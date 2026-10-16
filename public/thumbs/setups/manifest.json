@@ -6,442 +6,442 @@
  "scenes": {
   "ACID": {
    "hero": "BOX",
-   "rsb": "6dd5275a946a0e43fd07d127aaa42d653859bbf693e0b7edf6f9e51f59001b74",
+   "rsb": "9de87559fa337e1aa62493923eec767477a102c4cf33f88fb2b3a6a1e91a023d",
    "png": "7d4539739b7c9ace41005d4886097fc050cff316fdb6da7bdddaf8c338218343"
   },
   "ANGER": {
    "hero": "BOTTLE",
-   "rsb": "e930646812f8342a3e0a8133edeab5e32b9a42129d7f3b31045824bd1aa29716",
-   "png": "ec37f650193d1cef9e8bdf6b257d8e63b36f8be3b4127355a265ba1bc67ebd6c"
+   "rsb": "249f8e4063d361bd6805a1db6c09957f17c08558e65aae2b4d2fba595fab9f2b",
+   "png": "3440ec55041cae9de536a7b7fe78a2bc5d6830c667f691f6095860f4f8d6eb08"
   },
   "ATELIER": {
    "hero": "RING",
-   "rsb": "95b7ef8532959e99a3b423a71ee95e629c7ad614322e6b47a014914a1bbbaebd",
-   "png": "7454dae44ac91863ab974ca246a812a0c1bae7a79c086267a3045887b982df21"
+   "rsb": "7d37c3563c85dd77ecf761785fab835261c7291e9bd12cc287e7fb46cd6aa789",
+   "png": "9c11b0886a560f2a465a73c2fbeb19bc849b32483084758f668598cf23c2c6c7"
   },
   "BACKLIT": {
    "hero": "SPHERES",
-   "rsb": "e86b48a814b09e5abc4d3dba15a502347c10fc60394bf162b429603ff9cab40f",
+   "rsb": "97cc1736442d43c316f7052cf3939774b6923b5ca8dedf5c0963588c104cfeeb",
    "png": "ac67a27aa5f45d830fc0d82c1a37a78922bf3b4ee978e9506be2825b4b535b43"
   },
   "BACKLIT_LIQUID": {
    "hero": "BOTTLE",
-   "rsb": "edb93c95c465dd02f5d27e3c90ccade791bd1aa5cbdc78d54a379a194b48a6de",
-   "png": "3ce0211badc88a9f888fa4312e3e537ce246015cb073e402a45c3285b22d2e6e"
+   "rsb": "ded4a48572da862e00d65aa0039c6f5a301adeda8603a6f320990c102add825a",
+   "png": "809229314eb2990942b79a4de806f353772dea9a3b8b9b8ef1e4c244b3c2f0c6"
   },
   "BLACK_ON_BLACK": {
    "hero": "BOX",
-   "rsb": "13dce2b9454a9a28d4ad04f55cf0f4ee1c39e28975ffbe70f1463701a8922624",
-   "png": "0f70fd62bad829c8a0bb9b0bb38257c7a102baddfaf539ac8339f9ee6e888926"
+   "rsb": "0df674b885517cbbc81dda0b21d1ee45ab32b894e7b390bef88a00f53d6f6fd8",
+   "png": "bad893c41c4af2bb324dbf1ef814dce0ea8aca04183e4acc762dc404e20e055d"
   },
   "BLUE_TUNNEL": {
    "hero": "BOX",
-   "rsb": "51bd8df02e4aead458a69ac17268e24dc8bf1f5350b2b323d2649967d1826459",
+   "rsb": "db2c1d7fa90027de73acaa6d90b0cd231574042e5302801fe2d1ed8d011541cc",
    "png": "2ba864f41bebf71d1f2713306a8b4981fff34aaaa93b1a19fd00adb4f110baed"
   },
   "BRIGHT_FIELD": {
    "hero": "BOTTLE",
-   "rsb": "f0b9acb63277ab862b21197c7a76b4751fa2b0a973bec70dc94dac9938ca65d3",
-   "png": "bb00db9aa0435aba732e8a933c04d48b91a9cc209ea17fcabf82fbfe743114ff"
+   "rsb": "971bd8fee913a90eed1d5f5aacd5d6003cc974b15b96087f4dbb98accc5b2ea6",
+   "png": "c5053b759929ff377948efda1836ce41bffe8b47609ee84999dbec7faf561023"
   },
   "BROAD": {
    "hero": "SPHERES",
-   "rsb": "b61ece6f77646729771f377b18ae82c96ef43280eb94c3e85e318960d084b72d",
+   "rsb": "c9b123256b86193efe8d072f8ab1027966afd465e6d5cea44641209e62513e61",
    "png": "ff699548f97f66c912b8994d181d3a7bb01129795a134cc10071d109889d9ad1"
   },
   "BUTTERFLY": {
    "hero": "SPHERES",
-   "rsb": "f725073f27022c5a2aa958a4f7362d41e1a45e9415add63bd0ba1acdcaf603bc",
+   "rsb": "c6f4c9d225d0aac338bc16671aff96dee92d05f4a8059e8f319d276f9944cf6f",
    "png": "1539d2e364c04dd50899f5c328a05d94deebbf0e1446fa29fe42aca953a5ae3f"
   },
   "CALM": {
    "hero": "BOTTLE",
-   "rsb": "d1cc31040093483d5bde9d8b4c3c9292e2ff9b62f16770e2a8c0c8ac654e094c",
-   "png": "9fe0b1f586d8b22346fc9dc8e7d0262d716e29a8e3aa189ced639327535cd5cc"
+   "rsb": "c45cd93bcb1d6d4e7c826b3db84e13168e541b4c7fb68ffe74cffaa0c0f382bd",
+   "png": "05f1da481016abc76a1387fa9813be9994c3b33ef8ab29d4edb71e6df0c5f05e"
   },
   "CANDY": {
    "hero": "BOTTLE",
-   "rsb": "cefc0b218de9d557f8801c4c208f153ee8b6fb1c9498694183090a55e4084ceb",
-   "png": "8cb66823060de7bacf710ff38c42e85d94be0c3a5061768369f55d64debf7357"
+   "rsb": "63a510ca9c833fc87cc0a0b6f5c9ed109c8793345159392c46b952312b6c8f39",
+   "png": "46ae23b7df7ff1f9224ba6c5584788c6573d3996f7d13450fc5fb24e0d74defd"
   },
   "CATALOG_FLAT": {
    "hero": "SPHERES",
-   "rsb": "4eec19565c6df1f7bd605d8d1afd5df57dbc122889f4b98a9b953c47d7dc7751",
+   "rsb": "2d5753455d3b44bbdac326c408d87fa90b60e902488a9b922245a5a78dc377b7",
    "png": "7109367fae0f4bcef3f1610a387c4bf295f9ee775a2b812728bc02e2e6f9a5ef"
   },
   "CHIAROSCURO": {
    "hero": "BOTTLE",
-   "rsb": "ccfdcb37342040a1406ae35c87ff51e300695d4de47321f1e034ce968f4f9cbe",
-   "png": "d0ca07c2f74da1feeffa441ec278bc124216577f51407c81f6d9fbdf99963ea0"
+   "rsb": "d9e1a7dd9f489c26a0912ee7ff6458ae01daf9403ea3763842cb25d8a2776825",
+   "png": "fc5bd628a0e653bc513189bf7ad557e90c9a362804273769957ad880531fb68a"
   },
   "CHROME_FAMILY": {
    "hero": "CHROME",
-   "rsb": "3d794d97cff1cb0d3a297deb89a73d961c56bfaf268a93385b020ecf48b422de",
-   "png": "1def631ce90494bbbd0f737a1f3980a61c15f6ca255bfdd315e05a506b5848c5"
+   "rsb": "38c13f8d95f2963759bf21f96308bb97c3523bfb5f5bbdb5657b38cbde503b86",
+   "png": "d4abc9de7e3f055427e199c2ce0caaa133363487515ac8d80210b3814f88e9fb"
   },
   "CLAMSHELL": {
    "hero": "SPHERES",
-   "rsb": "b1504de8cebda5d8a01336f4ab2915c74082e159c3a57a174bb0e1f4a99b94cc",
+   "rsb": "e89b8eb0f8bfd8dec3eb88ef37bd3c367fbb22fee007e4c3188acf6459d882f0",
    "png": "db638ec373bcfde2e6a49fd30dbef2c417624fbb446cc6f9f3465bd5698dbca0"
   },
   "COLOR_DUO": {
    "hero": "BOX",
-   "rsb": "af19bd1ab4edbcb2beaf2d073560e1c7e95fddd81fab6ce8ccdfab77305e08b7",
-   "png": "1e34770f8e403e9693ecc031cd31dca3de286b96af14360a7d929e81e6c7ca5f"
+   "rsb": "eb0a9654fb6c742578c27f5ebd5fe3a0de60ece8ce673f9d8639f95c23686338",
+   "png": "0014242ebebd94fb14f3284c7996d622058f01bf9ccde5409bdff20fcf9b1d66"
   },
   "COPPER_GLOW": {
    "hero": "BOX",
-   "rsb": "d83eb99fd2791607e7dc3ea4a00eb6a1820650b7654d5cbf68a204dabaa6b394",
-   "png": "4fb301987906738ad0753f1348edca667776d28dcaccfd0dc33d14d64aab8117"
+   "rsb": "ba3fe38378ffc3215c5614c2b5160b2f978bd088b995aca8489eba39072e1c01",
+   "png": "b3eb9a6d7238c6fc1ef76f442f20b8c35418637999ae521ad940161c4f4b16fc"
   },
   "CYBER": {
    "hero": "BOTTLE",
-   "rsb": "4c9659b7c60d60e12282ca23b2460c25b559b265b8ec636b9d599488d62c79ef",
-   "png": "4389eb01b5c328ea00a18d2bbd6d7373708b67c4f75e91534e95f998b2f7adca"
+   "rsb": "36ec3d62eeb9e73cb70afece5b521df11fc027a0b93a6164ab95cbc736287883",
+   "png": "1747e02084ad50e35c6e1a4aef5c163d245bcef5a4cabca102d1556168b23b60"
   },
   "DARK_FIELD": {
    "hero": "SPHERES",
-   "rsb": "e55e80f9c55ba5e55981bbad96adda84877fefcc77ca5c67f3b6cffbbecf2262",
+   "rsb": "1dd58dbbbd5cb35ac1baf46e42bb79d58c8a39abe8a1cc88d5f2ee520b25d817",
    "png": "d71d16a932b7cd7957eaa16857f6ab5d36a5b9613c2c3f633951031bc251cfbc"
   },
   "DAWN": {
    "hero": "BOTTLE",
-   "rsb": "4634e784a05297cd8a2171332629bbca62bddc4c4324c33902bfdbc8a9dd95ef",
-   "png": "cce77cfa1b9151b917b662d4788dbcf347084c9751f40bb212feee1242e80ea0"
+   "rsb": "796400c854c81a811fc157f6df82ff6636ef4f4144207c891f49393f6526a75b",
+   "png": "7d29f1695e7b00b36b92e6f607956d79aadfbc5c3f8a912e67383f2fdeb2e4b4"
   },
   "ECLIPSE": {
    "hero": "BOTTLE",
-   "rsb": "a8f2c5b29816d5e55adb1b5a7dbde82104940da9a654b3064ab5c646278f5ed6",
-   "png": "ac41b1d51d298efe17e7182ad4731b4113f430a87e26a816329ccdb57347dfb9"
+   "rsb": "7f89b1b94490486eea9d0bd848c87df6b492eae900cb47547675da1e1d6ceb91",
+   "png": "873798355dcbef96bd043a7ae21edfe44ac0f979d770bb6329f7106a03c24a83"
   },
   "EDGE": {
    "hero": "SPHERES",
-   "rsb": "474ddae2c18a6e4949a9a2c6244cc3544576ef323863e6c87924587d0fc210c6",
+   "rsb": "f44386bde1fbc32199d20e009294bbf93bfff2d594c2719525382eeb5c975b5b",
    "png": "2b5a9dbaabd64abdf8c6487a1dc5e7c44ece9ab3be7ec6fe9ffa198845dbb562"
   },
   "EDITORIAL": {
    "hero": "RING",
-   "rsb": "c21001ab10961f279121b89c55ae0f58e3582a25308a44ba1be63df35bdfeb52",
-   "png": "75833a504115ab8d9bc7ceab74c569aebfae6964ce953e825386a4caee22ddea"
+   "rsb": "4154c94cca5857db15b9feb793fad2ee3e961292b09e01ae20a1cd6008456737",
+   "png": "cc97bf190ebcede6021f8b4f0ffc72a025a748439b3c9779f809a86d98755d99"
   },
   "FLAT_LAY": {
    "hero": "BOX",
-   "rsb": "10f3f9ffe928a36b4227bd8fa7de66d05507599bbae8ed8db0cc6726fd1b6101",
-   "png": "d57cbe06f7fee4d156c1299d9d31a6c1f021ae03f155e710b792c94b0c905437"
+   "rsb": "d027e34b83ddd3d05feae65e4258f70e3730a04a8b58ab69b72a3b8f9d5a2be3",
+   "png": "196772fae29dc5c99e1b601d2400bfd064337ed1b2d1b23ee2e3a80881296347"
   },
   "FLOATING": {
    "hero": "SPHERES",
-   "rsb": "3f68d4d68ee71a5a0c7a698d93bedf541aec2533e08851819a99f84bdc188fbd",
+   "rsb": "ceea762d8ebc603875f21134b51d654507dc1ac3364a9e5176d4b2417d8c22c5",
    "png": "650fbfbfc52ed8f175b87843159b7bbd4261db696c4c1a4865ba999f5f28693b"
   },
   "FROST": {
    "hero": "BOX",
-   "rsb": "94088afc92465a22988cbc3c3c6f26d9c4ed61d4dc288ca9c99673233f3865ef",
-   "png": "eb619820ca233604bace04a2d20ad51c769c8b678c198b6d0ceaa88cae26f401"
+   "rsb": "d26544224fe78fef352083602810817b1c9afeb44f50be146efdebed1badd632",
+   "png": "bed01e4af3bd99f176e3ffa69086b800a16bf1f15b2abdfcf47235d0bb82b7ce"
   },
   "GALLERY": {
    "hero": "RING",
-   "rsb": "82635e0736d0f7c325339e4915b6dacf1ee9b4d3f0edb0b452ed1bed91c6aaf4",
-   "png": "609342ac0274b07d4a59f676983b092050b7c91a4680384028bab9f570da90e9"
+   "rsb": "4e7733b2c0074447792b8e0da4a13b32f35b01622a0fd4e411650a2fe1976d9d",
+   "png": "19944b953f89edbf22ebb8a6d34c67506d2f03eaf1403da56fe81537955ac5d9"
   },
   "GLASS_DARK_FIELD": {
    "hero": "BOTTLE",
-   "rsb": "4ca7677f0f69c3b1acf519e21c58156fefaf89bb1fb2f4681d8e7dfe06743488",
-   "png": "3bc52b1e21066bb90c624487c762e679f6654c6ddc088e6a98349c2d1cbe784a"
+   "rsb": "dcad1debc09cf3602905f9f1a8a53bf1ed2aa05d33d1aac21cbf813f9c59f249",
+   "png": "3048bfcbfa1b70471863bab75ec32a4a2ca32b90743c310720ede3df8cd85edd"
   },
   "GOLDEN_HOUR": {
    "hero": "BOTTLE",
-   "rsb": "17698541ed022e9b28ef1a0d64f9c63151835291d06a03830722329221129bed",
-   "png": "967759e0550295480a67376a64bdb8a7be5074c2942770442066e121f7f94b3a"
+   "rsb": "0ac36fc18a5c02e980fd1190995bc0df14b5f64f5e66a7fbaaccb87ac52867c8",
+   "png": "ad55352fd4aafe8172dbfb17f4dcccba9b63cfb1cf342186e533f63ed4e4e08b"
   },
   "GRADIENT_POOL": {
    "hero": "SPHERES",
-   "rsb": "0bb47390f3c33c9d570e35dc74c86721b57aa5f5d0f0649018167c83a45ac7cc",
-   "png": "70effeec0961469e7886edd3e6ff0023d4c88724112e371f3220f41692ec5bc1"
+   "rsb": "c18b3fb487beca16c7396eb0e21aa77708b25dfa79b7f09ddeeaa3bb92f61300",
+   "png": "85024b65b8c09c4629a0286a449cb285ed77bf9a9f76c828c7ccaff9bf49f62d"
   },
   "GRADIENT_SWEEP": {
    "hero": "SPHERES",
-   "rsb": "6c1bcfdd1e76d62a9df5922fb3945f42cdd67503086e0cb5ba99a13ba57211ec",
-   "png": "a8242aace6f8f1f0ca66384c0c8fdf43390aa5e1df20d4a75a9968a8240bec39"
+   "rsb": "665b01592c8ec762761019159c44068498a50342a88009ccbca8ad8b8e461b7b",
+   "png": "0492a8bd670bfa5925c97ed7c922a467332313e8290d0f2326b748fa44f74722"
   },
   "GRAZING_LINE": {
    "hero": "CHROME",
-   "rsb": "438cef70cca209dbaa0c130a9a1f1df2a4bdd6f2a1e54a8e1254a6c9619bff02",
-   "png": "943cac62d99a7dade3ca5ff53b6eeca130f72bc2676b99162330e9db51401ccc"
+   "rsb": "a956ccd3c8fa5cd97c63291bb7dfe26dd59e545d97139a3df90e9d13459a2189",
+   "png": "93094c5e65a7f0727fceb4f379d7bd98d72d10ed72ebc318995a76877a15ada6"
   },
   "HIGH_KEY_WHITE": {
    "hero": "BOX",
-   "rsb": "9aadc0b4f4693052e813e628cc6d9a537cac559117ae36028b0d8f2606efec5f",
-   "png": "9db76e958e778cd9e899e8e85e461053465215df14b2bb64c6423535bb93caa5"
+   "rsb": "bef932550e661028dd678de7c01e96eb15accc552c4b1e23a4340108a6f1f9df",
+   "png": "110008f02c42f7fa42bafb416bb9ce018c6f5a8ea84a48ccd714d9b0cb340749"
   },
   "HIGH_RING": {
    "hero": "CHROME",
-   "rsb": "319bdec45c893d2c36ab778dbf50d1540c6ff2083d78b994e32319d2835a7db4",
-   "png": "7ebee06947616679810bbf7859a8c3428aff810d08ff91afd5fe8f90235e1773"
+   "rsb": "291dce0a55342464639eb497a184cda910bbd1782448aa3ea04e3bd7b9bbd4d1",
+   "png": "e0f8ed63107cfda3905b1c8b7be1e8f445946c3ef66cd73a5a8b9bf3c284bf2c"
   },
   "HOPE": {
    "hero": "BOTTLE",
-   "rsb": "19b4458525d0a38fe8b08dd00e45053ce325a37908247bcd5fc8658a538a7e20",
-   "png": "2a2b363cb1701e23966e1afeb3bec66f21ff28ceeac4763e93054172d7bc33e6"
+   "rsb": "e839a47567ebdbc32ab358188d4b8f591590c9b1b6d8d18bb86aafa69579adcb",
+   "png": "d589e734f0f53b5c7963fbc2874d4ae413f37b870be59b8ccfccd4aee484dcab"
   },
   "INNOCENCE": {
    "hero": "BOTTLE",
-   "rsb": "543972d99ebb15f1f506a86a0f40299b7e416d106c3cb586cdf2106e13ebcf9b",
-   "png": "c8eea01df8530f4f83a9445c295936d0c07c36e9667771aade3cbd9b6f6c12b3"
+   "rsb": "6b85d8af86c5993a282653c035ab1785a2116b3be17036367227706458998a6d",
+   "png": "5532656cb3be060e4052e115423d1760abde5017f66400a883943b954d10952e"
   },
   "JEWEL_BOX": {
    "hero": "RING",
-   "rsb": "bf8aa094db239468510601c9cf32c8b0817c6e0910a839fc6c72e08becb834d1",
-   "png": "090e73c0e79e71ed8eb3fa64a7c6f0045fdc23a25ea4ca58fc3cc02dbc3b76f1"
+   "rsb": "b2f617d568588802f75a5a3cb6c63987f092410878312e2ecc85fda131c6f286",
+   "png": "9708a3beb05dedc69591ec8edd032dcf527f1ed8d3ef47a80c656f4576055d4c"
   },
   "KEY_ONLY": {
    "hero": "SPHERES",
-   "rsb": "71a2137e079b5ebf5f1ee4110e541d656a2ced8e3d277b663c6f9ea8398ca64c",
+   "rsb": "80cbd28f4abcd47d2d5ad7ab4e0aabcaa1c47f40155b2bde417e55039aa49397",
    "png": "cb15b9c76b355a577aa525fa7d2d2fba6b62b6f135a8fa878fec7a19bea7721c"
   },
   "KEY_RIM": {
    "hero": "SPHERES",
-   "rsb": "6d0f0f645d249c1022c04cbada3b023eb33934e44b5e3022a0595a3af9fcf405",
-   "png": "1e7bed2fc7443a385b09bf2cd2cfda17122826a7eedc4d2c59e45b609d8830f7"
+   "rsb": "f76779e1c8d034d41fa422d79889b49e114702046a7e4469ed57535e21e208bc",
+   "png": "7e3dc841a306f07dd506ad9765bc7b93fd5a21883fc568ddb28f47105cdc0c68"
   },
   "LAVA": {
    "hero": "BOTTLE",
-   "rsb": "189442a42a52ff687f6335528c3a21e22be85df2bb7390b50cb7ed341de7efb4",
-   "png": "8bda775c96651c1ed4dd94457799a231ef17705dc08fd9612df9206721963d28"
+   "rsb": "35f0f61a7757c3bbef2dbed54690923dac52284f2cb9e634ff3617dfb313ad42",
+   "png": "f9ad1e492dbbf4daaed702ffac7ebaf0c0d388bc181a757fd333abd309a6ce70"
   },
   "LIGHT_GRID": {
    "hero": "CHROME",
-   "rsb": "2c47c10fd4b57b349193bb29f2917b9d8a43846363020a7605bd849a365e5fb9",
-   "png": "b067d5a2a3c66da79719edee225bb877fc9bbd0cd610382331c603ed4ed59503"
+   "rsb": "79c330661c9cc3f44a606aa54ad420c63f513b765d4aea301bfea1b9d21e6007",
+   "png": "6091e8ce7f6876bee6c5bef9e7774a8cf12524c4aa88dfa7013a5171c4bec774"
   },
   "LOFT": {
    "hero": "RING",
-   "rsb": "656fc71be4291dd00c338fc98bf39c892649152cc11271b3a563bc2302b4faf2",
-   "png": "2dcd364c13f3153406f8649c2376599d3f193621eebc708317fb40442918676c"
+   "rsb": "fb8759ee4e5c42904874b44655caed4860d71ee40a327ab4c495820780a1db44",
+   "png": "ddda6a4430a257217760b9fcbc600470a4ce3b1f1e6631da5a31a0f23655b6c0"
   },
   "LONG_STRIP": {
    "hero": "SPHERES",
-   "rsb": "a9f4a895b324cb70c581100eb04bf8afb1b2f0d8370d835391bb8d9d0c69a070",
+   "rsb": "e77671a508ccf8fe7e813de0884fba46270481d8d06e11fa0e24f859f455a71c",
    "png": "f9c27840e32474dfa049789b20228ea8b6cf254e14cc0497257b534db5857ee5"
   },
   "LOOP": {
    "hero": "SPHERES",
-   "rsb": "a0a85567aeeadb7866496aa020859c3642e88b4e5b443f9405ddc5b0983b48c4",
+   "rsb": "e9604745afebe8b46f440851c74e09399cb47cac3cbc5b59bbb1c0fab7371502",
    "png": "5d50864cabc039f6e2b440a3990c4564003fe4e0f18ee2fcb3013b5ede8c9a68"
   },
   "LOW_KEY": {
    "hero": "BOTTLE",
-   "rsb": "d3e72d19f734c1cee6981d30cc4349eeb754f5f8c1bef290dbf0911e80662e2a",
-   "png": "978365373ad90d8ac6fbd3baec3fd63093c47b5ce0064d438046321a1d510f6e"
+   "rsb": "5c0a09a2eec39abc36fc1db3a98ea28ccf4cd5d4cb628956c8b3bcce9d1125c7",
+   "png": "177a01d73eb24cb1b2b10836f16a84ce3cae615e62bf8faf3f3eab13944a3a9f"
   },
   "LOW_TENT": {
    "hero": "SPHERES",
-   "rsb": "9688c1859720ecaf3f001fd0cb1c85fdd50763a916611d972072fae29a386b3d",
+   "rsb": "13cc772ab76bf1ae5291a121212d57ea563dbd79f24aa75c02f3c8dfb5e2a7f7",
    "png": "bc2a2bf4dfab484842791f670d2885bd383eab7651e415c50a1e3a30bcd674cc"
   },
   "MAGENTA_BITE": {
    "hero": "BOTTLE",
-   "rsb": "79b427ab3856516f878d5c8e3b42a1dc1732e3a5b8565dd8df28a960d9dc0523",
-   "png": "10a1663c2acd3993761545a18ff65bb073f3fcfdf71c36e8ae440d08707f0f3f"
+   "rsb": "1f37b26f723c84ecc99a8dc112bca70b6e510eed82c1ca2a6ea1153bb9003a68",
+   "png": "d7b961bd54cdd89181d7c88646dc4bc52173a90fd50def5a66b05867d8014630"
   },
   "MELANCHOLY": {
    "hero": "BOTTLE",
-   "rsb": "3e2e4dc1860fb9bedfb42ffc93dec320b02739ff553460956715b34a184fcbdd",
-   "png": "95e572c50030f72e2c1b07958d107d65f5fd30cdeeda024102b4e8745946c381"
+   "rsb": "1632f4055ce7a3eb39ea48366d4742c7d83b1a41a846663ffb140593b0e0e55a",
+   "png": "ef70de5f0d7345bb836eff838d95fbc0a94d22070f8d8c2169822a40163085fc"
   },
   "MIRROR_FLOOR": {
    "hero": "BOTTLE",
-   "rsb": "882a714faf6a053367fffa71315aab62620b3d9fd770e7b1eae600d4de9fb4e6",
-   "png": "37262e8cf91764e3024318f586fe42485cb144c07362eeb056d8fab1f49d2374"
+   "rsb": "896cee48b9386880708138cd8d5567c1344d22bfb68a6e716eafce340f8e9383",
+   "png": "487bd9cddb8cae4b43ae795c948d21b1c68bb97da36d33177536f1f684c95ae4"
   },
   "MIRROR_SIDES": {
    "hero": "CHROME",
-   "rsb": "c379349b60499b8a6bff27a523aae8b7b5eb0e51e8784a0574369b024d98755e",
-   "png": "82ad406469353b46f2442346ce313fda45023b772b147d54bd5779e3034890ad"
+   "rsb": "1426b8d6700792cbaecb41716761f0bffec994712cb788e6044f5d07fd531e5c",
+   "png": "9703ce5d08dc7fb5930d58e25cb58f021d850b810bf5c098a480c1c47eade053"
   },
   "MOONLIGHT": {
    "hero": "BOTTLE",
-   "rsb": "3f077a55fa76bcef8e166df1f0cfe891f3b6879ca6b7dcbaf55e69fb7a1a9c20",
-   "png": "30ef7945460b9b504be910a1d03231d01789588a47a43871478e95c40d87839c"
+   "rsb": "4982cfebb511cf2a8ae9ac43ea34b9b444e8615ea34453207e649ec943ae6de8",
+   "png": "4dc75316ffc66b6a38940d5315e061acc3a80e20354032ac57d71f9fd6e6556c"
   },
   "MUSEUM": {
    "hero": "RING",
-   "rsb": "e856a26b3e0fff15504372d7370d80b0718d1cc4d401b652fedc80b663c5ab28",
-   "png": "4fc0ecfe8818b871425d55704562b5ccda3899b68f8c30e4b7d8821243ef4abf"
+   "rsb": "96902f1b2921b9c6baeb753ef0b6d7c9ab5e0be6b3eb4513751166c10dafc838",
+   "png": "bc98131cf8344ad41ffd3e93b3c71c6cb9797277de7e1c61e75405bba5440689"
   },
   "NEON_NOIR": {
    "hero": "BOTTLE",
-   "rsb": "96551cc78ce2300fea77be430992fc1a34a805aaf3400fcfe87ce9d1d3721beb",
-   "png": "0f9f54b4335eec2124294d1841d6d06560d68bc5d416c9a7f189ca0fdd74e7de"
+   "rsb": "a1741e54934eb0371afb3c983dd9462b8cf2c94010b03725e26a81c70858b047",
+   "png": "eaf22174b9f9865933dcd47c2f705722386c91c2b40f4e7290f83a5ffddd9ba4"
   },
   "POISON": {
    "hero": "BOTTLE",
-   "rsb": "8529d3b529c9bfa5873a5d80c16c29eb10ea9a48583ded2c0884ba3ccd74a485",
-   "png": "a1bbdc8247bd3295a2da6fc1371bc0599658d57dfd0fa80ea6dcd82549d49487"
+   "rsb": "4da1e38d8ffec3d3d785dfa6ac3a69f66ea6dfbf45d45cbe5ddf76659db4a75b",
+   "png": "919e84596ffc9c7d09aeb3a426d3c94abf747754d77915db76424a50c1631f87"
   },
   "POP_COLOR": {
    "hero": "BOX",
-   "rsb": "061a7c9fadbb5684fa370ef54feefca097fc57b2431346bd30a4214bbc974c36",
-   "png": "01120149486e030dea89d8ad1c12ff02b32185bc6fe101c1334926b98e49b105"
+   "rsb": "c0cf38246762c61b9c045267711d136f25c75e1f9c4e0ce60bb2b49df90b8842",
+   "png": "3da61c92dc89ac2fff5160a7cafc6891705f02b8c75beb12f361ad7753584ed2"
   },
   "PRESET": {
    "hero": "SPHERES",
-   "rsb": "eb78c42adacb17b26990e23f007f40f9b0d08936e429ca7a2e1426fccf9d9f95",
-   "png": "06881d51d382a034cd4a83029a1ab748e062dbe0974c9f39df33a3b275c31b13"
+   "rsb": "ddf5c0ec08483b5d3c86c138a1bb6b124c544232b9f4f7000f447ddac55ba65f",
+   "png": "910447de2022f683cadc056f6148fc6eb36de742ecc7b7e06207e4922588a780"
   },
   "PROJECTOR": {
    "hero": "BOTTLE",
-   "rsb": "de9f7e811acec2e735a1d498a35dafe1288c85b188582dca74a0f934c0e84055",
-   "png": "aa0c632323f19828cf369b0610a4e52e2e14164a4ff83159f07c2ccbf4c2c891"
+   "rsb": "91c0f0fc97906b87ff2561cf45dc4195d82b61772ba3e35f176d09f6f81b80b0",
+   "png": "0a5fdb99eefddc7736859cf00470dc8f18b9b5c297cecf8dd06de7cf098434a7"
   },
   "PURPLE_POINT": {
    "hero": "BOX",
-   "rsb": "f4ab65aa8d38049e9e4936bd0d638d1b5f84091985a080b7adf760e29666aa22",
+   "rsb": "2372621f82324105ef0e4cb9d6734d319552b8762164e031399691df15c4b060",
    "png": "2e5e072c9cfec692dfc4140b754ad3fc65dbb9766b75245a107f0ce577afdb0d"
   },
   "RAKING": {
    "hero": "SPHERES",
-   "rsb": "1fa1c21e09975fd6e1c0d5975e61295bd44320bb0f120494398a6b5cf394fe95",
+   "rsb": "89f983c9cf3794f54f2866ce9e6b118642fb4a5ed9edefe71604ee57ea3ea189",
    "png": "2688252194723a0fc2272f2bfa3c49ad6836b1f1bb377a592d4940074f48b186"
   },
   "RAKING_TEXTURE": {
    "hero": "SHOE",
-   "rsb": "0f2291e63a96640d2f09589e65f6b3ca442370977c022bb677a3542cd0dbabfd",
-   "png": "14997f04f8ab2c648ea92e409d3eb25617e7469fd1fd1c676c2a1964846e638c"
+   "rsb": "a36019370957332aa388e13ef0cf8a10295500e3c010065588d95bce6a0d33c3",
+   "png": "c2d5baa7ab4c42f4207503d4625440a33962e338e2bee8d0e80104c52b6d2c8b"
   },
   "REMBRANDT": {
    "hero": "SPHERES",
-   "rsb": "ff4befa15b41cff34bfbff001eb5b1b1d5089b800d93db4ea872d07e8b5a74e1",
-   "png": "39b1eb46f884071346ae59b5ff5d6a8878e36d301a196fbb99075d0f8cebf19e"
+   "rsb": "ede56f0b77080b78394ffd93713daaea5656b20dab6a489d5b0dbdd0d66920b0",
+   "png": "79b572b623c219cb25a8b5e73cd7a9cc0f31226bd878ff893f1e80cca757d7bf"
   },
   "RING": {
    "hero": "SPHERES",
-   "rsb": "d17167f9cb91328c2be8e2e1a6bf04a721ec129ac995cf5b3f3a523cd6ddf26a",
+   "rsb": "43204886319014f48c19e8c34418f0aefdafa6dc7c8c676dab4e7b4489cb8a82",
    "png": "ca32a0e3c5ca3d23f9292d800400f32f845edc4e39275ceee409c9b5a16a5d0d"
   },
   "SCANNER": {
    "hero": "CHROME",
-   "rsb": "75c6fb2fd6626dd66ae9d5abbd2a14cf7505e0f5de55a820827cd1f7bf5b7a9c",
-   "png": "391217b8e6f34065d7bf96677e4cd3341194128fc1264102dc24d8d9dedc8a51"
+   "rsb": "ad75773863408abf65d43e189992cd970c39a96f68b4ab72c2c366b0745c635a",
+   "png": "6f8cd97c1a556a66ff3210b50af316186466538d39867cc2c65fc6199a8be8ca"
   },
   "SHORT": {
    "hero": "SPHERES",
-   "rsb": "d994528fbfb82827d3d62043da0af9f04f182d48bcfdd65d7d3a007891543a3c",
+   "rsb": "8f447a4d86a7226084fac328fc185df5972d168e947fd10db2a39fe1ffd36ad9",
    "png": "c34168c5f503b828389b758eee74098ae53acc0856d3401f580de6b9e3a6f9a6"
   },
   "SILHOUETTE": {
    "hero": "BOTTLE",
-   "rsb": "19ed08bff44899ef8ab7ea3351140fc6e138796e8532f57eeb5cd4c096c95ffe",
-   "png": "221809873373e8968e0f32db8f39c9ce4e7e03405224eb7e1d9964f3d79ae5a9"
+   "rsb": "2acb06ec948e7ddb56bfc3f8195b44718175595bfc54c7c5fb1e6d303e40d498",
+   "png": "1e9fcf1a4a051e901c4782ebe4e8df61a14e90196994c4890b17799810853037"
   },
   "SILHOUETTE_GLOW": {
    "hero": "BOTTLE",
-   "rsb": "32d8345428ec1ca2247c7d5bf4ecffd3a3906db9f93706da20caaac710f369df",
-   "png": "b85035294d6733027a6685a98cebb4e6a99b17484cb4fd7b886a569c0b18081f"
+   "rsb": "945d1540418caa18cf27479e92135364d622ecbc5bd642d6c1d0cca5fc823e74",
+   "png": "8fc2db3a89b1d1f5de05144bed015bfe8b7ed8e78c4be7bb7baa93be5bb12944"
   },
   "SINGLE_POINT": {
    "hero": "CHROME",
-   "rsb": "80408cc9a5eed94c45264113dc4484fd527d6c3b64c5dffefbd6fd4f68a39744",
-   "png": "68bbf35b9a17856d656ccf5a4c29929d6fa8d0106a8739342889b7d728013e88"
+   "rsb": "6d0727dabe48f6d5236cddb63d89aa002275ea09eadf52ad526347a9a4e0f000",
+   "png": "885e10b76b531087d6976ca777082d55e8f34ea04b467dd27a981a1750a233e4"
   },
   "SODIUM": {
    "hero": "BOTTLE",
-   "rsb": "aba9e38ae006c1a67da4f68f8b50765156ea52d51f996421c5a6e1dc978386d6",
-   "png": "ed69dd82093fa203e3553b75d1a9196edb81d7e9aa6e7a8698de5a41a868e822"
+   "rsb": "b84eb53c1078435c190d82cb39e92d686f4daf190b75dae5fdc62b260fd31adf",
+   "png": "c82ac7a600680e516f26f83ffed1b9f9d99cbd847165ed6c3bdc9a5f0ada9cc7"
   },
   "SPLIT": {
    "hero": "SPHERES",
-   "rsb": "395271923fc27a0df5a3acc3caa3304421c59ffd2c60eba645e5bcd6fe845859",
-   "png": "e7b15b0e246abe8ea6a3bfda13953bbc4959bdb038fd978c885535027babd055"
+   "rsb": "095ee2dff6366ce637c51776ec3ab5049fa6c1e85f93d1f2f94e60ed9ee6cfa1",
+   "png": "9ab6feea18fb45b4437ed70dba37ec8b6ff35b4a762daed7c4326c23549f9416"
   },
   "STRENGTH": {
    "hero": "BOTTLE",
-   "rsb": "e7ad648f6b48afb35ba067ad0367db9e0cdf2e50c65ddc2b38de72bb267d5c0a",
-   "png": "66df92dc14aa203692a3662ea2d4afbcdc066c2f03f015d8ac5e1441073ef25f"
+   "rsb": "fce95abb5bdee15b75e807fc52c2c645d74ee000d3723a9f0bc92819a44e2c54",
+   "png": "506d94701cec2220ce8f72b1486ba4753056352f6ad6a03b8e90903eb0742c91"
   },
   "STRIPES": {
    "hero": "CHROME",
-   "rsb": "a0a39ff06810fc6efef1f9579bb9f7654ace62a102ea720fe617413f48f7814a",
-   "png": "522b61467116710528ada2e221aac2ae63be57c0c4ffcb0e2861fb121809e72e"
+   "rsb": "7f150e1e65b672abb15eff55bc84fe30cf8c642a5ca520776105a2d3204acacc",
+   "png": "92192533bc7f3c8dc109667ce8fad5e9a50f05c140db037d702cdb916b09a053"
   },
   "STRIP_EDGE": {
    "hero": "BOTTLE",
-   "rsb": "b809d05219e3ce96f9858f6cca7ca39a2816f780e24a0eab211ded48d825f21d",
-   "png": "9022b5ac702a7799890e35b1bde6f0aabf173679c481e95353f136107f6fcfca"
+   "rsb": "a58ce000ef9e347a52bbb0836ec338b575704a6a3c2df228ada636902113f2a1",
+   "png": "69dbb9446664b0c4f90f6439cfb28f4543bb3b11a1857e851a73bed0f270b540"
   },
   "SUN": {
    "hero": "BOTTLE",
-   "rsb": "29df8685ac0d6f7e62be137803f7f5eb2e7068552016a8de1b2bf9ee84f535eb",
-   "png": "84493a64da2a6f656f9b642fc9f54f3c655cdf241a0d99b523efd513612f397b"
+   "rsb": "933ceed41813d80b27aac9b325dda4696b3343009ca69eb4d6ca52221f12747c",
+   "png": "3d2ee6c80aa71c87273f5cb4efcc029b5aa53c0443c82af19a225499cfb422e5"
   },
   "TEAL_ORANGE": {
    "hero": "BOTTLE",
-   "rsb": "d89a28c2859a1a96967fdeac2a0cdc84082d845dde01505d8678d887e56e7043",
-   "png": "398adef6609c35b899f88252fbd6938b0ba79714a0b8c13d29084ac72b101ead"
+   "rsb": "136c069e201ef1add9ab626bbc3427b2ec70c08c45568cf4fc356ae2467c434e",
+   "png": "3637b3b9868244f0110700ce8c8242d4b5eb7ed334db0e6830390344a590cb53"
   },
   "THREE_POINT": {
    "hero": "SPHERES",
-   "rsb": "29056c8802e184612ec1e42439a1f93477d2bd283f44ae8458097037a66724ca",
+   "rsb": "228f4995b3de4a4cdf376e45cf9748edc4e6a05abdd0bcb116cf2b2c2b1db4cb",
    "png": "be3f74bd984b678f7cc97df95fd6cd337ee30a6516984a4ffd05fb2749cf17b5"
   },
   "TOP": {
    "hero": "SPHERES",
-   "rsb": "d034773ed0a83ee77205ce53afea0d482ee06e1a42b4387c47fd8d3828df6a6b",
+   "rsb": "859c0bdff19e1dbfcd3091e157a31d135623961653e960743f5175d007f7ca6e",
    "png": "76b2ed2fb962c8ca3c6fa94e1fdbd7ae90b1896e66e1c02cbdb56e80f3ccf11f"
   },
   "TWIN_SOFTBOX": {
    "hero": "SPHERES",
-   "rsb": "09def88b937c0f879e450cbaaebf1d6edd7ff850060b43db50b8ab91d033259d",
+   "rsb": "86b75f21ebbbbec507d0f95bfbb3896486e3138b2a5eebff97990f88479701d9",
    "png": "21128241f76abbf0c51057a8f897229281dbd99581f93ab48dff74cffa040c4a"
   },
   "UNEASE": {
    "hero": "BOTTLE",
-   "rsb": "4280cf42733222e226733d7fcfd3c522e2add83a4751c8409fb79375881955f6",
-   "png": "f0ef2c234c2857f4b9df668e9554e5bf86481ee49120dfe6a6c3f0fc25d61efd"
+   "rsb": "9eebd85878bb5df28a63764b0d0b8d97a0db6224f09f08a9277044905876cfc5",
+   "png": "a76edac89a05c6691e470fe7d7a8b68f627e6e88d1fe1842cfc5df207097645e"
   },
   "UPLIGHT": {
    "hero": "CHROME",
-   "rsb": "ff3f50c19d0e77440a1ae382edc54e4b99e227eb7ce0f37877377cc84085a72c",
-   "png": "9cc0bf0b5f63a2c5debe9dd056d2e1c714f91c641be0d69b79e258474fb98813"
+   "rsb": "fcf3041773a0d3035285d4bee0acc63a6b50d24435a3ee442372f8fc53616409",
+   "png": "8b191fad3eefbfc6089323f24165716529b2089b30dc4a01bbffa400381e9b33"
   },
   "VITRINE": {
    "hero": "RING",
-   "rsb": "3f2c96f09de7188e095ee8dc5f7a4dbdc51ee1a7279c0a0c90813a3008d0fba7",
-   "png": "cd29fd69a306d0139cb296d6d2fb654908d7368baba9b19c969c09c8b7b55664"
+   "rsb": "6ed819b935d9a404633adca3b081e20b3d55b47416d718f12ec1ec90aaf334ac",
+   "png": "3abe36f8cfe523f84724271235cfb80c849f5498203e200470387d33697ec3eb"
   },
   "WARMTH": {
    "hero": "BOTTLE",
-   "rsb": "1efb234a0d374430640f96a68c6f6f47114858c13d17caec469d88bb8ed9396c",
-   "png": "c4e5cb9f99b74c4e14ea3b683ab5bfa88bced00daf9bac45f3be7ddf9d2cdf1c"
+   "rsb": "f337871356d2bd9e87133325d60c9f0fbfb6a37a66629529e0f741087675803b",
+   "png": "44a29dff026a9cae2c91aa1f029d4fa88f8fdef4dbd1a25d3d76e196c9fd6b4f"
   },
   "WARM_COOL_CINEMA": {
    "hero": "BOTTLE",
-   "rsb": "97c121ddf3222774100d54530f4a366ca56708c5750b44af7f024a8ac2c2de60",
-   "png": "16827d9ee7662123daece154bb457833d2f618206fb69f1bba45b2013e2e3b9a"
+   "rsb": "86794dd0bd7d52c7ee82aa2ae4e3530d7a2c06842321ae35f54288586fe1fa48",
+   "png": "c801077b595b1289f82042befcef22715587e69b4d8ea6441d800ff55dc14193"
   },
   "WARM_RIM": {
    "hero": "BOX",
-   "rsb": "ab60d2a30aa096f057758a72cbfc6028033331148affb33ae71f07219448ed66",
-   "png": "cf95c35952cddbd2510c8ce1afee8d224031536ae464b25d2ceb12edcb1672c5"
+   "rsb": "68e4c15eef3d9fdc3a9dedc59e81ac91d8374fb642e87fdd9a0f9e9d7a66c50f",
+   "png": "34f5b5c430e3a2b62d6b91b6b12949bd7d9fec0662a4d627409f78e3442d13c3"
   },
   "WARM_WINDOW": {
    "hero": "SPHERES",
-   "rsb": "9f411e6e7aad736b140198dab244f606c711a890ae769ce8553327d2ff39de9a",
-   "png": "7d37848134be7d578372d40b83f0c3b247637f5321cd89e3a0603cf13a8d88ce"
+   "rsb": "8ebc3f30ec0e587b6ad18c7ded3faa4daeaeb4f3e4cebbb1deba7568f0c842ed",
+   "png": "9244be51120c1ef597f42be2f6fa90205af24b96d67186f5ffc783f025e36781"
   },
   "WHITE_SLICE": {
    "hero": "BOX",
-   "rsb": "cb973b980c0f63b0cfe7c10a9cc75b872fef2daeae4faedb4f73d87ac492493a",
+   "rsb": "5c38c36eae9766be81e92d0879ac75f3bbd285f0f4d56ee2db00625b13255db6",
    "png": "423ca986bffa243f03a34dc95318af5d480c57b364c80ac01436bc452a5d14e2"
   },
   "WINDOW": {
    "hero": "SPHERES",
-   "rsb": "0327bc727c0292f272f020b83cede860244858279606e515b7283d4e01a51ff5",
+   "rsb": "39f4781ac342c4049b63b3bc6bcad5449e6d7e876e951ad4c82f5fb6e3c5b616",
    "png": "323ae1a31632c5e565f73a0a9f1ab734b20f457bf8a6ea736261389fdfb04226"
   },
   "WRAP": {
    "hero": "SPHERES",
-   "rsb": "bd1d362f35af266730317b215bdb519aa36a8b2731d7fe6d11b35431f6c99379",
+   "rsb": "df158a540153a7be143a55bfc740aecf99b9cdd9c76fa73918569eb2ef68a9b3",
    "png": "bbdef77c5973a12cc42facab599ecaaf2ca610951d7439a9219e87d2f9425c59"
   }
  }
