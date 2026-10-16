@@ -137,6 +137,7 @@ fn lights_scene(size: (u32, u32), camera: Camera, lights: Vec<Light>) -> Scene {
         },
         bitmaps: Vec::new(),
         effects: Vec::new(),
+        patterns: Vec::new(),
     }
 }
 

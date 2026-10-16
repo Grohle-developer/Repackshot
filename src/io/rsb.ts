@@ -19,7 +19,7 @@ import { flattenGraph } from '../core/material-preview';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
-import type { MaterialInstance } from '../core/materials';
+import { fabricMeanColor, type MaterialInstance } from '../core/materials';
 import { mat4Compose, mat4Multiply, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import type { PassIds, PassInstance } from '../core/pass-ids';
@@ -46,6 +46,7 @@ export const RSB_MAGIC = 'RSB1';
 export const TAG_CAMR = 'CAMR';
 export const TAG_MESH = 'MESH';
 export const TAG_MATL = 'MATL';
+export const TAG_PATN = 'PATN';
 export const TAG_LGHT = 'LGHT';
 export const TAG_ENVR = 'ENVR';
 export const TAG_FLOR = 'FLOR';
@@ -335,7 +336,7 @@ export interface RsbMaterial {
   anisotropy: number;
   /** E5: absorption distance of the clear part in mm (0: a surface tint). */
   absorptionMm: number;
-  /** Reserved for E6 (the edge bevel radius in mm): written as 0 until E6 lands. */
+  /** E6: edge bevel radius in mm (0: sharp edges); the engine rounds the shading normal near the mesh's sharp edges. */
   bevelMm: number;
   /** E9: mean free path of the scattering medium inside a clear solid, mm (0: none). */
   scatterMm: number;
@@ -448,9 +449,50 @@ export interface RsbRender {
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
+/** `PATN.kind` 1: wood (rt_core::pattern::wood). */
+export const PATTERN_WOOD = 1;
+
+/** `PATN.variant` of a wood: its figure (`woodFigure`; unknown: rings). */
+export const WOOD_FIGURES: Readonly<Record<string, number>> = { RINGS: 0, STRIPS: 1, SPECKLE: 2, STREAKED: 3 };
+
+/** `PATN.kind` 2: cloth (rt_core::pattern::cloth). */
+export const PATTERN_CLOTH = 2;
+
+/** `PATN.variant` of a cloth: its `weave` (unknown: plain). */
+export const WEAVES: Readonly<Record<string, number>> = { PLAIN: 0, TWILL: 1, SATIN: 2, CANVAS: 3, KNIT: 4, FELT: 5, TWILL31: 6 };
+
+/** E6: the procedural pattern of a material (`PATN`, 108 B, written right after the MATL sections). */
+export interface RsbPattern {
+  /** Index of its material among the MATL sections. */
+  material: number;
+  kind: number;
+  /** Wood: the spring wood (light). Cloth: the warp (`threadColor1`). Linear RGB. */
+  colorA: RsbVec;
+  /** Wood: the summer wood (dark). Cloth: the weft (`threadColor2`). */
+  colorB: RsbVec;
+  /** Wood: the ring spacing (bamboo: the strip width), mm. Cloth: the distance between threads, mm. */
+  scaleMm: number;
+  /**
+   * Wood: ring variation, ring noise, axial noise, colour noise, contrast (0: the colours as given), pore width
+   * (mm, 0: none), pore depth, pore band (0 diffuse- to 1 ring-porous), fibre, anisotropy along the grain; knots
+   * (figure RINGS only): count (0 to 12), diameter (mm), variation of the diameter (± fraction), darkness; two
+   * unused (0). Cloth: the relief (`weaveDepth`), the yarn's twist (`yarnTwist`), then 0. PATN_PARAMS of them.
+   */
+  params: number[];
+  /** Wood: the figure (WOOD_FIGURES). Cloth: the weave (WEAVES). */
+  variant: number;
+  /** The material's seed (`wear.seed`): where the knots are. */
+  seed: number;
+}
+
+/** Number of `PATN.params`. */
+export const PATN_PARAMS = 16;
+
 export interface RsbScene {
   camera: RsbCamera;
   materials: RsbMaterial[];
+  /** E6: the materials' procedural patterns (absent: none). */
+  patterns?: RsbPattern[];
   meshes: RsbMesh[];
   /** null: one identity instance per mesh with the mesh's material (no INST sections). */
   instances: RsbInstance[] | null;
@@ -569,11 +611,12 @@ export interface WriteOptions {
 const CAMR_BYTES = 60;
 /** LENS without its picture: 15 numbers before the picture's three words. */
 const LENS_BYTES = 72;
-/** MATL with E9's fields (E6's reserved `bevel_mm`, the medium and the Abbe number). */
+/** MATL with E6's `bevel_mm` and E9's fields (the medium and the Abbe number). */
 const MATL_BYTES = 100;
+const PATN_BYTES = 108;
 /**
- * M2a: where the texture block of a MATL starts: after E6's `bevel_mm` (72) and E9's `scatter_mm scatter_color[3]
- * scatter_g abbe` (76 to 100), which E9 writes in every MATL (the bevel as 0 until E6).
+ * M2a: where the texture block of a MATL starts: after E6's `bevel_mm` (72 to 76) and E9's `scatter_mm scatter_color[3]
+ * scatter_g abbe` (76 to 100), written in every MATL.
  */
 export const MATL_TEXTURE_OFFSET = 100;
 /** M2a: version of the texture block (its first word). */
@@ -594,7 +637,7 @@ export const SLOT_FLAG_INVERT = 1;
 export const SLOT_FLAG_CUTOUT = 2;
 export const SLOT_FLAG_HEIGHT = 4;
 
-/** A MATL payload: the fields of E5, and with a texture block the padding to it and the block. */
+/** A MATL payload: the fields of E5 and E6 (`bevel_mm`), and with a texture block the padding to it and the block. */
 function materialBytes(m: RsbMaterial): number {
   if (!m.textures) return MATL_BYTES;
   return MATL_TEXTURE_OFFSET + 4 * (1 + 6 * TEXTURE_SLOT_WORDS + 3 + 1 + m.textures.labels.length * LABEL_WORDS);
@@ -736,10 +779,11 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   // meshes always carries them, so the engine never pairs kept meshes with stale materials.
   const instances = !withMeshes || !sameInstances(given, implicit) ? given : null;
 
+  const patterns = scene.patterns ?? [];
   const tex = scene.textures === true;
   const images = tex ? (scene.images ?? []) : [];
   const effects = scene.effects ?? [];
-  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES);
+  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
@@ -803,13 +847,25 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(m.opacity);
       w.f32(m.anisotropy);
       w.f32(m.absorptionMm);
-      // E6 reserves the next field (the bevel); E9 appends the medium and the Abbe number.
       w.f32(m.bevelMm);
+      // E9 appends the medium and the Abbe number.
       w.f32(m.scatterMm);
       w.vec(m.scatterColor);
       w.f32(m.scatterG);
       w.f32(m.abbe);
       if (t) writeTextureBlock(w, t);
+    });
+  }
+  for (const p of patterns) {
+    w.section(TAG_PATN, PATN_BYTES, () => {
+      w.u32(p.material);
+      w.u32(p.kind);
+      w.vec(p.colorA);
+      w.vec(p.colorB);
+      w.f32(p.scaleMm);
+      for (let i = 0; i < PATN_PARAMS; i++) w.f32(p.params[i] ?? 0);
+      w.u32(p.variant);
+      w.u32(p.seed >>> 0);
     });
   }
   if (withMeshes) {
@@ -1062,14 +1118,14 @@ export const GLASS_ABSORPTION_MM = 50;
 
 /**
  * A material instance with the semantics of rt-core: SIMPLE, WOOD and FABRIC as principled (wood
- * and fabric as their mean colour until E6, like the preview; SIMPLE with its transmission,
+ * and fabric with the mean colour of their pattern, which `patternToRsb` sends; SIMPLE with its transmission,
  * opacity and anisotropy, E5), GLASS as kind 1 (clear glass: its colour after `absorptionMm`
  * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN; E9: a scattering
  * medium inside with `scatterMm`, `scatterColor` and `scatterG`, and dispersion with `abbe`),
  * EMISSIVE as kind 2 with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a
  * black body at its temperature, normalised to its largest channel, or the colour given), sampled
- * as a light when it emits. Wear, wood and fabric patterns and the bevel come later (E6, E7): the
- * bevel field is written as 0.
+ * as a light when it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the
+ * emitter, which has none. Wear comes later (E7).
  */
 export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
   const m = defaultMaterial();
@@ -1080,6 +1136,7 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
   // M3a: until the engine evaluates graphs (M3b), a material of nodes is the means of its outputs.
   if (inst.graph) inst = { ...inst, ...flattenGraph(inst.graph) };
   const p = inst.params;
+  if (inst.family !== 'EMISSIVE') m.bevelMm = Math.max(0, num(inst.bevelRadiusMm, 0));
   switch (inst.family) {
     case 'SIMPLE':
       m.baseColor = rgbOf(p.baseColor, [0.8, 0.8, 0.8]);
@@ -1117,9 +1174,7 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
       break;
     }
     case 'FABRIC': {
-      const a = rgbOf(p.threadColor1, [0.7, 0.7, 0.68]);
-      const b = rgbOf(p.threadColor2, [0.6, 0.6, 0.58]);
-      m.baseColor = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+      m.baseColor = fabricMeanColor(p);
       m.roughness = clamp01(num(p.roughness, 0.75));
       m.coat = clamp01(num(p.coat, 0));
       m.coatRoughness = clamp01(num(p.coatRoughness, 0.05));
@@ -1215,6 +1270,80 @@ export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
     angleDeg: defaultLight().angleDeg,
     flags,
   };
+}
+
+/** Rings per 100 mm of wood: `ringDensity` counts them over this length (E6, physical). */
+export const WOOD_RING_SPAN_MM = 100;
+/** Anisotropy of a wood's roughness along its grain (none for the grainless figures). */
+export const WOOD_ANISOTROPY = 0.3;
+/** Most knots of a piece of wood (rt_core::pattern::knots::MAX_KNOTS). */
+export const MAX_KNOTS = 12;
+/** Millimetres per cm: a fabric's `threadCount` counts threads per cm (E6, physical). */
+export const CLOTH_SPAN_MM = 10;
+
+/**
+ * The procedural pattern of a material instance (E6, `PATN`; null for the families without one), as
+ * rt_core::pattern draws it. Wood: its two colours, `ringDensity` rings per 100 mm (physical: the ring spacing is
+ * `100 / ringDensity` mm times `woodScale`, whatever the part's size), contrast, variation, noises, pores and figure;
+ * fibres at full strength and the roughness stretched along the grain; its knots (only woods with rings have them:
+ * `knotCount` 0 elsewhere), placed by the material's seed. Fallbacks are FAMILY_PARAMS' and, for the recipe-only
+ * fields, those of a diffuse-porous wood. Cloth: warp and weft colours, `threadCount` threads per cm (physical: the
+ * thread spacing is `10 / threadCount` mm whatever the part's size), its relief, its yarn's twist (none on carbon tows
+ * and mesh) and its weave; the fuzz is not drawn.
+ */
+export function patternToRsb(inst: MaterialInstance | null | undefined, _partSizeMm: number, material: number): RsbPattern | null {
+  // M3a: a material of nodes is the means of its outputs until M3b (`materialToRsb`): no pattern.
+  if (!inst || inst.graph) return null;
+  const p = inst.params;
+  switch (inst.family) {
+    case 'WOOD': {
+      const figure = WOOD_FIGURES[String(p.woodFigure ?? 'RINGS')] ?? 0;
+      const scale = Math.min(10, Math.max(0.1, num(p.woodScale, 1)));
+      return {
+        material,
+        kind: PATTERN_WOOD,
+        colorA: rgbOf(p.woodColor1, [0.56, 0.38, 0.21]),
+        colorB: rgbOf(p.woodColor2, [0.3, 0.18, 0.09]),
+        scaleMm: (WOOD_RING_SPAN_MM / Math.max(1, num(p.ringDensity, 33))) * scale,
+        params: [
+          clamp01(num(p.ringVariation, 0.4)),
+          clamp01(num(p.ringNoise, 0.3)),
+          clamp01(num(p.axialNoise, 0.2)),
+          clamp01(num(p.colorNoise, 0.2)),
+          clamp01(num(p.ringContrast, 0.3)),
+          Math.max(0, num(p.poreSize, 0.2)),
+          clamp01(num(p.poreDepth, 0.3)),
+          clamp01(num(p.poreBand, 0)),
+          1,
+          figure === WOOD_FIGURES.SPECKLE ? 0 : WOOD_ANISOTROPY,
+          figure === WOOD_FIGURES.RINGS ? Math.min(MAX_KNOTS, Math.max(0, Math.round(num(p.knotCount, 0)))) : 0,
+          Math.max(0, num(p.knotSize, 15)),
+          clamp01(num(p.knotSizeVar, 0.3)),
+          clamp01(num(p.knotDarkness, 0.6)),
+          0,
+          0,
+        ],
+        variant: figure,
+        seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
+      };
+    }
+    case 'FABRIC': {
+      const params = new Array<number>(PATN_PARAMS).fill(0);
+      params[0] = clamp01(num(p.weaveDepth, 0.35));
+      params[1] = clamp01(num(p.yarnTwist, 1));
+      return {
+        material,
+        kind: PATTERN_CLOTH,
+        colorA: rgbOf(p.threadColor1, [0.7, 0.7, 0.68]),
+        colorB: rgbOf(p.threadColor2, [0.6, 0.6, 0.58]),
+        scaleMm: CLOTH_SPAN_MM / Math.min(200, Math.max(2, num(p.threadCount, 40))),
+        params,
+        variant: WEAVES[String(p.weave ?? 'PLAIN')] ?? 0,
+        seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -1555,6 +1684,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   };
 
   const materials: RsbMaterial[] = [];
+  const patterns: RsbPattern[] = [];
   const materialOrder: (string | null)[] = [];
   const materialIndex = new Map<string | null, number>();
   // M2a: the texture images in IMGS order, one per image and colour space, when the scene carries textures.
@@ -1578,9 +1708,12 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     const key = id && state.materials[id] ? id : null;
     let i = materialIndex.get(key);
     if (i === undefined) {
-      const m = materialToRsb(key ? state.materials[key] : null);
+      const inst = key ? state.materials[key] : null;
+      const m = materialToRsb(inst);
       if (view.textures && key) m.textures = texturesToRsb(state.materials[key].textures, imageFor);
       i = materials.push(m) - 1;
+      const pattern = patternToRsb(inst, state.scene.partSizeMm, i);
+      if (pattern) patterns.push(pattern);
       materialOrder.push(key);
       materialIndex.set(key, i);
     }
@@ -1739,7 +1872,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   }
 
   return {
-    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

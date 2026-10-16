@@ -3241,7 +3241,8 @@ normales (espacio tangente, con tangentes por UV o por proyección),
 relieve compuesto con el bisel de E6 y el terminador; alfa como recorte
 (ya existe la ruta); etiquetas como capa sobre el sustrato (alfa
 suaviza; acabado propio de la capa). Todo determinista en wasm y
-nativo. Cuesta lo que cuesta: medirlo.
+nativo. Cuesta lo que cuesta: medirlo. Con la opacidad por punto del alfa,
+la malla técnica de E6 (un tafetán abierto, sin agujeros) puede tenerlos.
 
 **Criterio.** Paridad wasm y *hashes* nuevos fijados; una esfera con
 textura de cuadros y una caja con proyección caja renderizadas por `rt`
@@ -3412,7 +3413,11 @@ defecto** (0,2–0,5 mm según material) en todo lo duro, medio dispersor
 (E9) en lo translúcido, **micro-variación** de rugosidad y de normal por
 ruido fino (E6) a una escala que no se ve como textura pero quita el
 «plástico de ordenador», y *imperfecciones sutiles* opcionales (E7
-cuando llegue). (3) Hoja `out/materials-sheet.html`: cada material
+cuando llegue). Pendiente de E6 (veredicto de la tela): **el barniz ignora
+el *bump* del dibujo** (hoy el relieve de la tela y de la madera inclina la
+normal de toda la BSDF, barniz incluido; el barniz de verdad es plano sobre
+el tejido o la veta): con eso el carbono puede volver a su relieve entero
+(ahora 0,05) y la madera barnizada gana un reflejo limpio sobre sus poros. (3) Hoja `out/materials-sheet.html`: cada material
 antes y después, sobre esfera y sobre el frasco, con el set `STRIP_EDGE`;
 **veredicto de Fable** material a material antes de cerrar (regla 11).
 
@@ -4189,7 +4194,7 @@ sin cambiar nada). (10) Con la máquina a carga 20–30 (otros agentes), dos pru
 la de *denoise* del *pool* en `pathtracer` (pasa sola al repetir) y el `afterAll` de
 `ai-passes-browser` (cierra el navegador en 10 s; sus siete pruebas pasan, el cierre no).
 
-## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
+## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet) — hecha
 
 **Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
 tras v0.1.5: es la mejora de realismo más visible que queda para modelos
@@ -4215,6 +4220,386 @@ pelusa queda fuera.
 estadísticas (periodo de anillos, contraste, media de rugosidad);
 renders de las 13 maderas y las 12 telas como esferas con `rt`; el bisel
 cambia la normal solo a menos del radio de una arista viva (cubo).
+
+**Hecho — bisel de aristas** (primera parte, su propio *commit*).
+
+- **Aristas vivas** (`rt_core::geometry::edges`): una vez por malla, la
+  primera vez que la pide una instancia con bisel, y guardadas con la malla
+  (sobreviven a las actualizaciones sin `MESH`). Soldado por posición exacta
+  y luego a menos de 10⁻⁵ del tamaño de la malla (la costura de un torno);
+  arista con un triángulo = borde; con dos = viva si sus normales,
+  orientadas de forma coherente, se separan más de 20° y la malla no la
+  suaviza con sus normales de vértice; con tres o más, ignorada. BVH binario
+  propio de segmentos (hojas de 4) y una holgura por triángulo; cada punto
+  mira como mucho 128 nodos y 8 aristas a menos de dos radios.
+- **La normal** (`rt_core::bevel`): la de un redondeo circular tangente a
+  las dos caras, `normalize(r n + (r tan(θ/2) − d) v)`, con la normal de
+  sombreado del punto y la de la cara de enfrente interpolada en la arista;
+  convexas y cóncavas con la misma fórmula; la huella nunca pasa de `r`
+  (aristas agudas: el radio baja a `r / tan(θ/2)`); bordes abiertos, un
+  ángulo recto hacia fuera. Varias aristas: el desplazamiento más corto que
+  cumple todas (exacto en la esquina de una caja; la mayor petición, no la
+  suma, en una arista curva); si no caben, el radio baja por bisección (un
+  borde fino se vuelve medio redondeo). Escala de instancia: el radio se
+  divide por `∛|det M|` (con escala no uniforme, el redondeo transformado:
+  elíptico, de radio medio `bevel_mm`). Se compone con el terminador (RTG
+  II): los rayos salen del punto elevado por el terminador y luego por el
+  redondeo, `d · a / |r n + w|` a lo largo de la normal biselada (lo justo
+  para que toda dirección por encima del plano tangente del redondeo libre
+  la cara), y la normal geométrica pasa a ser la del redondeo; una normal
+  que miraría hacia atrás se dobla hacia el observador. Lo usan el
+  integrador, los fotones de las cáusticas y el pase de normal.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina compartida
+  con otros dos agentes): botella de ejemplo de la interfaz con su bisel por
+  defecto de 0,303 mm, 1,444 s → 1,489 s (**+3,1 %**); ejemplo del motor con
+  0,3 mm en sus tres materiales, +0,7 %; escena de E6 (pocos triángulos,
+  todos tocando aristas, biseles de 2–3 mm), +11 %. Por debajo del +15 %.
+- **Sesgo**: una normal de sombreado más; MIS pesa las dos estrategias con
+  la misma BSDF, pero no es recíproca: horno blanco con un cubo biselado,
+  media 0,99995, píxeles entre 0,988 y 1,014.
+- **RSB**: `MATL` pasa a 76 B con `bevel_mm` (f32, 0 = vivo), en el orden
+  acordado con E9 (detrás irán `scatter_mm`, `scatter_color[3]`,
+  `scatter_g`, `abbe`); un `MATL` de 72 B se lee sin bisel. El escritor
+  TypeScript manda `bevelRadiusMm` de todas las familias salvo el emisor.
+- **Interfaz**: la nota del campo *Bisel de aristas* deja de decir
+  *próximamente* («Es del material. El modo Completo redondea las aristas
+  vivas en el sombreado, como un redondeo de este radio; la vista Rápida
+  las muestra vivas»). La vista *Rápida* no lo dibuja.
+- **Hashes**: los fijados no se mueven (ninguna escena fijada lleva bisel:
+  ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b`, *denoise* `0xab15f290`, cáusticas `0x55d60f2f`). Nuevo:
+  la escena de E6 (`rt --write-e6-example`: caja bicolor en dos mallas con
+  escala no uniforme, cilindro metálico de 48 lados, placa más fina que dos
+  biseles) **`0xfccda027`** y sus seis pases (`PINNED_E6_PASS_*`), iguales
+  en escalar, SSE2, AVX2, WASI, el `rt.wasm` real (también por el código de
+  la página) y con 1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en
+  `engine.yml`.
+- **Tests**: 29 nuevos en `rt-core` (extracción: caja, esferas suaves y
+  facetadas, bordes y enrollado incoherente, costura de torno, consultas
+  frente a fuerza bruta y holgura; bisel: el cubo cambia solo a menos del
+  radio y en la forma exacta, simetría entre caras, esquina como esfera,
+  esfera suave intacta, arista curva sin cuentas, elevación de una arista
+  curva, pieza en dos mallas igual que en una y costura plana, cóncava,
+  borde fino, escala de instancia, aristas agudas y poco marcadas, vecino al
+  otro lado de un hueco, nunca de espaldas, emisores; renders: la arista
+  coge una luz por debajo del plano de la cara, un brillo que la arista viva
+  no tiene, un espejo refleja lo que hay bajo el plano, horno blanco; pase
+  de normal; RSB), `rt-cli` y `rt-app` (1/4/16 hilos) y la interfaz
+  (`materialToRsb`, tamaños de sección, ida y vuelta, `e6.rsb` con el
+  `rt.wasm` real).
+
+**No encajó con el plan (bisel):**
+
+- **Bordes entre mallas de una pieza.** La interfaz manda una pieza con
+  materiales por cara como una malla por material, con la misma
+  transformación: sus bordes comunes no son bordes. `BevelSetup` empareja
+  los bordes de las mallas con la misma transformación (bit a bit): si la
+  superficie sigue lisa es una costura (sin bisel) y si dobla más de 20° es
+  una arista viva con la cara de la otra malla. Se calcula en cada
+  preparación de la escena, por instancia. Una costura que no coincida
+  (T, soldaduras de más de 10⁻⁵) sigue leyéndose como borde.
+- **El pase de normal lleva el bisel** (es la normal con que se sombrea):
+  las escenas con bisel cambian sus pases; las fijadas no lo llevan.
+- **Todas las instancias de un preset ya traían 0,25 % del tamaño de la
+  pieza** (el arreglo del Doctor): desde ahora todo proyecto existente se
+  ve con bisel en *Completo* sin tocar nada. Es lo que pedía el Doctor,
+  pero cambia el aspecto de los proyectos guardados.
+- **Lo que no se redondea**: aristas que la malla suaviza con sus normales
+  de vértice (ya son redondas), aristas no variedad y caras duplicadas;
+  con escala no uniforme, el umbral de 20° se mide en el espacio de la
+  malla.
+- **Un borde más fino que dos radios** se ajusta solo en ese punto: la cara
+  ancha de al lado conserva su radio, así que el redondeo es elíptico
+  (continuo en la arista).
+
+**Hecho — madera** (segunda parte, su propio *commit*; detalle en
+ARCHITECTURE §5.2 octies).
+
+- **Ruido propio** (`rt_core::pattern::noise`): ruido de gradiente de la
+  descripción pública de Perlin (2002) con nuestra permutación (Fisher–Yates
+  con el PCG del motor, semilla fija), `fbm` y un *hash* entero. Estadística
+  fijada: media −0,0012, varianza 0,0730 (2¹⁸ puntos), rango
+  [−0,993, 0,941]; `fbm` de 4 octavas, varianza 0,0274; los ocho primeros
+  valores de la permutación, fijados.
+- **La receta** (`pattern::wood`), en milímetros físicos: anillos en diente
+  de sierra (suben el 70 %, caen en el último 5 %) con el contraste de
+  Michelson de cada especie y la media de la vista *Rápida*; serpenteo de
+  media separación a 25 mm; fibra ±5 % a 0,3 × 30 mm; poros en anillo o
+  difusos, de `0,15 × anchura × poreDepth` de hondo; figuras de tiras
+  (bambú, con sus haces y sus nodos), moteado (MDF) y vetas (ébano).
+  Rugosidad anisótropa 0,3 a lo largo de la médula (la tangente del marco de
+  sombreado sigue la veta; no queda nada para otra fase).
+- **Nudos** (`pattern::knots`, pedido por el usuario): ramas en cono desde
+  la médula que cruzan la pieza, colocadas por la semilla del material sin
+  tocarse y sin rozar la superficie (≥ 45°, hasta 8 nuevos intentos, si no
+  se descartan), con la fibra y los anillos fluyendo a su alrededor (de 1,5
+  a 3 radios, abombamiento 0,35 R) y su testa, bolsa de corteza, cuenco y
+  grieta; la interfaz los coloca igual (`src/core/knots.ts`), la vista
+  *Rápida* los oscurece sobre el color medio (`src/render/knots.ts`) y el
+  inspector avisa de los que no caben («6 pedidos · 3 caben»). Mandos
+  *Nudos*, *Tamaño*, *Variación*, *Oscuridad* (desactivados con una nota en
+  bambú, MDF y ébano); por defecto, pino 4 de 10–25 mm (oscuridad 0,9),
+  cerezo y nogal 1 (0,6).
+- **Dónde**: en el espacio de la malla, la médula a lo largo del lado más
+  largo, a 0,8 de él por debajo y 0,35 a un lado, nunca dentro de la pieza.
+- **RSB**: sección nueva `PATN` (108 B, detrás de los `MATL`): material,
+  tipo, dos colores, escala, 16 parámetros, figura y semilla. El escritor
+  TypeScript la manda para cada material de madera.
+- **Hashes**: los fijados no se mueven. Nuevo: la escena de dibujos de E6
+  (`rt --write-e6-patterns-example`: tabla de roble biselada y esfera de
+  nogal) **`0x2a3a7416`**, igual en escalar, SSE2, AVX2, WASI, el `rt.wasm`
+  real y con 1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en
+  `engine.yml`. Con 0 nudos, los bits de la madera sin nudos.
+- **Hoja** `out/wood-sheet.html` (`rt --pattern-sheet`, materiales de
+  `tests/fixtures/patterns.rsb`, que escribe el escritor TypeScript): las 13
+  maderas en esfera y en caja de 60 × 40 × 25 mm, antes, después y de
+  cerca, y la fila de nudos del pino (0, 2 y 6 de 15 mm, 6 de 30 mm) en la
+  cara grande de la caja y en una tabla de 300 × 100 × 20 mm.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
+  la escena de dibujos de E6, casi toda madera (tabla y esfera), 0,762 s →
+  1,058 s (**+39 %**) frente a la misma con el color liso: una docena de
+  evaluaciones de ruido por punto de madera; el relieve reutiliza la
+  fracción de anillo de la muestra (sin eso, +56 %). Los nudos, unos
+  productos escalares por nudo y punto; su colocación, unas decenas de rayos
+  por pieza al preparar la escena.
+- **Tests**: 34 nuevos en `rt-core` (ruido: permutación, red y periodo,
+  estadística fijada, *hash*; madera: perfil en diente de sierra y su media,
+  periodo exacto de los anillos, contraste de Michelson y media de la vista
+  *Rápida*, la madera de verano en su 40 %, media de cada figura en una
+  tabla, poros en la banda de primavera y su hondo por anchura, los poros
+  de un anillo no suman un escalón, fibra ±5 %, nodos del bambú cada
+  150 mm y sus motas 11–19 por cm² en cualquier plano, la testa de un
+  nudo; nudos: colocados como se piden y sin solaparse, la semilla y los
+  primeros quietos, flujo alrededor y nada a 3 radios, más ancho lejos de
+  la médula, nunca rozan y los descartados no se reponen, colocación fijada
+  para la interfaz; escena: el dibujo es de su material, se pega a la pieza
+  y escala con ella, médula a lo largo del lado largo y nunca dentro, la
+  rugosidad estirada a lo largo de la veta, un render determinista distinto
+  del liso, el pase de albedo es el color del camino, una tabla enseña los
+  nudos pedidos y de su tamaño (2 / 6 / 6 discos de 17,3 / 15,9 / 33,9 mm
+  para 2 × 15, 6 × 15 y 6 × 30 mm), la semilla y 0 nudos iguales bit a bit,
+  un nudo más rugoso y su cuenco, en una bola nunca rozan; RSB), `rt-cli` y
+  `rt-app` (1/4/16 hilos de la escena fijada) y la interfaz (`patternToRsb`
+  de las 13 maderas y sus nudos, mandos desactivados, la colocación igual
+  que el motor, `meetsSurface`, los nudos de una pieza, el *fixture* al
+  día).
+
+**No encajó con el plan (madera):**
+
+- **La escala es física, no en tamaños de pieza** (decisión del líder sobre
+  la primera hoja, por realismo): `ringDensity` pasa a ser anillos por
+  100 mm y los presets llevan los de cada especie (roble 33, pino 20, arce
+  40…; antes 14 para el roble, por pieza); el mando nuevo *Escala* los
+  multiplica. SPEC §3.3 lo dice. Un proyecto guardado conserva su
+  `ringDensity` antiguo, que ahora se lee por 100 mm.
+- **Campos nuevos que el catálogo de EZ Packshot no tiene**: `ringContrast`,
+  `poreSize`, `poreBand`, `woodFigure`, `woodScale` y los cuatro de los
+  nudos (claves nuevas; ninguna renombrada).
+- **El relieve de los anillos, fuera** (decisión del líder: las esferas
+  parecían torneadas); solo relieve de poros, nudos y nodos del bambú. La
+  primera hoja enseñó que los poros en anillo sumaban un escalón en cada
+  anillo (la banda empezaba de golpe): ahora entra poco a poco, con un test
+  que falla con la banda de antes.
+- **Limitación de la vista *Rápida***: no pinta anillos, solo el color medio
+  y los nudos oscurecidos; por eso tampoco el flujo de la fibra alrededor de
+  los nudos que pedía el líder («la misma colocación y desviación»): la
+  colocación es la misma, la desviación no tiene nada que desviar.
+  Aceptado por el líder.
+- **En una pieza pequeña caben menos nudos de los pedidos** (nunca se tocan
+  ni rozan): en la caja de 60 × 40 × 25 mm, 2, 3 y 1 de 2 × 15, 6 × 15 y
+  6 × 30 mm; en la tabla de 300 × 100 × 20 mm, todos. El inspector lo dice
+  con una nota discreta.
+- **El umbral de incidencia, 30° → 60° → 45°** (reglas del líder tras la
+  hoja): un nudo cuyo eje corta la superficie a menos del umbral se saca otra
+  vez hasta 8 veces y si no, se descarta. Con 30° la bola de pino seguía
+  enseñando lágrimas: sus nudos la cortaban a 34–39°, y el borde del cono
+  roza antes que su eje. Con 60° (lo que pidió el líder para quedarse con los
+  nudos de frente) las piezas planas perdían nudos: las ramas suben 15–35°
+  por el tronco y la médula está 24° a un lado, así que una cara plana ve sus
+  nudos a 49–66° (la tabla de prueba, 1 de 2 y 10 de 12). Con 45° las piezas
+  planas no cambian (2 / 6 / 6) y la bola solo pierde las lágrimas (sus
+  nudos, a 47–64°): lo decidió la medida, con el visto bueno del líder.
+- **Ajustes del líder sobre la fila de nudos**: el flujo alrededor de un nudo
+  se desvanece de 1,5 a 3 radios (no de 3 a 5) y abomba 0,35 R (no 0,5 R):
+  en la cara de la caja se leía líquido.
+- **La pelusa (*fuzz*, *sheen*) sigue fuera**, como decía el plan.
+
+**Hecho — tela** (tercera parte, su propio *commit*; detalle en
+ARCHITECTURE §5.2 octies).
+
+- **La receta** (`rt_core::pattern::cloth`, `PATN.kind` 2), en milímetros
+  físicos: hilos de urdimbre y de trama redondos de través, con un hueco
+  entre ellos, que suben donde pasan por encima y bajan donde pasan por
+  debajo (una flotación larga se queda arriba) y enseñan las crestas
+  inclinadas de la torsión de su hilo; cada hilo varía ±6 % de color y
+  ±10 % de rugosidad. Tejidos: tafetán, sarga 2/2, raso de cinco lizos,
+  lona (cesta 2 × 2), punto (*jersey*: uves de dos patas que se solapan
+  fila a fila, cada punto de un jaspeado al azar), fieltro (fibras
+  apelmazadas, sin hilos) y **sarga 3/1** (nueva, la del vaquero). El
+  relieve (`weaveDepth`, media separación a 1) inclina la normal; la
+  rugosidad se estira **a través** del hilo de encima (anisotropía 0,5:
+  el brillo de las fibras; el fieltro no). El color medio es el de los
+  hilos mezclados por la parte de la cara que cubre cada uno (0,5; raso
+  0,72; sarga 3/1 0,685), y es el de la vista *Rápida* (`fabricMeanColor`).
+- **Dónde**: proyección de caja sobre los ejes de la malla, mezclada con
+  pesos `|nᵢ|⁸` en una banda estrecha sin costura; la urdimbre de pie en
+  los lados.
+- **RSB**: `PATN` de tipo 2 (los mismos 108 B): los dos colores de hilo,
+  `scale_mm = 10 / threadCount`, relieve (`weaveDepth`) y torsión
+  (`yarnTwist`), el tejido en `variant`. El escritor TypeScript la manda para cada material de tela.
+- **Interfaz**: *Hilos por cm* (2–200, físicos), *Tejido* (con *Sarga 3/1
+  (vaquero)*) y *Relieve del tejido* los pinta el modo Completo («lo
+  pintan el modo Completo y los renders»); la nota de tela ya no dice que
+  sea un color plano.
+- **Hashes**: los fijados no se mueven (la escena de dibujos sigue en
+  `0x2a3a7416`). Nuevo: la escena de tela de E6
+  (`rt --write-e6-cloth-example`: cojín vaquero biselado y bola de punto)
+  **`0xbb26399f`**, igual en escalar, SSE2, AVX2, WASI, el `rt.wasm` real y con
+  1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en `engine.yml`.
+- **Hoja** `out/cloth-sheet.html` (`rt --pattern-sheet --only cloth`, del
+  mismo *fixture*, que ahora lleva también las 12 telas): cada tela en
+  esfera y caja, antes, después y de cerca, un campo de 10 mm visto de
+  frente (donde se ven los hilos a su tamaño real) y el vaquero tejido en
+  2/2 para comparar con su 3/1 (la primera hoja enseñaba también el carbono
+  con 0,05 de relieve, que el líder eligió: ahora es su fila).
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
+  la escena de tela (cojín y bola, 320 × 240, 8 muestras), 0,784 s →
+  0,844 s (**+7,6 %**) frente a la misma con el color liso: una tela tejida
+  son unas pocas cuentas por proyección (tres evaluaciones con el *bump*);
+  el punto, 18 elipses por evaluación.
+- **Tests**: 10 nuevos en `rt-core` (tela: la parte de la cara de la
+  urdimbre de cada tejido y su color medio, periodos y estructura —el raso
+  nunca enseña dos tramas juntas, ni en diagonal; la lona va por parejas; la
+  3/1—, relieve de media separación y plano a 0, variación por hilo, la
+  torsión y su periodo, y ninguna sin ella, el punto en uve hacia abajo;
+  escena: proyección en los ejes de la malla, la anisotropía a través del
+  hilo de encima y el fieltro sin ella, la mezcla sin costura y exacta
+  donde se juntan dos y tres proyecciones, el PATN de tela leído; la escena
+  fijada), `rt-cli` (hoja, `--only`, `--write-e6-cloth-example`, 1/4/16
+  hilos), `rt-app` (1/4/16 hilos) y la interfaz (`patternToRsb` de las 12
+  telas, físico, límites y valores por defecto; color medio igual al del
+  motor en la vista *Rápida* y en el `MATL`; mandos que pinta el motor;
+  `projectScene`; el *fixture* con las telas). Se comprobó que fallan con
+  22 mutaciones de la tela: todas cogidas; una (las proyecciones de peso
+  menor que 0,5, ignoradas) escapaba al principio y la coge el test nuevo
+  de la mezcla.
+
+**No encajó con el plan (tela):**
+
+- **Los hilos por cm, físicos y propuestos** (como la madera): el
+  `threadCount` del catálogo era por tamaño de pieza (algodón 200, carbono
+  90); ahora son hilos por cm y cada tela lleva los suyos de verdad
+  (algodón 40, lino 18, sarga 36, vaquero 24, raso 100, lona 14,
+  terciopelo 30, fieltro 20, punto 4 puntos por cm, malla 8, microfibra
+  120, carbono 5 mechas por cm), aceptados por el líder (veredicto abajo).
+  Un proyecto guardado conserva su `threadCount` antiguo, que
+  ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
+  cm, invisible).
+- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
+  EZ Packshot es 2/2 y la siguen usando la sarga y el carbono): con 2/2 su
+  color medio era un gris azulado (la mitad de la cara, trama blanca); el
+  de verdad es de urdimbre. Cambia su color en la vista *Rápida*. La hoja
+  enseña los dos para el veredicto.
+- **Campos nuevos**: `yarnTwist` (0 en el carbono y la malla: mechas y
+  monofilamentos lisos; 1 por defecto, sin mando).
+- **A tamaño real, la mayoría de las telas no se ven** en un plano de
+  producto (el algodón a 0,25 mm, menos de un píxel a 100 mm por 300 px):
+  se promedian con las muestras del píxel, sin filtro propio (el color
+  converge a la media y el relieve se vuelve rugosidad); algún *moiré* en
+  esferas de sarga a pocas muestras.
+- **El barniz del carbono sigue el relieve** (el *bump* es de toda la
+  BSDF): de cerca se leen tubos brillantes, cuando el barniz de verdad es
+  plano. Opciones para el líder: menos relieve en el carbono o que el
+  barniz use la normal sin *bump* (cambio del motor, también para la madera
+  barnizada).
+- **La malla técnica no tiene agujeros** (no hay opacidad por punto): es
+  un tafetán abierto de hilos oscuros.
+- **El terciopelo y la pelusa**: sin *sheen* en el motor, el terciopelo es
+  un punto fino oscuro; la vista *Rápida* sí pinta su pelusa.
+
+**Veredicto del responsable (tela)** (sobre la hoja de telas, filas y
+campos de 10 mm; E6 aceptada):
+
+1. **Hilos por cm**: la tabla propuesta queda como valores del catálogo
+   (los típicos de verdad). El `threadCount` antiguo de un proyecto
+   guardado se sigue leyendo por cm, con el tope de 200.
+2. **Vaquero en sarga 3/1** (`TWILL31`): aceptado; la cara se lee índigo
+   sobre blanco, como debe.
+3. **Carbono**: la alternativa de relieve 0,05 (con el relieve entero, los
+   tubos brillantes están mal; con 0,05 la esfera y el campo se leen como
+   sarga 3K bajo barniz). Que el barniz ignore el *bump* es un cambio del
+   motor para la capa de realismo (M4), no ahora: anotado allí.
+4. **`yarnTwist`** sin mando (0 en el carbono y la malla, 1 en el resto):
+   aceptado.
+5. **Aceptados como están**: la malla sin agujeros hasta que el motor tenga
+   opacidad por punto (la traen las texturas de alfa de M2b: anotado en su
+   encargo), el terciopelo sin *sheen* hasta la pelusa (S8), el *moiré* a
+   pocas muestras (el filtro *Fine* de E11, ahora por defecto, lo suaviza) y
+   la proyección de caja sobre los ejes de la malla.
+
+Hecho tras el veredicto: el carbono del catálogo baja su `weaveDepth` de
+0,3 a 0,05 (el *fixture* de la hoja, al día) y la hoja ya no enseña esa
+alternativa; anotados el barniz sin *bump* en M4 y los agujeros de la malla
+en M2b.
+
+**Fusión con la rama de la sesión** (M2a, O1, E12, M3a, S2, S4a, U11,
+U11b, E11…). La selección de luz por punto de E12 mueve los tres fijados
+de E6, como movió los demás: bisel **`0x2f228634`** (era `0xfccda027`),
+madera **`0x6fbc91f7`** (era `0x2a3a7416`) y tela **`0x5604ec69`** (era
+`0xbb26399f`), en `rt-core` (todas las ISA), `rt-cli` y `rt-app` (1, 4 y
+16 hilos) y en `engine.yml` (sus pasos, detrás de los de O1, S4a y E11).
+El `MATL` de E6 (76 B, `bevel_mm` en el byte 72) es el que reservaba el
+bloque de texturas de M2a, que sigue en el byte 100 detrás de los campos de
+E9. Un material de nodos (M3a) no lleva `PATN` ni nudos en la vista
+*Rápida*: hasta M3b es la media de sus salidas. Las secciones de E6 en
+ARCHITECTURE eran entonces §5.2 sexies (bisel) y §5.2 septies (madera y
+tela); desde la segunda fusión, §5.2 septies y octies.
+
+**Segunda fusión con la rama de la sesión** (O3a, v0.1.6, el arreglo de la
+prueba de humo, E9 a, b y c, el ajuste de `GRADIENT_POOL`).
+
+- **`MATL`** es el de E9, de 100 B: el `bevel_mm` de E6 en el byte 72 (el
+  hueco que E9 le reservaba), y detrás `scatter_mm`, `scatter_color[3]`,
+  `scatter_g` y `abbe`. El motor y el escritor TypeScript escriben todos;
+  un registro de 72 B se lee sin bisel y uno de 76 B (E6 antes de E9), con
+  el bisel y sin medio ni dispersión (test nuevo). El bloque de texturas de
+  M2a sigue en el byte 100, ya sin relleno.
+- **El integrador**: la BSDF de E9 (salida de un medio, vidrio dispersivo
+  con su banda, superficie, suelo) con el marco de E6 (la tangente de la
+  veta del dibujo, si la hay); el punto de sombreado biselado y con su
+  dibujo alimenta a los dos.
+- **`rt`**: todas las órdenes de los dos lados; un solo `--only` para las
+  tres hojas (lista con comas en `--filter-sheet` y `--filter-noise`, `wood`
+  o `cloth` en `--pattern-sheet`). En `engine.yml`, todos los pasos de
+  paridad: O1, S4a, E11, O3a, E9 y los tres de E6.
+- **Hashes**: la compensación de energía de E9a mueve los tres fijados de
+  E6 (todas sus piezas tienen GGX rugoso, de 0,12 a 0,85): bisel
+  **`0xeacaae75`** (era `0x2f228634`), madera **`0x5ed1bf32`** (era
+  `0x6fbc91f7`) y tela **`0x53e6a855`** (era `0x5604ec69`), en `rt-core`
+  (todas las ISA), `rt-cli` y `rt-app` (1, 4 y 16 hilos) y en el `rt.wasm`
+  real; los seis pases de E6, iguales. Ninguna escena sin bisel, madera ni
+  tela se mueve, y todos los *fixtures* RSB sin E6 salen idénticos byte a
+  byte a los de la sesión; `e6.rsb` pasa a 9 852 B y `patterns.rsb` a
+  6 332 B.
+- **Las miniaturas de los montajes**: sus escenas sí cambian, y no por esta
+  fusión: toda instancia de un preset trae un *Bisel de aristas* del
+  0,25 % del tamaño de la pieza (el arreglo del Doctor) y desde E6 el
+  escritor lo manda, así que los héroes de los sets llevan bisel en
+  *Completo*. Con el bisel a cero en el escritor, los 88 *hashes* de escena
+  del manifiesto coinciden; el test del manifiesto ya fallaba en E6 antes
+  de esta fusión (`1dc375e`). No se vuelven a renderizar ni se fijan:
+  queda para el responsable (renderizarlas otra vez con el bisel, o que
+  las miniaturas no lo lleven).
+  **Veredicto del responsable (16-10):** se renderizan otra vez con el
+  bisel. Una miniatura enseña lo que da el montaje sobre la escena que
+  construye el código, y esa escena lleva el bisel del Doctor; quitárselo
+  solo a las miniaturas haría que no coincidieran con el primer render del
+  usuario. Las 88 se rehicieron con `rt` y el wasm de E6
+  (`tools/setup-thumbs.mjs`) y el *hash* PNG de `STRIP_EDGE` en
+  `tests/sets.test.ts` se re-fijó.
+- **Docs**: E9 conserva ARCHITECTURE §5.2 sexies y las secciones de E6 pasan
+  a §5.2 septies (bisel) y §5.2 octies (madera y tela); las líneas de E6
+  del CHANGELOG van en *Sin publicar*, no en v0.1.6.
 
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 

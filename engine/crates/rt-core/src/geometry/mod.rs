@@ -19,6 +19,7 @@
 //! [`Isa`]; the others use [`Isa::detect`]. All paths return identical results.
 
 mod bvh;
+pub mod edges;
 mod mesh;
 pub mod particles;
 mod transform;
@@ -439,6 +440,43 @@ impl Geometry {
             .meshes
             .get(self.instances[instance as usize].mesh as usize)?;
         Some((mesh, prepared))
+    }
+
+    /// The mesh and the instance of an instance that can be hit.
+    pub(crate) fn instance_mesh(&self, instance: u32) -> Option<(&Mesh, &Instance)> {
+        let (mesh, _) = self.instance_parts(instance)?;
+        Some((mesh, self.instances.get(instance as usize)?))
+    }
+
+    /// A normal of instance `instance`'s mesh space in world space (by the inverse transpose; not
+    /// normalised).
+    pub(crate) fn normal_to_world(&self, instance: u32, n: Vec3) -> Vec3 {
+        match self.prepared.get(instance as usize) {
+            Some(p) if !p.identity => p.to_local.transpose_vector(n),
+            _ => n,
+        }
+    }
+
+    /// A world normal in instance `instance`'s mesh space (by the transpose; not normalised).
+    pub(crate) fn normal_to_object(&self, instance: u32, n: Vec3) -> Vec3 {
+        match (
+            self.prepared.get(instance as usize),
+            self.instances.get(instance as usize),
+        ) {
+            (Some(p), Some(i)) if !p.identity => i.transform.transpose_vector(n),
+            _ => n,
+        }
+    }
+
+    /// A displacement of instance `instance`'s mesh space in world space.
+    pub(crate) fn vector_to_world(&self, instance: u32, v: Vec3) -> Vec3 {
+        match (
+            self.prepared.get(instance as usize),
+            self.instances.get(instance as usize),
+        ) {
+            (Some(p), Some(i)) if !p.identity => i.transform.vector(v),
+            _ => v,
+        }
     }
 
     /// The instance in leaf slot `slot` of the instance BVH.

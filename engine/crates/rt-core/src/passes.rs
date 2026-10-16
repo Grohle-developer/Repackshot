@@ -32,7 +32,7 @@
 use crate::color::Rgb;
 use crate::integrator::FirstHit;
 use crate::math::{Ray, Vec3};
-use crate::scene::{Camera, Material, Scene};
+use crate::scene::{Camera, Scene};
 
 /// Bit of the albedo pass.
 pub const PASS_ALBEDO: u32 = 1 << 0;
@@ -153,6 +153,7 @@ impl Exact {
                 instance,
                 t,
                 normal,
+                ..
             } => {
                 let material = scene
                     .geometry
@@ -184,11 +185,7 @@ pub fn albedo_of(scene: &Scene, hit: FirstHit) -> Rgb {
     match hit {
         FirstHit::Background => Rgb::BLACK,
         FirstHit::Floor { .. } => scene.floor.color,
-        FirstHit::Surface { instance, .. } => scene
-            .geometry
-            .material_of(instance)
-            .and_then(|m| scene.materials.get(m as usize))
-            .map_or(Material::default().base_color, |m| m.base_color),
+        FirstHit::Surface { albedo, .. } => albedo,
     }
 }
 

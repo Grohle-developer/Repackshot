@@ -27,7 +27,7 @@ describe('the RSB writer with textures off (until M2b)', () => {
     const b = writeRsb(projectScene(stripped(s), VIEW).scene);
     expect(a).toEqual(b);
     expect(sections(a).map((x) => x.tag)).not.toContain('IMGS');
-    // E9's MATL (100 bytes: E6's reserved bevel, the medium and the Abbe number), without a texture block.
+    // E9's MATL (100 bytes: E6's bevel, the medium and the Abbe number), without a texture block.
     for (const sec of sections(a)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(100);
     expect(projectScene(s, VIEW).meshKey).toBe(projectScene(stripped(s), VIEW).meshKey);
     expect(projectScene(s, VIEW).scene.materials.every((m) => m.textures === undefined)).toBe(true);
@@ -87,11 +87,10 @@ describe('the RSB writer with textures on (the contract M2b reads)', () => {
     // The contract: the block starts at byte 100, after E6's bevel_mm and E9's six fields.
     expect(MATL_TEXTURE_OFFSET).toBe(100);
     expect(p.byteLength).toBe(100 + 4 * (1 + 6 * 15 + 3 + 1 + 19));
-    // Bytes 72 to 100: E6's reserved bevel (0 until E6) and E9's medium and Abbe number, as for any material.
+    // Bytes 72 to 100: E6's bevel_mm (the material's) and E9's medium and Abbe number, as for any material.
     const m = scene.materials[0];
     const e9 = [m.bevelMm, m.scatterMm, ...m.scatterColor, m.scatterG, m.abbe].map((v) => Math.fround(v));
     expect([72, 76, 80, 84, 88, 92, 96].map((i) => p.getFloat32(i, true))).toEqual(e9);
-    expect(m.bevelMm).toBe(0);
     let at = MATL_TEXTURE_OFFSET;
     const u32 = () => {
       const x = p.getUint32(at, true);

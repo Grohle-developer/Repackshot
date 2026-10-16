@@ -9,8 +9,8 @@
 # `wasm32-wasip1` binary under Node's WASI (tools/wasi-run.mjs). NEON is compile-checked only.
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E5b-1
-# caustics, the O1 lens, the S4a ambient particles and the E9 scattering media and dispersion;
-# with every
+# caustics, the O1 lens, the S4a ambient particles, the E11 edges, the O3a lens filters, the E9
+# scattering media and dispersion, the E6 bevel and the E6 wood and cloth patterns; with every
 # exact pass of X2 rendered next to the image, the image keeps its hash and each pass gives the hash
 # the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
 # tests/fixtures/ai-guard.json, which the native rt-post tests
@@ -182,6 +182,28 @@ jobs:
           expected=$(sed -n 's/.*PINNED_E9_MEDIA_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e9.rsb" --expect "$expected"
+          # E6: the edge bevel (CAD-like parts, every edge rounded in the shading), alone and with
+          # every pass interleaved (the normal pass carries the bevel).
+          cargo run --release -p rt-cli -- --write-e6-example "$RUNNER_TEMP/e6.rsb"
+          expected=$(sed -n 's/.*PINNED_E6_BEVEL_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          passes=$(pinned_passes "E6_")
+          test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6.rsb" --expect "$expected" --expect-passes "$passes"
+          # E6: the procedural patterns (wood), alone and with the passes (the albedo is the
+          # pattern's colour).
+          cargo run --release -p rt-cli -- --write-e6-patterns-example "$RUNNER_TEMP/e6p.rsb"
+          expected=$(sed -n 's/.*PINNED_E6_PATTERNS_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6p.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6p.rsb" --expect "$expected" --passes
+          # E6: the procedural cloth (a denim cushion and a knit ball), alone and with the passes.
+          cargo run --release -p rt-cli -- --write-e6-cloth-example "$RUNNER_TEMP/e6c.rsb"
+          expected=$(sed -n 's/.*PINNED_E6_CLOTH_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6c.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6c.rsb" --expect "$expected" --passes
           # O2: the example through the traced double Gauss (the prescription at the end of LENS, its
           # preparation when the module reads the scene), alone and with the passes.
           cargo run --release -p rt-cli -- --write-o2-example "$RUNNER_TEMP/o2.rsb"

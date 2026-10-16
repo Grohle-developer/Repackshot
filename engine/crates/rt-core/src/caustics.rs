@@ -677,14 +677,9 @@ fn trace_photon<T: Tracer>(
         } else if bounces >= setup.max_bounces {
             break;
         }
-        let mut normal = details.normal;
-        if normal.dot(ng) < 0.0 {
-            normal = -normal;
-        }
-        if normal.dot(ray.dir) >= -1.0e-4 {
-            normal = ng;
-        }
-        let point = scene.geometry.terminator_point(&details);
+        // The shading normal, terminator point and edge bevel the camera paths use.
+        let shade = prepared.bevel.shading_point(scene, &ray, &details);
+        let (point, normal, ng) = (shade.point, shade.normal, shade.geometric);
         let frame = prepared.frame(Some(details.instance), point, normal);
         let wo_world = -ray.dir;
         let wo = frame.to_local(wo_world);

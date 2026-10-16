@@ -115,10 +115,10 @@ describe('E9 material parameters', () => {
 });
 
 describe('E9 RSB fields', () => {
-  it('MATL is 100 bytes: the E5 record, the bevel reserved for E6, then the medium and the Abbe number', () => {
+  it('MATL is 100 bytes: the E5 record, E6\'s bevel, then the medium and the Abbe number', () => {
     const scene: RsbScene = {
       camera: defaultCamera(),
-      materials: [{ ...defaultMaterial(), bevelMm: 0, scatterMm: 0.31, scatterColor: [0.25, 0.5, 0.75], scatterG: -0.5, abbe: 40 }],
+      materials: [{ ...defaultMaterial(), bevelMm: 0.75, scatterMm: 0.31, scatterColor: [0.25, 0.5, 0.75], scatterG: -0.5, abbe: 40 }],
       meshes: [],
       instances: null,
       lights: [],
@@ -131,9 +131,9 @@ describe('E9 RSB fields', () => {
     const back = readRsb(bytes);
     const v = sections(bytes).find((x) => x.tag === 'MATL')!.payload;
     expect(v.byteLength).toBe(100);
-    // Byte 72: the bevel (0), 76: scatter_mm, 80..92: scatter_color, 92: scatter_g, 96: abbe.
+    // Byte 72: the bevel (E6), 76: scatter_mm, 80..92: scatter_color, 92: scatter_g, 96: abbe.
     expect([v.getFloat32(72, true), v.getFloat32(76, true), v.getFloat32(80, true), v.getFloat32(84, true), v.getFloat32(88, true), v.getFloat32(92, true), v.getFloat32(96, true)]).toEqual([
-      0,
+      0.75,
       Math.fround(0.31),
       0.25,
       0.5,
@@ -141,7 +141,7 @@ describe('E9 RSB fields', () => {
       -0.5,
       40,
     ]);
-    expect(back.materials[0]).toMatchObject({ bevelMm: 0, scatterG: -0.5, abbe: 40 });
+    expect(back.materials[0]).toMatchObject({ bevelMm: 0.75, scatterG: -0.5, abbe: 40 });
   });
 });
 
@@ -156,7 +156,9 @@ describe('E9 and older projects', () => {
     const loaded = state.materials[id];
     expect(Object.keys(loaded.params).sort()).toEqual(Object.keys(glass.params).sort());
     const rsb = materialToRsb(loaded);
-    expect([rsb.bevelMm, rsb.scatterMm, rsb.scatterG, rsb.abbe]).toEqual([0, 0, 0, 0]);
+    // No medium and no dispersion; the bevel is the material's own (E6).
+    expect([rsb.scatterMm, rsb.scatterG, rsb.abbe]).toEqual([0, 0, 0]);
+    expect(rsb.bevelMm).toBe(loaded.bevelRadiusMm);
     expect(rsb.scatterColor).toEqual([1, 1, 1]);
     // Saved again, it keeps exactly the params it had (nothing added behind the user's back).
     const again = JSON.parse(await (await serializeProject(state)).text());
