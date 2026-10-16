@@ -3,7 +3,10 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.9 — 2026-10-16
+
+Versión de prueba con la vista en vivo del render seleccionado en la cola
+(petición del reporte del 14-10). Lo de v0.1.2 a v0.1.8 sigue igual.
 
 ### Interfaz
 
@@ -12,6 +15,15 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Escritorio
 
 - El lanzador manda la trama de un render **reducida** a un recuadro (`GET /api/render/<id>?fit=<an>x<al>`, bandera 512): la vista en vivo de la cola recibe solo los píxeles de su imagen y no las sumas enteras (U14).
+
+### Limitaciones conocidas de esta versión
+
+- En el escritorio la imagen en vivo cambia una vez por pasada del motor
+  (1, 2, 4, 8, 16 muestras…), no cada medio segundo; en la web el número de
+  muestras es el que ya tiene cada píxel (0 mientras la primera pasada llena
+  los mosaicos). No hay zoom ni 100 % en la vista en curso, y la miniatura
+  de la fila en marcha sigue siendo el icono.
+- Siguen las de la v0.1.8.
 
 ## v0.1.8 — 2026-10-16
 
