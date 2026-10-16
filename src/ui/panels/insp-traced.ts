@@ -19,7 +19,7 @@ import * as cmd from '../commands';
 import { field, numberField, segmented, select, slider, type Control } from '../components/controls';
 import { mineEmpty, mineRows, namePrompt } from '../components/library';
 import { h } from '../dom';
-import { lensSourceLine, sensorHalf } from '../lens-peek';
+import { lensPeekCache, lensSourceLine, sensorHalf, type PeekAnswer } from '../lens-peek';
 import { type Ctx, type Scope } from '../reactive';
 import { formatNumber, lbl, t, type StringKey } from '../strings';
 
@@ -87,22 +87,29 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
   const chips = h('div', { class: 'chips', role: 'tablist', 'aria-label': t('camera.lensCharacter'), 'data-lens-characters': '' });
   const listHost = h('div', { class: 'stack', 'data-lens-list': '' });
   const confirm = h('div');
-  const drawChips = () => {
+  // The chips are made once, so that pressing one leaves the element under the pointer and in the focus where it was.
+  const chipFor = new Map<LensCharacter | 'MINE', HTMLButtonElement>();
+  const pick = (key: LensCharacter | 'MINE') => {
     peek.dismiss();
-    chips.replaceChildren(
-      ...LENS_CHARACTERS.map((c) => {
-        const chip = h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': c.key, 'aria-pressed': String(filter === c.key), onclick: () => ((filter = c.key), drawChips(), drawList()) }, lbl(c.label));
-        // Resting on a character shows the lenses of it.
-        peek.attach(
-          chip,
-          () => ({ keys: LENS_PRESCRIPTIONS.filter((p) => p.character === c.key).map((p) => p.key), heading: lbl(c.label) }),
-          () => tracedBox,
-        );
-        return chip;
-      }),
-      h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': 'MINE', 'aria-pressed': String(filter === 'MINE'), onclick: () => ((filter = 'MINE'), drawChips(), drawList()) }, t('catalog.mine')),
-    );
+    filter = key;
+    drawChips();
+    drawList();
   };
+  const drawChips = () => {
+    for (const [key, chip] of chipFor) chip.setAttribute('aria-pressed', String(filter === key));
+  };
+  for (const c of LENS_CHARACTERS) {
+    const chip = h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': c.key, 'aria-pressed': 'false', onclick: () => pick(c.key) }, lbl(c.label));
+    // Resting on a character shows the lenses of it.
+    peek.attach(
+      chip,
+      () => ({ keys: LENS_PRESCRIPTIONS.filter((p) => p.character === c.key).map((p) => p.key), heading: lbl(c.label) }),
+      () => tracedBox,
+    );
+    chipFor.set(c.key, chip);
+  }
+  chipFor.set('MINE', h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': 'MINE', 'aria-pressed': 'false', onclick: () => pick('MINE') }, t('catalog.mine')));
+  chips.replaceChildren(...chipFor.values());
   const drawList = () => {
     const cur = tracedOf(optics());
     if (filter === 'MINE') {
@@ -259,17 +266,21 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     } else sectionHost.replaceChildren();
   };
   let asked = '';
+  /** The engine's answer, as the section shows it: its numbers, undefined when it forms no image, null without an engine. */
+  const answered = (c: CameraState, a: PeekAnswer) => showInfo(c, a.state === 'ready' ? a.info : a.state === 'refused' ? undefined : null, false);
   const ask = (c: CameraState) => {
     const key = JSON.stringify([c.id, c.optics, c.focalMm, c.fstop, c.focusDistance, c.aspect, c.projection]);
     if (key === asked) return;
     asked = key;
     const port = ctx.services.lens;
-    if (!port) return showInfo(c, null, false);
+    const lens = tracedOf(opticsOf(c));
+    if (!port || !lens) return showInfo(c, null, false);
+    // Through the cache of the window of the lens's elements: the lens on the camera is one question for both.
+    const cache = lensPeekCache(port);
+    const known = cache.known(c, lens.key);
+    if (known) return answered(c, known);
     showInfo(c, null, true);
-    void port.info(c).then(
-      (i) => asked === key && showInfo(c, i, false),
-      () => asked === key && showInfo(c, null, false),
-    );
+    void cache.load(c, lens.key).then((a) => asked === key && answered(c, a));
   };
 
   // --- not physical --------------------------------------------------------------------------------------------------

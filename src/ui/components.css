@@ -731,6 +731,7 @@ kbd,
 .lens-peek {
   z-index: 102;
   padding: 8px 10px 10px;
+  overflow: hidden;
   pointer-events: none;
   color: var(--ink-1);
 }
@@ -739,7 +740,7 @@ kbd,
 }
 .peek-cards {
   display: grid;
-  grid-template-columns: repeat(var(--peek-cols, 1), 212px);
+  grid-template-columns: repeat(var(--peek-cols, 1), var(--peek-w, 232px));
   gap: 12px 14px;
   align-items: start;
 }
@@ -776,6 +777,7 @@ kbd,
 .peek-numbers dt,
 .peek-numbers dd {
   margin: 0;
+  white-space: nowrap;
 }
 .peek-numbers dd {
   text-align: right;

@@ -6,59 +6,19 @@
 import { describe, expect, it } from 'vitest';
 import { makeCamera, type CameraState } from '../src/core/camera';
 import { OPTICS_NEUTRAL, type CameraOptics } from '../src/core/optics';
-import { newTracedLens, type EngineLensInfo, type TracedLens } from '../src/core/traced-lens';
-import { LENS_PRESCRIPTIONS, lensPrescription } from '../src/data/lenses';
+import { newTracedLens, type TracedLens } from '../src/core/traced-lens';
+import { lensPrescription } from '../src/data/lenses';
 import { lensInfoRsb } from '../src/io/rsb';
 import { hasLensInfoExport, readLensInfo } from '../src/render/lens-info';
 import { placePeek } from '../src/ui/components/lens-peek';
 import { createPeekController, lensPeekCache, lensSourceLine, peekCamera, peekCard, PEEK_CACHE_SIZE, PEEK_DELAY_MS, type PeekAnswer, type PeekTimers } from '../src/ui/lens-peek';
 import type { LensPort } from '../src/ui/ports';
 import { setLang } from '../src/ui/strings';
+import { fakeInfo, fakePort } from './browser/lens-peek-fake';
 import { loadRt, RT_WASM } from './wasm-engine';
 
 const traced = (key: string, patch: Partial<TracedLens> = {}): CameraOptics => ({ ...OPTICS_NEUTRAL, traced: { ...newTracedLens(key), ...patch } });
 const camera = (optics: CameraOptics = OPTICS_NEUTRAL, patch: Partial<CameraState> = {}): CameraState => ({ ...makeCamera('cam1', '', 200), optics, focalMm: 50, fstop: 5.6, focusDistance: 2000, ...patch });
-
-/** A lens information whose numbers say which lens it is for (the catalogue's order), and a section that can be drawn. */
-function fakeInfo(cam: CameraState): EngineLensInfo {
-  const key = cam.optics!.traced!.key;
-  const i = LENS_PRESCRIPTIONS.findIndex((p) => p.key === key);
-  const s = (z: number, kind: number, curvature: number, index: number, semiAperture = 10) => ({ z, kind, curvature, semiAperture, index, conic: 0, aspheric: [0, 0, 0, 0] as [number, number, number, number] });
-  return {
-    eflMm: cam.focalMm,
-    bflMm: 30 + i,
-    eflFocusedMm: cam.focalMm,
-    imageScaleMm: cam.focalMm,
-    fNumber: Math.max(cam.fstop, 1.4),
-    fNumberMin: 1.4,
-    tStop: Math.max(cam.fstop, 1.4) * 1.1,
-    transmittance: [0.9, 0.9, 0.9],
-    lengthMm: 40 + i,
-    entrancePupilMm: [5, 10],
-    elements: 3 + i,
-    groups: 2 + i,
-    sensorMm: 43.3,
-    squeeze: key === 'anamorphic_adapter_2x' ? 1.96 : 1,
-    distortion: [[10, -1]],
-    relativeIllumination: [[0, 1]],
-    section: { surfaces: [s(0, 0, 1 / 50, 1.5), s(5, 0, -1 / 50, 1), s(8, 1, 0, 1, 6)], stop: 2, stopRadiusMm: 4, sensorZMm: 60 },
-  };
-}
-
-/** A port that counts its questions (the cameras it was asked about) and answers after `gate`, if given. */
-function fakePort(answer: (cam: CameraState) => EngineLensInfo | null | undefined = fakeInfo) {
-  const asked: CameraState[] = [];
-  const gates: (() => void)[] = [];
-  let hold = false;
-  const port: LensPort = {
-    info(cam) {
-      asked.push(cam);
-      if (!hold) return Promise.resolve(answer(cam));
-      return new Promise((resolve) => gates.push(() => resolve(answer(cam))));
-    },
-  };
-  return { port, asked, hold: (v: boolean) => (hold = v), release: () => gates.splice(0).forEach((g) => g()) };
-}
 
 describe('the camera the engine is asked about', () => {
   it('is the camera with the hovered lens on it, as choosing it would leave it', () => {
@@ -95,7 +55,7 @@ describe('the answers of the engine, kept per lens and per what they depend on',
 
   it('shares a question already on its way', async () => {
     const f = fakePort();
-    f.hold(true);
+    f.mode = 'hold';
     const cache = lensPeekCache(f.port);
     const cam = camera(traced('double_gauss_normal'));
     const a = cache.load(cam, 'triplet');

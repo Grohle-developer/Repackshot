@@ -6,8 +6,8 @@
 // the lens is chosen.
 
 import type { CameraState } from '../../core/camera';
-import { h, placeAt } from '../dom';
-import { createPeekController, lensPeekCache, peekCard, type PeekAnswer, type PeekCard } from '../lens-peek';
+import { cssZoom, h, placeAt } from '../dom';
+import { createPeekController, lensPeekCache, peekCard, PEEK_FIGURE, type PeekAnswer, type PeekCard } from '../lens-peek';
 import type { Ctx } from '../reactive';
 import { t } from '../strings';
 
@@ -35,6 +35,9 @@ export interface LensPeek {
 /** The gap between the window and what it stands beside, and to the edge of the window, px. */
 const GAP = 8;
 const MARGIN = 8;
+/** The window's horizontal padding and the gap between its columns (components.css `.lens-peek`, `.peek-cards`), px. */
+const PAD = 20;
+const COLUMN_GAP = 14;
 
 interface Rect {
   left: number;
@@ -113,7 +116,13 @@ export function createLensPeek(ctx: Ctx, camera: () => CameraState | undefined):
     const draw = () => {
       if (win !== el) return;
       const cards = spec.keys.map((k) => peekCard(cam, k, answers.get(k))).filter((c): c is PeekCard => c !== null);
-      el.style.setProperty('--peek-cols', String(Math.min(2, Math.max(1, cards.length))));
+      // Two columns of cards at most, fewer where the viewport has no room, and never taller or wider than it.
+      const zoom = cssZoom(el);
+      const room = (window.innerWidth - 2 * MARGIN) / zoom - PAD;
+      el.style.setProperty('--peek-w', `${PEEK_FIGURE.width}px`);
+      el.style.setProperty('--peek-cols', String(Math.max(1, Math.min(2, cards.length, Math.floor((room + COLUMN_GAP) / (PEEK_FIGURE.width + COLUMN_GAP))))));
+      el.style.maxWidth = `${(window.innerWidth - 2 * MARGIN) / zoom}px`;
+      el.style.maxHeight = `${(window.innerHeight - 2 * MARGIN) / zoom}px`;
       el.replaceChildren(...(spec.heading && cards.length > 1 ? [h('div', { class: 'aux peek-heading', 'data-peek': 'heading' }, spec.heading)] : []), h('div', { class: 'peek-cards' }, ...cards.map(card)));
       const box = el.getBoundingClientRect();
       const avoid = entry.avoid?.() ?? target;

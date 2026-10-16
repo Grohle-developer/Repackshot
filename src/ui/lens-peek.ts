@@ -22,8 +22,8 @@ import { formatNumber, lbl, t, type StringKey } from './strings';
 /** How long the pointer (or the focus) rests on an entry before its window opens, ms. */
 export const PEEK_DELAY_MS = 300;
 
-/** The size the cross-section is drawn at in a card, px (the window's card is a little wider). */
-export const PEEK_FIGURE = { width: 212, height: 84 } as const;
+/** The size the cross-section is drawn at in a card, px (the card is as wide as the drawing: components.css `--peek-w`). */
+export const PEEK_FIGURE = { width: 232, height: 84 } as const;
 
 /** The half diagonal of the reference frame (36 mm along the longer side) of a camera's aspect, mm: the sensor in the section. */
 export function sensorHalf(cam: CameraState): number {
