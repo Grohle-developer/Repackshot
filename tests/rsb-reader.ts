@@ -341,6 +341,8 @@ export function readEffect(p: DataView): RsbEffect {
     energy: 0,
     spin: 0,
     palette: [],
+    forward: 0,
+    forwardG: 0,
   };
   if (c.remaining >= 16) {
     e.gravity = c.f32();
@@ -349,6 +351,10 @@ export function readEffect(p: DataView): RsbEffect {
     const n = c.u32();
     const tints = [c.vec(), c.vec(), c.vec(), c.vec()];
     e.palette = tints.slice(0, n);
+  }
+  if (c.remaining >= 8) {
+    e.forward = c.f32();
+    e.forwardG = c.f32();
   }
   return e;
 }

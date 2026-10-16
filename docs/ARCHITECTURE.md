@@ -228,7 +228,7 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   Cargo.toml  rust-toolchain.toml  README.md
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG, TIFF y DNG (U12);
                             imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c);
-                            partículas de Ambiente: esferas, discos y cápsulas con su BVH (geometry/particles.rs, S4a);
+                            partículas de Ambiente: esferas, discos y cápsulas con su BVH y su rejilla de pantalla (geometry/particles.rs, S4a, S4b); el lóbulo hacia delante (bsdf/forward.rs, S4b);
                             texturas de imagen y etiquetas del sombreado (texture/: imagen y mipmaps, proyecciones,
                             ranuras y etiquetas en el punto, M2b)
   crates/rt-sim/            el simulador de partículas sin estado (S4a): `FXAM` ⇄ `AmbientParams`, `evaluate`
@@ -668,7 +668,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   (`tests/fixtures/lens-catalogue.json`, `rt --write-lens-catalogue`).
 - **`FXAM`** (S4a, repetible: una por efecto de *Ambiente*; un motor
   anterior la salta como sección desconocida). Los **parámetros** del
-  efecto, no sus partículas: 192 B (los primeros 128 son obligatorios; una
+  efecto, no sus partículas: 200 B (192 en S4a; los primeros 128 son obligatorios; una
   carga más corta es error, una más larga se lee hasta donde se conoce y
   lo que sobra se ignora; presupuesto, 256 B). El motor evalúa las
   partículas al cargar la escena con `rt-sim` y construye su BVH; la
@@ -702,6 +702,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   | 136 | `f32` | `spin` | vueltas por segundo de los discos (0) |
   | 140 | `u32` | `palette_count` | tintes entre los que elige cada partícula, 0..4 (0: el color del material) |
   | 144 | `f32[4][3]` | `palette` | RGB lineal, multiplica el color base del material |
+  | 192 | `f32` | `forward` | S4b: parte de lo que dispersa la partícula que va al lóbulo hacia delante, 0..1 (0: ninguno; una carga de 192 B no lo tiene) |
+  | 196 | `f32` | `forward_g` | su asimetría de Henyey–Greenstein, −1 < g < 1 |
 
   **En el motor** (`rt-core::geometry::particles`): un conjunto por efecto
   con su BVH plana sobre los tamaños reales (hojas de una partícula; el id
@@ -722,6 +724,34 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   actualización sin `MESH` con los mismos parámetros conserva las
   partículas y su BVH. Sin `FXAM` (o con cuenta 0) los píxeles de toda
   escena son los de antes de S4a (test).
+
+  **S4b.** (1) *Rejilla de pantalla*: con una cámara en perspectiva cada
+  conjunto guarda una rejilla de celdas de 4 px sobre la imagen con, por
+  celda, las partículas cuya caja (ensanchada como la ven los rayos de
+  cámara, y en trozos a lo largo de su eje si es una cápsula larga)
+  proyecta en ella; un rayo de cámara que sale del centro (estenopeica) o
+  del disco de la apertura (lente fina: el rectángulo de cada partícula
+  crece con el círculo de confusión `R |1/z − 1/z_f|` en su peor
+  profundidad y el rayo busca la celda de su punto en el plano de foco)
+  prueba las de su celda en lugar de recorrer la BVH: el mismo impacto
+  más cercano, bit a bit (test frente a la fuerza bruta). Una celda de
+  más de 128 partículas (`GRID_MAX_CANDIDATES`) manda su rayo a la BVH,
+  que para en el impacto más cercano. Los demás rayos siguen con la BVH. (2) *Gotas sin cáusticas*: una partícula de material
+  claro (`(1 − metálico)·transmisión ≥ ½`: lluvia, burbujas) la cruzan
+  recta, entera, desde más allá de su cara del fondo y con la transmitancia
+  recta de una pared fina de su material, los rayos de sombra (si proyecta
+  sombra) y los de un camino que ya rebotó en un lóbulo ancho
+  (`RayClass::Rough`: densidad < 100 sr⁻¹; entonces solo la ven si
+  proyecta sombra); la cámara y los caminos de lóbulos estrechos desde ella
+  (espejo, vidrio liso) la siguen viendo refractar. En una partícula clara
+  y lisa la estimación de siguiente evento solo busca luces delta; las
+  demás las encuentra su rayo BSDF, que cuenta lo que encuentra entero
+  (densidad infinita en el MIS). (3) *Lóbulo hacia delante*
+  (`bsdf::forward`): con `forward > 0` y un material opaco, el BSDF de la
+  partícula es `(1 − forward)·superficie + forward·albedo·p_HG(−wi·wo)/|cos θi|`
+  (Henyey y Greenstein, ApJ 1941), muestreado con probabilidad `forward` y
+  con la densidad de la mezcla en el MIS de E12; sus rayos que atraviesan
+  la partícula (y sus rayos de sombra) salen de su cara del fondo.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -2554,7 +2584,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
-| Ambiente (S4a) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests` y `geometry::tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %) |
+| Ambiente (S4a, S4b) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests`, `geometry::tests`, `geometry::particles::grid_tests`, `bsdf::forward::tests` e `integrator::particle_tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %). En S4b, además: la rejilla de pantalla da los impactos de la fuerza bruta (estenopeica y lente fina, las tres formas, partículas en el plano de la cámara); el lóbulo hacia delante integra 1 con g como coseno medio, se muestrea con su densidad, el horno blanco de su BSDF y de una mota da 1, y la NEE sola, el BSDF solo y el MIS coinciden (1 %); los caminos tras un lóbulo ancho no ven una gota sin sombra (bit a bit) y la cruzan con la transmitancia de la sombra, la cámara la sigue viendo refractar, y la regla de las gotas lisas no cambia la media |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
 | Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente fina no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente fina y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
 | Ventana de la lente (O2b) | `tests/lens-peek.test.ts` (con el `rt.wasm` real), `tests/lens-peek-browser.test.ts`, `tools/lens-hover-check.mjs` | A qué cámara se pregunta y que la lente puesta es la cámara tal cual; la caché (una pregunta por lente, compartida la que está en vuelo, otra al cambiar focal, foco, f/, encuadre o ajustes, la negativa se guarda y «sin motor» y el fallo no, acotada); el reposo de 300 ms (cruzar la lista no abre nada), cerrar al salir, con Esc y al elegir, y no reabrir hasta que vuelve el puntero; las tarjetas con solo los números del motor (cargando, sin motor y negada, sin números ni dibujo; es y en); la colocación dentro de la ventana; los números de lentes que no están en la cámara contra los del motor real. En Chromium, sobre la sección de verdad: abre junto a la lista y junto al chip con el nombre, la fuente, el dibujo y los números de esa lente, no toma foco ni puntero, el teclado la abre y la mueve de lente en lente, y elegir pone la lente. Con la aplicación y el motor reales: los números de la ventana son los de la sección al poner la lente, y volver a pasar no vuelve a preguntar al módulo |

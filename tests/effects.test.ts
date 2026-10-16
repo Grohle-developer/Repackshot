@@ -1,6 +1,7 @@
 // The ambient effects as project data (phase S4a, core/effects.ts): the four actions through the store (undo, the
 // gestures, nothing recorded for no change), what the engine is sent (the region, the count from the density, the
-// cap), the Doctor's warning and fix, and the effects in a project file (an old one opens with none).
+// cap, the forward lobe of S4b), the Doctor's warning and fix, and the effects in a project file (an old one opens
+// with none; an effect saved before S4b takes its preset's lobe).
 
 import { describe, expect, it } from 'vitest';
 import { AVAILABLE_EFFECTS, EFFECT_PRESETS, effectPreset, type EffectKind } from '../src/data/effects';
@@ -8,6 +9,7 @@ import { runDoctor } from '../src/core/doctor';
 import {
   BROWSER_PARTICLE_CAP,
   effectCap,
+  effectForward,
   effectFxam,
   effectParticles,
   effectRegion,
@@ -185,6 +187,26 @@ describe('what the engine gets', () => {
     expect(f.band).toEqual([0, 0]);
   });
 
+  it('S4b: dust, pollen and the dust cloud send their forward lobe; the others, and a catalogue material, none', () => {
+    for (const p of AVAILABLE_EFFECTS) {
+      const s = added(exampleState(), p.key);
+      const f = effectFxam(s, s.effects[0], 0, 1_000_000);
+      const lobe = ['DUST_MOTES', 'POLLEN', 'DUST_CLOUD'].includes(p.key);
+      expect([f.forward, f.forwardG], p.key).toEqual(lobe ? [0.5, 0.7] : [0, 0]);
+    }
+    const s = added(exampleState(), 'DUST_MOTES');
+    const e = s.effects[0];
+    expect(effectForward({ ...e, material: 'GOLD' })).toEqual([0, 0]);
+    // An unknown key renders with the effect's own material, and so its lobe.
+    expect(effectForward({ ...e, material: 'NOPE' })).toEqual([0.5, 0.7]);
+    // A clear own material gets none (the engine would not tell the lobe from the refraction).
+    expect(effectForward({ ...e, ownMaterial: { ...e.ownMaterial, transmission: 0.3 } })).toEqual([0, 0]);
+    expect(effectForward({ ...e, ownMaterial: { ...e.ownMaterial, kind: 'GLASS' } })).toEqual([0, 0]);
+    // In range, whatever a file says.
+    expect(effectForward({ ...e, ownMaterial: { ...e.ownMaterial, forward: 7, forwardG: -3 } })).toEqual([1, -0.95]);
+    expect(effectForward({ ...e, ownMaterial: { ...e.ownMaterial, forward: Number.NaN } })).toEqual([0, 0]);
+  });
+
   it('the wind knob is the horizontal part of the vector, as a speed and a direction', () => {
     expect(windVector(2, 90, 0.5)).toEqual([0, 2, 0.5]);
     const p = windPolar(windVector(1.5, 210));
@@ -313,6 +335,16 @@ describe('effects in project files', () => {
     expect(out[1].preset).toBe(AVAILABLE_EFFECTS[0].key);
     expect(out[1].density).toBe(12);
     expect(normalizeEffects('nope', s)).toEqual([]);
+  });
+
+  it('an effect saved before S4b takes the forward lobe of its preset; one saved with its own keeps it', () => {
+    const s = exampleState();
+    const old = { ...makeEffect(s, 'DUST_MOTES', 'fx1'), ownMaterial: { kind: 'SURFACE', baseColor: [0.5, 0.5, 0.5], roughness: 0.4, ior: 1.5, transmission: 0, absorptionMm: 0, thin: false } };
+    const [opened] = normalizeEffects([old], s);
+    expect([opened.ownMaterial.forward, opened.ownMaterial.forwardG]).toEqual([0.5, 0.7]);
+    expect(opened.ownMaterial.baseColor).toEqual([0.5, 0.5, 0.5]);
+    const own = { ...old, ownMaterial: { ...old.ownMaterial, forward: 0.25, forwardG: 0.6 } };
+    expect(normalizeEffects([own], s)[0].ownMaterial).toMatchObject({ forward: 0.25, forwardG: 0.6 });
   });
 
   it('a new state is a valid project with effects in it', () => {
