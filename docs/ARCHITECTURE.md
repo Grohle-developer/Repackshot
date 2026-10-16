@@ -2176,17 +2176,26 @@ de un camino de refracción `x → v₁ (→ v₂) → y`. Las incógnitas son l
 vértices (dos por vértice: su desplazamiento en el plano de su triángulo) y
 las ecuaciones, dos por vértice, la parte tangencial del *half-vector*
 generalizado `ĥ = (ηₐ ωₐ + η_b ω_b) / |…|` respecto de la normal de
-sombreado (interpolada; `∂n/∂u` por las baricéntricas), que se anula justo
-donde se cumple Snell. Newton (`manifold::solve`): el sistema de las
+sombreado `n` (interpolada; `∂n/∂u` por las baricéntricas), que se anula
+justo donde se cumple Snell. Se toma a lo largo de las tangentes fijas del
+triángulo proyectadas en el plano de sombreado, `c_s = ĥ · (e_s − (n·e_s)
+n)`, para que sus derivadas, el giro de `n` incluido, sean exactas (ningún
+marco que gire con la normal). Newton (`manifold::solve`): el sistema de las
 derivadas (bloque tridiagonal, a lo sumo 4 × 4, eliminación gaussiana con
 pivote parcial) da un paso en los planos tangentes; los vértices movidos se
 **proyectan** sobre sus superficies trazando otra vez los tramos desde `x`
 (cada tramo comprueba de paso que está libre y que toca la misma pieza por el
-mismo lado), y un paso que no baja el error se parte por la mitad. Como
-mucho **8 proyecciones**, tolerancia `10⁻⁴` en el seno del ángulo entre `ĥ`
-y la normal, `f32`, sin números aleatorios: el mismo camino para el mismo
-`x` e `y` en cualquier arquitectura y con cualquier número de hilos. Hacia
-un sol el final es una dirección fija en lugar de un punto.
+mismo lado), y un paso que no baja la suma de los cuadrados de las
+restricciones se parte por la mitad. Como mucho **8 proyecciones**,
+tolerancia `10⁻⁴` en el seno del ángulo entre `ĥ` y la normal, `f32`, sin
+números aleatorios: el mismo camino para el mismo `x` e `y` en cualquier
+arquitectura y con cualquier número de hilos. Hacia un sol el final es una
+dirección fija en lugar de un punto. Bajo vidrio curvo la semilla recta cae
+a menudo fuera de la cuenca de la solución (una bola desvía la luz lejos de
+la recta); si Newton no converge desde ella, se traza una **segunda semilla
+desde la luz**, refractando por Snell en cada superficie de la cadena
+(`manifold::seed_from_light`), y se resuelve también
+(`manifold::connection_path`, la misma función en los dos lados del MIS).
 
 **La conexión** es una muestra de luz en la medida de la luz:
 `f(x) |cos θx| T Le · J / p(y)`, con `p(y)` la densidad con que la NEE
@@ -2212,8 +2221,8 @@ el último vértice desde el que se conecta y las refracciones lisas desde él
 `manifold::found_factor` responde: fuera del dominio de la conexión
 (semilla de otras superficies, el entorno, una luz sin sombras, una luz de
 fotones con cáusticas, un punto que la NEE en `x` no elige), `None`, y la
-luz pesa como antes; dentro, resuelve la conexión de ese `y` desde la
-semilla recta **y** el camino especular por las mismas facetas que el
+luz pesa como antes; dentro, resuelve la conexión de ese `y` (la misma
+`connection_path` que la NEE) **y** el camino especular por las mismas facetas que el
 camino BSDF (Newton desde sus propios vértices), y solo si son el mismo
 (dirección en `x` a 2·10⁻³ rad) la luz toma el factor `p_b²/(p_b² +
 p_m²)`; si no, 1 (la conexión no produce ese camino: en un vidrio facetado

@@ -259,15 +259,19 @@ twice (0: off).
   index at least 1.01, on a part without textures, program, pattern or bevel), the refraction
   path to that point of the light is solved by Newton's method on the half-vector constraints
   (two unknowns per vertex in its triangle's plane, the interpolated shading normal and its
-  derivatives, at most 8 projections, tolerance 10⁻⁴, `f32`, no random numbers) from the straight
-  seed, and connected with its generalised geometry term `|dωx/dA_y|` from the constraints'
+  derivatives, exact through the frame-free constraint `ĥ·(e_s − (n·e_s) n)`, a step kept only if
+  it lowers the sum of the squared constraints, at most 8 projections, tolerance 10⁻⁴, `f32`, no
+  random numbers) from the straight seed, or, where that fails, from a seed traced from the light
+  by Snell's law (`manifold::seed_from_light`; under curved glass the straight seed is often in
+  the wrong basin), and connected with its generalised geometry term `|dωx/dA_y|` from the constraints'
   derivatives (`J = |ωx·n₁| / d₁² · |det (A⁻¹B)₁|`) and what the refractions keep (Fresnel, the
   `η²` of radiance, tint or Beer–Lambert, thin walls and cut-outs on the way). Area lights, emissive
   meshes, spheres, points and spots, suns (disc or delta); not the environment, nor, with caustics,
   the lights that send photons (the map brings that light). MIS against the BSDF continuation:
   a light a BSDF path finds after smooth refractions asks (`manifold::found_factor`) whether the
   connection from the vertex before them to that point is the same path (the connection solved
-  from the straight seed against the specular path through the path's own facets) and takes the
+  as next-event estimation solves it, `manifold::connection_path`, against the specular path
+  through the path's own facets) and takes the
   power heuristic of the two densities per steradian there if so. It retires the E9b thin-wall
   rule where it connects (one smooth wall is two surfaces); the rule stays for the environment,
   two walls in a row and textured or dispersive walls. Without such surfaces nothing changes;
@@ -696,8 +700,8 @@ byte for byte.
   dust (`FXAM` 200 bytes: `forward`, `forward_g`), and the cost of each preset measured in the
   ambient sheet.
 * **E13**: manifold next-event estimation through one or two smooth refracting surfaces
-  (`integrator::manifold`: the seed of the shadow ray, Newton's method on the half-vector
-  constraints with projection by tracing, the generalised geometry term from the constraint
+  (`integrator::manifold`: the seed of the shadow ray and the one traced from the light, Newton's
+  method on the half-vector constraints with projection by tracing, the generalised geometry term from the constraint
   derivatives, the BSDF side's MIS that solves the connection and the path through its own
   facets), the E9b thin-wall rule retired where it connects, the E13 parity scene
   (`rt --write-e13-example`), the E13 sheet (`rt --e13-sheet`) and `tools/e13-cost.mjs`.

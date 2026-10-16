@@ -829,7 +829,7 @@ fn seed_from_light<T: Tracer>(
         let eta = from / to;
         let cos_i = -dir.dot(n);
         let sin2 = eta * eta * (1.0 - cos_i * cos_i);
-        if !(sin2 < 1.0) {
+        if !positive(1.0 - sin2) {
             return None;
         }
         dir = (dir * eta + n * (eta * cos_i - (1.0 - sin2).sqrt())).normalize();
