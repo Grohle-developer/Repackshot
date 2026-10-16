@@ -3082,6 +3082,13 @@ No encajó con el plan:
   cáusticas cambian nada. Va al motor (E12, selección de luz por punto) y
   esas miniaturas se vuelven a renderizar cuando entre; el charco no se
   mueve ni las miniaturas recortan la luz indirecta.
+- Con la compensación de energía de E9a (los materiales rugosos ya no
+  pierden luz) el papel de `GRADIENT_POOL` subió más que su charco y el
+  criterio del test (charco ≥ 2× el fondo) quedó en 1,96: el charco pasa
+  de 0,70 a 0,85 (0,75 daba 1,99, todavía rojo). Como ese set es también
+  el del estudio PRESET y de PACKAGING/GENERIC, sus miniaturas y las de
+  `PRESET` se rehicieron con las 88 (`tools/setup-thumbs.mjs`); el resto
+  no cambió.
 - *En el set* enseñaba la fila de fondo degradado de `STRIP_EDGE` tras
   *Restablecer montaje* (su degradado es un barrido, por el charco): la
   fila sale ahora solo para un fondo que el set pone detrás sin barrido

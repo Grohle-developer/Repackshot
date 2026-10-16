@@ -11,6 +11,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - En el inspector de un vidrio, bajo *Paredes*: **Dispersión interna** (mm), **Color de dispersión** y **Dirección** (−0,9 a 0,9, hacia atrás / hacia delante), con su ayuda; el visor Rápido lo aproxima con un difuso translúcido y lo dice (E9b).
 - **Nueve materiales nuevos** (92 en total con los de los sets de L6 y el cristal de E9c): HDPE blanco, PP natural y acrílico esmerilado entre los plásticos; cera, jabón de glicerina, leche, zumo de naranja, zumo de manzana y crema entre los otros. Los líquidos no se desgastan (E9b).
 - **Número de Abbe** en el inspector del vidrio (0 a 100; 0, sin dispersión), con su ayuda; el visor Rápido lo aproxima con la dispersión de three.js. Material nuevo: **Cristal de perfumería** (Abbe 40) en *Vidrio* (E9c).
+- Las 88 **miniaturas de montaje** están renderizadas de nuevo con el motor de esta versión (luz por punto de E12, energía de E9a, denoise de E11): se van los puntos sueltos de `STRIP_EDGE`, `BLACK_ON_BLACK` y `WARM_COOL_CINEMA`. El charco de **Fondo degradado con foco** (`GRADIENT_POOL`) sube de 0,70 a 0,85 para seguir siendo al menos el doble de brillante que el papel con los materiales corregidos (L6, E9).
 
 ### Motor
 

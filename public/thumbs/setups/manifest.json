@@ -156,8 +156,8 @@
   },
   "GRADIENT_POOL": {
    "hero": "SPHERES",
-   "rsb": "2613e5c1aed99ab54b3b1740d9abc90f8fe27ca66c012e2f14644e125dc4eba9",
-   "png": "cee0f63ef8905c55955aec9a4e0ce71ab1d6ca5270a45e4198c4970ed02cd746"
+   "rsb": "0bb47390f3c33c9d570e35dc74c86721b57aa5f5d0f0649018167c83a45ac7cc",
+   "png": "70effeec0961469e7886edd3e6ff0023d4c88724112e371f3220f41692ec5bc1"
   },
   "GRADIENT_SWEEP": {
    "hero": "SPHERES",
@@ -286,8 +286,8 @@
   },
   "PRESET": {
    "hero": "SPHERES",
-   "rsb": "7bc7154e557460175e8556db150f0a9da52d830319703cb6e67f7deaa035a371",
-   "png": "65d7cff130cb67fe28faa6a18d69caa6b9954e1ed1359901b10733db616901de"
+   "rsb": "eb78c42adacb17b26990e23f007f40f9b0d08936e429ca7a2e1426fccf9d9f95",
+   "png": "06881d51d382a034cd4a83029a1ab748e062dbe0974c9f39df33a3b275c31b13"
   },
   "PROJECTOR": {
    "hero": "BOTTLE",
