@@ -2347,7 +2347,8 @@ mod tests {
         let mut old = bytes[..8].to_vec();
         for (tag, mut payload) in sections(&bytes) {
             if tag == TAG_RNDR {
-                assert_eq!(payload.len(), 64);
+                // 72 with the adaptive fields of E10 (the full scene asks for them).
+                assert_eq!(payload.len(), 72);
                 assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
                 payload.truncate(36);
             }

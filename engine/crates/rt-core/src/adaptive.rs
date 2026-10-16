@@ -41,14 +41,6 @@ use crate::image::Film;
 use crate::render::TileRect;
 use crate::scene::RenderSettings;
 
-/// EXPERIMENT (removed before merge): ranking key 0 error, 1 error/sqrt(n); block 0 max, 1 mean; quantile per mille.
-pub static EXP: [std::sync::atomic::AtomicU32; 4] = [
-    std::sync::atomic::AtomicU32::new(0),
-    std::sync::atomic::AtomicU32::new(0),
-    std::sync::atomic::AtomicU32::new(500),
-    std::sync::atomic::AtomicU32::new(10),
-];
-
 /// `RNDR.adaptive` bit 0: the host samples adaptively.
 pub const ADAPTIVE_ON: u32 = 1;
 /// Edge of the square blocks a decision takes or leaves whole.
@@ -91,7 +83,7 @@ pub struct Decision {
 /// The floor `ε` of the mean in the relative error for an exposure of `ev` stops (scene-linear
 /// light).
 pub fn floor_for(ev: f32) -> f32 {
-    EXP[3].load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0 / exposure(ev)
+    EPSILON / exposure(ev)
 }
 
 /// The relative error of the mean of one pixel: the sums `r g b` of its premultiplied radiance
@@ -184,25 +176,18 @@ pub fn decide(
             }
             let s = sum / ((y1 - y0) * (x1 - x0)) as f32;
             let b = block_of(x, y);
-            if EXP[1].load(std::sync::atomic::Ordering::Relaxed) == 1 {
-                block_error[b] += s / 64.0;
-            } else if s > block_error[b] {
+            if s > block_error[b] {
                 block_error[b] = s;
             }
         }
     }
-    let key_sqrt = EXP[0].load(std::sync::atomic::Ordering::Relaxed) == 1;
-    let rank: Vec<f32> = (0..blocks)
-        .map(|b| if key_sqrt { block_error[b] / (counts[b] as f32).sqrt() } else { block_error[b] })
-        .collect();
-    let quant = EXP[2].load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0;
     // 4. The candidates, the threshold of the moment, the blocks of the next round.
     let floor_target = if target > 0.0 { target } else { 0.0 };
     let candidate =
         |b: usize| block_error[b] > floor_target && (cap == 0 || counts[b] < cap);
     let mut errors: Vec<f32> = (0..blocks)
         .filter(|&b| candidate(b))
-        .map(|b| rank[b])
+        .map(|b| block_error[b])
         .collect();
     let mut max_error = 0.0f32;
     for &e in &block_error {
@@ -246,11 +231,11 @@ pub fn decide(
         };
     }
     errors.sort_unstable_by(f32::total_cmp);
-    let threshold = errors[((errors.len() - 1) as f32 * quant) as usize];
+    let threshold = errors[(errors.len() - 1) / 2];
     let mut count = 0u32;
     let mut least = u32::MAX;
     for b in 0..blocks {
-        if candidate(b) && rank[b] >= threshold {
+        if candidate(b) && block_error[b] >= threshold {
             active[b] = true;
             count += 1;
             least = least.min(counts[b]);

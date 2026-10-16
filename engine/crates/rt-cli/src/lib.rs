@@ -404,9 +404,9 @@ fn finish(
 /// [`rt_core::adaptive`]): rounds decided by the image's noise, at most `samples` per pixel, until
 /// no block needs more or `budget` is spent (checked between passes, so a round may stop
 /// half-way). The first round renders every tile as [`render_progressive`] does (its exact passes
-/// and its albedo too); the later rounds only the active blocks of each tile, the passes of a
-/// round 1, 2, 4… up to [`MAX_PASS_SAMPLES`] samples long as before (where a round is cut changes
-/// no pixel). The decisions read the whole image, put together between rounds, so the film does
+/// and its albedo too, in passes of 1, 2, 4, 8 samples); the later rounds only the active blocks,
+/// claimed one by one by the threads, in passes of up to [`MAX_PASS_SAMPLES`] samples (where a
+/// round is cut changes no pixel). The decisions read the whole image, put together between rounds, so the film does
 /// not depend on the thread count or on which thread rendered which tile.
 pub fn render_adaptive(
     scene: &Scene,
@@ -571,7 +571,13 @@ pub fn render_adaptive_until(
         if spent(rays, start.elapsed()) {
             break;
         }
-        pass = (pass * 2).min(MAX_PASS_SAMPLES);
+        // After the first round, passes as long as a round allows (every pass waits for its last
+        // block: fewer of them, less waiting).
+        pass = if adaptive.warming_up() {
+            (pass * 2).min(MAX_PASS_SAMPLES)
+        } else {
+            MAX_PASS_SAMPLES
+        };
     }
     let (min, max) = adaptive.min_max();
     let run = AdaptiveRun {

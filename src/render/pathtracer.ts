@@ -1046,7 +1046,7 @@ export class PathTracerEngine implements RenderEngine {
         }
       }
       let next: { first: number; count: number } | null;
-      if (adaptive) next = { first: adaptive.iteration, count: Math.min(pass <= 0 ? 1 : Math.min(pass * 2, MAX_PASS_SAMPLES), adaptive.left) };
+      if (adaptive) next = { first: adaptive.iteration, count: Math.min(pass <= 0 ? 1 : adaptive.warmingUp ? Math.min(pass * 2, MAX_PASS_SAMPLES) : MAX_PASS_SAMPLES, adaptive.left) };
       else next = nextPass(done, pass, max);
       if (!next) break;
       // U11: with the live denoise on, a pass about as long as a denoise, so the denoised image follows.

@@ -67,7 +67,7 @@ export interface AdaptiveHooks extends Omit<PassHooks, 'progress'> {
 
 /**
  * E10: the passes of an adaptive render (render/adaptive.ts), as the launcher runs them (rt-app `render`): rounds
- * decided by the image at their ends, cut into passes of 1, 2, 4, 8, then 16 samples; it stops when no block needs
+ * decided by the image at their ends, cut into passes (1, 2, 4, 8 in the first round, then 16); it stops when no block needs
  * more (under the noise target, at the cap), or between passes near the time limit (a pass's cost is its blocks').
  * Where a round is cut changes no pixel. Always renders at least one pass.
  */
@@ -84,7 +84,8 @@ export async function runAdaptive(budget: PassBudget, state: AdaptiveState, hook
       left = d.remaining > 0 ? { work: d.remaining, since: 0 } : null;
       if (state.converged) return { samples: samples(), elapsedMs: hooks.now() - t0, reason: 'SAMPLES' };
     }
-    const size = previous <= 0 ? 1 : Math.min(previous * 2, MAX_PASS_SAMPLES);
+    // The first round grows 1, 2, 4, 8 as a plain render does; the later ones go in passes as long as a round allows.
+    const size = previous <= 0 ? 1 : state.warmingUp ? Math.min(previous * 2, MAX_PASS_SAMPLES) : MAX_PASS_SAMPLES;
     const count = Math.min(size, state.left);
     const cost = state.passCost(count);
     if (samples() > 0 && Number.isFinite(limit.ms)) {

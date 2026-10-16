@@ -1663,10 +1663,14 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
         }
         let mut count = match adaptive.as_ref() {
             Some(ad) => {
+                // The first round grows 1, 2, 4, 8 as a plain render does; the later ones go in
+                // passes as long as a round allows (every pass waits for its last block).
                 let size = if previous == 0 {
                     1
-                } else {
+                } else if ad.warming_up() {
                     (previous * 2).min(MAX_PASS_SAMPLES)
+                } else {
+                    MAX_PASS_SAMPLES
                 };
                 size.min(ad.left())
             }

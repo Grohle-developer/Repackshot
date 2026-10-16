@@ -455,6 +455,53 @@ fn denoise_lowers_the_error_against_a_long_reference_on_sheet_scenes() {
     }
 }
 
+/// FNV-1a over the little-endian bytes of every float (rt-core's test hash).
+fn fnv1a_f32(values: &[f32]) -> u32 {
+    values
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .fold(0x811c_9dc5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193))
+}
+
+#[test]
+fn an_adaptive_render_is_the_pinned_image_with_1_4_or_16_threads() {
+    // E10: the decisions read the whole image between rounds and the blocks of a round are
+    // claimed one by one, so rt's adaptive image is rt-core's pinned one (PINNED_E10_ADAPTIVE)
+    // whatever the threads; the counts too. Without the flag the scene is the plain one.
+    let scene = rt_core::example::e10_scene();
+    for threads in [1usize, 4, 16] {
+        let out = rt_cli::render(&scene, scene.render.max_samples, threads);
+        let run = out.adaptive.expect("adaptive");
+        assert_eq!((run.min, run.max), (16, 48), "{threads} threads");
+        assert!(run.converged);
+        assert_eq!(out.samples, 48);
+        assert_eq!(fnv1a_f32(&out.film.resolve()), 0x264b_4106, "{threads} threads");
+    }
+    let mut plain = scene.clone();
+    plain.render.adaptive = 0;
+    let out = rt_cli::render(&plain, 4, 4);
+    assert!(out.adaptive.is_none());
+    assert!(out.film.weight.iter().all(|&w| w == 4.0));
+}
+
+#[test]
+fn an_adaptive_render_by_time_stops_between_passes() {
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 64;
+    scene.render.height = 48;
+    scene.render.adaptive = rt_core::adaptive::ADAPTIVE_ON;
+    let out = rt_cli::render_progressive(
+        &scene,
+        1 << 24,
+        2,
+        Some(std::time::Duration::from_millis(300)),
+    );
+    let run = out.adaptive.expect("adaptive");
+    assert!(!run.converged);
+    assert!(run.max >= run.min && run.min >= 1);
+    assert!(out.elapsed.as_secs_f64() < 10.0);
+}
+
 #[test]
 fn the_cli_writes_the_denoised_image_and_the_noisy_one_beside_it() {
     let png = scratch("denoised.png");

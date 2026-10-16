@@ -169,7 +169,8 @@ OPTIONS:
         --write-e10-example <f>
                             write the E10 parity scene (the E5b-1 scene sampled adaptively to
                             a noise target) as an RSB file
-        --rounds <N>        --adaptive-noise: seeds per scene and mode (default 3)
+        --rounds <N>        --adaptive-noise: seeds per scene (default 3); with --noise, the
+                            adaptive renders go to that target
         --write-o2-example <f>
                             write the O2 parity scene (the example through the traced double
                             Gauss, and bokeh lights) as an RSB file
@@ -1016,7 +1017,9 @@ pub fn run(command: Command) -> Result<(), String> {
                 "adaptive noise: {}x{}, {seconds} s per render, reference {reference} spp, {rounds} rounds, {threads} threads",
                 size.0, size.1
             );
-            let table = crate::adaptive_noise::run(&dir, size, seconds, reference, rounds, threads)?;
+            let target = options.adaptive.unwrap_or(0.0);
+            let table =
+                crate::adaptive_noise::run(&dir, size, seconds, reference, rounds, threads, target)?;
             print!("{table}");
             println!("wrote {}", dir.join("noise.json").display());
             Ok(())
@@ -1280,6 +1283,19 @@ pub fn run(command: Command) -> Result<(), String> {
                 result.elapsed.as_secs_f64(),
                 result.rays_per_second() / 1.0e6
             );
+            if let Some(a) = result.adaptive {
+                println!(
+                    "adaptive: {} to {} spp in {} rounds, {}{}",
+                    a.min,
+                    a.max,
+                    a.rounds,
+                    if a.converged { "converged" } else { "stopped" },
+                    a.last.map_or(String::new(), |d| format!(
+                        ", the noisiest block at {:.2} %",
+                        d.max_error * 100.0
+                    ))
+                );
+            }
 
             let spec = OutputSpec::resolve(options.format, options.bits, &output)?;
             let (exposure_ev, tonemap) = (
@@ -1320,6 +1336,31 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Command, String> {
         parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn parses_adaptive_sampling_and_its_noise_target() {
+        let Ok(Command::Render { options, .. }) = parse(&["--example", "-o", "o.png", "--adaptive"])
+        else {
+            panic!("render");
+        };
+        assert_eq!(options.adaptive, Some(0.0));
+        let Ok(Command::Render { options, .. }) =
+            parse(&["--example", "-o", "o.png", "--noise", "1.5"])
+        else {
+            panic!("render");
+        };
+        assert_eq!(options.adaptive, Some(0.015));
+        let mut scene = rt_core::example::scene();
+        options.apply(&mut scene);
+        assert_eq!(scene.render.adaptive, rt_core::adaptive::ADAPTIVE_ON);
+        assert_eq!(scene.render.noise_threshold, 0.015);
+        assert!(parse(&["--example", "-o", "o.png", "--noise", "x"]).is_err());
+        assert!(parse(&["--example", "-o", "o.png", "--rounds", "2"]).is_err());
+        assert!(matches!(
+            parse(&["--adaptive-noise", "dir", "--rounds", "2", "--noise", "1"]),
+            Ok(Command::AdaptiveNoise { .. })
+        ));
     }
 
     #[test]

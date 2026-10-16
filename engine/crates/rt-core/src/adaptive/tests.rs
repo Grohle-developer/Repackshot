@@ -377,9 +377,9 @@ fn the_e10_example_has_a_pinned_adaptive_image() {
 }
 
 /// Pinned hash of the E10 example rendered adaptively to its cap (resolved film).
-pub(crate) const PINNED_E10_ADAPTIVE: u32 = 0;
+pub(crate) const PINNED_E10_ADAPTIVE: u32 = 0x264b_4106;
 /// The fewest and most samples of a pixel of it.
-pub(crate) const PINNED_E10_SAMPLES: (u32, u32) = (0, 0);
+pub(crate) const PINNED_E10_SAMPLES: (u32, u32) = (16, 48);
 
 /// A synthetic image for the cross test of the decision with the page's port: per pixel a colour
 /// and a spread from an integer hash of the pixel and `round`, the sums of `counts` samples of it.
@@ -453,7 +453,7 @@ fn the_decisions_of_a_synthetic_image_have_a_pinned_hash() {
 }
 
 /// Pinned hash of six decisions of the synthetic image.
-pub(crate) const PINNED_E10_DECISIONS: u32 = 0;
+pub(crate) const PINNED_E10_DECISIONS: u32 = 0xb492_454a;
 
 #[test]
 fn rescaled_sums_keep_the_mean_and_leave_equal_counts_alone() {
