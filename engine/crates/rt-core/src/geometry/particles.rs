@@ -1019,3 +1019,117 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+    use crate::geometry::{Geometry, RayClass};
+    use crate::rng::Pcg32;
+    use crate::simd::Isa;
+
+    /// `n` particles of `shape` in front of a camera at `(0, -1000, 100)` looking along +Y, from
+    /// specks that camera rays widen to drops 30 mm across, and a few that reach the camera's
+    /// plane or lie behind it.
+    fn particles(shape: Shape, n: u32, seed: u64) -> Vec<Particle> {
+        let mut rng = Pcg32::seeded(seed, 7);
+        let mut f = |lo: f32, hi: f32| lo + (hi - lo) * rng.next_f32();
+        (0..n)
+            .map(|id| {
+                let y = if id % 50 == 0 {
+                    f(-1060.0, -980.0) // straddling or behind the camera's plane
+                } else {
+                    f(-700.0, 400.0)
+                };
+                let centre = [f(-500.0, 500.0), y, f(-250.0, 450.0)];
+                let radius = if id % 3 == 0 {
+                    f(0.02, 0.3)
+                } else {
+                    f(0.5, 15.0)
+                };
+                let axis = match shape {
+                    Shape::Sphere => [0.0; 3],
+                    Shape::Disc => {
+                        let a = Vec3::new(f(-1.0, 1.0), f(-1.0, 1.0), f(-1.0, 1.0)).normalize();
+                        [a.x, a.y, a.z]
+                    }
+                    Shape::Capsule => [f(-15.0, 15.0), f(-15.0, 15.0), f(-40.0, 40.0)],
+                };
+                Particle {
+                    centre,
+                    radius,
+                    axis,
+                    tint: 0,
+                    id,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn camera_rays_find_through_the_screen_grid_what_brute_force_finds() {
+        let width = crate::geometry::BvhWidth::native();
+        for (fstop, focus) in [(0.0, 0.0), (2.0, 900.0), (1.4, 300.0)] {
+            let camera = Camera {
+                position: Vec3::new(0.0, -1000.0, 100.0),
+                target: Vec3::new(0.0, 0.0, 100.0),
+                fstop,
+                focus_dist: focus,
+                ..Camera::default()
+            };
+            let (w, h) = (120, 80);
+            let footprint = PixelFootprint::of(&camera, w, h);
+            assert_eq!(
+                footprint.screen.map(|s| s.lens_radius > 0.0),
+                Some(fstop > 0.0)
+            );
+            for (k, shape) in [Shape::Sphere, Shape::Disc, Shape::Capsule]
+                .into_iter()
+                .enumerate()
+            {
+                let params = AmbientParams {
+                    shape,
+                    count: 600,
+                    ..AmbientParams::default()
+                };
+                let set =
+                    ParticleSet::new(&params, &particles(shape, 600, k as u64), footprint, width);
+                assert!(set.widened());
+                let grid = set.grid.as_ref().expect("a grid");
+                assert!(!grid.everywhere.is_empty(), "some reach the camera's plane");
+                let geometry = Geometry::with_particles(Vec::new(), Vec::new(), vec![set], width)
+                    .expect("geometry");
+                let set = &geometry.particle_sets()[0];
+                let mut rng = Pcg32::seeded(11, k as u64);
+                let (mut hits, mut gridded) = (0, 0);
+                for _ in 0..6000 {
+                    // Beyond the frame too (the filter's reach, and the clamped border cells).
+                    let u = -0.1 + 1.2 * rng.next_f32();
+                    let v = -0.1 + 1.2 * rng.next_f32();
+                    let lens = crate::warp::concentric_disk((rng.next_f32(), rng.next_f32()));
+                    let ray = camera.generate_ray(w as f32 / h as f32, u, v, lens);
+                    gridded += set.screen_candidates(&ray).is_some() as u32;
+                    let found = geometry.trace_class(&ray, Isa::detect(), RayClass::Camera);
+                    assert_eq!(
+                        found,
+                        geometry.brute_force(&ray, RayClass::Camera).0,
+                        "f/{fstop}, {shape:?}, {ray:?}"
+                    );
+                    hits += found.is_some() as u32;
+                    // A ray that does not leave the lens walks the BVH, and finds the same.
+                    let mut off = ray;
+                    off.origin += camera.basis().0 * 2.0;
+                    assert!(set.screen_candidates(&off).is_none());
+                    assert_eq!(
+                        geometry.trace_class(&off, Isa::detect(), RayClass::Camera),
+                        geometry.brute_force(&off, RayClass::Camera).0
+                    );
+                }
+                eprintln!(
+                    "f/{fstop} at {focus}, {shape:?}: {hits} hits of 6000, {gridded} by the grid"
+                );
+                assert_eq!(gridded, 6000, "every camera ray uses the grid");
+                assert!(hits > 300, "{hits}");
+            }
+        }
+    }
+}

@@ -612,7 +612,11 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    4), *Congelar en* (s), *Visible a cámara*, *Visible en reflejos* y *Proyecta
    sombra*, y el tope propio (*El del motor (N)* por defecto). Una nota
    recuerda que *Rápido* dibuja hasta 50 000 partículas por efecto y
-   *Completo* y *Render* todas, iluminadas como el producto.
+   *Completo* y *Render* todas, iluminadas como el producto. Desde S4b, en
+   *Completo* y *Render* el polvo, el polen y la polvareda se encienden a
+   contraluz (su lóbulo hacia delante, sin mando propio: lo trae el
+   material del preset) y la lluvia y las burbujas no dejan cáusticas; los
+   puntos de *Rápido* no cambian.
 5. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
    su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
    (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada

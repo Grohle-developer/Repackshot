@@ -1,6 +1,7 @@
-// Writes the RSB files of the ambient contact sheet (phase S4a) that tools/ambient-sheet.mjs renders with the
+// Writes the RSB files of the ambient contact sheet (phases S4a and S4b) that tools/ambient-sheet.mjs renders with the
 // native `rt`: the example bottle in a dark flat studio with each of the eight presets under two lights (a side key,
-// and a spot behind the product aimed at the camera), rain with three streak lengths, the dust cloud with two
+// and a spot behind the product aimed at the camera), the dust motes with three other shares of their forward lobe
+// (S4b, for the lead to choose), rain with three streak lengths, the dust cloud with two
 // softnesses, and the scenes of the cost measurement (no effect; each preset at its own count on the bottle, S4b; and
 // 200 000 dust motes). Skipped unless REPACKSHOT_AMBIENT_RSB_DIR is set, so `npm run qa` writes nothing; the tool
 // sets the variable itself.
@@ -72,6 +73,14 @@ describe.skipIf(!dir)('ambient contact sheet: RSB dump', () => {
     for (const p of AVAILABLE_EFFECTS) {
       for (const light of Object.keys(LIGHTS) as LightKey[]) write(`${p.key}-${light}`, `preset-${light}`, p.label.en, withEffect(light, p.key));
     }
+    // S4b: the share of the dust's forward lobe, around the proposed 0.5 (the preset's, in the grid above).
+    for (const forward of [0.25, 0.75, 1]) {
+      for (const light of Object.keys(LIGHTS) as LightKey[]) {
+        const s = withEffect(light, 'DUST_MOTES');
+        const patch = { ownMaterial: { ...s.effects[0].ownMaterial, forward } };
+        write(`DUST_MOTES-forward-${forward}-${light}`, 'forward-share', `Dust motes, forward share ${forward} (${light})`, apply(s, { type: 'effect/set', id: s.effects[0].id, patch }));
+      }
+    }
     for (const streak of [0.004, 0.012, 0.03]) write(`RAIN-streak-${streak}`, 'rain-streak', `Rain, streak ${streak * 1000} ms (backlight)`, withEffect('back', 'RAIN', { streak }));
     for (const softness of [0.2, 0.9]) {
       const s = withEffect('side', 'DUST_CLOUD');
@@ -82,8 +91,9 @@ describe.skipIf(!dir)('ambient contact sheet: RSB dump', () => {
     write('cost-none', 'cost', 'No effect', base('side'), costSpp);
     for (const p of AVAILABLE_EFFECTS) write(`cost-${p.key}`, 'cost', p.label.en, withEffect('side', p.key), costSpp);
     write('cost-dust200k', 'cost', '200 000 dust motes', withEffect('side', 'DUST_MOTES', { amountMode: 'COUNT', count: 200_000 }), costSpp);
-    writeFileSync(join(dir!, 'shots.json'), JSON.stringify({ width, height, spp, costSpp, lights: Object.fromEntries(Object.entries(LIGHTS).map(([k, v]) => [k, v.label])), shots }, null, 2));
-    expect(shots).toHaveLength(8 * 2 + 3 + 2 + 1 + 8 + 1);
+    const rows = { 'forward-share': 'Dust motes: other shares of the forward lobe (S4b; the presets above have 0.5, the proposal)' };
+    writeFileSync(join(dir!, 'shots.json'), JSON.stringify({ width, height, spp, costSpp, lights: Object.fromEntries(Object.entries(LIGHTS).map(([k, v]) => [k, v.label])), rows, shots }, null, 2));
+    expect(shots).toHaveLength(8 * 2 + 3 * 2 + 3 + 2 + 1 + 8 + 1);
     expect(shots.find((x) => x.file === 'cost-dust200k')!.particles).toBe(200_000);
   });
 });

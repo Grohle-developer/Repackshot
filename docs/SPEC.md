@@ -304,7 +304,12 @@ función pura de (semilla, id, instante). Ni caché ni horneado.
   `marginMm`, o `BOX` con centro y tamaño; `band`: banda de alturas), la
   nube (`cloud`: centro, radio en mm, suavidad 0..1; con ella, el volumen
   es su esfera), el material (`material`: clave del catálogo de
-  materiales, o vacío y entonces `ownMaterial`, el del preset), `tintVar`
+  materiales, o vacío y entonces `ownMaterial`, el del preset; desde S4b
+  `ownMaterial` lleva además `forward` y `forwardG`, la parte de lo que
+  dispersa cada partícula que va a un lóbulo hacia delante de
+  Henyey–Greenstein y su asimetría: 0,5 y 0,7 en el polvo, el polen y la
+  polvareda, 0 en los demás; solo con un material propio y opaco; un
+  efecto guardado antes de S4b toma el de su preset), `tintVar`
   y `palette` (hasta 4 tintes), `time` (*Congelar en*, s), `camera`,
   `reflections` y `shadows` (como en las luces), `cap` (tope propio; 0: el
   del motor) y `seed`.

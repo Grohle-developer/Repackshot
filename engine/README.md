@@ -319,6 +319,16 @@ twice (0: off).
   normals describe (Hanika, "Hacking the Shadow Terminator", 2021), which keeps shadow
   terminators smooth; the shading normal is kept on the geometric side and falls back to the
   geometric normal where it would face away from the viewer.
+* **Ambient particles** (S4a, S4b; `FXAM` sections, `rt-sim`, `geometry::particles`): spheres,
+  discs and capsules evaluated from the effect's parameters when the scene loads, with a flat BVH
+  per effect walked after the instance BVH and, for the camera rays of a pinhole or thin-lens
+  camera, a screen grid of 4-pixel cells (each ray tests the particles whose box, widened and grown
+  by the circle of confusion, projects onto its cell: the BVH's nearest hit, bit for bit). Small
+  clear particles (rain, bubbles) are crossed straight, with a thin wall's transmittance, by
+  shadow rays and by the rays of a path that already scattered off a broad lobe (no caustics of
+  drops); the camera, and paths of narrow lobes from it, still see them refract. Dust, pollen and
+  a dust cloud get a Henyey–Greenstein forward lobe (`bsdf::forward`, a share of the particle's
+  BSDF, in the MIS of next-event estimation), so a light behind them lights them up.
 * **Tone curves** (`color`, `Film::to_srgb8_tonemapped`), `RNDR.tonemap`: **0** linear, **1** ACES
   (Narkowicz fit), **2** filmic (Blender-like: the 16.5-stop log2 shaper of Sobotka's Filmic and
   the published polynomial fit of the AgX base contrast, per channel), **3** AgX (Sobotka's
@@ -628,6 +638,14 @@ byte for byte.
   the measured cost of the traced camera (`rt --lens-cost`); the tiles trace the camera rays of a
   row through the lens in batches of eight (`optics::traced::batch`, the same bits as one by
   one).
+
+* **S4a**: ambient particles without state (`rt-sim`: `FXAM`, closed-form motion, curl-noise
+  drift), the three primitives with their BVH, the minimum size on screen with its energy kept,
+  the S4a parity scene (`rt --write-ambient-example`) and `rt_particles_eval` for the preview.
+* **S4b**: the screen grid of camera rays, drops without caustics (`RayClass::Rough`, straight
+  crossings, next-event estimation of smooth drops for delta lights only), the forward lobe of
+  dust (`FXAM` 200 bytes: `forward`, `forward_g`), and the cost of each preset measured in the
+  ambient sheet.
 
 ## Third-party data
 
