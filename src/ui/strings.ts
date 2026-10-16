@@ -775,8 +775,8 @@ const TABLE = {
   'ge.fast.note.CURVATURE': ['Curvature is left out (0): the engine measures it.', 'La curvatura se omite (0): la mide el motor.'],
   'ge.fast.note.MEANS': ['No map for {list}: its mean value.', 'Sin mapa para {list}: su valor medio.'],
   'ge.full.note': [
-    'Full: the engine evaluates graphs with phase M3b (coming soon); until then it renders the mean of each output.',
-    'Completo: el motor evaluará grafos con la fase M3b (próximamente); hasta entonces renderiza el valor medio de cada salida.',
+    'Full and Render: the engine runs the graph at every point (its images filtered, Fresnel and facing from the real view, the curvature at the part’s sharp edges); subsurface is not read. An older engine renders the mean of each output.',
+    'Completo y Render: el motor ejecuta el grafo en cada punto (sus imágenes filtradas, Fresnel y de cara con la vista real, la curvatura en las aristas vivas de la pieza); la dispersión interna no se lee. Un motor anterior renderiza el valor medio de cada salida.',
   ],
   'ge.toSimple.title': ['Back to Simple?', '¿Volver a Simple?'],
   'ge.toSimple.text': [

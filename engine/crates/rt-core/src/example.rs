@@ -204,6 +204,7 @@ pub fn scene() -> Scene {
         effects: Vec::new(),
         images: Vec::new(),
         textures: Vec::new(),
+        programs: Vec::new(),
         textured: false,
     }
 }
@@ -958,6 +959,287 @@ pub fn m2b_scene() -> Scene {
     ];
     scene.render.width = 160;
     scene.render.height = 120;
+    scene
+}
+
+/// The material programs of the M3b example, by material: 0 marble on the floor (the part's 3D
+/// coordinates through a noise, a sine, a power and a colour ramp, under a coat), 1 checks by a
+/// box projection with its edges worn lighter by the curvature (bevel weight 0.5), 2 leather (a
+/// bump of three evaluations of a simplex noise's height, a mottled colour), 3 a label by a
+/// cylindrical projection of an image with alpha over blue plastic (its bevel weight computed from
+/// a noise), 4 a card cut out in bands by stripes on its UVs with a normal map of flakes from a
+/// colour noise, 5 an emitter whose colour is a checker on its UVs (not sampled as a light), 6 a
+/// thin glass pane dusted where it turns from the view (facing, Fresnel, a smooth step).
+pub fn m3b_programs() -> Vec<crate::program::Program> {
+    use crate::program::build::{Builder, I, N, P, T, UV0};
+    use crate::program::{
+        op, NONE, OUT_BASE_COLOR, OUT_BEVEL, OUT_COAT, OUT_COAT_ROUGHNESS, OUT_EMISSION,
+        OUT_EMISSION_STRENGTH, OUT_IOR, OUT_METALLIC, OUT_NORMAL, OUT_OPACITY, OUT_ROUGHNESS,
+        OUT_TRANSMISSION,
+    };
+    let mut out = Vec::new();
+    // 0 Marble.
+    let mut b = Builder::new();
+    let m = b.map(5.0, 2.0, 400.0, 30.0, [1.0, 1.0], [0.0, 0.0]);
+    let n = b.noise(m, 2.5, false, 5.0, 0.0);
+    let x = b.f(op::VX, m, NONE, NONE, NONE);
+    let five = b.fconst(5.0);
+    let x5 = b.f(op::FMUL, x, five, NONE, NONE);
+    let seven = b.fconst(7.0);
+    let phase = b.f(op::FMADD, n, seven, x5, NONE);
+    let s = b.f(op::FSIN, phase, NONE, NONE, NONE);
+    let a = b.f(op::FABS, s, NONE, NONE, NONE);
+    let e = b.fconst(0.55);
+    let pw = b.f(op::FPOW, a, e, NONE, NONE);
+    let col = b.ramp(
+        pw,
+        0.0,
+        &[
+            (0.0, [0.1, 0.1, 0.11]),
+            (0.35, [0.5, 0.49, 0.48]),
+            (1.0, [0.88, 0.87, 0.85]),
+        ],
+    );
+    b.out(OUT_BASE_COLOR, col, true);
+    b.out_const(OUT_ROUGHNESS, &[0.15]);
+    b.out_const(OUT_COAT, &[0.7]);
+    out.push(b.build());
+    // 1 Checks, worn at the edges.
+    let mut b = Builder::new();
+    let m = b.map(2.0, 2.0, 80.0, 10.0, [1.0, 1.0], [0.0, 0.0]);
+    let four = b.fconst(4.0);
+    let chk = b.f(op::CHECK, m, four, NONE, NONE);
+    let c1 = b.vconst([0.82, 0.82, 0.8]);
+    let c2 = b.vconst([0.05, 0.06, 0.1]);
+    let base = b.v(op::VLERP, c1, c2, chk, NONE);
+    let r = b.konst(&[4.0]);
+    let edge = b.f(op::EDGE, NONE, NONE, NONE, r);
+    let worn = b.vconst([0.9, 0.75, 0.5]);
+    let col = b.v(op::VLERP, base, worn, edge, NONE);
+    let k = b.fconst(-0.3);
+    let r0 = b.fconst(0.45);
+    let rough = b.f(op::FMADD, edge, k, r0, NONE);
+    b.out(OUT_BASE_COLOR, col, true);
+    b.out(OUT_ROUGHNESS, rough, false);
+    b.out_const(OUT_COAT, &[0.3]);
+    b.out_const(OUT_BEVEL, &[0.5]);
+    out.push(b.build());
+    // 2 Leather: the height at the point and a hundredth of a millimetre along T and B.
+    let mut b = Builder::new();
+    let height = |b: &mut Builder, at: u32| -> u32 {
+        let k = b.fconst(0.01);
+        let obj = b.v(op::VSCALE, at, k, NONE, NONE);
+        let g = b.noise(obj, 90.0, true, 3.0, 0.0);
+        let e = b.fconst(1.8);
+        b.f(op::FPOW, g, e, NONE, NONE)
+    };
+    let h0 = height(&mut b, P);
+    let step = b.fconst(0.01);
+    let stepped = |b: &mut Builder, along: u32| -> u32 {
+        let d = b.v(op::VSCALE, along, step, NONE, NONE);
+        let at = b.v(op::VADD, P, d, NONE, NONE);
+        let h = height(b, at);
+        let dh = b.f(op::FSUB, h, h0, NONE, NONE);
+        let scale = b.fconst(12.0);
+        b.f(op::FMUL, dh, scale, NONE, NONE)
+    };
+    let dt = stepped(&mut b, T);
+    let db = stepped(&mut b, crate::program::build::B);
+    let normal = b.v(op::BUMP, N, dt, db, NONE);
+    let k = b.fconst(0.01);
+    let obj = b.v(op::VSCALE, P, k, NONE, NONE);
+    let mottle = b.noise(obj, 6.0, false, 4.0, 0.0);
+    let col = b.ramp(
+        mottle,
+        1.0,
+        &[(0.3, [0.07, 0.035, 0.018]), (0.7, [0.2, 0.1, 0.05])],
+    );
+    let k = b.fconst(0.3);
+    let r0 = b.fconst(0.42);
+    let rough = b.f(op::FMADD, h0, k, r0, NONE);
+    b.out(OUT_BASE_COLOR, col, true);
+    b.out(OUT_ROUGHNESS, rough, false);
+    b.out(OUT_NORMAL, normal, true);
+    b.out_const(OUT_COAT, &[0.08]);
+    b.out_const(OUT_COAT_ROUGHNESS, &[0.3]);
+    out.push(b.build());
+    // 3 A label on blue plastic, its bevel weighed by a noise.
+    let mut b = Builder::new();
+    let m = b.map(3.0, 2.0, 40.0, 0.0, [3.0, 1.0], [0.0, -0.4]);
+    let entry = b.image(Some(2), true, crate::texture::WRAP_CLAMP);
+    let (rgb, alpha) = b.tex(entry, m);
+    let blue = b.vconst([0.012, 0.06, 0.28]);
+    let base = b.v(op::BLEND, blue, rgb, alpha, 0);
+    let lo = b.fconst(0.16);
+    let hi = b.fconst(0.55);
+    let rough = b.f(op::FLERP, lo, hi, alpha, NONE);
+    let k = b.fconst(-0.5);
+    let half = b.fconst(0.5);
+    let coat = b.f(op::FMADD, alpha, k, half, NONE);
+    let k = b.fconst(0.05);
+    let obj = b.v(op::VSCALE, P, k, NONE, NONE);
+    let w = b.noise(obj, 1.0, false, 2.0, 5.0);
+    b.out(OUT_BASE_COLOR, base, true);
+    b.out(OUT_ROUGHNESS, rough, false);
+    b.out(OUT_COAT, coat, false);
+    b.out(OUT_BEVEL, w, false);
+    b.out_const(OUT_COAT_ROUGHNESS, &[0.02]);
+    out.push(b.build());
+    // 4 A card cut out in bands, with flakes in its normal.
+    let mut b = Builder::new();
+    let six = b.fconst(6.0);
+    let width = b.fconst(0.6);
+    let axis = b.konst(&[0.0, 0.0]);
+    let band = b.f(op::STRIPE, UV0, six, width, axis);
+    let c1 = b.vconst([0.9, 0.3, 0.1]);
+    let c2 = b.vconst([0.1, 0.4, 0.9]);
+    let col = b.v(op::VLERP, c1, c2, band, NONE);
+    let k = b.fconst(0.01);
+    let obj = b.v(op::VSCALE, P, k, NONE, NONE);
+    let s = b.fconst(300.0);
+    let nk = b.konst(&[0.0, 1.0, 2.0, 0.5, 9.0]);
+    let flakes = b.v(op::NOISEC, obj, s, NONE, nk);
+    let strength = b.fconst(0.35);
+    let normal = b.v(op::NMAP, flakes, strength, N, 0);
+    b.out(OUT_BASE_COLOR, col, true);
+    b.out(OUT_OPACITY, band, false);
+    b.out(OUT_NORMAL, normal, true);
+    b.out_const(OUT_METALLIC, &[0.3]);
+    b.out_const(OUT_ROUGHNESS, &[0.35]);
+    out.push(b.build());
+    // 5 An emitter checked on its UVs.
+    let mut b = Builder::new();
+    let four = b.fconst(4.0);
+    let chk = b.f(op::CHECK, UV0, four, NONE, NONE);
+    let warm = b.vconst([1.0, 0.7, 0.4]);
+    let cool = b.vconst([0.3, 0.5, 1.0]);
+    let col = b.v(op::VLERP, warm, cool, chk, NONE);
+    b.out(OUT_EMISSION, col, true);
+    b.out_const(OUT_EMISSION_STRENGTH, &[3.0]);
+    out.push(b.build());
+    // 6 A thin glass pane, dusty where it turns from the view.
+    let mut b = Builder::new();
+    let blend = b.fconst(0.35);
+    let facing = b.f(op::FACING, blend, N, I, NONE);
+    let k = b.fconst(0.01);
+    let obj = b.v(op::VSCALE, P, k, NONE, NONE);
+    let noise = b.noise(obj, 8.0, false, 5.0, 0.0);
+    let e0 = b.fconst(0.45);
+    let e1 = b.fconst(0.7);
+    let patch = b.f(op::FSSTEP, noise, e0, e1, NONE);
+    let dirt = b.f(op::FMUL, facing, patch, NONE, NONE);
+    let clear = b.vconst([0.97, 0.98, 0.98]);
+    let dust = b.vconst([0.42, 0.37, 0.3]);
+    let base = b.v(op::BLEND, clear, dust, dirt, 0);
+    let k = b.fconst(-0.75);
+    let one = b.fconst(1.0);
+    let trans = b.f(op::FMADD, dirt, k, one, NONE);
+    let ior = b.fconst(1.52);
+    let fres = b.f(op::FRESNEL, ior, N, I, NONE);
+    let k = b.fconst(0.3);
+    let r0 = b.fconst(0.01);
+    let rough = b.f(op::FMADD, fres, k, r0, NONE);
+    b.out(OUT_BASE_COLOR, base, true);
+    b.out(OUT_TRANSMISSION, trans, false);
+    b.out(OUT_ROUGHNESS, rough, false);
+    b.out_const(OUT_IOR, &[1.52]);
+    b.material(0.0, true);
+    out.push(b.build());
+    out
+}
+
+/// The M3b scene of material programs (`render.rs` pins its hash; `rt --write-m3b-example` writes
+/// it for `tools/wasm-parity.mjs`): the M2b floor, box, ball, bottle, card and lamp, each material
+/// now a program ([`m3b_programs`]: marble, worn checks, leather, a label, a cut-out card with
+/// flakes, a checked emitter) and a thin glass pane in front of the card, with the M2b images.
+/// Instances: 0 floor, 1 box, 2 ball, 3 bottle, 4 card, 5 lamp, 6 pane.
+pub fn m3b_scene() -> Scene {
+    use crate::scene::{
+        MATERIAL_EMISSIVE, MATERIAL_FLAG_LIGHT, MATERIAL_FLAG_THIN, MATERIAL_GLASS,
+    };
+    let mut scene = m2b_scene();
+    scene.textures.clear();
+    let pane = {
+        let p = [
+            Vec3::new(-30.0, 0.0, 0.0),
+            Vec3::new(30.0, 0.0, 0.0),
+            Vec3::new(30.0, 0.0, 50.0),
+            Vec3::new(-30.0, 0.0, 50.0),
+        ];
+        let n = [Vec3::new(0.0, -1.0, 0.0); 4];
+        Mesh::new(&p, &n, &[0, 1, 2, 0, 2, 3], 0).unwrap_or_default()
+    };
+    let mut meshes = scene.geometry.meshes().to_vec();
+    meshes.push(pane);
+    let mut instances = scene.geometry.instances().to_vec();
+    let (s25, c25) = crate::fmath::sin_cos(-15.0 * crate::fmath::DEG_TO_RAD);
+    instances.push(Instance::new(
+        6,
+        Transform::from_rows([
+            [c25, -s25, 0.0, -40.0],
+            [s25, c25, 0.0, -10.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]),
+        6,
+    ));
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.materials = vec![
+        Material {
+            base_color: Rgb::new(0.6, 0.6, 0.6),
+            roughness: 0.15,
+            coat: 0.7,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.5, 0.5, 0.5),
+            roughness: 0.4,
+            coat: 0.3,
+            bevel_mm: 3.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.12, 0.06, 0.03),
+            roughness: 0.6,
+            coat: 0.08,
+            coat_roughness: 0.3,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.1, 0.12, 0.3),
+            roughness: 0.3,
+            coat: 0.4,
+            coat_roughness: 0.02,
+            bevel_mm: 2.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.5, 0.35, 0.5),
+            metallic: 0.3,
+            roughness: 0.35,
+            opacity: 0.6,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_EMISSIVE,
+            emission: Rgb::new(0.65, 0.6, 0.7),
+            emission_power: 3.0,
+            flags: MATERIAL_FLAG_LIGHT,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.9, 0.9, 0.88),
+            roughness: 0.05,
+            ior: 1.52,
+            transmission: 0.95,
+            flags: MATERIAL_FLAG_THIN,
+            ..Material::default()
+        },
+    ];
+    scene.programs = m3b_programs()
+        .into_iter()
+        .map(|p| Some(std::sync::Arc::new(p)))
+        .collect();
     scene
 }
 

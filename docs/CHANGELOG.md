@@ -3,6 +3,26 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## v0.1.12 — 2026-10-16
+
+Versión de prueba con los materiales de nodos funcionando en el modo
+*Completo* y en los renders (lo que el reporte del 14-10 pedía en su punto
+1.6). Lo de v0.1.2 a v0.1.11 sigue igual.
+
+### Motor
+
+- **Los materiales de nodos funcionan en *Completo* y en *Render***: el motor ejecuta el grafo en cada punto de la superficie, con los mismos números que la vista *Rápido* (ruidos, rampas, mezclas, cuadros y rayas, imágenes por su proyección, Fresnel y *de cara* con la vista de verdad, relieve y mapa de normales, la curvatura en las aristas vivas, el peso del bisel, la opacidad que recorta también las sombras, la emisión). Los diez ejemplos del editor caen donde los dibuja *Rápido* (M3b).
+- El motor dice que lo hace (`rt_features` bit 1 en `rt.wasm`, `features` en `/api/info` del lanzador) y la página le manda el programa de cada material de nodos; a un motor anterior, el valor medio de cada salida, como hasta ahora. Una escena sin materiales de nodos da los mismos píxeles que antes; con todas sus piezas de nodos, una muestra cuesta un 41–47 % más (M3b).
+
+### Interfaz
+
+- *Inspector* y *Editor de material*: la nota de los materiales de nodos ya no dice *próximamente*; dice lo que hacen *Completo* y *Render* (M3b).
+
+### Limitaciones conocidas de esta versión
+
+- La salida *Dispersión interna* de un grafo no se lee en el motor; un material de nodos cuya emisión cambia por la superficie ilumina por los rayos que lo encuentran, no como luz muestreada (más ruido en lo que alumbra); las cáusticas lo ven con su media (M3b).
+- Los copos de la pintura metalizada de ejemplo salen más oscuros en *Completo* que en *Rápido* (el nodo *Mapa de normales* vuelve hacia dentro la mitad de sus normales): pendiente de decidir. El ejemplo de madera no se parece aún a la familia *Madera* del catálogo, y no hay nodos *Madera* ni *Tela* (M3b).
+
 ## v0.1.11 — 2026-10-16
 
 Versión de prueba con las partículas de ambiente mejoradas: el polvo brilla

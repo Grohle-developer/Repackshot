@@ -1865,6 +1865,49 @@ fn forward_scattering_sends_the_light_onwards() {
 }
 
 #[test]
+fn the_shadow_rays_from_a_mediums_exits_cross_a_programs_cut_out() {
+    // M3b: a sheet between the milky slab and the light under it, opaque in its own material and
+    // cut out entirely by its program (an opacity of 0): the slab is lit as without the sheet.
+    // The shadow rays from the medium's exits (`shadow_from_exit`) read the program there;
+    // without it the sheet would stop them.
+    let open = medium_slab(milky(10.0, Rgb::WHITE, 0.0, 0.0));
+    let mut covered = open.clone();
+    let mut meshes = open.geometry.meshes().to_vec();
+    meshes.push(box_mesh(
+        Vec3::new(-1000.0, -1000.0, -26.0),
+        Vec3::new(1000.0, 1000.0, -25.0),
+    ));
+    let sheet = covered.materials.len();
+    let mut instances = open.geometry.instances().to_vec();
+    instances.push(Instance::new(1, Transform::IDENTITY, sheet as u32));
+    covered.geometry = Geometry::new(meshes, instances).expect("sheet");
+    covered.materials.push(Material {
+        base_color: Rgb::splat(0.5),
+        roughness: 1.0,
+        ..Material::default()
+    });
+    let mut b = crate::program::build::Builder::new();
+    b.out_const(crate::program::OUT_OPACITY, &[0.0]);
+    covered.programs = vec![None; sheet + 1];
+    covered.programs[sheet] = Some(std::sync::Arc::new(b.build()));
+    let mut opaque = covered.clone();
+    opaque.programs.clear();
+    let lit = |s: &Scene| mean_where(&render(s, 128), 1, |_, _| true);
+    let (without, through, stopped) = (lit(&open), lit(&covered), lit(&opaque));
+    eprintln!(
+        "slab lit from below: {without:.4}, through a cut-out sheet {through:.4}, \
+         behind the sheet without its program {stopped:.4}"
+    );
+    // The exits' shadow rays carry a few per cent of it (the rest comes by paths that hit the
+    // light): measured 0.08 % apart with the program read there, 4.4 % without.
+    assert!(
+        (through / without - 1.0).abs() < 0.015,
+        "{through} vs {without}"
+    );
+    assert!(stopped < 0.05 * without, "{stopped}");
+}
+
+#[test]
 fn an_emitter_that_is_not_a_light_is_found_after_a_medium_event() {
     // The panel under the slab is an emissive mesh that is not sampled as a light, so the exit
     // vertices cannot sample it: its light arrives only by paths that leave the slab and hit it,

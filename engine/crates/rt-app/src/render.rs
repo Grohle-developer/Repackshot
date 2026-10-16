@@ -2935,6 +2935,32 @@ mod tests {
     }
 
     #[test]
+    fn the_programs_give_the_pinned_image_with_any_thread_count() {
+        // M3b: the material programs of the M3b example are rt-core's pinned image
+        // (PINNED_M3B_PROGRAMS_4SPP) for any thread count, through the launcher's engine.
+        let _serial = serial();
+        let mut scene = rt_core::example::m3b_scene();
+        scene.render.max_samples = 4;
+        for threads in [1usize, 4, 16] {
+            let engine = Engine::new(threads);
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            let inv = 1.0f32 / 4.0;
+            let hash = f
+                .sums
+                .chunks_exact(4)
+                .flat_map(|p| [p[0] * inv, p[1] * inv, p[2] * inv])
+                .flat_map(|v| v.to_le_bytes())
+                .fold(0x811c_9dc5u32, |h, b| {
+                    (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+                });
+            assert_eq!(hash, 0x0d6e_20ba, "{threads} threads");
+        }
+    }
+
+    #[test]
     fn the_cloth_gives_the_pinned_image_with_any_thread_count() {
         // E6: the procedural cloth of the E6 cloth example is rt-core's pinned image
         // (PINNED_E6_CLOTH_4SPP) for any thread count.

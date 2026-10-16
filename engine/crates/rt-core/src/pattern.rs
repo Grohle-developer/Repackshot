@@ -236,6 +236,10 @@ impl PatternSetup {
                 if m.is_emissive() {
                     return None;
                 }
+                // M3b: a material with a program draws what its program says instead.
+                if matches!(scene.programs.get(inst.material_id as usize), Some(Some(_))) {
+                    return None;
+                }
                 let pattern = scene
                     .patterns
                     .iter()

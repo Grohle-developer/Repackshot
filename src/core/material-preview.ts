@@ -13,7 +13,8 @@
 //     hold is approximated and said (`BakePlan.notes`): Fresnel and facing at 60° from the normal, curvature as 0,
 //     and the values without a slot (clear coat, transmission, IOR…) as their mean.
 //   - Plain values (`flattenGraph`): the mean of each output over 64 points of a sphere, for what reads a material's
-//     parameters (the engine until M3b, the thumbnails).
+//     parameters (the thumbnails; an engine that does not run graphs; one that does gets them as the base of the
+//     program, M3b).
 
 import type { MaterialFamily, MaterialParams } from '../data/types';
 import { getImage } from './images';
@@ -723,13 +724,17 @@ export function meanOutputs(p: Program, images: readonly (ImagePixels | null)[])
   return acc;
 }
 
-/** A family and parameters that stand for output values (the engine's material before it evaluates graphs, M3b). */
-export function paramsOfOutputs(o: OutputValues, absorptionMm: number, thinWalls: boolean): { family: MaterialFamily; params: MaterialParams } {
+/**
+ * A family and parameters that stand for output values: the material of an engine that does not run graphs, and the
+ * base of the program for one that does (M3b: its kind, absorption, thin walls). `emissive` false never makes it an
+ * emitter (a graph whose emission varies over the part reflects and adds its emission there, as Fast draws it).
+ */
+export function paramsOfOutputs(o: OutputValues, absorptionMm: number, thinWalls: boolean, emissive = true): { family: MaterialFamily; params: MaterialParams } {
   const c = (k: string) => o[k] as number[];
   const n = (k: string) => o[k] as number;
   const emission = c('emission');
   const strength = n('emissionStrength');
-  if (strength > 0 && Math.max(...emission) > 1e-6) {
+  if (emissive && strength > 0 && Math.max(...emission) > 1e-6) {
     return { family: 'EMISSIVE', params: { emitKind: 'COLOR', emitColor: [emission[0], emission[1], emission[2], 1], emitPower: strength / EMIT_RADIANCE_PER_WATT } };
   }
   const base = c('baseColor');
@@ -754,17 +759,19 @@ export function paramsOfOutputs(o: OutputValues, absorptionMm: number, thinWalls
 }
 
 const flatCache = new WeakMap<MaterialGraph, { family: MaterialFamily; params: MaterialParams }>();
+const reflectiveCache = new WeakMap<MaterialGraph, { family: MaterialFamily; params: MaterialParams }>();
 
 /**
  * The family and parameters that stand for a graph where it cannot be evaluated: the mean of each output over the
  * sample points (images as far as the registry has decoded them). Cached per graph object; a graph that does not
- * compile stands for the default grey.
+ * compile stands for the default grey. `emissive` false: never an emitter (`paramsOfOutputs`).
  */
-export function flattenGraph(g: MaterialGraph): { family: MaterialFamily; params: MaterialParams } {
-  const hit = flatCache.get(g);
+export function flattenGraph(g: MaterialGraph, emissive = true): { family: MaterialFamily; params: MaterialParams } {
+  const cache = emissive ? flatCache : reflectiveCache;
+  const hit = cache.get(g);
   if (hit) return hit;
   const { program } = compileGraph(g);
-  const out = program ? paramsOfOutputs(meanOutputs(program, registryPixels(program)), program.absorptionMm, program.thinWalls) : { family: 'SIMPLE' as const, params: { baseColor: [0.8, 0.8, 0.8, 1] as const } };
-  flatCache.set(g, out);
+  const out = program ? paramsOfOutputs(meanOutputs(program, registryPixels(program)), program.absorptionMm, program.thinWalls, emissive) : { family: 'SIMPLE' as const, params: { baseColor: [0.8, 0.8, 0.8, 1] as const } };
+  cache.set(g, out);
   return out;
 }

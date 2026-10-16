@@ -66,6 +66,11 @@
 //!             f32 conic a4 a6 a8 a10)[surface_count]                                      (O2)
 //! IMGS   4 B  u32 count; per image u32 width height channels (1, 3 or 4) color_space (0 sRGB,
 //!             1 linear); u8 rows[width·height·channels] from the top; zero padding to 4  (M2b, new)
+//! PROG   4 B  u32 material; the material's program: the bytes of M3a's `encodeProgram`
+//!             (u32 magic "RPGM" version instruction_count const_count image_count f_registers
+//!             v_registers output_count; f32 absorption_mm; u32 flags; instructions[6 words];
+//!             f32 consts; (u32 image srgb wrap)[image_count]; (u32 kind index)[output_count])
+//!                                                                    (M3b, new; written last)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -76,7 +81,7 @@
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS` and `IMGS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
-//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN` and `FXAM` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM` and `PROG` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -99,6 +104,18 @@
 //! emits them as the page's writer does: when the scene has images or blocks (or
 //! [`Scene::textured`]), every mesh gets its UV sets word, every material with a block its block,
 //! and `IMGS` follows the `FXAM` sections.
+//!
+//! **Material programs** (M3b, ARCHITECTURE §5.2 quater and [`crate::program`]). A `PROG`
+//! section is the compiled graph of the material `material` (its position among the `MATL`
+//! sections; at most one per material, the first counts): the engine runs it at every hit of the
+//! material's instances, and its values replace the material's there. A program of another
+//! version than 1 is skipped (a newer file's: the material keeps its plain values); an unknown
+//! opcode, a register, constant or image index out of range, a register read before it is
+//! written, a destination that is an operand of its own instruction, a material program without
+//! its fifteen outputs, a `material` that is not a `MATL`, or an image index that is not an `IMGS`
+//! image of the program's colour space make the file invalid. A file without `PROG` reads (and a
+//! scene without programs writes) exactly as before. The writer emits the `PROG` sections at the
+//! end, and with them the meshes' UV sets (a program reads them).
 //!
 //! **Instances.** A file without `INST` sections draws every mesh once, untransformed, with the
 //! mesh's own `material_id` (one implicit instance per mesh: what files written before `INST`
@@ -299,6 +316,8 @@ pub const TAG_LENS: [u8; 4] = *b"LENS";
 pub const TAG_FXAM: [u8; 4] = *b"FXAM";
 /// Section tag of the texture images (M2b).
 pub const TAG_IMGS: [u8; 4] = *b"IMGS";
+/// Section tag of a material's program (M3b).
+pub const TAG_PROG: [u8; 4] = *b"PROG";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -970,6 +989,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut bitmaps = Vec::new();
     let mut effects = Vec::new();
     let mut images: Option<Vec<Arc<TextureImage>>> = None;
+    let mut programs: Vec<(u32, crate::program::Program)> = Vec::new();
     let mut textured = false;
     let mut scene = Scene::default();
 
@@ -1013,6 +1033,17 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
             TAG_PATN => scene.patterns.push(parse_pattern(&mut r)?),
+            TAG_PROG => {
+                let material = r.u32()?;
+                match crate::program::Program::decode(&payload[4..]) {
+                    Ok(program) => programs.push((material, program)),
+                    // A newer contract: the material keeps its plain values.
+                    Err(crate::program::ProgramError::Version(_)) => {}
+                    Err(crate::program::ProgramError::Invalid(reason)) => {
+                        return Err(RsbError::Invalid { tag, reason })
+                    }
+                }
+            }
             TAG_FXAM => effects.push(AmbientParams::decode(payload).map_err(|e| match e {
                 rt_sim::FxamError::TooShort => RsbError::SectionTooShort { tag },
                 rt_sim::FxamError::Invalid(reason) => RsbError::Invalid { tag, reason },
@@ -1049,6 +1080,42 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             tag: TAG_MATL,
             reason: "texture image index does not refer to an IMGS image",
         });
+    }
+    // M3b: each material's program, against the images it will read.
+    let image_list: &[Arc<TextureImage>] = match (&images, &reuse_images) {
+        (Some(list), _) => list.as_slice(),
+        (None, Some(kept)) => kept.as_slice(),
+        (None, None) => &[],
+    };
+    let invalid_program = |reason| RsbError::Invalid {
+        tag: TAG_PROG,
+        reason,
+    };
+    for (material, p) in &programs {
+        if *material as usize >= scene.materials.len() {
+            return Err(invalid_program("material does not refer to a MATL section"));
+        }
+        if !p.is_material() {
+            return Err(invalid_program(
+                "a material program needs the fifteen outputs of the output node",
+            ));
+        }
+        for entry in &p.images {
+            let Some(k) = entry.image else { continue };
+            let space = if entry.srgb {
+                crate::texture::image::COLOR_SRGB
+            } else {
+                crate::texture::image::COLOR_LINEAR
+            };
+            if image_list
+                .get(k as usize)
+                .is_none_or(|im| im.color_space() != space)
+            {
+                return Err(invalid_program(
+                    "program image index does not refer to an IMGS image of its colour space",
+                ));
+            }
+        }
     }
     let reuse_bitmaps = if bitmaps.is_empty() {
         kept_bitmaps
@@ -1163,9 +1230,22 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     if scene.textures.iter().all(Option::is_none) {
         scene.textures.clear();
     }
-    // The flag says only what the images and the blocks do not: a file whose meshes carried
-    // their UV sets without either.
-    scene.textured = textured && scene.images.is_empty() && scene.textures.is_empty();
+    // M3b: the first program of a material counts; a scene without any holds no list.
+    for (material, p) in programs {
+        let i = material as usize;
+        if scene.programs.len() <= i {
+            scene.programs.resize(i + 1, None);
+        }
+        if scene.programs[i].is_none() {
+            scene.programs[i] = Some(Arc::new(p));
+        }
+    }
+    // The flag says only what the images, the blocks and the programs do not: a file whose
+    // meshes carried their UV sets without any of them.
+    scene.textured = textured
+        && scene.images.is_empty()
+        && scene.textures.is_empty()
+        && scene.programs.is_empty();
     scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
@@ -1205,8 +1285,10 @@ impl Scene {
         let mut w = Writer { buf: Vec::new() };
         // M2b: a scene with texture data writes it as the page does: every mesh's UV sets, the
         // texture block of every material that has one, the images.
-        let textured =
-            self.textured || !self.images.is_empty() || self.textures.iter().any(Option::is_some);
+        let textured = self.textured
+            || !self.images.is_empty()
+            || self.textures.iter().any(Option::is_some)
+            || self.programs.iter().any(Option::is_some);
         w.buf.extend_from_slice(&MAGIC);
         w.u32(0); // header_len
 
@@ -1441,6 +1523,15 @@ impl Scene {
             w.u32(r.pixel_filter);
             w.u32(r.edge_supersample);
         });
+        // M3b: the materials' programs, last.
+        for (index, p) in self.programs.iter().enumerate() {
+            if let Some(p) = p {
+                w.section(TAG_PROG, |w| {
+                    w.u32(index as u32);
+                    w.buf.extend_from_slice(&p.encode());
+                });
+            }
+        }
         w.buf
     }
 }

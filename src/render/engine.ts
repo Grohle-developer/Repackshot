@@ -25,6 +25,19 @@ export function readsTextures(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_TEXTURES) !== 0;
 }
 
+/**
+ * M3b: bit 1 of the engine's features: it runs the material programs (PROG, the compiled graph of a node material,
+ * core/material-program.ts), so a node material is written as its program and not only as the mean of its outputs.
+ * A program reads its images from IMGS and the meshes' UVs: the bit counts only with the textures' (bit 0).
+ */
+export const ENGINE_FEATURE_PROGRAMS = 2;
+
+/** True when an engine of `features` runs the material programs (M3b; it reads the textures too). */
+export function readsPrograms(features: number | undefined): boolean {
+  const f = features ?? 0;
+  return (f & ENGINE_FEATURE_PROGRAMS) !== 0 && (f & ENGINE_FEATURE_TEXTURES) !== 0;
+}
+
 export interface EngineStatus {
   samples: number;
   seconds: number;
