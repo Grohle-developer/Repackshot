@@ -279,13 +279,26 @@ fn the_paraxial_focal_length_and_back_focus_of_the_16_lenses_match_the_research(
 
 /// A lens of the catalogue prepared for a camera (focal, f-number, focus, sensor).
 fn traced(key: &str, focal: f32, fstop: f32, focus: f32) -> TracedLens {
+    traced_with(key, focal, fstop, focus, |_| {})
+}
+
+/// [`traced`] with the prescription's artistic overrides changed by `edit`.
+fn traced_with(
+    key: &str,
+    focal: f32,
+    fstop: f32,
+    focus: f32,
+    edit: impl Fn(&mut Prescription),
+) -> TracedLens {
     let lenses = catalogue();
     let (_, l) = lenses
         .iter()
         .find(|(k, _)| k == key)
         .expect("a catalogue lens");
+    let mut p = prescription(l);
+    edit(&mut p);
     let params = LensParams {
-        prescription: Some(prescription(l)),
+        prescription: Some(p),
         ..LensParams::default()
     };
     TracedLens::new(
@@ -489,6 +502,43 @@ fn every_catalogue_lens_prepares_and_reports_what_it_does() {
             info.elements >= 1 && info.groups >= 1 && info.groups <= info.elements,
             "{key}"
         );
+        // The cross-section is the lens as traced: every surface, scaled and focused, each with
+        // a semi-aperture (the derived ones too), the iris inside the stop's, the sensor behind.
+        let section = &info.section;
+        let surfaces = l.get("surfaces").arr();
+        assert_eq!(section.surfaces.len(), surfaces.len(), "{key}");
+        let stop = surfaces
+            .iter()
+            .position(|s| s.get("role").str() == Some("stop"))
+            .unwrap();
+        assert_eq!(section.stop as usize, stop, "{key}");
+        assert!(
+            section.surfaces.iter().all(|s| s.semi_aperture > 0.0),
+            "{key}: {:?}",
+            section.surfaces
+        );
+        assert!(
+            section.stop_radius > 0.0
+                && section.stop_radius <= section.surfaces[stop].semi_aperture * 1.0001,
+            "{key}: iris {} in a stop of {}",
+            section.stop_radius,
+            section.surfaces[stop].semi_aperture
+        );
+        let last = section.surfaces[section.surfaces.len() - 1].z;
+        assert!(
+            (section.sensor_z - last - info.sensor_mm).abs() < 1.0e-3,
+            "{key}"
+        );
+        assert!(
+            (section.surfaces[0].z, last - section.surfaces[0].z) == (0.0, info.length_mm)
+                || (last - section.surfaces[0].z).abs() == info.length_mm,
+            "{key}"
+        );
+        let json = info.to_json();
+        assert!(
+            json.contains(&format!("\"section\":{{\"stop\":{stop},\"stopRadiusMm\":")),
+            "{key}: {json}"
+        );
     }
 }
 
@@ -550,4 +600,83 @@ fn the_axis_focuses_at_the_focus_distance_with_unit_internal_and_floating_focus(
             "{key}: focused at {distance} mm, not {focus}"
         );
     }
+}
+
+#[test]
+fn the_distortion_is_measured_against_the_scale_near_the_axis_at_any_focus() {
+    // The double Gauss has little distortion (under 2 % of barrel at the corner of a 50 mm frame)
+    // at infinity and close up alike: focused close, the unit-focus lens sits further
+    // from the sensor and the frame narrows (the image scale grows past the focal length), which
+    // is breathing, not distortion.
+    for focus in [1.0e6f32, 3000.0, 500.0] {
+        let lens = traced("double_gauss_normal", 50.0, 8.0, focus);
+        let info = lens.info();
+        let corner = info.distortion.last().unwrap();
+        assert!(
+            corner.1.abs() < 2.5,
+            "focused at {focus}: {corner:?} (scale {} mm)",
+            info.image_scale_mm
+        );
+        assert!(info.image_scale_mm >= 49.9, "{}", info.image_scale_mm);
+    }
+    let near = traced("double_gauss_normal", 50.0, 8.0, 500.0);
+    assert!(
+        near.info().image_scale_mm > 54.0,
+        "{}",
+        near.info().image_scale_mm
+    );
+    // The heights of both profiles run from the axis (the illumination's first is 1) to the
+    // frame's corner.
+    let ri = &near.info().relative_illumination;
+    assert_eq!(ri.len(), PROFILE_POINTS + 1);
+    assert_eq!(ri[0], (0.0, 1.0));
+    assert!((ri[PROFILE_POINTS].0 - 0.6 * 36.0).abs() < 1.0e-4);
+}
+
+#[test]
+fn the_artistic_distortion_and_vignetting_show_in_the_profile_and_the_chief_rays() {
+    let plain = traced("double_gauss_normal", 50.0, 4.0, 3000.0);
+    let barrel = traced_with("double_gauss_normal", 50.0, 4.0, 3000.0, |p| {
+        p.distortion = -1.0;
+        p.vignetting = 0.5;
+    });
+    let at = |l: &TracedLens| l.info().distortion.last().unwrap().1;
+    // −1 is 25 % less film height at the corner: about −25 % (−20 % more of the scale's
+    // change), well below the lens's own.
+    assert!(
+        at(&barrel) < at(&plain) - 15.0,
+        "{} against {}",
+        at(&barrel),
+        at(&plain)
+    );
+    let ri = |l: &TracedLens| l.info().relative_illumination.last().unwrap().1;
+    assert!(
+        ri(&barrel) < 0.75 * ri(&plain),
+        "{} against {}",
+        ri(&barrel),
+        ri(&plain)
+    );
+    // The chief ray of a sensor point (the exact passes) goes where the samples of that point go:
+    // their mean direction, through the whole pupil.
+    let (x, y) = (14.0f32, 9.0f32);
+    let chief = match barrel.chief(x, y, (0.0, 0.0)) {
+        Traced::Out { dir, .. } => dir,
+        Traced::Blocked => panic!("blocked"),
+    };
+    let mut mean = Vec3::ZERO;
+    let n = 24;
+    for j in 0..n {
+        for i in 0..n {
+            let u = ((i as f32 + 0.5) / n as f32, (j as f32 + 0.5) / n as f32);
+            if let (Traced::Out { dir, .. }, w) = barrel.sample(x, y, u, 1, 0.0) {
+                mean += dir * w;
+            }
+        }
+    }
+    let mean = mean.normalize();
+    let angle = (1.0 - mean.dot(chief).min(1.0)).max(0.0).sqrt() * std::f32::consts::SQRT_2;
+    assert!(
+        angle < 0.002,
+        "the chief ray is {angle} rad off the samples"
+    );
 }

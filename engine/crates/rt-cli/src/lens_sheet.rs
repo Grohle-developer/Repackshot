@@ -1,8 +1,12 @@
 //! The sheet of the traced lenses (O2, `rt --lens-sheet <dir>`; `tools/lens-sheet.mjs` writes its
-//! page): the perfume bottle of the filter sheet through each of the 16 lenses of the catalogue
-//! (the anamorphic adapter in front of the double Gauss) wide open and at f/8, and a scene of
-//! points of light far behind the focus, on black, through each of them wide open, where cat's
-//! eye, bubble, creamy blur and swirl show; with the thin lens of the same camera for comparison.
+//! page) and the cost of the traced camera (`rt --lens-cost <dir>`).
+//!
+//! For each of the 16 lenses of the catalogue (the anamorphic adapter in front of the double
+//! Gauss): the perfume bottle of the filter sheet wide open and at f/8; a scene of points of light
+//! far behind the focus, on black, wide open (the bokeh across the frame: cat's eye, bubble, creamy
+//! blur, swirl, coma), and the same through the thin lens at the same f-number; and a chart of
+//! small lights in focus on a rectilinear grid at the lens's own field, wide open (distortion and
+//! falloff). With the thin lens of the bottle at f/2 and f/8 and of the chart, for comparison.
 
 use crate::filter_sheet::filter_bottle;
 use crate::lens_catalogue::{catalogue, CatalogueLens};
@@ -10,11 +14,13 @@ use crate::render_progressive;
 use rt_core::color::Rgb;
 use rt_core::math::Vec3;
 use rt_core::optics::filters::FilterParams;
+use rt_core::sampler::PixelSampler;
 use rt_core::scene::{
     Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Lens, LensParams, Light, LightKind,
     RenderSettings, Scene, LIGHT_FLAG_CAMERA,
 };
 use std::path::Path;
+use std::time::Instant;
 
 /// Size and samples of the sheet.
 pub const LENS_SHEET_SIZE: (u32, u32) = (400, 300);
@@ -22,15 +28,28 @@ pub const LENS_SHEET_SIZE: (u32, u32) = (400, 300);
 pub const LENS_SHEET_SAMPLES: u32 = 96;
 /// The stop of the second row of the bottle.
 pub const CLOSED_FSTOP: f32 = 8.0;
+/// The chart's distance from the camera, mm (in focus).
+pub const CHART_DISTANCE_MM: f32 = 3000.0;
+/// Lights per row and per column of the chart.
+pub const CHART_GRID: (usize, usize) = (13, 9);
+/// The focal length of the chart of a lens whose source states no field, by its character: a
+/// tele at 135 mm, anything else at 50 mm.
+pub const CHART_FOCAL_TELE: f32 = 135.0;
+/// See [`CHART_FOCAL_TELE`].
+pub const CHART_FOCAL_NORMAL: f32 = 50.0;
+/// A fisheye's chart: the frame's corner near 85° off the axis.
+pub const CHART_FOCAL_FISHEYE: f32 = 16.0;
 
 /// One image of the sheet.
 pub struct LensCell {
     /// File name without the extension.
     pub key: String,
-    /// The lens (catalogue key; empty: the thin lens).
+    /// The lens (catalogue key; empty for the thin lens of the bottle and the chart).
     pub lens: String,
-    /// `bottle` or `points`.
+    /// `bottle`, `points` or `chart`.
     pub scene_name: &'static str,
+    /// Whether the camera traces the lens (false: the thin lens, for comparison).
+    pub traced: bool,
     /// The camera's f-number (0: wide open).
     pub fstop: f32,
     /// The scene.
@@ -54,55 +73,44 @@ pub fn with_lens(mut scene: Scene, lens: &CatalogueLens, fstop: f32) -> Result<S
     Ok(scene)
 }
 
-/// Points of light far behind the focus on black: an 85 mm focused at 600 mm, small discs 6 m
-/// away in a 5 × 4 grid over the frame, seen by camera rays only (the thin lens of the camera at
-/// `fstop`, or what a traced lens makes of it).
-pub fn bokeh_points(size: (u32, u32), fstop: f32) -> Scene {
-    let (focal, sensor, focus, depth, diameter) = (85.0f32, 36.0f32, 600.0f32, 6000.0f32, 60.0f32);
-    let camera = Camera {
+/// The f-number a traced lens works at in `scene` (the requested one, never faster than the lens).
+fn traced_fstop(scene: &Scene) -> f32 {
+    scene
+        .camera
+        .lens
+        .as_ref()
+        .and_then(|l| l.traced())
+        .map_or(scene.camera.fstop, |t| t.info().f_number)
+}
+
+/// A camera at the origin looking along +y, z up.
+fn camera(focal: f32, fstop: f32, focus: f32) -> Camera {
+    Camera {
         position: Vec3::ZERO,
         target: Vec3::new(0.0, 1000.0, 0.0),
         up: Vec3::new(0.0, 0.0, 1.0),
         focal_mm: focal,
-        sensor_mm: sensor,
+        sensor_mm: 36.0,
         fstop,
         focus_dist: focus,
         ortho: false,
         ortho_width: 1000.0,
         lens: None,
-    };
+    }
+}
+
+/// The frame on the sensor, mm (the longer side 36).
+fn frame(size: (u32, u32), sensor: f32) -> (f32, f32) {
     let aspect = size.0 as f32 / size.1 as f32;
-    let (sw, sh) = if aspect >= 1.0 {
+    if aspect >= 1.0 {
         (sensor, sensor / aspect)
     } else {
         (sensor * aspect, sensor)
-    };
-    // As bright as the bokeh thumbnails' (tools/bokeh-scene.mjs): a blur disc of an f/2 averages
-    // about 0.45 before the tone curve.
-    let blur = (focal / 2.0) * (depth - focus) / depth / focus;
-    let radiance = 0.45 * (blur / (diameter / depth)).powi(2);
-    let area_m2 = std::f32::consts::PI * (diameter / 2000.0).powi(2);
-    let mut lights = Vec::new();
-    for gx in [-0.8f32, -0.4, 0.0, 0.4, 0.8] {
-        for gy in [-0.72f32, -0.24, 0.24, 0.72] {
-            let x = gx * sw / 2.0 * depth / focal;
-            let z = gy * sh / 2.0 * depth / focal;
-            let position = Vec3::new(x, depth, z);
-            lights.push(Light {
-                kind: LightKind::Disk,
-                position,
-                direction: (Vec3::ZERO - position).normalize(),
-                up: Vec3::new(0.0, 0.0, 1.0),
-                size_x: diameter,
-                size_y: diameter,
-                color: Rgb::new(1.0, 0.97, 0.92),
-                power: radiance * std::f32::consts::PI * area_m2,
-                spread_deg: 180.0,
-                angle_deg: 0.0,
-                flags: LIGHT_FLAG_CAMERA,
-            });
-        }
     }
+}
+
+/// A scene of `lights` on black, seen by camera rays only.
+fn lights_scene(size: (u32, u32), camera: Camera, lights: Vec<Light>) -> Scene {
     Scene {
         camera,
         materials: Vec::new(),
@@ -132,8 +140,85 @@ pub fn bokeh_points(size: (u32, u32), fstop: f32) -> Scene {
     }
 }
 
-/// Every image of the sheet: the thin lens of the bottle at f/2 and f/8 and of the points at f/2,
-/// then each lens on the bottle wide open and at f/8, and on the points wide open.
+/// A disc of `radiance` and `diameter` at `position`, facing the camera at the origin.
+fn disc(position: Vec3, diameter: f32, radiance: f32) -> Light {
+    let area_m2 = std::f32::consts::PI * (diameter / 2000.0).powi(2);
+    Light {
+        kind: LightKind::Disk,
+        position,
+        direction: (Vec3::ZERO - position).normalize(),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        size_x: diameter,
+        size_y: diameter,
+        color: Rgb::new(1.0, 0.97, 0.92),
+        power: radiance * std::f32::consts::PI * area_m2,
+        spread_deg: 180.0,
+        angle_deg: 0.0,
+        flags: LIGHT_FLAG_CAMERA,
+    }
+}
+
+/// Points of light far behind the focus on black: an 85 mm focused at 600 mm, small discs 6 m
+/// away in a 5 × 4 grid over the frame, seen by camera rays only (the thin lens of the camera at
+/// `fstop`, or what a traced lens makes of it).
+pub fn bokeh_points(size: (u32, u32), fstop: f32) -> Scene {
+    let (focal, focus, depth, diameter) = (85.0f32, 600.0f32, 6000.0f32, 60.0f32);
+    let (sw, sh) = frame(size, 36.0);
+    // As bright as the bokeh thumbnails' (tools/bokeh-scene.mjs): a blur disc of an f/2 averages
+    // about 0.45 before the tone curve.
+    let blur = (focal / 2.0) * (depth - focus) / depth / focus;
+    let radiance = 0.45 * (blur / (diameter / depth)).powi(2);
+    let mut lights = Vec::new();
+    for gx in [-0.8f32, -0.4, 0.0, 0.4, 0.8] {
+        for gy in [-0.72f32, -0.24, 0.24, 0.72] {
+            let x = gx * sw / 2.0 * depth / focal;
+            let z = gy * sh / 2.0 * depth / focal;
+            lights.push(disc(Vec3::new(x, depth, z), diameter, radiance));
+        }
+    }
+    lights_scene(size, camera(focal, fstop, focus), lights)
+}
+
+/// The focal length of `lens`'s chart: the frame's diagonal across the field its source states
+/// (a fisheye's corner near 85°), or by its character.
+pub fn chart_focal(lens: &CatalogueLens, size: (u32, u32)) -> f32 {
+    let (sw, sh) = frame(size, 36.0);
+    let half_diagonal = 0.5 * (sw * sw + sh * sh).sqrt();
+    let f = match lens.field_deg {
+        Some(field) if field >= 170.0 => CHART_FOCAL_FISHEYE,
+        Some(field) => half_diagonal / (0.5 * field.to_radians()).tan(),
+        None if lens.character == "tele" => CHART_FOCAL_TELE,
+        None => CHART_FOCAL_NORMAL,
+    };
+    (f * 10.0).round() / 10.0
+}
+
+/// A chart in focus: small discs of one radiance at [`CHART_DISTANCE_MM`] on a rectilinear grid
+/// that fills the frame of a lens without distortion (a grid of [`CHART_GRID`]), each about two
+/// pixels across, on black: distortion bends its rows and columns, falloff dims its corners.
+pub fn chart(size: (u32, u32), focal: f32, fstop: f32) -> Scene {
+    let depth = CHART_DISTANCE_MM;
+    let (sw, sh) = frame(size, 36.0);
+    let pixel = sw / size.0 as f32 * depth / focal;
+    let diameter = 2.0 * pixel;
+    let (nx, ny) = CHART_GRID;
+    let mut lights = Vec::new();
+    for j in 0..ny {
+        for i in 0..nx {
+            let gx = -1.0 + 2.0 * i as f32 / (nx - 1) as f32;
+            let gy = -1.0 + 2.0 * j as f32 / (ny - 1) as f32;
+            // Half a pixel's margin inside the frame, so the outer rows show.
+            let x = gx * (sw / 2.0 - 2.0 * sw / size.0 as f32) * depth / focal;
+            let z = gy * (sh / 2.0 - 2.0 * sh / size.1 as f32) * depth / focal;
+            lights.push(disc(Vec3::new(x, depth, z), diameter, 0.9));
+        }
+    }
+    lights_scene(size, camera(focal, fstop, depth), lights)
+}
+
+/// Every image of the sheet: the thin lens of the bottle at f/2 and f/8 and of a 50 mm chart;
+/// then for each lens the bottle wide open and at f/8 (when its iris closes that far), the points
+/// wide open and through the thin lens at that f-number, and its chart wide open.
 pub fn cells(size: (u32, u32)) -> Result<Vec<LensCell>, String> {
     let none = [FilterParams::default(); 3];
     let bottle = |fstop: f32| {
@@ -142,59 +227,81 @@ pub fn cells(size: (u32, u32)) -> Result<Vec<LensCell>, String> {
         s.camera.fstop = fstop;
         s
     };
+    let thin = |key: &str, scene_name: &'static str, fstop: f32, scene: Scene| LensCell {
+        key: key.into(),
+        lens: String::new(),
+        scene_name,
+        traced: false,
+        fstop,
+        scene,
+    };
     let mut out = vec![
-        LensCell {
-            key: "thin--bottle--f2".into(),
-            lens: String::new(),
-            scene_name: "bottle",
-            fstop: 2.0,
-            scene: bottle(2.0),
-        },
-        LensCell {
-            key: "thin--bottle--f8".into(),
-            lens: String::new(),
-            scene_name: "bottle",
-            fstop: CLOSED_FSTOP,
-            scene: bottle(CLOSED_FSTOP),
-        },
-        LensCell {
-            key: "thin--points--f2".into(),
-            lens: String::new(),
-            scene_name: "points",
-            fstop: 2.0,
-            scene: bokeh_points(size, 2.0),
-        },
+        thin("thin--bottle--f2", "bottle", 2.0, bottle(2.0)),
+        thin(
+            "thin--bottle--f8",
+            "bottle",
+            CLOSED_FSTOP,
+            bottle(CLOSED_FSTOP),
+        ),
+        thin(
+            "thin--chart--f8",
+            "chart",
+            CLOSED_FSTOP,
+            chart(size, CHART_FOCAL_NORMAL, CLOSED_FSTOP),
+        ),
     ];
     for lens in catalogue() {
         let name = lens.key.replace('_', "-");
-        out.push(LensCell {
-            key: format!("{name}--bottle--open"),
-            lens: lens.key.clone(),
-            scene_name: "bottle",
-            fstop: 0.0,
-            scene: with_lens(bottle(0.0), &lens, 0.0)?,
-        });
-        out.push(LensCell {
-            key: format!("{name}--bottle--f8"),
-            lens: lens.key.clone(),
-            scene_name: "bottle",
-            fstop: CLOSED_FSTOP,
-            scene: with_lens(bottle(CLOSED_FSTOP), &lens, CLOSED_FSTOP)?,
-        });
-        out.push(LensCell {
-            key: format!("{name}--points--open"),
-            lens: lens.key.clone(),
-            scene_name: "points",
-            fstop: 0.0,
-            scene: with_lens(bokeh_points(size, 0.0), &lens, 0.0)?,
-        });
+        let cell =
+            |suffix: &str, scene_name: &'static str, traced: bool, fstop: f32, scene| LensCell {
+                key: format!("{name}--{suffix}"),
+                lens: lens.key.clone(),
+                scene_name,
+                traced,
+                fstop,
+                scene,
+            };
+        out.push(cell(
+            "bottle--open",
+            "bottle",
+            true,
+            0.0,
+            with_lens(bottle(0.0), &lens, 0.0)?,
+        ));
+        if lens.f_number_max.is_none_or(|m| m >= CLOSED_FSTOP) {
+            out.push(cell(
+                "bottle--f8",
+                "bottle",
+                true,
+                CLOSED_FSTOP,
+                with_lens(bottle(CLOSED_FSTOP), &lens, CLOSED_FSTOP)?,
+            ));
+        }
+        let points = with_lens(bokeh_points(size, 0.0), &lens, 0.0)?;
+        let open = traced_fstop(&points);
+        out.push(cell("points--open", "points", true, 0.0, points));
+        out.push(cell(
+            "points--thin",
+            "points",
+            false,
+            open,
+            bokeh_points(size, open),
+        ));
+        let focal = chart_focal(&lens, size);
+        out.push(cell(
+            "chart--open",
+            "chart",
+            true,
+            0.0,
+            with_lens(chart(size, focal, 0.0), &lens, 0.0)?,
+        ));
     }
     Ok(out)
 }
 
-/// Renders the sheet into `dir`: one PNG per cell and `index.json` (key, lens, scene, f-number,
-/// samples, rays, seconds and the engine's lens information). With `only`, just those cells; the
-/// other lines of an existing `index.json` stay.
+/// Renders the sheet into `dir`: one PNG per cell and `index.json` (key, lens, scene, traced,
+/// f-number, focal length, samples, rays, seconds and the engine's lens information). With `only`,
+/// just those cells (and the ones `index.json` does not hold yet); the other lines stay.
 pub fn run(
     dir: &Path,
     size: (u32, u32),
@@ -227,12 +334,14 @@ pub fn run(
         crate::write_png(&png, size.0, size.1, &rgb8)
             .map_err(|e| format!("{}: {e}", png.display()))?;
         json.push(format!(
-            "{{\"key\":\"{}\",\"file\":\"{}.png\",\"lens\":\"{}\",\"scene\":\"{}\",\"fstop\":{},\"samples\":{},\"rays\":{},\"seconds\":{:.2},\"info\":{}}}",
+            "{{\"key\":\"{}\",\"file\":\"{}.png\",\"lens\":\"{}\",\"scene\":\"{}\",\"traced\":{},\"fstop\":{},\"focalMm\":{},\"samples\":{},\"rays\":{},\"seconds\":{:.2},\"info\":{}}}",
             cell.key,
             cell.key,
             cell.lens,
             cell.scene_name,
-            cell.fstop,
+            cell.traced,
+            if cell.traced { traced_fstop(&cell.scene) } else { cell.fstop },
+            cell.scene.camera.focal_mm,
             out.samples,
             out.rays,
             out.elapsed.as_secs_f64(),
@@ -250,33 +359,162 @@ pub fn run(
     Ok(rendered)
 }
 
+/// Size and samples of the cost measurement: the O2 example at a quarter of its size, at the
+/// 1024 samples of the brief.
+pub const COST_SIZE: (u32, u32) = (64, 48);
+/// See [`COST_SIZE`].
+pub const COST_SAMPLES: u32 = 1024;
+
+/// The time of `samples` camera samples of every pixel of `scene` on this thread, seconds: what
+/// the renderer's tiles do before tracing a ray into the scene.
+pub fn camera_seconds(scene: &Scene, samples: u32) -> f64 {
+    let (w, h) = (scene.render.width, scene.render.height);
+    let start = Instant::now();
+    let mut sum = 0.0f32;
+    for y in 0..h {
+        for x in 0..w {
+            for i in 0..samples {
+                let sampler = PixelSampler::new(scene.render.seed, x, y, i);
+                let (ray, _, weight) =
+                    rt_core::render::camera_sample_weighted(scene, &sampler, x, y);
+                sum += ray.dir.x + weight.r;
+            }
+        }
+    }
+    let seconds = start.elapsed().as_secs_f64();
+    std::hint::black_box(sum);
+    seconds
+}
+
+/// Measures what the traced camera costs (`rt --lens-cost <dir>`, `<dir>/cost.json`): the O2
+/// example (the example at f/2.8 through the double Gauss) and the same through the thin lens,
+/// rendered at [`COST_SIZE`] and [`COST_SAMPLES`] on one thread, and their camera samples alone;
+/// then the camera samples of every lens of the catalogue in the points scene of the sheet, per
+/// sample, against the thin lens's.
+pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut traced = rt_core::example::o2_scene();
+    traced.render.width = size.0;
+    traced.render.height = size.1;
+    let mut thin = traced.clone();
+    thin.camera.lens = None;
+    let n = f64::from(size.0) * f64::from(size.1) * f64::from(samples);
+    let mut rows = Vec::new();
+    for (name, scene) in [("double_gauss", &traced), ("thin", &thin)] {
+        let render = render_progressive(scene, samples, 1, None);
+        let camera = camera_seconds(scene, samples);
+        let total = render.elapsed.as_secs_f64();
+        println!(
+            "{name}: render {total:.1} s, camera {camera:.1} s ({:.1} %), {:.3} µs a camera sample",
+            100.0 * camera / total,
+            1.0e6 * camera / n
+        );
+        rows.push(format!(
+            "{{\"camera\":\"{name}\",\"renderSeconds\":{total:.3},\"cameraSeconds\":{camera:.3},\"share\":{:.4},\"cameraMicros\":{:.4},\"rays\":{}}}",
+            camera / total,
+            1.0e6 * camera / n,
+            render.rays
+        ));
+    }
+    let mut lenses = Vec::new();
+    let per = 64;
+    let points = bokeh_points((96, 72), 0.0);
+    let m = 96.0 * 72.0 * f64::from(per);
+    let thin_points = bokeh_points((96, 72), 2.0);
+    let thin_micros = 1.0e6 * camera_seconds(&thin_points, per) / m;
+    for lens in catalogue() {
+        let scene = with_lens(points.clone(), &lens, 0.0)?;
+        let micros = 1.0e6 * camera_seconds(&scene, per) / m;
+        let surfaces = lens.prescription.surfaces.len();
+        println!(
+            "{}: {micros:.3} µs a camera sample ({surfaces} surfaces)",
+            lens.key
+        );
+        lenses.push(format!(
+            "{{\"lens\":\"{}\",\"surfaces\":{surfaces},\"cameraMicros\":{micros:.4}}}",
+            lens.key
+        ));
+    }
+    let json = format!(
+        "{{\"width\":{},\"height\":{},\"samples\":{samples},\"threads\":1,\"example\":[{}],\"thinMicros\":{thin_micros:.4},\"lenses\":[\n{}\n]}}\n",
+        size.0,
+        size.1,
+        rows.join(","),
+        lenses.join(",\n")
+    );
+    let path = dir.join("cost.json");
+    std::fs::write(&path, &json).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path.display().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn the_sheet_has_every_lens_on_the_bottle_twice_and_on_the_points_with_the_thin_lens() {
+    fn the_sheet_has_every_lens_on_the_bottle_the_points_and_its_chart_with_the_thin_lens() {
         let cells = cells((40, 30)).unwrap();
-        assert_eq!(cells.len(), 3 + 16 * 3);
+        // Three thin references, and per lens five cells but the mirror lens's f/8 (its one stop
+        // is f/6.3).
+        assert_eq!(cells.len(), 3 + 16 * 5 - 1);
         for lens in catalogue() {
-            let of = |scene: &str| {
+            let of = |scene: &str, traced: bool| {
                 cells
                     .iter()
-                    .filter(|c| c.lens == lens.key && c.scene_name == scene)
+                    .filter(|c| c.lens == lens.key && c.scene_name == scene && c.traced == traced)
                     .count()
             };
-            assert_eq!((of("bottle"), of("points")), (2, 1), "{}", lens.key);
-        }
-        // Every traced cell prepared its lens (the engine's numbers are there to show).
-        for c in cells.iter().filter(|c| !c.lens.is_empty()) {
-            assert!(
-                c.scene
-                    .camera
-                    .lens_info_json()
-                    .starts_with("{\"traced\":true"),
+            let bottles = if lens.key == "catadioptric_mirror" {
+                1
+            } else {
+                2
+            };
+            assert_eq!(
+                (of("bottle", true), of("points", true), of("points", false)),
+                (bottles, 1, 1),
                 "{}",
-                c.key
+                lens.key
             );
+            assert_eq!(of("chart", true), 1, "{}", lens.key);
         }
+        for c in &cells {
+            let json = c.scene.camera.lens_info_json();
+            // Every traced cell prepared its lens (the engine's numbers are there to show), and
+            // the thin comparison of the points works at the lens's own f-number.
+            assert_eq!(json.starts_with("{\"traced\":true"), c.traced, "{}", c.key);
+            if c.scene_name == "points" && !c.traced {
+                let twin = cells
+                    .iter()
+                    .find(|t| t.lens == c.lens && t.scene_name == "points" && t.traced)
+                    .unwrap();
+                assert_eq!(c.scene.camera.fstop, traced_fstop(&twin.scene), "{}", c.key);
+                assert!(c.scene.camera.fstop > 0.0, "{}", c.key);
+            }
+        }
+    }
+
+    #[test]
+    fn a_chart_is_framed_by_the_field_its_source_states() {
+        let lenses = catalogue();
+        let by = |key: &str| lenses.iter().find(|l| l.key == key).unwrap();
+        let size = LENS_SHEET_SIZE;
+        // 65° across the 45 mm diagonal of a 36 × 27 frame: 22.5 / tan 32.5°.
+        assert_eq!(chart_focal(by("inverted_telephoto_wide"), size), 35.3);
+        assert_eq!(chart_focal(by("fisheye_180"), size), CHART_FOCAL_FISHEYE);
+        assert_eq!(
+            chart_focal(by("telephoto_internal_focus"), size),
+            CHART_FOCAL_TELE
+        );
+        assert_eq!(chart_focal(by("triplet"), size), CHART_FOCAL_NORMAL);
+        // The chart's lights fill the frame of a lens without distortion, inside it by a margin.
+        let s = chart(size, 50.0, 8.0);
+        assert_eq!(s.lights.len(), CHART_GRID.0 * CHART_GRID.1);
+        let (sw, _) = frame(size, 36.0);
+        let edge = s.lights.iter().map(|l| l.position.x).fold(0.0f32, f32::max);
+        let on_sensor = edge / CHART_DISTANCE_MM * 50.0;
+        assert!(
+            on_sensor < sw / 2.0 && on_sensor > 0.95 * sw / 2.0,
+            "{on_sensor}"
+        );
     }
 }

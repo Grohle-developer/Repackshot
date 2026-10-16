@@ -10,6 +10,8 @@ import { ADAPTER_FOCUS_TRAVEL, composeLens, DEFAULT_MASTER, isAdapter, masterLen
 import { LENS_PRESCRIPTIONS, lensPrescription } from '../src/data/lenses';
 import { FOCUS_MODE, lensInfoRsb, lensToRsb, prescriptionBytes, prescriptionToRsb, writeRsb, type RsbPrescription, type RsbScene } from '../src/io/rsb';
 import { hasLensInfoExport, readLensInfo } from '../src/render/lens-info';
+import { lensProfileTable } from '../src/render/lens-profile';
+import { PROFILE_SIZE } from '../src/render/lens-filter-pass';
 import { readRsb } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
 
@@ -77,6 +79,21 @@ describe('the traced lens of a camera', () => {
     expect(prescriptionToRsb(newTracedLens(adapter.key), tele).focusMode).toBe(FOCUS_MODE.internal);
     expect(stateMagnification('magnification 0.2')).toBe(0.2);
     expect(stateMagnification('infinity')).toBe(0);
+  });
+
+  it('gives the Fast viewport the engine’s scale, distortion and falloff (render/lens-profile.ts)', () => {
+    const info = parseLensInfo(
+      JSON.stringify({ traced: true, eflMm: 50, bflMm: 40, eflFocusedMm: 50, imageScaleMm: 55, fNumber: 2, fNumberMin: 2, tStop: 2.1, transmittance: [0.9, 0.9, 0.9], lengthMm: 60, entrancePupilMm: [20, 25], elements: 6, groups: 4, sensorMm: 45, squeeze: 1, distortion: [[10, 5], [20, 10]], relativeIllumination: [[0, 1], [10, 0.8], [20, 0.5]] }),
+    )!;
+    expect(info.section).toBeNull();
+    const { table, hMaxMm } = lensProfileTable(info, 50);
+    expect(hMaxMm).toBe(20);
+    // On the axis the frame is the pinhole's over the engine's image scale (a lens focused close frames less: not its
+    // focal length), at the corner that and the distortion; the falloff as the engine measured it.
+    expect(table[0]).toBeCloseTo(50 / 55, 6);
+    expect(table[(PROFILE_SIZE - 1) * 2]).toBeCloseTo(50 / 55 / 1.1, 6);
+    expect(table[1]).toBe(1);
+    expect(table[(PROFILE_SIZE - 1) * 2 + 1]).toBeCloseTo(0.5, 6);
   });
 
   it('reads the engine’s lens information, and refuses what is not one', () => {
@@ -147,6 +164,10 @@ describe.skipIf(!RT_WASM)('the real rt.wasm', () => {
       expect(info.tStop, p.key).toBeGreaterThanOrEqual(info.fNumber);
       expect(info.relativeIllumination.length, p.key).toBeGreaterThan(0);
       expect(info.elements, p.key).toBeGreaterThanOrEqual(1);
+      // The scale near the axis is the focal length's, a little more at 2 m; and the section is the lens as traced.
+      expect(info.imageScaleMm, p.key).toBeGreaterThan(49);
+      expect(info.section?.surfaces.length, p.key).toBe(composeLens(newTracedLens(p.key))!.surfaces.length);
+      expect(info.section!.surfaces.every((s) => s.semiAperture > 0), p.key).toBe(true);
     }
     // The adapter's squeeze as the engine traces it at the focus (2 m: a little under its 2x at infinity).
     const ana = readLensInfo(rt, lensInfoRsb(camera(traced('anamorphic_adapter_2x'), { focalMm: 50, fstop: 0, focusDistance: 2000 }), 640, 480))!;

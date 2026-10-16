@@ -21,14 +21,15 @@ function lerpTable(t: readonly (readonly [number, number])[], x: number, at0: nu
 
 /**
  * The profile table of a traced lens for a camera of `focalMm`: at PROFILE_SIZE heights from the axis to the last
- * one the engine measured, how much nearer the axis the undistorted picture holds what shows there (the focused
- * focal length's breathing and the distortion) and the relative illumination.
+ * one the engine measured, how much nearer the axis the undistorted picture (a pinhole of `focalMm`) holds what shows
+ * there, from the engine's image scale near the axis (the breathing: a lens focused close frames less) and its
+ * distortion against that scale, and the relative illumination.
  */
 export function lensProfileTable(info: EngineLensInfo, focalMm: number): { table: Float32Array; hMaxMm: number } {
   const distortion: [number, number][] = [[0, 0], ...info.distortion];
   const light: [number, number][] = info.relativeIllumination.length > 0 ? info.relativeIllumination : [[0, 1]];
   const hMaxMm = Math.max(1e-3, ...distortion.map((p) => p[0]), ...light.map((p) => p[0]));
-  const breathing = info.eflFocusedMm > 0 && focalMm > 0 ? focalMm / info.eflFocusedMm : 1;
+  const breathing = info.imageScaleMm > 0 && focalMm > 0 ? focalMm / info.imageScaleMm : 1;
   const table = new Float32Array(PROFILE_SIZE * 2);
   for (let i = 0; i < PROFILE_SIZE; i++) {
     const h = (hMaxMm * i) / (PROFILE_SIZE - 1);

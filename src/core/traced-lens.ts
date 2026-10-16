@@ -177,6 +177,11 @@ export interface EngineLensInfo {
   bflMm: number;
   /** Focal length at the focus distance (breathing), mm. */
   eflFocusedMm: number;
+  /**
+   * Image height per unit tangent of the object angle near the axis, mm, at the focus and with the artistic
+   * overrides (a thin lens's is its focal length): what the frame shows, and what the distortion is measured against.
+   */
+  imageScaleMm: number;
   /** The f-number in use (never faster than the lens) and the fastest. */
   fNumber: number;
   fNumberMin: number;
@@ -198,6 +203,49 @@ export interface EngineLensInfo {
   distortion: [number, number][];
   /** Relative illumination against image height. */
   relativeIllumination: [number, number][];
+  /** The lens as the engine traces it (scaled, focused, every semi-aperture), for its cross-section. */
+  section: LensSection | null;
+}
+
+/** One surface of the engine's prepared lens (rt-core `SectionSurface`). */
+export interface SectionSurface {
+  /** Vertex position from the first vertex along the axis, mm (back again after a mirror). */
+  z: number;
+  /** rt-core SURFACE_*: 0 sphere, 1 plane, 2 asphere, 3 cylinder (axis x), 4 cylinder (axis y), 5 mirror. */
+  kind: number;
+  /** Curvature, 1/mm, in the horizontal meridian (0: plane). */
+  curvature: number;
+  semiAperture: number;
+  /** d-line index of the medium after it (1: air). */
+  index: number;
+  conic: number;
+  aspheric: [number, number, number, number];
+}
+
+/** The engine's prepared lens (rt-core `LensSection`). */
+export interface LensSection {
+  surfaces: SectionSurface[];
+  stop: number;
+  /** The iris for the f-number in use, mm. */
+  stopRadiusMm: number;
+  /** The sensor from the first vertex, mm. */
+  sensorZMm: number;
+}
+
+const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+
+/** The `section` of the engine's lens information, or null when it is not one. */
+function parseSection(v: unknown): LensSection | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const r = v as Record<string, unknown>;
+  if (!finite(r.stop) || !finite(r.stopRadiusMm) || !finite(r.sensorZMm) || !Array.isArray(r.surfaces)) return null;
+  const surfaces: SectionSurface[] = [];
+  for (const s of r.surfaces) {
+    if (!Array.isArray(s) || s.length !== 10 || !s.every(finite)) return null;
+    const n = s as number[];
+    surfaces.push({ z: n[0], kind: n[1], curvature: n[2], semiAperture: n[3], index: n[4], conic: n[5], aspheric: [n[6], n[7], n[8], n[9]] });
+  }
+  return surfaces.length >= 2 && r.stop < surfaces.length ? { surfaces, stop: r.stop, stopRadiusMm: r.stopRadiusMm, sensorZMm: r.sensorZMm } : null;
 }
 
 const pairs = (v: unknown): [number, number][] | null =>
@@ -229,6 +277,7 @@ export function parseLensInfo(text: string): EngineLensInfo | null | undefined {
     eflMm: num('eflMm'),
     bflMm: num('bflMm'),
     eflFocusedMm: num('eflFocusedMm'),
+    imageScaleMm: num('imageScaleMm'),
     fNumber: num('fNumber'),
     fNumberMin: num('fNumberMin'),
     tStop: num('tStop'),
@@ -241,7 +290,8 @@ export function parseLensInfo(text: string): EngineLensInfo | null | undefined {
     squeeze: r.squeeze === undefined ? 1 : num('squeeze'),
     distortion: distortion ?? [],
     relativeIllumination: ri ?? [],
+    section: parseSection(r.section),
   };
-  const numbers = [info.eflMm, info.bflMm, info.fNumber, info.tStop, info.lengthMm, info.elements, info.groups, info.squeeze, ...info.transmittance];
+  const numbers = [info.eflMm, info.bflMm, info.imageScaleMm, info.fNumber, info.tStop, info.lengthMm, info.elements, info.groups, info.squeeze, ...info.transmittance];
   return numbers.every(Number.isFinite) && distortion && ri ? info : undefined;
 }

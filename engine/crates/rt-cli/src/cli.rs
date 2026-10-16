@@ -22,6 +22,7 @@ USAGE:
     rt --filter-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --filter-noise <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --lens-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
+    rt --lens-cost <dir> [--samples N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
@@ -82,9 +83,15 @@ OPTIONS:
                             seeds; the variance of a pixel between the seeds) into
                             <dir>/noise.json
         --lens-sheet <dir>  render the perfume bottle through each traced lens of the catalogue
-                            wide open and at f/8, and points of light through each wide open
-                            (400x300, 96 spp) into <dir>: one PNG each and index.json with the
-                            engine's numbers of each lens (tools/lens-sheet.mjs)
+                            wide open and at f/8, points of light through each wide open and
+                            through the thin lens at that f-number, and a chart in focus at the
+                            lens's own field (400x300, 96 spp) into <dir>: one PNG each and
+                            index.json with the engine's numbers of each lens
+                            (tools/lens-sheet.mjs)
+        --lens-cost <dir>   measure the traced camera on one thread: the O2 example through the
+                            double Gauss and through the thin lens (64x48, 1024 spp) and their
+                            camera samples alone, and the camera sample of every lens, into
+                            <dir>/cost.json
         --only <keys>       with --filter-sheet or --lens-sheet: only those cells (comma
                             separated), the others kept in index.json; with --filter-noise, only
                             those filters
@@ -266,6 +273,13 @@ pub enum Command {
         /// Only these cells (`--only key,key`), the others kept from `index.json`.
         only: Vec<String>,
     },
+    /// Measure what the traced camera costs (O2) into a directory (`cost.json`).
+    LensCost {
+        /// Output directory.
+        dir: PathBuf,
+        /// Overrides (samples, size).
+        options: Options,
+    },
     /// Measure the noise of the effect filters with and without their connections (O3a).
     FilterNoise {
         /// Output directory (`noise.json`).
@@ -425,6 +439,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut filter_sheet_dir = None;
     let mut filter_noise_dir = None;
     let mut lens_sheet_dir = None;
+    let mut lens_cost_dir = None;
     let mut only: Vec<String> = Vec::new();
     let mut tone_table = false;
     let mut options = Options::default();
@@ -508,6 +523,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-noise" => filter_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--lens-sheet" => lens_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--lens-cost" => lens_cost_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--only" => {
                 only = value(&mut it, arg)?
                     .split(',')
@@ -677,6 +693,20 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             );
         }
         return Ok(Command::LensSheet { dir, options, only });
+    }
+    if let Some(dir) = lens_cost_dir {
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || filter_noise_dir.is_some()
+            || !only.is_empty()
+        {
+            return Err(
+                "--lens-cost renders its own scenes: no scene, -o, --max-seconds, --only or --filter-noise"
+                    .into(),
+            );
+        }
+        return Ok(Command::LensCost { dir, options });
     }
     if let Some(dir) = filter_noise_dir {
         if input.is_some() || output.is_some() || options.max_seconds.is_some() {
@@ -873,6 +903,18 @@ pub fn run(command: Command) -> Result<(), String> {
             );
             let n = run(&dir, size, samples, threads, &only)?;
             println!("wrote {n} images and {}", dir.join("index.json").display());
+            Ok(())
+        }
+        Command::LensCost { dir, options } => {
+            use crate::lens_sheet::{cost, COST_SAMPLES, COST_SIZE};
+            let size = options.size.unwrap_or(COST_SIZE);
+            let samples = options.samples.unwrap_or(COST_SAMPLES);
+            println!(
+                "lens cost: {}x{}, {samples} spp, one thread",
+                size.0, size.1
+            );
+            let path = cost(&dir, samples, size)?;
+            println!("wrote {path}");
             Ok(())
         }
         Command::FilterNoise { dir, options, only } => {
@@ -1260,6 +1302,17 @@ mod tests {
             })
         );
         assert!(parse(&["--lens-sheet", "out", "scene.rsb"]).is_err());
+        assert_eq!(
+            parse(&["--lens-cost", "out", "--samples", "8"]),
+            Ok(Command::LensCost {
+                dir: "out".into(),
+                options: Options {
+                    samples: Some(8),
+                    ..Options::default()
+                },
+            })
+        );
+        assert!(parse(&["--lens-cost", "out", "--only", "a"]).is_err());
         assert_eq!(
             parse(&["--write-lens-catalogue", "c.json"]),
             Ok(Command::WriteLensCatalogue {

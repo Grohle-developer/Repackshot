@@ -178,6 +178,10 @@ pub struct CatalogueLens {
     pub squeeze: f32,
     /// The central obstruction of the aperture (a mirror lens's).
     pub obstruction: f32,
+    /// The full field angle the source states, degrees (the sheet frames its chart with it).
+    pub field_deg: Option<f32>,
+    /// The slowest f-number of the iris (a mirror lens has one stop only).
+    pub f_number_max: Option<f32>,
 }
 
 /// A surface of the catalogue, in `f64` as the page computes it.
@@ -401,6 +405,8 @@ pub fn catalogue() -> Vec<CatalogueLens> {
                 prescription,
                 squeeze,
                 obstruction,
+                field_deg: l.get("fieldDeg").num().map(|v| v as f32),
+                f_number_max: l.get("iris").get("fNumberMax").num().map(|v| v as f32),
             }
         })
         .collect()

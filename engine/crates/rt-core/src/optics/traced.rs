@@ -186,6 +186,10 @@ pub struct LensInfo {
     pub bfl_mm: f32,
     /// Focal length at the focus distance (breathing), mm.
     pub efl_focused_mm: f32,
+    /// Image height per unit tangent of the object angle near the axis, mm, at the focus and with
+    /// the artistic overrides: what the frame shows of the scene (`h = k tan θ` near the axis; a
+    /// thin lens's `k` is its focal length), the scale the distortion is measured against.
+    pub image_scale_mm: f32,
     /// The f-number in use (the requested one, never faster than the lens).
     pub f_number: f32,
     /// The fastest f-number of the lens.
@@ -210,6 +214,43 @@ pub struct LensInfo {
     pub sensor_mm: f32,
     /// An anamorphic lens's squeeze at its focus (1 without cylinders).
     pub squeeze: f32,
+    /// The lens as it is traced (scaled, focused, the derived semi-apertures), for drawing its
+    /// cross-section.
+    pub section: LensSection,
+}
+
+/// One surface of a prepared lens, for its cross-section.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SectionSurface {
+    /// The vertex's position along the axis from the first vertex, mm (the light travels to +z;
+    /// back again after a mirror).
+    pub z: f32,
+    /// `SURFACE_*`.
+    pub kind: u32,
+    /// Curvature, 1/mm (0: plane): in the horizontal meridian for a cylinder, where an anamorphic
+    /// adapter has its power (0 for a cylinder with its axis along x).
+    pub curvature: f32,
+    /// Clear semi-aperture, mm (the prescription's, or the one derived from the beam).
+    pub semi_aperture: f32,
+    /// The d-line (band G) index of the medium after the surface (1: air).
+    pub index: f32,
+    /// Conic constant and A4..A10 of an asphere (mm).
+    pub conic: f32,
+    /// See `conic`.
+    pub aspheric: [f32; 4],
+}
+
+/// The cross-section of a prepared lens (what [`LensInfo::to_json`] hands out as `section`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LensSection {
+    /// The surfaces, object side first.
+    pub surfaces: Vec<SectionSurface>,
+    /// The index of the aperture stop.
+    pub stop: u32,
+    /// The iris radius for the f-number in use, mm.
+    pub stop_radius: f32,
+    /// The sensor's position along the axis from the first vertex, mm.
+    pub sensor_z: f32,
 }
 
 /// What a traced lens is prepared for: the camera's optics (not where it is or looks).
@@ -431,7 +472,8 @@ pub struct TracedLens {
     tint: [f32; 3],
     /// Artistic spherical aberration: the slope change per r³ at the stop.
     plate: f32,
-    /// Artistic distortion: `k` of `r (1 + k (r / field)²)` on the sensor.
+    /// Artistic distortion: `k` of the film point `r (1 − k (r / field)²)` of a sensor position `r`
+    /// (negative: the corner sees further out, barrel; positive: pincushion).
     distortion: f32,
     /// Artistic vignetting: `1 − v (r / field)²`.
     vignetting: f32,
@@ -754,6 +796,11 @@ fn prepare(
     let pupil_full = efl / (2.0 * n_full);
     let mut surfaces = base;
     for (i, s) in surfaces.iter_mut().enumerate() {
+        if i == stop && s.semi_aperture > 0.0 {
+            // A stop's diameter in the source is the iris at some f-number: it opens to the
+            // fastest one the lens is stated at (the triplet's is given for f/4, the lens is f/3.7).
+            s.semi_aperture = s.semi_aperture.max(pupil_full * at_stop);
+        }
         if s.semi_aperture == 0.0 {
             s.semi_aperture = if i == stop {
                 pupil_full * at_stop
@@ -894,6 +941,7 @@ fn prepare(
             efl_mm: efl,
             bfl_mm: infinity.0,
             efl_focused_mm: efl_focused,
+            image_scale_mm: efl_focused,
             f_number,
             f_number_min: n_min,
             t_stop: f_number / lum.sqrt(),
@@ -906,6 +954,7 @@ fn prepare(
             relative_illumination: Vec::new(),
             sensor_mm: sensor_z - z[n - 1],
             squeeze: 1.0,
+            section: LensSection::default(),
         },
         key: camera,
         surfaces,
@@ -914,6 +963,7 @@ fn prepare(
     let (elements, groups) = lens_out.count_elements();
     lens_out.info.elements = elements;
     lens_out.info.groups = groups;
+    lens_out.info.section = lens_out.section();
     // Breathing override: the paraxial image height of a small angle, focused against infinity.
     if p.breathing != 0.0 {
         let beta = (sensor_z - lens_out.z[n - 1]) / infinity.0.max(1.0e-6) * (efl_focused / efl);
@@ -947,6 +997,33 @@ fn prepare(
 }
 
 impl TracedLens {
+    /// The lens as it is traced, for its cross-section.
+    fn section(&self) -> LensSection {
+        LensSection {
+            surfaces: self
+                .surfaces
+                .iter()
+                .zip(&self.z)
+                .map(|(s, &z)| SectionSurface {
+                    z,
+                    kind: s.kind,
+                    curvature: if s.kind == SURFACE_CYLINDER_X {
+                        0.0
+                    } else {
+                        s.curvature
+                    },
+                    semi_aperture: s.semi_aperture,
+                    index: s.index[1],
+                    conic: s.conic,
+                    aspheric: s.aspheric,
+                })
+                .collect(),
+            stop: self.stop as u32,
+            stop_radius: self.stop_radius,
+            sensor_z: self.sensor_z,
+        }
+    }
+
     /// Glass elements and groups: every surface followed by glass starts an element, every one
     /// followed by glass after air starts a group; a folded lens counts its way out only.
     fn count_elements(&self) -> (u32, u32) {
@@ -1056,28 +1133,115 @@ impl TracedLens {
                 last
             })
             .collect();
-        let profile_bins = (0..PUPIL_BINS).filter(|&b| b as f32 * self.bin <= self.field * 1.0001);
-        self.info.relative_illumination = profile_bins
-            .map(|b| (b as f32 * self.bin, irradiance[b] / irradiance[0]))
+        // The profile at image heights of the output frame (the overrides applied): the scale
+        // near the axis, then the distortion against it and the relative illumination.
+        let h0 = 0.01 * self.field;
+        if let Some(t0) = self.output_tan(h0) {
+            if t0 > 0.0 {
+                self.info.image_scale_mm = h0 / t0;
+            }
+        }
+        let heights = (0..=PROFILE_POINTS).map(|k| self.field * k as f32 / PROFILE_POINTS as f32);
+        self.info.relative_illumination = heights
+            .clone()
+            .map(|h| {
+                let (hf, weight) = self.film_height(h);
+                let f = (hf / self.bin).min((PUPIL_BINS - 1) as f32);
+                let b0 = f as usize;
+                let b1 = (b0 + 1).min(PUPIL_BINS - 1);
+                let e = irradiance[b0] + (irradiance[b1] - irradiance[b0]) * (f - b0 as f32);
+                (h, weight * e / irradiance[0])
+            })
             .collect();
-        self.info.distortion = (1..=PROFILE_POINTS)
-            .filter_map(|k| {
-                let h = self.field * k as f32 / PROFILE_POINTS as f32;
-                self.distortion_at(h).map(|d| (h, d))
+        self.info.distortion = heights
+            .skip(1)
+            .filter_map(|h| {
+                let t = self.output_tan(h)?;
+                let ideal = self.info.image_scale_mm * t;
+                (ideal > 0.0).then(|| (h, 100.0 * (h - ideal) / ideal))
             })
             .collect();
         Ok(())
     }
 
+    /// Where an output image height `h` (camera frame, mm from the axis) falls on the film, with the
+    /// artistic breathing and distortion, and the artistic vignetting's weight there: what
+    /// [`TracedLens::sample`] does to a sensor position.
+    fn film_height(&self, h: f32) -> (f32, f32) {
+        let hb = h * self.breathing;
+        let x = hb / self.field;
+        let k = if self.distortion != 0.0 {
+            1.0 - self.distortion * x * x
+        } else {
+            1.0
+        };
+        let v = if self.vignetting > 0.0 {
+            (1.0 - self.vignetting * x * x).max(0.0)
+        } else {
+            1.0
+        };
+        (hb * k, v)
+    }
+
+    /// The tangent of the object-space angle of the chief ray of output image height `h`: in the
+    /// vertical meridian for a lens with cylinders (an anamorphic lens's unsqueezed one, the one
+    /// its focal length is named by), in the horizontal one otherwise.
+    fn output_tan(&self, h: f32) -> Option<f32> {
+        let vertical = self
+            .surfaces
+            .iter()
+            .any(|s| matches!(s.kind, SURFACE_CYLINDER_X | SURFACE_CYLINDER_Y));
+        let (hf, _) = self.film_height(h);
+        let x = self.chief_rear(hf, vertical)?;
+        let (film, q) = if vertical {
+            (Vec3::new(0.0, hf, self.sensor_z), Vec3::new(0.0, x, 0.0))
+        } else {
+            (Vec3::new(hf, 0.0, self.sensor_z), Vec3::new(x, 0.0, 0.0))
+        };
+        let rear_z = self.z[self.z.len() - 1];
+        let d = unit(Vec3::new(q.x, q.y, rear_z) - film);
+        match self.trace(film, d, 1, false) {
+            Traced::Out { dir, .. } => Some((dir.x * dir.x + dir.y * dir.y).sqrt() / dir.z.abs()),
+            Traced::Blocked => None,
+        }
+    }
+
+    /// The film point of a sensor position `(x, y)` (camera frame, from the axis), with the
+    /// artistic breathing and distortion, and its image height over the frame's corner.
+    fn film_of(&self, x: f32, y: f32) -> (Vec3, f32) {
+        let (mut x, mut y) = (x * self.breathing, y * self.breathing);
+        let r_sensor = (x * x + y * y).sqrt();
+        let h = r_sensor / self.field;
+        if self.distortion != 0.0 {
+            let k = 1.0 - self.distortion * h * h;
+            x *= k;
+            y *= k;
+        }
+        (self.film(x, y), h)
+    }
+
     /// Where on the rear plane (x) the chief ray of a film point at height `h` on +x crosses: the
     /// ray through the centre of the stop, by bisection on the stop height (band G).
     fn chief_rear_x(&self, h: f32) -> Option<f32> {
-        let film = Vec3::new(h, 0.0, self.sensor_z);
+        self.chief_rear(h, false)
+    }
+
+    /// [`TracedLens::chief_rear_x`] in the horizontal meridian, or with `vertical` for a film point
+    /// at height `h` on +y (the coordinate on the rear plane is then y).
+    fn chief_rear(&self, h: f32, vertical: bool) -> Option<f32> {
+        let along = |a: f32, z: f32| {
+            if vertical {
+                Vec3::new(0.0, a, z)
+            } else {
+                Vec3::new(a, 0.0, z)
+            }
+        };
+        let film = along(h, self.sensor_z);
         let rear_z = self.z[self.z.len() - 1];
         let r = self.rear_radius;
         let at_stop = |x: f32| -> Option<f32> {
-            let d = unit(Vec3::new(x, 0.0, rear_z) - film);
-            self.stop_height(film, d)
+            let d = unit(along(x, rear_z) - film);
+            self.stop_height(film, d, vertical)
         };
         // A bracket of the stop's centre: the first pair of neighbouring points of a scan of the
         // rear plane where the ray reaches the stop on either side of its centre (rays near the
@@ -1111,25 +1275,9 @@ impl TracedLens {
         Some(0.5 * (lo + hi))
     }
 
-    /// The distortion at image height `h`, percent: `(h − f tan θ) / f tan θ` with θ the angle of
-    /// the chief ray in object space.
-    fn distortion_at(&self, h: f32) -> Option<f32> {
-        let x = self.chief_rear_x(h)?;
-        let film = Vec3::new(h, 0.0, self.sensor_z);
-        let rear_z = self.z[self.z.len() - 1];
-        let d = unit(Vec3::new(x, 0.0, rear_z) - film);
-        match self.trace(film, d, 1, false) {
-            Traced::Out { dir, .. } => {
-                let tan = (dir.x * dir.x + dir.y * dir.y).sqrt() / dir.z.abs();
-                let ideal = self.info.efl_focused_mm * tan;
-                (ideal > 0.0).then(|| 100.0 * (h - ideal) / ideal)
-            }
-            Traced::Blocked => None,
-        }
-    }
-
-    /// Where a ray from the film crosses the stop, x only (no rim checked), band G.
-    fn stop_height(&self, p: Vec3, d: Vec3) -> Option<f32> {
+    /// Where a ray from the film crosses the stop, x (y with `vertical`) only (no rim checked),
+    /// band G.
+    fn stop_height(&self, p: Vec3, d: Vec3, vertical: bool) -> Option<f32> {
         let n = self.surfaces.len();
         let (mut p, mut d) = (p, d);
         let mut n_cur = self.surfaces[n - 1].index[1];
@@ -1137,7 +1285,7 @@ impl TracedLens {
             let s = &self.surfaces[i];
             let (q, normal) = intersect(s, self.z[i], p, d)?;
             if i == self.stop {
-                return Some(q.x);
+                return Some(if vertical { q.y } else { q.x });
             }
             p = Vec3::new(q.x, q.y, self.z[i] + q.z);
             if s.kind == SURFACE_MIRROR {
@@ -1158,15 +1306,7 @@ impl TracedLens {
     /// band, and the swirl (artistic, 0 to 1). The ray in the lens frame and its weight
     /// (relative to the axis; the band's channel is weighted by the caller).
     pub fn sample(&self, x: f32, y: f32, u: (f32, f32), band: usize, swirl: f32) -> (Traced, f32) {
-        let (mut x, mut y) = (x * self.breathing, y * self.breathing);
-        let r_sensor = (x * x + y * y).sqrt();
-        let h = r_sensor / self.field;
-        if self.distortion != 0.0 {
-            let k = 1.0 + self.distortion * h * h;
-            x *= k;
-            y *= k;
-        }
-        let film = self.film(x, y);
+        let (film, h) = self.film_of(x, y);
         let r = (film.x * film.x + film.y * film.y).sqrt();
         let (c, s) = if r > 0.0 {
             (film.x / r, film.y / r)
@@ -1229,7 +1369,9 @@ impl TracedLens {
     /// point `p` of the bounds' rectangle around it: what [`crate::scene::Camera::generate_ray`]
     /// and the exact passes use.
     pub fn chief(&self, x: f32, y: f32, p: (f32, f32)) -> Traced {
-        let film = self.film(x * self.breathing, y * self.breathing);
+        // The sample's film point (with the artistic breathing and distortion), so that the exact
+        // passes line up with the image.
+        let (film, _) = self.film_of(x, y);
         let r = (film.x * film.x + film.y * film.y).sqrt();
         let (c, s) = if r > 0.0 {
             (film.x / r, film.y / r)
@@ -1269,12 +1411,24 @@ fn json_number(v: f32) -> String {
     }
 }
 
+/// A number for JSON in exponent form (aspheric coefficients are far below six decimals): `0`
+/// for zero, `null` when not finite.
+fn json_exp(v: f32) -> String {
+    if v == 0.0 {
+        "0".to_string()
+    } else if v.is_finite() {
+        format!("{v:e}")
+    } else {
+        "null".to_string()
+    }
+}
+
 impl LensInfo {
     /// The info as JSON (what `rt_scene_lens_info` and `/api/lens/info` hand out):
     /// `{"traced":true,"eflMm":…,"bflMm":…,"eflFocusedMm":…,"fNumber":…,"fNumberMin":…,
     /// "tStop":…,"transmittance":[r,g,b],"lengthMm":…,"entrancePupilMm":[position,diameter],
     /// "elements":…,"groups":…,"sensorMm":…,"distortion":[[h,%],…],
-    /// "relativeIllumination":[[h,ratio],…]}`.
+    /// "squeeze":…,"relativeIllumination":[[h,ratio],…],"section":{…}}` ([`LensSection::to_json`]).
     pub fn to_json(&self) -> String {
         let pairs = |v: &[(f32, f32)]| -> String {
             let items: Vec<String> = v
@@ -1284,10 +1438,11 @@ impl LensInfo {
             format!("[{}]", items.join(","))
         };
         format!(
-            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{}}}",
+            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"imageScaleMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{},\"section\":{}}}",
             json_number(self.efl_mm),
             json_number(self.bfl_mm),
             json_number(self.efl_focused_mm),
+            json_number(self.image_scale_mm),
             json_number(self.f_number),
             json_number(self.f_number_min),
             json_number(self.t_stop),
@@ -1303,6 +1458,37 @@ impl LensInfo {
             json_number(self.squeeze),
             pairs(&self.distortion),
             pairs(&self.relative_illumination),
+            self.section.to_json(),
+        )
+    }
+}
+
+impl LensSection {
+    /// `{"stop":i,"stopRadiusMm":…,"sensorZMm":…,"surfaces":[[z,kind,curvature,semiAperture,index,
+    /// conic,a4,a6,a8,a10],…]}`.
+    pub fn to_json(&self) -> String {
+        let surfaces: Vec<String> = self
+            .surfaces
+            .iter()
+            .map(|s| {
+                let mut v = vec![
+                    json_number(s.z),
+                    s.kind.to_string(),
+                    json_number(s.curvature),
+                    json_number(s.semi_aperture),
+                    json_number(s.index),
+                    json_exp(s.conic),
+                ];
+                v.extend(s.aspheric.iter().map(|&a| json_exp(a)));
+                format!("[{}]", v.join(","))
+            })
+            .collect();
+        format!(
+            "{{\"stop\":{},\"stopRadiusMm\":{},\"sensorZMm\":{},\"surfaces\":[{}]}}",
+            self.stop,
+            json_number(self.stop_radius),
+            json_number(self.sensor_z),
+            surfaces.join(",")
         )
     }
 }
@@ -1337,6 +1523,7 @@ impl TracedLens {
                 efl_mm: 0.0,
                 bfl_mm: 0.0,
                 efl_focused_mm: 0.0,
+                image_scale_mm: 0.0,
                 f_number: 0.0,
                 f_number_min: 0.0,
                 t_stop: 0.0,
@@ -1349,6 +1536,7 @@ impl TracedLens {
                 relative_illumination: Vec::new(),
                 sensor_mm: 0.0,
                 squeeze: 1.0,
+                section: LensSection::default(),
             },
             key: CameraOptics {
                 focal_mm: 0.0,
