@@ -176,6 +176,12 @@ impl Vertex {
     };
 }
 
+/// `x > 0`, false for NaN.
+#[inline]
+fn positive(x: f32) -> bool {
+    x > 0.0
+}
+
 /// The unit vector along `d` and its length; `None` for a degenerate one.
 #[inline]
 fn unit(d: Vec3) -> Option<(Vec3, f32)> {
@@ -264,12 +270,14 @@ pub(crate) enum Stop {
 
 impl Prepared {
     /// Follows `ray` as [`Prepared::shadow`] does, through what shadow rays cross, to the first
-    /// surface that stops it (E13: the segments of a refraction path).
+    /// surface that stops it (E13: the segments of a refraction path). A surface of an instance
+    /// that `accept` refuses blocks it at once, before its details are worked out.
     pub(crate) fn first_stop<T: Tracer>(
         &self,
         scene: &Scene,
         tracer: &T,
         ray: &Ray,
+        accept: impl Fn(u32) -> bool,
         rays: &mut u64,
     ) -> Stop {
         let floor = if self.floor_mode == crate::scene::FloorMode::Visible {
@@ -293,15 +301,18 @@ impl Prepared {
             if t >= floor {
                 return Stop::Blocked;
             }
-            let Some(details) = scene.geometry.hit_details(&r, hit) else {
-                return Stop::Blocked;
-            };
-            if !self
+            let passable = self
                 .passable
                 .get(hit.instance as usize)
                 .copied()
-                .unwrap_or(false)
-            {
+                .unwrap_or(false);
+            if !passable && !accept(hit.instance) {
+                return Stop::Blocked;
+            }
+            let Some(details) = scene.geometry.hit_details(&r, hit) else {
+                return Stop::Blocked;
+            };
+            if !passable {
                 return Stop::Surface { details, keep, t };
             }
             let (through, origin) = self.straight_through(scene, &r, hit, &details);
@@ -346,32 +357,36 @@ pub(crate) fn seed<T: Tracer>(
     let mut ray = total;
     let mut travelled = 0.0f32;
     let mut chain = Chain::EMPTY;
-    let mut vertices = [Vertex::NONE; MAX_CHAIN];
+    // The crossings' hits, made into vertices only once the seed is known to be one.
+    let mut hits = [None; MAX_CHAIN];
+    let done = |chain: Chain, hits: &[Option<(Hit, f32, Rgb)>; MAX_CHAIN]| {
+        let mut vertices = [Vertex::NONE; MAX_CHAIN];
+        for (v, hit) in vertices.iter_mut().zip(hits).take(chain.len) {
+            let (details, len, keep) = (*hit)?;
+            *v = vertex(scene, prepared, &details, dir, len, keep)?;
+        }
+        Some(Seed { chain, vertices })
+    };
     loop {
-        match prepared.first_stop(scene, tracer, &ray, rays) {
-            Stop::Open => return (chain.len > 0).then_some(Seed { chain, vertices }),
-            Stop::Blocked => return None,
+        // A chain surface while the chain has room; anything else stops the seed.
+        let room = chain.len < MAX_CHAIN;
+        let accept = |i: u32| room && prepared.chain_surface(i);
+        match prepared.first_stop(scene, tracer, &ray, accept, rays) {
+            Stop::Open if chain.len > 0 => return done(chain, &hits),
+            Stop::Open | Stop::Blocked => return None,
             Stop::Surface { details, keep, t } => {
-                if !prepared.chain_surface(details.instance) {
-                    return None;
-                }
-                let len = travelled + t;
-                let v = vertex(scene, prepared, &details, dir, len, keep)?;
-                let slot = chain.len;
-                if !chain.push(Crossing {
+                hits[chain.len] = Some((details, travelled + t, keep));
+                chain.push(Crossing {
                     instance: details.instance,
                     entering: details.outside,
-                }) {
-                    return None;
-                }
-                vertices[slot] = v;
+                });
                 // On from beyond the surface, in the same direction.
                 let origin = offset_origin(details.point, -details.geometric_normal);
                 travelled += (origin - ray.origin).dot(ray.dir);
                 let mut next = Ray::new(origin, dir);
                 next.t_max = total.t_max - travelled;
                 if next.t_max.is_nan() || next.t_max <= next.t_min {
-                    return Some(Seed { chain, vertices });
+                    return done(chain, &hits);
                 }
                 ray = next;
             }
@@ -405,12 +420,14 @@ fn seed_through<T: Tracer>(
             }
         };
         let ray = Ray::new(origin, dir);
-        let Stop::Surface { details, keep, t } = prepared.first_stop(scene, tracer, &ray, rays)
+        let want = chain.crossings[i];
+        let accept = |i: u32| i == want.instance;
+        let Stop::Surface { details, keep, t } =
+            prepared.first_stop(scene, tracer, &ray, accept, rays)
         else {
             return None;
         };
-        let want = chain.crossings[i];
-        if details.instance != want.instance || details.outside != want.entering {
+        if details.outside != want.entering {
             return None;
         }
         vertices[i] = vertex(scene, prepared, &details, dir, t, keep)?;
@@ -552,39 +569,46 @@ fn linear_solve<const M: usize>(
         return None;
     }
     for col in 0..n {
-        let mut pivot = col;
-        for row in col + 1..n {
-            if a[row][col].abs() > a[pivot][col].abs() {
-                pivot = row;
+        let pivot = (col..n).fold(col, |p, row| {
+            if a[row][col].abs() > a[p][col].abs() {
+                row
+            } else {
+                p
             }
-        }
-        if !(a[pivot][col].abs() > 1.0e-7 * scale) {
+        });
+        let size = a[pivot][col].abs();
+        if size.is_nan() || size <= 1.0e-7 * scale {
             return None;
         }
         a.swap(col, pivot);
         x.swap(col, pivot);
-        let inv = 1.0 / a[col][col];
-        for row in col + 1..n {
-            let f = a[row][col] * inv;
+        let (top, below) = a.split_at_mut(col + 1);
+        let (xtop, xbelow) = x.split_at_mut(col + 1);
+        let (prow, xrow) = (&top[col], &xtop[col]);
+        let inv = 1.0 / prow[col];
+        for (row, xr) in below.iter_mut().zip(xbelow.iter_mut()).take(n - col - 1) {
+            let f = row[col] * inv;
             if f == 0.0 {
                 continue;
             }
-            for c in col..n {
-                a[row][c] -= f * a[col][c];
+            for (v, p) in row.iter_mut().zip(prow).take(n).skip(col) {
+                *v -= f * p;
             }
-            for m in 0..M {
-                x[row][m] -= f * x[col][m];
+            for (v, p) in xr.iter_mut().zip(xrow) {
+                *v -= f * p;
             }
         }
     }
     for col in (0..n).rev() {
         let inv = 1.0 / a[col][col];
-        for m in 0..M {
-            let mut v = x[col][m];
-            for c in col + 1..n {
-                v -= a[col][c] * x[c][m];
+        let (head, tail) = x.split_at_mut(col + 1);
+        let row = &mut head[col];
+        for (m, v) in row.iter_mut().enumerate() {
+            let mut sum = *v;
+            for (c, solved) in tail.iter().enumerate().take(n - col - 1) {
+                sum -= a[col][col + 1 + c] * solved[m];
             }
-            x[col][m] = v * inv;
+            *v = sum * inv;
         }
     }
     x.iter()
@@ -626,12 +650,14 @@ fn project<T: Tracer>(
         };
         let (dir, _) = unit(toward)?;
         let ray = Ray::new(origin, dir);
-        let Stop::Surface { details, keep, t } = prepared.first_stop(scene, tracer, &ray, rays)
+        let want = chain.crossings[i];
+        let accept = |i: u32| i == want.instance;
+        let Stop::Surface { details, keep, t } =
+            prepared.first_stop(scene, tracer, &ray, accept, rays)
         else {
             return None;
         };
-        let want = chain.crossings[i];
-        if details.instance != want.instance || details.outside != want.entering {
+        if details.outside != want.entering {
             return None;
         }
         out[i] = vertex(scene, prepared, &details, dir, t, keep)?;
@@ -688,7 +714,7 @@ pub(crate) fn solve<T: Tracer>(
     let mut cons = constraints(&v[..k], end)?;
     let mut beta = 1.0f32;
     let mut iterations = 0;
-    while !(cons.err <= TOLERANCE) {
+    while cons.err.is_nan() || cons.err > TOLERANCE {
         if iterations == MAX_ITERATIONS {
             return None;
         }
@@ -722,7 +748,7 @@ pub(crate) fn solve<T: Tracer>(
     // Every vertex refracts: the next segment leaves on the far side of its surface.
     for i in 0..k {
         let (wb, _) = onwards(&v[..k], i, end)?;
-        if !(wb.dot(v[i].ng) < 0.0) {
+        if !positive(-wb.dot(v[i].ng)) {
             return None;
         }
     }
@@ -810,7 +836,7 @@ pub(crate) fn connect<T: Tracer>(
         End::Direction { w } => (w, f32::INFINITY),
     };
     let emitted = lights.manifold_emission(end.entry, &end.end, -wb, last.p);
-    if !(peak(emitted) > 0.0) {
+    if !positive(peak(emitted)) {
         return None;
     }
     *rays += 1;
@@ -916,7 +942,7 @@ pub(crate) fn found_factor<T: Tracer>(
         End::Direction { w } => (w, f32::INFINITY),
     };
     let local = track.frame.to_local(straight);
-    if !(peak(track.bsdf.eval(track.wo, local, Lobes::All)) > 0.0) {
+    if !positive(peak(track.bsdf.eval(track.wo, local, Lobes::All))) {
         return None;
     }
     let below = local.z < 0.0;

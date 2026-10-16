@@ -1768,7 +1768,7 @@ impl Lights {
             LightRef::Area(a) => {
                 let light = &self.areas[a as usize];
                 let (wi, _) = towards(found.at);
-                if !light.shadow || !(-wi.dot(light.frame.z) > 0.0) {
+                if !light.shadow || !positive(-wi.dot(light.frame.z)) {
                     return None;
                 }
                 let end = End::Point {
@@ -1780,7 +1780,7 @@ impl Lights {
             LightRef::Mesh(m) => {
                 let emitter = &self.meshes[m as usize];
                 let (wi, _) = towards(found.at);
-                if !emitter.two_sided && !(-wi.dot(found.normal) > 0.0) {
+                if !emitter.two_sided && !positive(-wi.dot(found.normal)) {
                     return None;
                 }
                 let end = End::Point {

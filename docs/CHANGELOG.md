@@ -3,6 +3,17 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Motor
+
+- **La luz atraviesa el vidrio liso**: lo que está detrás de un vidrio o dentro de él (la leche de una botella, el suelo bajo un vaso, una pieza tras un cristal) recibe la luz de cada foco por el camino que la refracta en una o dos caras del vidrio, resuelto en cada muestra, en lugar de esperar a que algún rebote dé con la luz por casualidad: la leche dentro del frasco pierde el grano a 64 muestras, la luz de un punto o del sol llega ahora a través del vidrio (antes no llegaba) y las cáusticas de un vidrio liso salen también con las cáusticas apagadas. Estimación en variedad (Hanika, Droske y Fascione, EGSR 2015), escrita desde el artículo; la regla aproximada de las paredes finas de los medios (E9b) se retira donde la sustituye (E13).
+- Una escena sin vidrio liso entre una superficie y una luz da los mismos píxeles que antes; con él, la imagen cambia donde llega esa luz (E13).
+
+### Limitaciones conocidas de esta versión
+
+- Solo a través de **una o dos** superficies: la sombra de un frasco o de un vaso hueco (cuatro superficies: entra y sale por las dos paredes) sigue llegando por los caminos que refractan o por las cáusticas; el vidrio rugoso, con barniz, texturado, con programa o dispersivo, y la luz del entorno, como antes. Con las cáusticas encendidas, las luces que emiten fotones siguen llegando por el mapa (E13).
+
 ## v0.1.12 — 2026-10-16
 
 Versión de prueba con los materiales de nodos funcionando en el modo

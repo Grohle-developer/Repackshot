@@ -617,6 +617,21 @@ vuelve, y la capa difusa recibe exactamente lo que el brillo no refleja.
 Con rugosidad 0, el metal y el vidrio no cambian; el plástico gana el
 8,6 % que antes perdía su capa difusa (ior 1,5).
 
+**Luz a través del vidrio** (E13): en el modo Completo y en el render, lo
+que está detrás de un vidrio liso o dentro de él (un líquido en una
+botella, el suelo bajo un vaso, una pieza tras un cristal) recibe la luz de
+cada foco a través de una o dos superficies del vidrio con la refracción
+exacta (la luz que la cruza llega por el camino que dobla en sus caras, con
+su Fresnel y su color), sin grano y también de un punto de luz o del sol,
+que antes no llegaban; incluye las cáusticas que ese vidrio enfoca. Vale
+para el vidrio claro sin barniz ni recorte, liso o casi (rugosidad hasta
+0,05), sin medio dispersor, sin dispersión cromática y sin texturas,
+programa, dibujo ni bisel; el resto, y la luz que cruza más de dos
+superficies o viene del entorno, sigue llegando como antes (por los caminos
+que refractan, por la regla de las paredes finas de los medios o por las
+cáusticas, si están encendidas, que entonces se encargan de las luces que
+emiten fotones).
+
 **Desgaste**: ocho tipos (aristas, arañazos, huellas, polvo, suciedad en
 cavidades, pátina, micro-variación de rugosidad, abolladuras), cada uno
 con cantidad y mandos propios, un mando maestro, escala en tamaños de

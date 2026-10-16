@@ -1626,7 +1626,8 @@ su densidad y su distancia), así que una luz que encuentra detrás pesa
 frente a esos rayos de sombra; con cáusticas, la luz de una luz de fotones
 a través de una pared es del mapa, como a través de cualquier *caster*.
 Es lo que deja ver las luces a un líquido dentro de un frasco por el lado
-del frasco; la solución exacta (NEE de variedades) es E13.
+del frasco; desde E13 la estimación en variedad lo hace de forma exacta
+donde conecta (§5.2 duodecies) y la regla se queda solo donde no.
 *Hash* fijado: la escena de E5 con un medio en su esfera de vidrio rugoso,
 `PINNED_E9_MEDIA_4SPP` (`rt --write-e9-example`, `tests/fixtures/e9.rsb`),
 igual en todas las rutas SIMD, en WASI, en el `rt.wasm` real y por el
@@ -1652,7 +1653,8 @@ todo vidrio dispersivo; la esperanza de cada canal es la de refractar su
 banda entera. Los fotones de las cáusticas hacen lo mismo con su propio
 generador. Un camino que no encuentra vidrio dispersivo sigue blanco, así
 que una escena sin ninguno no cambia ni un bit. El precio es ruido de color
-donde hay dispersión. Los rayos de sombra no atraviesan el vidrio (E5) y la
+donde hay dispersión. Los rayos de sombra no atraviesan el vidrio (E5; la
+estimación en variedad de E13 no conecta por vidrio dispersivo) y la
 regla de las paredes de los medios usa `ior`, sin dispersión. *Hash*
 fijado: la escena de E9 lleva desde E9c una esfera de cristal de Abbe 40
 (`PINNED_E9_MEDIA_4SPP`). En **Rápido**, la `dispersion` de three.js
@@ -2153,6 +2155,89 @@ dibujos de los diez ejemplos en *Rápido* y con el `rt.wasm` real.
   (`PINNED_M3B_PROGRAMS_4SPP`) en todas las rutas SIMD, en `rt-cli` y `rt-app`
   con 1, 4 y 16 hilos, en WASI y en el `rt.wasm` real (CI, y por el código de la
   página), y sus seis pases (`PINNED_M3B_PASS_*`).
+
+### 5.2 duodecies · Estimación en variedad: la luz a través del vidrio liso (E13, `rt_core::integrator::manifold`)
+
+**Qué resuelve.** Antes de E13 un rayo de sombra se paraba en cualquier
+superficie que refracta (E5): lo que está detrás de un vidrio o dentro de un
+frasco solo recibía la luz de los focos por los caminos BSDF que, por azar,
+refractaban hasta una luz (o por el mapa de fotones de E5b-1); un punto de
+luz detrás de un vidrio no llegaba por ningún camino. E9b lo parcheaba para
+los vértices de salida de un medio con la regla de las paredes finas.
+
+**El método** (J. Hanika, M. Droske y L. Fascione, «Manifold Next Event
+Estimation», *Computer Graphics Forum* 34(4), EGSR 2015; las restricciones
+y sus derivadas, de W. Jakob y S. Marschner, «Manifold Exploration»,
+SIGGRAPH 2012; escrito desde los artículos). La estimación de siguiente
+evento en un vértice `x` elige un punto `y` de una luz como siempre. Si el
+rayo de sombra recto de `x` a `y` lo paran **una o dos** superficies de
+vidrio liso y nada más (`manifold::seed`), esos cruces son la **semilla**
+de un camino de refracción `x → v₁ (→ v₂) → y`. Las incógnitas son los
+vértices (dos por vértice: su desplazamiento en el plano de su triángulo) y
+las ecuaciones, dos por vértice, la parte tangencial del *half-vector*
+generalizado `ĥ = (ηₐ ωₐ + η_b ω_b) / |…|` respecto de la normal de
+sombreado (interpolada; `∂n/∂u` por las baricéntricas), que se anula justo
+donde se cumple Snell. Newton (`manifold::solve`): el sistema de las
+derivadas (bloque tridiagonal, a lo sumo 4 × 4, eliminación gaussiana con
+pivote parcial) da un paso en los planos tangentes; los vértices movidos se
+**proyectan** sobre sus superficies trazando otra vez los tramos desde `x`
+(cada tramo comprueba de paso que está libre y que toca la misma pieza por el
+mismo lado), y un paso que no baja el error se parte por la mitad. Como
+mucho **8 proyecciones**, tolerancia `10⁻⁴` en el seno del ángulo entre `ĥ`
+y la normal, `f32`, sin números aleatorios: el mismo camino para el mismo
+`x` e `y` en cualquier arquitectura y con cualquier número de hilos. Hacia
+un sol el final es una dirección fija en lugar de un punto.
+
+**La conexión** es una muestra de luz en la medida de la luz:
+`f(x) |cos θx| T Le · J / p(y)`, con `p(y)` la densidad con que la NEE
+eligió `y` (por mm² de la luz, por estereorradián del disco de un sol), `T`
+lo que guardan las refracciones (la transmitancia de Fresnel de cada
+interfaz, el `(ηₐ/η_b)²` de la radiancia, el tinte del vidrio o su
+absorción de Beer–Lambert en los tramos de dentro, los recortes y paredes
+finas en el camino) y `J = |dωx / dA_y|` el término geométrico
+generalizado: con `A = ∂c/∂v` y `B = ∂c/∂y`, `dv = −A⁻¹B dy`, así que
+`J = |ωx · n₁| / d₁² · |det (A⁻¹B)₁|` (el bloque del primer vértice). Un
+punto de luz se mide en el área transversal al último tramo y un sol delta
+en su dirección; cuentan enteros (ninguna otra técnica los encuentra).
+
+**MIS.** Un camino BSDF desde `x` que refracta por las mismas superficies
+hasta el mismo punto de la misma luz es, en el límite del vidrio liso, el
+camino que conecta la variedad: comparten ese camino con las densidades
+`p_b(ωx)` de la BSDF y `p(y)/J` de la conexión, las dos por
+estereorradián en `x`, y la heurística de potencia. El integrador guarda
+el último vértice desde el que se conecta y las refracciones lisas desde él
+(`manifold::Track`); `Scattered` lleva un gancho (`light::Manifold`) que
+`crossed_from`, `crossed_without_photons`, `escaped` (los soles) y
+`emitter_weight_found` llaman para cada luz que encuentran, y
+`manifold::found_factor` responde: fuera del dominio de la conexión
+(semilla de otras superficies, el entorno, una luz sin sombras, una luz de
+fotones con cáusticas, un punto que la NEE en `x` no elige), `None`, y la
+luz pesa como antes; dentro, resuelve la conexión de ese `y` desde la
+semilla recta **y** el camino especular por las mismas facetas que el
+camino BSDF (Newton desde sus propios vértices), y solo si son el mismo
+(dirección en `x` a 2·10⁻³ rad) la luz toma el factor `p_b²/(p_b² +
+p_m²)`; si no, 1 (la conexión no produce ese camino: en un vidrio facetado
+cada faceta tiene su solución, a veces a menos de un grado de la vecina).
+Las dos caras usan las mismas funciones (`Lights::manifold_end` y
+`Lights::manifold_found` dan la misma densidad para el mismo punto, test),
+así que parten cada camino entre las dos técnicas.
+
+**Qué superficies.** `manifold::is_chain_material`: vidrio del todo claro
+con interior (no pared fina), rugosidad hasta la de la pared de E9b (0,05,
+tratada como espejo para la refracción), sin barniz, sin recorte, sin medio,
+sin dispersión e `ior ≥ 1,01`; y la pieza sin texturas, programa, dibujo
+procedural ni bisel (no se pueden derivar sus normales). Desde cualquier
+vértice que no sea una partícula ni una superficie lisa clara (un vértice de
+salida de un medio sí). Todo lo demás sigue como antes: vidrio rugoso, con
+barniz, texturado, con programa o dispersivo, o más de dos superficies,
+paran el rayo de sombra; el entorno se deja al muestreo BSDF (es grande y
+suave); con cáusticas, las luces que emiten fotones se dejan al mapa (que ya
+trae esa luz). **La regla de las paredes finas de E9b se retira donde
+conecta la variedad** (una pared lisa son dos superficies) y se queda donde
+no: el entorno, dos paredes seguidas, una pared texturada o dispersiva. Sin
+superficies de cadena en la escena, `Prepared::manifold` es falso y nada
+cambia ni un bit; con la conexión apagada (`Prepared::set_manifold(false)`),
+las escenas de vidrio dan los *hashes* de v0.1.12 (test).
 
 ### 5.3 · En el navegador: workers
 

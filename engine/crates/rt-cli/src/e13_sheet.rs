@@ -188,16 +188,33 @@ fn green(film: &Film) -> Vec<f64> {
         .collect()
 }
 
-/// The pixels of `floor` (floor pixels) where the reference is more than twice the median of
-/// them: the caustic.
-fn caustic_pixels(reference: &[f64], floor: &[usize]) -> Vec<usize> {
-    let mut values: Vec<f64> = floor.iter().map(|&i| reference[i]).collect();
+/// The pixels of `floor` (floor pixels of a `w`-wide image) where the reference, blurred by a
+/// 5 × 5 box (its fireflies spread out), is more than twice the median of them: the caustic.
+fn caustic_pixels(reference: &[f64], w: usize, floor: &[usize]) -> Vec<usize> {
+    let h = reference.len() / w.max(1);
+    let blurred = |i: usize| {
+        let (x, y) = ((i % w) as i64, (i / w) as i64);
+        let (mut sum, mut n) = (0.0, 0.0);
+        for dy in -2..=2i64 {
+            for dx in -2..=2i64 {
+                let (u, v) = (x + dx, y + dy);
+                if u >= 0 && v >= 0 && (u as usize) < w && (v as usize) < h {
+                    sum += reference[v as usize * w + u as usize];
+                    n += 1.0;
+                }
+            }
+        }
+        sum / n
+    };
+    let smooth: Vec<f64> = floor.iter().map(|&i| blurred(i)).collect();
+    let mut values = smooth.clone();
     values.sort_by(f64::total_cmp);
     let median = values.get(values.len() / 2).copied().unwrap_or(0.0);
     floor
         .iter()
-        .copied()
-        .filter(|&i| reference[i] > 2.0 * median)
+        .zip(&smooth)
+        .filter(|&(_, &v)| v > 2.0 * median)
+        .map(|(&i, _)| i)
         .collect()
 }
 
@@ -325,12 +342,19 @@ pub fn run(
         let ref_green = green(&refd.film);
         let pixels = match region {
             Region::Milk => milk_pixels(&scene),
-            Region::Caustic => caustic_pixels(&ref_green, &floor_pixels(&scene, (0.0, 1.0e9))),
+            Region::Caustic => caustic_pixels(
+                &ref_green,
+                size.0 as usize,
+                &floor_pixels(&scene, (0.0, 1.0e9)),
+            ),
             Region::Floor(radii) => floor_pixels(&scene, radii),
         };
         let region_words = match region {
             Region::Milk => "the milk",
-            Region::Caustic => "the caustic (floor pixels at more than twice the median floor)",
+            Region::Caustic => {
+                "the caustic (floor pixels where the reference, blurred over 5 × 5 pixels, is \
+                 more than twice the median of the floor)"
+            }
             Region::Floor(_) => "the floor around the bottle",
         };
         let camera_samples = |spp: u32| f64::from(size.0) * f64::from(size.1) * f64::from(spp);
@@ -548,7 +572,7 @@ mod tests {
         assert!(Prepared::new(&w).has_manifold());
         assert_eq!(Scene::from_rsb(&w.to_rsb()).as_ref(), Ok(&w));
         let reference = vec![1.0; 64 * 48];
-        assert!(caustic_pixels(&reference, &floor_pixels(&w, (0.0, 1.0e9))).is_empty());
+        assert!(caustic_pixels(&reference, 64, &floor_pixels(&w, (0.0, 1.0e9))).is_empty());
         let r = render_mode(&w, Mode::After, 1, 2);
         assert!(r.rays > 0 && r.film.width == 64);
     }

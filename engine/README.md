@@ -17,7 +17,7 @@ Do not add a dependency. If something is missing, write it.
 
 | Crate | Kind | Role |
 |-------|------|------|
-| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `texture` (M2b: image textures, their mipmaps, the five projections and labels in the shading), `program` (M3b: the material programs of node materials, their interpreter, M3a's noise and what a program makes of a hit), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
+| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer, with `integrator::manifold`: E13's manifold connections through glass), `texture` (M2b: image textures, their mipmaps, the five projections and labels in the shading), `program` (M3b: the material programs of node materials, their interpreter, M3a's noise and what a program makes of a hit), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
 | `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`): the renderer (`rt_*`) and the rigid body simulator (`phys_*`, `src/phys.rs`). Its `unsafe` is confined to `src/ffi.rs`. |
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
@@ -230,7 +230,8 @@ twice (0: off).
   as if the refractions cancelled (the Fresnel transmittances in and out and the absorption over
   that path; 2.0 % darker than the exact path under a 3 mm plate), and the exit
   vertex's BSDF samples through such a wall count as straight events for MIS: a liquid in a glass
-  bottle sees the lights through the bottle's side.
+  bottle sees the lights through the bottle's side. Since E13 the manifold connections (below) do
+  that exactly wherever they connect, and the rule is left where they do not.
 * **Dispersion** (E9c, `integrator::dispersion`): a clear solid without a medium and with
   `MATL.abbe > 0` refracts each wavelength with its own index, Cauchy's `A + B / λ²` through `ior`
   at the helium d line (587.6 nm) and the Abbe number `(n_d - 1) / (n_F - n_C)`. Each channel is
@@ -247,8 +248,31 @@ twice (0: off).
   cut-outs are *passable*: their straight-through events keep the last vertex's BSDF density and
   add their distance, so an emitter or the environment found through them is still weighted
   against light sampling with the right MIS weight, and shadow rays go through them (at most 32
-  crossings, tinted by what they let through). A solid clear part still blocks shadow rays: the
-  light through it comes by the caustics (E5b-1, below), or by BSDF sampling alone without them.
+  crossings, tinted by what they let through). A solid clear part blocks shadow rays, but where
+  it is smooth glass the light through it comes by manifold connections (E13, below), and
+  otherwise by the caustics (E5b-1, below) or by BSDF sampling alone.
+* **Manifold next-event estimation** (E13, `integrator::manifold`; J. Hanika, M. Droske and L.
+  Fascione, "Manifold Next Event Estimation", EGSR 2015, with the constraints of W. Jakob and S.
+  Marschner's "Manifold Exploration", SIGGRAPH 2012, written from the papers): when the shadow
+  ray of a light sample is stopped by one or two surfaces of smooth clear glass and nothing else
+  (`manifold::is_chain_material`: roughness up to 0.05, no coat, cut-out, medium or dispersion,
+  index at least 1.01, on a part without textures, program, pattern or bevel), the refraction
+  path to that point of the light is solved by Newton's method on the half-vector constraints
+  (two unknowns per vertex in its triangle's plane, the interpolated shading normal and its
+  derivatives, at most 8 projections, tolerance 10⁻⁴, `f32`, no random numbers) from the straight
+  seed, and connected with its generalised geometry term `|dωx/dA_y|` from the constraints'
+  derivatives (`J = |ωx·n₁| / d₁² · |det (A⁻¹B)₁|`) and what the refractions keep (Fresnel, the
+  `η²` of radiance, tint or Beer–Lambert, thin walls and cut-outs on the way). Area lights, emissive
+  meshes, spheres, points and spots, suns (disc or delta); not the environment, nor, with caustics,
+  the lights that send photons (the map brings that light). MIS against the BSDF continuation:
+  a light a BSDF path finds after smooth refractions asks (`manifold::found_factor`) whether the
+  connection from the vertex before them to that point is the same path (the connection solved
+  from the straight seed against the specular path through the path's own facets) and takes the
+  power heuristic of the two densities per steradian there if so. It retires the E9b thin-wall
+  rule where it connects (one smooth wall is two surfaces); the rule stays for the environment,
+  two walls in a row and textured or dispersive walls. Without such surfaces nothing changes;
+  with the connections off (`Prepared::set_manifold(false)`) the glass scenes give their v0.1.12
+  hashes.
 * **Lights** (`light`), `LGHT.kind`: **0 rect**, **1 disk**: one-sided, transparent, uniform
   area sampling; `power` is the flux in watts (radiance `color * power / (π area_m²)`, a scene
   millimetre being 1e-3 m); `spread_deg` adds a `cos^n` falloff whose intensity halves at
@@ -671,6 +695,12 @@ byte for byte.
   crossings, next-event estimation of smooth drops for delta lights only), the forward lobe of
   dust (`FXAM` 200 bytes: `forward`, `forward_g`), and the cost of each preset measured in the
   ambient sheet.
+* **E13**: manifold next-event estimation through one or two smooth refracting surfaces
+  (`integrator::manifold`: the seed of the shadow ray, Newton's method on the half-vector
+  constraints with projection by tracing, the generalised geometry term from the constraint
+  derivatives, the BSDF side's MIS that solves the connection and the path through its own
+  facets), the E9b thin-wall rule retired where it connects, the E13 parity scene
+  (`rt --write-e13-example`), the E13 sheet (`rt --e13-sheet`) and `tools/e13-cost.mjs`.
 
 ## Third-party data
 
