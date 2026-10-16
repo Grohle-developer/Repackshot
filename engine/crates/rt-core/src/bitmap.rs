@@ -104,7 +104,7 @@ pub struct Image {
 }
 
 /// The sRGB decoding of every byte value (IEC 61966-2-1), computed once with `fmath`.
-fn srgb_table() -> &'static [f32; 256] {
+pub(crate) fn srgb_table() -> &'static [f32; 256] {
     use std::sync::OnceLock;
     static TABLE: OnceLock<[f32; 256]> = OnceLock::new();
     TABLE.get_or_init(|| {

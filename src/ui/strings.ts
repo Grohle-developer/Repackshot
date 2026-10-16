@@ -3187,7 +3187,7 @@ const TABLE = {
   'texture.wrap.CLAMP': ['Stretch the edge', 'Estirar el borde'],
   'texture.wrap.MIRROR': ['Mirror', 'Espejo'],
   'texture.uvMissing': ['Some parts with this material have no UVs: UV shows nothing on them. Box needs none.', 'Algunas piezas con este material no tienen UV: UV no muestra nada en ellas. Caja no las necesita.'],
-  'texture.engineNote': ['Fast shows textures and labels; the engine draws them in Full and in Render (coming soon).', 'Rápido muestra texturas y etiquetas; el motor las pinta en Completo y en Render (próximamente).'],
+  'texture.engineNote': ['Fast, Full and Render draw the textures and labels in the same place.', 'Rápido, Completo y Render dibujan las texturas y las etiquetas en el mismo sitio.'],
   'texture.error.load': ['{name} cannot be a texture: {reason}.', '{name} no puede ser una textura: {reason}.'],
   'texture.drop.tooLarge': ['it is larger than 16 MB', 'pesa más de 16 MB'],
   'texture.drop.tooManyPixels': ['it has more than 8192 pixels on a side', 'tiene más de 8192 píxeles de lado'],

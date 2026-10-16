@@ -77,6 +77,17 @@ en el visor. (c) Mapeado de la madera y la tela (M, toca `PATN` y
 **Dependencias.** M2b (E6 y E9 ya están: desbloqueada), M3b para los nodos,
 5.1 (tamaño relativo). (b) puede salir sola; (a) y (c) no.
 
+**Estado tras M2b (16-10).** (a) **hecha**: el motor lee `IMGS`, el bloque de
+texturas de `MATL` y las UV de `MESH`, y *Completo* y *Render* pintan las
+ranuras y las etiquetas con su proyección, eje, juego de UV, tamaño en mm,
+giro, desplazamiento, repetición y bordes donde las pinta *Rápido*
+(`rt_core::texture`, ARCHITECTURE §5.2 decies; la comparación por regiones de
+`tests/textures-full-browser.test.ts`). La nota del inspector ya no dice
+*próximamente* (`texture.engineNote`). Siguen pendientes (b) (mandos de mapeado
+sin imagen, mapeado propio por ranura, *Triplanar*, herramienta en el visor),
+(c) (mapeado de la madera y la tela) y la decisión de 5.1: el tamaño sigue en
+mm. Los materiales de nodos siguen con la media de sus salidas hasta M3b.
+
 ---
 
 ## 1.2 · Ambiente: forma de gota y geometrías variadas
@@ -711,7 +722,7 @@ de deshacer). K8 (grupos de luz tras el render) es vecino.
 | 4.2 *Denoise* lava luces y colores | decisión, sin reproducir (medir primero) | S + S–M | E5b-1, U11, U11b, E11 | 4 |
 | 1.3 Elegir lentes, distorsión, bokeh | falta (O2 la cubre) | — (fusionar O2) | O2, veredicto Fable | 5 |
 | 1.4 Ventana de elementos al pasar el ratón | falta (hecha en O2b) | S–M | O2 | 6 |
-| 1.1 Mapeado en los editores | falta (+ decisión menor) | L (M2b) + M (interfaz) | M2b, M3b, 5.1 | 7 |
+| 1.1 Mapeado en los editores | falta (+ decisión menor); (a) hecha en M2b | L (M2b, hecha) + M (interfaz) | M3b, 5.1 | 7 |
 | 1.6 Nodos y maderas | falta (+ decisión: nodos de E6) | L (M3b) | M2b → M3b | 8 |
 | 3.1 Cola en vivo | falta | M | U5, N2 | 9 |
 | 2.1 La IA no hace casi nada | decisión | S tras la hoja | X1 parte B | 10 |

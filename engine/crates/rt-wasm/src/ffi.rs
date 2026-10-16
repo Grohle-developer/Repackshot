@@ -14,6 +14,13 @@ pub extern "C" fn rt_version() -> u32 {
     rt_core::VERSION
 }
 
+/// What the engine reads beyond the RSB every engine reads (`rt_core::FEATURES`; bit 0, M2b: the
+/// texture data). The page writes the textures only when this says so.
+#[no_mangle]
+pub extern "C" fn rt_features() -> u32 {
+    rt_core::FEATURES
+}
+
 /// Allocates `len` zeroed bytes in linear memory and returns their address. Never returns null
 /// (a zero length gives a dangling but non-null pointer). Release with [`rt_free`].
 #[no_mangle]

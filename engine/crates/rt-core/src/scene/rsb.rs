@@ -14,7 +14,7 @@
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
 //! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||` E6
-//! and E9) and are
+//! and E9, `||||||` M2b) and are
 //! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
 //! writer always writes them):
 //!
@@ -23,11 +23,17 @@
 //!             u32 ortho_flag; f32 ortho_width
 //! MESH  var.  u32 vertex_count index_count; f32 positions[3n] normals[3n]; u32 indices[m];
 //!             u32 material_id                      (n = vertex_count, m = index_count)
+//!             |||||| u32 uv_sets (0 to 2); f32 uv[2n] per set, v up            (M2b)
 //! MATL  56 B  u32 kind; f32 base_color[3] metallic roughness ior transmission coat
 //!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
 //!             || f32 opacity (1) anisotropy (0) absorption_mm (0)                     (72 B)
 //!             ||||| f32 bevel_mm (0)                                                  (76 B)
 //!             scatter_mm (0) scatter_color[3] (1 1 1) scatter_g (0) abbe (0)          (100 B)
+//!             |||||| the texture block from byte 100 (M2b): u32 version (1); 6 × slot
+//!             (i32 image; u32 projection axis uv_set; f32 size_mm rotation_deg offset[2]
+//!             repeat[2]; u32 wrap channel flags; f32 strength cutoff); f32 emission_tint[3];
+//!             u32 label_count; label_count × (i32 image; f32 origin[3] u[3] v[3] normal[3]
+//!             width_mm height_mm depth_mm roughness coat relief)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
@@ -58,6 +64,8 @@
 //!             spherical breathing; u32 moving_count; (u32 surface; f32 base near)[moving_count];
 //!             (u32 kind; f32 radius thickness nd vd semi_aperture; u32 coating;
 //!             f32 conic a4 a6 a8 a10)[surface_count]                                      (O2)
+//! IMGS   4 B  u32 count; per image u32 width height channels (1, 3 or 4) color_space (0 sRGB,
+//!             1 linear); u8 rows[width·height·channels] from the top; zero padding to 4  (M2b, new)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -66,7 +74,7 @@
 //!             f32 palette[4][3] (white)                                           (192 B)
 //! ```
 //!
-//! `CAMR`, `ENVR`, `FLOR`, `RNDR` and `LENS` may appear at most once (a missing one means
+//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS` and `IMGS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
 //! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN` and `FXAM` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
@@ -78,6 +86,19 @@
 //! file: scanline, uncompressed, RLE, ZIPS or ZIP); `width` and `height` are the size of the raw
 //! formats and 0 (or the file's own size) for the files. Rows run top to bottom. See
 //! [`crate::bitmap`]; a bitmap that cannot be decoded makes the file invalid.
+//!
+//! **Textures** (M2b, the contract M2a's writer follows: ARCHITECTURE §5.2). `IMGS` holds the
+//! texture images ([`crate::texture::TextureImage`]: the engine computes their mipmaps); the
+//! texture block of a `MATL` its six slots (colour, roughness, metal, normal, alpha, emission:
+//! the image's index in `IMGS`, −1 none, and the mapping it uses), the emission tint and its labels
+//! ([`crate::texture::MaterialTextures`]); the UV sets of a `MESH` its texture coordinates. A
+//! block of another version than 1 is skipped (a newer file's); an unknown projection, axis, UV
+//! set, wrap or channel, a size that is not positive, a label without a size, a truncated block,
+//! more than two UV sets or one without a pair per vertex, an image index past `IMGS` or a bad
+//! image make the file invalid. What they do in the shading: [`crate::texture`]. The writer
+//! emits them as the page's writer does: when the scene has images or blocks (or
+//! [`Scene::textured`]), every mesh gets its UV sets word, every material with a block its block,
+//! and `IMGS` follows the `FXAM` sections.
 //!
 //! **Instances.** A file without `INST` sections draws every mesh once, untransformed, with the
 //! mesh's own `material_id` (one implicit instance per mesh: what files written before `INST`
@@ -99,7 +120,9 @@
 //! instances, the materials or the lights sends everything but the geometry. In the same way a
 //! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large. The particles of
 //! an effect whose `FXAM` is unchanged are kept as well (S4a); only their BVH is built again when
-//! the camera or the image size changed.
+//! the camera or the image size changed. The texture images travel with the meshes (M2b): a file
+//! without `MESH` and `IMGS` keeps the loaded ones and their mipmaps; one with `MESH` and without
+//! `IMGS` has none.
 //!
 //! # Meaning of the values (fixed in E3)
 //!
@@ -237,14 +260,15 @@
 
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
-    Instance, Lens, LensParams, Light, LightKind, Material, Mesh, PixelFootprint, RenderSettings,
-    Scene, SkyModel, Transform, NO_BITMAP,
+    Instance, Lens, LensParams, Light, LightKind, Material, MaterialTextures, Mesh, PixelFootprint,
+    RenderSettings, Scene, SkyModel, TextureImage, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
 use crate::optics::filters::FilterParams;
 use crate::optics::traced::{MovingGap, Prescription, SurfaceSpec};
 use std::fmt;
+use std::sync::Arc;
 
 /// The four magic bytes at the start of every RSB file.
 pub const MAGIC: [u8; 4] = *b"RSB1";
@@ -273,6 +297,8 @@ pub const TAG_PATN: [u8; 4] = *b"PATN";
 pub const TAG_LENS: [u8; 4] = *b"LENS";
 /// Ambient effect section tag (S4a).
 pub const TAG_FXAM: [u8; 4] = *b"FXAM";
+/// Section tag of the texture images (M2b).
+pub const TAG_IMGS: [u8; 4] = *b"IMGS";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -533,7 +559,8 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
     Lens::new(p).map_err(|reason| r.invalid(reason))
 }
 
-fn parse_mesh(r: &mut Reader) -> Result<Mesh, RsbError> {
+/// A `MESH` section, and whether it carried the UV sets word (M2b).
+fn parse_mesh(r: &mut Reader) -> Result<(Mesh, bool), RsbError> {
     let vertex_count = r.u32()?;
     let index_count = r.u32()?;
     // Check the declared sizes against the payload before allocating anything, so a hostile
@@ -563,7 +590,29 @@ fn parse_mesh(r: &mut Reader) -> Result<Mesh, RsbError> {
         indices.push(index);
     }
     let material_id = r.u32()?;
-    Mesh::new(&positions, &normals, &indices, material_id).map_err(|e| r.invalid(e.reason()))
+    let mesh = Mesh::new(&positions, &normals, &indices, material_id)
+        .map_err(|e| r.invalid(e.reason()))?;
+    // M2b: the UV sets after the material, when the file carries textures.
+    if r.remaining() < 4 {
+        return Ok((mesh, false));
+    }
+    let sets = r.u32()? as usize;
+    if sets > crate::geometry::MAX_UV_SETS {
+        return Err(r.invalid("at most 2 UV sets"));
+    }
+    if (sets * n * 8) as u64 > r.remaining() as u64 {
+        return Err(RsbError::SectionTooShort { tag: r.tag });
+    }
+    let mut uvs = Vec::with_capacity(sets);
+    for _ in 0..sets {
+        let mut set = Vec::with_capacity(n);
+        for _ in 0..n {
+            set.push([r.f32()?, r.f32()?]);
+        }
+        uvs.push(set);
+    }
+    let mesh = mesh.with_uvs(uvs).map_err(|e| r.invalid(e.reason()))?;
+    Ok((mesh, true))
 }
 
 fn parse_instance(r: &mut Reader) -> Result<Instance, RsbError> {
@@ -582,8 +631,9 @@ fn parse_instance(r: &mut Reader) -> Result<Instance, RsbError> {
     })
 }
 
-fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
-    Ok(Material {
+/// A `MATL` section and its texture block (M2b), if it has one this engine reads.
+fn parse_material(r: &mut Reader) -> Result<(Material, Option<MaterialTextures>), RsbError> {
+    let m = Material {
         kind: r.u32()?,
         base_color: r.rgb()?,
         metallic: r.f32()?,
@@ -603,7 +653,103 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
         scatter_color: Rgb::new(r.opt_f32(1.0)?, r.opt_f32(1.0)?, r.opt_f32(1.0)?),
         scatter_g: r.opt_f32(0.0)?,
         abbe: r.opt_f32(0.0)?,
-    })
+    };
+    // M2b: the texture block from byte 100; a block of another version is a newer file's.
+    if r.remaining() < 4 || r.pos != crate::texture::TEXTURE_BLOCK_OFFSET {
+        return Ok((m, None));
+    }
+    if r.u32()? != crate::texture::TEXTURE_BLOCK_VERSION {
+        return Ok((m, None));
+    }
+    Ok((m, Some(parse_texture_block(r)?)))
+}
+
+/// The texture block of a `MATL` after its version word (M2b).
+fn parse_texture_block(r: &mut Reader) -> Result<MaterialTextures, RsbError> {
+    use crate::texture::{Label, TextureSlot};
+    let image = |v: u32| (v != u32::MAX).then_some(v);
+    let mut t = MaterialTextures::default();
+    for slot in &mut t.slots {
+        *slot = TextureSlot {
+            image: image(r.u32()?),
+            projection: r.u32()?,
+            axis: r.u32()?,
+            uv_set: r.u32()?,
+            size_mm: r.f32()?,
+            rotation_deg: r.f32()?,
+            offset: [r.f32()?, r.f32()?],
+            repeat: [r.f32()?, r.f32()?],
+            wrap: r.u32()?,
+            channel: r.u32()?,
+            flags: r.u32()?,
+            strength: r.f32()?,
+            cutoff: r.f32()?,
+        };
+        if slot.projection > crate::texture::PROJECTION_SPHERICAL
+            || slot.axis > crate::texture::AXIS_Z
+            || slot.uv_set > 1
+            || slot.wrap > crate::texture::WRAP_MIRROR
+            || slot.channel > crate::texture::CHANNEL_LUMINANCE
+        {
+            return Err(r.invalid("unknown texture projection, axis, UV set, wrap or channel"));
+        }
+        if slot.size_mm.is_nan() || slot.size_mm <= 0.0 {
+            return Err(r.invalid("texture size_mm must be positive"));
+        }
+    }
+    t.emission_tint = r.rgb()?;
+    let count = r.u32()? as usize;
+    if count as u64 * 76 > r.remaining() as u64 {
+        return Err(RsbError::SectionTooShort { tag: r.tag });
+    }
+    for _ in 0..count {
+        let label = Label {
+            image: image(r.u32()?),
+            origin: r.vec3()?,
+            u: r.vec3()?,
+            v: r.vec3()?,
+            normal: r.vec3()?,
+            width_mm: r.f32()?,
+            height_mm: r.f32()?,
+            depth_mm: r.f32()?,
+            roughness: r.f32()?,
+            coat: r.f32()?,
+            relief: r.f32()?,
+        };
+        if !(label.width_mm > 0.0 && label.height_mm > 0.0) || label.depth_mm < 0.0 {
+            return Err(r.invalid("a label needs a positive size and a reach of 0 or more"));
+        }
+        t.labels.push(label);
+    }
+    Ok(t)
+}
+
+/// The `IMGS` section (M2b): the texture images, their mipmaps computed here.
+fn parse_images(r: &mut Reader) -> Result<Vec<Arc<TextureImage>>, RsbError> {
+    let count = r.u32()? as usize;
+    if count as u64 * 16 > r.remaining() as u64 {
+        return Err(RsbError::SectionTooShort { tag: r.tag });
+    }
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let width = r.u32()?;
+        let height = r.u32()?;
+        let channels = r.u32()?;
+        let color_space = r.u32()?;
+        let len = u64::from(width) * u64::from(height) * u64::from(channels);
+        if len > r.remaining() as u64 {
+            return Err(RsbError::SectionTooShort { tag: r.tag });
+        }
+        let len = len as usize;
+        let data = r.data[r.pos..r.pos + len].to_vec();
+        r.pos += len;
+        let pad = (4 - len % 4) % 4;
+        r.pos = (r.pos + pad).min(r.data.len());
+        let image = TextureImage::new(width, height, channels, color_space, data)
+            .map_err(|reason| r.invalid(reason))?;
+        out.push(Arc::new(image));
+    }
+    Ok(out)
 }
 
 fn parse_pattern(r: &mut Reader) -> Result<crate::pattern::Pattern, RsbError> {
@@ -792,6 +938,8 @@ pub fn prescription_bytes(t: &Prescription) -> Vec<u8> {
 struct Kept<'a> {
     geometry: &'a mut Geometry,
     bitmaps: &'a mut Vec<Bitmap>,
+    /// The texture images (M2b), which travel with the meshes.
+    images: &'a mut Vec<Arc<TextureImage>>,
     /// The loaded camera's lens: its traced preparation is reused when it still applies (O2).
     lens: Option<&'a Lens>,
 }
@@ -821,6 +969,8 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut instances = Vec::new();
     let mut bitmaps = Vec::new();
     let mut effects = Vec::new();
+    let mut images: Option<Vec<Arc<TextureImage>>> = None;
+    let mut textured = false;
     let mut scene = Scene::default();
 
     while pos < bytes.len() {
@@ -844,9 +994,22 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             TAG_ENVR => set_once(&mut environment, tag, parse_environment(&mut r)?)?,
             TAG_FLOR => set_once(&mut floor, tag, parse_floor(&mut r)?)?,
             TAG_RNDR => set_once(&mut render, tag, parse_render(&mut r)?)?,
-            TAG_MESH => meshes.push(parse_mesh(&mut r)?),
+            TAG_MESH => {
+                let (mesh, uvs) = parse_mesh(&mut r)?;
+                textured |= uvs;
+                meshes.push(mesh);
+            }
             TAG_INST => instances.push(parse_instance(&mut r)?),
-            TAG_MATL => scene.materials.push(parse_material(&mut r)?),
+            TAG_MATL => {
+                let (material, textures) = parse_material(&mut r)?;
+                textured |= textures.is_some();
+                scene.materials.push(material);
+                scene.textures.push(textures);
+            }
+            TAG_IMGS => {
+                set_once(&mut images, tag, parse_images(&mut r)?)?;
+                textured = true;
+            }
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
             TAG_PATN => scene.patterns.push(parse_pattern(&mut r)?),
@@ -860,11 +1023,33 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
 
     // The meshes the instances refer to: the file's own, or the kept ones when it has none; the
     // same for the bitmaps.
-    let (kept_geometry, kept_bitmaps, kept_lens) = match kept {
-        Some(k) => (Some(k.geometry), Some(k.bitmaps), k.lens),
-        None => (None, None, None),
+    let (kept_geometry, kept_bitmaps, kept_lens, kept_images) = match kept {
+        Some(k) => (Some(k.geometry), Some(k.bitmaps), k.lens, Some(k.images)),
+        None => (None, None, None, None),
     };
     let reuse_meshes = meshes.is_empty() && kept_geometry.is_some();
+    // M2b: the images travel with the meshes: a file without either keeps the loaded ones.
+    let reuse_images = if images.is_none() && reuse_meshes {
+        kept_images
+    } else {
+        None
+    };
+    let image_count = match (&images, &reuse_images) {
+        (Some(list), _) => list.len(),
+        (None, Some(kept)) => kept.len(),
+        (None, None) => 0,
+    };
+    if scene
+        .textures
+        .iter()
+        .flatten()
+        .any(|t| t.max_image().is_some_and(|i| i as usize >= image_count))
+    {
+        return Err(RsbError::Invalid {
+            tag: TAG_MATL,
+            reason: "texture image index does not refer to an IMGS image",
+        });
+    }
     let reuse_bitmaps = if bitmaps.is_empty() {
         kept_bitmaps
     } else {
@@ -961,6 +1146,11 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     if let Some(kept) = reuse_bitmaps {
         bitmaps = std::mem::take(kept);
     }
+    let images = match (images, reuse_images) {
+        (Some(list), _) => list,
+        (None, Some(kept)) => std::mem::take(kept),
+        (None, None) => Vec::new(),
+    };
     let render = render.unwrap_or_default();
     let width = crate::geometry::BvhWidth::native();
     let footprint = PixelFootprint::of(&camera, render.width, render.height);
@@ -968,6 +1158,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     scene.geometry = Geometry::with_particles(meshes, instances, sets, width)
         .map_err(|_| invalid_instance("too many instances"))?;
     scene.bitmaps = bitmaps;
+    scene.images = images;
+    // A scene without texture blocks holds no list of them (the in-memory default).
+    if scene.textures.iter().all(Option::is_none) {
+        scene.textures.clear();
+    }
+    // The flag says only what the images and the blocks do not: a file whose meshes carried
+    // their UV sets without either.
+    scene.textured = textured && scene.images.is_empty() && scene.textures.is_empty();
     scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
@@ -994,6 +1192,7 @@ impl Scene {
         let kept = Kept {
             geometry: &mut self.geometry,
             bitmaps: &mut self.bitmaps,
+            images: &mut self.images,
             lens: self.camera.lens.as_ref(),
         };
         let scene = read_scene(bytes, Some(kept))?;
@@ -1004,6 +1203,10 @@ impl Scene {
     /// Serialises the scene as an RSB file (the reference writer for the TypeScript side).
     pub fn to_rsb(&self) -> Vec<u8> {
         let mut w = Writer { buf: Vec::new() };
+        // M2b: a scene with texture data writes it as the page does: every mesh's UV sets, the
+        // texture block of every material that has one, the images.
+        let textured =
+            self.textured || !self.images.is_empty() || self.textures.iter().any(Option::is_some);
         w.buf.extend_from_slice(&MAGIC);
         w.u32(0); // header_len
 
@@ -1067,7 +1270,7 @@ impl Scene {
                 }
             });
         }
-        for m in &self.materials {
+        for (index, m) in self.materials.iter().enumerate() {
             w.section(TAG_MATL, |w| {
                 w.u32(m.kind);
                 w.rgb(m.base_color);
@@ -1092,6 +1295,9 @@ impl Scene {
                 w.rgb(m.scatter_color);
                 w.f32(m.scatter_g);
                 w.f32(m.abbe);
+                if let Some(Some(t)) = self.textures.get(index) {
+                    w.texture_block(t);
+                }
             });
         }
         for p in &self.patterns {
@@ -1123,6 +1329,16 @@ impl Scene {
                     w.u32(i);
                 }
                 w.u32(mesh.material_id());
+                if textured {
+                    w.u32(mesh.uv_sets() as u32);
+                    for set in 0..mesh.uv_sets() {
+                        for i in 0..n {
+                            let [u, v] = mesh.uv(set, i).unwrap_or_default();
+                            w.f32(u);
+                            w.f32(v);
+                        }
+                    }
+                }
             });
         }
         if !self.geometry.has_implicit_instances() {
@@ -1154,6 +1370,21 @@ impl Scene {
         }
         for e in &self.effects {
             w.section(TAG_FXAM, |w| w.buf.extend_from_slice(&e.encode()));
+        }
+        if !self.images.is_empty() {
+            w.section(TAG_IMGS, |w| {
+                w.u32(self.images.len() as u32);
+                for image in &self.images {
+                    w.u32(image.width());
+                    w.u32(image.height());
+                    w.u32(image.channels());
+                    w.u32(image.color_space());
+                    let data = image.pixels();
+                    w.buf.extend_from_slice(data);
+                    let pad = (4 - data.len() % 4) % 4;
+                    w.buf.extend(std::iter::repeat_n(0u8, pad));
+                }
+            });
         }
         for b in &self.bitmaps {
             w.section(TAG_BMAP, |w| {
@@ -1238,6 +1469,49 @@ impl Writer {
         self.f32(c.r);
         self.f32(c.g);
         self.f32(c.b);
+    }
+
+    /// The texture block of a `MATL` (M2b), from byte 100: its version, six slots, the emission
+    /// tint, the labels.
+    fn texture_block(&mut self, t: &MaterialTextures) {
+        let image = |i: Option<u32>| i.unwrap_or(u32::MAX);
+        self.u32(crate::texture::TEXTURE_BLOCK_VERSION);
+        for s in &t.slots {
+            self.u32(image(s.image));
+            self.u32(s.projection);
+            self.u32(s.axis);
+            self.u32(s.uv_set);
+            self.f32(s.size_mm);
+            self.f32(s.rotation_deg);
+            self.f32(s.offset[0]);
+            self.f32(s.offset[1]);
+            self.f32(s.repeat[0]);
+            self.f32(s.repeat[1]);
+            self.u32(s.wrap);
+            self.u32(s.channel);
+            self.u32(s.flags);
+            self.f32(s.strength);
+            self.f32(s.cutoff);
+        }
+        self.rgb(t.emission_tint);
+        self.u32(t.labels.len() as u32);
+        for l in &t.labels {
+            self.u32(image(l.image));
+            self.vec3(l.origin);
+            self.vec3(l.u);
+            self.vec3(l.v);
+            self.vec3(l.normal);
+            for v in [
+                l.width_mm,
+                l.height_mm,
+                l.depth_mm,
+                l.roughness,
+                l.coat,
+                l.relief,
+            ] {
+                self.f32(v);
+            }
+        }
     }
 
     /// Writes a section: tag, a length patched in after `body` ran, then the payload.
@@ -1399,6 +1673,7 @@ mod tests {
                 seed: 0xdead_beef,
             }],
             effects: Vec::new(),
+            ..Scene::default()
         }
     }
 

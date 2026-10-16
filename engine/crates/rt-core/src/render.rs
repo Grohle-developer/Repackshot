@@ -1220,6 +1220,33 @@ mod tests {
     pub(crate) const PINNED_E6_CLOTH_4SPP: u32 = 0x53e6_a855;
 
     #[test]
+    fn the_m2b_textures_have_a_pinned_hash_on_every_platform() {
+        // M2b added the image textures and labels of the shading (crate::texture): the IMGS
+        // images and their mipmaps, every projection, normal and height maps, a cut-out, an
+        // emission image, labels with their paper edge and a textured emitter. Through an RSB
+        // round trip; `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-m2b-example`). Every hash above stayed: scenes without textures draw the
+        // same bits.
+        let scene = crate::example::m2b_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("M2b example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_M2B_TEXTURES_4SPP, "textures on {}", isa.name());
+        }
+        // Without its textures the same scene is another image.
+        let mut plain = scene.clone();
+        plain.textures.clear();
+        assert_ne!(
+            scene_4spp_hash(&plain, Isa::detect()),
+            PINNED_M2B_TEXTURES_4SPP
+        );
+    }
+
+    /// Pinned hash of the M2b texture example at 4 samples per pixel.
+    pub(crate) const PINNED_M2B_TEXTURES_4SPP: u32 = 0x5d94_b21c;
+
+    #[test]
     fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {
         // O2 traced the camera rays through the double Gauss of the catalogue (f/2.8, seven
         // rounded blades, the bokeh lights of O1): the prescription at the end of LENS, prepared

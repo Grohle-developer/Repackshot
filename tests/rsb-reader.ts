@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbInstance, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbPattern, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbImage, RsbInstance, RsbLabel, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbPattern, RsbRender, RsbScene, RsbTextures, RsbTextureSlot, RsbVec } from '../src/io/rsb';
 import { defaultMaterial } from '../src/io/rsb';
 
 export interface Section {
@@ -44,6 +44,9 @@ class Cursor {
   get remaining(): number {
     return this.v.byteLength - this.pos;
   }
+  get offset(): number {
+    return this.pos;
+  }
 }
 
 export function readCamera(p: DataView): RsbCamera {
@@ -67,7 +70,63 @@ export function readMaterial(p: DataView): RsbMaterial {
   if (c.remaining >= 12) m.scatterColor = c.vec();
   if (c.remaining >= 4) m.scatterG = c.f32();
   if (c.remaining >= 4) m.abbe = c.f32();
+  // M2b: the texture block from byte 100 (version 1).
+  if (c.remaining >= 4 && c.offset === 100 && c.u32() === 1) m.textures = readTextureBlock(c);
   return m;
+}
+
+/** The texture block of a MATL after its version word (ARCHITECTURE §5.2, M2a's contract that M2b reads). */
+function readTextureBlock(c: Cursor): RsbTextures {
+  const image = (v: number) => (v === 0xffffffff ? -1 : v);
+  const slots: RsbTextureSlot[] = Array.from({ length: 6 }, () => ({
+    image: image(c.u32()),
+    projection: c.u32(),
+    axis: c.u32(),
+    uvSet: c.u32(),
+    sizeMm: c.f32(),
+    rotationDeg: c.f32(),
+    offset: [c.f32(), c.f32()],
+    repeat: [c.f32(), c.f32()],
+    wrap: c.u32(),
+    channel: c.u32(),
+    flags: c.u32(),
+    strength: c.f32(),
+    cutoff: c.f32(),
+  }));
+  const emissionTint = c.vec();
+  const labels: RsbLabel[] = Array.from({ length: c.u32() }, () => ({
+    image: image(c.u32()),
+    origin: c.vec(),
+    u: c.vec(),
+    v: c.vec(),
+    normal: c.vec(),
+    widthMm: c.f32(),
+    heightMm: c.f32(),
+    depthMm: c.f32(),
+    roughness: c.f32(),
+    coat: c.f32(),
+    relief: c.f32(),
+  }));
+  return { slots, emissionTint, labels };
+}
+
+/** The IMGS section (M2b): the images, their rows without the padding. */
+export function readImages(p: DataView): RsbImage[] {
+  const c = new Cursor(p);
+  const count = c.u32();
+  const out: RsbImage[] = [];
+  let at = 4;
+  for (let i = 0; i < count; i++) {
+    const width = p.getUint32(at, true);
+    const height = p.getUint32(at + 4, true);
+    const channels = p.getUint32(at + 8, true);
+    const colorSpace = p.getUint32(at + 12, true);
+    const len = width * height * channels;
+    const data = new Uint8Array(p.buffer.slice(p.byteOffset + at + 16, p.byteOffset + at + 16 + len));
+    out.push({ width, height, channels, colorSpace, data });
+    at += 16 + len + ((4 - (len % 4)) % 4);
+  }
+  return out;
 }
 
 export function readPattern(p: DataView): RsbPattern {
@@ -94,7 +153,22 @@ export function readMesh(p: DataView): RsbMesh {
   for (let i = 0; i < n * 3; i++) normals[i] = c.f32();
   const indices = new Uint32Array(m);
   for (let i = 0; i < m; i++) indices[i] = c.u32();
-  return { positions, normals, indices, materialId: c.u32() };
+  const mesh: RsbMesh = { positions, normals, indices, materialId: c.u32() };
+  // M2b: the UV sets, when the scene carries textures.
+  if (c.remaining >= 4) {
+    const sets = c.u32();
+    const set = () => Float32Array.from({ length: 2 * n }, () => c.f32());
+    if (sets >= 1) mesh.uvs = set();
+    if (sets >= 2) mesh.uvs2 = set();
+  }
+  return mesh;
+}
+
+/** True when a MESH payload carries the UV sets word (M2b). */
+export function meshHasUvWord(p: DataView): boolean {
+  const n = p.getUint32(0, true);
+  const m = p.getUint32(4, true);
+  return p.byteLength >= 4 * (2 + 6 * n + m + 1) + 4;
 }
 
 export function readInstance(p: DataView): RsbInstance {
@@ -327,7 +401,12 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
       case 'FXAM':
         (out.effects ??= []).push(readEffect(s.payload));
         break;
+      case 'IMGS':
+        out.images = readImages(s.payload);
+        out.textures = true;
+        break;
     }
+    if ((s.tag === 'MESH' && meshHasUvWord(s.payload)) || (s.tag === 'MATL' && s.payload.byteLength > 100)) out.textures = true;
   }
   return out;
 }
