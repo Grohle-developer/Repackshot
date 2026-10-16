@@ -8912,7 +8912,8 @@ reproducirse sin el registro del lanzador (que ahora dice *attempt k of 4
 failed*). (2) **La barra por cuartos tiene un coste**: con un solo intento
 aceptado la barra de la IA llega a un 23 % antes de que el trabajo acabe y salta
 al final (la fila dice *intento 1 de 4*); es lo pedido, pero si queda raro, el
-reparto desigual (el primer intento con más barra) es una decisión de Fable. (3)
+reparto desigual (el primer intento con más barra) es una decisión de criterio
+visual (regla 11). (3)
 El motivo va en una segunda línea de la fila y en su texto emergente; **no se
 tocó el aviso final** (el triaje lo mencionaba): el informe del visor ya lo
 dice. La fila de una tarea en curso con reintento crece (el estado y el motivo
