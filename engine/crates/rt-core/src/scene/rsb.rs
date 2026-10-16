@@ -50,6 +50,7 @@
 //!             |||| u32 denoise (0) caustic_photons (0); f32 caustic_radius (0)      (52 B)
 //!             ||||| f32 denoise_strength (1)                                       (56 B)
 //!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
+//!             ||||||| u32 adaptive (0); f32 noise_threshold (0)    (E10, 72 B; only when set)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
@@ -241,6 +242,10 @@
 //!   camera samples go ([`crate::pixel_filter`]: 0 the box of one pixel, 1 the centre, 2 a tent,
 //!   3 Blackman–Harris; unknown values mean the box) and `edge_supersample` the samples an edge
 //!   pixel takes per sample index (0 and 1: one; at most 16); a file of before renders as it did.
+//!   `adaptive` (E10) bit 0 asks the host for adaptive sampling ([`crate::adaptive`]; unknown bits
+//!   are kept and ignored) and `noise_threshold` (`0..=1`; 0 none) is the relative error of the
+//!   mean under which a block needs no more samples; the writer adds the two only when one is
+//!   set, so a scene without them is the 64-byte section of E11.
 //! * `LENS` (O1, optional, written right after `CAMR`): the optics of the camera beyond the plain
 //!   thin lens, see [`crate::optics`]. `blades` 0 is a round iris, 3 to 18 an iris of that many
 //!   blades of `roundness` (0 straight, 1 the inscribed circle) turned by `rotation_deg`;
@@ -881,7 +886,12 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         denoise_strength: r.opt_f32(1.0)?,
         pixel_filter: r.opt_u32(0)?,
         edge_supersample: r.opt_u32(1)?,
+        adaptive: r.opt_u32(0)?,
+        noise_threshold: r.opt_f32(0.0)?,
     };
+    if !(0.0..=crate::adaptive::MAX_NOISE_THRESHOLD).contains(&settings.noise_threshold) {
+        return Err(r.invalid("noise_threshold must be between 0 and 1"));
+    }
     if settings.edge_supersample > crate::pixel_filter::MAX_EDGE_SUPERSAMPLE {
         return Err(r.invalid("edge_supersample must be at most 16"));
     }
@@ -1522,6 +1532,12 @@ impl Scene {
             w.f32(r.denoise_strength);
             w.u32(r.pixel_filter);
             w.u32(r.edge_supersample);
+            // E10: only when adaptive sampling is asked for (or a threshold is set): without
+            // it the section is the 64 bytes of E11, byte for byte.
+            if r.adaptive != 0 || r.noise_threshold != 0.0 {
+                w.u32(r.adaptive);
+                w.f32(r.noise_threshold);
+            }
         });
         // M3b: the materials' programs, last.
         for (index, p) in self.programs.iter().enumerate() {
@@ -1748,6 +1764,8 @@ mod tests {
                 denoise_strength: 0.25,
                 pixel_filter: 3,
                 edge_supersample: 4,
+                adaptive: 1,
+                noise_threshold: 0.02,
             },
             bitmaps: test_bitmaps(),
             patterns: vec![crate::pattern::Pattern {
@@ -1909,7 +1927,8 @@ mod tests {
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(16 * 4));
+        // E10: with adaptive sampling asked for, 72 bytes (64 without, as E11 wrote it).
+        assert_eq!(size(b"RNDR"), Some(18 * 4));
         assert_eq!(size(b"PATN"), Some(27 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[4].1.len(), (2 + 24 + 6 + 1) * 4);
@@ -2214,6 +2233,66 @@ mod tests {
             Scene::from_rsb(&rewrite(None, None, Some(17))),
             Err(RsbError::Invalid { tag: TAG_RNDR, .. })
         ));
+    }
+
+    #[test]
+    fn a_render_section_without_adaptive_sampling_is_the_one_of_e11() {
+        // E10: the writer adds `adaptive` and `noise_threshold` only when one is set, so a scene
+        // without them is the 64 bytes of E11 byte for byte; a file of 64 B reads them off; an
+        // unknown bit of `adaptive` is kept; a threshold outside 0..=1 is invalid.
+        let mut scene = full_scene();
+        assert_eq!(
+            (scene.render.adaptive, scene.render.noise_threshold),
+            (1, 0.02)
+        );
+        let bytes = scene.to_rsb();
+        let rndr = |bytes: &[u8]| {
+            sections(bytes)
+                .into_iter()
+                .find(|(t, _)| *t == TAG_RNDR)
+                .map(|(_, p)| p)
+                .expect("RNDR")
+        };
+        let payload = rndr(&bytes);
+        assert_eq!(payload.len(), 72);
+        assert_eq!(payload[64..68], 1u32.to_le_bytes());
+        assert_eq!(payload[68..72], 0.02f32.to_le_bytes());
+        let rewrite = |f: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    f(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let old = Scene::from_rsb(&rewrite(&|p| p.truncate(64))).expect("E11 layout reads");
+        assert_eq!((old.render.adaptive, old.render.noise_threshold), (0, 0.0));
+        let flag_only = Scene::from_rsb(&rewrite(&|p| p.truncate(68))).expect("reads");
+        assert_eq!(
+            (flag_only.render.adaptive, flag_only.render.noise_threshold),
+            (1, 0.0)
+        );
+        let odd = Scene::from_rsb(&rewrite(&|p| p[64..68].copy_from_slice(&6u32.to_le_bytes())))
+            .expect("reads");
+        assert_eq!(odd.render.adaptive, 6);
+        assert!(!crate::adaptive::Adaptive::enabled(&odd.render));
+        for bad in [-0.01f32, 1.5, f32::NAN] {
+            assert!(
+                matches!(
+                    Scene::from_rsb(&rewrite(&|p| p[68..72].copy_from_slice(&bad.to_le_bytes()))),
+                    Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+                ),
+                "{bad}"
+            );
+        }
+        // Off, the section is E11's again.
+        scene.render.adaptive = 0;
+        scene.render.noise_threshold = 0.0;
+        let plain = scene.to_rsb();
+        assert_eq!(rndr(&plain).len(), 64);
+        assert_eq!(rndr(&plain)[..], payload[..64]);
     }
 
     #[test]

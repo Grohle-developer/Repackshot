@@ -283,6 +283,11 @@ pub fn scene_lens_info(handle: u32) -> Option<String> {
 /// `normal` (3), `depth` (1), `part_id` (1) and `material_id` (1), one after another.
 pub const DENOISE_WORDS: usize = 14;
 
+/// E10: words per pixel of the input of an adaptive image: [`DENOISE_WORDS`] and a last plane,
+/// each pixel's own sample count (`f32`; the sums are rescaled to `samples`,
+/// `rt_core::adaptive::rescale`).
+pub const DENOISE_WORDS_COUNTED: usize = DENOISE_WORDS + 1;
+
 /// The denoiser's presets by number (U11): 0 the full filter of a render, 1 the viewport's.
 pub fn denoise_preset(id: u32) -> Option<Preset> {
     match id {
@@ -294,7 +299,8 @@ pub fn denoise_preset(id: u32) -> Option<Preset> {
 
 /// The denoiser (`rt_post::denoise`, the full filter) on a band of `rows` image rows from
 /// `origin_y` of an image `width × height` of `samples` samples per pixel: `input` holds its
-/// planes (little-endian words, see [`DENOISE_WORDS`]); returns the denoised RGBA sums of image
+/// planes (little-endian words, see [`DENOISE_WORDS`], or [`DENOISE_WORDS_COUNTED`] for an adaptive
+/// image, E10); returns the denoised RGBA sums of image
 /// rows `y0 .. y1` (which the band must hold with `rt_post::denoise::HALO` rows around them, or up
 /// to the image's edge).
 #[allow(clippy::too_many_arguments)]
@@ -339,7 +345,9 @@ pub fn denoise_with(
     input: &[u8],
 ) -> Result<Vec<f32>, u32> {
     let n = width as usize * rows as usize;
-    if input.len() != n * DENOISE_WORDS * 4 {
+    // E10: with one plane more, each pixel's own sample count (an adaptive image).
+    let counted = input.len() == n * DENOISE_WORDS_COUNTED * 4;
+    if input.len() != n * DENOISE_WORDS * 4 && !counted {
         return Err(STATUS_BAD_DENOISE);
     }
     let words = |from: usize, count: usize| -> Vec<u32> {
@@ -358,12 +366,18 @@ pub fn denoise_with(
     let depth = floats(n * 11, n);
     let part_id = words(n * 12, n);
     let material_id = words(n * 13, n);
+    let counts = if counted {
+        floats(n * DENOISE_WORDS, n)
+    } else {
+        Vec::new()
+    };
     let band = DenoiseInput {
         width,
         height,
         origin_y,
         rows,
         samples,
+        counts: &counts,
         sums: &sums,
         lum2: &lum2,
         albedo: &albedo,

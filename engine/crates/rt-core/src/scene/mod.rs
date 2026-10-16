@@ -711,6 +711,14 @@ pub struct RenderSettings {
     /// E11, `RNDR.edge_supersample`: the samples an edge pixel takes per sample index (1: none
     /// more; 0 is read as 1; at most [`crate::pixel_filter::MAX_EDGE_SUPERSAMPLE`]).
     pub edge_supersample: u32,
+    /// E10, `RNDR.adaptive`: bit 0 ([`crate::adaptive::ADAPTIVE_ON`]) the host samples
+    /// adaptively, in rounds decided by the image's noise ([`crate::adaptive`]); 0, and a file
+    /// without it, samples every pixel alike, as before. Unknown bits are kept and ignored.
+    pub adaptive: u32,
+    /// E10, `RNDR.noise_threshold`: with adaptive sampling, the relative error of the mean under
+    /// which a block needs no more samples, `0..=1` (0.01 is 1 %); 0, none: the render ends by its
+    /// samples or its time.
+    pub noise_threshold: f32,
 }
 
 /// `RNDR.denoise` bit 0: the host denoises the finished image.
@@ -766,6 +774,8 @@ impl Default for RenderSettings {
             denoise_strength: 1.0,
             pixel_filter: 0,
             edge_supersample: 1,
+            adaptive: 0,
+            noise_threshold: 0.0,
         }
     }
 }

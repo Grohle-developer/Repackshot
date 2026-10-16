@@ -36,6 +36,8 @@ USAGE:
     rt --write-m3b-example <scene.rsb>
     rt --write-e9-example <scene.rsb>
     rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --adaptive-noise <dir> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
+       [--rounds N]
     rt --write-e11-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
@@ -67,6 +69,11 @@ OPTIONS:
                             0 writes the image without denoise
         --keep-noisy        with --denoise, also write the image without denoise next to it
                             (<out>-noisy.png)
+        --adaptive          sample adaptively (RNDR.adaptive, E10): rounds of samples go to the
+                            noisiest 8x8 blocks, at most --samples per pixel
+        --noise <P>         with adaptive sampling, stop once every block's relative error of
+                            the mean is under P percent (RNDR.noise_threshold, 0.5 to 5 in the
+                            interface; implies --adaptive)
         --caustics <N>      trace N caustic photons per sample (RNDR.caustic_photons; 0: off)
         --caustic-radius <R>
                             first gather radius of the caustics in pixels (default 3)
@@ -159,6 +166,10 @@ OPTIONS:
         --write-film-thumb <f>
                             write the base scene of the film plugin's recipe thumbnails (the
                             perfume bottle beside the table lamp, 320x200) as an RSB file
+        --write-e10-example <f>
+                            write the E10 parity scene (the E5b-1 scene sampled adaptively to
+                            a noise target) as an RSB file
+        --rounds <N>        --adaptive-noise: seeds per scene and mode (default 3)
         --write-o2-example <f>
                             write the O2 parity scene (the example through the traced double
                             Gauss, and bokeh lights) as an RSB file
@@ -207,6 +218,11 @@ pub struct Options {
     /// `--edge-samples`: the samples of an edge pixel per sample index (E11), overriding the
     /// scene's.
     pub edge_samples: Option<u32>,
+    /// `--adaptive` / `--noise`: adaptive sampling (E10), with this noise target (0: none),
+    /// overriding the scene's.
+    pub adaptive: Option<f32>,
+    /// `--rounds`: rounds of `--adaptive-noise`.
+    pub rounds: Option<u32>,
     /// `--format`: the file format (else the output's extension decides).
     pub format: Option<OutputFormat>,
     /// `--bits`: bits per channel.
@@ -242,6 +258,10 @@ impl Options {
         }
         if let Some(k) = self.edge_samples {
             scene.render.edge_supersample = k;
+        }
+        if let Some(target) = self.adaptive {
+            scene.render.adaptive |= rt_core::adaptive::ADAPTIVE_ON;
+            scene.render.noise_threshold = target;
         }
         let samples = self.samples.unwrap_or(if scene.render.max_samples > 0 {
             scene.render.max_samples
@@ -387,6 +407,18 @@ pub enum Command {
         /// Samples, threads and size overrides.
         options: Options,
     },
+    /// Measure adaptive sampling against uniform sampling at equal time (E10).
+    AdaptiveNoise {
+        /// Output directory (`noise.json`).
+        dir: PathBuf,
+        /// Overrides (reference samples, threads, size, seconds per render, rounds).
+        options: Options,
+    },
+    /// Write the E10 parity scene (`rt_core::example::e10_scene`) as an RSB file.
+    WriteE10Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the E11 parity scene (`rt_core::example::e11_scene`) as an RSB file.
     WriteE11Example {
         /// RSB file to write.
@@ -500,6 +532,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e9 = None;
     let mut sss_dir = None;
     let mut write_e11 = None;
+    let mut write_e10 = None;
+    let mut adaptive_noise_dir = None;
     let mut write_ambient = None;
     let mut write_o1 = None;
     let mut write_o3a = None;
@@ -622,6 +656,23 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-m3b-example" => write_m3b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--rounds" => options.rounds = Some(positive(value(&mut it, arg)?, arg)?),
+            "--adaptive" => {
+                options.adaptive.get_or_insert(0.0);
+            }
+            "--noise" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<f32>() {
+                    Ok(p) if (0.0..=100.0).contains(&p) => options.adaptive = Some(p / 100.0),
+                    _ => {
+                        return Err(format!(
+                            "--noise expects a percentage from 0 to 100, got '{text}'"
+                        ))
+                    }
+                }
+            }
             "--write-ambient-example" => {
                 write_ambient = Some(PathBuf::from(value(&mut it, arg)?));
             }
@@ -745,6 +796,21 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e11-example takes no other option".into());
         }
         return Ok(Command::WriteE11Example { path });
+    }
+    if let Some(path) = write_e10 {
+        if args.len() != 2 {
+            return Err("--write-e10-example takes no other option".into());
+        }
+        return Ok(Command::WriteE10Example { path });
+    }
+    if let Some(dir) = adaptive_noise_dir {
+        if input.is_some() || output.is_some() {
+            return Err("--adaptive-noise renders its own scenes: no scene or -o".into());
+        }
+        return Ok(Command::AdaptiveNoise { dir, options });
+    }
+    if options.rounds.is_some() {
+        return Err("--rounds goes with --adaptive-noise".into());
     }
     if let Some(path) = write_ambient {
         if args.len() != 2 {
@@ -930,6 +996,29 @@ pub fn run(command: Command) -> Result<(), String> {
             let bytes = rt_core::example::e9_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteE10Example { path } => {
+            let bytes = rt_core::example::e10_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::AdaptiveNoise { dir, options } => {
+            let size = options.size.unwrap_or((320, 240));
+            let reference = options.samples.unwrap_or(4096);
+            let seconds = f64::from(options.max_seconds.unwrap_or(10.0));
+            let rounds = options.rounds.unwrap_or(3);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "adaptive noise: {}x{}, {seconds} s per render, reference {reference} spp, {rounds} rounds, {threads} threads",
+                size.0, size.1
+            );
+            let table = crate::adaptive_noise::run(&dir, size, seconds, reference, rounds, threads)?;
+            print!("{table}");
+            println!("wrote {}", dir.join("noise.json").display());
             Ok(())
         }
         Command::WriteE11Example { path } => {

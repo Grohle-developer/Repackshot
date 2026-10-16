@@ -82,6 +82,7 @@ impl Synthetic {
             origin_y: y0,
             rows: y1 - y0,
             samples: self.samples,
+            counts: &[],
             sums: &self.sums[a * 4..b * 4],
             lum2: &self.lum2[a..b],
             albedo: &self.albedo[a * 3..b * 3],
