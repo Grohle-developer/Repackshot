@@ -321,7 +321,8 @@ describe('the watchdog', () => {
 describe('the canvas shows the project as it is', () => {
   it('the scene on screen is the scene of the project, after a change too', async () => {
     const r = rig();
-    await r.run(80);
+    // Waits on the first picture, not on a fixed 80 ms of wall time (on a loaded machine the first frame came later).
+    expect(await until(r, () => !!r.engine.status().shownKey, 5000)).toBe(true);
     let st = r.engine.status();
     expect(st.shownKey).toBeTruthy();
     expect(st.shownKey).toBe(st.wantKey);
@@ -329,7 +330,7 @@ describe('the canvas shows the project as it is', () => {
     st = r.engine.status();
     expect(st.wantKey).not.toBe(st.shownKey);
     // (A change right after another renders at reduced resolution first, then at full.)
-    await r.run(500);
+    expect(await until(r, () => r.engine.status().shownKey === r.engine.status().wantKey, 5000)).toBe(true);
     st = r.engine.status();
     expect(st.shownKey).toBe(st.wantKey);
   });
