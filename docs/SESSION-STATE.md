@@ -4,7 +4,7 @@ Este archivo lo escribe el responsable (Fable) para que cualquier sesión
 nueva pueda seguir donde se quedó esta. Lo que cuenta es lo que hay en
 `origin`: la rama de sesión `ccr-8df3f848-6ukiky` (los PR #7, #8, #9 y #10 están
 fusionados en `main` por el usuario, el último en `dcba23d`; v0.1.6 salió de `c413669`;
-el PR abierto ahora es el de E9 + el retoque de `GRADIENT_POOL`, rama de sesión → `main`;
+el PR abierto ahora es el **#11** (E9 + el retoque de `GRADIENT_POOL` + el reporte en `TODO.md`), rama de sesión → `main`;
 E6 y O2 entrarán en ese mismo PR mientras siga abierto) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
 de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 «WIP» puede tener tests en rojo). Los árboles de trabajo locales
@@ -65,7 +65,7 @@ O2) y al responsable a medias del retoque de `GRADIENT_POOL`. Al volver
 con el árbol de O2 tal cual, empujó `wip/ccr-8df3f848/o1` y
 `wip/ccr-8df3f848/e6` (`1dc375e`, limpio), terminó el retoque (charco 0,85,
 44 tests de sets en verde), guardó el reporte de errores del usuario en
-`docs/TODO.md` y abrió el PR de E9. E6 y O2 siguen con agentes nuevos desde
+`docs/TODO.md` y abrió el PR #11. E6 y O2 siguen con agentes nuevos (lanzados el 16-10 a las 10:30 UTC) desde
 esos *commits*, con el brief de su fase y los veredictos de abajo. El bucle
 de empuje de las ramas `wip/` no está en marcha: cada agente empuja su rama
 tras cada *commit* (o el responsable).
