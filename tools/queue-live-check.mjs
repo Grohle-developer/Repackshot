@@ -25,7 +25,7 @@
 // view. Results: out/queue-live-check[-desktop].json, out/queue-live-measure[-desktop].json.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -271,7 +271,24 @@ const median = (xs) => {
 function cpuSeconds() {
   if (!existsSync('/proc/self/stat')) return null;
   const tick = 100;
-  const pids = spawnSync('pgrep', ['-f', 'pw-browsers/chromium']).stdout.toString().split(/\s+/).filter(Boolean);
+  // This check's browser (its marker switch) and every process under it: the zygotes, the page, the GPU process.
+  const root = spawnSync('pgrep', ['-f', '--', `--repackshot-check=${process.pid}`]).stdout.toString().split(/\s+/).filter(Boolean);
+  const parent = new Map();
+  for (const d of readdirSync('/proc')) {
+    if (!/^\d+$/.test(d)) continue;
+    try {
+      const st = readFileSync(`/proc/${d}/stat`, 'utf8');
+      parent.set(d, st.slice(st.lastIndexOf(')') + 2).split(' ')[1]);
+    } catch {
+      // gone
+    }
+  }
+  const mine = new Set(root);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [pid, pp] of parent) if (!mine.has(pid) && mine.has(pp)) (mine.add(pid), (grew = true));
+  }
+  const pids = [...mine];
   if (launcherPid) pids.push(String(launcherPid));
   let browser = 0;
   let launcher = 0;
@@ -378,7 +395,7 @@ try {
     await waitFor(BASE);
   }
   const { chromium } = await import(join(ROOT, 'node_modules', 'playwright-core', 'index.mjs'));
-  browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', `--repackshot-check=${process.pid}`] });
   if (MEASURE) await measure(browser);
   else await checks(browser);
 } catch (err) {
