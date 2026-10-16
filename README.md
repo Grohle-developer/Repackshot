@@ -113,7 +113,8 @@ today.
   renders to the same pixels on x86_64, ARM64, RISC-V and wasm, with one
   thread or many). In the browser it runs in a pool of Web Workers; on the
   command line, `rt` renders a scene file with every core of the machine.
-- **Projects in one file** (`.repack.json`, meshes embedded), and a
+- **Projects in one file** (`.repack`, meshes embedded; the `.repack.json` of
+  earlier versions opens too), and a
   procedural example part so you can see a finished result without
   bringing your own CAD.
 

@@ -80,7 +80,7 @@ describe('the project file service, in a browser with the File System Access API
     expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
     expect(showSaveFilePicker.mock.calls[0][0]).toMatchObject({
       suggestedName: 'Name.repack.json',
-      types: [{ description: 'Repackshot project', accept: { 'application/json': ['.repack.json'] } }],
+      types: [{ description: 'Repackshot project', accept: { 'application/json': ['.repack', '.repack.json'] } }],
     });
     expect(await files.save(blobOf('two'), 'Name.repack.json', { saveAs: false })).toMatchObject({ kind: 'SAVED', inPlace: true });
     expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
@@ -113,9 +113,11 @@ describe('the project file service, in a browser with the File System Access API
 
   it('a file opened with the picker is the one Save writes to, once the project is open (adopt)', async () => {
     const opened = handle('opened.repack.json', { contents: '{"x":1}' });
-    const { files, showSaveFilePicker } = setup({ open: async () => [opened] });
+    const { files, showSaveFilePicker, showOpenFilePicker } = setup({ open: async () => [opened] });
     const picked = await files.pick();
     expect(picked!.file.name).toBe('opened.repack.json');
+    // The picker lists both extensions, so a .repack and a .repack.json can be chosen.
+    expect(showOpenFilePicker.mock.calls[0][0]).toMatchObject({ types: [{ accept: { 'application/json': ['.repack', '.repack.json'] } }] });
     expect(await picked!.file.text()).toBe('{"x":1}');
     // Not the file of the project until the interface says the project opened.
     files.adopt(picked!.handle);
@@ -230,6 +232,19 @@ describe('the project file service, in a browser without it', () => {
     expect(await createProjectFiles({}, () => {}, { chooseWithInput: async () => null }).pick()).toBeNull();
   });
 
+  it('the input offers .repack and .repack.json, then any JSON', async () => {
+    const listeners: Record<string, () => void> = {};
+    const input = { type: '', accept: '', style: {}, files: null, addEventListener: (name: string, fn: () => void) => void (listeners[name] = fn), click: () => listeners.cancel?.(), remove: () => undefined };
+    vi.stubGlobal('document', { createElement: () => input, body: { appendChild: () => undefined } });
+    try {
+      expect(await createProjectFiles({}, () => {}).pick()).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(input.type).toBe('file');
+    expect(input.accept).toBe('.repack,.repack.json,.json,application/json');
+  });
+
   it('an insecure page has no picker either (the API only exists in secure contexts)', () => {
     const files = createProjectFiles({ showSaveFilePicker: async () => handle('x'), showOpenFilePicker: async () => [], isSecureContext: false }, () => {});
     expect(files.canSaveInPlace).toBe(false);
@@ -303,9 +318,9 @@ describe('Save and Save as…', () => {
     expect(await cmd.saveProject(ctx)).toBe(true);
     expect(ctx.store.get().meta.dirty).toBe(false);
     expect(stubs.saves).toHaveLength(1);
-    expect(stubs.saves[0]).toMatchObject({ name: 'bottle-a-ete.repack.json', saveAs: false });
+    expect(stubs.saves[0]).toMatchObject({ name: 'bottle-a-ete.repack', saveAs: false });
     expect(JSON.parse(stubs.saves[0].text)).toMatchObject({ format: PROJECT_FORMAT, state: { meta: { name: 'Bottle “A” été' } } });
-    expect(toasts(ctx)).toEqual(['Saved bottle-a-ete.repack.json']);
+    expect(toasts(ctx)).toEqual(['Saved bottle-a-ete.repack']);
     // Saving is not an undoable change: the history holds the rename and nothing else.
     expect(ctx.store.history().undo).toHaveLength(1);
   });
@@ -313,7 +328,7 @@ describe('Save and Save as…', () => {
   it('Save as… passes the flag; an untitled project is saved as untitled', async () => {
     const { ctx, stubs } = makeCtx();
     await cmd.saveProject(ctx, { saveAs: true });
-    expect(stubs.saves[0]).toMatchObject({ name: 'untitled.repack.json', saveAs: true });
+    expect(stubs.saves[0]).toMatchObject({ name: 'untitled.repack', saveAs: true });
   });
 
   it('a cancelled dialog changes nothing; a failed write says why and keeps the dot', async () => {
@@ -326,7 +341,7 @@ describe('Save and Save as…', () => {
     stubs.next = { kind: 'FAILED', reason: 'disk is full' };
     expect(await cmd.saveProject(ctx)).toBe(false);
     expect(ctx.store.get().meta.dirty).toBe(true);
-    expect(toasts(ctx)).toEqual(['Could not save untitled.repack.json: disk is full']);
+    expect(toasts(ctx)).toEqual(['Could not save untitled.repack: disk is full']);
   });
 
   it('a service that throws is a failed save, not an unhandled error', async () => {
@@ -334,7 +349,7 @@ describe('Save and Save as…', () => {
     edit(ctx);
     ctx.services.projectFiles.save = async () => Promise.reject(new Error('nope'));
     expect(await cmd.saveProject(ctx)).toBe(false);
-    expect(toasts(ctx)).toEqual(['Could not save untitled.repack.json: nope']);
+    expect(toasts(ctx)).toEqual(['Could not save untitled.repack: nope']);
   });
 
   it('changes made while the file was being written stay unsaved', async () => {
@@ -558,6 +573,25 @@ describe('dropping files on the window', () => {
     expect(stubs.imported).toEqual([]);
   });
 
+  it('a .repack opens the same, in the drop and in the Import dialog, whatever the case of its name', async () => {
+    const { text } = await exampleFile();
+    const dropped = makeCtx();
+    cmd.dropFiles(dropped.ctx, [fileOf(text, 'saved.repack')]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(dropped.ctx.store.get().meta.name).toBe('Bottle');
+    expect(dropped.stubs.imported).toEqual([]);
+    const imported = makeCtx();
+    await cmd.importFiles(imported.ctx, [fileOf(text, 'Mine.REPACK')]);
+    expect(imported.ctx.store.get().meta.name).toBe('Bottle');
+    expect(imported.stubs.imported).toEqual([]);
+    // With models in the same drop, as with .repack.json.
+    const mixed = makeCtx();
+    cmd.dropFiles(mixed.ctx, [fileOf('v 0 0 0', 'a.obj'), fileOf(text, 'saved.repack')]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mixed.ctx.store.get().meta.name).toBe('Bottle');
+    expect(mixed.stubs.imported).toEqual([]);
+  });
+
   it('with models in the same drop only the project is opened, and the person is told', async () => {
     const { text } = await exampleFile();
     const { ctx, stubs } = makeCtx();
@@ -583,13 +617,18 @@ describe('dropping files on the window', () => {
     expect(stubs.imported).toEqual([]);
   });
 
-  it('knows a project by its double extension, not by .json alone', () => {
-    expect(cmd.isProjectFile({ name: 'a.repack.json' })).toBe(true);
-    expect(cmd.isProjectFile({ name: 'A B.REPACK.JSON' })).toBe(true);
-    expect(cmd.isProjectFile({ name: 'a.json' })).toBe(false);
-    expect(cmd.isProjectFile({ name: 'repack.json' })).toBe(false);
-    expect(cmd.isProjectFile({ name: 'a.repack' })).toBe(false);
-    expect(cmd.isProjectFile({ name: 'a.gltf' })).toBe(false);
+  it('knows a project by .repack or by the .repack.json it used to be called, not by .json alone', () => {
+    for (const name of ['a.repack', 'A B.REPACK', 'a.repack.json', 'A B.REPACK.JSON', 'a.b.repack']) expect(cmd.isProjectFile({ name }), name).toBe(true);
+    for (const name of ['a.json', 'repack.json', 'repack', '.repack', 'a.repackx', 'a.repack.bak', 'a.gltf']) expect(cmd.isProjectFile({ name }), name).toBe(false);
+  });
+
+  it('a project saved as .repack and one saved as .repack.json are the same file: the same text, opened by either name', async () => {
+    const { text } = await exampleFile();
+    for (const name of ['one.repack', 'one.repack.json']) {
+      const { ctx } = makeCtx();
+      await cmd.openProjectFile(ctx, fileOf(text, name));
+      expect(ctx.store.get().meta.name, name).toBe('Bottle');
+    }
   });
 
   it('reads a drop: the files and, in Chromium, their handles', async () => {

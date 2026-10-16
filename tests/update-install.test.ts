@@ -182,7 +182,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     cmd.requestCloseWindow(h.ctx);
     choose(h.ctx, 1); // Save as…
     await flush();
-    expect(h.saves).toEqual([{ name: 'bottle.repack.json', saveAs: true }]);
+    expect(h.saves).toEqual([{ name: 'bottle.repack', saveAs: true }]);
     expect(h.closed()).toBe(1);
     expect(h.ctx.store.get().meta.dirty).toBe(false);
 
@@ -214,7 +214,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     cmd.requestNewProject(h.ctx);
     choose(h.ctx, 0);
     await flush();
-    expect(h.saves).toEqual([{ name: 'bottle.repack.json', saveAs: false }]);
+    expect(h.saves).toEqual([{ name: 'bottle.repack', saveAs: false }]);
     expect(h.ctx.store.get().meta.name).toBe('');
     const c = harness();
     edit(c.ctx);
@@ -250,7 +250,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     expect(h.launcher.requests).toEqual([]);
     shown[0].options[1].run();
     await flush();
-    expect(h.saves).toEqual([{ name: 'bottle.repack.json', saveAs: true }]);
+    expect(h.saves).toEqual([{ name: 'bottle.repack', saveAs: true }]);
     expect(h.launcher.requests).toHaveLength(1);
     // Nothing to ask: nothing shown, and it goes on.
     const clean = harness();
@@ -557,7 +557,7 @@ describe('Install and restart', () => {
     expect(install(h.ctx).deferred).toBe(false);
     choose(h.ctx, 1);
     await flush();
-    expect(h.saves).toEqual([{ name: 'lamp.repack.json', saveAs: true }]);
+    expect(h.saves).toEqual([{ name: 'lamp.repack', saveAs: true }]);
     expect(h.closed()).toBe(1);
   });
 

@@ -1,6 +1,6 @@
 // The user's own library (U4, SPEC §3.9): materials, light setups, product types and studios the person
 // made and wants to reuse between projects. It is user state like the theme, not project state: it is not in
-// `ProjectState`, has no undo and is not saved in `.repack.json` (persistence and the JSON file are
+// `ProjectState`, has no undo and is not saved in `.repack` (persistence and the JSON file are
 // `io/library.ts`; the interface holds the current value in its own state). This module is pure functions on
 // plain data: add, rename, remove, make an item from what is on screen, and turn an item back into what the
 // project understands.

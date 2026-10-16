@@ -6,6 +6,8 @@
 // convenience: when it stops working (the file moved, the permission was refused) Save asks where again, and a
 // picker that cannot be shown downloads the file, so a project is never lost to the dialogs.
 
+import { PROJECT_EXTENSIONS } from '../core/project-names';
+
 /** The part of a FileSystemWritableFileStream used here. */
 interface Writable {
   write(data: Blob): Promise<void>;
@@ -63,7 +65,7 @@ function chooseWithInput(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.repack.json,.json,application/json';
+    input.accept = `${PROJECT_EXTENSIONS.join(',')},.json,application/json`;
     input.style.display = 'none';
     input.addEventListener('change', () => {
       resolve(input.files?.[0] ?? null);
@@ -87,7 +89,7 @@ export function createProjectFiles(
   const secure = win.isSecureContext !== false;
   const savePicker = typeof win.showSaveFilePicker === 'function' && secure ? (win.showSaveFilePicker as SavePicker).bind(win) : null;
   const openPicker = typeof win.showOpenFilePicker === 'function' && secure ? (win.showOpenFilePicker as OpenPicker).bind(win) : null;
-  const types = () => [{ description: options.description?.() ?? 'Repackshot project', accept: { 'application/json': ['.repack.json'] } }];
+  const types = () => [{ description: options.description?.() ?? 'Repackshot project', accept: { 'application/json': [...PROJECT_EXTENSIONS] } }];
   /** The file the open project came from or was last saved to. */
   let current: FileHandle | null = null;
   /** Kept for the next session: a failure only means Last project has nothing to offer. */

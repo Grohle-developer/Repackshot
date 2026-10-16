@@ -56,6 +56,7 @@ import {
 import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
 import { resolvePreset } from '../core/rig';
 import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
+import { isProjectName, PROJECT_EXTENSION } from '../core/project-names';
 import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
@@ -512,11 +513,9 @@ export function projectFileBase(ctx: Ctx): string {
   return slug(ctx.store.get().meta.name || t('app.untitled'));
 }
 
-/** The extension of a project file (it is JSON, so `.json` alone is not enough to tell it from other files). */
-export const PROJECT_EXTENSION = '.repack.json';
-
+/** A project file: `.repack`, or `.repack.json` as projects were saved until v0.1.6. */
 export function isProjectFile(file: { name: string }): boolean {
-  return file.name.toLowerCase().endsWith(PROJECT_EXTENSION);
+  return isProjectName(file.name);
 }
 
 /**

@@ -37,8 +37,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// Extensions the file API writes: what the application produces (images, scenes, projects,
 /// libraries, videos).
-pub const WRITABLE_EXTENSIONS: [&str; 11] = [
-    "png", "jpg", "jpeg", "exr", "tif", "tiff", "dng", "json", "rsb", "mp4", "webm",
+pub const WRITABLE_EXTENSIONS: [&str; 12] = [
+    "png", "jpg", "jpeg", "exr", "tif", "tiff", "dng", "json", "repack", "rsb", "mp4", "webm",
 ];
 
 /// The id of the system's Downloads folder.
@@ -50,8 +50,19 @@ pub const MAX_LISTED: usize = 4096;
 /// Most numbered names tried (`name (2).png` ... `name (999).png`).
 pub const MAX_NUMBERED: u32 = 999;
 
-/// The extension of a project file.
-pub const PROJECT_EXTENSION: &str = ".repack.json";
+/// The extension a project is saved with. The file is JSON; the extension tells it from any other.
+pub const PROJECT_EXTENSION: &str = ".repack";
+
+/// What a project file was called until v0.1.6: the same JSON, still opened and remembered.
+pub const LEGACY_PROJECT_EXTENSION: &str = ".repack.json";
+
+/// True when the name ends in a project extension (any case) after a name of its own.
+pub fn is_project_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [PROJECT_EXTENSION, LEGACY_PROJECT_EXTENSION]
+        .iter()
+        .any(|e| lower.len() > e.len() && lower.ends_with(e))
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -214,8 +225,10 @@ pub fn numbered(name: &str, k: u32) -> String {
         return name.to_string();
     }
     let lower = name.to_ascii_lowercase();
-    let split = if lower.ends_with(PROJECT_EXTENSION) && name.len() > PROJECT_EXTENSION.len() {
-        Some(name.len() - PROJECT_EXTENSION.len())
+    let split = if lower.ends_with(LEGACY_PROJECT_EXTENSION)
+        && name.len() > LEGACY_PROJECT_EXTENSION.len()
+    {
+        Some(name.len() - LEGACY_PROJECT_EXTENSION.len())
     } else {
         name.rfind('.').filter(|&i| i > 0)
     };
@@ -505,11 +518,11 @@ impl Files {
         lock(&self.hashing).get(id).copied()
     }
 
-    /// Remembers the project file `id` (a file of this launch's dialogs, ending in
+    /// Remembers the project file `id` (a file of this launch's dialogs, ending in `.repack` or
     /// `.repack.json`) as the last one.
     pub fn set_last_project(&self, id: &str) -> Result<(), FileError> {
         let g = self.need(id)?;
-        if g.folder || !g.name().to_ascii_lowercase().ends_with(PROJECT_EXTENSION) {
+        if g.folder || !is_project_name(&g.name()) {
             return Err(FileError::Forbidden("not a project file"));
         }
         let text = json::Object::new()
@@ -527,8 +540,8 @@ impl Files {
     pub fn last_project(&self) -> Option<Grant> {
         let text = std::fs::read_to_string(&self.last_project).ok()?;
         let path = PathBuf::from(json::parse(&text).ok()?.get("path")?.as_str()?);
-        let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
-        if !name.ends_with(PROJECT_EXTENSION) || !path.is_file() {
+        let name = path.file_name()?.to_string_lossy().into_owned();
+        if !is_project_name(&name) || !path.is_file() {
             return None;
         }
         self.grant(&path, false, true, true).ok()
@@ -988,11 +1001,16 @@ mod tests {
         assert_eq!(numbered("a.png", 1), "a.png");
         assert_eq!(numbered("a.png", 2), "a (2).png");
         assert_eq!(numbered("bottle.repack.json", 3), "bottle (3).repack.json");
+        assert_eq!(numbered("bottle.repack", 3), "bottle (3).repack");
+        assert_eq!(numbered("A.REPACK.JSON", 2), "A (2).REPACK.JSON");
         assert_eq!(numbered("noext", 2), "noext (2)");
         assert_eq!(numbered(".hidden", 2), ".hidden (2)");
         assert_eq!(extension("A.PNG").as_deref(), Some("png"));
         assert_eq!(extension(".png"), None);
         assert!(writable_name("x.repack.json") && writable_name("x.EXR"));
+        // A project is saved as .repack (or, as before, .repack.json).
+        assert!(writable_name("x.repack") && writable_name("X.REPACK"));
+        assert!(WRITABLE_EXTENSIONS.contains(&"repack"));
         assert!(writable_name("x.tif") && writable_name("x.TIFF") && writable_name("x.dng"));
         for bad in [
             "x.exe",
@@ -1002,8 +1020,35 @@ mod tests {
             "x.sh",
             "x",
             "x.png.exe",
+            "x.repack.exe",
+            "x.repackx",
+            "repack",
         ] {
             assert!(!writable_name(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_project_name_ends_in_repack_or_repack_json() {
+        for ok in [
+            "a.repack",
+            "A B.REPACK",
+            "a.repack.json",
+            "A.Repack.Json",
+            "a.b.repack",
+        ] {
+            assert!(is_project_name(ok), "{ok}");
+        }
+        for bad in [
+            "a.json",
+            "repack.json",
+            "repack",
+            ".repack",
+            "a.repackx",
+            "a.repack.bak",
+            "a.glb",
+        ] {
+            assert!(!is_project_name(bad), "{bad}");
         }
     }
 
@@ -1156,6 +1201,25 @@ mod tests {
         assert_eq!(last.id, save.id);
         assert!(last.read && last.write);
         std::fs::remove_file(dir.join("p.repack.json")).unwrap();
+        assert_eq!(Files::new(&dir.join("data")).last_project(), None);
+        // The same with a .repack, which is what a project is saved as now; a plain .json is not one.
+        let repack = files
+            .grant(&dir.join("q.repack"), false, true, true)
+            .unwrap();
+        files.write_over(&repack.id, 2, &mut &b"{}"[..]).unwrap();
+        assert_eq!(std::fs::read(dir.join("q.repack")).unwrap(), b"{}");
+        files.set_last_project(&repack.id).unwrap();
+        assert_eq!(
+            Files::new(&dir.join("data")).last_project().unwrap().id,
+            repack.id
+        );
+        let plain = files.grant(&dir.join("q.json"), false, true, true).unwrap();
+        files.write_over(&plain.id, 2, &mut &b"{}"[..]).unwrap();
+        assert!(matches!(
+            files.set_last_project(&plain.id),
+            Err(FileError::Forbidden(_))
+        ));
+        std::fs::remove_file(dir.join("q.repack")).unwrap();
         assert_eq!(Files::new(&dir.join("data")).last_project(), None);
     }
 

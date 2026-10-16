@@ -320,6 +320,13 @@ No encajó con el plan: el esquema ya era 2 (U5) y no se sube; no hay
 referencia externa por ruta, solo mallas dentro; abrir no se deshace
 (como *Nuevo*); deshacer hasta el punto guardado deja el proyecto limpio.
 
+**Cambio posterior (B1, petición del usuario): la extensión.** El proyecto se
+guarda como `.repack` (el mismo JSON); `.repack.json` es lo que se escribió
+hasta v0.1.6 y se sigue abriendo, en el selector, en el diálogo del
+escritorio y al soltarlo en la ventana (`core/project-names.ts`; el lanzador
+admite `repack` en `WRITABLE_EXTENSIONS`). Donde arriba se lee `.repack.json`
+es lo que se hizo entonces.
+
 ## I1 · Importadores OBJ y STL — **Sonnet** — hecha
 
 **Qué.** `src/io/obj.ts` y `src/io/stl.ts` propios (ASCII y binario para

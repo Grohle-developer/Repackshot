@@ -23,8 +23,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-/// A file type of an open or save dialog: a name and extensions without the dot (`png`,
-/// `repack.json`); `*` is every file.
+/// A file type of an open or save dialog: a name and extensions without the dot (`png`, `repack`,
+/// `repack.json`); `*` is every file. The first extension is what a save dialog adds to a bare name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
     /// What the dialog shows (`PNG image`).
@@ -895,7 +895,7 @@ mod tests {
             filters: vec![
                 Filter {
                     name: "Repackshot project|x".into(),
-                    extensions: vec!["repack.json".into()],
+                    extensions: vec!["repack".into(), "repack.json".into()],
                 },
                 Filter {
                     name: "All files".into(),
@@ -936,7 +936,7 @@ mod tests {
     fn texts_and_extensions_are_checked() {
         assert_eq!(clean_text("  a\u{0}b\nc  "), "abc");
         assert_eq!(clean_text(&"x".repeat(500)).len(), MAX_TEXT);
-        for ok in ["png", "repack.json", "*", "c++", "glb"] {
+        for ok in ["png", "repack", "repack.json", "*", "c++", "glb"] {
             assert!(valid_extension(ok), "{ok}");
         }
         for bad in [
@@ -968,16 +968,17 @@ mod tests {
         assert!(open.contains(&"--multiple".to_string()));
         assert!(open.contains(&"--separator=\n".to_string()));
         assert!(open.contains(
-            &"--file-filter=Repackshot project x | *.repack.json *.REPACK.JSON".to_string()
+            &"--file-filter=Repackshot project x | *.repack *.REPACK *.repack.json *.REPACK.JSON"
+                .to_string()
         ));
         assert!(open.contains(&"--file-filter=All files | *".to_string()));
         let save = strings(zenity_args(&req(Kind::Save {
-            default_name: "bottle.repack.json".into(),
+            default_name: "bottle.repack".into(),
         })));
         assert!(save.contains(&"--save".to_string()));
         assert!(save.contains(&format!(
             "--filename={}",
-            abs_s("/home/a/Renders/bottle.repack.json")
+            abs_s("/home/a/Renders/bottle.repack")
         )));
 
         let k = strings(kdialog_args(&req(Kind::Open { multiple: true })));
@@ -986,7 +987,7 @@ mod tests {
         assert_eq!(k[3], abs_s("/home/a/Renders"));
         assert_eq!(
             k[4],
-            "*.repack.json *.REPACK.JSON|Repackshot project x\n*|All files"
+            "*.repack *.REPACK *.repack.json *.REPACK.JSON|Repackshot project x\n*|All files"
         );
         assert!(k.ends_with(&["--multiple".to_string(), "--separate-output".to_string()]));
         let k = strings(kdialog_args(&req(Kind::Save {
@@ -1072,9 +1073,10 @@ mod tests {
         assert_eq!(get("RPX_NAME"), "x'; Remove-Item C:\\ -Recurse; '.png");
         assert_eq!(
             get("RPX_FILTER"),
-            "Repackshot project x|*.repack.json|All files|*.*"
+            "Repackshot project x|*.repack;*.repack.json|All files|*.*"
         );
-        assert_eq!(get("RPX_EXT"), "repack.json");
+        // A bare name in the save dialog gets the first extension.
+        assert_eq!(get("RPX_EXT"), "repack");
         assert_eq!(get("RPX_OWNER"), "4660");
         assert!(get("RPX_CACHE").ends_with(&format!("folder-picker-{FOLDER_PICKER_VERSION}.dll")));
         // The page's words never become part of the script itself.

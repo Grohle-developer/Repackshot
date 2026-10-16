@@ -118,8 +118,9 @@ Escritorio, mínimo 1280 px de ancho. Cinco regiones fijas:
 De izquierda a derecha:
 
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
-   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack.json`,
-   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó), Guardar proyecto
+   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack`,
+   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó; Abrir también lee los
+   `.repack.json` de antes de v0.1.6), Guardar proyecto
    como… (`Ctrl/⌘ ⇧ S`), Importar modelo, **Añadir ▸** (fase U9: bajo el
    rótulo *Primitiva*, las doce formas del catálogo —*Caja*, *Plano*,
    *Disco*, *Cilindro*, *Pedestal*, *Esfera*, *Cono*, *Toro*, *Cápsula*,
@@ -1509,7 +1510,7 @@ deshabilitado, con *próximamente*.
 **Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
 cada una ordenada de menos a más coste, sin cifras de coste (el orden y
 una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
-proyecto: no se deshacen ni viajan en el `.repack.json`; en escritorio
+proyecto: no se deshacen ni viajan en el `.repack`; en escritorio
 se guardan con los demás en `settings.json` del lanzador.
 
 - **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
@@ -1557,7 +1558,7 @@ modelo no cabe en la memoria detectada.
 
 **Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para
 todas las imágenes (es un ajuste de la aplicación, no del proyecto: no se deshace
-ni va en el `.repack.json`), en un campo de varias líneas con el predeterminado del
+ni va en el `.repack`), en un campo de varias líneas con el predeterminado del
 líder (*Photorealistic product photograph. Keep the image exactly as rendered…*, en
 inglés: los codificadores de texto de los modelos rinden mejor en él), contador
 *n / 2000*, **Restablecer el predeterminado** (deshabilitado mientras lo es) y la

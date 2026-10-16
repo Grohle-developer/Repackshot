@@ -1,4 +1,4 @@
-// A mesh as a binary glTF (GLB 2.0), for the meshes embedded in .repack.json (ARCHITECTURE §8).
+// A mesh as a binary glTF (GLB 2.0), for the meshes embedded in .repack (ARCHITECTURE §8).
 //
 // One mesh per file: a scene with one node, the node's mesh with one triangle primitive, and one buffer holding
 // POSITION (float32 x3), NORMAL (float32 x3), TEXCOORD_0 (float32 x2, when the mesh has UVs), TEXCOORD_1 (the second

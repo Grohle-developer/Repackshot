@@ -180,7 +180,7 @@ export interface NativeGrant {
   size: number | null;
 }
 
-/** A file type of a dialog: `extensions` without the dot (`png`, `repack.json`); `*` is every file. */
+/** A file type of a dialog: `extensions` without the dot (`png`, `repack`, `repack.json`); `*` is every file. */
 export interface DialogFilter {
   name: string;
   extensions: string[];

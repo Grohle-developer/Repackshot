@@ -259,8 +259,8 @@ describe('Simple and Nodes', () => {
     }
     // The weave counts by its warp share: a 3/1 twill is not the plain mean of its two threads.
     const denim = instanceFromPreset('m1', 'DENIM', 120)!;
-    const a = denim.params.threadColor1 as number[];
-    const b = denim.params.threadColor2 as number[];
+    const a = denim.params.threadColor1 as readonly number[];
+    const b = denim.params.threadColor2 as readonly number[];
     expect(outputSetup(denim).inputs.baseColor).toEqual(fabricMeanColor(denim.params));
     expect(Math.abs((a[0] + b[0]) / 2 - fabricMeanColor(denim.params)[0])).toBeGreaterThan(0.01);
   });
