@@ -57,8 +57,10 @@ describe.skipIf(!executablePath)('the window of a lens’s elements, in a browse
     errors.length = 0;
     await page?.close();
     page = await browser.newPage({ viewport: { width: 1300, height: 900 } });
+    // Everything the window does takes well under a second: a wait that long is a failure, quickly.
+    page.setDefaultTimeout(6000);
     page.on('pageerror', (e) => errors.push(String(e)));
-    await page.goto(url);
+    await page.goto(url, { timeout: 120000 });
     await page.waitForSelector('html[data-ready="1"]', { timeout: 120000 });
   }, 180000);
 
@@ -201,7 +203,7 @@ describe.skipIf(!executablePath)('the window of a lens’s elements, in a browse
 
   it('says the engine is not loaded, with the name and the source and no numbers, when there is none', async () => {
     for (const m of ['nolink', 'none'] as const) {
-      await page.reload();
+      await page.reload({ timeout: 120000 });
       await page.waitForSelector('html[data-ready="1"]');
       await mode(m);
       await page.locator('[data-character="wide"]').hover();
@@ -234,7 +236,7 @@ describe.skipIf(!executablePath)('the window of a lens’s elements, in a browse
     await page.mouse.move(40, 400);
     await shown().waitFor({ state: 'detached', timeout: 1000 });
     // Crossing the chips opens nothing, and asks nothing.
-    await page.reload();
+    await page.reload({ timeout: 120000 });
     await page.waitForSelector('html[data-ready="1"]');
     for (const c of ['clinical', 'soft', 'swirl', 'vintage']) {
       await page.locator(`[data-character="${c}"]`).hover();
@@ -341,7 +343,7 @@ describe.skipIf(!executablePath)('the window of a lens’s elements, in a browse
   });
 
   it('has the same wording in Spanish', async () => {
-    await page.goto(`${url}?lang=es`);
+    await page.goto(`${url}?lang=es`, { timeout: 120000 });
     await page.waitForSelector('html[data-ready="1"]');
     await mode('hold');
     await page.locator('[data-character="swirl"]').hover();
