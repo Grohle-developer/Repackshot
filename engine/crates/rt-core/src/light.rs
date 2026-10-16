@@ -482,6 +482,14 @@ pub struct LightSample {
     /// The light casts shadows: a shadow ray decides whether the sample arrives. Without it
     /// (`LIGHT_FLAG_NO_SHADOW`, L4) it always does.
     pub shadow: bool,
+    /// Its entry in the selection (E13: what manifold next-event estimation connects to).
+    pub(crate) entry: u32,
+    /// The probability of having chosen that entry.
+    pub(crate) pmf: f32,
+    /// The point sampled on the light (zero for the sun and the environment).
+    pub(crate) point: Vec3,
+    /// The emitting surface's normal there (zero for a point, the sun and the environment).
+    pub(crate) normal: Vec3,
 }
 
 /// Light selection at one shading vertex ([`Lights::select`]): the vertex, the sum of the weights
@@ -505,12 +513,89 @@ pub struct Selection {
 /// A BSDF-sampled ray, for the MIS weights of the lights it finds: its density per steradian and
 /// the selection at the vertex it was sampled at (where it went on straight through thin walls
 /// and cut-outs, still that vertex).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct Scattered<'a> {
     /// Density per steradian of the BSDF sample.
     pub pdf: f32,
     /// The light selection at the vertex it left.
     pub from: &'a Selection,
+    /// E13: the ray left smooth refracting surfaces since a vertex that manifold next-event
+    /// estimation connects from ([`Manifold`]); `None` for every other ray.
+    pub manifold: Option<Manifold<'a>>,
+}
+
+impl<'a> Scattered<'a> {
+    /// A BSDF-sampled ray of density `pdf` from the vertex of `from`, with no manifold hook.
+    pub fn new(pdf: f32, from: &'a Selection) -> Scattered<'a> {
+        Scattered {
+            pdf,
+            from,
+            manifold: None,
+        }
+    }
+}
+
+/// A light that a BSDF-sampled ray found, as manifold next-event estimation looks at it (E13).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Found {
+    /// The light's entry in the selection.
+    pub entry: u32,
+    /// The point found on it; for a sun, the direction towards it.
+    pub at: Vec3,
+    /// The emitting surface's front normal there (zero for a sun).
+    pub normal: Vec3,
+}
+
+/// The MIS of a light that a BSDF-sampled ray finds after one or more smooth refractions,
+/// against manifold next-event estimation from the last vertex before them (E13,
+/// [`crate::integrator::manifold`]): MNEE may have connected that vertex to the same point of the
+/// same light through the same surfaces, and then the two techniques share the path.
+#[derive(Clone, Copy)]
+pub struct Manifold<'a> {
+    /// The density, the light selection and the distance from the last real scattering vertex
+    /// (the refracting surface the ray left), when the [`Scattered`] carries instead those of a
+    /// medium's exit vertex whose shadow rays cross thin walls (E9b, outside MNEE's domain);
+    /// `None` when they are the same.
+    pub raw: Option<(f32, &'a Selection, f32)>,
+    /// `Some(b)` when manifold next-event estimation connects that vertex to the light found:
+    /// the factor of the light's MIS weight against it (one when it cannot produce this path);
+    /// `None` outside its domain, where the usual weight holds.
+    pub weigh: &'a dyn Fn(Found) -> Option<f32>,
+}
+
+impl std::fmt::Debug for Manifold<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Manifold").field("raw", &self.raw).finish()
+    }
+}
+
+/// What manifold next-event estimation connects a vertex to (E13): a point of a light, or the
+/// direction of a sun.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum End {
+    /// A point `y`, on an emitting surface of front normal `normal` (zero for a point light: the
+    /// measure is then the area across the last segment).
+    Point { y: Vec3, normal: Vec3 },
+    /// The unit direction `w` towards a sun.
+    Direction { w: Vec3 },
+}
+
+/// A light sample, or a light found, as manifold next-event estimation connects to it (E13).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ManifoldEnd {
+    /// The light's entry in the selection.
+    pub(crate) entry: u32,
+    /// Where the connection ends.
+    pub(crate) end: End,
+    /// The density next-event estimation at the vertex draws it with, light selection included:
+    /// per mm² of the emitting surface (of the area across the last segment for a point light: a
+    /// selection probability), per steradian for a sun's disc, the selection probability for a
+    /// delta sun.
+    pub(crate) density: f32,
+    /// A point light or a delta sun: no other technique finds it.
+    pub(crate) delta: bool,
+    /// The light sends caustic photons ([`LightSample::photon`]).
+    pub(crate) photon: bool,
 }
 
 /// Which techniques may find a light (tests of the estimators): both, weighted by MIS, as
@@ -632,6 +717,21 @@ pub(crate) fn build_cdf(weights: &[f32]) -> Vec<f32> {
         *last = 1.0;
     }
     cdf
+}
+
+/// The MIS state and factor of a light `found` by the BSDF-sampled ray `s` (which went `offset`
+/// straight since its vertex) against manifold next-event estimation (E13): `None` without a
+/// hook or outside MNEE's domain (the usual weight); otherwise the density, selection and offset
+/// to weigh the light with (those of the last real vertex) and the factor `b` to multiply it by.
+#[inline]
+fn manifold_factor<'a>(
+    s: Scattered<'a>,
+    offset: f32,
+    found: Found,
+) -> Option<((f32, &'a Selection, f32), f32)> {
+    let m = s.manifold?;
+    let b = (m.weigh)(found)?;
+    Some((m.raw.unwrap_or((s.pdf, s.from, offset)), b))
 }
 
 impl Lights {
@@ -1028,7 +1128,7 @@ impl Lights {
     /// The MIS weight of a light found by a BSDF-sampled ray of density `bsdf_pdf`, against
     /// next-event estimation's density `light_pdf` for it.
     #[inline]
-    fn found_weight(&self, bsdf_pdf: f32, light_pdf: f32) -> f32 {
+    pub(crate) fn found_weight(&self, bsdf_pdf: f32, light_pdf: f32) -> f32 {
         #[cfg(test)]
         match self.techniques {
             Techniques::Mis => {}
@@ -1133,6 +1233,10 @@ impl Lights {
                     glossy: light.glossy,
                     photon: light.glossy,
                     shadow: light.shadow,
+                    entry: light.entry,
+                    pmf,
+                    point: p,
+                    normal: light.frame.z,
                 }
             }
             LightRef::Sun(s) => {
@@ -1147,6 +1251,10 @@ impl Lights {
                         glossy: sun.glossy,
                         photon: sun.glossy,
                         shadow: sun.shadow,
+                        entry: sun.entry,
+                        pmf,
+                        point: Vec3::ZERO,
+                        normal: Vec3::ZERO,
                     }
                 } else {
                     let local = warp::uniform_cone(u, sun.one_minus_cos_max);
@@ -1159,6 +1267,10 @@ impl Lights {
                         glossy: sun.glossy,
                         photon: sun.glossy,
                         shadow: sun.shadow,
+                        entry: sun.entry,
+                        pmf,
+                        point: Vec3::ZERO,
+                        normal: Vec3::ZERO,
                     }
                 }
             }
@@ -1188,6 +1300,10 @@ impl Lights {
                         glossy: light.glossy,
                         photon: false,
                         shadow: light.shadow,
+                        entry: light.entry,
+                        pmf,
+                        point: light.centre,
+                        normal: Vec3::ZERO,
                     }
                 } else {
                     let local = warp::uniform_cone(u, omc);
@@ -1196,6 +1312,7 @@ impl Lights {
                     let b = wi.dot(d);
                     let r2 = light.radius * light.radius;
                     let near = b - (r2 - (d - wi * b).length_squared()).max(0.0).sqrt();
+                    let point = x + wi * near.max(0.0);
                     LightSample {
                         wi,
                         distance: near.max(0.0),
@@ -1205,6 +1322,10 @@ impl Lights {
                         glossy: light.glossy,
                         photon: false,
                         shadow: light.shadow,
+                        entry: light.entry,
+                        pmf,
+                        point,
+                        normal: (point - light.centre) * (1.0 / light.radius),
                     }
                 }
             }
@@ -1235,6 +1356,10 @@ impl Lights {
                     glossy: true,
                     photon: true,
                     shadow: true,
+                    entry: emitter.entry,
+                    pmf,
+                    point: p,
+                    normal: emitter.normals[t],
                 }
             }
             LightRef::Environment => {
@@ -1248,6 +1373,10 @@ impl Lights {
                     glossy: true,
                     photon: false,
                     shadow: true,
+                    entry: index as u32,
+                    pmf,
+                    point: Vec3::ZERO,
+                    normal: Vec3::ZERO,
                 }
             }
         };
@@ -1314,9 +1443,20 @@ impl Lights {
             let weight = match bsdf {
                 None => 1.0,
                 Some(s) => {
-                    let d = offset + t;
-                    let light_pdf = self.pmf(light.entry, s.from) * d * d / (light.area * cos);
-                    self.found_weight(s.pdf, light_pdf)
+                    let weigh = |pdf: f32, from: &Selection, offset: f32| {
+                        let d = offset + t;
+                        let light_pdf = self.pmf(light.entry, from) * d * d / (light.area * cos);
+                        self.found_weight(pdf, light_pdf)
+                    };
+                    let found = Found {
+                        entry: light.entry,
+                        at: ray.at(t),
+                        normal: light.frame.z,
+                    };
+                    match manifold_factor(s, offset, found) {
+                        None => weigh(s.pdf, s.from, offset),
+                        Some(((pdf, from, offset), b)) => weigh(pdf, from, offset) * b,
+                    }
                 }
             };
             sum += light.radiance_at(cos) * weight;
@@ -1341,7 +1481,7 @@ impl Lights {
             if !visible {
                 continue;
             }
-            let Some(_) = light.intersect(ray, t_max) else {
+            let Some(t) = light.intersect(ray, t_max) else {
                 continue;
             };
             // Seen from the vertex the ray left (offset back along it), as next-event estimation saw it.
@@ -1352,13 +1492,30 @@ impl Lights {
             }
             let weight = match bsdf {
                 None => 1.0,
-                Some(s) => match light.cone((light.centre - vertex).length_squared()) {
-                    // Next-event estimation takes it for a point there: only it counts it.
-                    Some(omc) if omc > 0.0 => {
-                        self.found_weight(s.pdf, self.pmf(light.entry, s.from) / (fmath::TAU * omc))
+                Some(s) => {
+                    let weigh = |pdf: f32, from: &Selection, vertex: Vec3| {
+                        match light.cone((light.centre - vertex).length_squared()) {
+                            // Next-event estimation takes it for a point there: only it counts it.
+                            Some(omc) if omc > 0.0 => self.found_weight(
+                                pdf,
+                                self.pmf(light.entry, from) / (fmath::TAU * omc),
+                            ),
+                            _ => 0.0,
+                        }
+                    };
+                    let at = ray.at(t);
+                    let found = Found {
+                        entry: light.entry,
+                        at,
+                        normal: (at - light.centre) * (1.0 / light.radius),
+                    };
+                    match manifold_factor(s, offset, found) {
+                        None => weigh(s.pdf, s.from, vertex),
+                        Some(((pdf, from, offset), b)) => {
+                            weigh(pdf, from, ray.origin - ray.dir * offset) * b
+                        }
                     }
-                    _ => 0.0,
-                },
+                }
             };
             sum += light.radiance * (mask * weight);
         }
@@ -1452,7 +1609,19 @@ impl Lights {
             };
             if visible && sun.contains(dir) {
                 let weight = bsdf.map_or(1.0, |s| {
-                    self.found_weight(s.pdf, self.pmf(sun.entry, s.from) / sun.solid_angle)
+                    let weigh = |pdf: f32, from: &Selection| {
+                        self.found_weight(pdf, self.pmf(sun.entry, from) / sun.solid_angle)
+                    };
+                    let found = Found {
+                        entry: sun.entry,
+                        at: dir,
+                        normal: Vec3::ZERO,
+                    };
+                    // A sun is at no distance: the offset does not matter.
+                    match manifold_factor(s, 0.0, found) {
+                        None => weigh(s.pdf, s.from),
+                        Some(((pdf, from, _), b)) => weigh(pdf, from) * b,
+                    }
                 });
                 sum += sun.radiance * weight;
             }
@@ -1489,6 +1658,230 @@ impl Lights {
         let light_pdf =
             self.pmf(emitter.entry, bsdf.from) * t * t / (emitter.area * cos.abs().max(1.0e-7));
         self.found_weight(bsdf.pdf, light_pdf)
+    }
+
+    /// [`Lights::emitter_weight`] for a ray that met the emitter `t` after `offset` of straight
+    /// events, at `at` on a triangle of front normal `normal`, weighted against manifold
+    /// next-event estimation as its [`Manifold`] hook says (E13); without a hook it is exactly
+    /// `emitter_weight(instance, bsdf, offset + t, cos)`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn emitter_weight_found(
+        &self,
+        instance: u32,
+        bsdf: Scattered<'_>,
+        t: f32,
+        offset: f32,
+        cos: f32,
+        at: Vec3,
+        normal: Vec3,
+    ) -> f32 {
+        if bsdf.manifold.is_none() {
+            return self.emitter_weight(instance, bsdf, offset + t, cos);
+        }
+        let Some(Some(m)) = self.instance_emitter.get(instance as usize) else {
+            return 1.0;
+        };
+        let found = Found {
+            entry: self.meshes[*m as usize].entry,
+            at,
+            normal,
+        };
+        match manifold_factor(bsdf, offset, found) {
+            None => self.emitter_weight(instance, bsdf, offset + t, cos),
+            Some(((pdf, from, offset), b)) => {
+                let raw = Scattered::new(pdf, from);
+                self.emitter_weight(instance, raw, offset + t, cos) * b
+            }
+        }
+    }
+
+    /// What manifold next-event estimation connects the vertex `x` to for the light sample `ls`
+    /// drawn there (E13): `None` for the environment, which it leaves to BSDF sampling.
+    pub(crate) fn manifold_end(&self, ls: &LightSample, x: Vec3) -> Option<ManifoldEnd> {
+        let (end, density) = match *self.entries.get(ls.entry as usize)? {
+            LightRef::Area(a) => {
+                let light = &self.areas[a as usize];
+                let end = End::Point {
+                    y: ls.point,
+                    normal: light.frame.z,
+                };
+                (end, ls.pmf / light.area)
+            }
+            LightRef::Mesh(m) => {
+                let end = End::Point {
+                    y: ls.point,
+                    normal: ls.normal,
+                };
+                (end, ls.pmf / self.meshes[m as usize].area)
+            }
+            LightRef::Sphere(_) if ls.delta => {
+                let end = End::Point {
+                    y: ls.point,
+                    normal: Vec3::ZERO,
+                };
+                (end, ls.pmf)
+            }
+            LightRef::Sphere(_) => {
+                // Sampled by solid angle at x: per unit area of the sphere at the point.
+                let d2 = (ls.point - x).length_squared();
+                let cos = ls.normal.dot(ls.wi).abs();
+                let end = End::Point {
+                    y: ls.point,
+                    normal: ls.normal,
+                };
+                (end, ls.pdf * cos / d2)
+            }
+            LightRef::Sun(_) => (End::Direction { w: ls.wi }, ls.pdf),
+            LightRef::Environment => return None,
+        };
+        (density > 0.0 && density.is_finite()).then_some(ManifoldEnd {
+            entry: ls.entry,
+            end,
+            density,
+            delta: ls.delta,
+            photon: ls.photon,
+        })
+    }
+
+    /// The light `found` by a BSDF-sampled ray, as next-event estimation at `x` (where the
+    /// selection `from` was made) would have drawn it for manifold next-event estimation (E13):
+    /// the same density as [`Lights::manifold_end`] gives that sample. `None` when next-event
+    /// estimation there never draws that point of that light (a panel `x` is behind, the far side
+    /// of a sphere, the back of a one-sided emitter, a light without shadows), or for the
+    /// environment.
+    pub(crate) fn manifold_found(
+        &self,
+        found: Found,
+        x: Vec3,
+        from: &Selection,
+    ) -> Option<ManifoldEnd> {
+        let pmf = self.pmf(found.entry, from);
+        if !positive(pmf) {
+            return None;
+        }
+        let towards = |y: Vec3| {
+            let d = y - x;
+            let dist2 = d.length_squared();
+            (d * (1.0 / dist2.sqrt()), dist2)
+        };
+        let (end, density, photon) = match *self.entries.get(found.entry as usize)? {
+            LightRef::Area(a) => {
+                let light = &self.areas[a as usize];
+                let (wi, _) = towards(found.at);
+                if !light.shadow || !(-wi.dot(light.frame.z) > 0.0) {
+                    return None;
+                }
+                let end = End::Point {
+                    y: found.at,
+                    normal: light.frame.z,
+                };
+                (end, pmf / light.area, light.glossy)
+            }
+            LightRef::Mesh(m) => {
+                let emitter = &self.meshes[m as usize];
+                let (wi, _) = towards(found.at);
+                if !emitter.two_sided && !(-wi.dot(found.normal) > 0.0) {
+                    return None;
+                }
+                let end = End::Point {
+                    y: found.at,
+                    normal: found.normal,
+                };
+                (end, pmf / emitter.area, true)
+            }
+            LightRef::Sphere(s) => {
+                let light = &self.spheres[s as usize];
+                let c = light.centre - x;
+                let omc = light.cone(c.length_squared())?;
+                if !light.shadow || omc <= 0.0 || !positive(light.mask(x)) {
+                    return None;
+                }
+                // The point a sample in that direction lands on: the near side.
+                let (wi, dist2) = towards(found.at);
+                let b = wi.dot(c);
+                let r2 = light.radius * light.radius;
+                let near = b - (r2 - (c - wi * b).length_squared()).max(0.0).sqrt();
+                if (x + wi * near - found.at).length() > 1.0e-3 * light.radius + 1.0e-3 {
+                    return None;
+                }
+                let cos = found.normal.dot(wi).abs();
+                let end = End::Point {
+                    y: found.at,
+                    normal: found.normal,
+                };
+                (end, pmf / (fmath::TAU * omc) * cos / dist2, false)
+            }
+            LightRef::Sun(s) => {
+                let sun = &self.suns[s as usize];
+                if !sun.shadow || sun.delta {
+                    return None;
+                }
+                (
+                    End::Direction { w: found.at },
+                    pmf / sun.solid_angle,
+                    sun.glossy,
+                )
+            }
+            LightRef::Environment => return None,
+        };
+        (density > 0.0 && density.is_finite()).then_some(ManifoldEnd {
+            entry: found.entry,
+            end,
+            density,
+            delta: false,
+            photon,
+        })
+    }
+
+    /// What the light of entry `entry` sends along a manifold connection that leaves its point of
+    /// `end` in the unit direction `towards` to the last refracting vertex `receiver` (E13): the
+    /// radiance of an emitting surface in that direction (black from behind a one-sided one), a
+    /// sun's radiance (a delta sun's irradiance), and for a point light its intensity, per unit
+    /// area across the beam in mm² (the connection's Jacobian is per mm² there); a spot is masked
+    /// by the direction to `receiver`.
+    pub(crate) fn manifold_emission(
+        &self,
+        entry: u32,
+        end: &End,
+        towards: Vec3,
+        receiver: Vec3,
+    ) -> Rgb {
+        let normal = match *end {
+            End::Point { normal, .. } => normal,
+            End::Direction { .. } => Vec3::ZERO,
+        };
+        match self.entries.get(entry as usize) {
+            Some(&LightRef::Area(a)) => {
+                let light = &self.areas[a as usize];
+                let cos = towards.dot(light.frame.z);
+                if cos > 0.0 {
+                    light.radiance_at(cos)
+                } else {
+                    Rgb::BLACK
+                }
+            }
+            Some(&LightRef::Mesh(m)) => {
+                let emitter = &self.meshes[m as usize];
+                if emitter.two_sided || towards.dot(normal) > 0.0 {
+                    emitter.radiance
+                } else {
+                    Rgb::BLACK
+                }
+            }
+            Some(&LightRef::Sphere(s)) => {
+                let light = &self.spheres[s as usize];
+                let mask = light.mask(receiver);
+                if normal == Vec3::ZERO {
+                    light.intensity * (mask / MM2_TO_M2)
+                } else if towards.dot(normal) > 0.0 {
+                    light.radiance * mask
+                } else {
+                    Rgb::BLACK
+                }
+            }
+            Some(&LightRef::Sun(s)) => self.suns[s as usize].radiance,
+            _ => Rgb::BLACK,
+        }
     }
 }
 
@@ -1774,10 +2167,7 @@ mod tests {
         assert!((lights.crossed(&up, f32::INFINITY, None).g - radiance).abs() < radiance * 1.0e-4);
         assert!(lights.crossed(&up, 300.0, None) == Rgb::BLACK);
         let at = lights.select(Vec3::ZERO);
-        let bsdf = Scattered {
-            pdf: 1.0,
-            from: &at,
-        };
+        let bsdf = Scattered::new(1.0, &at);
         let w = lights.crossed(&up, f32::INFINITY, Some(bsdf)).g;
         assert!(w > 0.0 && w < radiance, "MIS weight of a BSDF ray: {w}");
         assert!(lights.camera_sees_panel(&up, f32::INFINITY));
@@ -2023,10 +2413,7 @@ mod tests {
             e / 4096.0
         );
         let at = lights.select(Vec3::ZERO);
-        let s = Scattered {
-            pdf: 1.0,
-            from: &at,
-        };
+        let s = Scattered::new(1.0, &at);
         assert_eq!(lights.emitter_weight(5, s, 1.0, 1.0), 1.0);
         assert!(lights.emitter_weight(0, s, 100.0, 1.0) < 1.0);
     }
@@ -2358,10 +2745,7 @@ mod tests {
             // selection rebuilds that distribution entry by entry).
             let weights: Vec<f32> = (0..lights.len()).map(|e| lights.weight(e, x)).collect();
             let entry = pick(&build_cdf(&weights), u_select).0;
-            let bsdf = Scattered {
-                pdf: s.pdf,
-                from: &selection,
-            };
+            let bsdf = Scattered::new(s.pdf, &selection);
             let ray = Ray::new(x, s.wi);
             // Only rays that cross the one light sampled (the sum would mix two weights).
             let crossings = lights

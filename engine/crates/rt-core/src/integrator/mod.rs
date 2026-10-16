@@ -66,6 +66,7 @@
 //! instance's X axis; then any.
 
 pub mod dispersion;
+pub mod manifold;
 pub mod medium;
 
 use crate::bevel::BevelSetup;
@@ -76,7 +77,7 @@ use crate::caustics::{gather_at, gather_catcher, CausticSetup, PhotonMap};
 use crate::color::Rgb;
 use crate::fmath;
 use crate::geometry::{Geometry, Hit, RayClass, RayHit};
-use crate::light::{Lights, Scattered};
+use crate::light::{Found, Lights, Manifold, Scattered};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::pattern::{PatternSetup, Tint};
 use crate::program::{ProgramSetup, Resolved};
@@ -90,6 +91,7 @@ use crate::scene::{
 };
 use crate::simd::Isa;
 use crate::texture::{Footprint, TextureSetup, Textured};
+use std::cell::Cell;
 use std::sync::Arc;
 
 /// Most cut-outs a path passes through (beyond them they are opaque).
@@ -266,6 +268,12 @@ pub struct Prepared {
     pub(crate) textures: TextureSetup,
     /// The material programs of every instance ([`crate::program`], M3b).
     pub(crate) programs: ProgramSetup,
+    /// Per instance: manifold next-event estimation connects through its surfaces (E13,
+    /// [`manifold::is_chain_material`], on a part without textures, program, pattern or bevel).
+    chain_surfaces: Vec<bool>,
+    /// Manifold next-event estimation is on (always, but for the tests' references) and the scene
+    /// has surfaces it connects through: without them every path is exactly what it was before E13.
+    pub(crate) manifold: bool,
 }
 
 /// True when a shadow ray from a medium's exit vertex may cross a solid of `m` (E9b): smooth,
@@ -377,6 +385,20 @@ impl Prepared {
             .collect();
         let lights = Lights::new(scene);
         let caustics = CausticSetup::new(scene, &lights);
+        let bevel = BevelSetup::new(scene);
+        let patterns = PatternSetup::new(scene);
+        // E13: the parts manifold next-event estimation refracts through, whose normals it can
+        // differentiate (no textures, program, pattern or bevel bend them).
+        let chain_surfaces: Vec<bool> = (0..instances.len())
+            .map(|i| {
+                let id = i as u32;
+                material(i).is_some_and(manifold::is_chain_material)
+                    && !textures.has(id)
+                    && !programs.has(id)
+                    && !patterns.has(id)
+                    && bevel.radius(id) <= 0.0
+            })
+            .collect();
         Prepared {
             lights,
             background,
@@ -403,11 +425,22 @@ impl Prepared {
             particles: !scene.geometry.particle_sets().is_empty(),
             tangent_axes,
             caustics,
-            bevel: BevelSetup::new(scene),
-            patterns: PatternSetup::new(scene),
+            bevel,
+            patterns,
             textures,
             programs,
+            manifold: chain_surfaces.iter().any(|&c| c),
+            chain_surfaces,
         }
+    }
+
+    /// True when manifold next-event estimation connects through the surfaces of instance `i`
+    /// (E13).
+    pub(crate) fn chain_surface(&self, i: u32) -> bool {
+        self.chain_surfaces
+            .get(i as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// True when the scene renders caustics from a photon map ([`crate::caustics`]): it asks for
@@ -1093,6 +1126,13 @@ pub fn radiance_weighted<T: Tracer>(
     let mut alpha_weight = 1.0f32;
     // The width of the path's cone at its last scattering vertex, for the texture reads (M2b).
     let mut cone_width = prepared.textures.camera().start_width();
+    // E13: the last vertex manifold next-event estimation connects from and the smooth
+    // refractions since; and, when a thin wall's straight event (E9b) replaced the density, the
+    // selection and the distance of the last real vertex, what they were (with what the
+    // replacement added to `offset`).
+    let mut track: Option<manifold::Track> = None;
+    let mut raw: Option<(f32, crate::light::Selection, f32)> = None;
+    let hook_rays = Cell::new(0u64);
     loop {
         // After a walk that scattered: the exit lobe's albedo at the surface it reached.
         let mut exit: Option<f32> = None;
@@ -1153,9 +1193,26 @@ pub fn radiance_weighted<T: Tracer>(
             }
         }
 
+        // E13: a light this ray finds after smooth refractions is weighed against manifold
+        // next-event estimation from the vertex before them.
+        let weigh = |found: Found| {
+            let t = track.as_ref()?;
+            let photons = caustics.is_some();
+            manifold::found_factor(
+                prepared, scene, tracer, lights, t, found, photons, &hook_rays,
+            )
+        };
+        let hooked = track.is_some_and(|t| (t.chain.len > 0 && !t.overflow) || raw.is_some());
+        let unreplaced = raw
+            .as_ref()
+            .map(|(pdf, from, base)| (*pdf, from, offset - *base));
         let scattered = bsdf_pdf.map(|pdf| Scattered {
             pdf,
             from: &sampled_at,
+            manifold: hooked.then_some(Manifold {
+                raw: unreplaced,
+                weigh: &weigh,
+            }),
         });
 
         // Area lights are transparent emitters: add every one crossed on the way (unless the
@@ -1209,6 +1266,7 @@ pub fn radiance_weighted<T: Tracer>(
                     caustics.map(|(map, _)| map),
                     rays,
                 );
+                *rays += hook_rays.get();
                 return (sum + throughput * c, a * alpha_weight);
             }
             let p = ray.at(t_floor);
@@ -1381,7 +1439,14 @@ pub fn radiance_weighted<T: Tracer>(
                 if (front || !one_sided) && !(dropped && lights.is_mesh_light(instance)) {
                     let weight = scattered.map_or(1.0, |s| {
                         let cos = surface.geometric.dot(ray.dir);
-                        lights.emitter_weight(instance, s, offset + t_geometry, cos)
+                        // The front face's normal (E13: what a manifold connection reaches).
+                        let normal = if front {
+                            surface.geometric
+                        } else {
+                            -surface.geometric
+                        };
+                        let (t, at) = (t_geometry, surface.hit_point);
+                        lights.emitter_weight_found(instance, s, t, offset, cos, at, normal)
                     });
                     let radiance = match (&surface.textured, &surface.programmed) {
                         (Some(t), _) => t.emission,
@@ -1518,6 +1583,14 @@ pub fn radiance_weighted<T: Tracer>(
             })
             && material.is_some_and(is_mirror);
 
+        // E13: manifold next-event estimation may connect from here (not from a particle, nor from
+        // a smooth clear surface, whose lobes it could not light).
+        let connects_here = prepared.manifold
+            && surface
+                .instance
+                .is_none_or(|(i, _)| scene.geometry.particle_set(i).is_none())
+            && (exit.is_some() || !material.is_some_and(is_mirror));
+
         // Next-event estimation: one light, chosen by what each one can send to this point.
         let selection = lights.select(surface.point);
         let light_sample = lights.sample_selected(
@@ -1550,21 +1623,71 @@ pub fn radiance_weighted<T: Tracer>(
                 } else {
                     (origin, ls.distance)
                 };
+                // E13: where the shadow ray meets one or two smooth refracting surfaces and
+                // nothing else, manifold next-event estimation connects through them instead (the
+                // environment is left to BSDF sampling, and with caustics the photon lights to
+                // the map).
+                let end = (connects_here && ls.shadow && !(ls.photon && caustics.is_some()))
+                    .then(|| lights.manifold_end(&ls, surface.point))
+                    .flatten();
+                let mut chained = None;
                 // A light that casts no shadow (L4) arrives whatever is in the way.
                 let arrives = if !ls.shadow {
                     Some(Rgb::WHITE)
                 } else if exit.is_some() {
                     // From a medium's exit, through thin walls too (with caustics, what a
-                    // photon light sends through a wall is the map's).
+                    // photon light sends through a wall is the map's), where the connection does
+                    // not take them.
                     *rays += 1;
-                    prepared
-                        .shadow_from_exit(scene, tracer, &shadow_ray(from, ls.wi, distance))
-                        .filter(|&(_, walls)| !(walls && ls.photon && caustics.is_some()))
-                        .map(|(pass, _)| pass)
+                    let ray = shadow_ray(from, ls.wi, distance);
+                    match prepared.shadow_from_exit(scene, tracer, &ray) {
+                        Some((pass, false)) => Some(pass),
+                        crossed => {
+                            if end.is_some() {
+                                chained = manifold::seed(
+                                    prepared, scene, tracer, from, ls.wi, distance, rays,
+                                );
+                            }
+                            crossed
+                                .filter(|&(_, walls)| {
+                                    chained.is_none() && !(walls && ls.photon && caustics.is_some())
+                                })
+                                .map(|(pass, _)| pass)
+                        }
+                    }
                 } else {
                     *rays += 1;
-                    prepared.shadow(scene, tracer, &shadow_ray(from, ls.wi, distance))
+                    let pass = prepared.shadow(scene, tracer, &shadow_ray(from, ls.wi, distance));
+                    if pass.is_none() && end.is_some() {
+                        chained =
+                            manifold::seed(prepared, scene, tracer, from, ls.wi, distance, rays);
+                    }
+                    pass
                 };
+                if let (Some(seed), Some(end)) = (chained.as_ref(), end.as_ref()) {
+                    let link =
+                        manifold::connect(prepared, scene, tracer, lights, from, seed, end, rays);
+                    // It leaves on the side its shadow ray left from.
+                    if let Some(link) =
+                        link.filter(|l| (frame.to_local(l.wi).z < 0.0) == (wi.z < 0.0))
+                    {
+                        let wi = frame.to_local(link.wi);
+                        let f = bsdf.eval(wo, wi, lobes);
+                        if peak(f) > 0.0 {
+                            let weight = if end.delta || !ls.glossy {
+                                1.0
+                            } else {
+                                let p = end.density / link.jacobian;
+                                lights.sampled_weight(p, bsdf.pdf(wo, wi))
+                            };
+                            let c = throughput
+                                * f
+                                * link.light
+                                * (wi.z.abs() * link.jacobian * weight / end.density);
+                            prepared.add(&mut sum, c, bounce >= 1);
+                        }
+                    }
+                }
                 if let Some(pass) = arrives {
                     let weight = if ls.delta || !ls.glossy {
                         1.0
@@ -1633,6 +1756,30 @@ pub fn radiance_weighted<T: Tracer>(
             // A ray that leaves from beyond a particle is that far from its vertex already.
             offset = beyond.map_or(0.0, |o| (o - surface.point).dot(wi).max(0.0));
             state = next_state;
+            // E13: a smooth refraction through a chain surface adds to the track; any other
+            // vertex manifold next-event estimation connects from starts one.
+            raw = None;
+            if prepared.manifold {
+                let smooth = transmitted && exit.is_none() && beyond.is_none();
+                track = match surface.instance {
+                    Some((i, _)) if smooth && prepared.chain_surface(i) => track.map(|mut t| {
+                        let crossing = manifold::Crossing {
+                            instance: i,
+                            entering: surface.outside,
+                        };
+                        t.push(crossing, surface.hit_point);
+                        t
+                    }),
+                    _ if connects_here => {
+                        let down = offset_origin(surface.hit_point, -ng);
+                        let (point, up) = (surface.point, origin);
+                        let t =
+                            manifold::Track::new(point, up, down, bsdf, frame, wo, selection, wi);
+                        Some(t)
+                    }
+                    _ => None,
+                };
+            }
             // E9b: a BSDF sample of an exit vertex that crosses a thin wall in and out is, for
             // multiple importance sampling, one straight event of that vertex, as its shadow rays
             // cross the wall.
@@ -1659,6 +1806,10 @@ pub fn radiance_weighted<T: Tracer>(
                     // Out of it: the pair is one straight event of the exit vertex, with its
                     // density and the light selection its next-event estimation used.
                     Some((w, before)) if w == i && !surface.outside => {
+                        // E13: what they were, for a light a manifold connection reaches.
+                        if let Some(p) = bsdf_pdf {
+                            raw = Some((p, sampled_at, before + distance - offset));
+                        }
                         bsdf_pdf = Some(pdf);
                         sampled_at = from;
                         offset = before + distance;
@@ -1692,6 +1843,7 @@ pub fn radiance_weighted<T: Tracer>(
         ray = Ray::new(next_origin, wi);
         bounce += 1;
     }
+    *rays += hook_rays.get();
     (sum, alpha * alpha_weight)
 }
 
@@ -1780,10 +1932,7 @@ fn shadow_catcher<T: Tracer>(
                 tracer.trace_shadow(&probe).map_or(f32::INFINITY, |h| h.t),
             )
         };
-        let bsdf = Scattered {
-            pdf: bs.pdf,
-            from: &selection,
-        };
+        let bsdf = Scattered::new(bs.pdf, &selection);
         let all =
             lights.crossed(&probe, f32::INFINITY, Some(bsdf)) + lights.escaped(wi, Some(bsdf));
         let mut reached = if blocker == f32::INFINITY {

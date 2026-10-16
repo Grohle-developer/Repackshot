@@ -656,6 +656,38 @@ impl Geometry {
         }
     }
 
+    /// The world corners of triangle `triangle` of instance `instance` and, when its mesh has
+    /// vertex normals, theirs in world space (by the inverse transpose, not normalised): the
+    /// shading normal of [`Geometry::hit_details`] is their interpolation by the barycentrics,
+    /// normalised (E13 differentiates it over the surface). `None` for a particle set or a
+    /// triangle that does not exist.
+    pub(crate) fn world_triangle(
+        &self,
+        instance: u32,
+        triangle: u32,
+    ) -> Option<([Vec3; 3], Option<[Vec3; 3]>)> {
+        let (mesh, prepared) = self.instance_parts(instance)?;
+        let to_world = &self.instances.get(instance as usize)?.transform;
+        let corners = mesh.triangle_indices(triangle as usize)?;
+        let local = mesh.triangle(triangle as usize)?;
+        let points = if prepared.identity {
+            local
+        } else {
+            local.map(|p| to_world.point(p))
+        };
+        let normals = match corners.map(|c| mesh.normal(c as usize)) {
+            [Some(n0), Some(n1), Some(n2)] => Some([n0, n1, n2].map(|n| {
+                if prepared.identity {
+                    n
+                } else {
+                    prepared.to_local.transpose_vector(n)
+                }
+            })),
+            _ => None,
+        };
+        Some((points, normals))
+    }
+
     /// Surface details of a hit returned by [`Geometry::trace`] for the same `ray`.
     pub fn hit_details(&self, ray: &Ray, hit: RayHit) -> Option<Hit> {
         if let Some(set) = self.particle_set(hit.instance) {

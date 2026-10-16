@@ -292,6 +292,11 @@ impl PatternSetup {
         self.instances.iter().all(Option::is_none)
     }
 
+    /// True when instance `i` has a pattern.
+    pub fn has(&self, i: u32) -> bool {
+        matches!(self.instances.get(i as usize), Some(Some(_)))
+    }
+
     /// How many knots each instance got (fewer than asked when no more fit its piece).
     pub fn knot_counts(&self) -> Vec<usize> {
         self.instances

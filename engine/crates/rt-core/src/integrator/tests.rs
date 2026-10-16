@@ -1130,9 +1130,15 @@ fn thin_walls_and_cut_outs_cast_partial_shadows() {
         "{} vs {want}",
         wall.0 / lit
     );
-    // A solid (refracting) sheet stops shadow rays: its light arrives only by refraction, and
-    // a delta sun cannot be found that way.
-    let solid = under_and_beside(&render(&strip_scene(Some(clear_glass(0.0))), 64));
+    // A solid (refracting) sheet that manifold next-event estimation does not connect through
+    // (smooth glass under a coat, E13) stops shadow rays: its light arrives only by refraction,
+    // and a delta sun cannot be found that way. (Through uncoated smooth glass the connection
+    // finds it: `manifold::tests::a_sun_lights_through_a_pane_with_the_fresnel_of_both_faces`.)
+    let coated = Material {
+        coat: 0.5,
+        ..clear_glass(0.0)
+    };
+    let solid = under_and_beside(&render(&strip_scene(Some(coated)), 64));
     assert!(solid.0 < 0.05 * lit, "{solid:?}");
 }
 
@@ -2067,32 +2073,35 @@ fn milk_under_glass(size: u32) -> Scene {
     }
 }
 
+/// Mean green of an 8 × 8 image.
+fn mean64(img: &[f32]) -> f64 {
+    img.iter()
+        .skip(1)
+        .step_by(3)
+        .map(|&v| f64::from(v))
+        .sum::<f64>()
+        / 64.0
+}
+
 #[test]
 #[cfg_attr(
     debug_assertions,
     ignore = "a long reference of a dense medium under glass: run with --release (CI does)"
 )]
-fn a_medium_sees_the_lights_through_a_thin_glass_wall() {
-    // E9b: the shadow rays of the exit vertices cross the 3 mm plate (the thin-wall rule), so the
-    // milk is lit by next-event estimation, and its BSDF samples that refract through the plate
-    // are weighted against those shadow rays. The image is within 5 % of the path tracer's
-    // without the rule (where the light comes only by samples that refract through the plate),
-    // much less noisy, and with caustics the light through the plate comes once: the photons
-    // bring it, the shadow rays leave it.
+fn a_medium_sees_the_lights_through_a_glass_wall_by_manifold_connections() {
+    // E13: the exit vertices of the milk connect to the panel through the 3 mm plate by manifold
+    // next-event estimation (the two refractions solved, with their Jacobian), which retires the
+    // thin-wall rule of E9b here; their BSDF samples that refract through the plate onto the panel
+    // are weighted against those connections. The image converges to the path tracer's with
+    // neither (the light comes only by samples that refract through the plate: unbiased and
+    // noisy) at 4096 samples, within its noise; much less noisy; and with caustics the light
+    // through the plate comes once: the photons bring it, the connections leave it.
     let scene = milk_under_glass(8);
     let mut without = Prepared::new(&scene);
     without.exit_walls = false;
-    let reference = render_prepared(&scene, &without, 0, 2048).resolve();
-    let with = render_samples(&scene, 0, 256).resolve();
-    let mean = |img: &[f32]| {
-        img.iter()
-            .skip(1)
-            .step_by(3)
-            .map(|&v| f64::from(v))
-            .sum::<f64>()
-            / 64.0
-    };
-    let (r, w) = (mean(&reference), mean(&with));
+    without.manifold = false;
+    let reference = mean64(&render_prepared(&scene, &without, 0, 4096).resolve());
+    let with = mean64(&render_samples(&scene, 0, 1024).resolve());
     let (noise_with, noise_without) = (
         relative_variance(&scene, &Prepared::new(&scene), 32),
         relative_variance(&scene, &without, 32),
@@ -2100,20 +2109,66 @@ fn a_medium_sees_the_lights_through_a_thin_glass_wall() {
     let mut lit = scene.clone();
     lit.render.caustic_photons = 4096;
     lit.render.caustic_radius = 2.0;
-    let photons = mean(&render_with_photons(&lit, 128).resolve());
+    let photons = mean64(&render_with_photons(&lit, 128).resolve());
     eprintln!(
-        "milk under glass: path tracer {r:.4}, through the wall {w:.4}, with photons \
+        "milk under glass: path tracer {reference:.4}, connections {with:.4}, with photons \
          {photons:.4}; relative variance at 32 spp {noise_with:.5} vs {noise_without:.5}"
     );
-    assert!(r > 0.0);
-    assert!((w / r - 1.0).abs() < 0.05, "through the wall {w} vs {r}");
+    assert!(reference > 0.0);
     assert!(
-        noise_with < 0.5 * noise_without,
+        (with / reference - 1.0).abs() < 0.01,
+        "connections {with} vs {reference}"
+    );
+    assert!(
+        noise_with < 0.25 * noise_without,
         "{noise_with} vs {noise_without}"
     );
     assert!(
-        (photons / r - 1.0).abs() < 0.1,
-        "with photons {photons} vs {r}"
+        (photons / reference - 1.0).abs() < 0.1,
+        "with photons {photons} vs {reference}"
+    );
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "a long reference of a dense medium under glass: run with --release (CI does)"
+)]
+fn a_medium_sees_the_lights_through_thin_walls_where_connections_do_not_go() {
+    // E9b's thin-wall rule stays where manifold next-event estimation does not connect: here two
+    // plates, four surfaces. The shadow rays of the exit vertices cross both as if their
+    // refractions cancelled (an approximation: within 5 % of the path tracer without the rule),
+    // much less noisy than without the rule.
+    let mut scene = milk_under_glass(8);
+    let mut meshes = scene.geometry.meshes().to_vec();
+    let mut instances = scene.geometry.instances().to_vec();
+    meshes.push(box_mesh(
+        Vec3::new(-100.0, -100.0, 17.0),
+        Vec3::new(100.0, 100.0, 20.0),
+    ));
+    instances.push(Instance::new(2, Transform::IDENTITY, 1));
+    scene.geometry = Geometry::new(meshes, instances).expect("scene");
+    let mut without = Prepared::new(&scene);
+    without.exit_walls = false;
+    without.manifold = false;
+    let reference = mean64(&render_prepared(&scene, &without, 0, 2048).resolve());
+    let with = mean64(&render_samples(&scene, 0, 256).resolve());
+    let (noise_with, noise_without) = (
+        relative_variance(&scene, &Prepared::new(&scene), 32),
+        relative_variance(&scene, &without, 32),
+    );
+    eprintln!(
+        "milk under two plates: path tracer {reference:.4}, through the walls {with:.4}; \
+         relative variance at 32 spp {noise_with:.5} vs {noise_without:.5}"
+    );
+    assert!(reference > 0.0);
+    assert!(
+        (with / reference - 1.0).abs() < 0.05,
+        "through the walls {with} vs {reference}"
+    );
+    assert!(
+        noise_with < 0.5 * noise_without,
+        "{noise_with} vs {noise_without}"
     );
 }
 
