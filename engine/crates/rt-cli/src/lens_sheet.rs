@@ -367,17 +367,41 @@ pub const COST_SIZE: (u32, u32) = (64, 48);
 pub const COST_SAMPLES: u32 = 1024;
 
 /// The time of `samples` camera samples of every pixel of `scene` on this thread, seconds: what
-/// the renderer's tiles do before tracing a ray into the scene.
+/// the renderer's tiles do before tracing a ray into the scene, row by row as they do it (through
+/// a traced lens, in batches: `render::camera_samples`).
 pub fn camera_seconds(scene: &Scene, samples: u32) -> f64 {
     let (w, h) = (scene.render.width, scene.render.height);
     let start = Instant::now();
     let mut sum = 0.0f32;
-    for y in 0..h {
-        for x in 0..w {
-            for i in 0..samples {
+    let mut pixels = Vec::with_capacity(w as usize);
+    let mut out = Vec::with_capacity(w as usize);
+    for i in 0..samples {
+        for y in 0..h {
+            pixels.clear();
+            pixels.extend((0..w).map(|x| (x, y)));
+            rt_core::render::camera_samples(scene, &pixels, i, &mut out);
+            for (ray, _, weight, _) in &out {
+                sum += ray.dir.x + weight.r;
+            }
+        }
+    }
+    let seconds = start.elapsed().as_secs_f64();
+    std::hint::black_box(sum);
+    seconds
+}
+
+/// The same as [`camera_seconds`], one sample at a time (`render::camera_sample_filtered`, what
+/// the tiles did before the batches): the cost table's "before".
+pub fn camera_seconds_unbatched(scene: &Scene, samples: u32) -> f64 {
+    let (w, h) = (scene.render.width, scene.render.height);
+    let start = Instant::now();
+    let mut sum = 0.0f32;
+    for i in 0..samples {
+        for y in 0..h {
+            for x in 0..w {
                 let sampler = PixelSampler::new(scene.render.seed, x, y, i);
-                let (ray, _, weight) =
-                    rt_core::render::camera_sample_weighted(scene, &sampler, x, y);
+                let (ray, _, weight, _) =
+                    rt_core::render::camera_sample_filtered(scene, &sampler, x, y);
                 sum += ray.dir.x + weight.r;
             }
         }
@@ -421,20 +445,23 @@ pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String
     ] {
         let render = render_progressive(scene, spp, 1, None);
         let camera = camera_seconds(scene, spp);
+        let unbatched = camera_seconds_unbatched(scene, spp);
         let total = render.elapsed.as_secs_f64();
         let n = f64::from(scene.render.width) * f64::from(scene.render.height) * f64::from(spp);
         println!(
-            "{scene_name}, {camera_name}: render {total:.1} s, camera {camera:.1} s ({:.1} %), {:.3} µs a camera sample, {:.3} µs a sample",
+            "{scene_name}, {camera_name}: render {total:.1} s, camera {camera:.1} s ({:.1} %), {:.3} µs a camera sample ({:.3} µs one by one), {:.3} µs a sample",
             100.0 * camera / total,
             1.0e6 * camera / n,
+            1.0e6 * unbatched / n,
             1.0e6 * total / n
         );
         rows.push(format!(
-            "{{\"scene\":\"{scene_name}\",\"camera\":\"{camera_name}\",\"width\":{},\"height\":{},\"samples\":{spp},\"renderSeconds\":{total:.3},\"cameraSeconds\":{camera:.3},\"share\":{:.4},\"cameraMicros\":{:.4},\"sampleMicros\":{:.4},\"rays\":{}}}",
+            "{{\"scene\":\"{scene_name}\",\"camera\":\"{camera_name}\",\"width\":{},\"height\":{},\"samples\":{spp},\"renderSeconds\":{total:.3},\"cameraSeconds\":{camera:.3},\"share\":{:.4},\"cameraMicros\":{:.4},\"unbatchedMicros\":{:.4},\"sampleMicros\":{:.4},\"rays\":{}}}",
             scene.render.width,
             scene.render.height,
             camera / total,
             1.0e6 * camera / n,
+            1.0e6 * unbatched / n,
             1.0e6 * total / n,
             render.rays
         ));

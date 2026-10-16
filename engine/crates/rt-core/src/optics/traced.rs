@@ -41,8 +41,11 @@
 //!   indices and weighs its channel.
 
 use super::paraxial;
+
+mod batch;
 use super::pupil::Iris;
 use crate::math::Vec3;
+pub use batch::{BatchSample, LANES};
 
 /// `SurfaceSpec.kind`: a sphere.
 pub const SURFACE_SPHERE: u32 = 0;
@@ -1464,6 +1467,26 @@ impl TracedLens {
     /// band, and the swirl (artistic, 0 to 1). The ray in the lens frame and its weight
     /// (relative to the axis; the band's channel is weighted by the caller).
     pub fn sample(&self, x: f32, y: f32, u: (f32, f32), band: usize, swirl: f32) -> (Traced, f32) {
+        let Some(setup) = self.sample_setup(x, y, u, swirl) else {
+            return (Traced::Blocked, 0.0);
+        };
+        // A sample the lens stops weighs nothing, but keeps its own ray (unclipped) for the
+        // coverage of a transparent background.
+        let (traced, stopped) = self.trace_with(setup.film, setup.d, band, true, true);
+        self.sample_finish(&setup, band, traced, stopped)
+    }
+
+    /// The part of [`TracedLens::sample`] before the trace: the film point, the direction to the
+    /// point of the pupil's rectangle and the measure of that rectangle; `None` when nothing passes
+    /// at that height.
+    #[inline(always)]
+    pub(crate) fn sample_setup(
+        &self,
+        x: f32,
+        y: f32,
+        u: (f32, f32),
+        swirl: f32,
+    ) -> Option<SampleSetup> {
         let (film, h) = self.film_of(x, y);
         let r = (film.x * film.x + film.y * film.y).sqrt();
         let (c, s) = if r > 0.0 {
@@ -1483,7 +1506,7 @@ impl TracedLens {
             p0[3].max(p1[3]),
         ];
         if rect[1] < rect[0] || rect[3] < rect[2] {
-            return (Traced::Blocked, 0.0);
+            return None;
         }
         let (w, hgt) = (rect[1] - rect[0], rect[3] - rect[2]);
         let mut px = rect[0] + u.0 * w;
@@ -1507,20 +1530,50 @@ impl TracedLens {
         let delta = q - film;
         let len2 = delta.dot(delta);
         let d = delta * (1.0 / len2.sqrt());
-        // A sample the lens stops weighs nothing, but keeps its own ray (unclipped) for the
-        // coverage of a transparent background.
-        let (traced, stopped) = self.trace_with(film, d, band, true, true);
+        Some(SampleSetup {
+            film,
+            d,
+            area: w * hgt * jacobian,
+            h,
+        })
+    }
+
+    /// The part of [`TracedLens::sample`] after the trace: the weight of a sample that passed
+    /// (nothing for one the lens stopped).
+    #[inline(always)]
+    pub(crate) fn sample_finish(
+        &self,
+        setup: &SampleSetup,
+        band: usize,
+        traced: Traced,
+        stopped: bool,
+    ) -> (Traced, f32) {
         if stopped {
             return (traced, 0.0);
         }
+        let rear_z = self.z[self.z.len() - 1];
+        let (film, d, h) = (setup.film, setup.d, setup.h);
         let zz = film.z - rear_z;
         let cos4 = d.z * d.z * d.z * d.z;
-        let mut weight = w * hgt * jacobian * cos4 / (zz * zz) / self.normaliser * self.tint[band];
+        let mut weight = setup.area * cos4 / (zz * zz) / self.normaliser * self.tint[band];
         if self.vignetting > 0.0 {
             weight *= (1.0 - self.vignetting * h * h).max(0.0);
         }
         (traced, weight)
     }
+}
+
+/// What a camera sample of a traced lens carries from its setup to its weight.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SampleSetup {
+    /// The film point (lens frame).
+    pub film: Vec3,
+    /// The direction to the point of the pupil's rectangle, unit.
+    pub d: Vec3,
+    /// The measure of the rectangle the point was drawn from (the swirl's Jacobian included).
+    pub area: f32,
+    /// The image height over the frame's corner.
+    pub h: f32,
 }
 
 impl TracedLens {

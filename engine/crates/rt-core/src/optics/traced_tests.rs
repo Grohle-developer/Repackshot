@@ -746,3 +746,119 @@ fn the_iris_short_cuts_give_the_exact_edge_answers() {
         }
     }
 }
+
+/// The bits of a traced sample, to compare two of them exactly.
+fn sample_bits(t: (Traced, f32)) -> (Option<[u32; 6]>, u32) {
+    let rays = match t.0 {
+        Traced::Out { origin, dir } => {
+            Some([origin.x, origin.y, origin.z, dir.x, dir.y, dir.z].map(f32::to_bits))
+        }
+        Traced::Blocked => None,
+    };
+    (rays, t.1.to_bits())
+}
+
+#[test]
+fn a_batch_of_samples_gives_the_bits_of_the_samples_one_by_one() {
+    // Every lens of the catalogue that forms an image, plain and with every override and the
+    // swirl, and batches of every length: each lane is the scalar sample, bit for bit.
+    let mut rng = crate::rng::Pcg32::seeded(7, 11);
+    let mut checked = 0;
+    for (key, _) in catalogue() {
+        if key == "anamorphic_adapter_2x" {
+            continue;
+        }
+        for (overrides, swirl) in [(false, 0.0f32), (true, 0.6)] {
+            let lens = traced_with(&key, 50.0, 0.0, 1500.0, |p| {
+                if overrides {
+                    p.distortion = 0.4;
+                    p.vignetting = 0.3;
+                    p.spherical = -0.5;
+                    p.breathing = 0.5;
+                }
+            });
+            for n in [1usize, 3, LANES] {
+                for _ in 0..40 {
+                    let samples: Vec<BatchSample> = (0..n)
+                        .map(|_| BatchSample {
+                            x: 44.0 * rng.next_f32() - 22.0,
+                            y: 30.0 * rng.next_f32() - 15.0,
+                            u: (rng.next_f32(), rng.next_f32()),
+                            band: (rng.next_u32() % 3) as usize,
+                        })
+                        .collect();
+                    let batch = lens.sample_batch(&samples, swirl);
+                    for (k, s) in samples.iter().enumerate() {
+                        let one = lens.sample(s.x, s.y, s.u, s.band, swirl);
+                        assert_eq!(
+                            sample_bits(batch[k]),
+                            sample_bits(one),
+                            "{key}, lane {k} of {n}: {s:?}"
+                        );
+                        checked += 1;
+                    }
+                    for lane in &batch[n..] {
+                        assert_eq!(sample_bits(*lane), sample_bits((Traced::Blocked, 0.0)));
+                    }
+                }
+            }
+        }
+    }
+    assert!(checked > 10_000, "{checked}");
+}
+
+#[test]
+fn the_tiles_batched_camera_samples_are_the_samples_one_by_one() {
+    // What the tiles trace through a traced lens, a row at a time in batches, is what
+    // `camera_sample_filtered` gives pixel by pixel: the same rays, weights and filter paths, also
+    // with filters, the swirl and a row whose length is not a multiple of the batch.
+    use crate::render::{camera_sample_filtered, camera_samples};
+    use crate::sampler::PixelSampler;
+    let mut scene = crate::example::o2_scene();
+    scene.render.width = 37;
+    scene.render.height = 5;
+    let mut with_filters = scene.clone();
+    with_filters.camera.lens = Some(
+        super::Lens::new(LensParams {
+            blades: 6,
+            swirl: 0.4,
+            filters: crate::example::filter_stack(),
+            prescription: Some(crate::example::double_gauss()),
+            ..LensParams::default()
+        })
+        .unwrap(),
+    );
+    with_filters.camera.prepare_lens().unwrap();
+    for scene in [scene, with_filters] {
+        assert!(crate::render::camera_batches(&scene));
+        let mut out = Vec::new();
+        for index in [0u32, 1, 2, 17] {
+            for y in 0..scene.render.height {
+                let pixels: Vec<(u32, u32)> = (0..scene.render.width).map(|x| (x, y)).collect();
+                camera_samples(&scene, &pixels, index, &mut out);
+                assert_eq!(out.len(), pixels.len());
+                for (&(x, y), got) in pixels.iter().zip(&out) {
+                    let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+                    let want = camera_sample_filtered(&scene, &sampler, x, y);
+                    let bits = |s: &crate::render::CameraSample| {
+                        let (r, (u, v), w, p) = s;
+                        (
+                            [
+                                r.origin.x, r.origin.y, r.origin.z, r.dir.x, r.dir.y, r.dir.z, *u,
+                                *v,
+                            ]
+                            .map(f32::to_bits),
+                            [w.r, w.g, w.b].map(f32::to_bits),
+                            p.as_ref().map(|p| p.last.map(|l| l.0)),
+                        )
+                    };
+                    assert_eq!(bits(got), bits(&want), "pixel ({x}, {y}), sample {index}");
+                    assert_eq!(
+                        got.3, want.3,
+                        "the filters of pixel ({x}, {y}), sample {index}"
+                    );
+                }
+            }
+        }
+    }
+}

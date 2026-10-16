@@ -478,6 +478,73 @@ impl Lens {
         sampler: &PixelSampler,
     ) -> (Ray, Rgb, Option<FilterPath>) {
         let (ray, weight) = self.sample_lens(camera, aspect, u, v, sampler);
+        self.filter_sample(camera, ray, weight, sampler)
+    }
+
+    /// O2: [`Lens::sample_filtered`] of several sensor points `(u, v)` with their samplers, into
+    /// `out` (one per point): a traced lens traces them [`traced::LANES`] at a time (the same bits
+    /// as one by one); any other lens samples them one by one.
+    pub fn sample_filtered_batch(
+        &self,
+        camera: &Camera,
+        aspect: f32,
+        points: &[(f32, f32)],
+        samplers: &[PixelSampler],
+        out: &mut Vec<(Ray, Rgb, Option<FilterPath>)>,
+    ) {
+        out.clear();
+        let n = points.len().min(samplers.len());
+        let Some(traced) = &self.traced else {
+            for k in 0..n {
+                let (u, v) = points[k];
+                out.push(self.sample_filtered(camera, aspect, u, v, &samplers[k]));
+            }
+            return;
+        };
+        let mut start = 0;
+        while start < n {
+            let end = (start + traced::LANES).min(n);
+            let mut lanes = [traced::BatchSample::default(); traced::LANES];
+            for k in start..end {
+                let (u, v) = points[k];
+                let (x, y) = self.traced_film(camera, aspect, u, v);
+                let (band, group) = samplers[k].strata(DIM_LENS_BAND, 3);
+                lanes[k - start] = traced::BatchSample {
+                    x,
+                    y,
+                    u: group.get2(DIM_LENS),
+                    band: band as usize,
+                };
+            }
+            let traced_out = traced.sample_batch(&lanes[..end - start], self.params.swirl);
+            for k in start..end {
+                let (u, v) = points[k];
+                let lane = &lanes[k - start];
+                let (ray, weight) = self.traced_result(
+                    traced,
+                    camera,
+                    aspect,
+                    u,
+                    v,
+                    (lane.x, lane.y),
+                    lane.band,
+                    traced_out[k - start],
+                );
+                out.push(self.filter_sample(camera, ray, weight, &samplers[k]));
+            }
+            start = end;
+        }
+    }
+
+    /// The effect filters after the lens: what [`Lens::sample_filtered`] does to the ray and the
+    /// weight of the lens's sample.
+    fn filter_sample(
+        &self,
+        camera: &Camera,
+        ray: Ray,
+        weight: Rgb,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb, Option<FilterPath>) {
         if self.filters.is_empty() {
             return (ray, weight, None);
         }
@@ -742,7 +809,28 @@ impl Lens {
         let (band, group) = sampler.strata(DIM_LENS_BAND, 3);
         let band = band as usize;
         let numbers = group.get2(DIM_LENS);
-        let (out, weight) = traced.sample(x, y, numbers, band, self.params.swirl);
+        let sample = traced.sample(x, y, numbers, band, self.params.swirl);
+        self.traced_result(traced, camera, aspect, u, v, (x, y), band, sample)
+    }
+
+    /// The world ray and the colour weight of a traced sample of the sensor point `(u, v)`
+    /// (`film`, desqueezed) in `band`: what [`Lens::sample_traced`] makes of
+    /// [`TracedLens::sample`]'s answer (one by one or from a batch).
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn traced_result(
+        &self,
+        traced: &TracedLens,
+        camera: &Camera,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        film: (f32, f32),
+        band: usize,
+        sample: (Traced, f32),
+    ) -> (Ray, Rgb) {
+        let (x, y) = film;
+        let (out, weight) = sample;
         match out {
             Traced::Out { origin, dir } => (
                 Self::traced_world(traced, camera, origin, dir),

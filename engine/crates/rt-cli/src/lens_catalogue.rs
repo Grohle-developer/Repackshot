@@ -565,4 +565,39 @@ mod tests {
         assert!(near > 1.0 && near < far, "squeeze at 1.5 m {near}");
         assert_eq!(adapter(1500.0, None).info().squeeze, near);
     }
+
+    #[test]
+    fn the_adapters_cylinders_trace_in_a_batch_as_one_by_one() {
+        // The anamorphic adapter's cylinders take their own branch of the batched trace: each
+        // lane is the scalar sample, bit for bit.
+        use rt_core::optics::traced::{BatchSample, LANES};
+        let lens = adapter(2000.0, None);
+        let bits = |t: (Traced, f32)| match t.0 {
+            Traced::Out { origin, dir } => {
+                Some([origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, t.1].map(f32::to_bits))
+            }
+            Traced::Blocked => None,
+        };
+        let mut checked = 0;
+        for j in 0..60u32 {
+            let samples: Vec<BatchSample> = (0..LANES as u32)
+                .map(|k| {
+                    let i = j * LANES as u32 + k;
+                    BatchSample {
+                        x: ((i * 37) % 41) as f32 - 20.0,
+                        y: ((i * 53) % 29) as f32 - 14.0,
+                        u: (((i * 7) % 97) as f32 / 97.0, ((i * 11) % 89) as f32 / 89.0),
+                        band: (i % 3) as usize,
+                    }
+                })
+                .collect();
+            let batch = lens.sample_batch(&samples, 0.0);
+            for (k, s) in samples.iter().enumerate() {
+                let one = lens.sample(s.x, s.y, s.u, s.band, 0.0);
+                assert_eq!(bits(batch[k]), bits(one), "{s:?}");
+                checked += usize::from(one.1 > 0.0);
+            }
+        }
+        assert!(checked > 100, "only {checked} samples passed");
+    }
 }
