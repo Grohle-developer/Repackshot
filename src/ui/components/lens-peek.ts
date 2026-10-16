@@ -53,9 +53,11 @@ interface Rect {
 export function placePeek(box: { width: number; height: number }, entry: Rect, avoid: Rect, view: { width: number; height: number }): { left: number; top: number } {
   const roomLeft = avoid.left - GAP - MARGIN;
   const roomRight = view.width - avoid.right - GAP - MARGIN;
+  // The side it fits on; when it fits on both or on neither, the one with more room.
   const fitsLeft = roomLeft >= box.width;
   const fitsRight = roomRight >= box.width;
-  const left = fitsLeft && (!fitsRight || roomLeft >= roomRight) ? avoid.left - GAP - box.width : fitsRight ? avoid.right + GAP : roomLeft >= roomRight ? avoid.left - GAP - box.width : avoid.right + GAP;
+  const onLeft = fitsLeft !== fitsRight ? fitsLeft : roomLeft >= roomRight;
+  const left = onLeft ? avoid.left - GAP - box.width : avoid.right + GAP;
   const top = entry.top - 6;
   return {
     left: Math.max(MARGIN, Math.min(view.width - box.width - MARGIN, left)),
