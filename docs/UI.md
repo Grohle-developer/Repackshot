@@ -308,8 +308,10 @@ tapar la pieza:
   las muestras son las de esa imagen) y *Cáusticas · 16 384 fotones por
   muestra* cuando el motor las renderiza, y **Adaptativo · 16–512 muestras**
   (E10) cuando el visor muestrea adaptativamente (*Terminar por Ruido*):
-  las muestras del píxel que menos y del que más tiene, las del motor (el
-  número de la primera línea es el de más); y el botón **Reducir ruido**
+  las muestras del píxel que menos y del que más tiene en lo acumulado, las
+  del motor (la primera línea sigue diciendo las de la imagen que se ve: con
+  *Ruido reducido*, las de la imagen filtrada, que va una pasada o más por
+  detrás); y el botón **Reducir ruido**
   (pulsado o no) enciende o apaga el *denoise* del visor: el mismo
   interruptor que *Reducir ruido* de la barra superior (§2.1, atajo `D`),
   la parte del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔
@@ -1248,9 +1250,9 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   atajos *Borrador 64 · Previa 256 · Final 1024* y valor libre. *Tiempo*:
   campo `hh:mm:ss`. En *Avanzado*, la opción *Lo que llegue antes* con
   los dos campos. **Ruido** (E10): el campo *Ruido* (0,5–5 %, por defecto
-  1,0 %, en décimas), con la nota *Cada píxel termina por debajo de este ruido
+  1 %, en décimas: *1,5 %*), con la nota *Cada píxel termina por debajo de este ruido
   (el error relativo de su media): las muestras van a las partes ruidosas,
-  como mucho las de arriba*, y el campo de *Muestras* a la vista como tope; el
+  nunca más que Muestras*, y el campo de *Muestras* debajo, a la vista, como tope; el
   motor muestrea adaptativamente (`RNDR.adaptive`, `RNDR.noise_threshold`) y
   el render acaba cuando ningún bloque de 8 × 8 pasa del umbral (o todos llegan
   al tope). El visor *Completo* que sigue las muestras de la salida muestrea
@@ -1262,7 +1264,7 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   la **última pasada del visor *Completo*** que muestrea al mismo umbral: lo que
   lleva más lo que el motor espera que le falte (el trabajo que la última
   decisión dice que queda, al ritmo de la última pasada), escalado a los
-  píxeles de la salida (*≈ 3 min hasta 1,0 % en este equipo, según la última
+  píxeles de la salida (*≈ 3 min hasta 1 % en este equipo, según la última
   pasada del visor Completo*); sin eso, *El tiempo sale de las pasadas: en modo
   Completo, o mientras se renderiza*. Mientras corre el render, el progreso de
   la cola es la parte del tiempo que el motor dice que lleva.
@@ -1590,7 +1592,7 @@ renderiza** (§2.5, *Vista en vivo*): la cabecera con la ficha **En vivo**, el
 nombre del archivo que saldrá, una línea de datos con lo que dice el motor
 (*1280 × 720 · 15 de 96 muestras · 0:14 · Cámara 1*; con *Terminar por
 tiempo*, *15 muestras · 0:14 de 1:00*; con *Terminar por ruido* (E10),
-*adaptativo · 16–212 muestras · ruido 2,4 % de 1,0 % · 0:14 · quedan ≈ 40 s*,
+*adaptativo · 16–212 muestras · ruido 2,4 % de 1 % · 0:14 · quedan ≈ 40 s*,
 los números del motor; antes de la primera imagen, solo el
 tamaño y la cámara), a la derecha el estado de la fila con su progreso
 (*Renderizando · 19 %*, *Fotograma 3 de 48*, *IA · mosaico 2 de 4 · intento 1

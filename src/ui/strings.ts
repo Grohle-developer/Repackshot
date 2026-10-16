@@ -1454,8 +1454,8 @@ const TABLE = {
   'rw.byNoise': ['Noise', 'Ruido'],
   'rw.noiseThreshold': ['Noise', 'Ruido'],
   'rw.noiseNote': [
-    'Every pixel ends under this noise (the relative error of its mean): the samples go to the noisy parts, at most the samples above',
-    'Cada píxel termina por debajo de este ruido (el error relativo de su media): las muestras van a las partes ruidosas, como mucho las de arriba',
+    'Every pixel ends under this noise (the relative error of its mean): the samples go to the noisy parts, never more than Samples',
+    'Cada píxel termina por debajo de este ruido (el error relativo de su media): las muestras van a las partes ruidosas, nunca más que Muestras',
   ],
   'rw.estimateNoise': ['≈ {time} to {t} on this machine, from the last pass of the Full view', '≈ {time} hasta {t} en este equipo, según la última pasada del visor Completo'],
   'rw.estimateNoiseNone': ['The time comes from the passes: in Full mode, or as the render runs', 'El tiempo sale de las pasadas: en modo Completo, o mientras se renderiza'],

@@ -6,7 +6,7 @@
 // Without --url it serves dist/ with `vite preview --port 4187 --strictPort` and stops it at the end
 // (by the pids `lsof -t -i :4187` reports, never `pkill -f`).
 //
-//   (window) Render ▸ Quality ▸ Finish by has Samples · Time · Noise; Noise shows its field at 1.0 % with its
+//   (window) Render ▸ Quality ▸ Finish by has Samples · Time · Noise; Noise shows its field at 1 % with its
 //            note, keeps the Samples field as the cap, hides Time, and the estimate says where its time comes from;
 //   (full)   in Full mode, with the view following the output's samples, the meter says "Adaptive · min–max samples"
 //            with the engine's numbers (min < max once the image has been decided), and the window's estimate then
@@ -143,7 +143,7 @@ try {
     const labels = chosen.finishBy.map((b) => b.text);
     const wantLabels = lang === 'en' ? ['Samples', 'Time', 'Noise'] : ['Muestras', 'Tiempo', 'Ruido'];
     const pressed = chosen.finishBy.find((b) => b.pressed === 'true')?.text;
-    const field = lang === 'en' ? '1.0 %' : '1,0 %';
+    const field = '1 %';
     const note = lang === 'en' ? 'Every pixel ends' : 'Cada píxel termina';
     const noneEstimate = lang === 'en' ? 'The time comes from the passes' : 'El tiempo sale de las pasadas';
     check(`window_${lang}`, JSON.stringify(labels) === JSON.stringify(wantLabels) && pressed === NOISE && chosen.noise?.includes(field) && chosen.noiseShown && !before.noiseShown && chosen.samplesShown && chosen.notes.some((n) => n.startsWith(note)) && chosen.estimate.startsWith(noneEstimate), {
