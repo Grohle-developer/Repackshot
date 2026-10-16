@@ -365,6 +365,8 @@ pub fn run(
 pub const COST_SIZE: (u32, u32) = (64, 48);
 /// See [`COST_SIZE`].
 pub const COST_SAMPLES: u32 = 1024;
+/// Runs of each measurement of the cost; the quickest counts.
+pub const COST_RUNS: usize = 3;
 
 /// The time of `samples` camera samples of every pixel of `scene` on this thread, seconds: what
 /// the renderer's tiles do before tracing a ray into the scene, row by row as they do it (through
@@ -443,9 +445,16 @@ pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String
         ("bottle", "double_gauss", &bottle_traced, samples / 4),
         ("bottle", "thin", &bottle, samples / 4),
     ] {
-        let render = render_progressive(scene, spp, 1, None);
-        let camera = camera_seconds(scene, spp);
-        let unbatched = camera_seconds_unbatched(scene, spp);
+        // The quickest of COST_RUNS runs of each (the machine is shared: the slower runs are
+        // other work's).
+        let render = (0..COST_RUNS)
+            .map(|_| render_progressive(scene, spp, 1, None))
+            .min_by(|a, b| a.elapsed.cmp(&b.elapsed))
+            .expect("at least one run");
+        let quickest =
+            |f: &dyn Fn() -> f64| (0..COST_RUNS).map(|_| f()).fold(f64::INFINITY, f64::min);
+        let camera = quickest(&|| camera_seconds(scene, spp));
+        let unbatched = quickest(&|| camera_seconds_unbatched(scene, spp));
         let total = render.elapsed.as_secs_f64();
         let n = f64::from(scene.render.width) * f64::from(scene.render.height) * f64::from(spp);
         println!(
@@ -486,7 +495,7 @@ pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String
         ));
     }
     let json = format!(
-        "{{\"threads\":1,\"rows\":[\n{}\n],\"thinMicros\":{thin_micros:.4},\"lenses\":[\n{}\n]}}\n",
+        "{{\"threads\":1,\"runs\":{COST_RUNS},\"rows\":[\n{}\n],\"thinMicros\":{thin_micros:.4},\"lenses\":[\n{}\n]}}\n",
         rows.join(",\n"),
         lenses.join(",\n")
     );

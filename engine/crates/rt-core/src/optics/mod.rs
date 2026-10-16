@@ -501,6 +501,7 @@ impl Lens {
             }
             return;
         };
+        let basis = camera.basis();
         let mut start = 0;
         while start < n {
             let end = (start + traced::LANES).min(n);
@@ -529,8 +530,9 @@ impl Lens {
                     (lane.x, lane.y),
                     lane.band,
                     traced_out[k - start],
+                    basis,
                 );
-                out.push(self.filter_sample(camera, ray, weight, &samplers[k]));
+                out.push(self.filter_sample_in(camera, basis, ray, weight, &samplers[k]));
             }
             start = end;
         }
@@ -548,6 +550,22 @@ impl Lens {
         if self.filters.is_empty() {
             return (ray, weight, None);
         }
+        self.filter_sample_in(camera, camera.basis(), ray, weight, sampler)
+    }
+
+    /// [`Lens::filter_sample`] with the camera's basis already at hand.
+    #[inline(always)]
+    fn filter_sample_in(
+        &self,
+        camera: &Camera,
+        basis: (Vec3, Vec3, Vec3),
+        ray: Ray,
+        weight: Rgb,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb, Option<FilterPath>) {
+        if self.filters.is_empty() {
+            return (ray, weight, None);
+        }
         // The three bands of a group share their filters' numbers too (one scattering, three
         // colours), as they share the pupil.
         let banded =
@@ -557,7 +575,7 @@ impl Lens {
         } else {
             *sampler
         };
-        let (_, right, up) = camera.basis();
+        let (_, right, up) = basis;
         let mut path = FilterPath {
             origin: ray.origin,
             right,
@@ -763,7 +781,19 @@ impl Lens {
     /// A lens-frame ray (`traced`'s axis is −forward; its x and y are the camera's right and up)
     /// in the world.
     fn traced_world(traced: &TracedLens, camera: &Camera, origin: Vec3, dir: Vec3) -> Ray {
-        let (forward, right, up) = camera.basis();
+        Self::traced_world_in(traced, camera, camera.basis(), origin, dir)
+    }
+
+    /// [`Lens::traced_world`] with the camera's basis already at hand (a batch computes it once).
+    #[inline(always)]
+    fn traced_world_in(
+        traced: &TracedLens,
+        camera: &Camera,
+        basis: (Vec3, Vec3, Vec3),
+        origin: Vec3,
+        dir: Vec3,
+    ) -> Ray {
+        let (forward, right, up) = basis;
         let o = camera.position
             + right * origin.x
             + up * origin.y
@@ -810,7 +840,17 @@ impl Lens {
         let band = band as usize;
         let numbers = group.get2(DIM_LENS);
         let sample = traced.sample(x, y, numbers, band, self.params.swirl);
-        self.traced_result(traced, camera, aspect, u, v, (x, y), band, sample)
+        self.traced_result(
+            traced,
+            camera,
+            aspect,
+            u,
+            v,
+            (x, y),
+            band,
+            sample,
+            camera.basis(),
+        )
     }
 
     /// The world ray and the colour weight of a traced sample of the sensor point `(u, v)`
@@ -828,19 +868,22 @@ impl Lens {
         film: (f32, f32),
         band: usize,
         sample: (Traced, f32),
+        basis: (Vec3, Vec3, Vec3),
     ) -> (Ray, Rgb) {
         let (x, y) = film;
         let (out, weight) = sample;
         match out {
             Traced::Out { origin, dir } => (
-                Self::traced_world(traced, camera, origin, dir),
+                Self::traced_world_in(traced, camera, basis, origin, dir),
                 band_weight(band) * weight,
             ),
             Traced::Blocked => {
                 let ray = match traced.chief(x, y, (0.0, 0.0)) {
-                    Traced::Out { origin, dir } => Self::traced_world(traced, camera, origin, dir),
+                    Traced::Out { origin, dir } => {
+                        Self::traced_world_in(traced, camera, basis, origin, dir)
+                    }
                     Traced::Blocked => {
-                        let (forward, right, up) = camera.basis();
+                        let (forward, right, up) = basis;
                         let (sx, sy) = sensor_point(camera, aspect, u, v);
                         Ray::new(
                             camera.position,
