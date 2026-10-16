@@ -250,6 +250,26 @@ describe('the synthetic service', () => {
     expect(res.progress.filter((p) => p.stage === 'RETRY')).toHaveLength(MAX_ATTEMPTS - 1);
   });
 
+  it('counts its attempts, 1-based and of four, says why each was sent back, and splits the bar by attempts (B1)', async () => {
+    const res = await run({ ...DEFAULT_AI_PIPELINE, intervention: 100, light: 100 }, { limits: { deltaEMean: 1e-9, deltaEP95: 1e-9 } });
+    const steps = res.progress.filter((p) => p.stage !== 'CONDITIONING');
+    expect(new Set(steps.map((p) => p.attempt))).toEqual(new Set([1, 2, 3, 4]));
+    for (const p of res.progress) expect(p.maxAttempts).toBe(MAX_ATTEMPTS);
+    // The first attempt has nothing to explain; every later one says why the one before it was sent back.
+    expect(steps.filter((p) => p.attempt === 1).every((p) => p.reason === undefined)).toBe(true);
+    expect(steps.filter((p) => p.attempt > 1).every((p) => typeof p.reason === 'string' && /Material \d+ ΔE00/.test(p.reason))).toBe(true);
+    // Each attempt owns a quarter of the bar and the bar never goes back, however many retries there are.
+    let last = 0;
+    for (const p of res.progress) {
+      expect(p.fraction).toBeGreaterThanOrEqual(last);
+      last = p.fraction;
+      expect(p.fraction).toBeGreaterThanOrEqual((p.attempt - 1) / MAX_ATTEMPTS - 1e-9);
+      expect(p.fraction).toBeLessThanOrEqual(p.attempt / MAX_ATTEMPTS + 1e-9);
+    }
+    // A fourth attempt is not at the end of the bar while it is working.
+    expect(Math.max(...steps.filter((p) => p.attempt === MAX_ATTEMPTS).map((p) => p.fraction))).toBeLessThan(1);
+  });
+
   it('reports progress inside 0..1, in order, and stops when it is aborted', async () => {
     const res = await run(DEFAULT_AI_PIPELINE);
     expect(res.progress.map((p) => p.stage)).toEqual(['CONDITIONING', 'INFERENCE', 'GUARD']);

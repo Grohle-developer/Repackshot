@@ -421,12 +421,15 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
       const check = () => {
         if (signal.aborted) throw aborted();
       };
-      const report = (stage: AiPostProgress['stage'], fraction: number, attempt: number) => onProgress({ stage, tile: 1, tiles: 1, attempt, fraction });
+      // The bar is split by attempts (`at` is where in the attempt, 0..1); a retry says why the last one was sent back.
+      const report = (stage: AiPostProgress['stage'], fraction: number, attempt: number, reason?: string) =>
+        onProgress({ stage, tile: 1, tiles: 1, attempt, maxAttempts: MAX_ATTEMPTS, ...(reason ? { reason } : {}), fraction });
+      const at = (attempt: number, within: number) => (attempt - 1 + within) / MAX_ATTEMPTS;
       if (request.source.kind !== 'INLINE') throw new Error('the synthetic service takes INLINE sources only');
       const { image, passes } = request.source;
       const s = request.settings;
       check();
-      report('CONDITIONING', 0.1, 1);
+      report('CONDITIONING', at(1, 0.1), 1);
       if (opts.delayMs && opts.delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, opts.delayMs));
       check();
 
@@ -442,11 +445,12 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
 
       let scale = 1;
       let last: Measured | null = null;
+      let sentBack: string | undefined;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        report(attempt === 1 ? 'INFERENCE' : 'RETRY', 0.2 + 0.2 * attempt, attempt);
+        report(attempt === 1 ? 'INFERENCE' : 'RETRY', at(attempt, 0.3), attempt, sentBack);
         const out = applySynthetic(image, passes, weightsOf(s, scale), s.style, s.seed);
         check();
-        report('GUARD', 0.3 + 0.2 * attempt, attempt);
+        report('GUARD', at(attempt, 0.9), attempt, sentBack);
         const m = measure(image, out, passes, limits, request.materials);
         last = m;
         if (m.ok) {
@@ -455,6 +459,7 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
           if (verdict === 'LIMITED') rep.reason = `limited to ${Math.round(scale * 100)} % of the asked strength after ${attempt - 1} retries`;
           return { image: out, report: rep };
         }
+        sentBack = whyNot(m);
         scale = f(scale * RETRY_FACTOR);
       }
       // No attempt passed: the engine image, unchanged, with the reason.

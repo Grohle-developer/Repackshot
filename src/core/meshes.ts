@@ -2,7 +2,7 @@
 // lives here, keyed by id, and the project state only keeps a small `MeshRef`
 // (id, counts, local bounds). This keeps `ProjectState` plain JSON
 // (ARCHITECTURE §4) while the preview and the importers share the buffers.
-// Phase U2 embeds these buffers in `.repack.json` as GLB.
+// Phase U2 embeds these buffers in `.repack` as GLB.
 
 import { emptyBox, type Box, type Mat4 } from './math';
 

@@ -195,8 +195,16 @@ export interface AiPostProgress {
   /** 1-based tile being run, and how many. */
   tile: number;
   tiles: number;
+  /** 1-based attempt in flight (the guard may send an attempt back: at most `maxAttempts`). */
   attempt: number;
-  /** 0..1 of the whole request, as far as it can be known. */
+  /** The most attempts there can be (`MAX_ATTEMPTS` when the service does not say). */
+  maxAttempts?: number;
+  /** Why the guard sent the attempt before this one back, in its words; absent on the first. */
+  reason?: string;
+  /**
+   * 0..1 of the whole request, as far as it can be known. Split by attempts: each owns `1 / maxAttempts` of it, so the
+   * bar reaches the end only when the work does (it used to creep towards the end at every retry).
+   */
   fraction: number;
 }
 

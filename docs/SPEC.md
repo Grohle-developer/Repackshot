@@ -1218,7 +1218,12 @@ focos (el charco incluido) y su fondo; sus tarjetas, barrido y suelo son
 piezas de la escena y se quedan en ella. Fondo `GRADIENT` (L6): el entorno
 guarda sus dos colores (`gradient`), en el proyecto y en los estudios de la
 biblioteca. El **proyecto** es el estado completo en un archivo
-`.repack.json`, con las mallas dentro.
+`.repack`, con las mallas dentro. El contenido es JSON (la extensión lo
+distingue de cualquier otro JSON); hasta v0.1.6 se llamaba `.repack.json`,
+y esos archivos se siguen abriendo igual (selector, diálogo del escritorio y
+al soltarlos en la ventana). *Guardar* y *Guardar como…* proponen `.repack`;
+guardar sobre un archivo abierto lo escribe donde está, con el nombre que
+tenga.
 
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
 entre proyectos: materiales (*Guardar material como…*), montajes de luz

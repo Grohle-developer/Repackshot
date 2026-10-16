@@ -38,6 +38,7 @@ const state = (patch: Partial<AiPostState>): AiPostState => ({
   tiles: 2,
   attempt: 0,
   maxAttempts: 4,
+  lastFailure: null,
   strength: 0,
   step: 0,
   steps: 0,
@@ -131,6 +132,33 @@ describe('the desktop AI service', () => {
     expect(progress.at(-1)!.fraction).toBe(1);
     // Collected, and forgotten.
     expect(l.calls.some((c) => c.method === 'DELETE' && c.path === '/api/ai/post/3')).toBe(true);
+  });
+
+  it('follows the attempts: which of how many, and why the guard sent the last one back (B1)', async () => {
+    const why = 'detail SSIM 0.912 below 0.98';
+    const script = [
+      state({}),
+      state({ state: 'INFERENCE', stage: 'INFERENCE', tile: 1, attempt: 1, fraction: 0.1, version: 3 }),
+      state({ state: 'GUARD', stage: 'GUARD', tile: 2, attempt: 1, fraction: 0.22, version: 4 }),
+      state({ state: 'RETRY', stage: 'RETRY', tile: 1, attempt: 2, fraction: 0.3, lastFailure: why, version: 5 }),
+      state({ state: 'GUARD', stage: 'GUARD', tile: 2, attempt: 2, fraction: 0.47, lastFailure: why, version: 6 }),
+      state({ state: 'DONE', tile: 2, attempt: 2, fraction: 1, lastFailure: why, version: 7, verdict: 'LIMITED', report: REPORT }),
+    ];
+    const l = launcher(script, { image: { width: 4, height: 2, rgba: new Float32Array(32) } });
+    const progress: AiPostProgress[] = [];
+    await new DesktopAiService(l.native, query).post(render(), (p) => progress.push(p), new AbortController().signal);
+    expect(progress.map((p) => [p.stage, p.attempt, p.maxAttempts, p.reason])).toEqual([
+      ['INFERENCE', 1, 4, undefined],
+      ['GUARD', 1, 4, undefined],
+      ['RETRY', 2, 4, why],
+      ['GUARD', 2, 4, why],
+      ['GUARD', 2, 4, why],
+    ]);
+    // The launcher's own count is what is shown (the guard's cap, not a number of the page's).
+    const five = launcher([state({ state: 'INFERENCE', stage: 'INFERENCE', tile: 1, attempt: 1, maxAttempts: 5, version: 2 }), state({ state: 'DONE', maxAttempts: 5, version: 3, verdict: 'ACCEPTED', report: REPORT })], { image: { width: 4, height: 2, rgba: new Float32Array(32) } });
+    const seen: AiPostProgress[] = [];
+    await new DesktopAiService(five.native, query).post(render(), (p) => seen.push(p), new AbortController().signal);
+    expect(seen[0].maxAttempts).toBe(5);
   });
 
   it('sends an INLINE source as one binary body: the JSON, the image and the passes', async () => {

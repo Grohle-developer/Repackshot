@@ -1,5 +1,5 @@
 // Interface-only state: tabs, tools, drawers, panel widths, open menus...
-// It is not part of the project (no undo, not saved in .repack.json); the
+// It is not part of the project (no undo, not saved in .repack); the
 // parts worth remembering between sessions go to localStorage.
 
 import type { LightStyle, MaterialCategory } from '../data/types';

@@ -118,8 +118,9 @@ Escritorio, mínimo 1280 px de ancho. Cinco regiones fijas:
 De izquierda a derecha:
 
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
-   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack.json`,
-   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó), Guardar proyecto
+   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack`,
+   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó; Abrir también lee los
+   `.repack.json` de antes de v0.1.6), Guardar proyecto
    como… (`Ctrl/⌘ ⇧ S`), Importar modelo, **Añadir ▸** (fase U9: bajo el
    rótulo *Primitiva*, las doce formas del catálogo —*Caja*, *Plano*,
    *Disco*, *Cilindro*, *Pedestal*, *Esfera*, *Cono*, *Toro*, *Cápsula*,
@@ -1432,8 +1433,12 @@ imagen de la IA llega como luz lineal y se escribe **con la exposición y la cur
 del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
 así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
 trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
-mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
-mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
+mosaico 2 de 4 · intento 1 de 4*, *IA · comprobando · intento 1 de 4*— y la barra
+mide la tubería, no ya el render (B1: la guarda repite como mucho `MAX_ATTEMPTS`
+= 4 veces, y cada intento tiene su cuarto de la barra, así que la barra no se
+acerca al final a cada reintento; tras un reintento, una segunda línea
+en la fila, *El intento 1 no pasó: <motivo de la guarda>*; el estado y el motivo
+enteros, en el texto emergente de la fila). *Detener* o *Pausar* en ese momento paran la
 IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
 IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
 trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
@@ -1509,7 +1514,7 @@ deshabilitado, con *próximamente*.
 **Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
 cada una ordenada de menos a más coste, sin cifras de coste (el orden y
 una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
-proyecto: no se deshacen ni viajan en el `.repack.json`; en escritorio
+proyecto: no se deshacen ni viajan en el `.repack`; en escritorio
 se guardan con los demás en `settings.json` del lanzador.
 
 - **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
@@ -1557,7 +1562,7 @@ modelo no cabe en la memoria detectada.
 
 **Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para
 todas las imágenes (es un ajuste de la aplicación, no del proyecto: no se deshace
-ni va en el `.repack.json`), en un campo de varias líneas con el predeterminado del
+ni va en el `.repack`), en un campo de varias líneas con el predeterminado del
 líder (*Photorealistic product photograph. Keep the image exactly as rendered…*, en
 inglés: los codificadores de texto de los modelos rinden mejor en él), contador
 *n / 2000*, **Restablecer el predeterminado** (deshabilitado mientras lo es) y la

@@ -304,6 +304,38 @@ export function sameView(cam: CameraState, patch: Partial<Omit<CameraState, 'id'
   return true;
 }
 
+/**
+ * True when the focus plane still sits at the orbit distance, as a fresh or orbited camera has it. A focus that was
+ * picked or typed is somewhere else, and orbiting must not drag it back to the target.
+ */
+export function focusFollowsOrbit(cam: Pick<CameraState, 'focusDistance' | 'distance'>): boolean {
+  return Math.abs(cam.focusDistance - cam.distance) <= Math.max(cam.distance, 1) * 1e-6;
+}
+
+/** Where the viewport's navigation has put its view (preview.ts ViewChange). */
+export interface OrbitView {
+  azimuth: number;
+  elevation: number;
+  distance: number;
+  target: Vec3;
+  /** Width of the orthographic view, millimetres; absent for a perspective view. */
+  orthoWidth?: number;
+}
+
+/**
+ * What the camera takes from the view the navigation ended on: null when the view is the camera's own (a click that
+ * did not move it, which OrbitControls still reports as the end of a gesture), else the patch to apply. The focus
+ * plane goes along with the orbit distance only if it was there before; a focus picked with a click or typed in the
+ * field stays where it is.
+ */
+export function orbitPatch(cam: CameraState, view: OrbitView): Partial<Omit<CameraState, 'id'>> | null {
+  const patch: Partial<Omit<CameraState, 'id'>> = { azimuth: view.azimuth, elevation: view.elevation, distance: view.distance, target: [view.target[0], view.target[1], view.target[2]] };
+  if (view.orthoWidth) patch.orthoWidth = view.orthoWidth;
+  if (sameView(cam, patch)) return null;
+  if (focusFollowsOrbit(cam)) patch.focusDistance = view.distance;
+  return patch;
+}
+
 export type CameraAction =
   | ({ type: 'camera/set'; id: CameraId; patch: Partial<Omit<CameraState, 'id'>> } & ActionBase)
   | ({ type: 'camera/activate'; id: CameraId } & ActionBase)

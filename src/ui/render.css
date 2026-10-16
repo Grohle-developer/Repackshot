@@ -694,7 +694,7 @@
 }
 .queue-row {
   display: grid;
-  grid-template-columns: 14px 64px minmax(0, 1.7fr) minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(0, 1fr) 46px minmax(0, 1fr) 78px;
+  grid-template-columns: 14px 64px minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.9fr) 46px minmax(0, 1.5fr) 78px;
   gap: 8px;
   align-items: center;
   min-height: 40px;
@@ -773,6 +773,21 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+/* The status of the job in flight may be a long line (the AI's variant, tile and attempt): it wraps rather than being
+   cut off, and under it, why the AI's last attempt was sent back, in two lines at most (B1). */
+.queue-status-text,
+.queue-why {
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.25;
+}
+.queue-why {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-weight: 400;
 }
 .queue-actions {
   display: flex;

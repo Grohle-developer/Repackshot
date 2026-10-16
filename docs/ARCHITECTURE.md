@@ -165,7 +165,7 @@ src/
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
-    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
+    project.ts (.repack)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
     phys.ts                 escritor de PHY1, la escena del simulador (S2, §5.6)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
@@ -406,7 +406,7 @@ Reglas:
   `transaction` por gesto: una entrada de deshacer por arrastre.
 - Los reductores son funciones puras en `src/core/*.ts`; los efectos
   (renderizar, descargar) viven fuera, suscritos al store.
-- El estado es serializable tal cual a `.repack.json` (sin instancias de
+- El estado es serializable tal cual a `.repack` (sin instancias de
   clase, sin referencias circulares, sin `Map`). `io/project.ts` lo guarda
   y lo carga con una versión de esquema y migraciones.
 - Las acciones de deshacer no incluyen `meta.lang`, `meta.theme`, el
@@ -696,7 +696,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
 TypeScript, y un test de paridad escribe la misma escena por los dos
-lados y compara los bytes. El `.repack.json` sigue siendo el formato de
+lados y compara los bytes. El `.repack` sigue siendo el formato de
 proyecto; el RSB es lo que viaja al motor (y lo que `rt` lee en la línea
 de comandos). **Actualizaciones** (E4): `rt_scene_update` acepta un RSB
 sin `MESH` que conserva las mallas cargadas y sus BVH (cámara, luces,
@@ -2341,7 +2341,19 @@ Reglas, heredadas de EZ Packshot y no negociables:
 
 ---
 
-## 8 · Formato de proyecto (`.repack.json`)
+## 8 · Formato de proyecto (`.repack`)
+
+**Extensión.** El archivo se guarda como `.repack` (B1, petición del usuario);
+el contenido es el mismo JSON de siempre. Hasta v0.1.6 se llamaba
+`.repack.json`: se siguen abriendo los dos (`core/project-names.ts`:
+`PROJECT_EXTENSION`, `PROJECT_EXTENSIONS`, `isProjectName`), tanto en el
+selector del navegador (`accept` y `types`), como en el diálogo del
+escritorio (un solo filtro con `repack` y `repack.json`, el primero es el que
+un diálogo de guardar añade a un nombre sin extensión) y al soltarlos en la
+ventana. El lanzador escribe `.repack` (`WRITABLE_EXTENSIONS` de
+`rt-app/src/files.rs`) y recuerda como último proyecto cualquiera de los dos.
+No hay asociación de la extensión con el programa en los instaladores (doble
+clic): no se pidió, y queda para una fase de empaquetado.
 
 `{ "format": "repackshot-project", "schema": 2, "state": ProjectState,
 "meshes": [{ "id", "glb", "sharpEdges"?, "triangleSource"? }] }` (U2). Las

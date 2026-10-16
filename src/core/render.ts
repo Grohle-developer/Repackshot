@@ -245,9 +245,10 @@ export interface RenderProgress {
   frames?: number;
   /**
    * The AI post-processing of the job's image is running (X3c): `progress` is then the pipeline's own, and this
-   * says where it is (the tile and the attempt, 1-based; X4b: the variant, 1-based, of how many).
+   * says where it is (the tile and the attempt, 1-based, of how many attempts there can be; why the guard sent the last
+   * one back; X4b: the variant, 1-based, of how many).
    */
-  ai?: { stage: AiPostStage; tile: number; tiles: number; attempt: number; variant?: number; variants?: number };
+  ai?: { stage: AiPostStage; tile: number; tiles: number; attempt: number; maxAttempts?: number; reason?: string; variant?: number; variants?: number };
 }
 
 /** `state.render`: the window's settings, the queue, the job in flight and the last render number. */

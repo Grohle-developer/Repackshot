@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSyntheticService } from '../src/ai/synthetic';
 import { notBuiltService } from '../src/ai/not-built';
-import type { AiPostRequest, AiPostService, LinearImage } from '../src/core/ai';
+import type { AiPostProgress, AiPostRequest, AiPostService, LinearImage } from '../src/core/ai';
 import { AI_PERCENT_KEYS, DEFAULT_AI } from '../src/core/render';
 import { evictionPlan, type ResultMeta } from '../src/core/results';
 import { createStore } from '../src/core/store';
@@ -16,7 +16,7 @@ import * as cmd from '../src/ui/commands';
 import type { AiEncodeOptions, AiPort, AppServices, FrameRequest, FrameResult } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { pauseQueue, queueSettled, startQueue } from '../src/ui/render-queue';
-import { aiStatusText } from '../src/ui/panels/queue';
+import { aiStatusText, aiWhyText } from '../src/ui/panels/queue';
 import { setLang } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { exampleState } from './helpers';
@@ -358,14 +358,59 @@ describe('a job with AI on the desktop (X3c): the RENDER source', () => {
     await cmd.renderNow(f.ctx);
     await queueSettled(f.ctx);
     expect(seen[0]).toBe('AI · loading the model @25');
-    expect(seen).toContain('AI · tile 2 of 3 @50');
-    expect(seen).toContain('AI · tile 3 of 3 @75');
+    // Every step says which attempt it is, of how many there can be (the service did not say: the guard's four).
+    expect(seen).toContain('AI · tile 2 of 3 · attempt 1 of 4 @50');
+    expect(seen).toContain('AI · tile 3 of 3 · attempt 1 of 4 @75');
     // Ticks within the same tile are throttled (at most one every 200 ms): the half-way one is not shown.
-    expect(seen).not.toContain('AI · tile 3 of 3 @88');
-    expect(seen.at(-1)).toBe('AI · checking @95');
-    expect(aiStatusText({ stage: 'RETRY', tile: 1, tiles: 4, attempt: 2 })).toBe('AI · tile 1 of 4 · attempt 2');
+    expect(seen).not.toContain('AI · tile 3 of 3 · attempt 1 of 4 @88');
+    expect(seen.at(-1)).toBe('AI · checking · attempt 1 of 4 @95');
+    expect(aiStatusText({ stage: 'RETRY', tile: 1, tiles: 4, attempt: 2 })).toBe('AI · tile 1 of 4 · attempt 2 of 4');
     setLang('es');
-    expect(aiStatusText({ stage: 'INFERENCE', tile: 2, tiles: 4, attempt: 1 })).toBe('IA · mosaico 2 de 4');
+    expect(aiStatusText({ stage: 'INFERENCE', tile: 2, tiles: 4, attempt: 1 })).toBe('IA · mosaico 2 de 4 · intento 1 de 4');
+  });
+
+  it('a retry says which attempt of how many it is and why the guard sent the last one back; the bar goes on (B1)', async () => {
+    const f = makeCtx(null);
+    f.renderSource = true;
+    const why = 'detail SSIM 0.912 below 0.98';
+    const seen: { text: string; why: string; progress: number }[] = [];
+    const steps: AiPostProgress[] = [
+      { stage: 'INFERENCE', tile: 1, tiles: 2, attempt: 1, maxAttempts: 4, fraction: 0.1 },
+      { stage: 'GUARD', tile: 2, tiles: 2, attempt: 1, maxAttempts: 4, fraction: 0.22 },
+      { stage: 'RETRY', tile: 1, tiles: 2, attempt: 2, maxAttempts: 4, reason: why, fraction: 0.3 },
+      { stage: 'GUARD', tile: 2, tiles: 2, attempt: 2, maxAttempts: 4, reason: why, fraction: 0.47 },
+    ];
+    const svc: AiPostService = {
+      status: async () => ({ available: true, backend: 'CPU', device: 'Fake CPU', supports: ['ZIMAGE_Q4'], activeModel: 'ZIMAGE_Q4' }),
+      post: async (req, onProgress, signal) => {
+        for (const p of steps) {
+          // The queue publishes the step it hears; what its row reads is the job in flight.
+          onProgress(p);
+          const running = f.ctx.store.get().render.running;
+          if (running?.ai) seen.push({ text: aiStatusText(running.ai), why: aiWhyText(running.ai), progress: Math.round(running.progress * 100) });
+        }
+        return launcherLike(f, 1).post(req, () => undefined, signal);
+      },
+    };
+    (f.ctx.services as { ai: AiPort | null }).ai = port(f, svc);
+    withAi(f);
+    await cmd.renderNow(f.ctx);
+    await queueSettled(f.ctx);
+    expect(seen).toEqual([
+      { text: 'AI · tile 1 of 2 · attempt 1 of 4', why: '', progress: 10 },
+      { text: 'AI · checking · attempt 1 of 4', why: '', progress: 22 },
+      { text: 'AI · tile 1 of 2 · attempt 2 of 4', why: `Attempt 1 did not pass: ${why}`, progress: 30 },
+      { text: 'AI · checking · attempt 2 of 4', why: `Attempt 1 did not pass: ${why}`, progress: 47 },
+    ]);
+    setLang('es');
+    const ai = { stage: 'RETRY' as const, tile: 1, tiles: 2, attempt: 3, maxAttempts: 4, reason: why };
+    expect(aiStatusText(ai)).toBe('IA · mosaico 1 de 2 · intento 3 de 4');
+    expect(aiWhyText(ai)).toBe(`El intento 2 no pasó: ${why}`);
+    // Nothing to explain on the first attempt, or without the guard's words; and a service that counts to another number says so.
+    expect(aiWhyText({ ...ai, attempt: 1 })).toBe('');
+    expect(aiWhyText({ ...ai, reason: undefined })).toBe('');
+    setLang('en');
+    expect(aiStatusText({ ...ai, attempt: 2, maxAttempts: 6 })).toBe('AI · tile 1 of 2 · attempt 2 of 6');
   });
 
   it('Pause during the AI step frees it at once: the job waits again, the engine’s image is kept, and Resume renders it whole', async () => {

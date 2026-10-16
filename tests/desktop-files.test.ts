@@ -169,19 +169,20 @@ describe('project files on the desktop', () => {
     const { api, disk } = fakeLauncher();
     const pf = createDesktopProjectFiles(api, opts);
     expect(pf.canSaveInPlace).toBe(true);
-    disk.answers.push(chosen(grant('p1', '/work/bottle.repack.json')));
+    disk.answers.push(chosen(grant('p1', '/work/bottle.repack')));
     let made = 0;
     const make = () => new Blob([`{"v":${++made}}`]);
-    expect(await pf.save(make, 'bottle.repack.json', { saveAs: false })).toEqual({ kind: 'SAVED', name: 'bottle.repack.json', inPlace: true });
-    expect(disk.calls[0]).toMatch(/^save .*"defaultName":"bottle.repack.json".*"extensions":\["repack.json"\]/);
-    expect(await pf.save(make, 'bottle.repack.json', { saveAs: false })).toEqual({ kind: 'SAVED', name: 'bottle.repack.json', inPlace: true });
+    expect(await pf.save(make, 'bottle.repack', { saveAs: false })).toEqual({ kind: 'SAVED', name: 'bottle.repack', inPlace: true });
+    // The dialog proposes .repack and lists .repack.json too (the first is what a bare name gets).
+    expect(disk.calls[0]).toMatch(/^save .*"defaultName":"bottle.repack".*"extensions":\["repack","repack.json"\]/);
+    expect(await pf.save(make, 'bottle.repack', { saveAs: false })).toEqual({ kind: 'SAVED', name: 'bottle.repack', inPlace: true });
     expect(disk.calls.filter((c) => c.startsWith('save '))).toHaveLength(1);
-    expect(new TextDecoder().decode(disk.files.get('/work/bottle.repack.json'))).toBe('{"v":2}');
+    expect(new TextDecoder().decode(disk.files.get('/work/bottle.repack'))).toBe('{"v":2}');
     disk.answers.push({ cancelled: true });
-    expect(await pf.save(make, 'bottle.repack.json', { saveAs: true })).toEqual({ kind: 'CANCELLED' });
+    expect(await pf.save(make, 'bottle.repack', { saveAs: true })).toEqual({ kind: 'CANCELLED' });
     expect(disk.calls.filter((c) => c.startsWith('save '))).toHaveLength(2);
     const last = await pf.last!();
-    expect(last?.name).toBe('bottle.repack.json');
+    expect(last?.name).toBe('bottle.repack');
     const file = await pf.reopen!(last!.handle);
     expect(await file!.text()).toBe('{"v":2}');
   });
@@ -195,6 +196,8 @@ describe('project files on the desktop', () => {
     expect(await picked!.file.text()).toBe('{"a":1}');
     expect(picked!.file.name).toBe('a.repack.json');
     expect(disk.calls[0]).toContain('"writable":true');
+    // The Open dialog lists both extensions in one filter, then every file.
+    expect(disk.calls[0]).toContain('"extensions":["repack","repack.json"]');
     pf.adopt(picked!.handle);
     await pf.save(() => new Blob(['{"a":2}']), 'a.repack.json', { saveAs: false });
     expect(new TextDecoder().decode(disk.files.get('/work/a.repack.json'))).toBe('{"a":2}');

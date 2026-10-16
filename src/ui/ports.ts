@@ -458,7 +458,7 @@ export type OpenOutcome = { ok: true; state: ProjectState; warnings: ProjectWarn
 
 /** The project as a file: its content (never throws for a bad file; `open` says why instead). */
 export interface ProjectPort {
-  /** The `.repack.json` blob: the state and the meshes its parts use. Throws only when a mesh is too big to embed. */
+  /** The `.repack` blob: the state and the meshes its parts use. Throws only when a mesh is too big to embed. */
   serialize(state: ProjectState): Blob;
   /**
    * Reads a project file. On success its meshes are registered and `state` is ready for `store.reset`; on

@@ -400,11 +400,11 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       let lastAi = '';
       const aiTick = (p: AiStepProgress) => {
         const t = now();
-        const key = `${p.variant}|${p.stage}|${p.tile}|${p.attempt}`;
+        const key = `${p.variant}|${p.stage}|${p.tile}|${p.attempt}|${p.reason ?? ''}`;
         if (key === lastAi && t - lastTick < 200) return;
         lastAi = key;
         lastTick = t;
-        const where = { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt, ...(p.variants > 1 ? { variant: p.variant, variants: p.variants } : {}) };
+        const where = { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt, ...(p.maxAttempts ? { maxAttempts: p.maxAttempts } : {}), ...(p.reason ? { reason: p.reason } : {}), ...(p.variants > 1 ? { variant: p.variant, variants: p.variants } : {}) };
         ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: Math.min(1, p.fraction), samples: out.samples, seconds: out.seconds, ai: where } });
         patchJob(ctx, job.id, { progress: Math.min(1, p.fraction) });
       };

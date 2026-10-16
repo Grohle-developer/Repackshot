@@ -23,7 +23,7 @@ import type { Label } from '../../data/types';
 import { aiStatusKey, promptContext, recommendationOf } from '../ai-query';
 import { hasModel, runtimeWatch } from '../ai-runtime-state';
 import { runtimeNotice } from './ai-runtime-notice';
-import { AiPreviewController, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
+import { AiPreviewController, previewTriggers, sameTriggers, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
 import { reportText } from '../ai-report';
 import * as cmd from '../commands';
 import { numberField, select, slider, textArea, toggle } from '../components/controls';
@@ -415,9 +415,12 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     frame.dataset.on = on ? '1' : '0';
   };
 
-  // The settings (undo and redo included), the model manager and the section being opened all land here.
+  // The model manager's snapshot is a new object at every tick of a download: the lines follow it, the preview does
+  // not (it is made again only when the models on this computer change: `previewTriggers`).
+  scope.watch((_s, u) => u.models, () => sync());
+  // The settings (undo and redo included), the models installed and the section being opened all land here.
   scope.watch(
-    (s, u) => [u.renderWindow?.kind === 'EDIT' ? u.renderWindow.draft.ai : s.render.ai, u.renderWindow?.kind === 'EDIT' ? u.renderWindow.draft.mode : s.render.mode, u.models?.installed.join(','), u.models?.ready, u.settings['ai.active'], u.settings['ai.systemPrompt'], u.models] as unknown[],
+    (s, u) => previewTriggers(s, u),
     (v, prev) => {
       sync();
       if (prev === undefined) return;
@@ -426,7 +429,7 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       if (a !== b && v.slice(1).every((x, i) => Object.is(x, prev[i + 1])) && (Object.keys(a) as (keyof AiSettings)[]).every((k) => k === 'variants' || a[k] === b[k])) return;
       preview.touch();
     },
-    (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i])),
+    sameTriggers,
   );
   // The AI's measured time (a job finished) and the size: the variants' estimate.
   scope.watch(

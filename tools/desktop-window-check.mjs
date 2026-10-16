@@ -19,7 +19,7 @@
 //       application's shortcuts (Ctrl K, Ctrl ,) still work;
 //   (d) the render window's Choose folder… asks the system's dialog (zenity --directory), shows the path, and Render
 //       writes the PNG into that folder; the results viewer offers Open folder;
-//   (e) Save asks once (zenity --save) and writes the .repack.json; Save again writes it without asking; Open reads it
+//   (e) Save asks once (zenity --save) and writes the .repack; Save again writes it without asking; Open reads it
 //       back through the open dialog; Import model reads an OBJ through it; Export scene writes the .rsb;
 //   (f) Ctrl W asks our own unsaved-changes question (never the browser's), Don't save closes the window and the
 //       launcher ends.
@@ -296,7 +296,7 @@ try {
     await page.keyboard.press('Escape');
 
     // (e) Projects, imports and exports through the dialogs.
-    const proj = join(DIR, 'work', 'bottle.repack.json');
+    const proj = join(DIR, 'work', 'bottle.repack');
     mkdirSync(dirname(proj), { recursive: true });
     let n = calls().length;
     answer(proj);
@@ -332,7 +332,7 @@ try {
     await page.keyboard.press('Enter');
     await until(() => existsSync(rsb), 30000, 'the exported scene');
     const exportCall = calls()[n] ?? '';
-    check('e_projects_imports_exports', saved.format && saveCall.includes('--save') && saveCall.includes('--filename=') && !askedAgain && openCall.includes('*.repack.json') && importCall.includes('*.obj') && readFileSync(rsb).subarray(0, 4).toString() === 'RSB1' && exportCall.includes('--save'), { format: saved.format, saveDialog: saveCall.split('\n').filter(Boolean).slice(0, 4), askedAgain, open: openCall.includes('*.repack.json'), importDialog: importCall.includes('*.obj'), rsb: existsSync(rsb) });
+    check('e_projects_imports_exports', saved.format && saveCall.includes('--save') && saveCall.includes('--filename=') && !askedAgain && openCall.includes('*.repack *.REPACK *.repack.json') && importCall.includes('*.obj') && readFileSync(rsb).subarray(0, 4).toString() === 'RSB1' && exportCall.includes('--save'), { format: saved.format, saveDialog: saveCall.split('\n').filter(Boolean).slice(0, 4), askedAgain, open: openCall.includes('*.repack *.REPACK *.repack.json'), importDialog: importCall.includes('*.obj'), rsb: existsSync(rsb) });
 
     // (f) Ctrl W with unsaved changes (a render setting of the project): our question, then the window closes and the
     // launcher ends.

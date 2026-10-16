@@ -7,7 +7,7 @@
 // measures the drags (render/preview.ts, render/gizmo.ts); the interface turns the drags and the navigation into the
 // actions written here, one gesture token per drag, so a whole drag is one undo entry.
 
-import { activeCamera, aspectRatio, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, orbitFromPosition, outputAspect, outputFrameRect, sameView, type CameraState } from './camera';
+import { activeCamera, aspectRatio, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, focusDistanceTo, focusFollowsOrbit, orbitFromPosition, orbitPatch, outputAspect, outputFrameRect, sameView, type CameraState, type OrbitView } from './camera';
 import { polar } from './light-math';
 import { aimOffset, isSphereLike, levelUp, lightFrame, polarAboutPivot, SPOT_DEFAULTS, wrapDeg, type LightInstance } from './lighting';
 import { add, boxRadius, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
@@ -137,7 +137,7 @@ export function objectGizmoAction(start: ProjectState, obj: ViewObject, frame: G
   const o = orbitFromPosition(position, target);
   const patch: Partial<Omit<CameraState, 'id'>> = { azimuth: o.azimuth, elevation: o.elevation, distance: o.distance, target };
   // A focus that followed the target (orbiting sets it so) goes on following it.
-  if (Math.abs(cam.focusDistance - cam.distance) <= Math.max(cam.distance, 1) * 1e-6) patch.focusDistance = o.distance;
+  if (focusFollowsOrbit(cam)) patch.focusDistance = o.distance;
   if (sameView(cam, patch)) return null;
   return { type: 'camera/set', id: obj.id, patch, ...meta };
 }
@@ -201,14 +201,20 @@ export function viewedCamera(state: ProjectState, lookThrough: ViewObject | null
   return (lookThrough ? lookThroughCamera(state, lookThrough) : null) ?? activeCamera(state);
 }
 
-/** A view of the viewport's navigation: where it orbits, how far and from where (preview.ts ViewChange). */
-export interface ViewPose {
-  azimuth: number;
-  elevation: number;
-  distance: number;
-  target: Vec3;
-  orthoWidth?: number;
+/**
+ * Focus with a click: the focus plane of the camera that is seen goes through `point`, measured from that camera (the
+ * one looked through, else the active one; the view of a light has no focus, so the active camera takes it). Null
+ * when that camera is not in the project.
+ */
+export function focusPickAction(state: ProjectState, lookThrough: ViewObject | null | undefined, point: Vec3, meta: { label?: ActionLabel } = {}): Action | null {
+  const seen = viewedCamera(state, lookThrough);
+  const cam = state.camera.cameras[seen.id] ?? activeCamera(state);
+  if (!cam) return null;
+  return { type: 'camera/set', id: cam.id, patch: { focusDistance: focusDistanceTo(cam, point) }, ...meta };
 }
+
+/** A view of the viewport's navigation: where it orbits, how far and from where (preview.ts ViewChange). */
+export type ViewPose = OrbitView;
 
 /**
  * What navigating the view from an object does to it: Orbit, Pan and Zoom move that object. A light goes where the
@@ -219,9 +225,8 @@ export function lookThroughAction(state: ProjectState, obj: ViewObject, view: Vi
   if (obj.kind === 'CAMERA') {
     const cam = state.camera.cameras[obj.id];
     if (!cam || cam.locked) return null;
-    const patch: Partial<Omit<CameraState, 'id'>> = { azimuth: view.azimuth, elevation: view.elevation, distance: view.distance, target: [view.target[0], view.target[1], view.target[2]], focusDistance: view.distance, ...(view.orthoWidth ? { orthoWidth: view.orthoWidth } : {}) };
-    if (sameView(cam, patch)) return null;
-    return { type: 'camera/set', id: obj.id, patch, ...meta };
+    const patch = orbitPatch(cam, view);
+    return patch ? { type: 'camera/set', id: obj.id, patch, ...meta } : null;
   }
   const l = lightOf(state, obj.id);
   if (!l || !(view.distance > 0)) return null;

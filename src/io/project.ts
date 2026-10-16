@@ -1,4 +1,4 @@
-// The .repack.json project file (ARCHITECTURE §8): the state, and next to it the geometry the state refers to.
+// The .repack project file (once .repack.json; both open, ARCHITECTURE §8): the state, and next to it the geometry the state refers to.
 //
 //   {
 //    "format": "repackshot-project",
@@ -430,7 +430,7 @@ function parseText(text: string): unknown {
   }
 }
 
-/** The text of a .repack.json file to its state, without geometry (see `migrateProject`). */
+/** The text of a .repack file to its state, without geometry (see `migrateProject`). */
 export function parseProject(text: string): ProjectState {
   return migrateProject(parseText(text));
 }
@@ -710,7 +710,7 @@ export function placeTextureImages(state: ProjectState, saved: readonly SavedIma
 }
 
 /**
- * The text of a .repack.json file to a project ready for `store.reset`: the state, migrated and checked, with its
+ * The text of a .repack file to a project ready for `store.reset`: the state, migrated and checked, with its
  * meshes registered. Throws a `ProjectError` and leaves the registry as it was when the file cannot be loaded.
  */
 export function loadProject(text: string): LoadedProject {

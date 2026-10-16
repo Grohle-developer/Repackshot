@@ -23,11 +23,12 @@ import {
   type GraphAction,
   type MaterialGraph,
 } from '../src/core/material-graph';
-import { instanceFromPreset, type MaterialInstance } from '../src/core/materials';
+import { fabricMeanColor, instanceFromPreset, type MaterialInstance } from '../src/core/materials';
 import { createStore, type ProjectState } from '../src/core/store';
 import { textureImages } from '../src/core/textures';
 import { emptyLibrary, fromMaterialInstance, instanceFromItem } from '../src/core/library';
 import { loadProject, placeTextureImages, serializeProject } from '../src/io/project';
+import { materialToRsb } from '../src/io/rsb';
 import { exampleState, keyIds } from './helpers';
 
 /** A store with the example bottle, its body in Nodes mode; returns the body's material id too. */
@@ -247,6 +248,21 @@ describe('Simple and Nodes', () => {
       expect(back.material.params, p.key).toEqual(m.params);
       expect('graph' in back.material, p.key).toBe(false);
     }
+  });
+
+  it('the minimal graph of every catalogue material gives the engine the colour the material gives it (a denim stays blue)', () => {
+    for (const p of MATERIAL_PRESETS) {
+      const m = instanceFromPreset('m1', p.key, 120)!;
+      const engine = materialToRsb(m).baseColor;
+      const nodes = materialToRsb({ ...m, graph: minimalGraph(m) }).baseColor;
+      engine.forEach((v, i) => expect(nodes[i], `${p.key} channel ${i}`).toBeCloseTo(v, 6));
+    }
+    // The weave counts by its warp share: a 3/1 twill is not the plain mean of its two threads.
+    const denim = instanceFromPreset('m1', 'DENIM', 120)!;
+    const a = denim.params.threadColor1 as readonly number[];
+    const b = denim.params.threadColor2 as readonly number[];
+    expect(outputSetup(denim).inputs.baseColor).toEqual(fabricMeanColor(denim.params));
+    expect(Math.abs((a[0] + b[0]) / 2 - fabricMeanColor(denim.params)[0])).toBeGreaterThan(0.01);
   });
 
   it('a minimal graph with other values goes back without asking when a family holds them exactly', () => {

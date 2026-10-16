@@ -167,6 +167,30 @@ describe.skipIf(!WASM)('post.wasm against the native guard', { timeout: 300_000 
     expect(result.image.width * result.image.height * 4).toBe(result.image.rgba.length);
   });
 
+  it('reports its attempts 1-based and of four, why the first was sent back, and a bar split by attempts (B1)', async () => {
+    const guard = await load();
+    const world = fx.scene();
+    const [, , , limited] = fx.scenarios();
+    const session = guard.open(limited.job, world.image, world.passes);
+    const progress: { stage: string; attempt: number; maxAttempts?: number; reason?: string; fraction: number }[] = [];
+    try {
+      await runGuarded(session, (r) => limited.model(r, session.plan.tiles[r.tile]), (p) => progress.push(p));
+    } finally {
+      session.close();
+    }
+    expect([...new Set(progress.map((p) => p.attempt))]).toEqual([1, 2]);
+    expect(progress.every((p) => p.maxAttempts === MAX_ATTEMPTS)).toBe(true);
+    expect(progress.filter((p) => p.attempt === 1).every((p) => p.reason === undefined)).toBe(true);
+    expect(progress.filter((p) => p.attempt === 2).every((p) => typeof p.reason === 'string' && p.reason.length > 0)).toBe(true);
+    let last = 0;
+    for (const p of progress) {
+      expect(p.fraction).toBeGreaterThanOrEqual(last);
+      last = p.fraction;
+      expect(p.fraction).toBeGreaterThanOrEqual((p.attempt - 1) / MAX_ATTEMPTS - 1e-9);
+      expect(p.fraction).toBeLessThanOrEqual(p.attempt / MAX_ATTEMPTS + 1e-9);
+    }
+  });
+
   it('intervention 0: the model is never called and the image is the input, bit for bit', async () => {
     const guard = await load();
     const world = fx.scene();
