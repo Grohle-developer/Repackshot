@@ -1,6 +1,6 @@
-# TODO diferido — especificación guardada tal cual (14-10-2026)
+# TODO diferido — documentos guardados tal cual (14/16-10-2026)
 
-Trabajo pedido para **después** de terminar todo lo que está en curso (ver `ROADMAP.md` y `SESSION-STATE.md`). No se implementa todavía; cuando toque, cada apartado se convierte en fases del `ROADMAP.md` con brief y veredictos del responsable. Guardado por petición del usuario sin cambios.
+Trabajo pedido para **después** de terminar todo lo que está en curso (ver `ROADMAP.md` y `SESSION-STATE.md`). No se implementa todavía; cuando toque, cada apartado se convierte en fases del `ROADMAP.md` con brief y veredictos del responsable. Guardado por petición del usuario sin cambios. Contiene dos documentos, uno detrás de otro: la especificación de Room Builder y paseos (14-10-2026) y el reporte de errores graves (Render IA y anteriores; añadido el 16-10-2026). El reporte de errores tiene prioridad sobre la especificación: son regresiones y faltas de la versión publicada, no trabajo nuevo.
 
 ---
 
@@ -253,3 +253,151 @@ Los pequeños paneles superpuestos al canvas deben ser personalizables, no fijos
 
 ---
 *Guardado 2026-10-14 desde los mensajes de Berto. Actualizado el mismo día con: vista aérea de planta al agarrar el muñeco + sombra de caída, salida del paseo con opción de guardar posición en la cámara, slider vertical de altura en el borde del canvas, paneles del canvas personalizables, física + efectos ambientales (gravedad realista + aire, tiempo de generación de partículas, toggle de físicas en el fuzz, máx. 2 efectos por defecto, simulador de viento, preview en fast), servidor MCP integrado con permisos por toggle en Settings > MCP, materiales emisor / desagüe de líquido configurables, vídeo (fps + 16K, IA con consistencia entre frames, IA antes que plugins, guardar todas las versiones o solo la final), y Aspect Ratio con Open Gate. No se ha implementado nada: es especificación diferida.*
+
+
+---
+
+# Reporte de errores graves — Render IA y errores anteriores
+
+**Ámbito de este documento:** contiene **tan solo** el mensaje anterior ("error gravísimo", 2026-10-14), este mensaje (fase de Render IA, 2026-10-14) y los de más adelante. No contiene la especificación de Room Builder / paseos / etc. (esa vive en `room-builder-y-paseos-especificacion-futura.md`).
+
+**Estado:** reporte abierto, sin verificar ni corregir en este chat. Nada implementado todavía a partir de este documento.
+
+---
+
+## 1. Mensaje anterior — "error gravísimo" (2026-10-14)
+
+Texto de Berto, recogido tal cual:
+
+> error gravísimo. Los editores de materiales no tienen para cambiar el tipo de mapeado (UV, caja, triplanar, esférico...), cambiar tamaños, mover las texturas en distintas direcciones... Ha de mirar como lo hace keyshot. Por otro lado, en ambient, quiero una forma que sea gota, y que varíen de geometrías. Ahora mismo no puedes elegir lentes como dijimos, hay algún efecto pero tampoco se notan. No imitan tal cual las lentes que estudiaste, como distorsionan, o el bokeh que crean de manera natural. Me gustaría que al hacer hover por encima de la lente mostrara una ventana con los elementos. Aparte, un editor de lentes donde aparte de las opciones actuales, pueda editar los elementos, cambiar tamaño o distancias entre cada elemento, añadir uno nuevo, rotarlo 180º... Las maderas no se están viendo como mostrabas en las esferas, y ningun material está funcional respecto a los nodos. Aparte, al cambiar la focal length cambia el zoom respecto al objeto enfocado, y esto quiero que sea un toggle. O la cámara se acerca o el objeto/punto enfocado. Sigue sin funcionar el enfocar en el punto exacto donde se clicka, en mi vista exacta en el punto exacto del pixel exacto donde estoy haciendo click. Ahora hay doble barra deslizante vertical en el carrusel de LUTs de aintfilm.
+
+### 1.1. Editores de materiales: mapeado, tamaño y desplazamiento
+- Los editores de materiales actuales **no tienen** para cambiar el tipo de mapeado, cambiar tamaños ni mover las texturas en distintas direcciones.
+- Requisito: poder cambiar el **tipo de mapeado**: UV, caja, triplanar, esférico…
+- Requisito: poder **cambiar tamaños**.
+- Requisito: poder **mover las texturas en distintas direcciones**.
+- **Ha de mirar como lo hace KeyShot** (referencia de comportamiento / UI).
+- Límite clean-room vigente: solo observación del comportamiento usando KeyShot normalmente. No entra en el repo código descompilado, desensamblado, binarios ni recursos extraídos de KeyShot.
+
+### 1.2. Ambient: forma gota + variación de geometrías
+- En Ambient, quiero una **forma que sea gota**.
+- Y que **varíen de geometrías** (no una única geometría fija).
+
+### 1.3. Lentes: selección, distorsión y bokeh
+- **Ahora mismo no puedes elegir lentes como dijimos**; hay algún efecto pero **tampoco se notan**.
+- Requisito: poder **elegir lentes**.
+- **Deben imitar tal cual las lentes que se estudiaron:**
+  - Cómo **distorsionan**.
+  - El **bokeh que crean de manera natural**.
+- Si el efecto no se nota, no vale: la diferencia entre lentes tiene que ser visible en distorsión y bokeh.
+
+### 1.4. Hover sobre la lente: ventana con los elementos
+- **Al hacer hover por encima de la lente**, ha de mostrar **una ventana con los elementos**.
+
+### 1.5. Editor de lentes
+- **Un editor de lentes** donde, aparte de las opciones actuales, se pueda:
+  - **Editar los elementos**.
+  - **Cambiar tamaño** o **distancias entre cada elemento**.
+  - **Añadir uno nuevo**.
+  - **Rotarlo 180º**.
+
+### 1.6. Maderas vs esferas + materiales respecto a los nodos
+- **Las maderas no se están viendo como mostrabas en las esferas.**
+  - Requisito: la madera en escena ha de verse como en las esferas de preview.
+- **Ningún material está funcional respecto a los nodos.**
+  - Requisito: todos los materiales han de ser funcionales respecto a los nodos (el grafo de nodos ha de pilotar realmente el material).
+
+### 1.7. Cámara: focal length (toggle)
+- **Al cambiar la focal length cambia el zoom respecto al objeto enfocado**, y esto quiero que sea **un toggle**.
+- **O la cámara se acerca o el objeto / punto enfocado** (texto literal de Berto; a precisar al implementar cuál mueve qué y cómo se mantiene el encuadre en cada modo).
+
+### 1.8. Enfoque en el punto exacto del click
+- **Sigue sin funcionar el enfocar en el punto exacto donde se clicka, en mi vista exacta, en el punto exacto del píxel exacto donde estoy haciendo click.**
+- Requisito: el enfoque por click ha de usar el **píxel exacto** donde se hace click, **en la vista exacta** actual (rayo desde ese píxel exacto, no desde el centro ni desde un punto aproximado).
+
+### 1.9. Aparte (no es Repackshot): aintfilm, doble barra en el carrusel de LUTs
+- **Ahora hay doble barra deslizante vertical en el carrusel de LUTs de aintfilm.**
+- Bug de **aintfilm**, no de Repackshot. Queda anotado aquí para no perderlo; hay que verificarlo / corregirlo en aintfilm por separado. No verificado todavía en este chat.
+
+---
+
+## 2. Este mensaje — fase de Render IA (2026-10-14)
+
+Texto de Berto, recogido tal cual:
+
+> la fase de Render IA no hace casi nada, y además ahora se queda en un loop de attemps.
+
+### 2.1. Render IA no hace casi nada
+- La fase de **Render IA no hace casi nada**: su efecto es mínimo / casi imperceptible (no se detalla en el mensaje si es que no cambia nada visible, o que el cambio es tan sutil que no se nota).
+- Pendiente de precisar al reproducirlo: ¿qué se esperaba que hiciera la fase, qué hace realmente, y con qué entrada/salida se comparó?
+
+### 2.2. Loop de attempts
+- **Además, ahora se queda en un loop de attemps** (bucle de intentos / reintentos).
+- La fase no termina: se queda repitiendo intentos sin salir del bucle.
+- Pendiente de precisar al reproducirlo: ¿cuántos intentos, con qué mensaje/error entre intentos, si hay tope o es infinito, y si hay que matar el proceso / cerrar la app para salir?
+
+---
+
+## 3. De más adelante — Queue: preview en tiempo real del render seleccionado (2026-10-14)
+
+Texto de Berto, recogido tal cual:
+
+> aparte, al irme a queue quiero poder ver un preview en tiempo real de un render seleccionado.
+
+### 3.1. Queue: preview en tiempo real
+- **Al irse a Queue**, ha de poder ver un **preview en tiempo real de un render seleccionado**.
+- Es decir: en la vista de Queue (cola de renders), al seleccionar un render (un trabajo de la cola), se muestra su preview **en tiempo real** (progreso vivo del render, no una miniatura estática ni el resultado solo al terminar).
+- Pendiente de precisar al implementar: si el preview es del render en curso (el que se está renderizando ahora) o de cualquier render seleccionado de la cola (en espera / en curso / terminado), y a qué resolución / calidad va ese preview en vivo.
+
+## 4. De más adelante — Extensión de archivo + denoise (2026-10-14)
+
+Texto de Berto, recogido tal cual:
+
+> los archivos se está guardando como .repack.json y no como .repack a secas. Además, el denoise hace perder cierta personalidad y lava algunas luces y colores ahora.
+
+### 4.1. Extensión de archivo: .repack.json en vez de .repack
+- Los archivos **se están guardando como `.repack.json` y no como `.repack` a secas**.
+- Requisito: la extensión de guardado ha de ser **`.repack`** (a secas, sin `.json`).
+- Pendiente de precisar al corregirlo: si el contenido interno sigue siendo JSON (solo cambia la extensión) o si el formato `.repack` es otra cosa, y si hay que seguir abriendo los `.repack.json` ya guardados (compatibilidad hacia atrás).
+
+### 4.2. Denoise: pierde personalidad y lava luces y colores
+- **El denoise hace perder cierta personalidad y lava algunas luces y colores ahora.**
+- Es decir: el denoise actual (regresión: "ahora") aplana el resultado — quita carácter / personalidad de la imagen y lava (desatura / suaviza en exceso) algunas luces y colores.
+- Requisito: el denoise ha de limpiar el ruido **sin** lavar luces y colores ni quitar personalidad (preservar el carácter de la imagen: contraste local, color, detalle de luces).
+- Pendiente de precisar al reproducirlo: con qué escenas / valores de denoise se nota más, y si hay un ajuste (intensidad) que lo atenúe o si pasa a cualquier ajuste.
+
+## 5. De más adelante — Materiales: ajuste dinámico de tamaño al sólido (2026-10-14)
+
+Texto de Berto, recogido tal cual:
+
+> Los materiales no se estan ajustando dinámicamente en tamaño (UV etc) al tamaño del solido al que se aplica.
+
+### 5.1. Materiales no se ajustan dinámicamente al tamaño del sólido
+- Los materiales **no se están ajustando dinámicamente en tamaño (UV etc.) al tamaño del sólido al que se aplica**.
+- Requisito: al aplicar un material a un sólido, su escala / tamaño (UV, etc.) ha de ajustarse dinámicamente al tamaño de ese sólido (la textura no puede quedar con la misma escala absoluta en un sólido pequeño que en uno grande).
+- Pendiente de precisar al reproducirlo: si el ajuste debe ser automático siempre, o con un toggle de "ajuste dinámico", y cómo convive con el control manual de tamaño / mapeado de la sección 1.1 (si el usuario fija un tamaño manual, ¿el dinámico lo respeta o lo sobreescribe?).
+
+## 6. De más adelante — Presets de estudio: de Lights a Estudios + luces añadidas (2026-10-15)
+
+Texto de Berto, recogido tal cual:
+
+> Los presets nuevos de estudio estan dentro de lights y con un tamaño más grande que los presets de luces. Quiero que estén dentro de los "estudios", Y que elijas estudio con muestras del tamaño que se muestra ahora. Las luces propuestas son añadidos al estudio, que no interfieren con las luces de este, ya que se pueden desactivar a gusto las que se considere facilmente.
+
+### 6.1. Presets de estudio fuera de Lights, dentro de Estudios
+- Estado actual (reportado): los **presets nuevos de estudio están dentro de Lights** y con un **tamaño más grande que los presets de luces**.
+- Requisito: los presets de estudio han de estar **dentro de los "estudios"** (sección Estudios), no dentro de Lights.
+
+### 6.2. Elegir estudio con muestras del tamaño actual
+- Requisito: se elige estudio **con muestras del tamaño que se muestra ahora** — es decir, se conserva el tamaño de muestra grande actual de los presets de estudio (el que tienen ahora dentro de Lights) al moverlos a Estudios, no se reducen al tamaño pequeño de los presets de luces.
+
+### 6.3. Luces propuestas: añadidos al estudio, sin interferir, desactivables
+- Las **luces propuestas son añadidos al estudio**, que **no interfieren con las luces de este** (las luces propias del estudio).
+- Es decir: las luces que propone un preset de estudio se añaden a las luces que ya tiene el estudio, sin sustituirlas ni interferir con ellas.
+- Y se **pueden desactivar a gusto las que se considere fácilmente**: cada luz (propuesta o propia) se puede desactivar individualmente y fácilmente.
+
+## 7. De más adelante (siguientes mensajes)
+
+*(Los siguientes mensajes de este hilo se añadirán aquí, como nuevas secciones numeradas, sin mezclar con la especificación de Room Builder / paseos.)*
+
+---
+*Creado 2026-10-14 a petición de Berto: nuevo documento con tan solo el mensaje anterior ("error gravísimo") y este (Render IA), más los de más adelante.*
