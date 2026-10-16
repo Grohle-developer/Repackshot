@@ -14,6 +14,8 @@
 
 import type { AiGuardMaterial, AiPipelineSettings, AiPostProgress, AiPostService, GuardReport, LinearImage } from '../core/ai';
 import type { RenderPasses } from '../core/passes';
+import type { ProjectState } from '../core/store';
+import type { UiState } from './ui-state';
 
 /** What the preview is made from, read when it is about to be computed. */
 export interface AiPreviewInput {
@@ -57,6 +59,20 @@ export interface AiPreviewState {
 }
 
 const IDLE: AiPreviewState = { phase: 'IDLE', before: null, after: null, report: null, seconds: null, progress: 0, error: null };
+
+/**
+ * What outside the picture makes the preview stale: the window's AI settings and mode (the draft while it is edited),
+ * the models on this computer (`installed`, and `ready` when the store answers), the active model and the system
+ * prompt of Settings. Never the model manager's snapshot itself: it is a new object at every tick of a download
+ * (every 200 ms), and each one would abandon the preview in flight and start it again, so it never finished.
+ */
+export function previewTriggers(s: ProjectState, u: UiState): unknown[] {
+  const edit = u.renderWindow?.kind === 'EDIT' ? u.renderWindow : null;
+  return [edit ? edit.draft.ai : s.render.ai, edit ? edit.draft.mode : s.render.mode, u.models?.installed.join(','), u.models?.ready, u.settings['ai.active'], u.settings['ai.systemPrompt']];
+}
+
+/** Whether two `previewTriggers` are the same (each value by identity). */
+export const sameTriggers = (a: readonly unknown[], b: readonly unknown[]): boolean => a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 
 const sameKey = (a: readonly unknown[], b: readonly unknown[]): boolean => a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 const isAbort = (e: unknown): boolean => e instanceof Error && e.name === 'AbortError';

@@ -8829,7 +8829,7 @@ de `main` (`72e4f79`) y la rama de O2, está en **`TRIAGE.md`**: qué hay
 hoy, si se reproduce, si es *bug*, *falta* o *decisión*, causa, arreglo y
 dependencias. De ahí salen:
 
-### B1 · Arreglos del reporte — **Sonnet**
+### B1 · Arreglos del reporte — **Sonnet** — hecha
 
 **Qué.** Los fallos confirmados y lo que el usuario pidió sin dejar nada
 abierto:
@@ -8868,6 +8868,70 @@ nombres y filtros de `.repack` en la página y en `rt-app` (`files.rs`,
 un reloj falso. Una comprobación de navegador en `tools/` que hace el clic
 real sobre el frasco del ejemplo y lee *Distancia de enfoque* (en el triaje
 pasaba 688 → 660 → 688). `npm run qa`, `npm run engine:test`, fmt y clippy.
+
+**Hecho.** (1) *Enfocar con clic*: `orbitPatch(cam, view)` y
+`focusFollowsOrbit` en `core/camera.ts` (sin parche si azimut, elevación,
+distancia, objetivo y ancho ortográfico no cambian; el foco sigue a la
+distancia solo si ya la seguía), usados por `onViewChange` y por el gesto de
+`src/main.ts`, por `lookThroughAction` y por el *gizmo* de la cámara; el clic
+mide desde la cámara vista (`focusPickAction` en `core/view-objects.ts`, que
+`clickAt` llama: la cámara de *Mirar a través*, o la activa si se mira por una
+luz). `tests/camera-focus.test.ts` (11 tests nuevos) y
+`tools/focus-click-check.mjs`: el clic real sobre el frasco da 688 → 660 y se
+queda (con el `main.ts` de antes, 688 → 660 → 688 y *Mover la cámara* en el
+deshacer: 4 de las 8 comprobaciones en rojo). (2) *Tela a Nodos*:
+`fabricMeanColor` y `WEAVE_WARP_SHARE` pasan a `core/fabric.ts` (reexportados
+por `core/materials.ts`, para que el grafo los use sin ciclo de importación) y
+`outputSetup` de la tela los usa; test en `tests/material-graph.test.ts` con
+todos los `MATERIAL_PRESETS` (falla en el vaquero, el raso y la microfibra sin
+el arreglo). (3) `.repack`: `core/project-names.ts` (`PROJECT_EXTENSION`,
+`PROJECT_EXTENSIONS`, `PROJECT_FILTER_EXTENSIONS`, `isProjectName`), el selector
+del navegador (`accept` y `types`), el diálogo del escritorio (un filtro con
+`repack` y `repack.json`), soltar y *Importar*; `WRITABLE_EXTENSIONS`,
+`is_project_name` y las pruebas de `files.rs`, `dialogs.rs` y `tests/files.rs`
+en `rt-app`; `packaging/wine-dialogs.mjs` (ejecutada aquí contra una compilación
+de Windows del lanzador bajo Wine: pasa, con `RPX_EXT=repack` y el filtro
+`*.repack;*.repack.json`); SPEC §3.9, ARCHITECTURE §8, UI.md y la nota de U2.
+(4) *Intentos de la IA*: `AiPostProgress` lleva `maxAttempts` y `reason`
+(1-based, repartido por intentos); el lanzador saca `lastFailure` en el estado
+del *post* y reparte la barra en cuartos (`attempt_range` en `post.rs`), el
+servicio sintético y el conductor de wasm igual; la fila dice *IA · mosaico 2 de
+4 · intento 2 de 4* (también con la variante) y, debajo, *El intento 1 no pasó:
+<motivo>* (`aiStatusText`, `aiWhyText`, es y en); la vista previa de la ventana
+de render solo se rehace si cambian los modelos instalados o `ready`
+(`previewTriggers` en `ui/ai-preview.ts`; con el reloj falso, 40 instantáneas de
+descarga seguidas dan 1 petición y no 40). Cada arreglo con su test, y cada test
+falla al reintroducir el fallo (mutaciones comprobadas una a una).
+
+**Qué no encajó.** (1) **El tope es 4 en todas partes** (`MAX_ATTEMPTS` de
+`rt-post/job.rs` y `core/ai.ts`, `maxAttempts` del lanzador, el bucle del
+sintético): no hay bucle sin fin, y con N variantes son hasta 4 × N intentos. Pero
+el conductor de wasm (`runGuarded`) contaba los intentos desde 0 en el progreso
+y el resto desde 1: ahora todos desde 1. Lo que ve el usuario sigue sin
+reproducirse sin el registro del lanzador (que ahora dice *attempt k of 4
+failed*). (2) **La barra por cuartos tiene un coste**: con un solo intento
+aceptado la barra de la IA llega a un 23 % antes de que el trabajo acabe y salta
+al final (la fila dice *intento 1 de 4*); es lo pedido, pero si queda raro, el
+reparto desigual (el primer intento con más barra) es una decisión de Fable. (3)
+El motivo va en una segunda línea de la fila y en su texto emergente; **no se
+tocó el aviso final** (el triaje lo mencionaba): el informe del visor ya lo
+dice. La fila de una tarea en curso con reintento crece (el estado y el motivo
+envuelven en vez de cortarse) y se reparten las columnas de la cola (el nombre
+cede ancho al estado). (4) **Foco con clic**: no se tocan el plano de foco con
+*tilt* (b del triaje) ni el pico a través de la distorsión de una lente trazada
+(O2); con un plano de la animación con el cabezal fuera de 0 el clic mide desde
+la cámara vista sin la pose (ese foco lo anima el plano de todos modos). (5)
+**`.repack`**: sin asociación del archivo en los instaladores (no se pidió);
+guardar sobre un archivo abierto lo escribe donde está, con el nombre que
+tenga (un `.repack.json` sigue siéndolo); `tools/desktop-window-check.mjs` y
+`desktop-platform-check.mjs` ahora guardan `.repack`, pero no se pudieron
+ejecutar aquí (piden el lanzador de *release* y su ventana). (6) **Hallazgo
+fuera del encargo**: al pasar a *Nodos* un plástico translúcido con dispersión
+interna (`HDPE_WHITE`, `PP_NATURAL`, `PMMA_FROST`) el grafo pierde el medio
+(`kind`, `scatterMm`, `scatterColor`, `scatterG`: el grafo no tiene entradas para
+ello); el color base sí coincide ya en todos los materiales. (7) Un *mock* más
+permisivo que la realidad: el estado del *post* de `tests/ai-desktop-service.test.ts`
+no llevaba `lastFailure`; ahora sí.
 
 **Pendiente del usuario** para cerrar lo que no se pudo reproducir:
 el registro del lanzador (`<datos>/logs/repackshot.log`) de una pasada de

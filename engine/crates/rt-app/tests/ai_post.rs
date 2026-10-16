@@ -327,12 +327,45 @@ fn retries_lower_the_strength_by_the_retry_factor_then_deliver_the_engine_image(
         ),
     );
     let mut retries = Vec::new();
+    // What the queue shows: the attempt of how many, the guard's words about the last one, and a bar that is
+    // split by attempts (a quarter each) and never goes back.
+    let mut seen: Vec<(u32, f64, Option<String>)> = Vec::new();
     let end = follow(&t, num(&v, "id") as u32, |s| {
         if text(s, "state") == "RETRY" {
             retries.push(num(s, "attempt") as u32);
         }
+        assert_eq!(num(s, "maxAttempts"), f64::from(rt_post::MAX_ATTEMPTS));
+        seen.push((
+            num(s, "attempt") as u32,
+            num(s, "fraction"),
+            s.get("lastFailure")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        ));
     });
     assert_eq!(text(&end, "state"), "DONE");
+    let max = f64::from(rt_post::MAX_ATTEMPTS);
+    let mut last = 0.0;
+    for (attempt, fraction, failure) in &seen[..seen.len() - 1] {
+        assert!(*fraction >= last, "the bar went back: {seen:?}");
+        last = *fraction;
+        if *attempt > 0 {
+            let a = f64::from(*attempt);
+            assert!(
+                *fraction >= (a - 1.0) / max - 1e-9 && *fraction <= a / max + 1e-9,
+                "attempt {attempt} is at {fraction}: {seen:?}"
+            );
+            // Nothing is said about a failure until one attempt has failed, and the words stay after.
+            assert_eq!(failure.is_some(), *attempt > 1, "{seen:?}");
+        }
+    }
+    assert!(seen.iter().any(|(a, _, _)| *a == rt_post::MAX_ATTEMPTS));
+    let why = seen
+        .iter()
+        .rev()
+        .find_map(|(_, _, f)| f.as_deref())
+        .expect("the guard's words about a failed attempt");
+    assert!(why.contains("detail"), "{why}");
     let report = end.get("report").unwrap();
     assert_eq!(text(report, "verdict"), "REJECTED");
     assert_eq!(num(report, "attempts"), f64::from(rt_post::MAX_ATTEMPTS));

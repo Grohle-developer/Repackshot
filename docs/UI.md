@@ -1433,8 +1433,12 @@ imagen de la IA llega como luz lineal y se escribe **con la exposición y la cur
 del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
 así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
 trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
-mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
-mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
+mosaico 2 de 4 · intento 1 de 4*, *IA · comprobando · intento 1 de 4*— y la barra
+mide la tubería, no ya el render (B1: la guarda repite como mucho `MAX_ATTEMPTS`
+= 4 veces, y cada intento tiene su cuarto de la barra, así que la barra no se
+acerca al final a cada reintento; tras un reintento, una segunda línea
+en la fila, *El intento 1 no pasó: <motivo de la guarda>*; el estado y el motivo
+enteros, en el texto emergente de la fila). *Detener* o *Pausar* en ese momento paran la
 IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
 IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
 trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no

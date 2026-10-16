@@ -5,7 +5,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiPostRequest, type AiPostResult, type LinearImage } from '../src/core/ai';
-import { AiPreviewController, type AiPreviewDeps, type AiPreviewInput, type AiPreviewState } from '../src/ui/ai-preview';
+import { emptySnapshot, type DownloadProgress, type ModelsSnapshot } from '../src/core/models';
+import { createInitialState } from '../src/core/store';
+import { AI_MODELS } from '../src/data/ai-models';
+import { AiPreviewController, previewTriggers, sameTriggers, type AiPreviewDeps, type AiPreviewInput, type AiPreviewState } from '../src/ui/ai-preview';
+import { defaultUiState, type UiState } from '../src/ui/ui-state';
 
 const image = (v: number): LinearImage => ({ width: 2, height: 2, rgba: new Float32Array(16).fill(v) });
 
@@ -321,5 +325,59 @@ describe('the measured time', () => {
     expect(h.ctl.state.seconds).toBe(4.2);
     await h.finish();
     expect(h.ctl.state.seconds).toBe(3);
+  });
+});
+
+describe('a model download does not restart the preview (user report: the AI never finished)', () => {
+  const download = (done: number): Record<string, DownloadProgress> => ({ SD15_LIGHT: { key: 'SD15_LIGHT', phase: 'DOWNLOADING', done, total: 4_000_000_000, bytesPerSecond: 20e6, etaSeconds: 100 } });
+  const models = (extra: Partial<ModelsSnapshot> = {}): ModelsSnapshot => ({ ...emptySnapshot(AI_MODELS), ready: true, installed: ['ZIMAGE_Q4'], ...extra });
+  const ui = (m: ModelsSnapshot): UiState => ({ ...defaultUiState(), models: m });
+  const project = createInitialState();
+
+  it('the triggers are the installed models and whether the store answered, not the snapshot', () => {
+    const base = previewTriggers(project, ui(models()));
+    // A new snapshot object at every tick of a download, an import being hashed, a blob listed: the same triggers.
+    for (const same of [models({ downloads: download(1e6) }), models({ downloads: download(9e8), blobs: { x: { size: 1 } as never } }), models({ importing: { name: 'm', phase: 'HASHING', done: 1, total: 2 } })]) {
+      expect(sameTriggers(base, previewTriggers(project, ui(same)))).toBe(true);
+    }
+    // What does change the preview: a model installed or removed, the store answering.
+    expect(sameTriggers(base, previewTriggers(project, ui(models({ installed: ['ZIMAGE_Q4', 'SD15_LIGHT'] }))))).toBe(false);
+    expect(sameTriggers(base, previewTriggers(project, ui(models({ ready: false }))))).toBe(false);
+    // And the settings that shape the picture's words and the model.
+    const u = ui(models());
+    expect(sameTriggers(base, previewTriggers(project, { ...u, settings: { ...u.settings, 'ai.active': 'SD15_LIGHT' } }))).toBe(false);
+    expect(sameTriggers(base, previewTriggers(project, { ...u, settings: { ...u.settings, 'ai.systemPrompt': 'Other words' } }))).toBe(false);
+    expect(sameTriggers(base, previewTriggers({ ...project, render: { ...project.render, ai: { ...project.render.ai, light: 77 } } }, u))).toBe(false);
+  });
+
+  it('a snapshot every 200 ms for 8 seconds leaves the preview being made alone; the model arriving makes it again', async () => {
+    const h = harness();
+    let u = ui(models());
+    let seen = previewTriggers(project, u);
+    // What the panel's watch does: the preview is touched when the triggers differ.
+    const snapshot = (m: ModelsSnapshot) => {
+      u = ui(m);
+      const next = previewTriggers(project, u);
+      if (!sameTriggers(seen, next)) h.ctl.touch();
+      seen = next;
+    };
+    h.ctl.refresh();
+    await flush();
+    expect(h.posts).toHaveLength(1);
+    for (let i = 1; i <= 40; i++) {
+      h.tick(200);
+      snapshot(models({ downloads: download(i * 1e6) }));
+      await flush();
+    }
+    // Still the one request, never abandoned: it finishes.
+    expect(h.posts).toHaveLength(1);
+    expect(h.signals[0].aborted).toBe(false);
+    await h.finish();
+    expect(h.ctl.state.phase).toBe('READY');
+    // The download ends and the model is installed: that is a change, and the preview is made again.
+    snapshot(models({ installed: ['ZIMAGE_Q4', 'SD15_LIGHT'] }));
+    h.tick(150);
+    await flush();
+    expect(h.posts).toHaveLength(2);
   });
 });

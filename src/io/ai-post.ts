@@ -36,6 +36,8 @@ export interface AiPostState {
   tiles: number;
   attempt: number;
   maxAttempts: number;
+  /** Why the guard sent the previous attempt back, in its words; null until it did. */
+  lastFailure?: string | null;
   strength: number;
   step: number;
   steps: number;
@@ -219,7 +221,7 @@ export class DesktopAiService implements AiPostService {
     try {
       for (;;) {
         if (signal.aborted) throw abortError();
-        if (STAGES.includes(s.state)) onProgress({ stage: s.state as AiPostStage, tile: s.tile, tiles: s.tiles, attempt: s.attempt, fraction: s.fraction });
+        if (STAGES.includes(s.state)) onProgress({ stage: s.state as AiPostStage, tile: s.tile, tiles: s.tiles, attempt: s.attempt, ...(s.maxAttempts > 0 ? { maxAttempts: s.maxAttempts } : {}), ...(s.lastFailure ? { reason: s.lastFailure } : {}), fraction: s.fraction });
         if (FINISHED.includes(s.state)) break;
         s = await this.state(id, s.version, signal);
       }
@@ -228,7 +230,7 @@ export class DesktopAiService implements AiPostService {
       const res = await this.native.request(`/api/ai/post/${id}/image`, { signal });
       if (!res.ok) throw new NativeError(res.status, 'image', await res.text());
       const image = decodeLinearImage(await res.arrayBuffer());
-      onProgress({ stage: 'GUARD', tile: s.tiles, tiles: s.tiles, attempt: s.attempt, fraction: 1 });
+      onProgress({ stage: 'GUARD', tile: s.tiles, tiles: s.tiles, attempt: s.attempt, ...(s.maxAttempts > 0 ? { maxAttempts: s.maxAttempts } : {}), ...(s.lastFailure ? { reason: s.lastFailure } : {}), fraction: 1 });
       // Collected: the launcher may forget it.
       void this.forget(id).catch(() => undefined);
       return { image, report: s.report };

@@ -6,6 +6,7 @@
 // results viewer. On the right, the results history (newest first) with
 // Clear history; when the browser keeps no storage, it says so.
 
+import { MAX_ATTEMPTS } from '../../core/ai';
 import type { RenderJob, RenderProgress, RenderSettings } from '../../core/render';
 import { aiImagesOf, aiVariantsOf, type ResultMeta } from '../../core/results';
 import * as cmd from '../commands';
@@ -34,19 +35,27 @@ export function queueButton(run: QueueRun, waiting: boolean): { state: 'START' |
 }
 
 /**
- * Where the AI post-processing of the job in flight is (X3c): "AI · tile 2 of 4", "· attempt 2" after a retry; with
- * several variants (X4b), which one: "AI · variant 2 of 4 · tile 3 of 4".
+ * Where the AI post-processing of the job in flight is (X3c): "AI · tile 2 of 4 · attempt 1 of 4" (B1: the guard may
+ * send an attempt back, at most `maxAttempts` times in all); with several variants (X4b), which one: "AI · variant 2 of
+ * 4 · tile 3 of 4 · attempt 1 of 4".
  */
 export function aiStatusText(ai: NonNullable<RenderProgress['ai']>): string {
   const i = Math.max(1, ai.tile);
   const n = Math.max(1, ai.tiles);
+  const a = Math.max(1, ai.attempt);
+  const m = Math.max(a, ai.maxAttempts ?? MAX_ATTEMPTS);
   if (ai.variants && ai.variants > 1) {
-    const step = ai.stage === 'LOADING' ? t('queue.aiStep.loading') : ai.stage === 'GUARD' ? t('queue.aiStep.guard') : ai.attempt > 1 ? t('queue.aiStep.tileRetry', { i, n, a: ai.attempt }) : t('queue.aiStep.tile', { i, n });
+    const step = ai.stage === 'LOADING' ? t('queue.aiStep.loading') : ai.stage === 'GUARD' ? t('queue.aiStep.guard', { a, m }) : t('queue.aiStep.tile', { i, n, a, m });
     return t('queue.aiVariant', { v: Math.max(1, ai.variant ?? 1), m: ai.variants, step });
   }
   if (ai.stage === 'LOADING') return t('queue.aiLoading');
-  if (ai.stage === 'GUARD') return t('queue.aiGuard');
-  return ai.attempt > 1 ? t('queue.aiTileRetry', { i, n, a: ai.attempt }) : t('queue.aiTile', { i, n });
+  if (ai.stage === 'GUARD') return t('queue.aiGuard', { a, m });
+  return t('queue.aiTile', { i, n, a, m });
+}
+
+/** Why the guard sent the attempt before the one in flight back, in its words (B1); empty when it did not. */
+export function aiWhyText(ai: NonNullable<RenderProgress['ai']>): string {
+  return ai.reason && ai.attempt > 1 ? t('queue.aiWhy', { a: ai.attempt - 1, reason: ai.reason }) : '';
 }
 
 /** A small count over a thumbnail: how many AI images a result has, when more than one (X4b). */
@@ -60,6 +69,11 @@ function statusTextOf(j: RenderJob, running: RenderProgress | null): string {
   if (j.status === 'RUNNING' && running?.jobId === j.id && running.ai) return aiStatusText(running.ai);
   if (j.status === 'RUNNING' && j.settings.mode === 'ANIMATION' && j.frames > 0) return t('queue.frameOf', { i: j.frame || 1, n: j.frames });
   return t(dyn(`queue.status.${j.status}`));
+}
+
+/** The line under the status of the job in flight: why the AI's last attempt was sent back (empty otherwise). */
+function statusWhyOf(j: RenderJob, running: RenderProgress | null): string {
+  return j.status === 'RUNNING' && running?.jobId === j.id && running.ai ? aiWhyText(running.ai) : '';
 }
 
 export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
@@ -98,6 +112,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
         : h('img', { src: result.thumb, alt: '', class: 'queue-pic' })
       : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
     const statusText = statusTextOf(j, s.render.running);
+    const why = statusWhyOf(j, s.render.running);
     const act = (label: string, iconName: 'edit' | 'duplicate' | 'close' | 'stop', fn: () => void, disabled = false) =>
       h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label, 'data-tip': label, disabled, onclick: (e: MouseEvent) => (e.stopPropagation(), fn()) }, icon(iconName, 14));
     const el = h(
@@ -119,7 +134,13 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       h('span', { class: 'tabular' }, anim ? `${j.settings.width} × ${j.settings.height} · ${framesText(frameCount)}` : `${j.settings.width} × ${j.settings.height}`),
       h('span', { class: 'tabular' }, finishByText(j.settings)),
       h('span', { class: 'aux' }, !j.settings.ai.enabled ? t('queue.aiNo') : j.settings.ai.variants > 1 && !anim ? t('queue.aiVariants', { n: j.settings.ai.variants }) : t('queue.aiYes')),
-      h('span', { class: `queue-status${j.status === 'FAILED' ? ' warn-text' : ''}`, title: j.error ?? '' }, statusText, h('div', { class: 'bar-meter' }, h('div', { style: `width:${Math.round(j.progress * 100)}%` }))),
+      h(
+        'span',
+        { class: `queue-status${j.status === 'FAILED' ? ' warn-text' : ''}`, title: j.error ?? (why ? `${statusText}\n${why}` : '') },
+        h('span', { class: 'queue-status-text' }, statusText),
+        h('span', { class: 'note queue-why', style: why ? undefined : 'display:none' }, why),
+        h('div', { class: 'bar-meter' }, h('div', { style: `width:${Math.round(j.progress * 100)}%` })),
+      ),
       h(
         'span',
         { class: 'queue-actions' },
@@ -195,8 +216,19 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
           const el = list.querySelector(`[data-job="${j.id}"]`);
           const bar = el?.querySelector('.bar-meter > div') as HTMLElement | null;
           if (bar) bar.style.width = `${Math.round(j.progress * 100)}%`;
-          const st = el?.querySelector('.queue-status')?.firstChild;
-          if (st && j.status === 'RUNNING') st.textContent = statusTextOf(j, store.get().render.running);
+          const st = el?.querySelector('.queue-status-text');
+          if (st && j.status === 'RUNNING') {
+            const running = store.get().render.running;
+            const text = statusTextOf(j, running);
+            const why = statusWhyOf(j, running);
+            st.textContent = text;
+            const line = el?.querySelector('.queue-why') as HTMLElement | null;
+            if (line) {
+              line.textContent = why;
+              line.style.display = why ? '' : 'none';
+            }
+            el?.querySelector('.queue-status')?.setAttribute('title', why ? `${text}\n${why}` : '');
+          }
         }
         return;
       }

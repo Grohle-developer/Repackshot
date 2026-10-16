@@ -194,15 +194,15 @@ describe('a job with N variants', () => {
     expect(f.asked.map((a) => a.settings.seed)).toEqual([100, 101, 102, 103]);
     expect(new Set(f.asked.map((a) => a.prompt)).size).toBe(1);
     expect(f.decodes).toBe(0);
-    expect(seen).toContain('AI · variant 1 of 4 · tile 1 of 4');
-    expect(seen).toContain('AI · variant 2 of 4 · tile 3 of 4');
-    expect(seen).toContain('AI · variant 4 of 4 · tile 4 of 4');
+    expect(seen).toContain('AI · variant 1 of 4 · tile 1 of 4 · attempt 1 of 4');
+    expect(seen).toContain('AI · variant 2 of 4 · tile 3 of 4 · attempt 1 of 4');
+    expect(seen).toContain('AI · variant 4 of 4 · tile 4 of 4 · attempt 1 of 4');
     // The job's bar measures the variants as one: the second variant's third tile is past a quarter.
-    expect(aiStatusText({ stage: 'RETRY', tile: 1, tiles: 2, attempt: 2, variant: 3, variants: 4 })).toBe('AI · variant 3 of 4 · tile 1 of 2 · attempt 2');
+    expect(aiStatusText({ stage: 'RETRY', tile: 1, tiles: 2, attempt: 2, variant: 3, variants: 4 })).toBe('AI · variant 3 of 4 · tile 1 of 2 · attempt 2 of 4');
     expect(aiStatusText({ stage: 'LOADING', tile: 0, tiles: 2, attempt: 1, variant: 1, variants: 2 })).toBe('AI · variant 1 of 2 · loading the model');
     setLang('es');
-    expect(aiStatusText({ stage: 'INFERENCE', tile: 3, tiles: 4, attempt: 1, variant: 2, variants: 4 })).toBe('IA · variante 2 de 4 · mosaico 3 de 4');
-    expect(aiStatusText({ stage: 'GUARD', tile: 4, tiles: 4, attempt: 1, variant: 4, variants: 4 })).toBe('IA · variante 4 de 4 · comprobando');
+    expect(aiStatusText({ stage: 'INFERENCE', tile: 3, tiles: 4, attempt: 1, variant: 2, variants: 4 })).toBe('IA · variante 2 de 4 · mosaico 3 de 4 · intento 1 de 4');
+    expect(aiStatusText({ stage: 'GUARD', tile: 4, tiles: 4, attempt: 1, variant: 4, variants: 4 })).toBe('IA · variante 4 de 4 · comprobando · intento 1 de 4');
     setLang('en');
     // The time of the AI on this computer was measured, for the window's estimate.
     expect(f.ctx.ui.get().aiThroughput).toBeGreaterThan(0);
