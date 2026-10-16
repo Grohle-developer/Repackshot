@@ -3,6 +3,7 @@
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
 import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbInstance, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbPattern, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import { defaultMaterial } from '../src/io/rsb';
 
 export interface Section {
   tag: string;
@@ -52,7 +53,7 @@ export function readCamera(p: DataView): RsbCamera {
 
 export function readMaterial(p: DataView): RsbMaterial {
   const c = new Cursor(p);
-  const m: RsbMaterial = { kind: c.u32(), baseColor: c.vec(), metallic: c.f32(), roughness: c.f32(), ior: c.f32(), transmission: c.f32(), coat: c.f32(), coatRoughness: c.f32(), emission: c.vec(), emissionPower: c.f32(), flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0, bevelMm: 0 };
+  const m: RsbMaterial = { ...defaultMaterial(), kind: c.u32(), baseColor: c.vec(), metallic: c.f32(), roughness: c.f32(), ior: c.f32(), transmission: c.f32(), coat: c.f32(), coatRoughness: c.f32(), emission: c.vec(), emissionPower: c.f32(), flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0 };
   m.flags = c.remaining >= 4 ? c.u32() : 0;
   // E5 fields.
   if (c.remaining >= 12) {
@@ -60,8 +61,12 @@ export function readMaterial(p: DataView): RsbMaterial {
     m.anisotropy = c.f32();
     m.absorptionMm = c.f32();
   }
-  // E6.
+  // E6's bevel; E9 adds the scattering medium and the Abbe number (all optional).
   if (c.remaining >= 4) m.bevelMm = c.f32();
+  if (c.remaining >= 4) m.scatterMm = c.f32();
+  if (c.remaining >= 12) m.scatterColor = c.vec();
+  if (c.remaining >= 4) m.scatterG = c.f32();
+  if (c.remaining >= 4) m.abbe = c.f32();
   return m;
 }
 
@@ -177,6 +182,12 @@ export function readLens(p: DataView): RsbLens {
   };
   const len = l.maskWidth * l.maskHeight;
   l.mask = new Uint8Array(p.buffer.slice(p.byteOffset + 72, p.byteOffset + 72 + len));
+  // O3a: the three filter slots after the picture's padding, when the section goes on.
+  const at = 72 + Math.ceil(len / 4) * 4;
+  if (p.byteLength - at >= 84) {
+    const f = new Cursor(new DataView(p.buffer, p.byteOffset + at, 84));
+    l.filters = [0, 1, 2].map(() => ({ kind: f.u32(), grade: f.f32(), tint: [f.f32(), f.f32(), f.f32()] as [number, number, number], angleDeg: f.f32(), points: f.u32() }));
+  }
   return l;
 }
 

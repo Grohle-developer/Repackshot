@@ -227,6 +227,16 @@ pub struct Material {
     /// rounded within this distance of the mesh's sharp edges, as if they were filleted. 0 (or
     /// less): sharp edges.
     pub bevel_mm: f32,
+    /// Mean free path, in millimetres, of the scattering medium that fills a clear solid of this
+    /// material (E9b, [`crate::integrator::medium`]); 0: none.
+    pub scatter_mm: f32,
+    /// Single-scattering albedo of that medium, per channel (what each event keeps).
+    pub scatter_color: Rgb,
+    /// Henyey–Greenstein anisotropy of that medium, clamped to ±0.9 (positive: forwards).
+    pub scatter_g: f32,
+    /// Abbe number of a solid clear material (E9c, `integrator::dispersion`): its index
+    /// changes with the wavelength; 0: no dispersion.
+    pub abbe: f32,
 }
 
 impl Default for Material {
@@ -247,6 +257,10 @@ impl Default for Material {
             anisotropy: 0.0,
             absorption_mm: 0.0,
             bevel_mm: 0.0,
+            scatter_mm: 0.0,
+            scatter_color: Rgb::WHITE,
+            scatter_g: 0.0,
+            abbe: 0.0,
         }
     }
 }

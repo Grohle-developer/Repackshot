@@ -50,7 +50,7 @@ no un requisito.
    sombra, cáusticas, calidad, y un rig de focos adecuado a la
    reflectancia típica de esa categoría.
 3. **Materiales.** Elegir el nivel (modelo, grupo, pieza, caras) y pulsar
-   o arrastrar un material del catálogo (77 presets en 7 categorías). Si
+   o arrastrar un material del catálogo (86 presets en 7 categorías). Si
    el objetivo ya tiene materiales distintos, se pregunta con inventario.
    Editar parámetros con nombres de fotógrafo. Añadir desgaste.
 4. **Luz.** Elegir un montaje del catálogo (72 en 8 estilos) por su
@@ -573,17 +573,25 @@ Es del material (todas las familias salvo el emisor, que no tiene); una
 instancia nueva de un preset lleva el 0,25 % del tamaño de la pieza (el
 arreglo del Doctor). El modo *Completo* y los renders lo dibujan; la vista
 *Rápida* muestra las aristas vivas. Detalle técnico: `ARCHITECTURE.md`
-§5.2 sexies.
+§5.2 septies.
 
 Familias y lo que significan para el motor:
 
 | Familia | Modelo | Parámetros propios |
 | --- | --- | --- |
 | `SIMPLE` | BSDF de principio físico: base, metal, rugosidad, barniz, anisotropía, subsuperficie, opacidad | — |
-| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`) |
+| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta. Con `scatterMm` por encima de 0 (E9), el sólido está lleno de un medio dispersor: plástico translúcido, cera, jabón, leche, zumo; `scatterMm` es la distancia libre media en mm, `scatterColor` lo que conserva cada rebote de cada color (el albedo) y `scatterG` adónde va la luz en cada rebote (Henyey–Greenstein, de −0,9 hacia atrás a 0,9 hacia delante). El modo Completo hace el paseo aleatorio dentro de la pieza; el Rápido lo aproxima con un difuso translúcido. Con `abbe` por encima de 0 (E9c), el vidrio macizo sin medio separa la luz en colores (dispersión cromática): es su número de Abbe, cuanto menor, más separa (cristal 30–40, vidrio de ventana unos 60); el modo Completo refracta cada longitud de onda con su índice y el Rápido usa la dispersión de three.js | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`), `scatterMm` (0), `scatterColor` (blanco), `scatterG` (0), `abbe` (0) |
 | `WOOD` | veta procedural (E6): dos colores (primavera y verano) con el contraste de la especie, anillos por 100 mm (físicos) y su escala, variación y serpenteo de los anillos, ruido axial y de color, fibra, poros (anchura, profundidad, en anillo o difusos), la figura (anillos, tiras de bambú con sus haces y sus nodos, moteado de MDF, vetas de ébano) y los nudos de las maderas con anillos (cuántos por pieza, 0–12; diámetro en mm, 5–40, ± variación; oscuridad), colocados según la semilla del material. La vista *Rápida* muestra su color medio y dónde caen los nudos | `woodColor1/2`, `ringDensity`, `woodScale`, `ringContrast`, `poreSize`, `poreDepth`, `poreBand`, `woodFigure`, `knotCount`, `knotSize`, `knotSizeVar`, `knotDarkness`… |
 | `FABRIC` | trama procedural (E6): dos colores de hilo (urdimbre y trama), tejido (tafetán, sarga 2/2, sarga 3/1 de vaquero, raso, lona, punto, fieltro), hilos por cm (físicos, 2–200: los de cada tela del catálogo), relieve; pelusa (la vista *Rápida* la dibuja como *sheen*; el motor todavía no). La vista *Rápida* muestra el color medio del tejido | `threadColor1/2`, `weave`, `threadCount`, `weaveDepth`, `fuzz` |
 | `EMISSIVE` | emisor: cuerpo negro a temperatura o color, potencia | `emitKind`, `temperature`, `emitPower` |
+
+**Energía** (E9a): en el modo Completo los materiales no pierden luz con
+la rugosidad. Un metal blanco, un vidrio claro o un plástico blanco, con
+o sin barniz y con cualquier rugosidad, salen blancos en un entorno
+uniforme (±1 %): la luz que rebota varias veces entre las microfacetas
+vuelve, y la capa difusa recibe exactamente lo que el brillo no refleja.
+Con rugosidad 0, el metal y el vidrio no cambian; el plástico gana el
+8,6 % que antes perdía su capa difusa (ior 1,5).
 
 **Desgaste**: ocho tipos (aristas, arañazos, huellas, polvo, suciedad en
 cavidades, pátina, micro-variación de rugosidad, abolladuras), cada uno
@@ -936,6 +944,33 @@ y en `rt-core/src/optics`. El pase `coc` (X2) sigue siendo el de la
 lente fina redonda y sin inclinar, sea cual sea la óptica. El modo
 Rápido no dibuja profundidad de campo; del resto solo muestra el
 descentramiento (el encuadre).
+
+**Filtros de efecto (O3a).** `CameraOptics.filters` (opcional; sin él,
+ninguno, y los proyectos anteriores no cambian ni un byte): una pila de
+hasta tres filtros delante del objetivo, en orden. Cada uno tiene su
+**tipo** (`src/data/lens-filters.ts`, claves estables y nombres
+genéricos, nunca de una marca: *Difusión blanca*, *Difusión negra*,
+*Difusión dorada*, *Brillo*, *Suavizado*, *Red*, *Estrella*, *Rayas*), su
+**grado** (1/8, 1/4, 1/2, 1 o 2, como los filtros reales) y, según el
+tipo, su **tinte** (dorada, red y rayas; `null` es el propio del tipo),
+sus **puntas** (estrella: 4, 6 u 8) y su **ángulo** (estrella, rayas y
+los ejes de la red). El motor dispersa el rayo de cámara en la muestra de
+pupila: con la probabilidad `s` del grado lo desvía según la PSF angular
+del filtro y si no lo deja seguir, de modo que la imagen es
+`(1 − s)·I + s·a·(I ⊗ K_T)` (`a`, lo que dejan pasar las partículas: 1
+salvo la difusión negra; el tinte `T`, de luminancia 1, solo en las
+partes anchas de la PSF: la cola de la difusión, que es el halo, y las
+rayas; el núcleo estrecho, que cae sobre la imagen, y los destellos del
+brillo quedan neutros); así el halo lleva el bokeh y el enfoque de la
+lente, y una luz fuera del encuadre vela la imagen. El grado decide `s`
+y, en la estrella y la red, el largo de sus rayas (en ángulo: en un
+85 mm, la estrella llega a un cuarto del medio cuadro a 1/4, al 60 % a 1
+y al borde a 2, con el mismo brillo junto a la luz; la cruz de la red,
+como mucho al 15 % del ancho a 2). El brillo es una nube fija de
+destellos finos alrededor de cada luz. Un filtro de grado 0 no hace nada. Elegir un tipo de
+bokeh o *Disco sencillo* no quita los filtros. Una cámara ortográfica no
+tiene filtros (como no tiene lente). El modo Rápido dibuja una
+aproximación en imagen con los mismos núcleos y el medidor lo dice.
 
 ### 3.6 · Imagen
 

@@ -544,8 +544,55 @@ pub struct Lights {
     pub(crate) per_point: bool,
     /// Emitter index of each instance, if it is one.
     instance_emitter: Vec<Option<u32>>,
+    /// The lights a camera ray sees (O3a: the lens's filters connect to them), in the order of
+    /// [`Lights::camera_lights`].
+    camera: Vec<CameraLight>,
     #[cfg(test)]
     pub(crate) techniques: Techniques,
+}
+
+/// A light a camera ray can see: an area light or a sphere flagged `camera`, with the sphere
+/// that bounds it (O3a, the connection of the lens's effect filters to the lights).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraLight {
+    /// The centre of its bounding sphere.
+    pub centre: Vec3,
+    /// The radius of its bounding sphere.
+    pub radius: f32,
+    /// A sphere light (else an area light), and its index there.
+    sphere: bool,
+    index: u32,
+}
+
+/// The lights a camera ray can see, by their bounding spheres: the area lights flagged `camera`
+/// and the sphere lights flagged `camera` with a size (O3a).
+fn camera_lights_of(areas: &[AreaLight], spheres: &[SphereLight]) -> Vec<CameraLight> {
+    let mut camera = Vec::new();
+    for (i, a) in areas.iter().enumerate() {
+        if a.camera {
+            let radius = match a.shape {
+                AreaShape::Rect { half_x, half_y } => (half_x * half_x + half_y * half_y).sqrt(),
+                AreaShape::Disk { radius } => radius,
+            };
+            camera.push(CameraLight {
+                centre: a.centre,
+                radius,
+                sphere: false,
+                index: i as u32,
+            });
+        }
+    }
+    for (i, l) in spheres.iter().enumerate() {
+        if l.camera && positive(l.radius) {
+            camera.push(CameraLight {
+                centre: l.centre,
+                radius: l.radius,
+                sphere: true,
+                index: i as u32,
+            });
+        }
+    }
+    camera
 }
 
 /// Index of the bucket of a CDF that holds `u`, and `u` rescaled to `[0, 1)` inside it.
@@ -853,6 +900,7 @@ impl Lights {
         let flux_pmf = (0..cdf.len())
             .map(|e| cdf[e] - if e == 0 { 0.0 } else { cdf[e - 1] })
             .collect();
+        let camera = camera_lights_of(&areas, &spheres);
         Lights {
             areas,
             suns,
@@ -868,6 +916,7 @@ impl Lights {
             cdf,
             flux_pmf,
             instance_emitter,
+            camera,
             #[cfg(test)]
             techniques: Techniques::Mis,
         }
@@ -1300,6 +1349,55 @@ impl Lights {
                 },
             };
             sum += light.radiance * (mask * weight);
+        }
+        sum
+    }
+
+    /// The lights a camera ray sees, with their bounding spheres (O3a).
+    pub fn camera_lights(&self) -> &[CameraLight] {
+        &self.camera
+    }
+
+    /// The radiance of camera light `i` ([`Lights::camera_lights`]) that a camera ray crosses
+    /// before `t_max`, as [`Lights::crossed`] counts it (black when it misses).
+    pub fn camera_light_radiance(&self, i: usize, ray: &Ray, t_max: f32) -> Rgb {
+        let Some(c) = self.camera.get(i) else {
+            return Rgb::BLACK;
+        };
+        if c.sphere {
+            let light = &self.spheres[c.index as usize];
+            if light.intersect(ray, t_max).is_none() {
+                return Rgb::BLACK;
+            }
+            let mask = light.mask(ray.origin);
+            if positive(mask) {
+                light.radiance * mask
+            } else {
+                Rgb::BLACK
+            }
+        } else {
+            let light = &self.areas[c.index as usize];
+            light
+                .intersect(ray, t_max)
+                .map_or(Rgb::BLACK, |(_, cos)| light.radiance_at(cos))
+        }
+    }
+
+    /// The light a camera ray crosses before `t_max`, each camera light `i` weighted by
+    /// `weight(i)` (O3a: against the filters' connections to the lights); the lights a camera ray
+    /// does not see add nothing, as in [`Lights::crossed`].
+    pub fn crossed_camera_weighted(
+        &self,
+        ray: &Ray,
+        t_max: f32,
+        weight: &dyn Fn(usize) -> f32,
+    ) -> Rgb {
+        let mut sum = Rgb::BLACK;
+        for i in 0..self.camera.len() {
+            let le = self.camera_light_radiance(i, ray, t_max);
+            if positive(le.r + le.g + le.b) {
+                sum += le * weight(i);
+            }
         }
         sum
     }

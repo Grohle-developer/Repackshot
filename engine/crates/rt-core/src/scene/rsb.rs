@@ -13,7 +13,8 @@
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
-//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||` E6) and are
+//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||` E6
+//! and E9) and are
 //! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
 //! writer always writes them):
 //!
@@ -26,6 +27,7 @@
 //!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
 //!             || f32 opacity (1) anisotropy (0) absorption_mm (0)                     (72 B)
 //!             ||||| f32 bevel_mm (0)                                                  (76 B)
+//!             scatter_mm (0) scatter_color[3] (1 1 1) scatter_g (0) abbe (0)          (100 B)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
@@ -50,6 +52,7 @@
 //!             obstruction cats_eye squeeze shift_x_mm shift_y_mm tilt_deg tilt_axis_deg
 //!             ca_amount swirl field_mm; u32 mask_kind mask_width mask_height;
 //!             u8 mask[mask_width * mask_height]; zero padding to 4                 (O1, new)
+//!             | (u32 kind; f32 grade tint[3] angle_deg; u32 points)[3]           (O3a, +84 B)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -119,7 +122,13 @@
 //!   makes `base_color` the colour white light keeps after that many millimetres inside a solid
 //!   (Beer–Lambert) instead of a surface tint. `bevel_mm` (E6) above zero rounds the shading
 //!   normal within that many millimetres of the mesh's sharp edges ([`crate::bevel`]); a file
-//!   without it (72 B) has sharp edges.
+//!   without it (72 B) has sharp edges. E9: `scatter_mm` above zero fills a clear solid with a
+//!   scattering medium of that mean free path, single-scattering albedo `scatter_color` and
+//!   Henyey–Greenstein anisotropy `scatter_g` (see [`crate::integrator::medium`]); `abbe` above
+//!   zero makes the index of a clear solid without a medium depend on the wavelength (Cauchy's law
+//!   through `ior` at the d line with that Abbe number, see [`crate::integrator::dispersion`]). A
+//!   file written before E9 (72 or 76 B) reads them as 0, white, 0, 0: no medium and no
+//!   dispersion.
 //! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
 //!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
 //!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect
@@ -202,6 +211,13 @@
 //!   pixels (at most 1024 per side, 255 open) covering `[−1, 1]²` of the pupil, rows top to
 //!   bottom, the unit circle inscribed. Values out of range make the file invalid. An orthographic
 //!   camera ignores the section, and a file without it renders exactly as before O1.
+//!   **O3a** appends the stack of three effect filters (see [`crate::optics::filters`]): `kind`
+//!   **0** none, **1** white diffusion, **2** black diffusion, **3** gold diffusion, **4**
+//!   glimmer, **5** soft, **6** net, **7** star, **8** streak; `grade` 0 (off) to 2; `tint` the
+//!   tint of the scattered light (gold, net and streak; all zero: the kind's own); `angle_deg` the
+//!   angle of a star's or a streak's first line, or of a net's axes; `points` a star's 4, 6 or 8
+//!   (0: 6). A section without them, or with every slot zero, has no filters; the writer adds
+//!   them only when there are any.
 
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
@@ -210,6 +226,7 @@ use super::{
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
+use crate::optics::filters::FilterParams;
 use std::fmt;
 
 /// The four magic bytes at the start of every RSB file.
@@ -415,6 +432,7 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
         mask_width: r.u32()?,
         mask_height: r.u32()?,
         mask: Vec::new(),
+        filters: [FilterParams::default(); 3],
     };
     let len = u64::from(p.mask_width) * u64::from(p.mask_height);
     let padded = len.div_ceil(4) * 4;
@@ -423,6 +441,18 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
     }
     p.mask = r.data[r.pos..r.pos + len as usize].to_vec();
     r.pos += padded as usize;
+    // O3a: the stack of effect filters, when the section goes on (an O1 file has none).
+    if r.remaining() > 0 {
+        for f in &mut p.filters {
+            *f = FilterParams {
+                kind: r.u32()?,
+                grade: r.f32()?,
+                tint: [r.f32()?, r.f32()?, r.f32()?],
+                angle_deg: r.f32()?,
+                points: r.u32()?,
+            };
+        }
+    }
     Lens::new(p).map_err(|reason| r.invalid(reason))
 }
 
@@ -492,6 +522,10 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
         anisotropy: r.opt_f32(0.0)?,
         absorption_mm: r.opt_f32(0.0)?,
         bevel_mm: r.opt_f32(0.0)?,
+        scatter_mm: r.opt_f32(0.0)?,
+        scatter_color: Rgb::new(r.opt_f32(1.0)?, r.opt_f32(1.0)?, r.opt_f32(1.0)?),
+        scatter_g: r.opt_f32(0.0)?,
+        abbe: r.opt_f32(0.0)?,
     })
 }
 
@@ -882,6 +916,18 @@ impl Scene {
                 w.buf.extend_from_slice(&p.mask);
                 let pad = (4 - p.mask.len() % 4) % 4;
                 w.buf.extend(std::iter::repeat_n(0u8, pad));
+                // O3a: the filters only when there are any, so an O1 lens writes the O1 bytes.
+                if p.filters.iter().any(|f| *f != FilterParams::default()) {
+                    for f in &p.filters {
+                        w.u32(f.kind);
+                        w.f32(f.grade);
+                        for v in f.tint {
+                            w.f32(v);
+                        }
+                        w.f32(f.angle_deg);
+                        w.u32(f.points);
+                    }
+                }
             });
         }
         for m in &self.materials {
@@ -905,6 +951,10 @@ impl Scene {
                 w.f32(m.anisotropy);
                 w.f32(m.absorption_mm);
                 w.f32(m.bevel_mm);
+                w.f32(m.scatter_mm);
+                w.rgb(m.scatter_color);
+                w.f32(m.scatter_g);
+                w.f32(m.abbe);
             });
         }
         for p in &self.patterns {
@@ -1103,6 +1153,10 @@ mod tests {
                     anisotropy: 0.4,
                     absorption_mm: 25.0,
                     bevel_mm: 0.35,
+                    scatter_mm: 2.5,
+                    scatter_color: Rgb::new(0.9, 0.8, 0.7),
+                    scatter_g: -0.3,
+                    abbe: 42.0,
                 },
             ],
             geometry: Geometry::from_meshes(vec![
@@ -1346,7 +1400,7 @@ mod tests {
                 .map(|(_, p)| p.len())
         };
         assert_eq!(size(b"CAMR"), Some(15 * 4));
-        assert_eq!(size(b"MATL"), Some(19 * 4));
+        assert_eq!(size(b"MATL"), Some(25 * 4));
         assert_eq!(size(b"LGHT"), Some(19 * 4));
         assert_eq!(size(b"ENVR"), Some(21 * 4));
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
@@ -1462,21 +1516,31 @@ mod tests {
 
     #[test]
     fn materials_written_before_e6_have_sharp_edges() {
-        // MATL of 72 B, as E5 to X5 wrote it: no bevel_mm.
+        // MATL of 72 B, as E5 to X5 wrote it: no bevel_mm. MATL of 76 B, as E6 wrote it before
+        // E9: the bevel, and no medium or dispersion.
         let scene = full_scene();
         let bytes = scene.to_rsb();
-        let mut old = bytes[..8].to_vec();
-        for (tag, mut payload) in sections(&bytes) {
-            if tag == TAG_MATL {
-                assert_eq!(payload.len(), 76);
-                payload.truncate(72);
+        let with_matl = |len: usize| {
+            let mut old = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_MATL {
+                    assert_eq!(payload.len(), 100);
+                    payload.truncate(len);
+                }
+                old.extend(unknown_section(&tag, &payload));
             }
-            old.extend(unknown_section(&tag, &payload));
-        }
-        let read = Scene::from_rsb(&old).expect("E5 layout reads");
-        assert_eq!(read.materials[1].bevel_mm, 0.0);
-        assert_eq!(read.materials[1].absorption_mm, 25.0);
+            Scene::from_rsb(&old).expect("older layout reads")
+        };
+        let e5 = with_matl(72);
+        assert_eq!(e5.materials[1].bevel_mm, 0.0);
+        assert_eq!(e5.materials[1].absorption_mm, 25.0);
         assert_eq!(scene.materials[1].bevel_mm, 0.35);
+        let e6 = &with_matl(76).materials[1];
+        assert_eq!(e6.bevel_mm, 0.35);
+        assert_eq!(
+            (e6.scatter_mm, e6.scatter_color, e6.scatter_g, e6.abbe),
+            (0.0, Rgb::WHITE, 0.0, 0.0)
+        );
     }
 
     #[test]
@@ -1499,6 +1563,16 @@ mod tests {
         let m = &read.materials[1];
         assert_eq!((m.opacity, m.anisotropy, m.absorption_mm), (1.0, 0.0, 0.0));
         assert_eq!(m.flags, 1);
+        assert_eq!(
+            (
+                m.bevel_mm,
+                m.scatter_mm,
+                m.scatter_color,
+                m.scatter_g,
+                m.abbe
+            ),
+            (0.0, 0.0, Rgb::WHITE, 0.0, 0.0)
+        );
         let e = &read.environment;
         assert_eq!(
             (e.hdri_map, e.backplate_map, e.backplate_fit),

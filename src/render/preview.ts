@@ -37,6 +37,9 @@ import { setKnots } from './knots';
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 import { TexturePreview } from './texture-preview';
+import { filterActive, filtersOf, opticsOf } from '../core/optics';
+import { filterKernel, type FilterKernel } from './lens-filter-image';
+import { LensFilterPass } from './lens-filter-pass';
 import { GraphBakes } from './graph-preview';
 import type { GraphWorkers } from './graph-client';
 
@@ -337,6 +340,8 @@ export class PreviewEngine implements RenderEngine {
   private overlayClear = false;
   private readonly depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
   private maskTarget: THREE.WebGLRenderTarget | null = null;
+  /** The camera's effect filters (O3a), drawn as an approximation in image space. */
+  private readonly filterPass = new LensFilterPass();
   private readonly maskSelected = new THREE.MeshBasicMaterial({ toneMapped: false });
   private readonly maskHover = new THREE.MeshBasicMaterial({ toneMapped: false, blending: THREE.AdditiveBlending, transparent: true });
   private readonly outlineMaterial = new THREE.ShaderMaterial({
@@ -525,8 +530,12 @@ export class PreviewEngine implements RenderEngine {
     return n === this.canvasSamples ? null : n;
   }
 
-  /** The scene of Fast mode, with the multisampling asked for (see `msaaWanted`). */
-  private drawScene(cam: THREE.Camera): void {
+  /**
+   * The scene of Fast mode from `cam`, with the multisampling asked for (see `msaaWanted`), or through the effect
+   * filters of camera `c` when it has any (O3a, `drawFiltered`).
+   */
+  private drawScene(cam: THREE.Camera, c: CameraState): void {
+    if (this.drawFiltered(cam, c)) return;
     const samples = this.msaaPath();
     if (samples === null) {
       this.aaTarget?.dispose();
@@ -1329,11 +1338,34 @@ export class PreviewEngine implements RenderEngine {
     if (this.overlayClear || !this.overlayOnly) this.renderer.domElement.style.opacity = '';
     this.overlayClear = false;
     if (this.overlayOnly) this.drawOverlayBase(cam);
-    else this.drawScene(cam);
+    else this.drawScene(cam, activeCamera(this.state));
     this.drawOutline(cam);
     this.drawGizmo(cam);
     this.lastFrameMs = performance.now() - t0;
     for (const fn of this.frameListeners) fn();
+  }
+
+  /**
+   * The scene from `cam` through the effect filters of camera `c`, when it has any (O3a): an approximation in image
+   * space with the engine's kernels (render/lens-filter-pass.ts, into its own multisampled target); an orthographic
+   * camera has none, as in the engine. False, and nothing drawn, without filters.
+   */
+  private drawFiltered(cam: THREE.Camera, c: CameraState): boolean {
+    const kernels = this.filterKernels(cam, c);
+    if (kernels.length === 0) return false;
+    this.filterPass.render(this.renderer!, this.scene, cam, kernels);
+    return true;
+  }
+
+  /** The kernels of camera `c`'s filters in drawing-buffer pixels of `cam` (the projection's scale). */
+  private filterKernels(cam: THREE.Camera, c: CameraState): FilterKernel[] {
+    if (!(cam instanceof THREE.PerspectiveCamera) || c.projection === 'ORTHOGRAPHIC') return [];
+    const filters = filtersOf(opticsOf(c)).filter(filterActive);
+    if (filters.length === 0) return [];
+    const width = this.renderer!.getDrawingBufferSize(new THREE.Vector2()).x;
+    // Pixels per unit of tangent: the projection's x scale over half the buffer's width.
+    const ppr = (cam.projectionMatrix.elements[0] * width) / 2;
+    return filters.map((f) => filterKernel(f, ppr)).filter((k): k is FilterKernel => k !== null);
   }
 
   /**
@@ -1977,7 +2009,7 @@ export class PreviewEngine implements RenderEngine {
       if (opts.transparent) this.scene.background = null;
       this.renderer.setClearColor(0x000000, 0);
       const three = cam.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
-      this.renderer.render(this.scene, three);
+      if (!this.drawFiltered(three, cam)) this.renderer.render(this.scene, three);
       out.getContext('2d')!.drawImage(this.renderer.domElement, 0, 0);
     } finally {
       this.scene.background = bg;
@@ -2091,6 +2123,7 @@ export class PreviewEngine implements RenderEngine {
     this.envTexture?.dispose();
     this.envMap?.dispose();
     this.maskTarget?.dispose();
+    this.filterPass.dispose();
     this.pmrem?.dispose();
     this.plateTexture?.dispose();
     this.renderer?.dispose();

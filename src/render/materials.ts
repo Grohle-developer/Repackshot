@@ -2,9 +2,12 @@
 // viewport and the thumbnail renderer. Approximations of the preview: wood is
 // the mean colour of its pattern (the engine draws its rings, pores and grain,
 // E6: rt_core::pattern), fabric the mean colour of its weave (the engine
-// weaves it), fuzz is sheen, wear is not
-// drawn; the engine draws glass (refraction, absorption, thin walls), the
-// clear coat, opacity and anisotropy (E5).
+// weaves it), fuzz is sheen, wear is not drawn; the engine draws glass
+// (refraction, absorption, thin walls), the clear coat, opacity and anisotropy
+// (E5). E9: a scattering medium is approximated as a translucent diffuse (the
+// colour light comes back with, opaque when the medium is dense for the part's
+// size, see-through when it is sparse), and (E9c) the dispersion of glass with
+// three.js's own `dispersion`; the engine renders both in Full.
 
 import * as THREE from 'three';
 import { kelvinToRgb } from '../core/light-math';
@@ -24,6 +27,25 @@ function num(v: unknown, fallback: number): number {
 
 function setLinear(c: THREE.Color, rgb: readonly number[]): void {
   c.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+}
+
+/**
+ * The colour a dense, isotropic medium of single-scattering albedo `a` sends back: the similarity
+ * relation of H. C. van de Hulst ("Multiple Light Scattering", 1980), `(1 - s)(1 - 0.139 s) / (1 +
+ * 1.17 s)` with `s = √(1 - a)`. A preview estimate only (Fast mode); the engine walks the medium.
+ */
+export function diffuseOfMedium(a: number): number {
+  const s = Math.sqrt(Math.max(0, 1 - Math.min(1, Math.max(0, a))));
+  return ((1 - s) * (1 - 0.139 * s)) / (1 + 1.17 * s);
+}
+
+/**
+ * How see-through a part of `partSizeMm` is with a medium of mean free path `mfpMm` (Fast mode): 0
+ * when the medium is dense for the part (light diffuses well before crossing it), 1 when sparse.
+ */
+export function clarityOfMedium(mfpMm: number, partSizeMm: number): number {
+  if (!(mfpMm > 0)) return 1;
+  return Math.min(1, Math.max(0, mfpMm / Math.max(1e-3, partSizeMm * 0.25)));
 }
 
 /** Writes an instance into a physical material (in place; three bumps versions when needed). */
@@ -47,6 +69,7 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
   m.specularIntensity = 1;
   m.attenuationDistance = Infinity;
   setLinear(m.attenuationColor, [1, 1, 1]);
+  m.dispersion = 0;
 
   switch (inst.family) {
     case 'SIMPLE': {
@@ -79,6 +102,21 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
         setLinear(m.attenuationColor, base);
         m.attenuationDistance = absorption;
       } else setLinear(m.color, base);
+      // E9, Fast's approximation of the scattering medium: what light comes back with as a diffuse
+      // colour, weighted against the glass by how see-through the part is for its size.
+      const mfp = Math.max(0, num(p.scatterMm, 0));
+      if (mfp > 0 && p.walls !== 'THIN') {
+        const albedo = rgbOf(p.scatterColor, [1, 1, 1]);
+        const back = [0, 1, 2].map((i) => diffuseOfMedium(albedo[i]));
+        const clarity = clarityOfMedium(mfp, partSizeMm);
+        setLinear(m.color, back);
+        m.transmission *= clarity;
+        m.roughness = Math.max(m.roughness, 0.35 * (1 - clarity));
+      }
+      // E9c: dispersion as three.js defines it for glTF (KHR_materials_dispersion: 20 / Abbe number),
+      // on solid glass without a medium, as the engine (rt_core::integrator::dispersion).
+      const abbe = Math.max(0, num(p.abbe, 0));
+      m.dispersion = abbe > 0 && p.walls !== 'THIN' && !(mfp > 0) ? Math.min(2, 20 / abbe) : 0;
       break;
     }
     case 'WOOD': {

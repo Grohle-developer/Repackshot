@@ -134,10 +134,51 @@ pub const fn cutout_dim(bounce: u32, crossing: u32) -> u32 {
     DIM_CUTOUT + bounce * 64 + c
 }
 
+/// First logical dimension of the scattering media (E9b): beyond the cut-outs, so a scene
+/// without media draws exactly the numbers it drew before. Their block ends where
+/// [`DIM_LENS_BAND`] starts.
+pub const DIM_MEDIUM: u32 = 1 << 21;
+/// Dimensions of one medium event.
+pub const MEDIUM_DIMS_PER_EVENT: u32 = 8;
+/// Medium events of one walk with their own dimensions (also the path's cap,
+/// [`crate::integrator::medium::MAX_MEDIUM_EVENTS`]).
+pub const MEDIUM_EVENTS: u32 = 1024;
+/// Path vertices whose walks have their own block of dimensions; later walks share the last.
+pub const MEDIUM_BOUNCES: u32 = 128;
+
+/// The first dimension of event `event` of the walk that starts after path vertex `bounce`
+/// (walks after vertex 127 share the last block of numbers).
+#[inline]
+pub const fn medium_dim(bounce: u32, event: u32) -> u32 {
+    let b = if bounce < MEDIUM_BOUNCES {
+        bounce
+    } else {
+        MEDIUM_BOUNCES - 1
+    };
+    let e = if event < MEDIUM_EVENTS {
+        event
+    } else {
+        MEDIUM_EVENTS - 1
+    };
+    DIM_MEDIUM + (b * MEDIUM_EVENTS + e) * MEDIUM_DIMS_PER_EVENT
+}
+
 /// The logical dimension of the chromatic band of a lens camera sample (O1, [`crate::optics`]):
 /// beyond the Sobol table and the cut-outs, so a scene without a `LENS` section draws exactly the
 /// numbers it drew before. It is used through [`PixelSampler::stratum`], not as a number.
 pub const DIM_LENS_BAND: u32 = 3 << 20;
+
+/// First logical dimension of the effect filters of a lens (O3a, [`crate::optics::filters`]):
+/// four per filter of the stack (the choice, two for the angle, one for the lobe), beyond the
+/// Sobol table, so a lens without filters draws exactly the numbers it drew before.
+pub const DIM_LENS_FILTER: u32 = 4 << 20;
+
+/// First logical dimension of the filters' connections to the lights (O3a): six per filter of
+/// the stack (the light, four for the deflection and the lobe, one spare), beyond the Sobol table.
+pub const DIM_LENS_FILTER_LIGHT: u32 = 5 << 20;
+
+/// First logical dimension of the wavelength chosen at a path's first dispersive glass (E9c).
+pub const DIM_DISPERSION: u32 = 1 << 23;
 
 /// Degree `s`, coefficients `a` and initial direction numbers `m_1..m_s` of dimensions 2 to 64
 /// (Joe and Kuo, `new-joe-kuo-6.21201`, rows `d = 2..=64`). Unused `m` entries are zero.

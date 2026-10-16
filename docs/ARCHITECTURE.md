@@ -102,7 +102,7 @@ src/
     lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
-    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh
+    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
     animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6)
@@ -142,6 +142,8 @@ src/
     particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
+    lens-filter-image.ts    los filtros de efecto de la lente en imagen (O3a): los núcleos en píxeles y su convolución en TS, la referencia del pase WebGL
+    lens-filter-pass.ts     el pase WebGL de esos núcleos en el modo Rápido (objetivo lineal de medio flotante, gaussianas a tamaño reducido, rayas a media resolución; cada parte con su color)
     graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
@@ -184,6 +186,7 @@ src/
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
       insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
+      insp-filters.ts       Cámara ▸ Filtros: la pila de filtros de efecto de la lente (O3a)
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
       insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
@@ -525,9 +528,9 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 
 - **`PATN`** (E6, nueva, repetible, 108 B): el dibujo procedural de un
   material (`u32 material kind; f32 color_a[3] color_b[3] scale_mm
-  params[16]; u32 variant seed`, §5.2 septies). `kind` 1 madera, 2 tela; un
+  params[16]; u32 variant seed`, §5.2 octies). `kind` 1 madera, 2 tela; un
   tipo desconocido no dibuja nada; un `material` que no existe es error.
-- **`MATL`** (76 B desde E6; los de 56, 60 y 72 B se leen con los valores
+- **`MATL`** (100 B desde E9; los de 56, 60, 72 y 76 B se leen con los valores
   por defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
   barniz; la parte `transmission` es vidrio claro: reflexión y refracción
   GGX con el Fresnel dieléctrico exacto), 1 vidrio (el principal sin
@@ -537,8 +540,15 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   rectos). E5 añade `opacity` (1; por debajo, recorte estocástico),
   `anisotropy` (0) y `absorption_mm` (0; por encima, Beer–Lambert dentro
   del sólido: `base_color` es lo que conserva la luz blanca tras esos
-  milímetros). E6 añade `bevel_mm` (0; por encima, el radio del bisel de
-  aristas del sombreado, §5.2 sexies; los emisores lo ignoran).
+  milímetros). E6 añade `bevel_mm` (byte 72; 0; por encima, el radio del
+  bisel de aristas del sombreado, §5.2 septies; los emisores lo ignoran).
+  E9 añade, detrás, en este orden: `scatter_mm` (0; por encima, el sólido
+  claro está lleno de un medio dispersor con esa distancia libre media,
+  §5.2 sexies), `scatter_color` (tres `f32`, el albedo de dispersión simple
+  por canal; 1, 1, 1), `scatter_g` (0; la anisotropía de
+  Henyey–Greenstein, recortada a ±0,9) y `abbe` (0; el número de Abbe del
+  vidrio macizo sin medio: por encima de 0, dispersión cromática,
+  §5.2 sexies).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -611,7 +621,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   diafragma, 2 textura que lo multiplica) `mask_width mask_height`, los
   píxeles de 8 bits (255 abierto; [−1, 1]² de la pupila, filas de arriba
   abajo, círculo unidad inscrito; hasta 1024 por lado) y relleno a 4
-  bytes. Un valor fuera de rango hace inválido el fichero. Un RSB sin
+  bytes. **O3a** añade al final los tres huecos de la pila de filtros de
+  efecto, 28 B cada uno (`u32 kind`: 0 ninguno, 1 difusión blanca, 2
+  negra, 3 dorada, 4 brillo, 5 suavizado, 6 red, 7 estrella, 8 rayas;
+  `f32 grade` 0 a 2, `tint[3]` (ceros: el del tipo), `angle_deg`; `u32
+  points` 4, 6 u 8, 0 es 6), escritos solo cuando hay alguno: una `LENS`
+  sin filtros es la de O1 byte a byte, y una sección de O1 se lee sin
+  filtros. Un valor fuera de rango hace inválido el fichero. Un RSB sin
   `LENS` es la lente fina de siempre, bit a bit (los *hash* del ejemplo,
   E5, E5c, E5b-1 y los pases no se movieron); una `LENS` neutra también.
   La interfaz la escribe solo para una cámara con óptica no neutra
@@ -715,9 +731,9 @@ sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
    el motor**. Los píxeles los decodifica la interfaz
    (`io/texture-pixels.ts`, con el decodificador del navegador): el motor no
    lee PNG ni JPEG.
-2. **`MATL`**: los campos de antes (72 B), los de E6 (`f32 bevel_mm`, 76 B,
-   que el escritor ya manda siempre) y E9 (`f32 scatter_mm scatter_color[3]
-   scatter_g abbe`, 100 B) —ceros mientras E9 no los escriba—, y desde el
+2. **`MATL`**: los campos de antes (72 B), los de E6 (`f32 bevel_mm`, 76 B) y
+   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B), que el
+   escritor manda siempre, y desde el
    **byte 100** el bloque de texturas:
 
    ```text
@@ -843,9 +859,59 @@ que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
   ignora `LENS`; el muestreo de luces, BSDF y recortes no ve nada nuevo.
 - *Hash* fijado de la escena O1 (`example::o1_scene`, todas las
   perillas a la vez y una textura de anillos): `PINNED_O1_LENS_4SPP` =
-  `0x1439a1a8` (tras E12: la selección de luz por punto mueve el hash) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
+  `0x087d1276` (desde la unión de E9 y E12: la compensación de energía y la selección de luz por punto mueven el hash) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
   (`rt --write-o1-example`, `tools/wasm-parity.mjs`, en CI) y con 1, 4 y
   16 hilos (`rt-cli/tests`).
+- **Filtros de efecto** (O3a, `optics::filters`): tras la pupila, cada
+  filtro de la pila (hasta tres, en orden) decide con un número si dispersa
+  la muestra (probabilidad `s` del grado: `kind_s`, tablas por `GRADES`
+  lineales entre grados, `GRADE_S` de las difusiones, el brillo y la red,
+  `STAR_S` y `STREAK_S` propias) y, si lo hace, desvía la dirección del
+  rayo `d + right·δx + up·δy` (δ en tangentes, radianes) y la pesa con
+  `Filter::colour_at`: `a` en el núcleo y los destellos, `a·T` en las
+  rayas y, en la difusión, por la parte de la cola en la densidad a esa
+  distancia (el tinte va al halo, no a la imagen). Las PSF son radiales
+  (difusión: gaussiana de `SIGMA_CORE_DEG` y cola de Cauchy 2D de
+  `SIGMA_TAIL_DEG` hasta 12 anchos; suavizado: la gaussiana), de rayas
+  (estrella, rayas y la cruz de la red: densidad 1/r desde
+  `LINE_START_DEG` que se afila hasta 0 en su largo, `line_length_deg`:
+  `STAR_LENGTH_DEG` y `NET_LENGTH_DEG` por grado, `STREAK_END_DEG` las
+  rayas; grosor de `LINE_WIDTH_DEG`) o de destellos (brillo: la gaussiana, un
+  halo suave de `GLIMMER_CLOUD_DEG` y una nube fija de `GLIMMER_SPARKLES`
+  destellos, gaussiana 2D de
+  `GLIMMER_CLOUD_DEG`, con brillos exponenciales de un *hash*, de la que
+  cada muestra toma uno por su peso; en una rejilla de 64 × 64 para las
+  conexiones); todas por CDF inversa tabulada (256 valores, construida al
+  cargar con `fmath`), sin `exp` ni `ln` en el bucle. Los
+  rayos dispersos rara vez dan con una luz pequeña, así que cada muestra
+  de cámara con filtros **se conecta además a una luz** que la cámara ve
+  (`Lights::camera_lights`, por su esfera envolvente; una elegida al azar
+  por filtro): un lóbulo por su parte de la PSF, una desviación dentro de
+  la luz con la densidad de conexión de ese lóbulo (el disco de la luz en
+  el plano de desviaciones, `filters::light_disc`; para las rayas, la raya
+  elegida por la probabilidad que cae dentro y la distancia por su
+  densidad ahí; para el brillo, uno de los destellos cuya caja toca la luz,
+  por su peso y el área de esa parte, y un punto en ella), un rayo de
+  sombra y su radiancia por `s`, el color del lóbulo y la probabilidad de que los
+  filtros siguientes no dispersen. La dispersión y la conexión se pesan
+  una contra otra con la heurística del balance lóbulo a lóbulo
+  (`Filter::mis_weight`): las luces que cruza el primer tramo del rayo de
+  una muestra dispersa pesan `K / (K + p·q)` (`integrator::radiance_weighted`)
+  y la conexión `s·L` por su color y ese mismo peso donde cayó. Sin luces que la
+  cámara vea, no hay conexión. Los números de cada filtro salen de cuatro
+  dimensiones propias más allá de la tabla de Sobol (`DIM_LENS_FILTER`,
+  `4 << 20`, cuatro por filtro) y los de su conexión de seis más
+  (`DIM_LENS_FILTER_LIGHT`, `5 << 20`);
+  con bandas cromáticas, los del grupo de tres (una dispersión, tres
+  colores). Una lente sin filtros no saca ninguno: los *hashes* de antes
+  no se mueven. Escena de paridad `example::o3a_scene` (difusión negra
+  1/2, estrella de 6 a 15° y rayas 1/2 sobre un diafragma de 6 láminas):
+  `PINNED_O3A_FILTERS_4SPP` = `0x21e43bb1` (desde que le llegó E9a; antes `0x49938f3b`) en cada ruta SIMD, en WASI, en
+  el `rt_wasm.wasm` real (`rt --write-o3a-example`, `tests/fixtures/o3a.rsb`)
+  y con 1, 4 y 16 hilos. El visor Rápido aplica `(1 − s)·I + s·a·(I ⊗ K_T)`
+  con los mismos núcleos proyectados por la focal (`render/lens-filter-*`;
+  cada parte con su color, la nube del brillo como la gaussiana de la que
+  sale), como aproximación que el medidor declara.
 
 ### 5.2 bis · Película, *denoise* y cáusticas (E5b-1)
 
@@ -882,7 +948,7 @@ con `HALO` = 72 filas alrededor (el alcance de todo el filtro) y da
 exactamente esas filas de la imagen entera, así que los anfitriones lo
 reparten entre hilos o *workers* sin cambiar un bit (bandas de 192 filas
 como mínimo). *Hash* fijado: el ejemplo a 4 muestras con *denoise*,
-`0x9ef7c8a0` (`PINNED_DENOISED_EXAMPLE_4SPP`, desde E12), igual con el `rt.wasm` real
+`0x2a430f92` (`PINNED_DENOISED_EXAMPLE_4SPP`, desde la unión de E9 y E12), igual con el `rt.wasm` real
 (`tools/wasm-parity.mjs --expect-denoised`) y por el código de la página
 (`tests/denoise.test.ts`).
 
@@ -924,7 +990,7 @@ relativa a la del suelo abierto, al fondo que muestra; con fondo
 transparente no se muestran. Coste: `caustic_photons` fotones por muestra,
 trazados por cada anfitrión antes de las baldosas de esa muestra (en wasm,
 cada *worker* guarda los 16 mapas de la última pasada). *Hash* fijado: la
-escena de E5 con 2048 fotones por muestra, `0x5419866e` (desde E12)
+escena de E5 con 2048 fotones por muestra, `0x7135df4b` (desde la unión de E9 y E12)
 (`PINNED_E5B_CAUSTICS_4SPP`, `rt --write-e5b-example`), igual en todas las
 rutas SIMD, en el `rt.wasm` real, por el lanzador con 1, 4 y 16 hilos y por
 el código de la página.
@@ -1350,7 +1416,7 @@ calculan la máscara una vez por baldosa: `rt` y el lanzador en un
 `OnceLock` por baldosa (la primera que la renderiza), el wasm en su escena
 cargada por rectángulo (`KEPT_EDGE_MASKS`, se vacía al actualizar la
 escena). En el ejemplo son el 1,8 % de los píxeles. *Hash* fijado del
-ejemplo con *Fino + bordes ×2*: `PINNED_E11_EDGES_4SPP` = `0x3d8f85de` (con la elección de luz de E12),
+ejemplo con *Fino + bordes ×2*: `PINNED_E11_EDGES_4SPP` = `0xd01702ce` (con la elección de luz de E12 y la compensación de energía de E9a),
 igual en escalar, SSE2 y AVX2, con baldosas de 32 y de 23, por `rt` y el
 lanzador con 1, 4 y 16 hilos, por el `rt.wasm` real (`wasm-parity.mjs`,
 `rt --write-e11-example`) y por el código de la página.
@@ -1369,7 +1435,105 @@ siempre; con otro, en un destino de `n` muestras (como mucho
 fondo en sRGB) guardado en `RGBA8` sin codificar ni decodificar, y lo
 copia tal cual al lienzo antes de los contornos y el *gizmo*.
 
-### 5.2 sexies · Bisel de aristas en el sombreado (E6)
+### 5.2 sexies · Materiales: energía, medios dispersores y dispersión (E9)
+
+**Compensación de energía** (`rt_core::bsdf::energy`, tablas en
+`bsdf/energy_table.rs`). El GGX de dispersión simple pierde la luz que
+rebota más de una vez entre microfacetas (un metal blanco de rugosidad 1
+reflejaba 0,356 en el *furnace*). El lóbulo especular (metal y dieléctrico
+opaco) y el barniz llevan el lóbulo añadido de Kulla y Conty (2017),
+`F_ms (1 − E(μo)) (1 − E(μi)) / (π (1 − E_avg))` con
+`F_ms = F_avg² E_avg / (1 − F_avg (1 − E_avg))` y el `F_avg` de Schlick
+`f0 + (f90 − f0)/21`, muestreado por el coseno y con su densidad en la
+mezcla del MIS. La parte clara (Walter 2007) se divide por su propio albedo
+de potencia `E_t(μo, α, η)` (Turquin 2019); con rugosidad, se muestrea
+primero la microfaceta y se refleja con su propio Fresnel (Walter 2007,
+§5.3). La capa difusa bajo el especular dieléctrico pesa
+`(1 − E_s(μo)) (1 − E_s(μi)) / (1 − E_s,avg)` (Kulla y Conty), y bajo el
+barniz, el producto de las dos transmisiones normalizado por su media
+conjunta (Gauss–Legendre de 8 puntos, `energy::joint_norm`). Las tablas son
+nuestras: Monte Carlo con semilla fija (VNDF de Heitz 2018, rejilla
+*jittered* 64 × 64 por nodo, PCG), 32 × 32 nodos en `√μ` y `√α` (y 17
+índices de refracción entrando y saliendo para la parte clara), en
+fracciones de 16 bits; un test las regenera bit a bit y otro mide el error
+de interpolación (< 0,5 % frente a 16 veces las muestras). Por debajo de
+`α = 0,002` no hay compensación: la rugosidad 0 conserva los bits.
+
+**Medios dispersores** (`rt_core::integrator::medium`). Un sólido claro
+(transmisión, no pared fina, no metal, no emisor, `ior ≥ 1,0001`) con
+`scatter_mm > 0` está lleno de un medio homogéneo: `σt = 1/scatter_mm`,
+`σs = albedo σt`, `σa = (1 − albedo) σt` por canal, más la absorción de
+`absorption_mm` y `base_color` si la hay. El camino que refracta dentro
+hace un paseo aleatorio (Chiang, Kutz y Burley, SIGGRAPH 2016): distancias
+de un canal *héroe* elegido una vez por paseo con MIS espectral sobre los
+tres (Wilkie et al. 2014, cocientes renormalizados en cada paso), fase de
+Henyey–Greenstein y, tras 32 eventos, ruleta rusa sobre el peso del propio
+paseo (lo que ha perdido desde que entró: el camino entra con el `1/η²` de
+la refracción, que la salida devuelve).
+**Sin estimación del siguiente evento dentro.** Un paseo que no dispersa
+cruza como el vidrio claro; uno que dispersa, al llegar a la frontera, se
+refleja hacia dentro con el Fresnel de salida (reflexión total incluida) o
+sale: el vértice de salida es un vértice de superficie con un lóbulo de
+transmisión lambertiano de albedo `η²` (`Bsdf::medium_exit`), donde el
+integrador muestrea una luz con su MIS y sigue con una dirección por el
+coseno. Como máximo 1024 pasos por camino (eventos y reflexiones en la
+frontera); pasado el tope, el paseo va recto a la frontera conservando todo
+salvo la absorción y sale por el lóbulo. Los medios no cuentan contra
+`RNDR.max_depth`. Todos sus números son dimensiones *hash* más allá de la
+tabla Sobol (`sampler::medium_dim`, 8 por paso), así que una escena sin
+medios no cambia ni un bit. Para el mapa de fotones un medio es receptor:
+guarda fotones en su superficie y ninguno entra (`caustics::is_caster`);
+el vértice de salida recoge los del exterior de su superficie.
+**Paredes finas alrededor de un medio** (una **aproximación**): un rayo de
+sombra desde un vértice de salida, y solo desde uno, atraviesa una pared de
+vidrio liso (rugosidad ≤ 0,05, del todo clara, sin barniz ni medio propio)
+donde la luz que la cruzara refractando saldría a menos de 5 mm de su
+entrada por una cara a menos de 15° de la primera, como si las dos
+refracciones se anularan: conserva las transmitancias de Fresnel de entrada
+y de salida y la absorción de la pared en ese tramo (su tinte en cada cara
+sin distancia de absorción), y sigue en su dirección desde la cara de
+salida; una pared más gruesa, rugosa o con barniz lo sigue parando. En una
+losa de leche bajo una placa de 3 mm queda un 2,0 % por debajo del camino
+exacto. Para el MIS, una muestra de la BSDF del vértice de salida que
+entra y sale de una pared así es un suceso recto de ese vértice (conserva
+su densidad y su distancia), así que una luz que encuentra detrás pesa
+frente a esos rayos de sombra; con cáusticas, la luz de una luz de fotones
+a través de una pared es del mapa, como a través de cualquier *caster*.
+Es lo que deja ver las luces a un líquido dentro de un frasco por el lado
+del frasco; la solución exacta (NEE de variedades) es E13.
+*Hash* fijado: la escena de E5 con un medio en su esfera de vidrio rugoso,
+`PINNED_E9_MEDIA_4SPP` (`rt --write-e9-example`, `tests/fixtures/e9.rsb`),
+igual en todas las rutas SIMD, en WASI, en el `rt.wasm` real y por el
+código de la página. En el visor **Rápido** (`src/render/materials.ts`),
+un medio es un difuso translúcido: el color con que vuelve la luz
+(similitud de van de Hulst, `(1 − s)(1 − 0,139 s)/(1 + 1,17 s)` con
+`s = √(1 − albedo)`) y una transmisión que baja con lo denso que es el
+medio para el tamaño de la pieza; la ayuda del inspector dice que Rápido lo
+aproxima.
+
+**Dispersión cromática** (`rt_core::integrator::dispersion`, E9c). Un
+sólido claro sin medio con `abbe > 0` refracta cada longitud de onda con
+su índice: la ley de Cauchy de dos términos, `n(λ) = A + B/λ²`, que pasa
+por `ior` en la línea d del helio (587,6 nm) y da el número de Abbe
+`V = (n_d − 1)/(n_F − n_C)` (líneas F, 486,1 nm, y C, 656,3 nm, del
+hidrógeno). El motor no es espectral: cada canal es una banda de
+longitudes de onda (rojo 580–700, verde 490–580, azul 400–490 nm). Al
+primer vidrio dispersivo que encuentra, un camino elige un canal con
+probabilidad ⅓ y una longitud de onda uniforme dentro de su banda, con una
+dimensión *hash* propia (`sampler::DIM_DISPERSION`, `1 << 23`), y desde
+ahí lleva solo ese canal, por 3, y refracta con esa longitud de onda en
+todo vidrio dispersivo; la esperanza de cada canal es la de refractar su
+banda entera. Los fotones de las cáusticas hacen lo mismo con su propio
+generador. Un camino que no encuentra vidrio dispersivo sigue blanco, así
+que una escena sin ninguno no cambia ni un bit. El precio es ruido de color
+donde hay dispersión. Los rayos de sombra no atraviesan el vidrio (E5) y la
+regla de las paredes de los medios usa `ior`, sin dispersión. *Hash*
+fijado: la escena de E9 lleva desde E9c una esfera de cristal de Abbe 40
+(`PINNED_E9_MEDIA_4SPP`). En **Rápido**, la `dispersion` de three.js
+(`KHR_materials_dispersion`: 20 / número de Abbe, hasta 2), solo en vidrio
+macizo sin medio.
+
+### 5.2 septies · Bisel de aristas en el sombreado (E6)
 
 Las aristas de un modelo CAD son matemáticamente vivas y una arista viva no
 coge luz. El bisel (`rt_core::bevel`, con las aristas en
@@ -1469,7 +1633,7 @@ las rutas SIMD, en WASI, en el `rt.wasm` real (también por el código de la
 página, `tests/passes-engine.test.ts` con `tests/fixtures/e6.rsb`), con 1, 4
 y 16 hilos en `rt` y en el lanzador. Las escenas sin bisel no cambian de bits.
 
-### 5.2 septies · Dibujos procedurales: madera y tela (E6)
+### 5.2 octies · Dibujos procedurales: madera y tela (E6)
 
 `rt_core::pattern`: la receta de un material de la familia `WOOD` como una
 función del punto, con ruido propio (`pattern::noise`: ruido de gradiente
@@ -2157,6 +2321,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Ambiente (S4a) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests` y `geometry::tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %) |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
+| Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |

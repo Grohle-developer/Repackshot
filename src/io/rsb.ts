@@ -29,8 +29,9 @@ import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_P
 import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
-import { isNeutralOptics, type CameraOptics } from '../core/optics';
+import { filtersOf, isNeutralOptics, type CameraOptics, type LensFilter } from '../core/optics';
 import type { PupilProfile } from '../data/bokeh';
+import { lensFilterType } from '../data/lens-filters';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -166,6 +167,29 @@ export interface RsbLens {
   maskHeight: number;
   /** maskWidth × maskHeight bytes, rows top to bottom (empty without a mask). */
   mask: Uint8Array;
+  /** O3a: the stack of effect filters (up to three; absent or empty: none, and the O1 bytes). */
+  filters?: RsbLensFilter[];
+}
+
+/** One LENS filter slot (rt-core `optics::filters::FilterParams`). */
+export interface RsbLensFilter {
+  /** `FILTER_*`: 0 none, 1 white, 2 black, 3 gold diffusion, 4 glimmer, 5 soft, 6 net, 7 star, 8 streak. */
+  kind: number;
+  grade: number;
+  /** All zero: the kind's own. */
+  tint: [number, number, number];
+  angleDeg: number;
+  /** Star: 4, 6 or 8 (0: 6). */
+  points: number;
+}
+
+/** The three filter slots of a LENS section: 28 bytes each. */
+export const LENS_FILTER_SLOTS = 3;
+const LENS_FILTER_BYTES = 28;
+
+/** True when a slot holds anything (the engine writes the slots when one does). */
+function filterSlotUsed(f: RsbLensFilter): boolean {
+  return f.kind !== 0 || f.grade !== 0 || f.tint.some((v) => v !== 0) || f.angleDeg !== 0 || f.points !== 0;
 }
 
 /** M2a: how a slot reads its image (one of the six of the MATL texture block). */
@@ -241,6 +265,14 @@ export interface RsbMaterial {
   absorptionMm: number;
   /** E6: edge bevel radius in mm (0: sharp edges); the engine rounds the shading normal near the mesh's sharp edges. */
   bevelMm: number;
+  /** E9: mean free path of the scattering medium inside a clear solid, mm (0: none). */
+  scatterMm: number;
+  /** E9: single-scattering albedo of that medium, per channel (linear RGB). */
+  scatterColor: RsbVec;
+  /** E9: Henyey–Greenstein anisotropy of that medium, -0.9 (backwards) to 0.9 (forwards). */
+  scatterG: number;
+  /** E9c: Abbe number of solid glass without a medium (0: no dispersion). */
+  abbe: number;
   /** M2a: the texture block, written only when the scene carries textures (`RsbScene.textures`). */
   textures?: RsbTextures;
 }
@@ -419,7 +451,27 @@ export function defaultCamera(): RsbCamera {
 }
 
 export function defaultMaterial(): RsbMaterial {
-  return { kind: MATERIAL_PRINCIPLED, baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.5, ior: 1.5, transmission: 0, coat: 0, coatRoughness: 0, emission: [0, 0, 0], emissionPower: 0, flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0, bevelMm: 0 };
+  return {
+    kind: MATERIAL_PRINCIPLED,
+    baseColor: [0.8, 0.8, 0.8],
+    metallic: 0,
+    roughness: 0.5,
+    ior: 1.5,
+    transmission: 0,
+    coat: 0,
+    coatRoughness: 0,
+    emission: [0, 0, 0],
+    emissionPower: 0,
+    flags: 0,
+    opacity: 1,
+    anisotropy: 0,
+    absorptionMm: 0,
+    bevelMm: 0,
+    scatterMm: 0,
+    scatterColor: [1, 1, 1],
+    scatterG: 0,
+    abbe: 0,
+  };
 }
 
 export function defaultLight(): RsbLight {
@@ -486,13 +538,12 @@ export interface WriteOptions {
 const CAMR_BYTES = 60;
 /** LENS without its picture: 15 numbers before the picture's three words. */
 const LENS_BYTES = 72;
-/** MATL: E5's 72 bytes and E6's `bevel_mm`. */
-const MATL_BYTES = 76;
+/** MATL with E6's `bevel_mm` and E9's fields (the medium and the Abbe number). */
+const MATL_BYTES = 100;
 const PATN_BYTES = 108;
 /**
- * M2a: where the texture block of a MATL starts: after E6's `bevel_mm` (72 to 76, written) and E9's `scatter_mm
- * scatter_color[3] scatter_g abbe` (76 to 100). Until E9 writes its fields the writer fills them with zeros (no medium,
- * no dispersion), which only happens once the engine reads textures (M2b, after E6 and E9).
+ * M2a: where the texture block of a MATL starts: after E6's `bevel_mm` (72 to 76) and E9's `scatter_mm scatter_color[3]
+ * scatter_g abbe` (76 to 100), written in every MATL.
  */
 export const MATL_TEXTURE_OFFSET = 100;
 /** M2a: version of the texture block (its first word). */
@@ -545,9 +596,10 @@ function bitmapBytes(b: RsbBitmap): number {
   return 16 + b.data.length + ((4 - (b.data.length % 4)) % 4);
 }
 
-/** A LENS payload: the numbers, the picture, zero padding to a multiple of four. */
+/** A LENS payload: the numbers, the picture, zero padding to a multiple of four, and the filters when there are any. */
 function lensBytes(l: RsbLens): number {
-  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4);
+  const filters = (l.filters ?? []).some(filterSlotUsed) ? LENS_FILTER_SLOTS * LENS_FILTER_BYTES : 0;
+  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4) + filters;
 }
 
 /** Little-endian writer over a buffer of the exact final size. */
@@ -595,7 +647,7 @@ class ByteWriter {
   }
 }
 
-/** M2a: the texture block of a MATL, from MATL_TEXTURE_OFFSET (the fields between E6's and it are zeros until E9 writes its own). */
+/** M2a: the texture block of a MATL, from MATL_TEXTURE_OFFSET (right after E9's fields: no padding left). */
 function writeTextureBlock(w: ByteWriter, t: RsbTextures): void {
   w.pad(MATL_TEXTURE_OFFSET - MATL_BYTES);
   w.u32(TEXTURE_BLOCK_VERSION);
@@ -690,6 +742,17 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.u32(lens.maskHeight);
       w.raw(lens.mask);
       w.pad((4 - (lens.mask.length % 4)) % 4);
+      const filters = lens.filters ?? [];
+      if (filters.some(filterSlotUsed)) {
+        for (let i = 0; i < LENS_FILTER_SLOTS; i++) {
+          const f = filters[i] ?? { kind: 0, grade: 0, tint: [0, 0, 0], angleDeg: 0, points: 0 };
+          w.u32(f.kind);
+          w.f32(f.grade);
+          for (const v of f.tint) w.f32(v);
+          w.f32(f.angleDeg);
+          w.u32(f.points);
+        }
+      }
     });
   }
   for (const m of scene.materials) {
@@ -705,6 +768,11 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(m.anisotropy);
       w.f32(m.absorptionMm);
       w.f32(m.bevelMm);
+      // E9 appends the medium and the Abbe number.
+      w.f32(m.scatterMm);
+      w.vec(m.scatterColor);
+      w.f32(m.scatterG);
+      w.f32(m.abbe);
       if (t) writeTextureBlock(w, t);
     });
   }
@@ -962,6 +1030,9 @@ function num(v: unknown, fallback: number): number {
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
+/** Largest |g| of a scattering medium's Henyey–Greenstein phase (the engine clamps to it too). */
+export const SCATTER_G_MAX = 0.9;
+
 /** Absorption distance of a GLASS material without its own (`absorptionMm` of core/materials.ts). */
 export const GLASS_ABSORPTION_MM = 50;
 
@@ -969,11 +1040,12 @@ export const GLASS_ABSORPTION_MM = 50;
  * A material instance with the semantics of rt-core: SIMPLE, WOOD and FABRIC as principled (wood
  * and fabric with the mean colour of their pattern, which `patternToRsb` sends; SIMPLE with its transmission,
  * opacity and anisotropy, E5), GLASS as kind 1 (clear glass: its colour after `absorptionMm`
- * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN), EMISSIVE as kind 2
- * with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a black body at its
- * temperature, normalised to its largest channel, or the colour given), sampled as a light when
- * it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the emitter, which has none. Wear
- * and subsurface come later (E7, E9).
+ * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN; E9: a scattering
+ * medium inside with `scatterMm`, `scatterColor` and `scatterG`, and dispersion with `abbe`),
+ * EMISSIVE as kind 2 with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a
+ * black body at its temperature, normalised to its largest channel, or the colour given), sampled
+ * as a light when it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the
+ * emitter, which has none. Wear comes later (E7).
  */
 export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
   const m = defaultMaterial();
@@ -1005,6 +1077,12 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
       m.transmission = clamp01(num(p.transmission, 1));
       m.absorptionMm = Math.max(0, num(p.absorptionMm, GLASS_ABSORPTION_MM));
       m.flags = p.walls === 'THIN' ? MATERIAL_FLAG_THIN : 0;
+      // E9: a scattering medium inside the solid (mean free path, albedo, direction) and the
+      // dispersion of the glass (its Abbe number). A project without them writes the defaults.
+      m.scatterMm = Math.max(0, num(p.scatterMm, 0));
+      m.scatterColor = rgbOf(p.scatterColor, [1, 1, 1]).map(clamp01) as RsbVec;
+      m.scatterG = Math.min(SCATTER_G_MAX, Math.max(-SCATTER_G_MAX, num(p.scatterG, 0)));
+      m.abbe = Math.max(0, num(p.abbe, 0));
       break;
     case 'WOOD': {
       const a = rgbOf(p.woodColor1, [0.56, 0.38, 0.21]);
@@ -1263,7 +1341,22 @@ export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens 
     maskWidth: picture ? APERTURE_SIZE : 0,
     maskHeight: picture ? APERTURE_SIZE : 0,
     mask: picture ?? new Uint8Array(0),
+    ...(filtersOf(o).length > 0 ? { filters: filtersToRsb(filtersOf(o)) } : {}),
   };
+}
+
+/** The LENS filter slots of a camera's filters (O3a): the type's kind, the grade, the tint (zeros: the type's own). */
+export function filtersToRsb(filters: readonly LensFilter[]): RsbLensFilter[] {
+  return filters.slice(0, LENS_FILTER_SLOTS).map((f) => {
+    const type = lensFilterType(f.type);
+    return {
+      kind: type?.kind ?? 0,
+      grade: Math.min(2, Math.max(0, f.grade)),
+      tint: type?.tint && f.tint ? [f.tint[0], f.tint[1], f.tint[2]] : [0, 0, 0],
+      angleDeg: type?.angle ? f.angleDeg : 0,
+      points: type?.points ? (f.points === 4 || f.points === 8 ? f.points : 6) : 0,
+    };
+  });
 }
 
 /** The 3 x 4 rows of a column-major Mat4. */

@@ -41,10 +41,32 @@
 //! background and the lights flagged `camera`. A cut-out pass is not a path vertex (at most
 //! [`MAX_CUTOUTS`] per path); a thin wall is.
 //!
+//! **Scattering media** (E9b, [`medium`]): inside a clear solid whose material has
+//! `scatter_mm`, the path takes a random walk instead of a straight segment, with no light
+//! sampled inside. A walk that did not scatter hands the path to the surface it reached, as clear
+//! glass does; one that scattered leaves through a vertex shaded by the exit lobe
+//! ([`Bsdf::medium_exit`]) instead of the surface's own BSDF: next-event estimation and the next
+//! direction there are those of any surface. A walk does not see lights inside the solid, and its
+//! exit vertex no cut-out or floor.
+//!
+//! **Thin walls around a medium** (E9b, an approximation): a shadow ray from an exit vertex, and
+//! only from one, crosses a smooth clear wall where the light refracting through it would leave
+//! it within [`WALL_MAX_MM`] by a face within 15° of the first, as if the two refractions
+//! cancelled: it keeps the Fresnel transmittance in and out and the wall's absorption over that
+//! path, and goes on in its own direction from the far face; a thicker, rougher or coated wall
+//! still stops it (a liquid in a glass bottle sees the lights through the bottle's side). For multiple importance sampling, a BSDF sample of the exit vertex that
+//! refracts in and out of such a wall is one straight event of that vertex (it keeps its density
+//! and its distance), so a light it finds behind the wall is weighted against those shadow rays.
+//! With caustics, light of photon lights through a wall is the photon map's, as through any
+//! caster.
+//!
 //! **Anisotropy**: the shading frame's tangent runs around the instance's local Z axis through
 //! the centre of its mesh's bounds (Blender's default radial tangent, which the recipes' brushed
 //! metals were tuned with), projected onto the tangent plane; where that degenerates, the
 //! instance's X axis; then any.
+
+pub mod dispersion;
+pub mod medium;
 
 use crate::bevel::BevelSetup;
 use crate::bitmap::Image;
@@ -57,8 +79,8 @@ use crate::light::{Lights, Scattered};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::pattern::{PatternSetup, Tint};
 use crate::sampler::{
-    bounce_dim, cutout_dim, PixelSampler, OFFSET_BSDF, OFFSET_LIGHT, OFFSET_LIGHT_SELECT,
-    OFFSET_ROULETTE,
+    bounce_dim, cutout_dim, PixelSampler, DIM_DISPERSION, OFFSET_BSDF, OFFSET_LIGHT,
+    OFFSET_LIGHT_SELECT, OFFSET_ROULETTE,
 };
 use crate::scene::{
     Background, FloorMode, Material, Scene, BACKPLATE_FIT, BACKPLATE_STRETCH, INSTANCE_ONE_SIDED,
@@ -72,6 +94,12 @@ pub const MAX_CUTOUTS: u32 = 64;
 /// Most surfaces a shadow ray crosses through thin walls and cut-outs before it counts as
 /// blocked.
 pub const MAX_SHADOW_CROSSINGS: u32 = 32;
+/// Thickest wall (along the shadow ray) that a shadow ray from a medium's exit vertex crosses, mm.
+pub const WALL_MAX_MM: f32 = 5.0;
+/// Least cosine between the normals of the two faces of such a wall (15°).
+pub const WALL_MIN_COS: f32 = 0.965_925_8;
+/// Roughest such wall.
+pub const WALL_MAX_ROUGHNESS: f32 = 0.05;
 
 /// Nearest-hit and shadow queries against the scene geometry. The particles of the ambient
 /// effects (S4a) are seen by each kind of ray as their flags say ([`RayClass`]); a tracer that
@@ -190,8 +218,18 @@ pub struct Prepared {
     /// Per instance: shadow rays may pass it (a cut-out or a thin wall).
     passable: Vec<bool>,
     any_passable: bool,
-    /// Per material: the absorption coefficients per millimetre of its inside, if any.
+    /// Per material: the absorption coefficients per millimetre of its inside, if any (none for
+    /// a scattering medium, which absorbs as it walks).
     pub(crate) media: Vec<Option<Rgb>>,
+    /// Per material: the scattering medium of its inside, if any (E9b).
+    pub(crate) scattering: Vec<Option<medium::ScatterMedium>>,
+    /// Per material: a wall that shadow rays from a medium's exit vertex may cross (E9b).
+    walls: Vec<bool>,
+    /// The walks leave through the surface's own BSDF instead of the exit lobe (tests: the exact
+    /// boundary, [`medium::WalkPath::exact`]).
+    pub(crate) exact_media: bool,
+    /// Shadow rays from exit vertices cross thin walls (always, but for the tests' reference).
+    pub(crate) exit_walls: bool,
     /// Per instance with an anisotropic material: the world centre and axis of its tangents.
     tangent_axes: Vec<Option<(Vec3, Vec3, Vec3)>>,
     /// The caustics of the scene (`RNDR.caustic_photons` above zero and something to focus
@@ -201,6 +239,18 @@ pub struct Prepared {
     pub(crate) bevel: BevelSetup,
     /// The procedural pattern of every instance ([`crate::pattern`], E6).
     pub(crate) patterns: PatternSetup,
+}
+
+/// True when a shadow ray from a medium's exit vertex may cross a solid of `m` (E9b): smooth,
+/// wholly clear glass without a medium of its own, a coat or a cut-out.
+fn is_wall(m: &Material) -> bool {
+    medium::is_clear_solid(m)
+        && medium::of(m).is_none()
+        && (m.kind == crate::scene::MATERIAL_GLASS || m.metallic <= 0.0)
+        && m.transmission >= 1.0
+        && m.roughness <= WALL_MAX_ROUGHNESS
+        && m.coat <= 0.0
+        && m.opacity >= 1.0
 }
 
 /// Absorption coefficients (per millimetre) of a clear material with an absorption distance.
@@ -300,7 +350,15 @@ impl Prepared {
             fallback: Material::default(),
             any_passable: passable.iter().any(|&p| p),
             passable,
-            media: scene.materials.iter().map(medium_of).collect(),
+            media: scene
+                .materials
+                .iter()
+                .map(|m| medium::of(m).map_or_else(|| medium_of(m), |_| None))
+                .collect(),
+            scattering: scene.materials.iter().map(medium::of).collect(),
+            walls: scene.materials.iter().map(is_wall).collect(),
+            exact_media: false,
+            exit_walls: true,
             tangent_axes,
             caustics,
             bevel: BevelSetup::new(scene),
@@ -336,6 +394,14 @@ impl Prepared {
         } else {
             f32::INFINITY
         }
+    }
+
+    /// The scattering medium inside a solid of instance `i`, if any. The particles of the ambient
+    /// effects (S4a), whose hits report indices past the instances, never hold one: a drop, a
+    /// bubble or a mote is crossed as clear glass, or absorbs.
+    fn scattering_of(&self, scene: &Scene, i: u32) -> Option<medium::ScatterMedium> {
+        let id = scene.geometry.instances().get(i as usize)?.material_id;
+        self.scattering.get(id as usize).copied().flatten()
     }
 
     /// The material of instance `i` (or of the particle set whose hits report `i`).
@@ -456,6 +522,127 @@ impl Prepared {
         }
         let (keep, blocker) = self.walk(scene, tracer, ray);
         (blocker == f32::INFINITY && peak(keep) > 0.0).then_some(keep)
+    }
+
+    /// The shadow test of a medium's exit vertex (E9b): [`Prepared::shadow`], and the ray also
+    /// crosses thin smooth walls ([`Prepared::far_face`]) as if the two refractions cancelled,
+    /// keeping the Fresnel transmittance in and out and the wall's absorption over the refracted
+    /// path inside (its tint at each face without an absorption distance), and going on in its
+    /// own direction from the far face. Also says whether it crossed a wall.
+    fn shadow_from_exit<T: Tracer>(
+        &self,
+        scene: &Scene,
+        tracer: &T,
+        ray: &Ray,
+    ) -> Option<(Rgb, bool)> {
+        let floor = if self.floor_mode == FloorMode::Visible {
+            self.floor_t(ray, false)
+        } else {
+            f32::INFINITY
+        };
+        let mut keep = Rgb::WHITE;
+        let mut r = *ray;
+        let mut travelled = 0.0f32;
+        let mut walls = false;
+        for _ in 0..MAX_SHADOW_CROSSINGS {
+            // The particles that cast shadows (S4a), as for any shadow ray.
+            let Some(hit) = tracer.trace_shadow(&r) else {
+                return (floor == f32::INFINITY && peak(keep) > 0.0).then_some((keep, walls));
+            };
+            if travelled + hit.t >= floor {
+                return None;
+            }
+            let details = scene.geometry.hit_details(&r, hit)?;
+            // A particle's own tint and thinness.
+            let own = self.particle_material(scene, hit.instance, hit.triangle);
+            let m = match &own {
+                Some(m) => m,
+                None => self.material(scene, hit.instance),
+            };
+            let n = details.geometric_normal;
+            let next_origin = if self
+                .passable
+                .get(hit.instance as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                let opacity = m.opacity.clamp(0.0, 1.0);
+                let through = Bsdf::principled(m).straight_transmittance(n.dot(r.dir)) * opacity
+                    + Rgb::splat(1.0 - opacity);
+                keep = keep * through;
+                offset_origin(details.point, -n)
+            } else {
+                if !details.outside {
+                    return None;
+                }
+                let id = self.material_id(scene, hit.instance)?;
+                let (t, far, n2, out) =
+                    self.far_face(scene, tracer, hit.instance, details.point, n, r.dir)?;
+                let into = 1.0 - crate::bsdf::fresnel_dielectric(-r.dir.dot(n), m.ior);
+                let tint = if m.absorption_mm > 0.0 {
+                    self.media
+                        .get(id)
+                        .copied()
+                        .flatten()
+                        .map_or(Rgb::WHITE, |sigma| beer_lambert(sigma, t))
+                } else {
+                    m.base_color.map(|c| c.clamp(0.0, 1.0))
+                };
+                keep = keep * tint * (into * out);
+                walls = true;
+                offset_origin(far, -n2)
+            };
+            if peak(keep) <= 0.0 {
+                return None;
+            }
+            travelled += (next_origin - r.origin).dot(r.dir);
+            let mut next = Ray::new(next_origin, r.dir);
+            next.t_max = ray.t_max - travelled;
+            if next.t_max.is_nan() || next.t_max <= next.t_min {
+                return Some((keep, walls));
+            }
+            r = next;
+        }
+        None
+    }
+
+    /// Where light arriving along `dir` at `point` (on the outside of instance `i`, facing
+    /// normal `n`) and refracting into it leaves it again, if `i` is a thin wall for exit
+    /// vertices: the length of that path inside, the far point, the far face's facing normal and
+    /// the Fresnel transmittance out of it. The far face must be within [`WALL_MAX_MM`] and its
+    /// normal within 15° of the near one's.
+    fn far_face<T: Tracer>(
+        &self,
+        scene: &Scene,
+        tracer: &T,
+        i: u32,
+        point: Vec3,
+        n: Vec3,
+        dir: Vec3,
+    ) -> Option<(f32, Vec3, Vec3, f32)> {
+        let id = self.material_id(scene, i)?;
+        if !(self.exit_walls && self.walls[id]) {
+            return None;
+        }
+        let ior = scene.materials[id].ior;
+        let inside = crate::bsdf::refract(-dir, n, ior)?;
+        let mut inner = Ray::new(offset_origin(point, -n), inside);
+        inner.t_max = WALL_MAX_MM;
+        let hit = tracer.trace_shadow(&inner)?;
+        let back = scene.geometry.hit_details(&inner, hit)?;
+        let n2 = back.geometric_normal;
+        if hit.instance != i || back.outside || n.dot(n2) < WALL_MIN_COS {
+            return None;
+        }
+        let out = 1.0 - crate::bsdf::fresnel_dielectric(-inside.dot(n2), 1.0 / ior);
+        Some((hit.t, back.point, n2, out))
+    }
+
+    /// The material index of instance `i`, if it has one in range (none for a particle set: a
+    /// particle is never a wall for exit vertices).
+    fn material_id(&self, scene: &Scene, i: u32) -> Option<usize> {
+        let id = scene.geometry.instances().get(i as usize)?.material_id as usize;
+        (id < scene.materials.len()).then_some(id)
     }
 
     /// The shading frame of instance `instance` at `point` with shading normal `n`.
@@ -690,7 +877,30 @@ pub fn radiance_with<T: Tracer>(
     photons: Option<&PhotonMap>,
     rays: &mut u64,
 ) -> (Rgb, f32) {
+    radiance_weighted(
+        scene, prepared, tracer, sampler, camera_ray, screen, photons, None, rays,
+    )
+}
+
+/// [`radiance_with`] where the camera lights the camera ray crosses before it meets anything
+/// count `camera_lights(i)` times (O3a: the weight of a sample the lens's filters scattered,
+/// against their connection to light `i` of [`crate::light::Lights::camera_lights`]); `None` is
+/// exactly [`radiance_with`].
+#[allow(clippy::too_many_arguments)]
+pub fn radiance_weighted<T: Tracer>(
+    scene: &Scene,
+    prepared: &Prepared,
+    tracer: &T,
+    sampler: &PixelSampler,
+    camera_ray: Ray,
+    screen: (f32, f32),
+    photons: Option<&PhotonMap>,
+    camera_lights: Option<&dyn Fn(usize) -> f32>,
+    rays: &mut u64,
+) -> (Rgb, f32) {
     let lights = &prepared.lights;
+    // The first segment of the camera ray (until it meets anything), where `camera_lights` applies.
+    let mut first = true;
     let caustics = photons.zip(prepared.caustics.as_ref());
     let mut state = CausticState::Eye;
     let mut ray = camera_ray;
@@ -710,18 +920,68 @@ pub fn radiance_with<T: Tracer>(
     let mut offset = 0.0f32;
     // Absorption coefficients of the solid the ray is inside.
     let mut medium: Option<Rgb> = None;
+    // The scattering medium of the solid the ray is inside (E9b), and the steps its walks took.
+    let mut scatter: Option<medium::ScatterMedium> = None;
+    let mut medium_events = 0u32;
+    // Since the last exit vertex, through nothing but the walls its shadow rays cross: its BSDF
+    // density and its light selection (E12); and the wall the path is inside, with the distance
+    // from that vertex (E9b).
+    let mut exit_pdf: Option<(f32, crate::light::Selection)> = None;
+    let mut wall: Option<(u32, f32)> = None;
+    // The wavelength the path carries since its first dispersive glass (E9c).
+    let mut band: Option<dispersion::Band> = None;
     let mut cutouts = 0u32;
     // The weight of the widened particles a camera ray went through or shaded (their coverage).
     let mut alpha_weight = 1.0f32;
     loop {
-        *rays += 1;
-        let hit = if primary {
-            tracer.trace_camera(&ray)
-        } else {
-            tracer.trace(&ray)
+        // After a walk that scattered: the exit lobe's albedo at the surface it reached.
+        let mut exit: Option<f32> = None;
+        let hit = match scatter {
+            None => {
+                *rays += 1;
+                if primary {
+                    tracer.trace_camera(&ray)
+                } else {
+                    tracer.trace(&ray)
+                }
+            }
+            Some(sm) => {
+                let end = medium::walk(
+                    scene,
+                    tracer,
+                    sampler,
+                    &sm,
+                    medium::WalkPath {
+                        ray: &mut ray,
+                        throughput: &mut throughput,
+                        events: &mut medium_events,
+                        rays: &mut *rays,
+                        bounce,
+                        exact: prepared.exact_media,
+                    },
+                );
+                match end {
+                    medium::WalkEnd::Absorbed => break,
+                    medium::WalkEnd::Escaped => None,
+                    medium::WalkEnd::Crossed { hit } => Some(hit),
+                    medium::WalkEnd::Exit { hit, eta2, pdf } => {
+                        // The last event is the vertex the ray left from.
+                        scatter = None;
+                        exit = Some(eta2);
+                        bsdf_pdf = Some(pdf);
+                        primary = false;
+                        offset = 0.0;
+                        Some(hit)
+                    }
+                }
+            }
         };
         let t_geometry = hit.map_or(f32::INFINITY, |h| h.t);
-        let t_floor = prepared.floor_t(&ray, primary);
+        let t_floor = if exit.is_some() {
+            f32::INFINITY
+        } else {
+            prepared.floor_t(&ray, primary)
+        };
         let t_nearest = t_geometry.min(t_floor);
 
         if let Some(sigma) = medium {
@@ -739,11 +999,16 @@ pub fn radiance_with<T: Tracer>(
         // photon map brings their light here: every area light a BSDF-sampled ray sees sends
         // photons; point lights and spots do not).
         let dropped = caustics.is_some() && state.photons_bring_it();
-        let crossed = if dropped {
-            lights.crossed_without_photons(&ray, t_nearest, scattered, offset)
-        } else {
-            lights.crossed_from(&ray, t_nearest, scattered, offset)
+        let crossed = match camera_lights {
+            // After a walk, the segment to its exit vertex crosses no light.
+            _ if exit.is_some() => Rgb::BLACK,
+            Some(weight) if first && !dropped => {
+                lights.crossed_camera_weighted(&ray, t_nearest, weight)
+            }
+            _ if dropped => lights.crossed_without_photons(&ray, t_nearest, scattered, offset),
+            _ => lights.crossed_from(&ray, t_nearest, scattered, offset),
         };
+        first = false;
         prepared.add(&mut sum, throughput * crossed, bounce >= 2);
 
         if t_nearest == f32::INFINITY {
@@ -801,7 +1066,7 @@ pub fn radiance_with<T: Tracer>(
             // with probability q, weighted by its real share of the widened area over q, or goes
             // on through it, weighted by the rest over 1 - q, to see what is behind; on average
             // the pixel gets exactly the particle's share and the background's.
-            if let Some((coverage, exit)) = hit
+            if let Some((coverage, beyond)) = hit
                 .filter(|_| primary)
                 .and_then(|h| scene.geometry.widened_hit(&ray, &h))
             {
@@ -815,7 +1080,7 @@ pub fn radiance_with<T: Tracer>(
                         let through = (1.0 - coverage) / (1.0 - q);
                         throughput = throughput * through;
                         alpha_weight *= through;
-                        ray.t_min = exit * (1.0 + 1.0e-6) + Ray::EPSILON;
+                        ray.t_min = beyond * (1.0 + 1.0e-6) + Ray::EPSILON;
                         continue;
                     }
                 } else {
@@ -876,13 +1141,16 @@ pub fn radiance_with<T: Tracer>(
                 break;
             }
             // A cut-out lets the ray through with probability 1 - opacity.
-            if m.opacity < 1.0 && cutouts < MAX_CUTOUTS {
+            if m.opacity < 1.0 && cutouts < MAX_CUTOUTS && exit.is_none() {
                 let u = sampler.get1(cutout_dim(bounce, cutouts));
                 cutouts += 1;
                 if u >= m.opacity.max(0.0) {
                     let origin = offset_origin(surface.hit_point, -surface.geometric);
                     offset += (origin - ray.origin).dot(ray.dir);
                     ray = Ray::new(origin, ray.dir);
+                    if !surface.outside {
+                        scatter = None; // out of a scattering solid through a cut-out
+                    }
                     continue;
                 }
             }
@@ -892,7 +1160,24 @@ pub fn radiance_with<T: Tracer>(
             break;
         }
 
-        let bsdf = material.map_or(prepared.floor_bsdf, |m| Bsdf::surface(m, surface.outside));
+        let bsdf = match (exit, material) {
+            (Some(eta2), _) => Bsdf::medium_exit(eta2),
+            (None, Some(m)) if dispersion::is_dispersive(m) => {
+                // The first dispersive glass chooses the path's wavelength (E9c).
+                let b = match band {
+                    Some(b) => b,
+                    None => {
+                        let b = dispersion::Band::choose(sampler.get1(DIM_DISPERSION));
+                        throughput = b.mask(throughput);
+                        band = Some(b);
+                        b
+                    }
+                };
+                Bsdf::surface_at(m, surface.outside, b.index(m))
+            }
+            (None, Some(m)) => Bsdf::surface(m, surface.outside),
+            (None, None) => prepared.floor_bsdf,
+        };
         // A pattern that stretches the roughness along its grain gives the frame its tangent.
         let frame = surface
             .tint
@@ -919,15 +1204,14 @@ pub fn radiance_with<T: Tracer>(
                 .is_some_and(|(i, _)| setup.is_caster_instance(i));
             if !caster {
                 let budget = prepared.max_depth.saturating_sub(bounce + 1);
-                let c = gather_at(
-                    map,
-                    &bsdf,
-                    &frame,
-                    wo,
-                    surface.hit_point,
-                    surface.geometric,
-                    budget,
-                );
+                // A medium's exit vertex gathers the photons on the outside of its surface,
+                // where its lobe looks (E9b).
+                let side = if exit.is_some() {
+                    -surface.geometric
+                } else {
+                    surface.geometric
+                };
+                let c = gather_at(map, &bsdf, &frame, wo, surface.hit_point, side, budget);
                 prepared.add(&mut sum, throughput * c, state != CausticState::Eye);
             }
             next_state = state.after(caster);
@@ -960,11 +1244,19 @@ pub fn radiance_with<T: Tracer>(
                     origin
                 };
                 // A light that casts no shadow (L4) arrives whatever is in the way.
-                let arrives = if ls.shadow {
+                let arrives = if !ls.shadow {
+                    Some(Rgb::WHITE)
+                } else if exit.is_some() {
+                    // From a medium's exit, through thin walls too (with caustics, what a
+                    // photon light sends through a wall is the map's).
+                    *rays += 1;
+                    prepared
+                        .shadow_from_exit(scene, tracer, &shadow_ray(from, ls.wi, ls.distance))
+                        .filter(|&(_, walls)| !(walls && ls.photon && caustics.is_some()))
+                        .map(|(pass, _)| pass)
+                } else {
                     *rays += 1;
                     prepared.shadow(scene, tracer, &shadow_ray(from, ls.wi, ls.distance))
-                } else {
-                    Some(Rgb::WHITE)
                 };
                 if let Some(pass) = arrives {
                     let weight = if ls.delta || !ls.glossy {
@@ -1017,11 +1309,49 @@ pub fn radiance_with<T: Tracer>(
         if bs.straight {
             offset += (next_origin - ray.origin).dot(ray.dir);
         } else {
+            // From the last real vertex to this one.
+            let distance = offset + t_geometry;
             bsdf_pdf = Some(bs.pdf);
             sampled_at = selection;
             primary = false;
             offset = 0.0;
             state = next_state;
+            // E9b: a BSDF sample of an exit vertex that crosses a thin wall in and out is, for
+            // multiple importance sampling, one straight event of that vertex, as its shadow rays
+            // cross the wall.
+            let (mut next_exit, mut next_wall) = (None, None);
+            if exit.is_some() {
+                next_exit = Some((bs.pdf, selection));
+            } else if let (Some((pdf, from)), Some((i, _)), true) =
+                (exit_pdf, surface.instance, transmitted)
+            {
+                match wall {
+                    // Into a wall the shadow rays along this direction would cross (the same
+                    // test as theirs, on the straight ray).
+                    None if surface.outside => {
+                        *rays += 1;
+                        let ng = surface.geometric;
+                        if prepared
+                            .far_face(scene, tracer, i, surface.hit_point, ng, ray.dir)
+                            .is_some()
+                        {
+                            next_exit = Some((pdf, from));
+                            next_wall = Some((i, distance));
+                        }
+                    }
+                    // Out of it: the pair is one straight event of the exit vertex, with its
+                    // density and the light selection its next-event estimation used.
+                    Some((w, before)) if w == i && !surface.outside => {
+                        bsdf_pdf = Some(pdf);
+                        sampled_at = from;
+                        offset = before + distance;
+                        next_exit = Some((pdf, from));
+                    }
+                    _ => {}
+                }
+            }
+            exit_pdf = next_exit;
+            wall = next_wall;
             if transmitted {
                 // Into the solid, or out of it.
                 medium = if surface.outside {
@@ -1030,6 +1360,13 @@ pub fn radiance_with<T: Tracer>(
                             .instance
                             .and_then(|(i, _)| prepared.medium_inside(scene, i))
                     })
+                } else {
+                    None
+                };
+                scatter = if surface.outside {
+                    surface
+                        .instance
+                        .and_then(|(i, _)| prepared.scattering_of(scene, i))
                 } else {
                     None
                 };

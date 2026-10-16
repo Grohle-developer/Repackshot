@@ -183,7 +183,8 @@ twice (0: off).
   distance; the lens point from the concentric disk map) or orthographic. Box pixel filter (a
   Gaussian or Blackman-Harris filter can replace it by weighting splats).
 * **Materials** (`bsdf`), `MATL.kind`: **0 principled**: Lambert diffuse weighted by
-  `(1 - F(μo))(1 - F(μi))`, GGX specular with height-correlated Smith masking (Heitz 2014),
+  `(1 - E_s(μo))(1 - E_s(μi)) / (1 - E_s,avg)` (E9a, Kulla and Conty 2017: `E_s` the albedo of
+  the specular layer above it; jointly normalised with the coat's under a coat), GGX specular with height-correlated Smith masking (Heitz 2014),
   sampled by its visible normals (Heitz 2018), `α = roughness²`, Schlick Fresnel with
   `F0 = ((ior - 1)/(ior + 1))²` for the dielectric and `base_color` for the metal, blended by
   `metallic`, `F90 = min(1, 50 F0)` (Lagarde and de Rousiers 2014: an `ior` of 1 has no
@@ -202,9 +203,43 @@ twice (0: off).
   the lights per shading point (below) and inside the instance by triangle area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
   `src/core/photometry.ts`, the factor the preview has used since U1: the catalogue's watts are
   a level, not a flux) and `emission` the black body's colour at its temperature (normalised to
-  its largest channel) or the colour given (`emitKind`). Single-scattering GGX loses energy when
-  rough (a white metal at roughness 1 reflects `1 - ln 2` head on; glass at roughness 1 keeps
-  as little as 42 % of the light from inside, at worst); it never gains any.
+  its largest channel) or the colour given (`emitKind`). **Energy compensation** (E9a,
+  `bsdf::energy`): single-scattering GGX loses the light that bounces between microfacets (a white
+  metal at roughness 1 reflected 0.356 in a furnace); the specular lobe and the coat get Kulla and
+  Conty's extra lobe `F_ms (1 - E(μo))(1 - E(μi)) / (π (1 - E_avg))`, cosine-sampled, and the
+  clear part is divided by its own power albedo (Turquin 2019), from our own Monte Carlo tables
+  (`bsdf/energy_table.rs`, 32 × 32 nodes, regenerated bit for bit by a test). White metal, glass
+  and plastic, bare or coated, come out white within 1 % in a furnace at any roughness;
+  roughness 0 keeps every bit except the plastic's diffuse, which no longer loses `F_avg`.
+* **Scattering media** (E9b, `integrator::medium`): a clear solid with `MATL.scatter_mm` is
+  filled with a homogeneous medium (mean free path `scatter_mm`, single-scattering albedo
+  `scatter_color`, Henyey–Greenstein `scatter_g`, plus the absorption of `absorption_mm`). The
+  path takes a random walk inside (Chiang, Kutz and Burley 2016): hero-channel distance sampling
+  with spectral MIS over the three channels, Russian roulette after 32 events on the walk's own
+  weight (what it lost since it entered), no light sampled inside. At the boundary the Fresnel of
+  leaving reflects the walk back in (total internal reflection included) or lets it out through
+  an exit vertex: a Lambertian transmission lobe of albedo `η²` where the integrator samples a
+  light with MIS and continues by the cosine. At most 1024 steps per path, after which the walk
+  goes straight out keeping all but absorption. Its random numbers are hashed dimensions beyond
+  the Sobol table, so scenes without media keep every bit. A medium is a receiver for the photon
+  map; its exit vertices gather the photons on the outside of its surface. **Thin walls** (an
+  approximation): a shadow ray from an exit vertex, and only from one, crosses smooth clear glass
+  where light refracting through it would leave within 5 mm by a face within 15° of the first,
+  as if the refractions cancelled (the Fresnel transmittances in and out and the absorption over
+  that path; 2.0 % darker than the exact path under a 3 mm plate), and the exit
+  vertex's BSDF samples through such a wall count as straight events for MIS: a liquid in a glass
+  bottle sees the lights through the bottle's side.
+* **Dispersion** (E9c, `integrator::dispersion`): a clear solid without a medium and with
+  `MATL.abbe > 0` refracts each wavelength with its own index, Cauchy's `A + B / λ²` through `ior`
+  at the helium d line (587.6 nm) and the Abbe number `(n_d - 1) / (n_F - n_C)`. Each channel is
+  a band of wavelengths (red 580–700, green 490–580, blue 400–490 nm); at its first dispersive
+  surface a path picks a channel (probability ⅓) and a wavelength uniformly in its band from one
+  hashed dimension of its own (`sampler::DIM_DISPERSION`), carries that channel alone times 3
+  from then on and refracts at that wavelength at every dispersive surface; photons do the same
+  with their own generator. Paths that meet no dispersive glass stay white, so scenes without
+  one keep every bit. `PINNED_E9_MEDIA_4SPP` (`0x5b5ea281` since E9 and E12 met, `rt --write-e9-example`: the E5
+  scene with a medium in its big sphere and a crystal sphere of Abbe number 40) holds on every
+  SIMD path, in WASI, through the real module and with 1, 4 and 16 threads.
 * **Dielectrics in the integrator** (E5): a path keeps track of the solid it is in (the hit side
   of a closed mesh) and attenuates by Beer–Lambert along each segment inside. Thin walls and
   cut-outs are *passable*: their straight-through events keep the last vertex's BSDF density and
@@ -318,7 +353,7 @@ exponentials. `f32` only, a fixed order: the same bits natively and in WebAssemb
 RGBA sums out (coverage as it was). `denoise_rows` computes a band of rows from the rows and
 `HALO` = 72 rows around them, exactly those rows of the whole image: `rt`, the launcher and the
 page cut the work in bands (of at least 192 rows) on their threads or workers.
-`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0x9ef7c8a0`) is the
+`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0x2a430f92` since E9 and E12 met) is the
 example at 4 spp denoised; `tools/wasm-parity.mjs --expect-denoised` checks the real module
 against it. On the sheet's scenes the relative MSE against a long render falls to 4–20 % of the
 noisy image's at 4 spp and to 10–40 % at 16 spp (`rt-cli/tests/example.rs` checks the bound).
@@ -353,7 +388,7 @@ stream per (seed, sample, photon): a map is the same bits however its photons ar
 all their threads and every web worker traces the maps of the samples it renders (keeping 16).
 The shadow catcher (the interface's floor) gets the caustics too: photons land on its plane, and a
 camera ray that sees it adds their light relative to the open floor's to the background it shows
-(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x5419866e`, the E5 scene with
+(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x7135df4b` since E9 and E12 met, the E5 scene with
 2048 photons per sample, `rt --write-e5b-example`) holds on every SIMD path, in WASI, through
 the real module and through the launcher with 1, 4 and 16 threads.
 
@@ -530,7 +565,10 @@ none). O1 added `LENS` (optional, right after `CAMR`): the optics of the camera 
 (`rt_core::optics`: iris blades, roundness and rotation, an aperture mask or a pupil texture
 sampled through its 2-D CDF, the pupil's radial profile, a central obstruction, cat's eye, an
 anamorphic squeeze, lens shift and a Scheimpflug tilt, artistic chromatic bands and swirl); a file
-without it renders exactly as before. The exact field layout and the semantics
+without it renders exactly as before. O3a appended the lens's three effect-filter slots (28 bytes
+each, written only when there are filters). E9 appended to `MATL` (100 bytes) `bevel_mm` (reserved
+for E6: read and kept, written 0), `scatter_mm`, `scatter_color` (three floats), `scatter_g` and
+`abbe` (the Abbe number of solid glass, E9c). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -564,7 +602,15 @@ byte for byte.
   their exact density (concentric disc, fans of straight or curved blades, 2-D CDFs of masks and
   textures), radial profiles, obstruction, cat's eye, anamorphic squeeze, shift and Scheimpflug
   tilt, chromatic bands stratified per pixel (`PixelSampler::stratum`, `DIM_LENS_BAND`) and
-  swirl; the O1 parity scene (`rt --write-o1-example`). Next: the traced lens (O2).
+  swirl; the O1 parity scene (`rt --write-o1-example`).
+* **O3a**: effect filters on the lens (`rt_core::optics::filters`): diffusion (white, black,
+  gold), glimmer, soft, net, star and streak as scattering of the camera ray at the pupil, with
+  tabulated inverse CDFs of their angular PSFs, and a connection of each camera sample to a light
+  the camera sees through the filter's PSF, weighted against the scattering with the balance
+  heuristic lobe by lobe; a stack of three per camera; the O3a parity scene
+  (`rt --write-o3a-example`), the filter sheet (`rt --filter-sheet`) and the measurement of the
+  noise the filters add with and without the connections (`rt --filter-noise`). Next: the traced
+  lens (O2).
 
 ## Third-party data
 

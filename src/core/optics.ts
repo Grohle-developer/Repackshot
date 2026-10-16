@@ -1,9 +1,23 @@
 // A camera's optics beyond the plain thin lens (phase O1, STUDIO-TOOLS §1 mode 1): the bokeh of the
-// enhanced thin lens, tilt and shift. What the engine does with it is rt-core `optics` (the RSB `LENS`
+// enhanced thin lens, tilt and shift, and the effect filters in front of the lens (phase O3a). What the engine does with it is rt-core `optics` (the RSB `LENS`
 // section, written by io/rsb.ts); this module is the project's side: the fields, the neutral optics (a
 // camera without them renders exactly as before O1), the parameters of a bokeh type, and the limits.
 
 import { BOKEH_NEUTRAL, bokehParams, bokehType, type BokehThin, type PupilProfile } from '../data/bokeh';
+import { LENS_FILTER_GRADES, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../data/lens-filters';
+
+/** One effect filter in front of the lens (O3a; data/lens-filters.ts). */
+export interface LensFilter {
+  type: LensFilterKey;
+  /** Grade, one of LENS_FILTER_GRADES (1/8 to 2). */
+  grade: number;
+  /** Tint of the scattered light (gold, net, streak); null: the type's own. */
+  tint: [number, number, number] | null;
+  /** Star and streak: the angle of the first line from the horizontal, degrees; net: of its axes. */
+  angleDeg: number;
+  /** Star: 4, 6 or 8 points. */
+  points: number;
+}
 
 /** The optics of a camera (CameraState.optics; absent on cameras made before O1, which are the neutral optics). */
 export interface CameraOptics extends BokehThin {
@@ -17,6 +31,8 @@ export interface CameraOptics extends BokehThin {
   /** Lens tilt, degrees, about an axis in the sensor plane `tiltAxisDeg` from the horizontal: the focus plane turns (Scheimpflug). */
   tiltDeg: number;
   tiltAxisDeg: number;
+  /** O3a: the effect filters in front of the lens, in order, at most MAX_LENS_FILTERS (absent before O3a: none). */
+  filters?: LensFilter[];
 }
 
 /** The plain thin lens: what a camera without optics is. */
@@ -38,6 +54,39 @@ export const OPTICS_LIMITS = {
   tiltDeg: { min: -12, max: 12 },
   shiftMm: { min: -24, max: 24 },
 } as const;
+
+/** A new filter of `type` with its defaults: grade 1/2, the type's tint, six points at 0°. */
+export function newLensFilter(type: LensFilterKey): LensFilter {
+  return { type, grade: 0.5, tint: null, angleDeg: 0, points: 6 };
+}
+
+/** A filter of a project file within the engine's limits, or null when it is not one. */
+export function normalizeLensFilter(f: unknown): LensFilter | null {
+  const r = (typeof f === 'object' && f !== null ? f : {}) as Partial<Record<keyof LensFilter, unknown>>;
+  const type = typeof r.type === 'string' ? lensFilterType(r.type) : undefined;
+  if (!type) return null;
+  const grade = typeof r.grade === 'number' && Number.isFinite(r.grade) ? Math.min(2, Math.max(0, r.grade)) : 0.5;
+  const tint =
+    Array.isArray(r.tint) && r.tint.length === 3 && r.tint.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0) && r.tint.some((v) => (v as number) > 0)
+      ? (r.tint.map((v) => Math.min(4, v as number)) as [number, number, number])
+      : null;
+  const angleDeg = typeof r.angleDeg === 'number' && Number.isFinite(r.angleDeg) ? Math.min(360, Math.max(-360, r.angleDeg)) : 0;
+  const points = STAR_POINTS.includes(r.points as number) ? (r.points as number) : 6;
+  return { type: type.key, grade, tint, angleDeg, points };
+}
+
+/** The filters of optics (none before O3a). */
+export function filtersOf(o: CameraOptics | undefined): LensFilter[] {
+  return o?.filters ?? [];
+}
+
+/** True when a filter scatters something (a grade above 0). */
+export function filterActive(f: LensFilter): boolean {
+  return f.grade > 0 && lensFilterType(f.type) !== undefined;
+}
+
+/** The grades offered, from the weakest. */
+export const FILTER_GRADES: readonly number[] = LENS_FILTER_GRADES;
 
 /** The anamorphic squeezes offered (1 none). */
 export const SQUEEZES: readonly number[] = [1, 1.33, 2];
@@ -80,6 +129,9 @@ export function normalizeOptics(o: unknown): CameraOptics {
     shiftYMm: clamp(r.shiftYMm, OPTICS_LIMITS.shiftMm.min, OPTICS_LIMITS.shiftMm.max, n.shiftYMm),
     tiltDeg: clamp(r.tiltDeg, OPTICS_LIMITS.tiltDeg.min, OPTICS_LIMITS.tiltDeg.max, n.tiltDeg),
     tiltAxisDeg: clamp(r.tiltAxisDeg, -360, 360, n.tiltAxisDeg),
+    ...(Array.isArray(r.filters)
+      ? { filters: r.filters.map(normalizeLensFilter).filter((f): f is LensFilter => f !== null).slice(0, MAX_LENS_FILTERS) }
+      : {}),
   };
 }
 
@@ -99,7 +151,8 @@ export function isNeutralOptics(o: CameraOptics | undefined): boolean {
     o.swirl === 0 &&
     o.shiftXMm === n.shiftXMm &&
     o.shiftYMm === n.shiftYMm &&
-    o.tiltDeg === 0
+    o.tiltDeg === 0 &&
+    !filtersOf(o).some(filterActive)
   );
 }
 

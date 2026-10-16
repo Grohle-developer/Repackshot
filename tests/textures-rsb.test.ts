@@ -27,8 +27,8 @@ describe('the RSB writer with textures off (until M2b)', () => {
     const b = writeRsb(projectScene(stripped(s), VIEW).scene);
     expect(a).toEqual(b);
     expect(sections(a).map((x) => x.tag)).not.toContain('IMGS');
-    // E5's fields and E6's bevel_mm: the texture block is not written.
-    for (const sec of sections(a)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(76);
+    // E9's MATL (100 bytes: E6's bevel, the medium and the Abbe number), without a texture block.
+    for (const sec of sections(a)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(100);
     expect(projectScene(s, VIEW).meshKey).toBe(projectScene(stripped(s), VIEW).meshKey);
     expect(projectScene(s, VIEW).scene.materials.every((m) => m.textures === undefined)).toBe(true);
   });
@@ -40,7 +40,7 @@ describe('the RSB writer with textures off (until M2b)', () => {
     const off = { ...on, textures: undefined };
     const bytes = writeRsb(off);
     expect(sections(bytes).map((x) => x.tag)).not.toContain('IMGS');
-    for (const sec of sections(bytes)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(76);
+    for (const sec of sections(bytes)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(100);
     expect(bytes).toEqual(writeRsb(projectScene(stripped(s), VIEW).scene));
   });
 });
@@ -87,9 +87,10 @@ describe('the RSB writer with textures on (the contract M2b reads)', () => {
     // The contract: the block starts at byte 100, after E6's bevel_mm and E9's six fields.
     expect(MATL_TEXTURE_OFFSET).toBe(100);
     expect(p.byteLength).toBe(100 + 4 * (1 + 6 * 15 + 3 + 1 + 19));
-    // E6's bevel_mm (bytes 72 to 76) is the material's; E9's fields (76 to 100) are zeros until it writes them.
-    expect(p.getFloat32(72, true)).toBe(Math.fround(scene.materials[0].bevelMm));
-    for (let i = 76; i < 100; i += 4) expect(p.getUint32(i, true)).toBe(0);
+    // Bytes 72 to 100: E6's bevel_mm (the material's) and E9's medium and Abbe number, as for any material.
+    const m = scene.materials[0];
+    const e9 = [m.bevelMm, m.scatterMm, ...m.scatterColor, m.scatterG, m.abbe].map((v) => Math.fround(v));
+    expect([72, 76, 80, 84, 88, 92, 96].map((i) => p.getFloat32(i, true))).toEqual(e9);
     let at = MATL_TEXTURE_OFFSET;
     const u32 = () => {
       const x = p.getUint32(at, true);

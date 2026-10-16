@@ -21,6 +21,8 @@ USAGE:
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --pattern-sheet <dir> --materials <patterns.rsb> [--only wood|cloth] [--samples N]
        [--threads N] [--size WxH]
+    rt --filter-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
+    rt --filter-noise <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
@@ -28,9 +30,12 @@ USAGE:
     rt --write-e6-example <scene.rsb>
     rt --write-e6-patterns-example <scene.rsb>
     rt --write-e6-cloth-example <scene.rsb>
+    rt --write-e9-example <scene.rsb>
+    rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-e11-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
+    rt --write-o3a-example <scene.rsb>
     rt --write-film-thumb <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
@@ -76,7 +81,18 @@ OPTIONS:
                             <dir>/wood-sheet.html and <dir>/cloth-sheet.html (images in
                             <dir>/patterns/)
         --materials <f>     the materials of --pattern-sheet
-        --only <wood|cloth> render one of the two sheets of --pattern-sheet
+        --filter-sheet <dir>
+                            render the perfume bottle through every effect filter of the lens
+                            at three grades, two stacks and none (512x384, 128 spp) into <dir>:
+                            one PNG each and index.json (tools/lens-filters-sheet.mjs)
+        --filter-noise <dir>
+                            measure the noise of the effect filters on the same bottle, with
+                            and without their connections to the lights (192x144, 16 spp, six
+                            seeds; the variance of a pixel between the seeds) into
+                            <dir>/noise.json
+        --only <keys>       with --filter-sheet: only those cells (comma separated), the others
+                            kept in index.json; with --filter-noise, only those filters; with
+                            --pattern-sheet, wood or cloth: only that one of its two sheets
         --write-example <f> write the built-in example scene as an RSB file
         --write-e5-example <f>
                             write the E5 parity scene (glass, cut-outs, anisotropy, HDRI,
@@ -94,6 +110,15 @@ OPTIONS:
                             write the E6 pattern scene (procedural wood) as an RSB file
         --write-e6-cloth-example <f>
                             write the E6 cloth scene (procedural cloth) as an RSB file
+        --write-e9-example <f>
+                            write the E9 parity scene (the E5 scene with a scattering
+                            medium in its big sphere and a dispersive crystal sphere) as
+                            an RSB file
+        --sss-sheet <dir>   render the E9 contact sheet of the scattering media (each
+                            recipe as a sphere, the perfume bottle filled with milk and
+                            juice, with and without the medium, the milk bottle with
+                            caustic photons, at N and 4 N samples, default 64) into
+                            <dir>: sss-sheet.html and sss/*.png
         --write-e11-example <f>
                             write the E11 parity scene (the example with the fine filter and
                             twice the samples on its edges) as an RSB file
@@ -103,6 +128,9 @@ OPTIONS:
         --write-o1-example <f>
                             write the O1 parity scene (the example through a lens with every
                             knob of the enhanced thin lens, and bokeh lights) as an RSB file
+        --write-o3a-example <f>
+                            write the O3a parity scene (the example through a stack of three
+                            effect filters on the lens, and bokeh lights) as an RSB file
         --write-film-thumb <f>
                             write the base scene of the film plugin's recipe thumbnails (the
                             perfume bottle beside the table lamp, 320x200) as an RSB file
@@ -237,6 +265,24 @@ pub enum Command {
         /// Overrides (samples, threads, size).
         options: Options,
     },
+    /// Render the sheet of the effect filters (O3a) into a directory.
+    FilterSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Overrides (samples, threads, size).
+        options: Options,
+        /// Only these cells (`--only key,key`), the others kept from `index.json`.
+        only: Vec<String>,
+    },
+    /// Measure the noise of the effect filters with and without their connections (O3a).
+    FilterNoise {
+        /// Output directory (`noise.json`).
+        dir: PathBuf,
+        /// Overrides (samples, threads, size).
+        options: Options,
+        /// Only these filters (`--only key,key`).
+        only: Vec<String>,
+    },
     /// Write the example scene as an RSB file.
     WriteExample {
         /// RSB file to write.
@@ -272,6 +318,18 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the E9 parity scene (`rt_core::example::e9_scene`) as an RSB file.
+    WriteE9Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Render the E9 contact sheet of the scattering media into a directory.
+    SssSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Samples, threads and size overrides.
+        options: Options,
+    },
     /// Write the E11 parity scene (`rt_core::example::e11_scene`) as an RSB file.
     WriteE11Example {
         /// RSB file to write.
@@ -284,6 +342,11 @@ pub enum Command {
     },
     /// Write the O1 parity scene (`rt_core::example::o1_scene`) as an RSB file.
     WriteO1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the O3a parity scene (`rt_core::example::o3a_scene`) as an RSB file.
+    WriteO3aExample {
         /// RSB file to write.
         path: PathBuf,
     },
@@ -365,14 +428,19 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e6 = None;
     let mut write_e6p = None;
     let mut write_e6cloth = None;
+    let mut write_e9 = None;
+    let mut sss_dir = None;
     let mut write_e11 = None;
     let mut write_ambient = None;
     let mut write_o1 = None;
+    let mut write_o3a = None;
     let mut write_film_thumb = None;
     let mut sheet_dir = None;
     let mut pattern_dir = None;
     let mut pattern_materials = None;
-    let mut pattern_only = None;
+    let mut filter_sheet_dir = None;
+    let mut filter_noise_dir = None;
+    let mut only: Vec<String> = Vec::new();
     let mut tone_table = false;
     let mut options = Options::default();
     let mut it = args.iter();
@@ -453,12 +521,14 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--pattern-sheet" => pattern_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--materials" => pattern_materials = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--sss-sheet" => sss_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--filter-noise" => filter_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--only" => {
-                pattern_only = Some(match value(&mut it, arg)?.as_str() {
-                    "wood" => rt_core::pattern::PATTERN_WOOD,
-                    "cloth" => rt_core::pattern::PATTERN_CLOTH,
-                    other => return Err(format!("--only takes wood or cloth, not {other}")),
-                })
+                only = value(&mut it, arg)?
+                    .split(',')
+                    .map(str::to_string)
+                    .collect()
             }
             "--example" => {
                 if input.replace(Input::Example).is_some() {
@@ -473,11 +543,13 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e6-example" => write_e6 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-patterns-example" => write_e6p = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-cloth-example" => write_e6cloth = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-ambient-example" => {
                 write_ambient = Some(PathBuf::from(value(&mut it, arg)?));
             }
             "--write-o1-example" => write_o1 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-o3a-example" => write_o3a = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-film-thumb" => write_film_thumb = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
@@ -506,15 +578,26 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 "--pattern-sheet renders its own scenes: no scene, -o or --max-seconds".into(),
             );
         }
+        let only = match only.as_slice() {
+            [] => None,
+            [kind] if kind == "wood" => Some(rt_core::pattern::PATTERN_WOOD),
+            [kind] if kind == "cloth" => Some(rt_core::pattern::PATTERN_CLOTH),
+            _ => {
+                return Err(format!(
+                    "--only takes wood or cloth with --pattern-sheet, not {}",
+                    only.join(",")
+                ))
+            }
+        };
         return Ok(Command::PatternSheet {
             dir,
             materials,
-            only: pattern_only,
+            only,
             options,
         });
     }
-    if pattern_materials.is_some() || pattern_only.is_some() {
-        return Err("--materials and --only go with --pattern-sheet".into());
+    if pattern_materials.is_some() {
+        return Err("--materials goes with --pattern-sheet".into());
     }
     if let Some(path) = write_e5 {
         if args.len() != 2 {
@@ -552,6 +635,18 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteE6ClothExample { path });
     }
+    if let Some(path) = write_e9 {
+        if args.len() != 2 {
+            return Err("--write-e9-example takes no other option".into());
+        }
+        return Ok(Command::WriteE9Example { path });
+    }
+    if let Some(dir) = sss_dir {
+        if input.is_some() || output.is_some() {
+            return Err("--sss-sheet renders its own scenes".into());
+        }
+        return Ok(Command::SssSheet { dir, options });
+    }
     if let Some(path) = write_e11 {
         if args.len() != 2 {
             return Err("--write-e11-example takes no other option".into());
@@ -569,6 +664,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-o1-example takes no other option".into());
         }
         return Ok(Command::WriteO1Example { path });
+    }
+    if let Some(path) = write_o3a {
+        if args.len() != 2 {
+            return Err("--write-o3a-example takes no other option".into());
+        }
+        return Ok(Command::WriteO3aExample { path });
     }
     if let Some(path) = write_film_thumb {
         if args.len() != 2 {
@@ -601,6 +702,30 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             );
         }
         return Ok(Command::Sheet { dir, options });
+    }
+    if let Some(dir) = filter_sheet_dir {
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || filter_noise_dir.is_some()
+        {
+            return Err(
+                "--filter-sheet renders its own scenes: no scene, -o, --max-seconds or --filter-noise"
+                    .into(),
+            );
+        }
+        return Ok(Command::FilterSheet { dir, options, only });
+    }
+    if let Some(dir) = filter_noise_dir {
+        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
+            return Err(
+                "--filter-noise renders its own scenes: no scene, -o or --max-seconds".into(),
+            );
+        }
+        return Ok(Command::FilterNoise { dir, options, only });
+    }
+    if !only.is_empty() {
+        return Err("--only goes with --pattern-sheet, --filter-sheet or --filter-noise".into());
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
@@ -666,6 +791,12 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteE9Example { path } => {
+            let bytes = rt_core::example::e9_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteE11Example { path } => {
             let bytes = rt_core::example::e11_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -690,8 +821,30 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::SssSheet { dir, options } => {
+            let size = options.size.unwrap_or(crate::sss_sheet::SIZE);
+            let samples = options.samples.unwrap_or(crate::sss_sheet::SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            let entries = crate::sss_sheet::run(&dir, size, samples, threads)?;
+            for e in &entries {
+                println!(
+                    "{:<36} {:>5} spp {:>8.1} s  mean {:.3}",
+                    e.key, e.samples, e.seconds, e.mean
+                );
+            }
+            println!("wrote {}", dir.join("sss-sheet.html").display());
+            Ok(())
+        }
         Command::WriteO1Example { path } => {
             let bytes = rt_core::example::o1_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteO3aExample { path } => {
+            let bytes = rt_core::example::o3a_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -768,6 +921,43 @@ pub fn run(command: Command) -> Result<(), String> {
                 );
             }
             println!("wrote {}", dir.join("index.html").display());
+            Ok(())
+        }
+        Command::FilterSheet { dir, options, only } => {
+            let size = options
+                .size
+                .unwrap_or(crate::filter_sheet::FILTER_SHEET_SIZE);
+            let samples = options
+                .samples
+                .unwrap_or(crate::filter_sheet::FILTER_SHEET_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "filter sheet: {}x{}, {samples} spp, {threads} threads",
+                size.0, size.1
+            );
+            let n = crate::filter_sheet::run(&dir, size, samples, threads, &only)?;
+            println!("wrote {n} images and {}", dir.join("index.json").display());
+            Ok(())
+        }
+        Command::FilterNoise { dir, options, only } => {
+            use crate::filter_sheet::{noise, NOISE_RUNS, NOISE_SAMPLES, NOISE_SIZE};
+            let size = options.size.unwrap_or(NOISE_SIZE);
+            let samples = options.samples.unwrap_or(NOISE_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "filter noise: {}x{}, {samples} spp, {NOISE_RUNS} seeds, {threads} threads",
+                size.0, size.1
+            );
+            let rows = noise(&dir, size, samples, NOISE_RUNS, threads, &only)?;
+            println!(
+                "wrote {} rows to {}",
+                rows.len(),
+                dir.join("noise.json").display()
+            );
             Ok(())
         }
         Command::Render {
@@ -1172,6 +1362,42 @@ mod tests {
             })
         );
         assert!(parse(&["--write-o1-example", "o1.rsb", "--example"]).is_err());
+        assert_eq!(
+            parse(&["--write-o3a-example", "o3a.rsb"]),
+            Ok(Command::WriteO3aExample {
+                path: "o3a.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-o3a-example", "o3a.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--filter-sheet", "out", "--only", "star--1,none"]),
+            Ok(Command::FilterSheet {
+                dir: "out".into(),
+                options: Options::default(),
+                only: vec!["star--1".into(), "none".into()],
+            })
+        );
+        assert!(parse(&["--example", "-o", "a.png", "--only", "none"]).is_err());
+        assert_eq!(
+            parse(&[
+                "--filter-noise",
+                "out",
+                "--only",
+                "star--1",
+                "--samples",
+                "8"
+            ]),
+            Ok(Command::FilterNoise {
+                dir: "out".into(),
+                options: Options {
+                    samples: Some(8),
+                    ..Options::default()
+                },
+                only: vec!["star--1".into()],
+            })
+        );
+        assert!(parse(&["--filter-noise", "out", "-o", "a.png"]).is_err());
+        assert!(parse(&["--filter-noise", "out", "--filter-sheet", "out"]).is_err());
         assert_eq!(
             parse(&["--write-film-thumb", "t.rsb"]),
             Ok(Command::WriteFilmThumb {

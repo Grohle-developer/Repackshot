@@ -329,11 +329,11 @@ fn the_denoised_example_has_a_pinned_hash() {
     }
     assert_eq!(banded, out);
     // The image without denoise keeps its own pinned hash.
-    assert_eq!(fnv1a(&film.resolve()), 0x8206_111f);
+    assert_eq!(fnv1a(&film.resolve()), 0x75ba_4cb4);
 }
 
 /// Pinned hash of the denoised example image at 4 samples per pixel.
-pub(crate) const PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0x9ef7_c8a0;
+pub(crate) const PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0x2a43_0f92;
 
 // ------------------------------------------------------------------ the viewport's preset (U11)
 
@@ -468,8 +468,8 @@ fn the_example_denoised_for_the_viewport_has_a_pinned_hash() {
 
 /// Pinned hashes of the example image at 2 and 4 samples per pixel denoised with
 /// [`Preset::VIEWPORT`].
-pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP: u32 = 0x1751_4303;
-pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP: u32 = 0x6db6_039b;
+pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP: u32 = 0x7000_ceb2;
+pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP: u32 = 0x5318_d4c5;
 
 // ------------------------------------------------------------------ the strength (U11b)
 

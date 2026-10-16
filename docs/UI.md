@@ -656,6 +656,21 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
      que todo esto se ve en el modo Completo y en el render.
      ![óptica avanzada](camera-optics.png)
+   - **Filtros** (cerrado si la cámara no tiene ninguno; O3a): la pila de
+     filtros de efecto delante del objetivo, hasta tres, en orden. Sin
+     ninguno dice *Sin filtros*. **Añadir filtro** pone una *Difusión
+     negra* de grado 1/2 (o una *Estrella* si ya hay una difusión negra);
+     con tres, el botón se apaga y dice *Tres filtros como máximo*. Por
+     filtro: *Filtro* (lista con los ocho tipos) con la frase de lo que
+     hace fotográficamente debajo, una **×** para quitarlo, *Grado*
+     (*1/8 · 1/4 · 1/2 · 1 · 2*) y, según el tipo, *Tinte* (muestra de
+     color y *Tinte propio* para volver al del tipo), *Puntas* (*4 · 6 ·
+     8*) y *Ángulo*. Cada cambio es una entrada de deshacer (*Cámara:
+     Añadir filtro*, *Cámara: Grado*…). Una nota dice que el modo
+     Completo y el render los trazan y que el Rápido dibuja una
+     aproximación; con filtros, el medidor del modo Rápido añade
+     *Filtros: aproximación, el render lo hace el motor*.
+     ![filtros](lens-filters.png)
 6. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
@@ -676,8 +691,15 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    la suelta cae en la cara bajo el cursor. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
    barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
-   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
-   *Paredes*: *Macizo · Pared fina*); madera
+   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm,
+   *Paredes*: *Macizo · Pared fina*, y bajo ellos, E9, *Dispersión
+   interna* en mm —lo que recorre la luz dentro entre dos rebotes; 0,
+   transparente—, *Color de dispersión* —lo que conserva cada rebote de
+   cada color— y *Dirección*, de −0,9 a 0,9, con la ayuda «hacia delante /
+   hacia atrás»; la ayuda de *Dispersión interna* dice que el modo Rápido
+   la aproxima; y, E9c, *Número de Abbe*, de 0 a 100 —la dispersión
+   cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
+   ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
    (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
    anillos*, variación, ruidos, *Poros*: lo pintan el modo Completo y los
    renders, y su punto «·» y su ayuda lo dicen; la vista Rápida muestra el
@@ -750,7 +772,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    bisel es del material (lo dice la nota bajo el campo: *Es del material.
    El modo Completo redondea las aristas vivas en el sombreado, como un
    redondeo de este radio; la vista Rápida las muestra vivas*): lo dibuja el
-   motor desde E6 (`ARCHITECTURE.md` §5.2 sexies); three.js no puede hacerlo
+   motor desde E6 (`ARCHITECTURE.md` §5.2 septies); three.js no puede hacerlo
    barato y la vista *Rápida* no lo intenta.
 5. **Físicas** (fase S2; `SPEC.md` §3.1) — **Papel**, segmentado:
    *Estático · Dinámico · Tela · Líquido*, con *Tela* y *Líquido*
@@ -1962,7 +1984,7 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Catálogo de montajes de luz con sus 72 miniaturas, filtro por estilo,
   intención, anterior / siguiente; al elegir uno, el rig del visor cambia
   (`setupRig()`): se tienen que ver moverse las luces y cambiar su color.
-- Catálogo de materiales con sus 77 presets y sus esferas (ver §6),
+- Catálogo de materiales con sus 86 presets y sus esferas (ver §6),
   asignación por nivel con inventario de confirmación, parámetros por
   familia que se reflejan en el visor (color, metal, rugosidad, barniz,
   transmisión, emisión; madera y tela como aproximación de color plano
@@ -2047,7 +2069,7 @@ Lo que revisa quien reciba el PR, en este orden:
    recorre `src/ui/**/*.css` y falla si algún color (`#rgb`, `#rrggbb`,
    `rgb()`, `hsl()`) tiene saturación distinta de cero. Las miniaturas y
    el visor quedan fuera porque son contenido.
-3. Las 72 miniaturas de montaje y las 77 esferas de material se ven y se
+3. Las 72 miniaturas de montaje y las 86 esferas de material se ven y se
    eligen; cambiar montaje mueve las luces del visor; cambiar material
    cambia la pieza.
 4. Flujo completo sin ratón salvo en el visor: `Ctrl K` → "ejemplo" →
