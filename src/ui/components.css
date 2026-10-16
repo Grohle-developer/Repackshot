@@ -281,6 +281,18 @@ kbd,
 .select:focus {
   border-color: var(--line-strong);
 }
+/* A select drawn by the interface (components/pick-menu.ts): a button with the select's frame and caret. */
+.select-button {
+  display: block;
+  text-align: left;
+}
+.select-button .select-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 24px;
+}
 /* A multi-line text field (X4b): the same frame as a one-line field, its height from its rows, resized only downwards. */
 .text-area {
   height: auto;
@@ -713,6 +725,63 @@ kbd,
   padding: 2px 8px 6px;
   max-width: 300px;
   white-space: normal;
+}
+
+/* The window of a lens's elements (components/lens-peek.ts): information only, it takes no pointer and no focus. */
+.lens-peek {
+  z-index: 102;
+  padding: 8px 10px 10px;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--ink-1);
+}
+.peek-heading {
+  padding-bottom: 6px;
+}
+.peek-cards {
+  display: grid;
+  grid-template-columns: repeat(var(--peek-cols, 1), var(--peek-w, 232px));
+  gap: 12px 14px;
+  align-items: start;
+}
+.peek-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.peek-name {
+  font-weight: 600;
+  color: var(--ink-0);
+}
+.peek-figure {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  color: var(--ink-1);
+}
+.peek-figure .note {
+  text-align: center;
+}
+.peek-source {
+  line-height: 1.3;
+}
+.peek-numbers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 1px 10px;
+  margin: 3px 0 0;
+}
+.peek-numbers dt,
+.peek-numbers dd {
+  margin: 0;
+  white-space: nowrap;
+}
+.peek-numbers dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .palette-backdrop {

@@ -167,6 +167,12 @@ comprobación en `tools/lens-check.mjs`.
 
 **Dependencias.** O2. No antes.
 
+**Hecho en O2b** (`ROADMAP.md`): la ventana al pasar el ratón o el foco por
+una lente de la lista y por un chip de carácter, preguntando al motor por la
+lente señalada con caché por lente. Una lista de `select` del navegador no
+dice a la página sobre qué entrada está el puntero: la lista *Lente* pasó a
+ser la de la interfaz.
+
 ---
 
 ## 1.5 · Editor de lentes: editar elementos, tamaños, distancias, añadir, girar 180°
@@ -700,7 +706,7 @@ de deshacer). K8 (grupos de luz tras el render) es vecino.
 | 2.2 Bucle de intentos | bug provisional, sin reproducir | S (diagnóstico y rótulos) | registro del usuario, 2.1, X1b | 3 |
 | 4.2 *Denoise* lava luces y colores | decisión, sin reproducir (medir primero) | S + S–M | E5b-1, U11, U11b, E11 | 4 |
 | 1.3 Elegir lentes, distorsión, bokeh | falta (O2 la cubre) | — (fusionar O2) | O2, veredicto Fable | 5 |
-| 1.4 Ventana de elementos al pasar el ratón | falta | S–M | O2 | 6 |
+| 1.4 Ventana de elementos al pasar el ratón | falta (hecha en O2b) | S–M | O2 | 6 |
 | 1.1 Mapeado en los editores | falta (+ decisión menor) | L (M2b) + M (interfaz) | M2b, M3b, 5.1 | 7 |
 | 1.6 Nodos y maderas | falta (+ decisión: nodos de E6) | L (M3b) | M2b → M3b | 8 |
 | 3.1 Cola en vivo | falta | M | U5, N2 | 9 |

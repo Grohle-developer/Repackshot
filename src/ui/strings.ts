@@ -650,6 +650,8 @@ const TABLE = {
   'camera.lensInfoWait': ['Asking the engine…', 'Preguntando al motor…'],
   'camera.lensInfoNone': ['The engine is not available here: its numbers and the section of the lens show when it is', 'El motor no está disponible aquí: sus números y el corte de la lente aparecen cuando lo esté'],
   'camera.lensInfoRefused': ['The engine forms no image with this lens and these settings', 'El motor no forma imagen con esta lente y estos ajustes'],
+  'camera.lensPeekNoEngine': ['The engine is not loaded: no section or numbers for this lens', 'El motor no está cargado: sin corte ni números para esta lente'],
+  'camera.lensPeekLabel': ['Elements of the lens', 'Elementos de la lente'],
   'camera.lensSectionAux': ['The lens as the engine traces it, scaled to the focal length and focused: glass in grey, the iris at the stop, the sensor on the right', 'La lente tal como la traza el motor, a su focal y enfocada: el vidrio en gris, el diafragma en su sitio, el sensor a la derecha'],
   'camera.lensFastNote': ['Fast mode draws the distortion and the falloff as an approximation; Full mode and the render trace every ray through the lens', 'El modo Rápido dibuja la distorsión y el viñeteo como aproximación; el modo Completo y el render trazan cada rayo por la lente'],
   'camera.lensThinOnly': ['With a traced lens the lens makes its own pupil, cat’s eye and fringes: the profile, the cat’s eye and the anamorphic squeeze of the thin lens do not apply, nor does the tilt (coming soon)', 'Con una lente trazada, la lente hace su propia pupila, su ojo de gato y sus flecos: el perfil, el ojo de gato y la compresión anamórfica de la lente fina no se aplican, ni la inclinación (próximamente)'],
