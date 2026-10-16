@@ -625,7 +625,9 @@ byte for byte.
   back focus, f-number and T-stop, distortion, relative illumination, the cross-section;
   `rt_scene_lens_info`, `POST /api/lens/info`); the O2 parity scene (`rt --write-o2-example`), the
   catalogue as `rt` sends it (`rt --write-lens-catalogue`), the lens sheet (`rt --lens-sheet`) and
-  the measured cost of the traced camera (`rt --lens-cost`).
+  the measured cost of the traced camera (`rt --lens-cost`); the tiles trace the camera rays of a
+  row through the lens in batches of eight (`optics::traced::batch`, the same bits as one by
+  one).
 
 ## Third-party data
 

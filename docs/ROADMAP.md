@@ -3813,13 +3813,37 @@ Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
   su propio campo (96 muestras), el corte, los números, las curvas y el
   coste; arriba la lente fina de referencia y la tabla del coste
   (`rt --lens-cost`, `out/lens-sheet/cost.json`).
-- **Coste**, medido en un hilo con la máquina cargada: la muestra de cámara
-  por la doble Gauss cuesta 0,71 µs (0,18 µs la de la lente fina); en el
-  ejemplo a 64 × 48 y 1024 muestras es el **29 %** del render (7,7 s; con
-  la lente fina el render tarda 5,5 s y su cámara el 10 %), el 28 % en el
-  frasco; lo que la lente trazada añade sobre la cámara de la lente fina es
-  el 22 % en los dos. Por lente, de 0,29 µs (menisco, 3 superficies) a
-  1,1 µs (ojo de pez, 17).
+- **Lotes** (la regla de coste del encargo, §6.1 del informe). En la
+  primera entrega la cámara trazada era el 29,1 % del render del ejemplo
+  con la doble Gauss a 1024 muestras (0,71 µs por muestra de cámara), por
+  encima del 25 %: ahora la baldosa traza por la lente, fila a fila, las
+  muestras de los píxeles que toman una sola en **lotes de ocho**
+  (`optics::traced::batch`: las ocho a la vez, superficie a superficie, en
+  forma de estructura de *arrays*, cada carril con las mismas operaciones y
+  en el mismo orden que una sola, así que los mismos bits; los píxeles de
+  borde de E11 y una lente con asféricas, uno a uno), con la base de la
+  cámara una vez por lote. El trazado solo pasa de 0,60 a 0,14 µs por
+  muestra; ningún *hash* se mueve (`PINNED_O2_TRACED_4SPP` sigue en
+  `0x8f7d0ef8`, en cada ruta SIMD, en el `rt_wasm.wasm` real y con 1, 4 y
+  16 hilos).
+- **Coste** (`rt --lens-cost`, un hilo, la más rápida de tres vueltas de
+  cada medida, `out/lens-sheet/cost.json`):
+
+  | Escena | Cámara | Muestra de cámara | Parte del render | Render |
+  | --- | --- | --- | --- | --- |
+  | Ejemplo, 64 × 48, 1024 spp | Doble Gauss, antes de los lotes | 0,71 µs | **29,1 %** | 7,7 s |
+  | Ejemplo, 64 × 48, 1024 spp | Doble Gauss, en lotes | 0,25 µs (0,71 una a una) | **13,7 %** | 5,7 s |
+  | Ejemplo, 64 × 48, 1024 spp | Lente fina | 0,19 µs | 10,6 % | 5,6 s |
+  | Frasco, 96 × 72, 256 spp | Doble Gauss, en lotes | 0,26 µs (0,68 una a una) | 12,9 % | 3,6 s |
+  | Frasco, 96 × 72, 256 spp | Lente fina | 0,19 µs | 10,1 % | 3,4 s |
+
+  Lo que la lente trazada añade sobre la cámara de la lente fina es ya el
+  3 % del render del ejemplo. Con la máquina cargada las vueltas sueltas
+  varían (de 12,4 a 23,5 % en tres medidas de una vuelta); la más rápida de
+  tres es la que cuenta. Por lente, en lotes (una vuelta en la escena de
+  puntos), la muestra de cámara va de 0,21 µs (cuatro elementos con
+  doblete trasero) y 0,22 µs (menisco) a 0,43 µs (ojo de pez, 17
+  superficies) y 0,51 µs (asimétrico rápido); la de la lente fina, 0,16 µs.
 - **Tests** (cada uno comprobado reintroduciendo el error donde arregla
   uno). rt-core `optics::traced_tests`: focal y tiraje paraxiales de las 15
   lentes que forman imagen en la tolerancia del informe; rayos axiales de
@@ -3837,7 +3861,12 @@ Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
   el foco anamórfico con los dos meridianos al foco a 1,5 y 4 m (sin mover
   el hueco, el horizontal enfoca a otra distancia, falla) y la compresión
   2 a infinito; las celdas de la hoja y el campo de su gráfico; la línea
-  de órdenes; 1/4/16 hilos. rt-app: `POST /api/lens/info`.
+  de órdenes; 1/4/16 hilos. rt-app: `POST /api/lens/info`. Los **lotes**:
+  cada carril de un lote con los bits de la muestra sola en las 15 lentes
+  que forman imagen, con y sin ajustes y remolino, lotes de 1, 3 y 8
+  (rt-core), los cilindros del adaptador (rt-cli) y las filas de la
+  baldosa, también con filtros y una fila que no es múltiplo de ocho,
+  contra `camera_sample_filtered` píxel a píxel (rt-core).
   `tests/traced-lens.test.ts` (13): la lente de un proyecto, los tipos de
   bokeh que la ponen, la composición (tratamiento, hueco variable,
   adaptador y su hueco de enfoque, en otro objetivo su enfoque), el perfil
@@ -3851,14 +3880,14 @@ Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
   los tipos de la lente trazada ponen su lente y sus miniaturas están al
   día con la escena de la herramienta.
 
-**No encajó con el plan.** (1) **Coste**: la cámara trazada es el 29 % del
-render del ejemplo con la doble Gauss a 1024 muestras, por encima del 25 %
-del criterio (lo que añade sobre la cámara de la lente fina, el 22 %). El
-ejemplo es una escena barata (2,4 µs por muestra en un hilo) y el trazado
-de 11 superficies está limitado por la latencia de sus divisiones y raíces
-(unos 45 ns por superficie); trazar cuatro muestras a la vez con SIMD lo
-bajaría, y no lo he hecho: la decisión de si el criterio se queda así o se
-mide sobre lo que añade es del líder. (2) **Ruido**: con una banda por
+**No encajó con el plan.** (1) **Coste**: en la primera entrega la cámara
+trazada pasaba del 25 % (29,1 %); la regla del encargo pedía lotes antes de
+cerrar y se hicieron (arriba): 13,7 %. Los lotes son de ocho muestras en
+*arrays* que el compilador vectoriza solo (lo que medía §6.1), no con los
+tipos del módulo `simd`, que no tienen raíz cuadrada; los mismos bits en
+cada plataforma porque cada carril hace las operaciones IEEE de una
+muestra sola. La medida toma la más rápida de tres vueltas porque una sola
+vuelta, con la máquina compartida, varía mucho. (2) **Ruido**: con una banda por
 muestra (decisión 3) cada canal recibe un tercio de las muestras, y el
 rectángulo alrededor de la pupila de salida pierde del 33 al 40 % de ellas
 (el diafragma redondo dentro de su caja más una celda de margen): a igualdad
@@ -3890,11 +3919,12 @@ del teleobjetivo a f/5,6: la respiración no se ve en un núcleo quieto. (10)
 Una muestra parada da ahora la cobertura de su propio rayo sin recortar en
 vez de la del rayo principal (el color no cambia ni un bit; el alfa de un
 fondo transparente, levemente). (11) **Decisiones para el veredicto**
-(regla 11): la hoja, lente a lente (qué dan ojo de gato, burbuja, cremoso
-y remolino, y si las prescripciones y los diafragmas supuestos, los
-`stopBasis: assumed`, se quedan); el criterio del coste; el ruido de las
-bandas; las constantes del adaptador (`ADAPTER_GAP_MM` 5,
-`ADAPTER_CLEARANCE` 2,2, `ADAPTER_FOCUS_TRAVEL` 0,6).
+(regla 11), pendientes: la hoja, lente a lente (qué dan ojo de gato,
+burbuja, cremoso y remolino, y si las prescripciones y los diafragmas
+supuestos, los `stopBasis: assumed`, se quedan); el ruido de las bandas y
+la propuesta del muestreo por celdas de (2); las constantes del adaptador
+(`ADAPTER_GAP_MM` 5, `ADAPTER_CLEARANCE` 2,2, `ADAPTER_FOCUS_TRAVEL` 0,6);
+y las focales de los gráficos de la hoja de (8).
 
 ## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable** — hecha
 

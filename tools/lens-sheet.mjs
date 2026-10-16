@@ -126,15 +126,15 @@ function costTable() {
   const name = { example: 'El ejemplo de O2', bottle: 'El frasco de la hoja' };
   const lines = cost.rows.map(
     (r) =>
-      `<tr><td>${name[r.scene] ?? r.scene}, ${r.width} × ${r.height}, ${r.samples} spp</td><td>${r.camera === 'thin' ? 'Lente fina' : 'Doble Gauss trazada'}</td><td>${num(r.renderSeconds, 1)} s</td><td>${num(r.cameraSeconds, 2)} s</td><td><b>${num(100 * r.share, 1)} %</b></td><td>${num(r.cameraMicros, 3)} µs</td><td>${num(r.sampleMicros, 2)} µs</td><td>${num(r.rays / 1e6, 2)} M</td></tr>`,
+      `<tr><td>${name[r.scene] ?? r.scene}, ${r.width} × ${r.height}, ${r.samples} spp</td><td>${r.camera === 'thin' ? 'Lente fina' : 'Doble Gauss trazada'}</td><td>${num(r.renderSeconds, 1)} s</td><td>${num(r.cameraSeconds, 2)} s</td><td><b>${num(100 * r.share, 1)} %</b></td><td>${num(r.cameraMicros, 3)} µs</td><td>${r.unbatchedMicros !== undefined ? `${num(r.unbatchedMicros, 3)} µs` : '—'}</td><td>${num(r.sampleMicros, 2)} µs</td><td>${num(r.rays / 1e6, 2)} M</td></tr>`,
   );
   const pair = (scene) => [cost.rows.find((r) => r.scene === scene && r.camera !== 'thin'), cost.rows.find((r) => r.scene === scene && r.camera === 'thin')];
   const extra = (scene) => {
     const [t, f] = pair(scene);
     return t && f ? num((100 * (t.cameraMicros - f.cameraMicros) * (t.cameraSeconds / t.cameraMicros)) / t.renderSeconds, 1) : '—';
   };
-  return `<p>El criterio de la fase pide que la cámara trazada cueste como mucho el 25 % del render del ejemplo con la doble Gauss a 1024 muestras. Medido con <code>rt --lens-cost</code> en un hilo: el render entero y, aparte, las muestras de cámara solas (lo que la baldosa hace antes de trazar el rayo en la escena: la banda, el punto de la pupila, el trazado por las superficies y el peso); también en el frasco de vidrio de la hoja, una escena que cuesta más por muestra. En esta máquina, cargada por otros procesos, los segundos son orientativos; la proporción es lo que cuenta.</p>
-<table><thead><tr><th>Escena</th><th>Cámara</th><th>Render</th><th>Muestras de cámara</th><th>Parte del render</th><th>Por muestra de cámara</th><th>Por muestra</th><th>Rayos</th></tr></thead><tbody>
+  return `<p>El criterio de la fase pide que la cámara trazada cueste como mucho el 25 % del render del ejemplo con la doble Gauss a 1024 muestras. Medido con <code>rt --lens-cost</code> en un hilo, la más rápida de ${cost.runs ?? 1} vueltas de cada medida: el render entero y, aparte, las muestras de cámara solas (lo que la baldosa hace antes de trazar el rayo en la escena: la banda, el punto de la pupila, el trazado por las superficies y el peso), en lotes de ocho como las traza la baldosa y una a una como antes de los lotes; también en el frasco de vidrio de la hoja. En esta máquina, cargada por otros procesos, los segundos son orientativos; la proporción es lo que cuenta. Antes de los lotes (la primera entrega) la cámara trazada era el 29,1 % del render del ejemplo (0,71 µs por muestra de cámara, 7,7 s).</p>
+<table><thead><tr><th>Escena</th><th>Cámara</th><th>Render</th><th>Muestras de cámara</th><th>Parte del render</th><th>Por muestra de cámara</th><th>Una a una (sin lotes)</th><th>Por muestra</th><th>Rayos</th></tr></thead><tbody>
 ${lines.join('\n')}
 </tbody></table>
 <p>Lo que la lente trazada añade sobre la muestra de la lente fina: el ${extra('example')} % del render del ejemplo y el ${extra('bottle')} % del del frasco.</p>
