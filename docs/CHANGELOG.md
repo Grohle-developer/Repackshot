@@ -13,6 +13,24 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - El lanzador manda la trama de un render **reducida** a un recuadro (`GET /api/render/<id>?fit=<an>x<al>`, bandera 512): la vista en vivo de la cola recibe solo los píxeles de su imagen y no las sumas enteras (U14).
 
+## v0.1.8 — 2026-10-16
+
+Versión de prueba con una sola novedad: la ventana con los elementos de una
+lente al dejar el puntero sobre ella (petición del reporte del 14-10). Lo de
+v0.1.2 a v0.1.7 sigue igual.
+
+### Interfaz
+
+- *Cámara* ▸ **Lente**: al dejar el puntero un momento sobre una lente de la lista, o al llegar a ella con el teclado, se abre a su lado una **ventana con sus elementos** (petición del usuario del 14-10): el corte de la lente (el mismo dibujo de la sección), su nombre, su fuente y los números que el motor da para ella con la focal, el diafragma, el foco y el encuadre de la cámara (focal, diafragma y T-stop, elementos y grupos, longitud, y la compresión del adaptador anamórfico). Sobre un chip de *carácter* abre la de las lentes de ese carácter. Mientras el motor contesta dice *Preguntando al motor…*; sin motor (la versión web sin `rt.wasm`) deja el nombre y la fuente y dice que el motor no está cargado, sin números inventados. Se cierra al sacar el puntero o el foco, con Esc y al elegir; no toma el foco ni el puntero. La lista *Lente* es ahora la de la interfaz (flechas, Intro y Esc) en vez de un `select` del navegador, que no dice a la página sobre qué entrada está el puntero; los chips de carácter ya no se rehacen al pulsarlos, así que el foco se queda en el que se pulsó (O2b).
+
+### Limitaciones conocidas de esta versión
+
+- La ventana se recorta en pantallas de menos de unos 550 px de alto cuando
+  un carácter tiene cuatro lentes; no se ha probado contra el lanzador de
+  escritorio (usa el mismo servicio que la sección *Lente*). La lista de
+  lentes ya no es un desplegable del sistema: no busca al teclear.
+- Siguen las de la v0.1.7.
+
 ## v0.1.7 — 2026-10-16
 
 Versión de prueba con la madera, la tela y el bisel de aristas en el modo

@@ -637,7 +637,11 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      angular · Tele · Míos*) que filtra la lista *Lente* (las lentes del
      catálogo de ese carácter, por su nombre genérico); *Míos* enseña las
      lentes propias en filas con *Renombrar* y *Eliminar*, y elegir una la
-     pone en la cámara. Debajo, la **fuente** de la lente (la patente o el
+     pone en la cámara. La lista *Lente* es la propia de la interfaz (O2b:
+     un botón con la flecha de un desplegable que abre el menú de la
+     interfaz, con la lente puesta marcada; flechas, Intro y Esc; no un
+     `select` del navegador, que no dice a la página sobre qué entrada está
+     el puntero). Debajo, la **fuente** de la lente (la patente o el
      libro, el año y lo que se ha comprobado), y lo suyo: *Objetivo detrás*
      (solo el adaptador anamórfico: la lente sobre la que va), *Tratamiento*
      (*El de la lente · Sin tratar · Monocapa · Multicapa*), el hueco
@@ -667,6 +671,37 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      Tratamiento*…).
      ![editor de lente](lens-editor.png)
      ![lo que calcula el motor](lens-section.png)
+
+     **Ventana de los elementos** (O2b, `src/ui/components/lens-peek.ts`,
+     la lógica en `src/ui/lens-peek.ts`): al dejar el puntero un momento
+     (300 ms: cruzar la lista no abre nada) sobre una lente de la lista
+     abierta, o al llegar a ella con el teclado, se abre a un lado de la
+     lista y a la altura de la entrada una ventana con el **corte** de esa
+     lente (el mismo dibujo, `components/lens-section.ts`, que la sección
+     *Lo que calcula el motor*), su **nombre**, su **fuente** (la patente o
+     el libro, el año, lo comprobado) y los números que **el motor** da
+     para ella con la focal, el diafragma, el foco y el encuadre de la
+     cámara: *Focal*, *Diafragma* (f/ y T-stop), *Elementos · grupos*,
+     *Longitud* y, en el adaptador anamórfico, *Compresión al foco*. Sobre
+     un chip de **carácter** abre la ventana de las lentes de ese carácter
+     (hasta cuatro, en dos columnas, con el nombre del carácter arriba);
+     *Míos* no abre ventana. Al motor se le pregunta por la lente señalada
+     (`rt.wasm` de la página, o `/api/lens/info` en el escritorio), sin
+     bloquear nada: mientras contesta la tarjeta dice *Preguntando al
+     motor…*; sin motor (la versión web sin `rt.wasm`) dice *El motor no
+     está cargado: sin corte ni números para esta lente* y deja solo el
+     nombre y la fuente (regla 10: ningún número que no sea del motor); si
+     no forma imagen con esa lente y esos ajustes, lo dice. Cada lente se
+     pregunta una sola vez por cada focal, foco, diafragma y encuadre de la
+     cámara, así que volver a pasar no vuelve a preguntar; la lente puesta
+     se dibuja con lo que ya preguntó la sección. La ventana se cierra al
+     sacar el puntero o el foco, con Esc (que no hace nada más) y al
+     elegir la lente o pulsar el chip; no toma el foco ni el puntero (se
+     pulsa a través de ella), se vincula a la entrada con `aria-describedby`
+     y no sale de la ventana del navegador (en una pantalla baja se
+     recorta).
+     ![ventana de una lente de la lista](lens-hover.png)
+     ![ventana de las lentes de un carácter](lens-hover-chip.png)
    - **Bokeh** (abierto): rejilla de 4 columnas con los 20 tipos de
      `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
      el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
