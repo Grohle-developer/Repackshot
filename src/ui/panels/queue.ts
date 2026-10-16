@@ -20,6 +20,8 @@ import { formatClock, formatNumber, framesText, getLang, t } from '../strings';
 
 function finishByText(s: RenderSettings): string {
   const n = t('rw.summarySamples', { n: formatNumber(s.maxSamples, getLang(), 0) });
+  // E10: by noise, its threshold.
+  if (s.finishBy === 'NOISE') return t('rw.summaryNoise', { t: `${formatNumber(s.noiseThreshold, getLang(), 1)} %` });
   return s.finishBy === 'SAMPLES' ? n : s.finishBy === 'TIME' ? formatClock(s.maxSeconds) : t('rw.summaryOr', { a: n, b: formatClock(s.maxSeconds) });
 }
 

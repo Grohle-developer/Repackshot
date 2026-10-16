@@ -28,8 +28,37 @@ export type RenderMode = 'IMAGE' | 'ANIMATION';
 export type OutputFormat = 'PNG' | 'JPEG' | 'EXR' | 'TIFF' | 'DNG';
 /** Bits per channel: 8 and 16 are sRGB (PNG, TIFF); 32 is the float TIFF in linear light. */
 export type BitDepth = 8 | 16 | 32;
-/** When a render ends: at a number of samples, at a time, or whichever comes first (Advanced). */
-export type FinishBy = 'SAMPLES' | 'TIME' | 'FIRST';
+/**
+ * When a render ends: at a number of samples, at a time, whichever comes first (Advanced), or (E10) when its noise is
+ * under a threshold everywhere, with adaptive sampling (at most its samples).
+ */
+export type FinishBy = 'SAMPLES' | 'TIME' | 'FIRST' | 'NOISE';
+/** Every finish-by, in the order of the window. */
+export const FINISH_BYS: readonly FinishBy[] = ['SAMPLES', 'TIME', 'FIRST', 'NOISE'];
+/** E10: the noise threshold of Finish by Noise, percent (the relative error of a pixel's mean): its range and default. */
+export const NOISE_THRESHOLD_MIN = 0.5;
+export const NOISE_THRESHOLD_MAX = 5;
+export const DEFAULT_NOISE_THRESHOLD = 1;
+
+/** E10: a noise threshold in percent as the engine takes it (`RNDR.noise_threshold`), a fraction, within the range. */
+export function noiseFraction(percent: number): number {
+  const p = Number.isFinite(percent) ? percent : DEFAULT_NOISE_THRESHOLD;
+  return Math.round(Math.max(NOISE_THRESHOLD_MIN, Math.min(NOISE_THRESHOLD_MAX, p)) * 10) / 1000;
+}
+
+/**
+ * E10: what the engine is told of adaptive sampling for a render of these settings (io/rsb.ts `SceneView.adaptive`,
+ * render/engine.ts `RenderOptions.adaptive`): by noise, its threshold as a fraction; otherwise nothing (every pixel
+ * alike, the scene's bytes of before).
+ */
+export function adaptiveOf(s: Pick<RenderSettings, 'finishBy' | 'noiseThreshold'>): { adaptive?: { noiseThreshold: number } } {
+  return s.finishBy === 'NOISE' ? { adaptive: { noiseThreshold: noiseFraction(s.noiseThreshold) } } : {};
+}
+
+/** E10: a threshold in percent clamped to the range, in tenths. */
+export function clampNoiseThreshold(percent: number): number {
+  return Math.round(noiseFraction(percent) * 1000) / 10;
+}
 /** Where an output goes: the browser's downloads, or a folder chosen with the File System Access API. */
 export type Destination = { kind: 'DOWNLOADS' } | { kind: 'FOLDER'; id: string; name: string };
 /** The camera of the render window: the active one, one by id, or every camera (one job each). */
@@ -195,6 +224,11 @@ export interface RenderSettings {
   quality: RenderQuality;
   maxSamples: number;
   maxSeconds: number;
+  /**
+   * E10, Finish by Noise: the noise every pixel ends under, percent (the relative error of its mean; 0.5–5, default 1).
+   * The engine samples adaptively to it (`RNDR.adaptive`, `RNDR.noise_threshold`), at most `maxSamples` per pixel.
+   */
+  noiseThreshold: number;
   advanced: AdvancedSettings;
   animation: AnimationOutput;
   ai: AiSettings;
@@ -243,6 +277,12 @@ export interface RenderProgress {
   /** Animation: the frame being rendered (1-based) and the frames in the job. */
   frame?: number;
   frames?: number;
+  /**
+   * E10, an adaptive render: its pixels' fewest and most samples, the noise of its noisiest block at the last decision
+   * (a fraction; -1 before it), the target (a fraction) and the seconds the engine expects to the target from its last
+   * pass (-1: unknown).
+   */
+  adaptive?: { min: number; max: number; noise: number; target: number; eta: number };
   /**
    * The AI post-processing of the job's image is running (X3c): `progress` is then the pipeline's own, and this
    * says where it is (the tile and the attempt, 1-based, of how many attempts there can be; why the guard sent the last
@@ -345,6 +385,7 @@ export function defaultRenderSettings(): RenderSettings {
     quality: 'PREVIEW',
     maxSamples: QUALITY_PRESETS.PREVIEW.samples,
     maxSeconds: 120,
+    noiseThreshold: DEFAULT_NOISE_THRESHOLD,
     advanced: { ...DEFAULT_ADVANCED },
     animation: { range: 'ALL', rangeUnit: 'FRAMES', from: 1, to: 1, fps: 24, output: 'FRAMES', video: 'MP4' },
     ai: DEFAULT_AI,
@@ -378,6 +419,7 @@ export function settingsOf(r: RenderSettings): RenderSettings {
     quality: r.quality,
     maxSamples: r.maxSamples,
     maxSeconds: r.maxSeconds,
+    noiseThreshold: r.noiseThreshold ?? DEFAULT_NOISE_THRESHOLD,
     advanced: r.advanced,
     animation: r.animation,
     ai: r.ai,
@@ -455,7 +497,9 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
     if (p.quality === undefined && s.quality !== 'CUSTOM' && QUALITY_PRESETS[s.quality].samples !== next.maxSamples) next.quality = 'CUSTOM';
   }
   if (p.maxSeconds !== undefined) next.maxSeconds = clampInt(p.maxSeconds, 1, MAX_SECONDS);
-  if (p.finishBy !== undefined && !['SAMPLES', 'TIME', 'FIRST'].includes(p.finishBy)) next.finishBy = s.finishBy;
+  if (p.finishBy !== undefined && !FINISH_BYS.includes(p.finishBy)) next.finishBy = s.finishBy;
+  // E10: a settings object of before has no threshold.
+  next.noiseThreshold = clampNoiseThreshold(p.noiseThreshold ?? s.noiseThreshold ?? DEFAULT_NOISE_THRESHOLD);
   // Format.
   if (!WRITABLE_FORMATS.has(next.format)) next.format = 'PNG';
   if (!supportsAlpha(next.format)) next.transparent = false;
@@ -752,6 +796,8 @@ export function estimateSeconds(s: RenderSettings, pixelSamplesPerSecond: number
   let perFrame: number | null;
   if (s.finishBy === 'TIME') perFrame = s.maxSeconds;
   else if (s.finishBy === 'FIRST') perFrame = bySamples === null ? null : Math.min(bySamples, s.maxSeconds);
+  // E10: by noise it takes what the image needs: the engine says it from its passes (UI.md §2.7), nothing before.
+  else if (s.finishBy === 'NOISE') perFrame = null;
   else perFrame = bySamples;
   return perFrame === null ? null : perFrame * Math.max(1, frames);
 }
@@ -814,7 +860,9 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     // Before P6 there were no plugins: the patch keeps `{}`.
     plugins: isObj(raw.plugins) ? (raw.plugins as unknown as PluginsSettings) : undefined,
     // U1 had no finishBy: its budget was the samples or the time, whichever came first (0 s: no time limit).
-    finishBy: oneOf<FinishBy>(raw.finishBy, ['SAMPLES', 'TIME', 'FIRST']) ?? (raw.finishBy === undefined && maxSeconds !== undefined ? (maxSeconds > 0 ? 'FIRST' : 'SAMPLES') : undefined),
+    finishBy: oneOf<FinishBy>(raw.finishBy, FINISH_BYS) ?? (raw.finishBy === undefined && maxSeconds !== undefined ? (maxSeconds > 0 ? 'FIRST' : 'SAMPLES') : undefined),
+    // E10: before it there was no Finish by Noise, nor its threshold.
+    noiseThreshold: num(raw.noiseThreshold),
     quality: oneOf(raw.quality, QUALITIES),
     maxSamples: num(raw.maxSamples),
     maxSeconds: maxSeconds !== undefined && maxSeconds > 0 ? maxSeconds : undefined,

@@ -622,7 +622,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   (64 B), al final, `pixel_filter` (u32: 0 la caja de un píxel, lo de
   siempre; 1 el centro; 2 tienda; 3 Blackman–Harris; desconocido = caja) y
   `edge_supersample` (u32: muestras por índice de un píxel de borde; 0 y
-  1, una; más de 16, RSB no válido); sin ellos, la imagen de antes.
+  1, una; más de 16, RSB no válido); sin ellos, la imagen de antes. Desde
+  E10 (72 B, **solo cuando se pide**: sin ellos la sección es la de E11 byte a
+  byte), al final, `adaptive` (u32; bit 0, el anfitrión muestrea
+  adaptativamente, §5.2 duodecies; los bits desconocidos se conservan y se
+  ignoran) y `noise_threshold` (f32 en `0..=1`, el error relativo de la media
+  por debajo del cual un bloque ya no recibe muestras; 0, ninguno; fuera de
+  rango, RSB no válido); uno de 68 B se lee sin umbral.
 - **`LENS`** (O1, nueva, opcional, una como máximo, justo después de
   `CAMR`; `CAMR` no cambia): la óptica de la cámara más allá de la lente
   fina (`rt_core::optics`). 72 B de números y la imagen:
@@ -1158,7 +1164,8 @@ pasadas duran más o menos lo que un *denoise* y al menos 250 ms
 un píxel), así que una imagen limpia llega como mucho una pasada y un
 *denoise* después de la anterior: cada `max(2 × el denoise, 0,5 s)`. Cada
 fotograma del lanzador lleva el número de su imagen (cabecera de 52 bytes,
-`Frame::version`) y el *long-poll* lo pide con `version=`: las sumas solo
+`Frame::version`; desde E10, de 68 con lo que el muestreo adaptativo dice de
+la imagen, §5.2 duodecies) y el *long-poll* lo pide con `version=`: las sumas solo
 vienen con una imagen más nueva, y un visor ya terminado espera a la
 limpia que el interruptor pidió. Apagado, el siguiente fotograma es la
 acumulación ruidosa; encendido, se reduce al momento lo acumulado (también
@@ -2154,6 +2161,90 @@ dibujos de los diez ejemplos en *Rápido* y con el `rt.wasm` real.
   con 1, 4 y 16 hilos, en WASI y en el `rt.wasm` real (CI, y por el código de la
   página), y sus seis pases (`PINNED_M3B_PASS_*`).
 
+### 5.2 duodecies · Muestreo adaptativo y terminar por ruido (E10, `rt_core::adaptive`)
+
+**Rondas.** Con `RNDR.adaptive` bit 0 el anfitrión renderiza por **rondas**.
+La primera da `WARMUP` = 16 muestras a todos los píxeles con el renderizador
+de baldosas de siempre (`render_tile_edges`: el índice de muestra es la
+iteración del mapa de fotones, como sin adaptativo; los pases exactos y el
+albedo se hacen solo en ella). Al acabar cada ronda, con todas sus baldosas
+renderizadas por los hilos que sea, la **imagen entera decide la siguiente**
+(`decide`): (1) el error relativo de la media de cada píxel,
+`sqrt((E[l²] − E[l]²) / (n − 1)) / (max(media, 0) + ε)` con la luminancia de
+Rec. 709 de las sumas de la película y `Film::lum2` (la varianza de la media
+que usa el *denoise*), `ε = EPSILON / 2^ev` (el 1 % del blanco de pantalla,
+`floor_for`), y `UNMEASURED` = 10³⁰ con menos de dos muestras o sumas no
+finitas; (2) suavizado por la media 3 × 3 dentro de la imagen; (3) por bloque
+de `BLOCK` = 8 × 8 píxeles, el mayor; (4) **candidatos**: los bloques por
+encima del objetivo de ruido (`RNDR.noise_threshold`; sin él, cualquiera con
+error) que no han llegado al tope de muestras; la ronda va a los candidatos
+en o por encima del **cuantil 50 %** de sus errores (el umbral del momento,
+que baja al converger la imagen); sin candidatos, **convergido**; (5) la
+ronda dura `ROUND` = 16 muestras × `clamp(bloques / (4 × activos), 1, 16)`,
+nunca más que las que ya tiene el bloque activo con menos. Un bloque sin
+ronda conserva sus muestras y su media: cada píxel es la media de sus propias
+muestras de índices `0..n`, en orden (un test lo compara bit a bit con la
+imagen uniforme de esas muestras). Todo `f32` en un orden fijo: la decisión
+no depende de hilos, baldosas ni arquitectura. Las decisiones solo ocurren al
+final de las rondas, así que dónde se corta una ronda en pasadas (por tiempo,
+por el carril del *denoise* en directo, por cualquier tamaño) no cambia un
+píxel; tras la primera ronda las pasadas son de hasta 16 muestras.
+
+**Cáusticas y bordes.** En una pasada todos los bloques activos están en el
+mismo punto de su ronda: la muestra `j` de la pasada de cada bloque (índice
+`n_b + hecho + j`) usa el mapa de fotones `iteración + hecho + j`
+(`Adaptive::iteration`): una pasada traza tantos mapas como sin adaptativo y
+dos muestras de un píxel nunca comparten mapa. `render_block` es
+`render_tile_edges` de un rectángulo dentro de la baldosa de su `EdgeMask`, con
+el mapa que se le dé (sea cual sea su iteración).
+
+**Anfitriones.** `rt` (`render_adaptive`; `--adaptive`, `--noise P`) y el
+lanzador juntan las películas de las baldosas (`gather`) al final de cada
+ronda; tras la primera, el trabajo de una pasada son los bloques activos de
+todas las baldosas, que los hilos se reparten uno a uno (cada bloque se corta
+de la película de su baldosa, `Film::cut`, se renderiza y se devuelve con
+`copy_region`: los mismos bits que renderizar en ella). El lanzador publica
+las sumas de cada píxel **reescaladas** a las muestras del que más tiene
+(`rescale`: la suma tal cual si `n` es esa, si no `(suma × (1/n)) × s` en
+`f32`), así que la página y `Frame::fitted` (U14) las leen como siempre, y su
+trama (cabecera de 68 bytes, bandera `FLAG_ADAPTIVE` = 1024) lleva en los
+bytes 52 a 68 el mínimo y el máximo de muestras, el error del bloque más
+ruidoso en la última decisión y los segundos que espera hasta el objetivo
+(lo que la decisión dice que queda, en píxeles-muestra, al ritmo de la última
+pasada; −1 sin objetivo o sin medir). *Terminar por ruido* llega al lanzador
+como `finish=samples`: el tope son las muestras y el objetivo del RSB lo
+acaba antes. En la web, `src/render/adaptive.ts` es el **puerto bit a bit**
+de la decisión (`Math.fround` tras cada operación; `PINNED_E10_DECISIONS`,
+de una imagen sintética, lo comprueba contra el motor), `Accumulator` cuenta
+por bloque (`blockSamples`, `addBlock`), los *workers* reciben el mensaje
+`blocks` y renderizan cada bloque con `rt_render_block_rgba(… muestra,
+iteración …)` (la máscara de bordes, la de su baldosa de 32), y
+`runAdaptive` (`render/schedule.ts`) lleva las rondas del *Render*; el visor
+*Completo* que sigue las muestras de la salida muestrea así cuando la salida
+termina por ruido. `rt_adaptive_decide` expone la decisión del motor para
+`tools/wasm-parity.mjs --adaptive`.
+
+**Denoise.** `DenoiseInput::with_counts`: las sumas y `lum2` reescaladas a
+`samples` y el conteo propio de cada píxel, por el que se divide su varianza
+(`n − 1`; por debajo de cuatro, la estimación espacial); en wasm, el plano de
+conteos detrás de los catorce de siempre (`DENOISE_WORDS_COUNTED`). Sin
+conteos, los bits de siempre.
+
+**Interfaz.** *Terminar por* gana *Ruido* (`FinishBy` `NOISE`,
+`RenderSettings.noiseThreshold` en por ciento, 0,5–5, 1 por defecto;
+`adaptiveOf` lo hace `SceneView.adaptive`/`RenderOptions.adaptive`). El
+medidor dice *Adaptativo · mín–máx muestras* con los números de
+`EngineStatus.adaptive`; la estimación de la ventana sale de la última
+pasada del visor que muestrea al mismo umbral (`ui.noiseEstimate`), y el
+progreso de la cola, de los segundos que el motor espera.
+
+**Hashes.** `PINNED_E10_ADAPTIVE` = `0x264b4106` (la escena de E10:
+`e5b_scene` con un objetivo del 3 %, 48 muestras de tope y bordes ×2, de 16 a
+48 muestras por píxel), igual por `rt` con 1, 4 y 16 hilos, con baldosas de
+32, 24 y 13 y pasadas de 16, 5 y 3, por el lanzador (final y visor) con 1, 4 y
+16 hilos, por el `rt.wasm` real escalar y SIMD (`rt --write-e10-example`) y
+por el código de la página; sin el *flag*, ninguno de antes se movió.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -2177,7 +2268,10 @@ con cada baldosa, el albedo de cada muestra (`rt_render_tile_albedo`) y,
 en el trabajo que empieza en la muestra 0, sus planos exactos
 (`rt_render_tile_passes`), y el hilo principal los junta con
 `PassAccumulator` (`src/render/pass-planes.ts`) igual que la imagen: el
-resultado es el del motor nativo bit a bit y vuelve como `RenderPasses`.
+resultado es el del motor nativo bit a bit y vuelve como `RenderPasses`. Con
+muestreo adaptativo (E10, §5.2 duodecies), tras la primera ronda los
+*workers* reciben bloques de 8 × 8 (mensaje `blocks`) en vez de baldosas, y
+el hilo principal decide cada ronda con el puerto de la decisión.
 
 **Denoise y cáusticas en el pool** (E5b-1). Cada *worker* traza los mapas
 de fotones de las muestras que renderiza (los mismos bits que cualquier

@@ -11,6 +11,7 @@
 // `Film::resolve` computes. So the pool's image equals `rt`'s bit for bit.
 
 import { applyCurve, exactPixel, exposureGain, srgbEncode, toneCurve, type DisplayCurve } from './tonemap';
+import { BLOCK } from './adaptive';
 
 /** Edge of the square tiles (rt-cli's TILE_SIZE). */
 export const TILE = 32;
@@ -131,6 +132,8 @@ export interface TileResult {
   albedo?: Float32Array;
   /** With passes, once per tile (the job whose `first` is 0): its exact planes (render/pass-planes.ts). */
   exact?: Uint32Array;
+  /** E10: the samples are of a block of an adaptive round (`index` is the block's): its pixels. */
+  block?: { x: number; y: number; w: number; h: number };
 }
 
 /** Opaque coverage, give or take the rounding of `n * (1 / n)`. */
@@ -157,20 +160,43 @@ export class Accumulator {
    * as `Film::lum2` sums it (the denoiser's variance); empty otherwise.
    */
   readonly lum2: Float32Array;
-  /** Samples summed into each tile. */
+  /** Samples summed into each tile (E10, with `blocks`: the fewest of its blocks). */
   readonly samples: Int32Array;
+  /**
+   * E10, adaptive sampling (`blocks`): the samples of every 8 × 8 block (render/adaptive.ts), row by row; a pixel has
+   * its block's. Empty otherwise.
+   */
+  readonly blockSamples: Int32Array;
+  private readonly blockCols: number;
   /** The image shown instead of the sums (the denoised one, E5b-1): its RGBA sums and their samples. */
   private shownSums: Float32Array | null = null;
   private shownCount = 0;
   private filled = 0;
 
-  constructor(width: number, height: number, tiles?: readonly Tile[], opts: { lum2?: boolean } = {}) {
+  constructor(width: number, height: number, tiles?: readonly Tile[], opts: { lum2?: boolean; blocks?: boolean } = {}) {
     this.width = width;
     this.height = height;
     this.tiles = tiles ?? tileGrid(width, height);
     this.sum = new Float32Array(width * height * 4);
-    this.lum2 = new Float32Array(opts.lum2 ? width * height : 0);
+    this.lum2 = new Float32Array(opts.lum2 || opts.blocks ? width * height : 0);
     this.samples = new Int32Array(this.tiles.length);
+    this.blockCols = Math.ceil(width / BLOCK);
+    this.blockSamples = new Int32Array(opts.blocks ? this.blockCols * Math.ceil(height / BLOCK) : 0);
+  }
+
+  /** E10: the accumulation counts samples per block (adaptive sampling). */
+  get adaptive(): boolean {
+    return this.blockSamples.length > 0;
+  }
+
+  /** Samples of pixel `p` (its tile's, or with adaptive sampling its block's). */
+  samplesAt(p: number): number {
+    const x = p % this.width;
+    const y = (p - x) / this.width;
+    if (this.blockSamples.length > 0) return this.blockSamples[Math.floor(y / BLOCK) * this.blockCols + Math.floor(x / BLOCK)];
+    const tx = Math.floor(x / TILE);
+    const ty = Math.floor(y / TILE);
+    return this.samples[ty * Math.ceil(this.width / TILE) + tx];
   }
 
   /** Shows `sums` (RGBA sums of `samples` samples, the denoised image) in place of the accumulated ones; null shows the accumulated ones again (U11). */
@@ -213,7 +239,60 @@ export class Accumulator {
     }
     if (this.samples[index] === 0) this.filled++;
     this.samples[index] += count;
+    // E10: every block of the tile has the tile's samples (the first round renders whole tiles).
+    if (this.blockSamples.length > 0) {
+      for (let by = Math.floor(t.y / BLOCK); by * BLOCK < t.y + t.h; by++) {
+        for (let bx = Math.floor(t.x / BLOCK); bx * BLOCK < t.x + t.w; bx++) this.blockSamples[by * this.blockCols + bx] = this.samples[index];
+      }
+    }
     return true;
+  }
+
+  /**
+   * E10: adds a block's samples (an adaptive round: `count` samples of the pixels `x, y, w × h` of block `block`,
+   * `w * h * 4` floats each). They must continue where the block stopped; anything else is refused.
+   */
+  addBlock(block: number, x: number, y: number, w: number, h: number, first: number, count: number, data: Float32Array): boolean {
+    if (block < 0 || block >= this.blockSamples.length || first !== this.blockSamples[block] || count <= 0 || data.length < count * w * h * 4) return false;
+    const stride = w * h * 4;
+    const sum = this.sum;
+    const lum2 = this.lum2;
+    for (let s = 0; s < count; s++) {
+      const base = s * stride;
+      for (let yy = 0; yy < h; yy++) {
+        let o = ((y + yy) * this.width + x) * 4;
+        let i = base + yy * w * 4;
+        for (let k = 0; k < w * 4; k++) sum[o++] += data[i++];
+        let p = (y + yy) * this.width + x;
+        for (let xx = 0, j = base + yy * w * 4; xx < w; xx++, j += 4, p++) {
+          const l = luminanceF32(data[j], data[j + 1], data[j + 2]);
+          lum2[p] += Math.fround(l * l);
+        }
+      }
+    }
+    this.blockSamples[block] += count;
+    // The tile's count is its least block's.
+    const t = this.tiles[Math.floor(y / TILE) * Math.ceil(this.width / TILE) + Math.floor(x / TILE)];
+    if (t) {
+      let least = Infinity;
+      for (let by = Math.floor(t.y / BLOCK); by * BLOCK < t.y + t.h; by++) {
+        for (let bx = Math.floor(t.x / BLOCK); bx * BLOCK < t.x + t.w; bx++) least = Math.min(least, this.blockSamples[by * this.blockCols + bx]);
+      }
+      this.samples[t.index] = least;
+    }
+    return true;
+  }
+
+  /** E10: the fewest and the most samples of a pixel (with adaptive sampling; else the tiles'). */
+  get sampleRange(): { min: number; max: number } {
+    const src = this.blockSamples.length > 0 ? this.blockSamples : this.samples;
+    let min = Infinity;
+    let max = 0;
+    for (let i = 0; i < src.length; i++) {
+      if (src[i] < min) min = src[i];
+      if (src[i] > max) max = src[i];
+    }
+    return Number.isFinite(min) ? { min, max } : { min: 0, max: 0 };
   }
 
   /** Every tile has at least one sample. */
@@ -262,12 +341,15 @@ export class Accumulator {
   tileBytes(index: number, curve: DisplayCurve, out: Uint8ClampedArray): void {
     const t = this.tiles[index];
     const shown = this.shownSums;
-    const n = shown ? this.shownCount : this.samples[index];
+    const tileN = shown ? this.shownCount : this.samples[index];
+    // E10: an adaptive accumulation's pixels have their blocks' counts (a shown image has one count).
+    const perBlock = !shown && this.blockSamples.length > 0;
     const src = shown ?? this.sum;
     const px = [0, 0, 0, 0];
     let o = 0;
     for (let y = 0; y < t.h; y++) {
       for (let x = 0; x < t.w; x++, o += 4) {
+        const n = perBlock ? this.blockSamples[Math.floor((t.y + y) / BLOCK) * this.blockCols + Math.floor((t.x + x) / BLOCK)] : tileN;
         if (n === 0) {
           out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
           continue;

@@ -296,7 +296,7 @@ export function readFloor(p: DataView): RsbFloor {
 
 export function readRender(p: DataView): RsbRender {
   const c = new Cursor(p);
-  const r = { width: c.u32(), height: c.u32(), maxSamples: c.u32(), seed: c.u32(), maxSeconds: c.f32(), exposureEv: c.f32(), tonemap: c.u32(), maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 };
+  const r = { width: c.u32(), height: c.u32(), maxSamples: c.u32(), seed: c.u32(), maxSeconds: c.f32(), exposureEv: c.f32(), tonemap: c.u32(), maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1, adaptive: 0, noiseThreshold: 0 };
   if (c.remaining >= 4) r.maxDepth = c.u32();
   if (c.remaining >= 4) r.clampIndirect = c.f32();
   // X2: the pass mask.
@@ -308,6 +308,9 @@ export function readRender(p: DataView): RsbRender {
   // E11: the pixel filter and the edge samples.
   if (c.remaining >= 4) r.pixelFilter = c.u32();
   if (c.remaining >= 4) r.edgeSupersample = c.u32();
+  // E10: adaptive sampling and its noise target (written only when set).
+  if (c.remaining >= 4) r.adaptive = c.u32();
+  if (c.remaining >= 4) r.noiseThreshold = c.f32();
   return r;
 }
 

@@ -60,13 +60,13 @@ import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
 import { readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
-import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
+import { adaptiveKey, QUIET_MS, viewAdaptive, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
 import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
 import { liveFrameOf } from './live-frame';
 import { parsePasses } from './pass-planes';
-import { abortError, budgetProgress, type PassBudget } from './schedule';
+import { abortError, adaptiveProgress, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, retryDelay, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
@@ -93,6 +93,11 @@ export const FLAG_NOISY = 128;
 export const FLAG_CAUSTICS = 256;
 /** U14: the sums are scaled down by a whole factor (`fit=`): the header's width and height are the picture's. */
 export const FLAG_SCALED = 512;
+/**
+ * E10: the image is sampled adaptively: its pixels have from `adaptive.min` to `adaptive.max` samples, and the sums are
+ * each pixel's rescaled to the header's samples (so they read as before).
+ */
+export const FLAG_ADAPTIVE = 1024;
 
 /** Threads the viewport keeps while a Render runs: a quarter, at least one (render.rs `viewport_share`). */
 export function viewportShare(threads: number): number {
@@ -116,6 +121,12 @@ export interface NativeFrame {
   noisy: Float32Array | null;
   /** U11: the number of the image (render.rs `Frame::version`; 0 in a header of before). */
   version: number;
+  /**
+   * E10, with FLAG_ADAPTIVE (render.rs `FrameAdaptive`, header bytes 52..68): the fewest and most samples of a pixel,
+   * the relative error of the noisiest block at the last decision (-1 before it) and the seconds to the noise target
+   * (-1: unknown). Null otherwise.
+   */
+  adaptive: { min: number; max: number; noise: number; eta: number } | null;
 }
 
 /** Reads a frame of `GET /api/render/<id>` (header, then little-endian f32 sums). */
@@ -152,6 +163,7 @@ export function parseFrame(buf: ArrayBuffer): NativeFrame {
     sums,
     noisy,
     version: header >= 52 ? u(48) : 0,
+    adaptive: header >= 68 && flags & FLAG_ADAPTIVE ? { min: u(52), max: u(56), noise: v.getFloat32(60, true), eta: v.getFloat32(64, true) } : null,
   };
 }
 
@@ -191,6 +203,8 @@ export function touchesImage(s: ProjectState, p: ProjectState): boolean {
     s.scene !== p.scene ||
     // Caustics and the other Advanced settings (E5b-1) reach the image; the denoise is the live switch (U11).
     advancedTouchesView(s.render.advanced, p.render.advanced) ||
+    // E10: Finish by Noise samples the view adaptively, to its threshold.
+    adaptiveKey(s) !== adaptiveKey(p) ||
     s.materials !== p.materials ||
     s.studio !== p.studio ||
     s.environment !== p.environment ||
@@ -262,6 +276,8 @@ interface ViewJob {
   expectMs: number;
   /** Its long-poll is running (it ends when the job ends, is replaced, or fails). */
   alive: boolean;
+  /** E10: what the launcher's last frame said of an adaptive image. */
+  adaptive: NativeFrame['adaptive'];
   /** Aborts its long-poll. */
   abort: AbortController;
 }
@@ -604,6 +620,8 @@ export class NativeEngine {
         // E11: a gesture's frames keep the filter but not the edge samples.
         pixelFilter: this.filter.pixelFilter,
         edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
+        // E10: a view that follows the output's samples samples adaptively when the output finishes by noise.
+        ...(scale === 1 ? viewAdaptive(state, this.limit) : {}),
         // M2b: the textures, when the launcher's engine reads them; M3b: the material programs, when it runs them.
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
         ...(readsPrograms(this.info.features) ? { programs: true } : {}),
@@ -617,7 +635,8 @@ export class NativeEngine {
    * viewport update the launcher cannot apply (409 need-meshes) is sent again whole.
    */
   private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again: (() => Uint8Array) | undefined, opts: { finish?: FinishBy; seq?: number; share?: number; signal?: AbortSignal; passes?: readonly PassKey[]; live?: boolean }): Promise<number> {
-    const finish = opts.finish ? `&finish=${opts.finish.toLowerCase()}` : '';
+    // E10: by noise is the launcher's by samples (its samples are the cap; the RSB's noise target ends it sooner).
+    const finish = opts.finish ? `&finish=${(opts.finish === 'NOISE' ? 'SAMPLES' : opts.finish).toLowerCase()}` : '';
     const wanted = opts.passes?.length ? `&passes=${opts.passes.join(',')}` : '';
     const order = opts.seq !== undefined ? `&seq=${opts.seq}` : '';
     const share = opts.share ? `&share=${opts.share}` : '';
@@ -679,7 +698,7 @@ export class NativeEngine {
     this.failure = null;
     this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, filter: { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 }, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController() };
+    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, filter: { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 }, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController(), adaptive: null };
     this.job = job;
     this.dirty.clear();
     this.shownPass = 0;
@@ -718,6 +737,7 @@ export class NativeEngine {
         this.aliveAt = now;
         job.samples = frame.samples;
         job.seconds = frame.seconds;
+        job.adaptive = frame.adaptive;
         job.paused = (frame.flags & FLAG_PAUSED) !== 0;
         job.shared = (frame.flags & FLAG_SHARED) !== 0;
         job.threads = frame.threads;
@@ -968,6 +988,7 @@ export class NativeEngine {
       ...(full && job.denoised ? { denoised: true } : {}),
       ...(full && job.live !== undefined ? { liveDenoise: { images: job.cleanImages } } : {}),
       ...(job?.caustics && this.state ? { caustics: CAUSTICS_PRESETS[this.state.render.advanced.causticsQuality].photons } : {}),
+      ...(full && job.adaptive ? { adaptive: { ...job.adaptive } } : {}),
       ...(full ? { pixelFilter: { ...job.filter } } : {}),
     };
   }
@@ -1012,6 +1033,7 @@ export class NativeEngine {
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
         ...this.filter,
+        ...(opts.adaptive ? { adaptive: opts.adaptive } : {}),
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
         ...(readsPrograms(this.info.features) ? { programs: true } : {}),
       };
@@ -1039,6 +1061,11 @@ export class NativeEngine {
         const f = parseFrame(await res.arrayBuffer());
         pass = f.pass;
         const progress: RenderProgress = { jobId: null, progress: budgetProgress(budget, f.samples, f.seconds * 1000), samples: f.samples, seconds: f.seconds };
+        // E10: the launcher's numbers of an adaptive image, its progress by the time it expects to the target.
+        if (f.adaptive && opts.adaptive) {
+          progress.adaptive = { ...f.adaptive, target: opts.adaptive.noiseThreshold };
+          progress.progress = adaptiveProgress(budget, f.samples, f.seconds * 1000, f.adaptive.eta);
+        }
         opts.onProgress?.(progress);
         if (f.flags & FLAG_CANCELLED) throw signal?.aborted ? abortError() : new Error('the render was interrupted');
         if (f.flags & FLAG_FAILED) throw new Error('the render failed');
@@ -1108,7 +1135,7 @@ export class NativeEngine {
         const tone = this.source.tone(state);
         this.liveCurve = { state, curve: new DisplayCurve(tone.exposureEv, tone.tonemap) };
       }
-      opts.onFrame?.(liveFrameOf({ sum: f.sums, width: f.width, height: f.height, samples: f.samples }, box, this.liveCurve.curve, { renderWidth: opts.width, renderHeight: opts.height, samples: f.samples, seconds: f.seconds }));
+      opts.onFrame?.(liveFrameOf({ sum: f.sums, width: f.width, height: f.height, samples: f.samples }, box, this.liveCurve.curve, { renderWidth: opts.width, renderHeight: opts.height, samples: f.samples, seconds: f.seconds, ...(f.adaptive ? { minSamples: f.adaptive.min } : {}) }));
     } catch (err) {
       if (isAbort(err) || init.signal?.aborted) throw err;
       console.warn(`render ${id}: no live picture (${err instanceof Error ? err.message : String(err)})`);

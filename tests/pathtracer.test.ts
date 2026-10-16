@@ -18,6 +18,9 @@ import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generatio
 import { exactPixel, exposureGain } from '../src/render/tonemap';
 import { ALBEDO_BIT, EXACT_BITS, PassAccumulator, wordsPerPixel } from '../src/render/pass-planes';
 import { passMask } from '../src/core/passes';
+import { AdaptiveState, rescaledSums } from '../src/render/adaptive';
+import type { RenderProgress } from '../src/core/render';
+import type { LiveFrame } from '../src/core/live-frame';
 
 const f = Math.fround;
 
@@ -227,6 +230,8 @@ class FakeWorker {
   delay = 0;
   /** U11: with this, a job's message takes this many milliseconds per sample instead (a pass costs what it renders). */
   sampleDelay = 0;
+  /** E10: the samples it renders (default `sampleData`), the same for a pixel in a tile or in a block. */
+  data: typeof sampleData = sampleData;
   /** The denoise requests it answered (E5b-1). */
   readonly denoised: Extract<WorkerRequest, { type: 'denoise' }>[] = [];
   constructor(private readonly width: number) {}
@@ -270,10 +275,18 @@ class FakeWorker {
             index,
             first: msg.first,
             count: msg.count,
-            data: sampleData(t, msg.first, msg.count, this.width),
+            data: this.data(t, msg.first, msg.count, this.width),
             ...(passes & ALBEDO_BIT ? { albedo: albedoData(t, msg.first, msg.count, this.width) } : {}),
             ...(passes & EXACT_BITS && msg.first === 0 ? { exact: exactData(t, passes, this.width) } : {}),
           });
+        }
+        this.reply({ type: 'done', generation: msg.generation });
+        break;
+      case 'blocks':
+        // E10: a round's blocks, each its samples from where it stopped.
+        for (let k = 0; k < msg.items.length; k += 7) {
+          const [x, y, w, h, block, first, count] = msg.items.subarray(k, k + 7);
+          this.reply({ type: 'tile', generation: msg.generation, index: block, first, count, data: this.data({ x, y, w, h }, first, count, this.width), block: { x, y, w, h } });
         }
         this.reply({ type: 'done', generation: msg.generation });
         break;
@@ -532,6 +545,123 @@ describe('Render with the path tracer', () => {
     expect(frames).toHaveLength(0);
     expect([...plain.data]).toEqual([...px.data]);
     expect([...px.data]).toEqual([...exactBytes(ref.sum, 7, 0.5, 2)]);
+  });
+});
+
+describe('Render by noise with the path tracer (E10)', () => {
+  function source(views: TracerView[]): SceneSource {
+    return {
+      build: (_s, view) => {
+        views.push(view);
+        return { meshKey: 'k', bytes: (meshes) => new Uint8Array([meshes ? 2 : 1, view.maxSamples & 255, view.width & 255, 0]) };
+      },
+      tone: () => ({ exposureEv: 0.5, tonemap: 2 }),
+    };
+  }
+
+  /** Samples whose noise is ten times larger on the left third of the image than elsewhere. */
+  function varied(t: { x: number; y: number; w: number; h: number }, first: number, count: number, width: number): Float32Array {
+    const out = new Float32Array(count * t.w * t.h * 4);
+    for (let s = 0; s < count; s++) {
+      for (let y = 0; y < t.h; y++) {
+        for (let x = 0; x < t.w; x++) {
+          const p = (t.y + y) * width + t.x + x;
+          const amp = t.x + x < width / 3 ? 0.5 : 0.05;
+          const v = f(0.5 + f(amp * f((((p * 7 + (first + s) * 13) % 97) - 48) / 48)));
+          out.set([v, f(v * 0.5), f(v * 0.25), 1], (s * t.w * t.h + y * t.w + x) * 4);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** The adaptive render of the fake workers' samples, by hand: the port of the decision on an accumulation. */
+  function byHand(width: number, height: number, cap: number, target: number): { acc: Accumulator; ad: AdaptiveState } {
+    const ad = new AdaptiveState(width, height, { ev: 0.5, target, cap });
+    const acc = new Accumulator(width, height, undefined, { blocks: true });
+    for (;;) {
+      if (ad.left === 0) {
+        ad.decide(acc.sum, 4, acc.lum2);
+        if (ad.converged) break;
+      }
+      const count = ad.left;
+      if (ad.warmingUp) for (const t of acc.tiles) acc.add(t.index, acc.samples[t.index], count, varied(t, ad.iteration, count, width));
+      else for (const b of ad.work(count)) acc.addBlock(b.block, b.x, b.y, b.w, b.h, b.first, b.count, varied(b, b.first, b.count, width));
+      ad.advance(count);
+    }
+    return { acc, ad };
+  }
+
+  it('renders its first round by tiles, then only the blocks the decision chooses, and hands back sums rescaled to its most samples', async () => {
+    const { pool, workers } = await fakePool(3, 96);
+    workers.forEach((w) => (w.data = varied));
+    const views: TracerView[] = [];
+    const engine = new PathTracerEngine(pool, source(views), true);
+    engine.sync(exampleState(), null);
+    const progress: RenderProgress[] = [];
+    const frames: LiveFrame[] = [];
+    let asks = 0;
+    const px = await engine.renderPixels({
+      width: 96,
+      height: 40,
+      maxSamples: 64,
+      maxSeconds: 0,
+      transparent: false,
+      finishBy: 'NOISE',
+      adaptive: { noiseThreshold: 0.02 },
+      keepLinear: true,
+      onProgress: (p) => progress.push(p),
+      frameBox: () => (++asks % 7 === 0 ? { width: 48, height: 48 } : null),
+      onFrame: (fr) => frames.push(fr),
+    });
+    expect(views[0].adaptive).toEqual({ noiseThreshold: 0.02 });
+    // The first round: tiles, passes of 1, 2, 4, 8 and 1; then the workers get blocks.
+    const jobs = workers[0].got.filter((m) => m.type === 'job') as Extract<WorkerRequest, { type: 'job' }>[];
+    expect(jobs.map((j) => j.count)).toEqual([1, 2, 4, 8, 1]);
+    expect(workers.some((w) => w.got.some((m) => m.type === 'blocks'))).toBe(true);
+    const { acc, ad } = byHand(96, 40, 64, 0.02);
+    const { min, max } = ad.minMax();
+    expect(min).toBeLessThan(max);
+    expect(px.samples).toBe(max);
+    expect([...px.sum!]).toEqual([...rescaledSums(acc.sum, 96, 40, acc.blockSamples, max)]);
+    expect([...px.data]).toEqual([...exactBytes(px.sum!, max, 0.5, 2)]);
+    // The progress says what the engine says of it, and ends at 1.
+    const last = progress[progress.length - 2];
+    expect(last.adaptive).toMatchObject({ min, max, target: 0.02 });
+    expect(progress[progress.length - 1].progress).toBe(1);
+    // U14: the live view's pictures of it, with the samples of its pixels.
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.every((fr) => fr.minSamples !== undefined && fr.minSamples <= fr.samples)).toBe(true);
+  });
+
+  it('a view that follows the output samples adaptively when the output finishes by noise, and says its range', async () => {
+    const dom = installDom();
+    const { pool, workers } = await fakePool(2, 64);
+    workers.forEach((w) => (w.data = varied));
+    const views: TracerView[] = [];
+    const engine = new PathTracerEngine(pool, source(views), true);
+    const state = exampleState();
+    const noisy = { ...state, render: { ...state.render, finishBy: 'NOISE' as const, noiseThreshold: 4, maxSamples: 48 } };
+    engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+    engine.sync(noisy, null);
+    engine.resize(64, 32, 1);
+    engine.setActive(true);
+    for (let i = 0; i < 400 && !engine.status().converged; i++) {
+      engine.frame();
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const st = engine.status();
+    dom.restore();
+    expect(views.some((v) => v.adaptive?.noiseThreshold === 0.04)).toBe(true);
+    expect(st.converged).toBe(true);
+    expect(st.adaptive).toBeDefined();
+    expect(st.adaptive!.min).toBeLessThanOrEqual(st.adaptive!.max);
+    expect(st.samples).toBe(st.adaptive!.max);
+    // Another threshold starts the view over; another finish by is not adaptive.
+    expect(touchesImage({ ...noisy, render: { ...noisy.render, noiseThreshold: 2 } }, noisy)).toBe(true);
+    expect(nativeTouchesImage({ ...noisy, render: { ...noisy.render, noiseThreshold: 2 } }, noisy)).toBe(true);
+    expect(touchesImage({ ...state, render: { ...state.render, finishBy: 'TIME' } }, state)).toBe(false);
+    engine.setActive(false);
   });
 });
 

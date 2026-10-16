@@ -192,6 +192,114 @@ pub unsafe extern "C" fn rt_render_tile_rgba(
     }
 }
 
+/// E10, adaptive sampling: like [`rt_render_tile_rgba`] for a block of a round (`crate::render_block_rgba`):
+/// sample `sample_index` of the pixel rectangle `(x, y, w, h)` with the photon map of `iteration`.
+/// Same status codes.
+///
+/// # Safety
+///
+/// `out_ptr` must be null or point to at least `w * h * 4 * 4` writable bytes (alignment is not
+/// required).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn rt_render_block_rgba(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+    iteration: u32,
+    out_ptr: *mut f32,
+) -> u32 {
+    if out_ptr.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    match crate::render_block_rgba(handle, x, y, w, h, sample_index, iteration) {
+        Ok(pixels) => {
+            // SAFETY: the caller promises `w * h * 4 * 4` writable bytes and `pixels` holds
+            // exactly `w * h * 4` floats; byte-wise copy needs no alignment, and `pixels` is a
+            // fresh allocation so the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    pixels.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    pixels.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}
+
+/// E10: the adaptive decision (`crate::adaptive_decide`) of a `width × height` image: `counts_ptr`
+/// the samples of its blocks (`u32`, `ceil(width / 8) × ceil(height / 8)` of them), `sums_ptr` its
+/// RGBA sums (`f32`, 4 per pixel), `lum2_ptr` its squared-luminance sums (`f32`); writes one byte
+/// per block to `active_ptr` (1: in the next round) and [`crate::DECISION_WORDS`] words to
+/// `decision_ptr`. Status 2 when the sizes do not fit, 3 for a null pointer.
+///
+/// # Safety
+///
+/// Every pointer must be null or point to as many bytes as its plane holds (alignment is not
+/// required).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn rt_adaptive_decide(
+    width: u32,
+    height: u32,
+    ev: f32,
+    target: f32,
+    cap: u32,
+    counts_ptr: *const u8,
+    sums_ptr: *const u8,
+    lum2_ptr: *const u8,
+    active_ptr: *mut u8,
+    decision_ptr: *mut u8,
+) -> u32 {
+    if [counts_ptr, sums_ptr, lum2_ptr].iter().any(|p| p.is_null())
+        || active_ptr.is_null()
+        || decision_ptr.is_null()
+    {
+        return STATUS_NULL_POINTER;
+    }
+    let (cols, rows) = rt_core::adaptive::block_grid(width, height);
+    let (blocks, pixels) = (
+        cols as usize * rows as usize,
+        width as usize * height as usize,
+    );
+    let words = |ptr: *const u8, n: usize| -> Vec<u32> {
+        // SAFETY: the caller promises each plane's bytes; they are read byte-wise (no alignment).
+        let bytes = unsafe { std::slice::from_raw_parts(ptr, n * 4) };
+        bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    };
+    let counts = words(counts_ptr, blocks);
+    let sums: Vec<f32> = words(sums_ptr, pixels * 4)
+        .into_iter()
+        .map(f32::from_bits)
+        .collect();
+    let lum2: Vec<f32> = words(lum2_ptr, pixels)
+        .into_iter()
+        .map(f32::from_bits)
+        .collect();
+    match crate::adaptive_decide(width, height, ev, target, cap, &counts, &sums, &lum2) {
+        Ok((active, decision)) => {
+            let bytes: Vec<u8> = decision.iter().flat_map(|w| w.to_le_bytes()).collect();
+            // SAFETY: the caller promises `blocks` bytes at `active_ptr` and
+            // `DECISION_WORDS * 4` at `decision_ptr`; fresh allocations, no overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(active.as_ptr(), active_ptr, active.len());
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), decision_ptr, bytes.len());
+            }
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}
+
 /// Writes the exact passes of `mask` (normal 2, depth 4, part id 8, material id 16, circle of
 /// confusion 32; the albedo bit 1 and unknown bits are ignored) of the pixel rectangle
 /// `(x, y, w, h)` to `out_ptr`: the planes one after another in that order, each

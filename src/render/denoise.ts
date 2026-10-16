@@ -21,6 +21,8 @@ export const DENOISE_GUIDE_MASK = passMask(DENOISE_GUIDES);
 export const DENOISE_HALO = 72;
 /** Words per pixel of a band's input (rt_wasm::DENOISE_WORDS): sums 4, lum2 1, albedo 3, normal 3, depth 1, ids 2. */
 export const DENOISE_WORDS = 14;
+/** E10: with one plane more, each pixel's own sample count (rt_wasm::DENOISE_WORDS_COUNTED; an adaptive image). */
+export const DENOISE_WORDS_COUNTED = DENOISE_WORDS + 1;
 /** No band under this many rows (each carries 2 × HALO more), as the launcher cuts them. */
 export const MIN_BAND_ROWS = 192;
 
@@ -60,12 +62,13 @@ export function hasGuides(passes: RenderPasses): boolean {
 
 /**
  * The input of `rt_denoise` for rows `lo .. hi`: the planes one after another (sums, lum2, albedo, normal, depth,
- * part id, material id), little-endian words.
+ * part id, material id), little-endian words; E10, with `counts` (an adaptive image whose sums are rescaled to the
+ * image's samples), each pixel's own count last.
  */
-export function packBand(width: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, lo: number, hi: number): Uint32Array {
+export function packBand(width: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, lo: number, hi: number, counts?: Float32Array): Uint32Array {
   const m = width * (hi - lo);
   const a = lo * width;
-  const words = new Uint32Array(m * DENOISE_WORDS);
+  const words = new Uint32Array(m * (counts ? DENOISE_WORDS_COUNTED : DENOISE_WORDS));
   const f = new Float32Array(words.buffer);
   f.set(sums.subarray(a * 4, (a + m) * 4), 0);
   f.set(lum2.subarray(a, a + m), m * 4);
@@ -74,6 +77,7 @@ export function packBand(width: number, sums: Float32Array, lum2: Float32Array, 
   f.set(passes.depth!.subarray(a, a + m), m * 11);
   words.set(passes.partId!.subarray(a, a + m), m * 12);
   words.set(passes.materialId!.subarray(a, a + m), m * 13);
+  if (counts) f.set(counts.subarray(a, a + m), m * DENOISE_WORDS);
   return words;
 }
 
@@ -105,13 +109,15 @@ export async function denoiseImage(
   run: (job: DenoiseJob, k: number) => Promise<Float32Array>,
   preset: DenoisePreset = 'FULL',
   strength = 1,
+  counts?: Float32Array,
 ): Promise<Float32Array | null> {
   if (!hasGuides(passes) || lum2.length !== width * height) return null;
+  if (counts && counts.length !== width * height) return null;
   const out = new Float32Array(width * height * 4);
   const s = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : 1;
   await Promise.all(
     denoiseBands(height, workers, preset).map(async (band, k) => {
-      const job: DenoiseJob = { width, height, samples, band, input: packBand(width, sums, lum2, passes, band.lo, band.hi), ...(preset === 'FULL' ? {} : { preset }), ...(s === 1 ? {} : { strength: s }) };
+      const job: DenoiseJob = { width, height, samples, band, input: packBand(width, sums, lum2, passes, band.lo, band.hi, counts), ...(preset === 'FULL' ? {} : { preset }), ...(s === 1 ? {} : { strength: s }) };
       const rows = await run(job, k);
       out.set(rows.subarray(0, width * (band.y1 - band.y0) * 4), band.y0 * width * 4);
     }),

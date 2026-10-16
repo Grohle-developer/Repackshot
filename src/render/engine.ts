@@ -95,6 +95,12 @@ export interface EngineStatus {
    * (`RNDR.pixel_filter`, `RNDR.edge_supersample`), at full resolution.
    */
   pixelFilter?: PixelFilterFields;
+  /**
+   * Path tracer (E10): the view samples adaptively; its pixels have from `min` to `max` samples (`samples` is `max`),
+   * `noise` is the relative error of the noisiest block at the last decision (-1 before it) and `eta` the seconds to
+   * the noise target from the last pass (-1: unknown). The engine's numbers, as the meter prints them.
+   */
+  adaptive?: { min: number; max: number; noise: number; eta: number };
   /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
   msaa?: { samples: number; max: number };
   /**
@@ -146,6 +152,11 @@ export interface RenderOptions {
   frameBox?: (image?: number) => FrameBox | null;
   /** U14: the picture `frameBox` asked for. */
   onFrame?: (frame: LiveFrame) => void;
+  /**
+   * E10, Finish by Noise (core/render.ts `adaptiveOf`): sample adaptively to this noise target (a fraction), at most
+   * `maxSamples` per pixel; with `finishBy` NOISE the render ends when every block is under it.
+   */
+  adaptive?: { noiseThreshold: number };
 }
 
 export interface PickHit {

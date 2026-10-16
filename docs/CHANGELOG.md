@@ -3,6 +3,18 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Motor
+
+- **Muestreo adaptativo**: tras 16 muestras a todos los píxeles, el motor reparte las siguientes por bloques de 8 × 8 según el ruido de cada uno (el error relativo de la media de cada píxel, de la varianza que ya llevaba la película), ronda a ronda, la misma imagen con cualquier número de hilos, baldosas o pasadas, igual en el navegador, en el lanzador y en `rt` (`--adaptive`, `--noise P`). Un bloque que ya no recibe muestras conserva su media. Sin pedirlo, los mismos píxeles que antes (E10).
+- El *denoise* pondera la varianza de cada píxel por sus propias muestras (E10).
+
+### Interfaz
+
+- *Render ▸ Calidad ▸ Terminar por* gana **Ruido**: el render acaba cuando cada parte de la imagen queda por debajo del umbral (0,5–5 %, el 1 % por defecto), con las muestras como tope, y la estimación sale de la última pasada del visor *Completo* (E10).
+- El medidor del visor dice *Adaptativo · mín–máx muestras*, y la vista en vivo del render, el ruido que queda frente al objetivo y el tiempo que el motor espera (E10).
+
 ## v0.1.12 — 2026-10-16
 
 Versión de prueba con los materiales de nodos funcionando en el modo
