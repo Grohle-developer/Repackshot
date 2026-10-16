@@ -293,6 +293,26 @@ fn the_cloth_is_the_same_bits_with_1_4_or_16_threads() {
 }
 
 #[test]
+fn the_textures_are_the_same_bits_with_1_4_or_16_threads() {
+    // M2b: the mipmaps are computed when the scene is read, before any thread starts, and every
+    // read is a function of the hit and the ray's footprint; the M2b example is rt-core's
+    // pinned image (PINNED_M2B_TEXTURES_4SPP) on any number of threads.
+    let scene = rt_core::example::m2b_scene();
+    for threads in [1, 4, 16] {
+        let out = rt_cli::render(&scene, 4, threads);
+        let hash = out
+            .film
+            .resolve()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .fold(0x811c_9dc5u32, |h, b| {
+                (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+            });
+        assert_eq!(hash, 0x5d94_b21c, "{threads} threads");
+    }
+}
+
+#[test]
 fn media_are_the_same_bits_with_1_4_or_16_threads() {
     // E9b: a walk takes its random numbers from hashed dimensions of its pixel's sample, never
     // from a thread, and so does the wavelength a path chooses at a dispersive glass (E9c), so

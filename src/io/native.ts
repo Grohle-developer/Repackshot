@@ -56,6 +56,8 @@ export interface NativeInfo {
   app: 'repackshot';
   version: string;
   engineVersion: string;
+  /** M2b: what the engine reads beyond the plain RSB (`rt_core::FEATURES`; bit 0, the textures); absent before. */
+  features?: number;
   threads: number;
   /** The SIMD path the native engine renders with (`avx2`, `sse2`, `neon`, `scalar`). */
   isa: string;

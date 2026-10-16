@@ -55,7 +55,7 @@ import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset }
 import { fitFactor } from '../core/live-frame';
 import { LivePicture } from './live-frame';
 import type { ProjectState } from '../core/store';
-import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
+import { readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
 import { abortError, budgetProgress, runPasses, type PassBudget } from './schedule';
@@ -89,6 +89,8 @@ export interface TracerView {
   edgeSupersample?: number;
   /** E5b-1: the caustics switch and quality (Automatic is decided by io/rsb.ts from the scene). */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
+  /** M2b: the engine reads the textures (render/engine.ts `readsTextures`): the scene carries them. */
+  textures?: boolean;
 }
 
 export interface BuiltScene {
@@ -190,6 +192,8 @@ export class Pool {
   readonly size: number;
   /** The engine's version as its workers report it (`rt_version`: major << 16 | minor << 8 | patch). */
   version = 0;
+  /** M2b: what the engine reads beyond the plain RSB, as its workers report it (`rt_features`; 0 before M2b). */
+  features = 0;
   private readonly workers: Worker[];
   private sceneSeq = 0;
   private readonly scenes = new Map<number, { left: number; error: string | null; done: (error: string | null) => void }>();
@@ -220,6 +224,7 @@ export class Pool {
   static async create(module: WebAssembly.Module, size: number, spawn: () => Worker): Promise<Pool> {
     const workers = Array.from({ length: size }, spawn);
     let version = 0;
+    let features = 0;
     try {
       await Promise.all(
         workers.map(
@@ -228,6 +233,7 @@ export class Pool {
               w.onmessage = (e: MessageEvent<WorkerReply>) => {
                 if (e.data.type === 'ready') {
                   version = e.data.version;
+                  features = e.data.features ?? 0;
                   resolve();
                 }
                 else if (e.data.type === 'failed') reject(new Error(e.data.reason));
@@ -243,6 +249,7 @@ export class Pool {
     }
     const pool = new Pool(workers);
     pool.version = version;
+    pool.features = features;
     return pool;
   }
 
@@ -893,6 +900,8 @@ export class PathTracerEngine implements RenderEngine {
       // E11: a gesture's frames keep the filter but not the edge samples (they are gone before they would tell).
       pixelFilter: this.filter.pixelFilter,
       edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
+      // M2b: the textures, when this engine reads them.
+      ...(readsTextures(this.pool.features) ? { textures: true } : {}),
     };
   }
 
@@ -1273,6 +1282,7 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
         ...this.filter,
+        ...(readsTextures(this.pool.features) ? { textures: true } : {}),
       };
       // E5b-1: a denoised render also renders the guide passes and sums the squared luminance. U11b: at a strength
       // of 0 it is not denoised at all (the image is the noisy one).

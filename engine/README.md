@@ -17,7 +17,7 @@ Do not add a dependency. If something is missing, write it.
 
 | Crate | Kind | Role |
 |-------|------|------|
-| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
+| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `texture` (M2b: image textures, their mipmaps, the five projections and labels in the shading), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
 | `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`): the renderer (`rt_*`) and the rigid body simulator (`phys_*`, `src/phys.rs`). Its `unsafe` is confined to `src/ffi.rs`. |
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
@@ -117,6 +117,7 @@ cargo run --release -p rt-cli -- --example -o out.png        # built-in scene, n
 cargo run --release -p rt-cli -- --write-example scene.rsb   # the same scene as an RSB file
 cargo run --release -p rt-cli -- --write-e5-example e5.rsb   # the E5 parity scene (glass, HDRI, background image)
 cargo run --release -p rt-cli -- --write-e5b-example e5b.rsb # the E5b-1 parity scene (the E5 scene with caustic photons)
+cargo run --release -p rt-cli -- --write-m2b-example m2b.rsb # the M2b texture scene (every projection, normal maps, a cut-out, labels)
 cargo run --release -p rt-cli -- --write-film-thumb t.rsb    # the film plugin's recipe-card scene (bottle beside the lit lamp, 320x200)
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 16 --denoise --keep-noisy   # out.png denoised, out-noisy.png
 cargo run --release -p rt-cli -- scene.rsb -o out.png --caustics 16384 --caustic-radius 3   # photon-map caustics
@@ -550,7 +551,7 @@ A wasm instance is single threaded; the host runs one instance per Web Worker.
 
 RSB (Repackshot Scene Binary, version 1) is little-endian: the magic `RSB1`, a `u32` header
 length, then sections `[tag: 4 ASCII bytes][u32 byte length][payload]`. Tags: `CAMR`, `LENS`,
-`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`. Unknown tags are skipped, so old readers keep
+`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`, `PATN`, `FXAM`, `IMGS`. Unknown tags are skipped, so old readers keep
 working with newer writers. `INST` (E2) places a mesh with a 3x4 transform, a material and flags;
 a file without `INST` sections draws every mesh once, untransformed, with its own material,
 exactly as before. E3 appended optional fields (`MATL.flags`; `RNDR.max_depth`,
@@ -573,7 +574,11 @@ the fastest f-number, the floating magnifications, four artistic overrides, the 
 the edge bevel of the shading, `rt_core::bevel`) and added `PATN` (108 bytes, one per patterned
 material: the procedural wood or cloth of `rt_core::pattern`). E9 appended to `MATL` (100 bytes)
 `scatter_mm`, `scatter_color` (three floats), `scatter_g` and `abbe` (the Abbe number of solid
-glass, E9c). The exact field layout and the semantics
+glass, E9c). M2b reads what M2a's writer sends when the engine says it can (`rt_features` bit 0,
+`rt_core::FEATURE_TEXTURES`): `IMGS` (the texture images as 8-bit rows, sRGB or linear; the
+engine computes their mipmaps), the texture block of `MATL` from byte 100 (six slots with their
+mapping, the emission tint, the labels) and the UV sets of `MESH` after its material; see
+`rt_core::texture`. The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -628,6 +633,16 @@ byte for byte.
   the measured cost of the traced camera (`rt --lens-cost`); the tiles trace the camera rays of a
   row through the lens in batches of eight (`optics::traced::batch`, the same bits as one by
   one).
+* **M2b**: image textures and labels (`rt_core::texture`): `IMGS` with mipmaps computed when the
+  scene is read (box filter in linear values, fractional weights on odd sides), bilinear and
+  trilinear reads with the level of detail of the ray's footprint (Igehy's ray differentials for
+  camera rays, the path's cone after; a quarter of a pixel), the UV, box, planar, cylindrical and
+  spherical projections of `src/core/textures.ts` in `f32` (the shared fixture
+  `tests/fixtures/texture-mapping.json`), the six slots (colour, roughness, metal, normal or height,
+  alpha as a cut-out or a coverage, emission), tangent-space normal maps in the frame of the
+  coordinates' surface gradients, labels over the surface with their own finish and paper edge,
+  per-point opacity for shadow rays, the textured albedo pass; `rt_features`, the M2b parity
+  scene (`rt --write-m2b-example`).
 
 ## Third-party data
 

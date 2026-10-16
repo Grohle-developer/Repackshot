@@ -271,6 +271,52 @@ pub(crate) const PINNED_E6_PASS_PART_ID: u32 = 0xf0c7_5106;
 pub(crate) const PINNED_E6_PASS_MATERIAL_ID: u32 = 0xf0c7_5106;
 pub(crate) const PINNED_E6_PASS_COC: u32 = 0x6ad5_8dc5;
 
+#[test]
+fn the_passes_of_the_m2b_example_have_pinned_hashes_on_every_platform() {
+    // M2b: the albedo pass is the textured base colour (the colour images and the labels over
+    // it, read with the footprint of the sample's camera ray); the other planes are the
+    // geometry's. `tools/wasm-parity.mjs` checks the real module against the same values; the
+    // image keeps its hash with the passes interleaved.
+    let scene = crate::example::m2b_scene();
+    let tiles = tile_grid(scene.render.width, scene.render.height, 32);
+    for isa in Isa::available() {
+        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let got = hashes(&passes);
+        for (key, hash) in PASS_KEYS.iter().zip(&got) {
+            eprintln!("M2b {key} on {}: {hash:#010x}", isa.name());
+        }
+        assert_eq!(got, PINNED_M2B_PASSES, "on {}", isa.name());
+    }
+    let mut plain = scene.clone();
+    plain.textures.clear();
+    let without = hashes(&passes_of(&plain, PASS_ALL, 4, &tiles, Isa::detect()));
+    assert_ne!(
+        without[0], PINNED_M2B_PASS_ALBEDO,
+        "the textures show in the albedo pass"
+    );
+    assert_eq!(
+        without[2], PINNED_M2B_PASS_DEPTH,
+        "and nowhere in the geometry"
+    );
+}
+
+/// The pinned hashes of the M2b example's passes (4 samples of albedo), in the order of
+/// `PASS_KEYS` (`PINNED_M2B_PASS_<KEY>` for CI).
+const PINNED_M2B_PASSES: [u32; 6] = [
+    PINNED_M2B_PASS_ALBEDO,
+    PINNED_M2B_PASS_NORMAL,
+    PINNED_M2B_PASS_DEPTH,
+    PINNED_M2B_PASS_PART_ID,
+    PINNED_M2B_PASS_MATERIAL_ID,
+    PINNED_M2B_PASS_COC,
+];
+pub(crate) const PINNED_M2B_PASS_ALBEDO: u32 = 0x478b_fcc8;
+pub(crate) const PINNED_M2B_PASS_NORMAL: u32 = 0xc149_1d6a;
+pub(crate) const PINNED_M2B_PASS_DEPTH: u32 = 0x3047_4c2a;
+pub(crate) const PINNED_M2B_PASS_PART_ID: u32 = 0xb4c6_eb60;
+pub(crate) const PINNED_M2B_PASS_MATERIAL_ID: u32 = 0xb4c6_eb60;
+pub(crate) const PINNED_M2B_PASS_COC: u32 = 0x6ad5_8dc5;
+
 /// The pinned hashes of the example's passes (4 samples of albedo), in the order of
 /// `PASS_KEYS`. CI reads them from here (`PINNED_PASS_<KEY>`) for `tools/wasm-parity.mjs`.
 const PINNED_EXAMPLE_PASSES: [u32; 6] = [
