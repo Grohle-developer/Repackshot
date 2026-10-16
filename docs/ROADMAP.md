@@ -4590,6 +4590,13 @@ prueba de humo, E9 a, b y c, el ajuste de `GRADIENT_POOL`).
   de esta fusión (`1dc375e`). No se vuelven a renderizar ni se fijan:
   queda para el responsable (renderizarlas otra vez con el bisel, o que
   las miniaturas no lo lleven).
+  **Veredicto del responsable (16-10):** se renderizan otra vez con el
+  bisel. Una miniatura enseña lo que da el montaje sobre la escena que
+  construye el código, y esa escena lleva el bisel del Doctor; quitárselo
+  solo a las miniaturas haría que no coincidieran con el primer render del
+  usuario. Las 88 se rehicieron con `rt` y el wasm de E6
+  (`tools/setup-thumbs.mjs`) y el *hash* PNG de `STRIP_EDGE` en
+  `tests/sets.test.ts` se re-fijó.
 - **Docs**: E9 conserva ARCHITECTURE §5.2 sexies y las secciones de E6 pasan
   a §5.2 septies (bisel) y §5.2 octies (madera y tela); las líneas de E6
   del CHANGELOG van en *Sin publicar*, no en v0.1.6.
