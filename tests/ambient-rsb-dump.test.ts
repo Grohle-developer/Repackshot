@@ -1,8 +1,9 @@
 // Writes the RSB files of the ambient contact sheet (phase S4a) that tools/ambient-sheet.mjs renders with the
 // native `rt`: the example bottle in a dark flat studio with each of the eight presets under two lights (a side key,
 // and a spot behind the product aimed at the camera), rain with three streak lengths, the dust cloud with two
-// softnesses, and the two scenes of the cost measurement (no effect, and 200 000 dust motes). Skipped unless
-// REPACKSHOT_AMBIENT_RSB_DIR is set, so `npm run qa` writes nothing; the tool sets the variable itself.
+// softnesses, and the scenes of the cost measurement (no effect; each preset at its own count on the bottle, S4b; and
+// 200 000 dust motes). Skipped unless REPACKSHOT_AMBIENT_RSB_DIR is set, so `npm run qa` writes nothing; the tool
+// sets the variable itself.
 //
 //   REPACKSHOT_AMBIENT_RSB_DIR=out/ambient-sheet npx vitest run tests/ambient-rsb-dump.test.ts
 //
@@ -76,11 +77,13 @@ describe.skipIf(!dir)('ambient contact sheet: RSB dump', () => {
       const s = withEffect('side', 'DUST_CLOUD');
       write(`DUST_CLOUD-soft-${softness}`, 'cloud-softness', `Dust cloud, softness ${softness} (side key)`, apply(s, { type: 'effect/set', id: s.effects[0].id, patch: { cloud: { ...s.effects[0].cloud, softness } } }));
     }
-    // The cost: the same bottle and light, without and with 200 000 dust motes.
+    // The cost: the same bottle and light, without an effect, with each preset at its own count (S4b: the criterion
+    // of 1.3x applies at the presets' densities) and with 200 000 dust motes.
     write('cost-none', 'cost', 'No effect', base('side'), costSpp);
+    for (const p of AVAILABLE_EFFECTS) write(`cost-${p.key}`, 'cost', p.label.en, withEffect('side', p.key), costSpp);
     write('cost-dust200k', 'cost', '200 000 dust motes', withEffect('side', 'DUST_MOTES', { amountMode: 'COUNT', count: 200_000 }), costSpp);
     writeFileSync(join(dir!, 'shots.json'), JSON.stringify({ width, height, spp, costSpp, lights: Object.fromEntries(Object.entries(LIGHTS).map(([k, v]) => [k, v.label])), shots }, null, 2));
-    expect(shots).toHaveLength(8 * 2 + 3 + 2 + 2);
+    expect(shots).toHaveLength(8 * 2 + 3 + 2 + 1 + 8 + 1);
     expect(shots.find((x) => x.file === 'cost-dust200k')!.particles).toBe(200_000);
   });
 });

@@ -74,7 +74,7 @@ use crate::bsdf::{Bsdf, Lobes};
 use crate::caustics::{gather_at, gather_catcher, CausticSetup, PhotonMap};
 use crate::color::Rgb;
 use crate::fmath;
-use crate::geometry::{Geometry, RayClass, RayHit};
+use crate::geometry::{Geometry, Hit, RayClass, RayHit};
 use crate::light::{Lights, Scattered};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::pattern::{PatternSetup, Tint};
@@ -100,6 +100,11 @@ pub const WALL_MAX_MM: f32 = 5.0;
 pub const WALL_MIN_COS: f32 = 0.965_925_8;
 /// Roughest such wall.
 pub const WALL_MAX_ROUGHNESS: f32 = 0.05;
+/// Least density, per steradian, of a BSDF sample after which a path still sees small clear
+/// particles refract (S4b): a lobe this narrow (a GGX of roughness about 0.15 or smoother: a
+/// mirror, clear glass, a smooth coat) shows them as sharply as the camera does; a broader one
+/// would make caustics of them.
+pub const SHARP_PDF: f32 = 100.0;
 
 /// Nearest-hit and shadow queries against the scene geometry. The particles of the ambient
 /// effects (S4a) are seen by each kind of ray as their flags say ([`RayClass`]); a tracer that
@@ -116,6 +121,11 @@ pub trait Tracer {
     /// Nearest hit of a shadow ray (particles that cast shadows): what a shadow ray crossing cut-outs
     /// and thin walls meets next.
     fn trace_shadow(&self, ray: &Ray) -> Option<RayHit> {
+        self.trace(ray)
+    }
+    /// Nearest hit of a ray of a path that scattered off a rough lobe (S4b): the particles seen in
+    /// reflections, but the clear ones only when they cast shadows ([`RayClass::Rough`]).
+    fn trace_rough(&self, ray: &Ray) -> Option<RayHit> {
         self.trace(ray)
     }
 }
@@ -150,6 +160,11 @@ impl Tracer for BvhTracer<'_> {
     #[inline]
     fn trace_shadow(&self, ray: &Ray) -> Option<RayHit> {
         self.geometry.trace_class(ray, self.isa, RayClass::Shadow)
+    }
+
+    #[inline]
+    fn trace_rough(&self, ray: &Ray) -> Option<RayHit> {
+        self.geometry.trace_class(ray, self.isa, RayClass::Rough)
     }
 }
 
@@ -309,12 +324,20 @@ impl Prepared {
                 .particle_set(i as u32)
                 .is_some_and(|set| set.params().shape == rt_sim::Shape::Disc)
         };
+        // Small clear particles that cast shadows are crossed straight by shadow rays (S4b).
+        let clear = |i: usize| {
+            scene
+                .geometry
+                .particle_set(i as u32)
+                .is_some_and(|set| set.is_clear() && set.params().visible_to(rt_sim::FLAG_SHADOW))
+        };
         let passable: Vec<bool> = (0..instances.len() + scene.geometry.particle_sets().len())
             .map(|i| {
                 material(i).is_some_and(|m| {
                     let thin = m.flags & MATERIAL_FLAG_THIN != 0 || disc(i);
                     !m.is_emissive()
                         && (m.opacity < 1.0
+                            || clear(i)
                             || (thin
                                 && m.transmission > 0.0
                                 && (m.metallic < 1.0 || m.kind == crate::scene::MATERIAL_GLASS)))
@@ -450,9 +473,44 @@ impl Prepared {
         self.media.get(id as usize).copied().flatten()
     }
 
-    /// Follows `ray` through the cut-outs and thin walls it meets: what a straight ray keeps up
-    /// to the first surface that stops it, and that surface's distance (infinite when nothing
-    /// does; the visible floor stops it too).
+    /// What a ray crossing the surface it met (`hit`, with its `details`) straight keeps, and
+    /// where it goes on from: a cut-out lets `1 - opacity` through and a thin wall its straight
+    /// transmittance, from just behind it. A small clear particle that is not a thin wall itself
+    /// ([`crate::geometry::ParticleSet::is_clear`]: a drop) is crossed whole and without refraction
+    /// (S4b): it keeps the straight transmittance of a thin wall of the particle's material (the
+    /// Fresnel of both faces and its tint) and goes on from beyond the particle's far side.
+    fn straight_through(&self, scene: &Scene, r: &Ray, hit: RayHit, details: &Hit) -> (Rgb, Vec3) {
+        // A particle's own tint and thinness.
+        let own = self.particle_material(scene, hit.instance, hit.triangle);
+        let m = match &own {
+            Some(m) => m,
+            None => self.material(scene, hit.instance),
+        };
+        let cos = details.geometric_normal.dot(r.dir);
+        let opacity = m.opacity.clamp(0.0, 1.0);
+        let drop = scene
+            .geometry
+            .particle_set(hit.instance)
+            .filter(|set| set.is_clear() && m.flags & MATERIAL_FLAG_THIN == 0);
+        if let Some(set) = drop {
+            let mut wall = m.clone();
+            wall.flags |= MATERIAL_FLAG_THIN;
+            let through = Bsdf::principled(&wall).straight_transmittance(cos) * opacity
+                + Rgb::splat(1.0 - opacity);
+            let far = r.at(set.exit(hit.triangle, r, hit.t, false));
+            return (through, offset_origin(far, set.normal(hit.triangle, far)));
+        }
+        let through =
+            Bsdf::principled(m).straight_transmittance(cos) * opacity + Rgb::splat(1.0 - opacity);
+        (
+            through,
+            offset_origin(details.point, -details.geometric_normal),
+        )
+    }
+
+    /// Follows `ray` through the cut-outs, thin walls and small clear particles it meets: what a
+    /// straight ray keeps up to the first surface that stops it, and that surface's distance
+    /// (infinite when nothing does; the visible floor stops it too).
     fn walk<T: Tracer>(&self, scene: &Scene, tracer: &T, ray: &Ray) -> (Rgb, f32) {
         let floor = if self.floor_mode == FloorMode::Visible {
             self.floor_t(ray, false)
@@ -485,21 +543,11 @@ impl Prepared {
             let Some(details) = scene.geometry.hit_details(&r, hit) else {
                 return (keep, t);
             };
-            // A particle's own tint and thinness.
-            let own = self.particle_material(scene, hit.instance, hit.triangle);
-            let m = match &own {
-                Some(m) => m,
-                None => self.material(scene, hit.instance),
-            };
-            let cos = details.geometric_normal.dot(r.dir);
-            let opacity = m.opacity.clamp(0.0, 1.0);
-            let through = Bsdf::principled(m).straight_transmittance(cos) * opacity
-                + Rgb::splat(1.0 - opacity);
+            let (through, origin) = self.straight_through(scene, &r, hit, &details);
             keep = keep * through;
             if keep.r.max(keep.g).max(keep.b) <= 0.0 {
                 return (Rgb::BLACK, t);
             }
-            let origin = offset_origin(details.point, -details.geometric_normal);
             travelled += (origin - r.origin).dot(r.dir);
             let mut next = Ray::new(origin, r.dir);
             next.t_max = ray.t_max - travelled;
@@ -566,11 +614,9 @@ impl Prepared {
                 .copied()
                 .unwrap_or(false)
             {
-                let opacity = m.opacity.clamp(0.0, 1.0);
-                let through = Bsdf::principled(m).straight_transmittance(n.dot(r.dir)) * opacity
-                    + Rgb::splat(1.0 - opacity);
+                let (through, origin) = self.straight_through(scene, &r, hit, &details);
                 keep = keep * through;
-                offset_origin(details.point, -n)
+                origin
             } else {
                 if !details.outside {
                     return None;
@@ -749,6 +795,23 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
     }
 }
 
+/// True for a smooth, fully clear dielectric (S4b): GGX lobes no wider than the narrowest the
+/// engine renders ([`crate::bsdf::MIN_ALPHA`]), no metal, no diffuse, no rough coat; it scatters
+/// nothing but mirror reflection and refraction (or a thin wall's straight transmission).
+fn is_mirror(m: &Material) -> bool {
+    let smooth = |roughness: f32| roughness * roughness <= crate::bsdf::MIN_ALPHA;
+    let metallic = if m.kind == crate::scene::MATERIAL_GLASS {
+        0.0
+    } else {
+        m.metallic
+    };
+    !m.is_emissive()
+        && metallic <= 0.0
+        && m.transmission >= 1.0
+        && smooth(m.roughness)
+        && (m.coat <= 0.0 || smooth(m.coat_roughness))
+}
+
 /// Largest channel.
 #[inline]
 pub(crate) fn peak(c: Rgb) -> f32 {
@@ -916,6 +979,14 @@ pub fn radiance_weighted<T: Tracer>(
     let mut bounce = 0u32;
     // Nothing but straight events since the camera.
     let mut primary = true;
+    // Every vertex since the camera scattered by a narrow lobe ([`SHARP_PDF`]): the path still sees
+    // small clear particles refract (S4b); after a rough one it crosses them straight.
+    let mut sharp = true;
+    // Small clear particles crossed straight since the last vertex.
+    let mut crossings = 0u32;
+    // Inside a particle the ray just refracted into: where it leaves it, the farthest its nearest
+    // hit can be (S4b; the search is bounded by it, then the whole ray if nothing is that near).
+    let mut within = f32::INFINITY;
     // Distance from the last scattering vertex to the origin of `ray` (straight events).
     let mut offset = 0.0f32;
     // Absorption coefficients of the solid the ray is inside.
@@ -939,10 +1010,23 @@ pub fn radiance_weighted<T: Tracer>(
         let hit = match scatter {
             None => {
                 *rays += 1;
-                if primary {
-                    tracer.trace_camera(&ray)
+                let trace = |r: &Ray| {
+                    if primary {
+                        tracer.trace_camera(r)
+                    } else if sharp {
+                        tracer.trace(r)
+                    } else {
+                        tracer.trace_rough(r)
+                    }
+                };
+                if within < ray.t_max {
+                    // The nearest hit within the particle's exit is the nearest of the whole ray.
+                    let mut near = ray;
+                    near.t_max = within * (1.0 + 1.0e-4) + Ray::EPSILON;
+                    within = f32::INFINITY;
+                    trace(&near).or_else(|| trace(&ray))
                 } else {
-                    tracer.trace(&ray)
+                    trace(&ray)
                 }
             }
             Some(sm) => {
@@ -970,6 +1054,7 @@ pub fn radiance_weighted<T: Tracer>(
                         exit = Some(eta2);
                         bsdf_pdf = Some(pdf);
                         primary = false;
+                        sharp = false;
                         offset = 0.0;
                         Some(hit)
                     }
@@ -1062,6 +1147,34 @@ pub fn radiance_weighted<T: Tracer>(
                 tint: None,
             }
         } else {
+            // S4b: a path that scattered off a rough lobe crosses a small clear particle (a drop)
+            // straight, as a shadow ray does (`Prepared::straight_through`), so the drops make no
+            // caustics: a straight event, which keeps the density and the light selection of the
+            // last vertex for the MIS of what lies behind.
+            if let Some(h) = hit.filter(|h| {
+                !sharp
+                    && exit.is_none()
+                    && scene
+                        .geometry
+                        .particle_set(h.instance)
+                        .is_some_and(|set| set.is_clear())
+            }) {
+                let Some(details) = scene.geometry.hit_details(&ray, h) else {
+                    break;
+                };
+                crossings += 1;
+                if crossings > MAX_SHADOW_CROSSINGS {
+                    break;
+                }
+                let (through, origin) = prepared.straight_through(scene, &ray, h, &details);
+                throughput = throughput * through;
+                if !(peak(throughput) > 0.0) {
+                    break;
+                }
+                offset += (origin - ray.origin).dot(ray.dir);
+                ray = Ray::new(origin, ray.dir);
+                continue;
+            }
             // A particle widened to the minimum size on screen (S4a): the camera ray shades it
             // with probability q, weighted by its real share of the widened area over q, or goes
             // on through it, weighted by the rest over 1 - q, to see what is behind; on average
@@ -1218,6 +1331,16 @@ pub fn radiance_weighted<T: Tracer>(
         }
         let drop_nee = caustics.is_some() && next_state.photons_bring_it();
 
+        // S4b: a smooth clear particle (a drop, a bubble) only reflects and refracts like a mirror:
+        // next-event estimation there can only find delta lights, and every other light is left
+        // to its BSDF ray, which counts what it finds whole (a density of infinity in the MIS).
+        let mirror = surface.instance.is_some_and(|(i, _)| {
+            scene
+                .geometry
+                .particle_set(i)
+                .is_some_and(|set| set.is_clear())
+        }) && material.is_some_and(is_mirror);
+
         // Next-event estimation: one light, chosen by what each one can send to this point.
         let selection = lights.select(surface.point);
         let light_sample = lights.sample_selected(
@@ -1228,7 +1351,9 @@ pub fn radiance_weighted<T: Tracer>(
         // No test against the geometric normal here: a light above the shading horizon but
         // below a coarse facet's plane is decided by the shadow ray from the lifted point, which
         // keeps the terminator smooth (a ray into the surface hits it and is shadowed).
-        if let Some(ls) = light_sample.filter(|ls| !(drop_nee && ls.photon)) {
+        if let Some(ls) =
+            light_sample.filter(|ls| !(drop_nee && ls.photon) && (ls.delta || !mirror))
+        {
             let wi = frame.to_local(ls.wi);
             let lobes = if ls.glossy {
                 Lobes::All
@@ -1311,9 +1436,11 @@ pub fn radiance_weighted<T: Tracer>(
         } else {
             // From the last real vertex to this one.
             let distance = offset + t_geometry;
-            bsdf_pdf = Some(bs.pdf);
+            bsdf_pdf = Some(if mirror { f32::INFINITY } else { bs.pdf });
             sampled_at = selection;
             primary = false;
+            sharp = sharp && bs.pdf >= SHARP_PDF;
+            crossings = 0;
             offset = 0.0;
             state = next_state;
             // E9b: a BSDF sample of an exit vertex that crosses a thin wall in and out is, for
@@ -1373,6 +1500,15 @@ pub fn radiance_weighted<T: Tracer>(
             }
         }
         ray = Ray::new(next_origin, wi);
+        // Refracted into a particle: its own far side bounds the search for the next hit.
+        if let (true, true, Some((i, _))) = (transmitted, surface.outside, surface.instance) {
+            if let Some(set) = scene.geometry.particle_set(i) {
+                let exit = set.exit(surface.triangle, &ray, 0.0, false);
+                if exit > ray.t_min && exit.is_finite() {
+                    within = exit;
+                }
+            }
+        }
         bounce += 1;
     }
     (sum, alpha * alpha_weight)

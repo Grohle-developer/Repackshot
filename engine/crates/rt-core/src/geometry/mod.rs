@@ -31,7 +31,7 @@ mod tests;
 
 pub use bvh::{BvhStats, BvhWidth, BINS, SAH_DEPTH_LIMIT};
 pub use mesh::{Mesh, MeshError, MAX_TRIANGLES};
-pub use particles::{ParticleSet, PixelFootprint, MIN_PIXELS};
+pub use particles::{is_clear_material, ParticleSet, PixelFootprint, ScreenProjection, MIN_PIXELS};
 pub use transform::Transform;
 pub use triangle::{intersect_triangle, Cull, TriangleHit};
 
@@ -61,6 +61,10 @@ pub enum RayClass {
     Secondary,
     /// Shadow rays: the effects that cast shadows.
     Shadow,
+    /// Rays of a path that scattered off a rough lobe (S4b): the effects seen in reflections,
+    /// except the clear ones ([`ParticleSet::is_clear`]), which such a ray crosses straight as a
+    /// shadow ray does, so it sees them only when they cast shadows.
+    Rough,
     /// Only the parts, no particles (picking).
     Parts,
 }
@@ -73,6 +77,8 @@ impl RayClass {
             RayClass::Camera => rt_sim::FLAG_CAMERA,
             RayClass::Secondary => rt_sim::FLAG_REFLECTIONS,
             RayClass::Shadow => rt_sim::FLAG_SHADOW,
+            RayClass::Rough if set.is_clear() => rt_sim::FLAG_SHADOW,
+            RayClass::Rough => rt_sim::FLAG_REFLECTIONS,
             RayClass::Parts => return false,
         };
         set.params().visible_to(flag)

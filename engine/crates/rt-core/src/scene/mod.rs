@@ -17,12 +17,14 @@ pub use rsb::RsbError;
 pub use rt_sim::AmbientParams;
 
 /// The particle sets of `effects` for `footprint`: a set of `kept` with the same parameters is
-/// reused (its BVH built again only for another footprint), any other effect is evaluated.
+/// reused (its BVH built again only for another footprint), any other effect is evaluated. Each
+/// set knows whether its material (of `materials`) is clear (S4b).
 pub(crate) fn particle_sets(
     effects: &[AmbientParams],
     kept: Vec<ParticleSet>,
     footprint: PixelFootprint,
     width: crate::geometry::BvhWidth,
+    materials: &[Material],
 ) -> Vec<ParticleSet> {
     let mut kept: Vec<Option<ParticleSet>> = kept.into_iter().map(Some).collect();
     effects
@@ -36,6 +38,7 @@ pub(crate) fn particle_sets(
                 Some(set) => set.with_footprint(footprint, width),
                 None => ParticleSet::evaluate(params, footprint, width),
             }
+            .with_material(materials.get(params.material_id as usize))
         })
         .collect()
 }
@@ -807,7 +810,13 @@ impl Scene {
     pub fn build_particles(&mut self, kept: Vec<ParticleSet>) {
         let width = crate::geometry::BvhWidth::native();
         let instances = self.geometry.instances().to_vec();
-        let mut sets = particle_sets(&self.effects, kept, self.pixel_footprint(), width);
+        let mut sets = particle_sets(
+            &self.effects,
+            kept,
+            self.pixel_footprint(),
+            width,
+            &self.materials,
+        );
         if instances.len() + sets.len() > crate::geometry::MAX_INSTANCES {
             sets.clear();
         }
