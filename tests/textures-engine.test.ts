@@ -86,10 +86,15 @@ describe('the switch: the page writes the textures when the engine reads them (M
     const s = await texturedProject();
     await decodeTexturePixels(s, fixtureDecoder);
     const view = { width: 64, height: 48, maxSamples: 4, maxSeconds: 0 };
-    const on = sections(writeRsb(projectScene(s, { ...view, textures: true }).scene)).map((x) => x.tag);
-    const off = sections(writeRsb(projectScene(s, view).scene)).map((x) => x.tag);
-    expect(on).toContain('IMGS');
-    expect(off).not.toContain('IMGS');
+    const on = sections(writeRsb(projectScene(s, { ...view, textures: true }).scene));
+    const off = sections(writeRsb(projectScene(s, view).scene));
+    expect(on.map((x) => x.tag)).toContain('IMGS');
+    expect(off.map((x) => x.tag)).not.toContain('IMGS');
+    const size = (list: typeof on, tag: string) => list.filter((x) => x.tag === tag).map((x) => x.payload.byteLength);
+    expect(size(on, 'MATL').every((n) => n > 100)).toBe(true);
+    expect(size(off, 'MATL').every((n) => n === 100)).toBe(true);
+    // Each mesh: four more bytes (the UV sets word) and its UVs.
+    expect(size(on, 'MESH').map((n, i) => n > size(off, 'MESH')[i])).toEqual(size(off, 'MESH').map(() => true));
   });
 });
 
@@ -136,6 +141,25 @@ describe('the page’s writer gives the engine’s texture scene byte for byte',
 const live = RT_WASM ? describe : describe.skip;
 
 live('the real rt.wasm reads the textures', () => {
+  it('the pool’s own worker (render/worker.ts) reports the module’s features in its ready message', async () => {
+    const posted: unknown[] = [];
+    const scope = globalThis as unknown as { self?: unknown };
+    const before = scope.self;
+    const fake = { postMessage: (m: unknown) => posted.push(m), onmessage: null as ((e: { data: WorkerRequest }) => Promise<void>) | null };
+    scope.self = fake;
+    try {
+      await import('../src/render/worker');
+      const module = await WebAssembly.compile(readFileSync(RT_WASM!));
+      await fake.onmessage!({ data: { type: 'init', module } as WorkerRequest });
+    } finally {
+      scope.self = before;
+    }
+    expect(posted).toHaveLength(1);
+    const ready = posted[0] as Extract<WorkerReply, { type: 'ready' }>;
+    expect(ready.type).toBe('ready');
+    expect(readsTextures(ready.features)).toBe(true);
+  });
+
   it('says so, and renders the engine’s texture scene through the page’s code to rt-core’s pinned image', async () => {
     const rt = await loadRt();
     const features = (rt as unknown as { rt_features?: () => number }).rt_features;

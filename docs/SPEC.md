@@ -479,6 +479,21 @@ una acción del *store* (`texture/*`), deshacible (un arrastre, una
 entrada), y convierte el material en propio. La biblioteca guarda el
 mapeado, no las imágenes.
 
+**En *Completo* y en *Render*** (fase M2b) el motor pinta las ranuras y las
+etiquetas en el mismo sitio que *Rápido*, con las mismas proyecciones, el
+mismo tamaño en mm y la misma composición (el motor dice que las lee y la
+interfaz se las manda con sus píxeles; un motor anterior no las recibe). Lo
+que cambia es lo que hace el trazador mejor que la vista previa, y está
+dicho: el filtrado es el del rayo (*mipmaps* por la huella de un cuarto de
+píxel, y el promedio de las muestras del píxel); dibuja todas las etiquetas,
+no las seis primeras; el recorte del alfa recorta también las sombras; el
+papel de una etiqueta es opaco (sobre vidrio no se ve a través de ella); un
+emisor cuya imagen cambia su luz se ve igual pero no se muestrea como luz
+(más ruido en lo que ilumina, ningún sesgo); y los fotones de las cáusticas
+ven el material sin texturas. Si el tamaño de una textura debe seguir al del
+sólido es una decisión pendiente (`TRIAGE.md` 5.1): hasta entonces es en mm,
+como arriba.
+
 **Grafos de material** (fase M3a, `src/core/material-graph.ts`; el
 contrato con el motor en `ARCHITECTURE.md` §5.2 quater). Un material puede
 ser **Simple** (los parámetros de su familia) o **Nodos**: lleva entonces

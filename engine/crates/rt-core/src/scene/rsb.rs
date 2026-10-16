@@ -14,7 +14,7 @@
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
 //! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||` E6
-//! and E9) and are
+//! and E9, `||||||` M2b) and are
 //! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
 //! writer always writes them):
 //!
@@ -23,11 +23,17 @@
 //!             u32 ortho_flag; f32 ortho_width
 //! MESH  var.  u32 vertex_count index_count; f32 positions[3n] normals[3n]; u32 indices[m];
 //!             u32 material_id                      (n = vertex_count, m = index_count)
+//!             |||||| u32 uv_sets (0 to 2); f32 uv[2n] per set, v up            (M2b)
 //! MATL  56 B  u32 kind; f32 base_color[3] metallic roughness ior transmission coat
 //!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
 //!             || f32 opacity (1) anisotropy (0) absorption_mm (0)                     (72 B)
 //!             ||||| f32 bevel_mm (0)                                                  (76 B)
 //!             scatter_mm (0) scatter_color[3] (1 1 1) scatter_g (0) abbe (0)          (100 B)
+//!             |||||| the texture block from byte 100 (M2b): u32 version (1); 6 × slot
+//!             (i32 image; u32 projection axis uv_set; f32 size_mm rotation_deg offset[2]
+//!             repeat[2]; u32 wrap channel flags; f32 strength cutoff); f32 emission_tint[3];
+//!             u32 label_count; label_count × (i32 image; f32 origin[3] u[3] v[3] normal[3]
+//!             width_mm height_mm depth_mm roughness coat relief)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
@@ -58,6 +64,8 @@
 //!             spherical breathing; u32 moving_count; (u32 surface; f32 base near)[moving_count];
 //!             (u32 kind; f32 radius thickness nd vd semi_aperture; u32 coating;
 //!             f32 conic a4 a6 a8 a10)[surface_count]                                      (O2)
+//! IMGS   4 B  u32 count; per image u32 width height channels (1, 3 or 4) color_space (0 sRGB,
+//!             1 linear); u8 rows[width·height·channels] from the top; zero padding to 4  (M2b, new)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -66,7 +74,7 @@
 //!             f32 palette[4][3] (white)                                           (192 B)
 //! ```
 //!
-//! `CAMR`, `ENVR`, `FLOR`, `RNDR` and `LENS` may appear at most once (a missing one means
+//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS` and `IMGS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
 //! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN` and `FXAM` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
@@ -78,6 +86,19 @@
 //! file: scanline, uncompressed, RLE, ZIPS or ZIP); `width` and `height` are the size of the raw
 //! formats and 0 (or the file's own size) for the files. Rows run top to bottom. See
 //! [`crate::bitmap`]; a bitmap that cannot be decoded makes the file invalid.
+//!
+//! **Textures** (M2b, the contract M2a's writer follows: ARCHITECTURE §5.2). `IMGS` holds the
+//! texture images ([`crate::texture::TextureImage`]: the engine computes their mipmaps); the
+//! texture block of a `MATL` its six slots (colour, roughness, metal, normal, alpha, emission:
+//! the image's index in `IMGS`, −1 none, and the mapping it uses), the emission tint and its labels
+//! ([`crate::texture::MaterialTextures`]); the UV sets of a `MESH` its texture coordinates. A
+//! block of another version than 1 is skipped (a newer file's); an unknown projection, axis, UV
+//! set, wrap or channel, a size that is not positive, a label without a size, a truncated block,
+//! more than two UV sets or one without a pair per vertex, an image index past `IMGS` or a bad
+//! image make the file invalid. What they do in the shading: [`crate::texture`]. The writer
+//! emits them as the page's writer does: when the scene has images or blocks (or
+//! [`Scene::textured`]), every mesh gets its UV sets word, every material with a block its block,
+//! and `IMGS` follows the `FXAM` sections.
 //!
 //! **Instances.** A file without `INST` sections draws every mesh once, untransformed, with the
 //! mesh's own `material_id` (one implicit instance per mesh: what files written before `INST`
@@ -99,7 +120,9 @@
 //! instances, the materials or the lights sends everything but the geometry. In the same way a
 //! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large. The particles of
 //! an effect whose `FXAM` is unchanged are kept as well (S4a); only their BVH is built again when
-//! the camera or the image size changed.
+//! the camera or the image size changed. The texture images travel with the meshes (M2b): a file
+//! without `MESH` and `IMGS` keeps the loaded ones and their mipmaps; one with `MESH` and without
+//! `IMGS` has none.
 //!
 //! # Meaning of the values (fixed in E3)
 //!
