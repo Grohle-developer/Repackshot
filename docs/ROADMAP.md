@@ -9198,7 +9198,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 
 - O2 dibuja en *Rápido* la distorsión de una lente trazada, pero el pico
   usa el rayo sin distorsión: con un gran angular o el ojo de pez el clic no
-  cae bajo el cursor. Lo arregla O2 antes de cerrar.
+  cae bajo el cursor. Arreglado en O2 (`593d480`: un solo mapa en
+  `render/lens-profile.ts` para el pase de pantalla y el pico).
 - **1.3** (elegir lente, distorsión y bokeh de verdad) es O2.
 - **1.4** (ventana con los elementos al pasar por una lente de la lista)
   va tras O2: el corte en SVG ya existe; falta el aviso flotante y pedir al

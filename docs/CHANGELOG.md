@@ -3,7 +3,16 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.7 — 2026-10-16
+
+Versión de prueba con la madera, la tela y el bisel de aristas en el modo
+*Completo* y en los renders, materiales rugosos que ya no pierden luz,
+medios dispersores y dispersión cromática del vidrio, la lente trazada con
+las 16 lentes del catálogo, filtros de efecto en la lente, las 88
+miniaturas de montaje rehechas y los arreglos del reporte de errores del
+14-10 (enfocar con clic, el color de una tela en nodos, la extensión
+`.repack`, los intentos de la IA). Es la primera a la que se llega con
+*Actualizar desde la aplicación*. Lo de v0.1.2 a v0.1.6 sigue igual.
 
 ### Interfaz
 
@@ -19,7 +28,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - *Cámara* ▸ **Lente** (O2): *Lente fina* o **lente trazada**, una de las 16 del catálogo elegida por carácter (*Clínica, Suave, Remolino, Vintage, Anamórfica, Macro, Gran angular, Tele*), con su fuente, su tratamiento, el objetivo detrás del adaptador anamórfico, el hueco de la lente blanda y las láminas; lo que calcula el motor para esa cámara (focal, tiraje, f/ y T-stop, elementos y grupos, longitud, pupila de entrada, distorsión y luz hacia la esquina) y el **corte de la lente** en SVG; en *Avanzado*, los ajustes marcados *no físico* (distorsión, viñeteo, carácter de la esférica, respiración, aberración cromática, remolino); **Guardar lente como…** a *Míos*. El modo Rápido dibuja su distorsión y su viñeteo como aproximación y el medidor lo dice.
 - Los tipos de bokeh **Cometa de coma**, **Respiración de foco** y **Aberración esférica variable** ya se pueden elegir: ponen su lente trazada en la cámara, con su miniatura renderizada por el motor (O2).
 - Con una lente trazada, **un clic cae en lo que está bajo el cursor**: enfocar con clic, seleccionar, el *gizmo*, los glifos de luces y cámaras y la selección por caja siguen la distorsión que dibuja el visor, y el contorno de la selección y el *gizmo* se dibujan con ella; al mirar a través de otra cámara o de una luz el visor ya no aplica la lente de la cámara activa (O2).
-
 - **Enfocar con clic** ya no se deshace con el mismo clic: el visor terminaba el gesto de órbita al soltar el botón y devolvía el foco a la distancia de órbita (688 → 660 → 688 en el ejemplo, con la entrada de deshacer *Mover la cámara*). Ahora un clic que no mueve la vista no toca la cámara, y una órbita arrastra el foco solo si ya estaba en la distancia de órbita; vale también para *Mirar a través* de una cámara guardada. El clic mide desde la cámara que se ve, no desde la activa (B1).
 - **Intentos de la IA contados** (la cola): la fila dice *IA · mosaico 2 de 4 · intento 2 de 4* (la guarda repite como mucho 4 veces por variante y no hay bucle sin fin), y tras un reintento una segunda línea con el motivo de la guarda (*El intento 1 no pasó: …*); la barra se reparte por intentos, un cuarto cada uno, en vez de acercarse al final a cada reintento. El registro del lanzador dice *attempt k of 4 failed*. En la ventana de render, la vista previa de la IA ya no se abandona y empieza de nuevo con cada instantánea del gestor de modelos (llegan cada 200 ms durante una descarga): solo cuando cambian los modelos instalados o la tienda empieza a responder (B1).
 - Pasar una **tela a *Nodos*** conserva su color: el grafo mínimo promediaba los dos hilos a partes iguales, así que el vaquero volvía al gris azulado que E6 había corregido (y el raso y la microfibra se desviaban); ahora usa el color medio del tejido que leen el motor y la vista Rápida (B1).
@@ -42,8 +50,22 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Una cámara guarda su lente trazada por su clave del catálogo y lo que se cambió (`optics.traced`); los proyectos anteriores no la tienen y se abren igual. La biblioteca propia gana **lentes** (O2).
 - Los proyectos guardados se ven con las aristas redondeadas en *Completo* sin tocar nada: toda instancia de un preset ya traía un *Bisel de aristas* del 0,25 % del tamaño de la pieza (el arreglo del Doctor). Una madera o una tela guardadas conservan su `ringDensity` y su `threadCount`, que ahora se leen como anillos por 100 mm y hilos por cm (hasta 200). El bisel va en el byte 72 del registro `MATL` y los dibujos en la sección `PATN` nueva (E6).
 
-### Limitaciones conocidas
+### Limitaciones conocidas de esta versión
 
+- Las **texturas**, las **etiquetas** y los **materiales de nodos** siguen
+  viéndose solo en *Rápido*; *Completo* y el render usan la media de cada
+  salida hasta que el motor las lea (M2b y M3b).
+- Del reporte de errores del 14-10, esta versión arregla lo confirmado
+  (B1) y trae la lente trazada (O2); el resto está clasificado en
+  `TRIAGE.md` y espera sus fases (M2b, M3b, U14) o una decisión. El bucle
+  de intentos de la IA y el *denoise* que lava colores no se han podido
+  reproducir: hace falta el registro del lanzador y una escena.
+- El veredicto fotográfico de la hoja de lentes de O2 (qué lente da qué
+  bokeh, las prescripciones y los diafragmas supuestos, las constantes del
+  adaptador anamórfico) está pendiente: los valores son los propuestos.
+- Siguen las de las versiones anteriores, sobre todo que lo nuevo de
+  escritorio **no se ha probado en un Windows real** y que la primera imagen
+  real de la IA en una tarjeta gráfica sigue pendiente.
 - La luz sale de un medio como de una superficie difusa (la aproximación de producción de Chiang, Kutz y Burley 2016): en una esfera de leche bajo un panel lateral queda un 3,3 % más brillante que el camino que refracta de verdad. No hay medios anidados (un líquido dentro de otro), un sólido con índice 1 no tiene medio, y con una dirección muy marcada (cerca de ±0,9) converge despacio (E9b).
 - **Un líquido dentro de un frasco de vidrio** ve las luces a través de una pared fina y lisa (hasta 5 mm, caras casi paralelas) como si el vidrio no las desviara, una aproximación que en una losa de leche bajo una placa de 3 mm queda un 2 % por debajo del camino exacto; a través de un fondo grueso, de vidrio rugoso o con barniz, solo le llega la luz por los caminos que la encuentran al azar (con grano a pocas muestras) o, con *Cáusticas* encendidas, por fotones (E9b).
 - La compensación de energía aproxima los lóbulos anisótropos con el ancho isótropo equivalente y no toca las paredes finas (E9a).
