@@ -388,31 +388,53 @@ pub fn camera_seconds(scene: &Scene, samples: u32) -> f64 {
 
 /// Measures what the traced camera costs (`rt --lens-cost <dir>`, `<dir>/cost.json`): the O2
 /// example (the example at f/2.8 through the double Gauss) and the same through the thin lens,
-/// rendered at [`COST_SIZE`] and [`COST_SAMPLES`] on one thread, and their camera samples alone;
-/// then the camera samples of every lens of the catalogue in the points scene of the sheet, per
-/// sample, against the thin lens's.
+/// rendered at `size` and `samples` on one thread, and their camera samples alone; the same for
+/// the perfume bottle of the sheet (glass: a scene that costs more per sample) at a quarter of the
+/// samples; then the camera samples of every lens of the catalogue in the points scene of the
+/// sheet, per sample, against the thin lens's.
 pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let mut traced = rt_core::example::o2_scene();
-    traced.render.width = size.0;
-    traced.render.height = size.1;
-    let mut thin = traced.clone();
-    thin.camera.lens = None;
-    let n = f64::from(size.0) * f64::from(size.1) * f64::from(samples);
+    let catalogue = catalogue();
+    let double_gauss = catalogue
+        .iter()
+        .find(|l| l.key == "double_gauss_normal")
+        .ok_or("no double Gauss in the catalogue")?;
+    let mut example = rt_core::example::o2_scene();
+    example.render.width = size.0;
+    example.render.height = size.1;
+    let mut bottle = filter_bottle(
+        (size.0 * 3 / 2, size.1 * 3 / 2),
+        [FilterParams::default(); 3],
+    );
+    bottle.camera.lens = None;
+    let bottle_traced = with_lens(bottle.clone(), double_gauss, 2.8)?;
+    bottle.camera.fstop = 2.8;
+    let mut thin_example = example.clone();
+    thin_example.camera.lens = None;
     let mut rows = Vec::new();
-    for (name, scene) in [("double_gauss", &traced), ("thin", &thin)] {
-        let render = render_progressive(scene, samples, 1, None);
-        let camera = camera_seconds(scene, samples);
+    for (scene_name, camera_name, scene, spp) in [
+        ("example", "double_gauss", &example, samples),
+        ("example", "thin", &thin_example, samples),
+        ("bottle", "double_gauss", &bottle_traced, samples / 4),
+        ("bottle", "thin", &bottle, samples / 4),
+    ] {
+        let render = render_progressive(scene, spp, 1, None);
+        let camera = camera_seconds(scene, spp);
         let total = render.elapsed.as_secs_f64();
+        let n = f64::from(scene.render.width) * f64::from(scene.render.height) * f64::from(spp);
         println!(
-            "{name}: render {total:.1} s, camera {camera:.1} s ({:.1} %), {:.3} µs a camera sample",
+            "{scene_name}, {camera_name}: render {total:.1} s, camera {camera:.1} s ({:.1} %), {:.3} µs a camera sample, {:.3} µs a sample",
             100.0 * camera / total,
-            1.0e6 * camera / n
+            1.0e6 * camera / n,
+            1.0e6 * total / n
         );
         rows.push(format!(
-            "{{\"camera\":\"{name}\",\"renderSeconds\":{total:.3},\"cameraSeconds\":{camera:.3},\"share\":{:.4},\"cameraMicros\":{:.4},\"rays\":{}}}",
+            "{{\"scene\":\"{scene_name}\",\"camera\":\"{camera_name}\",\"width\":{},\"height\":{},\"samples\":{spp},\"renderSeconds\":{total:.3},\"cameraSeconds\":{camera:.3},\"share\":{:.4},\"cameraMicros\":{:.4},\"sampleMicros\":{:.4},\"rays\":{}}}",
+            scene.render.width,
+            scene.render.height,
             camera / total,
             1.0e6 * camera / n,
+            1.0e6 * total / n,
             render.rays
         ));
     }
@@ -422,8 +444,8 @@ pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String
     let m = 96.0 * 72.0 * f64::from(per);
     let thin_points = bokeh_points((96, 72), 2.0);
     let thin_micros = 1.0e6 * camera_seconds(&thin_points, per) / m;
-    for lens in catalogue() {
-        let scene = with_lens(points.clone(), &lens, 0.0)?;
+    for lens in &catalogue {
+        let scene = with_lens(points.clone(), lens, 0.0)?;
         let micros = 1.0e6 * camera_seconds(&scene, per) / m;
         let surfaces = lens.prescription.surfaces.len();
         println!(
@@ -436,10 +458,8 @@ pub fn cost(dir: &Path, samples: u32, size: (u32, u32)) -> Result<String, String
         ));
     }
     let json = format!(
-        "{{\"width\":{},\"height\":{},\"samples\":{samples},\"threads\":1,\"example\":[{}],\"thinMicros\":{thin_micros:.4},\"lenses\":[\n{}\n]}}\n",
-        size.0,
-        size.1,
-        rows.join(","),
+        "{{\"threads\":1,\"rows\":[\n{}\n],\"thinMicros\":{thin_micros:.4},\"lenses\":[\n{}\n]}}\n",
+        rows.join(",\n"),
         lenses.join(",\n")
     );
     let path = dir.join("cost.json");

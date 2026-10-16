@@ -693,3 +693,56 @@ fn the_rims_the_source_does_not_give_pass_the_real_rays_of_the_frame() {
         "relative illumination {corner} at the corner"
     );
 }
+
+#[test]
+fn a_traced_lens_without_cylinders_ignores_the_thin_lens_squeeze() {
+    // The thin lens's anamorphic squeeze would stretch a spherical lens's image: a traced lens
+    // desqueezes by what it traces (nothing, without cylinders).
+    let ray = |squeeze: f32| {
+        let mut scene = crate::example::o2_scene();
+        scene.camera.lens = Some(
+            super::Lens::new(LensParams {
+                squeeze,
+                prescription: Some(crate::example::double_gauss()),
+                ..LensParams::default()
+            })
+            .unwrap(),
+        );
+        scene.camera.prepare_lens().unwrap();
+        scene.camera.generate_ray(4.0 / 3.0, 0.9, 0.2, (0.0, 0.0))
+    };
+    let (a, b) = (ray(1.0), ray(2.0));
+    assert_eq!((a.origin, a.dir), (b.origin, b.dir));
+}
+
+#[test]
+fn the_iris_short_cuts_give_the_exact_edge_answers() {
+    // Inside the inscribed circle every point passes and beyond the circumradius none does, for
+    // the round iris, straight and curved blades, with and without an obstruction: the short cuts
+    // of the trace answer as the exact edge does, point by point.
+    use super::pupil::Iris;
+    for (blades, roundness, rotation, obstruction) in [
+        (0u32, 0.0f32, 0.0f32, 0.0f32),
+        (5, 0.0, 0.0, 0.0),
+        (6, 0.0, 30.0, 0.3),
+        (7, 0.3, 10.0, 0.0),
+        (9, 1.0, 0.0, 0.2),
+    ] {
+        let iris = Iris::new(blades, roundness, rotation);
+        let inner = 0.9998 * iris.inscribed();
+        let n = 400;
+        for j in 0..n {
+            for i in 0..n {
+                let x = -1.2 + 2.4 * (i as f32 + 0.5) / n as f32;
+                let y = -1.2 + 2.4 * (j as f32 + 0.5) / n as f32;
+                let exact = iris.signed_distance(x, y) > 0.0
+                    || (obstruction > 0.0 && iris.gauge(x, y) < obstruction);
+                assert_eq!(
+                    super::traced::iris_stops(&iris, inner * inner, obstruction, x, y),
+                    exact,
+                    "{blades} blades, roundness {roundness}: ({x}, {y})"
+                );
+            }
+        }
+    }
+}

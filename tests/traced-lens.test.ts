@@ -137,6 +137,9 @@ describe('the LENS prescription', () => {
     const lens = lensToRsb(traced('petzval_portrait', { distortion: -0.5, vignetting: 0.25, spherical: 0.75, breathing: -1 }), 640, 480);
     expect([lens.prescription!.distortion, lens.prescription!.vignetting, lens.prescription!.spherical, lens.prescription!.breathing]).toEqual([-0.5, 0.25, 0.75, -1]);
     expect(lensToRsb(traced('anamorphic_adapter_2x'), 640, 480).squeeze).toBe(2);
+    // The thin lens's squeeze does not apply to a traced lens (it would stretch a spherical lens's image).
+    expect(lensToRsb({ ...traced('triplet'), squeeze: 2 }, 640, 480).squeeze).toBe(1);
+    expect(lensToRsb({ ...traced('anamorphic_adapter_2x'), squeeze: 1.33 }, 640, 480).squeeze).toBe(2);
     expect(lensToRsb(traced('catadioptric_mirror'), 640, 480).obstruction).toBeCloseTo(0.49, 6);
     expect(lensToRsb(traced('macro_floating'), 640, 480).prescription!.magnification).toEqual([0.1, 0.2]);
     expect(lensToRsb(traced('telephoto_internal_focus'), 640, 480).prescription!.moving).toHaveLength(2);
@@ -177,4 +180,49 @@ describe.skipIf(!RT_WASM)('the real rt.wasm', () => {
     // The thin lens says so.
     expect(readLensInfo(rt, lensInfoRsb(camera(OPTICS_NEUTRAL), 640, 480))).toBeNull();
   }, 120000);
+});
+
+describe('a lens of one’s own (Save lens as…, the library)', () => {
+  it('keeps the traced lens, the iris and the artistic knobs, and puts them back on a camera', async () => {
+    const { emptyLibrary, fromCameraLens, opticsWithLensItem, addItem, itemsOf } = await import('../src/core/library');
+    const { exportLibrary, importLibrary } = await import('../src/io/library');
+    const optics: CameraOptics = { ...traced('soft_focus_variable', { variable: 3.1, spherical: -0.4, coating: 'single' }), blades: 9, roundness: 0.5, rotationDeg: 12, caAmount: 0.2, swirl: 0.1, tiltDeg: 2 };
+    expect(fromCameraLens(emptyLibrary(), OPTICS_NEUTRAL, 'x')).toBeNull();
+    const item = fromCameraLens(emptyLibrary(), optics, 'Dreamy', { id: 'lns-1', now: 1 })!;
+    expect(item.lens).toEqual({ traced: optics.traced, blades: 9, roundness: 0.5, rotationDeg: 12, caAmount: 0.2, swirl: 0.1 });
+    expect(item.source).toBe('soft_focus_variable');
+    // Back on a camera: its lens, iris and knobs; the tilt and the rest of the camera's optics stay.
+    const back = opticsWithLensItem({ ...OPTICS_NEUTRAL, tiltDeg: 3, filters: [] }, item);
+    expect([back.traced, back.blades, back.caAmount, back.tiltDeg, back.bokeh]).toEqual([optics.traced, 9, 0.2, 3, null]);
+    // Through the library file and back, and a lens of an unknown key is refused.
+    const lib = addItem(emptyLibrary(), item);
+    const again = importLibrary(exportLibrary(lib), emptyLibrary());
+    expect(itemsOf(again.lib, 'lens')).toEqual([item]);
+    const bad = JSON.parse(exportLibrary(lib));
+    bad.items[0].lens.traced.key = 'no_such_lens';
+    const refused = importLibrary(JSON.stringify(bad), emptyLibrary());
+    expect([itemsOf(refused.lib, 'lens').length, refused.skipped[0]?.code]).toEqual([0, 'invalid']);
+  });
+});
+
+describe('the cross-section (ui/components/lens-section.ts)', () => {
+  it('draws the glass of each element, the iris and the sensor from the engine’s section', async () => {
+    const { lensSectionSvg, sag, profileChartSvg } = await import('../src/ui/components/lens-section');
+    // A biconvex singlet and a plane stop behind it: one piece of glass, two blades of the iris.
+    const s = (z: number, kind: number, curvature: number, index: number, semiAperture = 10) => ({ z, kind, curvature, semiAperture, index, conic: 0, aspheric: [0, 0, 0, 0] as [number, number, number, number] });
+    const section = { surfaces: [s(0, 0, 1 / 50, 1.5), s(5, 0, -1 / 50, 1), s(8, 1, 0, 1, 6)], stop: 2, stopRadiusMm: 4, sensorZMm: 60 };
+    const svg = lensSectionSvg(section, { width: 200, height: 100, sensorHalfMm: 12 });
+    expect(svg.match(/fill-opacity="0.16"/g)?.length).toBe(1);
+    expect(svg.match(/stroke-width="2.5"/g)?.length).toBe(2);
+    expect(svg.includes('<line')).toBe(true);
+    // The sag of a sphere: R − sqrt(R² − y²).
+    expect(sag(section.surfaces[0], 10)).toBeCloseTo(50 - Math.sqrt(2500 - 100), 9);
+    // A doublet cemented: two pieces of glass (one per medium), and a mirror is a thick line, not glass.
+    const doublet = { surfaces: [s(0, 0, 1 / 40, 1.5), s(4, 0, -1 / 30, 1.7), s(6, 0, -1 / 90, 1), s(9, 1, 0, 1)], stop: 3, stopRadiusMm: 4, sensorZMm: 50 };
+    expect(lensSectionSvg(doublet, { width: 200, height: 100 }).match(/fill-opacity="0.16"/g)?.length).toBe(2);
+    const mirror = { surfaces: [s(0, 1, 0, 1), s(30, 5, -1 / 100, 1), s(10, 1, 0, 1)], stop: 0, stopRadiusMm: 8, sensorZMm: 0 };
+    const m = lensSectionSvg(mirror, { width: 200, height: 100 });
+    expect([m.match(/fill-opacity="0.16"/g), m.match(/stroke-width="3"/g)?.length]).toEqual([null, 1]);
+    expect(profileChartSvg([[10, 1], [20, 2]], { width: 100, height: 40, min: -2, max: 2, zero: 0 }).startsWith('<svg')).toBe(true);
+  });
 });

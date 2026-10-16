@@ -369,6 +369,33 @@
       "pixelsSha256": "761cd874c5ce38aba354bc8bee44cd10e90fa4c05c4e733931dbf1e99c1314c4"
     },
     {
+      "key": "coma_comet",
+      "variant": null,
+      "file": "coma-comet.png",
+      "width": 128,
+      "height": 96,
+      "samples": 1024,
+      "thin": {
+        "blades": 0,
+        "roundness": 1,
+        "rotationDeg": 0,
+        "mask": null,
+        "profile": "uniform",
+        "profileParam": 0,
+        "obstruction": 0,
+        "catsEye": 0,
+        "squeeze": 1,
+        "streaks": 0,
+        "caAmount": 0,
+        "swirl": 0,
+        "onionAmplitude": 0,
+        "texture": null
+      },
+      "lens": "double_gauss_fast",
+      "rsbSha256": "b5152f7093d60d852b8280839c8151130d8c182578b20b6d45a30d7bfbe32efc",
+      "pixelsSha256": "5b938413a46dedb6003f93fba271c67f4607a06c3adcfd4ef90630a8ccce4a59"
+    },
+    {
       "key": "double_line",
       "variant": null,
       "file": "double-line.png",
@@ -783,6 +810,60 @@
       },
       "rsbSha256": "b278c079da714d564e08fec755076591f76e0be6c6c30d5553a3564491c50052",
       "pixelsSha256": "290aacab2d04d87edd8a2c48cb61b5d90709df85b3028f6532628728d0d819b4"
+    },
+    {
+      "key": "focus_breathing",
+      "variant": null,
+      "file": "focus-breathing.png",
+      "width": 128,
+      "height": 96,
+      "samples": 1024,
+      "thin": {
+        "blades": 0,
+        "roundness": 1,
+        "rotationDeg": 0,
+        "mask": null,
+        "profile": "uniform",
+        "profileParam": 0,
+        "obstruction": 0,
+        "catsEye": 0,
+        "squeeze": 1,
+        "streaks": 0,
+        "caAmount": 0,
+        "swirl": 0,
+        "onionAmplitude": 0,
+        "texture": null
+      },
+      "lens": "telephoto_internal_focus",
+      "rsbSha256": "232c7d9d8c125817d04872241b65080d7bc534d04cd01a95b5dde9229ca6606e",
+      "pixelsSha256": "b957c45430b12e47c2a1abbccfd12a3c30862e6b5a58a688a3cb1f2ec3945003"
+    },
+    {
+      "key": "variable_sa",
+      "variant": null,
+      "file": "variable-sa.png",
+      "width": 128,
+      "height": 96,
+      "samples": 1024,
+      "thin": {
+        "blades": 0,
+        "roundness": 1,
+        "rotationDeg": 0,
+        "mask": null,
+        "profile": "uniform",
+        "profileParam": 0,
+        "obstruction": 0,
+        "catsEye": 0,
+        "squeeze": 1,
+        "streaks": 0,
+        "caAmount": 0,
+        "swirl": 0,
+        "onionAmplitude": 0,
+        "texture": null
+      },
+      "lens": "soft_focus_variable",
+      "rsbSha256": "338aaa477c4932d33884567591621229874bc65a9b4c98af863a10e4bd0e4289",
+      "pixelsSha256": "4d68e4e1d83165dde6e8aa2ed17f3265fdd384e2a90a2c35a1289b4151b62657"
     }
   ]
 }

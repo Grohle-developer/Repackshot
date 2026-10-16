@@ -1301,7 +1301,8 @@ export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens 
     // A mirror lens's central obstruction and an anamorphic adapter's squeeze are the traced lens's own.
     obstruction: Math.min(0.95, Math.max(0, composed ? Math.max(o.obstruction, composed.obstruction) : o.obstruction)),
     catsEye: unit(o.catsEye),
-    squeeze: Math.min(4, Math.max(1, composed && composed.squeeze !== 1 ? composed.squeeze : o.squeeze)),
+    // With a traced lens, the thin lens's squeeze does not apply (the engine desqueezes by what it traces).
+    squeeze: Math.min(4, Math.max(1, composed ? composed.squeeze : o.squeeze)),
     shiftXMm: o.shiftXMm,
     shiftYMm: o.shiftYMm,
     tiltDeg: Math.min(45, Math.max(-45, o.tiltDeg)),

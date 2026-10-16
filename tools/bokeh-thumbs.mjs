@@ -22,7 +22,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { decodePng } from './assets/common.mjs';
-import { bokehParams, bokehScene, CLOSE_UP, halve, PICTURE_SIZE, PURE_LIGHT_MM, SCENE, SHEET_SIZE, THUMB_SIZE, thumbnails } from './bokeh-scene.mjs';
+import { bokehParams, bokehScene, catalogueLens, CLOSE_UP, halve, PICTURE_SIZE, PURE_LIGHT_MM, SCENE, SHEET_SIZE, THUMB_SIZE, thumbnails } from './bokeh-scene.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -34,6 +34,9 @@ const opt = (name, fallback) => {
 const THUMB_SAMPLES = 1024;
 const OUT_DIR = join(ROOT, 'public/thumbs/bokeh');
 const data = JSON.parse(readFileSync(join(ROOT, 'src/data/bokeh.json'), 'utf8'));
+// O2: the traced lenses' prescriptions as rt and the page send them (rt --write-lens-catalogue).
+const lensCatalogue = JSON.parse(readFileSync(join(ROOT, 'tests/fixtures/lens-catalogue.json'), 'utf8'));
+const tracedOf = (t) => (t.lens ? catalogueLens(lensCatalogue, t.lens) : null);
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
@@ -137,9 +140,9 @@ function rtBinary() {
 const scratch = join(ROOT, 'out/bokeh-tmp');
 
 /** Renders the kernel scene of `thin` with `rt`: the RGB pixels and the RSB. */
-function render(rt, thin, size, samples, name, lightMm = SCENE.lightDiameterMm, scene = SCENE) {
+function render(rt, thin, size, samples, name, lightMm = SCENE.lightDiameterMm, scene = SCENE, traced = null) {
   mkdirSync(scratch, { recursive: true });
-  const rsb = bokehScene(thin, size, samples, picture, lightMm, scene);
+  const rsb = bokehScene(thin, size, samples, picture, lightMm, scene, traced);
   const rsbPath = join(scratch, `${name}.rsb`);
   const pngPath = join(scratch, `${name}.png`);
   writeFileSync(rsbPath, rsb);
@@ -169,7 +172,7 @@ if (flag('sheet')) {
     const keep = reuse && existsSync(join(dir, file)) && !(only && only.includes(t.key));
     const started = performance.now();
     if (!keep) {
-      const img = render(rt, thin, SHEET_SIZE, spp, `sheet-${file.replace(/\.png$/, '')}`, lightMm, scene);
+      const img = render(rt, thin, SHEET_SIZE, spp, `sheet-${file.replace(/\.png$/, '')}`, lightMm, scene, tracedOf(t));
       writeFileSync(join(dir, file), encodeRgb(img.pixels, img.width, img.height));
       console.log(`${file}: ${((performance.now() - started) / 1000).toFixed(1)} s`);
     }
@@ -192,7 +195,7 @@ if (flag('sheet')) {
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const figure = (c) =>
     `<figure><img src="bokeh-sheet/${c.file}" alt="${esc(c.type.name.en)}"><figcaption><b>${c.type.n}. ${esc(c.type.name.es)}${c.variant ? ` · ${esc(c.variant.name.es)}` : ''}</b> <span class="k">${esc(c.t.key)}${c.t.variant ? `/${esc(c.t.variant)}` : ''} · luces de ${c.lightMm} mm · ${c.spp} spp</span><br>${esc(c.type.description.es)}<br><code>${c.set.map(([k, v]) => `${k} ${v}`).join(' · ') || 'neutro'}</code></figcaption></figure>`;
-  const waiting = data.types.filter((t) => t.requires !== null);
+  const waiting = data.types.filter((t) => t.requires === 'wave');
   const html = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>Bokeh sheet</title>
 <style>
@@ -208,7 +211,7 @@ code{color:#aaa;font-size:12px}
 .k{color:#777}
 </style></head><body>
 <h1>Bokeh: los ${list.length} núcleos del modo 1 (lente fina mejorada)</h1>
-<p>Escena de puntos de luz de <code>tools/bokeh-scene.mjs</code>: un 85 mm a f/${SCENE.fstop} enfocado a ${SCENE.focusMm} mm, doce luces de ${SCENE.lightDiameterMm} mm (un quinto del disco de desenfoque a esa distancia) a ${SCENE.lightDepthMm / 1000} m en una rejilla de 4 × 3 (las de las esquinas a 0,84 de la altura de imagen), fondo negro, curva sRGB, ${samples} muestras por píxel, renderizado por <code>rt</code>. Los valores son los de <code>src/data/bokeh.json</code>, provisionales hasta el veredicto (regla 11). Sin núcleo propio en O1: ${waiting.map((t) => `${esc(t.name.es)} (${t.requires === 'wave' ? 'óptica de ondas, próximamente' : 'lente trazada, O2'})`).join(', ')}.</p>
+<p>Escena de puntos de luz de <code>tools/bokeh-scene.mjs</code>: un 85 mm a f/${SCENE.fstop} enfocado a ${SCENE.focusMm} mm, doce luces de ${SCENE.lightDiameterMm} mm (un quinto del disco de desenfoque a esa distancia) a ${SCENE.lightDepthMm / 1000} m en una rejilla de 4 × 3 (las de las esquinas a 0,84 de la altura de imagen), fondo negro, curva sRGB, ${samples} muestras por píxel, renderizado por <code>rt</code>. Los valores son los de <code>src/data/bokeh.json</code>, provisionales hasta el veredicto (regla 11). Los tipos de la lente trazada (O2) se renderizan con su lente del catálogo, al f/ de la escena o al más abierto de la lente si es más lento. Sin núcleo propio: ${waiting.map((t) => `${esc(t.name.es)} (óptica de ondas, próximamente)`).join(', ')}.</p>
 <div class="grid">
 ${cards.map(figure).join('\n')}
 </div>
@@ -233,8 +236,8 @@ ${close.map(figure).join('\n')}
   let bad = 0;
   for (const t of list) {
     const thin = bokehParams(data, t.key, t.variant);
-    const img = render(rt, thin, THUMB_SIZE, THUMB_SAMPLES, t.file.replace(/\.png$/, ''));
-    const entry = { key: t.key, variant: t.variant, file: t.file, width: img.width, height: img.height, samples: THUMB_SAMPLES, thin, rsbSha256: sha256(img.rsb), pixelsSha256: sha256(img.pixels) };
+    const img = render(rt, thin, THUMB_SIZE, THUMB_SAMPLES, t.file.replace(/\.png$/, ''), SCENE.lightDiameterMm, SCENE, tracedOf(t));
+    const entry = { key: t.key, variant: t.variant, file: t.file, width: img.width, height: img.height, samples: THUMB_SAMPLES, thin, ...(t.lens ? { lens: t.lens } : {}), rsbSha256: sha256(img.rsb), pixelsSha256: sha256(img.pixels) };
     if (check) {
       const was = known.thumbs.find((e) => e.file === t.file);
       if (!was || was.pixelsSha256 !== entry.pixelsSha256 || was.rsbSha256 !== entry.rsbSha256) {

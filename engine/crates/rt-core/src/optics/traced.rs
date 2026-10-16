@@ -445,12 +445,18 @@ pub struct TracedLens {
     surfaces: Vec<Surface>,
     /// The vertices' positions along the axis (the first at 0), focused.
     z: Vec<f32>,
+    /// Per surface and band, the index ratio a ray traced back meets there (the medium after the
+    /// surface over the one before it); 0 where the medium does not change ([`etas`]).
+    eta: Vec<[f32; 3]>,
     /// The aperture stop.
     stop: usize,
     /// Its radius for the f-number in use.
     stop_radius: f32,
     /// The iris (blades, roundness, rotation), circumradius 1.
     iris: Iris,
+    /// The squared radius inside which every point passes the iris: its inscribed circle's, a
+    /// hair smaller.
+    iris_inner2: f32,
     /// Central obstruction, as a fraction of the stop radius.
     obstruction: f32,
     /// The sensor plane's position.
@@ -497,6 +503,28 @@ struct Built {
     stop: usize,
     efl: f32,
     moving: Vec<MovingGap>,
+}
+
+/// The index ratios of [`TracedLens::eta`]: what the trace divides at each surface, once. A mirror
+/// keeps its medium, so the medium a ray meets a surface in is always the one after it.
+fn etas(surfaces: &[Surface]) -> Vec<[f32; 3]> {
+    (0..surfaces.len())
+        .map(|i| {
+            let after = surfaces[i].index;
+            let before = if i == 0 {
+                [1.0; 3]
+            } else {
+                surfaces[i - 1].index
+            };
+            [0, 1, 2].map(|b| {
+                if before[b] != after[b] {
+                    after[b] / before[b]
+                } else {
+                    0.0
+                }
+            })
+        })
+        .collect()
 }
 
 fn positions(surfaces: &[Surface]) -> Vec<f32> {
@@ -554,45 +582,64 @@ impl TracedLens {
     /// Traces a ray from `p` (behind the lens) along `d` (unit) back through every surface in the
     /// band `band`, checking rims and the iris when `clip`.
     pub fn trace(&self, p: Vec3, d: Vec3, band: usize, clip: bool) -> Traced {
-        let n = self.surfaces.len();
+        self.trace_with(p, d, band, clip, false).0
+    }
+
+    /// Whether the iris (and the central obstruction) stops a ray that meets the stop at `(x, y)`,
+    /// in units of the stop radius: the disc inside the iris's inscribed circle passes and what lies
+    /// beyond its circumradius is stopped without the exact edge (the same answers, faster).
+    #[inline]
+    fn iris_stops(&self, x: f32, y: f32) -> bool {
+        iris_stops(&self.iris, self.iris_inner2, self.obstruction, x, y)
+    }
+
+    /// [`TracedLens::trace`], and with `through` a ray that a rim or the iris stops carries on
+    /// unclipped to the front (for the coverage of the sample it belongs to): the ray and whether
+    /// it was stopped. A surface missed or a total internal reflection ends it either way.
+    #[inline(always)]
+    fn trace_with(
+        &self,
+        p: Vec3,
+        d: Vec3,
+        band: usize,
+        clip: bool,
+        through: bool,
+    ) -> (Traced, bool) {
         let mut p = p;
         let mut d = d;
-        let mut n_cur = self.surfaces[n - 1].index[band];
-        for i in (0..n).rev() {
-            let s = &self.surfaces[i];
-            let zv = self.z[i];
+        let mut clip = clip;
+        let mut stopped = false;
+        let surfaces = self.surfaces.iter().zip(&self.z).zip(&self.eta);
+        for (i, ((s, &zv), eta)) in surfaces.enumerate().rev() {
             let Some((q, normal)) = intersect(s, zv, p, d) else {
-                return Traced::Blocked;
+                return (Traced::Blocked, true);
             };
             if clip {
                 let r2 = q.x * q.x + q.y * q.y;
-                if s.semi_aperture > 0.0 && r2 > s.semi_aperture * s.semi_aperture {
-                    return Traced::Blocked;
-                }
-                if i == self.stop {
-                    let (x, y) = (q.x / self.stop_radius, q.y / self.stop_radius);
-                    if self.iris.signed_distance(x, y) > 0.0
-                        || (self.obstruction > 0.0 && self.iris.gauge(x, y) < self.obstruction)
-                    {
-                        return Traced::Blocked;
+                let rim = s.semi_aperture > 0.0 && r2 > s.semi_aperture * s.semi_aperture;
+                if rim
+                    || (i == self.stop
+                        && self.iris_stops(q.x / self.stop_radius, q.y / self.stop_radius))
+                {
+                    if !through {
+                        return (Traced::Blocked, true);
                     }
+                    stopped = true;
+                    clip = false;
                 }
             }
             p = Vec3::new(q.x, q.y, zv + q.z);
             if s.kind == SURFACE_MIRROR {
                 d = d - normal * (2.0 * d.dot(normal));
             } else {
-                let n_next = if i == 0 {
-                    1.0
-                } else {
-                    self.surfaces[i - 1].index[band]
-                };
-                if n_next != n_cur {
-                    match refract(d, normal, n_cur / n_next) {
+                // The index ratio across the surface, from the medium behind it (after it, in the
+                // light's direction) to the one in front (0: the same medium).
+                let eta = eta[band.min(2)];
+                if eta != 0.0 {
+                    match refract(d, normal, eta) {
                         Some(t) => d = t,
-                        None => return Traced::Blocked,
+                        None => return (Traced::Blocked, true),
                     }
-                    n_cur = n_next;
                 }
             }
             if i == self.stop && self.plate != 0.0 {
@@ -606,9 +653,29 @@ impl TracedLens {
                 ));
             }
         }
-        Traced::Out { origin: p, dir: d }
+        (Traced::Out { origin: p, dir: d }, stopped)
     }
 }
+
+/// Whether `iris` (and an `obstruction`) stops the point `(x, y)` (units of its circumradius):
+/// inside `inner2` (the squared inscribed radius, a hair smaller) it passes, beyond
+/// [`IRIS_OUTER2`] it is stopped, and between, the exact edge decides.
+#[inline]
+pub(crate) fn iris_stops(iris: &Iris, inner2: f32, obstruction: f32, x: f32, y: f32) -> bool {
+    let r2 = x * x + y * y;
+    let outside = if r2 < inner2 {
+        false
+    } else if r2 > IRIS_OUTER2 {
+        true
+    } else {
+        iris.signed_distance(x, y) > 0.0
+    };
+    outside || (obstruction > 0.0 && iris.gauge(x, y) < obstruction)
+}
+
+/// Beyond this squared radius (in units of the iris's circumradius) a point is outside any iris;
+/// a hair over 1 so that rounding never decides.
+const IRIS_OUTER2: f32 = 1.0002;
 
 /// Checks a prescription and scales it to `focal_mm`, with its band indices and transmittances.
 fn build(p: &Prescription, lens: &super::LensParams, focal_mm: f32) -> Result<Built, &'static str> {
@@ -926,6 +993,10 @@ fn prepare(
     let mut lens_out = TracedLens {
         stop,
         stop_radius,
+        iris_inner2: {
+            let r = 0.9998 * iris.inscribed();
+            r * r
+        },
         iris,
         obstruction: lens.obstruction,
         sensor_z,
@@ -962,6 +1033,7 @@ fn prepare(
             section: LensSection::default(),
         },
         key: camera,
+        eta: etas(&surfaces),
         surfaces,
         z,
     };
@@ -1435,9 +1507,11 @@ impl TracedLens {
         let delta = q - film;
         let len2 = delta.dot(delta);
         let d = delta * (1.0 / len2.sqrt());
-        let traced = self.trace(film, d, band, true);
-        if let Traced::Blocked = traced {
-            return (Traced::Blocked, 0.0);
+        // A sample the lens stops weighs nothing, but keeps its own ray (unclipped) for the
+        // coverage of a transparent background.
+        let (traced, stopped) = self.trace_with(film, d, band, true, true);
+        if stopped {
+            return (traced, 0.0);
         }
         let zz = film.z - rear_z;
         let cos4 = d.z * d.z * d.z * d.z;
@@ -1590,6 +1664,7 @@ impl TracedLens {
             stop,
             stop_radius: 1.0e6,
             iris: Iris::new(0, 0.0, 0.0),
+            iris_inner2: 0.0,
             obstruction: 0.0,
             sensor_z: z[n - 1],
             pupil_z: 0.0,
@@ -1630,6 +1705,7 @@ impl TracedLens {
                 focus_dist: 0.0,
                 sensor_mm: 0.0,
             },
+            eta: etas(&surfaces),
             surfaces,
             z,
         }

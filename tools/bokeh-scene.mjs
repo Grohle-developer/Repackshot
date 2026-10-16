@@ -47,19 +47,30 @@ export const SHEET_SIZE = [480, 360];
 
 const PROFILE = { uniform: 0, centreBright: 1, ringBright: 2, apodized: 3 };
 
-/** `src/data/bokeh.ts` BOKEH_NEUTRAL, merged with a type's and a variant's `thin` (bokehParams). */
+/**
+ * `src/data/bokeh.ts` BOKEH_NEUTRAL, merged with a type's and a variant's `thin` (bokehParams). A type of the traced
+ * lens (O2) keeps the neutral knobs of the thin lens, as `opticsForBokeh` does: its lens makes its bokeh.
+ */
 export function bokehParams(data, key, variant) {
   const neutral = { blades: 0, roundness: 1, rotationDeg: 0, mask: null, profile: 'uniform', profileParam: 0, obstruction: 0, catsEye: 0, squeeze: 1, streaks: 0, caAmount: 0, swirl: 0, onionAmplitude: 0, texture: null };
   const type = data.types.find((t) => t.key === key);
+  if (type && type.requires === 'traced' && type.lens) return neutral;
   if (!type || type.thin === null) return null;
   const v = variant ? type.variants.find((x) => x.key === variant) : null;
   return { ...neutral, ...type.thin, ...(v ? v.thin : {}) };
 }
 
-/** Every thumbnail: each type the thin lens can do, and each of its variants. */
+/**
+ * Every thumbnail: each type the thin lens can do, and each of its variants; and each type of the traced lens (O2),
+ * with its `lens` (a catalogue key).
+ */
 export function thumbnails(data) {
   const out = [];
   for (const t of data.types) {
+    if (t.requires === 'traced' && t.lens) {
+      out.push({ key: t.key, variant: null, file: `${t.key.replace(/_/g, '-')}.png`, lens: t.lens });
+      continue;
+    }
     if (t.requires !== null || t.thin === null) continue;
     out.push({ key: t.key, variant: null, file: `${t.key.replace(/_/g, '-')}.png` });
     for (const v of t.variants) out.push({ key: t.key, variant: v.key, file: `${t.key.replace(/_/g, '-')}--${v.key.replace(/_/g, '-')}.png` });
@@ -102,10 +113,23 @@ export function frameFieldMm(w, h) {
 }
 
 /**
- * The LENS fields of bokeh parameters (io/rsb.ts `lensToRsb` of the same camera optics, no tilt or shift).
- * `pictures(id)` gives a picture of 256 × 256 or null.
+ * The traced lens of the catalogue `key` as `tests/fixtures/lens-catalogue.json` holds it (rt's bytes of its
+ * prescription, the page's too): `{ squeeze, obstruction, prescription }` for `lensFields`, or null.
  */
-export function lensFields(thin, size, pictures) {
+export function catalogueLens(catalogue, key) {
+  const row = catalogue.lenses.find((l) => l.key === key);
+  if (!row) return null;
+  const bytes = new Uint8Array(row.prescription.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(row.prescription.slice(2 * i, 2 * i + 2), 16);
+  return { squeeze: row.squeeze, obstruction: row.obstruction, prescription: bytes };
+}
+
+/**
+ * The LENS fields of bokeh parameters (io/rsb.ts `lensToRsb` of the same camera optics, no tilt or shift).
+ * `pictures(id)` gives a picture of 256 × 256 or null; `traced` (catalogueLens) a traced lens (O2).
+ */
+/** @param {{ squeeze: number, obstruction: number, prescription: Uint8Array } | null} [traced] */
+export function lensFields(thin, size, pictures, traced = null) {
   const mask = thin.mask ? pictures(thin.mask) : null;
   const texture = thin.texture ? pictures(thin.texture) : null;
   const amount = thin.texture === 'onion_rings' ? thin.onionAmplitude : 1;
@@ -117,9 +141,9 @@ export function lensFields(thin, size, pictures) {
     rotationDeg: thin.rotationDeg,
     profile: PROFILE[thin.profile] ?? 0,
     profileParam: unit(thin.profileParam),
-    obstruction: Math.min(0.95, Math.max(0, thin.obstruction)),
+    obstruction: Math.min(0.95, Math.max(0, traced ? Math.max(thin.obstruction, traced.obstruction) : thin.obstruction)),
     catsEye: unit(thin.catsEye),
-    squeeze: Math.min(4, Math.max(1, thin.squeeze)),
+    squeeze: Math.min(4, Math.max(1, traced ? traced.squeeze : thin.squeeze)),
     shiftXMm: 0,
     shiftYMm: 0,
     tiltDeg: 0,
@@ -131,13 +155,15 @@ export function lensFields(thin, size, pictures) {
     maskWidth: picture ? PICTURE_SIZE : 0,
     maskHeight: picture ? PICTURE_SIZE : 0,
     mask: picture ?? new Uint8Array(0),
+    prescription: traced ? traced.prescription : null,
   };
 }
 
-/** The payload of a LENS section. */
+/** The payload of a LENS section (with a prescription, the three empty filter slots of O3a before it). */
 export function lensPayload(l) {
   const pad = (4 - (l.mask.length % 4)) % 4;
-  const out = new Uint8Array(72 + l.mask.length + pad);
+  const traced = l.prescription ? 84 + l.prescription.length : 0;
+  const out = new Uint8Array(72 + l.mask.length + pad + traced);
   const v = new DataView(out.buffer);
   let o = 0;
   const u32 = (x) => (v.setUint32(o, x >>> 0, true), (o += 4));
@@ -151,6 +177,7 @@ export function lensPayload(l) {
   u32(l.maskWidth);
   u32(l.maskHeight);
   out.set(l.mask, o);
+  if (l.prescription) out.set(l.prescription, 72 + l.mask.length + pad + 84);
   return out;
 }
 
@@ -158,7 +185,8 @@ export function lensPayload(l) {
  * The whole RSB file of the scene for bokeh parameters `thin`, an image of `size`, `samples` per pixel;
  * `lightDiameterMm` makes the lights smaller (PURE_LIGHT_MM) or larger than the scene's; `scene` is SCENE or CLOSE_UP.
  */
-export function bokehScene(thin, size, samples, pictures, lightDiameterMm = SCENE.lightDiameterMm, scene = SCENE) {
+/** @param {{ squeeze: number, obstruction: number, prescription: Uint8Array } | null} [traced] */
+export function bokehScene(thin, size, samples, pictures, lightDiameterMm = SCENE.lightDiameterMm, scene = SCENE, traced = null) {
   const [w, h] = size;
   const sections = [];
   const section = (tag, bytes) => sections.push({ tag, bytes });
@@ -181,7 +209,7 @@ export function bokehScene(thin, size, samples, pictures, lightDiameterMm = SCEN
     u32(0);
     f32(1000);
   }));
-  section('LENS', lensPayload(lensFields(thin, size, pictures)));
+  section('LENS', lensPayload(lensFields(thin, size, pictures, traced)));
   // The lights: discs facing the camera, seen by camera rays only, bright enough that a blur disc averages
   // `discRadiance`: the disc's radiance times (source / blur)² in solid angle.
   const aspect = w / h;

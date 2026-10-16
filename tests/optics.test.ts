@@ -9,7 +9,7 @@ import { APERTURE_SIZE, combinePictures, getAperturePicture, halve, registerAper
 import { makeCamera, type CameraState } from '../src/core/camera';
 import { createInitialState } from '../src/core/store';
 import { OPTICS_NEUTRAL, isNeutralOptics, normalizeOptics, opticsForBokeh, opticsOf, opticsPictures } from '../src/core/optics';
-import { BOKEH_TYPES, bokehParams } from '../src/data/bokeh';
+import { BOKEH_NEUTRAL, BOKEH_TYPES, bokehParams } from '../src/data/bokeh';
 import { decodeGreyPng, loadAperturePicture, picturePixels } from '../src/io/aperture';
 import { migrateProject } from '../src/io/project';
 import { cameraToRsb, frameFieldMm, lensToRsb, MASK_APERTURE, MASK_NONE, MASK_TEXTURE, projectScene, writeRsb, type RsbScene } from '../src/io/rsb';
@@ -18,6 +18,7 @@ import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './
 import * as scene from '../tools/bokeh-scene.mjs';
 
 const bokehData = JSON.parse(readFileSync('src/data/bokeh.json', 'utf8'));
+const lensCatalogue = JSON.parse(readFileSync('tests/fixtures/lens-catalogue.json', 'utf8'));
 
 /** The pictures of public/assets/aperture as the page gets them (io/aperture.ts), registered once. */
 async function registerAll(): Promise<void> {
@@ -147,24 +148,26 @@ describe('the LENS section', () => {
   it('the bokeh scene of the thumbnails writes the LENS section the page writes, for every type', async () => {
     await registerAll();
     const base = emptyScene();
-    for (const th of scene.thumbnails(bokehData) as { key: string; variant: string | null }[]) {
+    for (const th of scene.thumbnails(bokehData) as { key: string; variant: string | null; lens?: string }[]) {
       const o = opticsForBokeh(OPTICS_NEUTRAL, th.key, th.variant)!;
       const page = lensToRsb(o, 128, 96);
-      const tool = scene.lensFields(scene.bokehParams(bokehData, th.key, th.variant), [128, 96], (id: string) => getAperturePicture(id) ?? null);
+      // O2: a type of the traced lens with its catalogue lens, rt's bytes (tests/fixtures/lens-catalogue.json).
+      const traced = th.lens ? scene.catalogueLens(lensCatalogue, th.lens) : null;
+      const tool = scene.lensFields(scene.bokehParams(bokehData, th.key, th.variant), [128, 96], (id: string) => getAperturePicture(id) ?? null, traced);
       expect(sameBytes(scene.lensPayload(tool), sectionPayload(writeRsb({ ...base, camera: { ...base.camera, lens: page } }), 'LENS')), `${th.key}/${th.variant}`).toBe(true);
     }
   }, 60000);
 });
 
 describe('the bokeh thumbnails', () => {
-  const index = JSON.parse(readFileSync('public/thumbs/bokeh/index.json', 'utf8')) as { thumbs: { key: string; variant: string | null; file: string; width: number; height: number; samples: number; thin: unknown; rsbSha256: string }[] };
+  const index = JSON.parse(readFileSync('public/thumbs/bokeh/index.json', 'utf8')) as { thumbs: { key: string; variant: string | null; file: string; width: number; height: number; samples: number; thin: unknown; lens?: string; rsbSha256: string }[] };
 
-  it('cover every type the thin lens can do and every variant, and none of the others', () => {
+  it('cover every type the thin lens or a traced lens can do and every variant, and not wave optics', () => {
     const want = scene.thumbnails(bokehData).map((t: { file: string }) => t.file).sort();
     expect(index.thumbs.map((t) => t.file).sort()).toEqual(want);
     for (const t of BOKEH_TYPES) {
       const has = index.thumbs.some((x) => x.key === t.key);
-      expect(has, t.key).toBe(t.requires === null);
+      expect(has, t.key).toBe(t.requires !== 'wave');
     }
     for (const t of index.thumbs) expect(readFileSync(`public/thumbs/bokeh/${t.file}`).subarray(1, 4).toString(), t.file).toBe('PNG');
   });
@@ -174,8 +177,11 @@ describe('the bokeh thumbnails', () => {
     const { createHash } = await import('node:crypto');
     for (const t of index.thumbs) {
       const type = BOKEH_TYPES.find((x) => x.key === t.key)!;
-      expect(t.thin, t.file).toEqual(bokehParams(type, t.variant ?? undefined));
-      const rsb: Uint8Array = scene.bokehScene(t.thin, [t.width, t.height], t.samples, (id: string) => getAperturePicture(id) ?? null);
+      // A type of the traced lens: its lens, and the thin lens's neutral knobs (the lens makes its bokeh).
+      expect(t.lens, t.file).toBe(type.requires === 'traced' ? type.lens : undefined);
+      expect(t.thin, t.file).toEqual(type.requires === 'traced' ? BOKEH_NEUTRAL : bokehParams(type, t.variant ?? undefined));
+      const traced = t.lens ? scene.catalogueLens(lensCatalogue, t.lens) : null;
+      const rsb: Uint8Array = scene.bokehScene(t.thin, [t.width, t.height], t.samples, (id: string) => getAperturePicture(id) ?? null, undefined, undefined, traced);
       expect(createHash('sha256').update(rsb).digest('hex'), `${t.file}: run node tools/bokeh-thumbs.mjs`).toBe(t.rsbSha256);
     }
   }, 60000);

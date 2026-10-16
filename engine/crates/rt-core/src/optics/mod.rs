@@ -684,12 +684,12 @@ impl Lens {
     fn traced_film(&self, camera: &Camera, aspect: f32, u: f32, v: f32) -> (f32, f32) {
         let (sx, sy) = sensor_point(camera, aspect, u, v);
         let (x, y) = self.shifted(sx, sy);
-        // An anamorphic lens desqueezes by its squeeze as traced at its focus.
-        let squeeze = self
-            .traced
-            .as_ref()
-            .and_then(|t| t.squeeze())
-            .unwrap_or(self.params.squeeze);
+        // An anamorphic lens desqueezes by its squeeze as traced at its focus; a lens without
+        // cylinders by nothing (the thin lens's squeeze does not apply to a traced lens).
+        let squeeze = match &self.traced {
+            Some(t) => t.squeeze().unwrap_or(1.0),
+            None => self.params.squeeze,
+        };
         (x / squeeze, y)
     }
 

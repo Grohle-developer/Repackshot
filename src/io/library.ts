@@ -26,7 +26,10 @@ import {
   type MaterialPayload,
   type ProductTypePayload,
   type StudioPayload,
+  type LensPayload,
 } from '../core/library';
+import { normalizeTracedLens } from '../core/traced-lens';
+import { OPTICS_LIMITS } from '../core/optics';
 import { isLibraryKey, type CustomSetup, type LightInstance } from '../core/lighting';
 import { defaultTextures, type MaterialInstance, type MaterialTextures } from '../core/materials';
 import { normalizeTextures } from '../core/textures';
@@ -460,7 +463,25 @@ export function validateItem(v: unknown, path = 'item'): LibraryItem {
       return { ...b, kind, preset: productTypePayload(o.preset, `${path}.preset`) };
     case 'studio':
       return { ...b, kind, studio: studioPayload(o.studio, `${path}.studio`) };
+    case 'lens':
+      return { ...b, kind, lens: lensPayload(o.lens, `${path}.lens`) };
   }
+}
+
+/** A lens of one's own (O2): a traced lens of the catalogue by its key, its iris and artistic knobs in range. */
+function lensPayload(v: unknown, path: string): LensPayload {
+  const o = obj(v, path);
+  const traced = normalizeTracedLens(obj(o.traced, `${path}.traced`));
+  if (!traced) fail(`${path}.traced.key`, 'is not a lens of the catalogue');
+  const blades = num(o.blades, `${path}.blades`, 0, OPTICS_LIMITS.blades.max);
+  return {
+    traced: traced!,
+    blades: blades < OPTICS_LIMITS.blades.min ? 0 : Math.round(blades),
+    roundness: num(o.roundness, `${path}.roundness`, 0, 1),
+    rotationDeg: num(o.rotationDeg, `${path}.rotationDeg`, -360, 360),
+    caAmount: num(o.caAmount, `${path}.caAmount`, 0, 1),
+    swirl: num(o.swirl, `${path}.swirl`, 0, 1),
+  };
 }
 
 // --- Import -------------------------------------------------------------------------------

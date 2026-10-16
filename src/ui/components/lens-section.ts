@@ -1,10 +1,10 @@
 // The cross-section of a traced lens (phase O2, STUDIO-TOOLS §1 "corte de la lente"): an SVG drawn from the lens as
 // the engine prepared it (rt-core `LensSection`: the prescription scaled to the camera's focal length, focused, with
 // the semi-apertures it derived), so the drawing is what is traced. Pure and string-only (no DOM): the inspector puts
-// it in the Lens section and tools/lens-sheet.mjs in the sheet. The interface chrome is achromatic (rule 4): glass is
+// it in the Lens section (ui/panels/insp-traced.ts) and tools/lens-sheet.mjs in the sheet. The interface chrome is achromatic (rule 4): glass is
 // a grey, the lines are `currentColor`. Only type imports, so Node can load this file as it is.
 
-import type { LensSection, SectionSurface } from '../core/traced-lens';
+import type { LensSection, SectionSurface } from '../../core/traced-lens';
 
 /** rt-core SURFACE_MIRROR. */
 const MIRROR = 5;
@@ -98,7 +98,7 @@ export function lensSectionSvg(section: LensSection, o: SectionOptions): string 
   }
   parts.push(`<line x1="${pad}" y1="${Y(0)}" x2="${o.width - pad}" y2="${Y(0)}" stroke="currentColor" stroke-opacity="0.45" stroke-width="0.75" stroke-dasharray="4 3"/>`);
   const title = o.title ? `<title>${o.title.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</title>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${o.width} ${o.height}" width="${o.width}" height="${o.height}" role="img">${title}${parts.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${o.width} ${o.height}" width="100%" style="max-width:${o.width}px;height:auto" role="img">${title}${parts.join('')}</svg>`;
 }
 
 /**
@@ -115,5 +115,7 @@ export function profileChartSvg(points: readonly (readonly [number, number])[], 
   const line = pts.map(([h, v], i) => `${i ? 'L' : 'M'}${X(h)} ${Y(v)}`).join('');
   const zero = o.zero !== undefined ? `<line x1="${pad}" y1="${Y(o.zero)}" x2="${o.width - pad}" y2="${Y(o.zero)}" stroke="currentColor" stroke-opacity="0.35" stroke-width="0.75" stroke-dasharray="3 3"/>` : '';
   const title = o.title ? `<title>${o.title.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</title>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${o.width} ${o.height}" width="${o.width}" height="${o.height}" role="img">${title}${zero}<path d="${line}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+  // A frame of the axes: the image height along the bottom, from the axis (left) to the corner (right).
+  const frame = `<path d="M${pad} ${pad}V${o.height - pad}H${o.width - pad}" fill="none" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.75"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${o.width} ${o.height}" width="100%" style="max-width:${o.width}px;height:auto" role="img">${title}${frame}${zero}<path d="${line}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
 }
