@@ -4,14 +4,14 @@
 
 import { DEFAULT_PIXEL_FILTER, pixelFilterSetting } from '../../core/antialias';
 import { aspectText } from '../../core/aspect';
-import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
+import { activeCamera, cameraBasis, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
 import { dropNodes, viewportDropTarget, type DropTarget } from '../../core/material-drop';
 import { allParts, effectiveVisible, partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import { gizmoTransforms, movableTargets, selectionFrame, type GizmoFrame, type GizmoHandle } from '../../core/transform';
-import { objectFrame, objectGizmoAction, sameObject, selectedObject, type ViewObject } from '../../core/view-objects';
+import { focusPickAction, objectFrame, objectGizmoAction, sameObject, selectedObject, type ViewObject } from '../../core/view-objects';
 import * as cmd from '../commands';
 import { newGesture } from '../components/controls';
 import { materialDragActive, registerDropZone } from '../components/material-drag';
@@ -597,10 +597,10 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     if (pm) {
       if (!tg) return;
       if (pm.kind === 'focus') {
-        const cam = activeCamera(s);
-        // Along the view axis: the engine focuses a plane, not a sphere around the camera.
-        const d = focusDistanceTo(cam, tg.hit.point);
-        store.dispatch({ type: 'camera/set', id: cam.id, patch: { focusDistance: d }, label: L('undo.focusClick') });
+        // From the camera that is seen (Look through), along its view axis: the engine focuses a plane, not a sphere
+        // around the camera.
+        const action = focusPickAction(s, ui.get().lookThrough, tg.hit.point, { label: L('undo.focusClick') });
+        if (action) store.dispatch(action);
       } else if (pm.kind === 'pivot') {
         cmd.setPivot(ctx, 'CUSTOM', pm.ids, tg.hit.point);
       } else if (pm.kind === 'link') {

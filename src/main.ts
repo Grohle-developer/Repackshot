@@ -34,8 +34,8 @@ import { PLUGIN_REGISTRY, validEntries, type PluginRegistryEntry } from './data/
 import { PluginHost, type WorkerLike } from './plugins/host';
 import { PluginsService } from './plugins/service';
 import { openPluginStore } from './plugins/store';
-import { activeCamera, sameView, type CameraState } from './core/camera';
-import { lookThroughAction, lookThroughCamera, sameObject, type ViewObject } from './core/view-objects';
+import { activeCamera, orbitPatch, type CameraState } from './core/camera';
+import { lookThroughAction, lookThroughCamera, sameObject, viewedCamera, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
 import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
@@ -1063,9 +1063,10 @@ if (preview) {
     if (moveLookedThrough(v)) return;
     const s = store.get();
     const cam = activeCamera(s);
-    const patch = { azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) };
-    // A click that did not move the camera (selecting a part, picking a point) leaves no undo entry.
-    if (sameView(cam, patch)) return;
+    // A click that did not move the camera (selecting a part, picking a point) leaves no undo entry and leaves the
+    // focus where it was; an orbit takes the focus along only if it sat at the orbit distance.
+    const patch = orbitPatch(cam, v);
+    if (!patch) return;
     store.dispatch({ type: 'camera/set', id: cam.id, patch, gesture: `orbit${gesture}`, label: L('undo.orbit') });
   });
   preview.onFrame(() => (firstFrame = true));
@@ -1076,7 +1077,8 @@ if (preview) {
     if (!full || !tracer) return;
     if (phase === 'start') tracer.beginGesture();
     else if (phase === 'end') tracer.endGesture();
-    else if (v) tracer.gestureView({ azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) });
+    // The camera as it is now (the one looked through, if any): no patch is the camera as it stands, as at the start.
+    else if (v) tracer.gestureView(orbitPatch(viewedCamera(store.get(), ui.get().lookThrough), v) ?? {});
   });
 
   // One loop: animation playback, then a frame when something changed. The next frame is asked for first: an
