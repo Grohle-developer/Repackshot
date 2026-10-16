@@ -14,6 +14,17 @@ import type { ProjectState } from '../core/store';
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
 
+/**
+ * M2b: bit 0 of the engine's features (`rt_features` of rt.wasm, `features` of the launcher's `/api/info`): it reads
+ * the texture data of the RSB (IMGS, the MATL texture blocks, the meshes' UVs), so the scene is written with them.
+ */
+export const ENGINE_FEATURE_TEXTURES = 1;
+
+/** True when an engine of `features` reads the textures (M2b). */
+export function readsTextures(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_TEXTURES) !== 0;
+}
+
 export interface EngineStatus {
   samples: number;
   seconds: number;

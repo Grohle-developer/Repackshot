@@ -54,6 +54,7 @@ import { readProjectFile, serializeProject } from './io/project';
 import { NativeInstaller } from './io/update-install';
 import { fetchLatestRelease } from './io/updates';
 import { lensInfoRsb, projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { decodeTexturePixels } from './io/texture-pixels';
 import { loadCameraPictures } from './io/aperture';
 import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
@@ -773,6 +774,8 @@ const services: AppServices = {
     // Render and every queue job use the path tracer, whatever the viewport shows; without the engine there is
     // no render (the preview is never passed off as one).
     if (!tracer) throw new Error(t('render.noEngine'));
+    // M2b: the texture images the engine reads, decoded before the scene is written.
+    await decodeTexturePixels(store.get());
     const linear = needsLinearSums(req.format, req.bitDepth);
     // The AI step of a Render on the desktop: the launcher keeps the image with the guard's passes (X3c).
     const kept = req.aiPasses === true && tracer instanceof NativeEngine;
@@ -865,6 +868,7 @@ const services: AppServices = {
     // use it).
     if (!req.quick) {
       if (!tracer) throw new Error(t('render.noEngine'));
+      await decodeTexturePixels(store.get());
       return encodePixels(await tracer.renderPixels(opts), req.format);
     }
     if (!preview) throw new Error('WebGL');
@@ -872,7 +876,8 @@ const services: AppServices = {
   },
   captureViewport: () => (full && tracer ? tracer.capture() : preview ? preview.capture() : Promise.resolve(null)),
   exportScene(state) {
-    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG' });
+    // M2b: with the textures `rt` reads (the images decoded since the materials took them).
+    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true });
     return new Blob([writeRsb(scene) as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
   },
   async importFile(file, options) {
@@ -1063,6 +1068,17 @@ if (preview) {
   store.subscribe((s) => askLens(s));
 }
 onAperturePicture(() => tracer?.sync(store.get(), null));
+
+// M2b: the texture images the materials use, decoded to pixels for the engine (io/texture-pixels.ts) as soon as they
+// are there; when new pixels arrive the Full viewport builds its scene again (its mesh key names the decoded images).
+const decodeTextures = (state: ReturnType<typeof store.get>) =>
+  void decodeTexturePixels(state).then((n) => {
+    if (n > 0) tracer?.sceneChanged();
+  });
+decodeTextures(store.get());
+store.subscribe((s, prev) => {
+  if (s.materials !== prev.materials) decodeTextures(s);
+});
 
 if (preview) {
   preview.sync(store.get(), null);

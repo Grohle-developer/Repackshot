@@ -32,6 +32,7 @@ USAGE:
     rt --write-e6-example <scene.rsb>
     rt --write-e6-patterns-example <scene.rsb>
     rt --write-e6-cloth-example <scene.rsb>
+    rt --write-m2b-example <scene.rsb>
     rt --write-e9-example <scene.rsb>
     rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-e11-example <scene.rsb>
@@ -125,6 +126,10 @@ OPTIONS:
                             write the E6 pattern scene (procedural wood) as an RSB file
         --write-e6-cloth-example <f>
                             write the E6 cloth scene (procedural cloth) as an RSB file
+        --write-m2b-example <f>
+                            write the M2b texture scene (image textures of every
+                            projection, normal and height maps, cut-outs, emission, labels)
+                            as an RSB file
         --write-e9-example <f>
                             write the E9 parity scene (the E5 scene with a scattering
                             medium in its big sphere and a dispersive crystal sphere) as
@@ -355,6 +360,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the M2b texture scene (`rt_core::example::m2b_scene`) as an RSB file.
+    WriteM2bExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the E9 parity scene (`rt_core::example::e9_scene`) as an RSB file.
     WriteE9Example {
         /// RSB file to write.
@@ -475,6 +485,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e6 = None;
     let mut write_e6p = None;
     let mut write_e6cloth = None;
+    let mut write_m2b = None;
     let mut write_e9 = None;
     let mut sss_dir = None;
     let mut write_e11 = None;
@@ -596,6 +607,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e6-example" => write_e6 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-patterns-example" => write_e6p = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-cloth-example" => write_e6cloth = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-m2b-example" => write_m2b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-ambient-example" => {
@@ -691,6 +703,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e6-cloth-example takes no other option".into());
         }
         return Ok(Command::WriteE6ClothExample { path });
+    }
+    if let Some(path) = write_m2b {
+        if args.len() != 2 {
+            return Err("--write-m2b-example takes no other option".into());
+        }
+        return Ok(Command::WriteM2bExample { path });
     }
     if let Some(path) = write_e9 {
         if args.len() != 2 {
@@ -916,6 +934,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteE6ClothExample { path } => {
             let bytes = rt_core::example::e6_cloth_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteM2bExample { path } => {
+            let bytes = rt_core::example::m2b_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -1486,6 +1510,13 @@ mod tests {
             })
         );
         assert!(parse(&["--write-e6-cloth-example", "c.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-m2b-example", "m.rsb"]),
+            Ok(Command::WriteM2bExample {
+                path: "m.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-m2b-example", "m.rsb", "--samples", "2"]).is_err());
         assert_eq!(
             parse(&["--write-ambient-example", "s4a.rsb"]),
             Ok(Command::WriteAmbientExample {

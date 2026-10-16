@@ -11,6 +11,26 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Lluvia sin puntitos**: las gotas y las burbujas ya no hacen cáusticas; la luz las cruza recta, con su transmitancia, en los rayos de sombra y en los caminos que ya rebotaron en una superficie mate, y desaparecen los puntitos que la lluvia dejaba sobre el producto con la clave lateral. La cámara (y lo que se ve a través de vidrios y espejos lisos) las sigue viendo refractar (S4b).
 - **Partículas más baratas**: los rayos de cámara (estenopeica o con desenfoque) prueban solo las partículas de su trozo de imagen en lugar de recorrer su BVH, sin cambiar un píxel; a la densidad de cada preset sobre la botella del ejemplo, una muestra cuesta de 1,07× a 1,19× la de la escena sin efecto, salvo la lluvia (1,63×: sus estelas cubren un cuarto del cuadro de vidrio) (S4b).
 
+## v0.1.10 — 2026-10-16
+
+Versión de prueba con las texturas de imagen, su mapeado y las etiquetas
+en el modo *Completo* y en los renders (lo que el reporte del 14-10 pedía
+en su punto 1.1). Lo de v0.1.2 a v0.1.9 sigue igual.
+
+### Motor
+
+- **Texturas de imagen y etiquetas en *Completo* y en *Render***: el motor pinta las seis ranuras de un material (color, rugosidad, metal, normal o alturas, alfa, emisión) y sus etiquetas donde las pinta *Rápido*, con la misma proyección (UV, caja, plana, cilíndrica, esférica), el mismo tamaño en mm, giro, desplazamiento, repetición y bordes. Las imágenes llevan *mipmaps* calculados por el motor y se leen con la huella del rayo (diferenciales de rayo en la cámara, el cono del camino después); los mapas de normales doblan la normal sobre el bisel; el alfa recorta también las sombras; una etiqueta pone su papel, con su rugosidad, su barniz y el relieve de su borde (M2b).
+- El motor dice qué lee (`rt_features` en `rt.wasm`, `features` en `/api/info` del lanzador) y la página manda las texturas con sus píxeles solo a un motor que las lee; una escena sin texturas da los mismos píxeles que antes (M2b).
+
+### Interfaz
+
+- *Inspector ▸ Texturas*: la nota ya no dice *próximamente*; *Rápido*, *Completo* y *Render* dibujan las texturas y las etiquetas en el mismo sitio (M2b).
+
+### Limitaciones conocidas de esta versión
+
+- El tamaño de una textura sigue en mm y no sigue al del sólido: es una decisión pendiente (`TRIAGE.md` 5.1). Los materiales de nodos siguen pintándose con la media de sus salidas hasta M3b.
+- Un emisor con imagen no se muestrea como luz (lo que ilumina tiene más ruido); los fotones de las cáusticas ven el material sin texturas; el pase de normales no lleva el mapa de normales (M2b).
+
 ## v0.1.9 — 2026-10-16
 
 Versión de prueba con la vista en vivo del render seleccionado en la cola

@@ -176,7 +176,7 @@ src/
     gltf-materials.ts       los materiales y las imágenes de un glTF leídos de su JSON (M2a)
     mtl.ts  obj-materials.ts  las bibliotecas .mtl de un OBJ y sus imágenes (M2a)
     texture-notes.ts        lo que la hoja dice de las texturas de un archivo (M2a)
-    texture-pixels.ts       los píxeles de las texturas para la sección IMGS del RSB (M2a; la lee M2b)
+    texture-pixels.ts       los píxeles de las texturas para la sección IMGS del RSB (M2a); main.ts los decodifica antes de escribir la escena para un motor que las lee (M2b)
     aperture.ts             lee las imágenes de pupila de public/assets/aperture (PNG gris propio, sin canvas) y las promedia a 256² (O1)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
@@ -228,7 +228,9 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   Cargo.toml  rust-toolchain.toml  README.md
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG, TIFF y DNG (U12);
                             imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c);
-                            partículas de Ambiente: esferas, discos y cápsulas con su BVH y su rejilla de pantalla (geometry/particles.rs, S4a, S4b); el lóbulo hacia delante (bsdf/forward.rs, S4b)
+                            partículas de Ambiente: esferas, discos y cápsulas con su BVH y su rejilla de pantalla (geometry/particles.rs, S4a, S4b); el lóbulo hacia delante (bsdf/forward.rs, S4b);
+                            texturas de imagen y etiquetas del sombreado (texture/: imagen y mipmaps, proyecciones,
+                            ranuras y etiquetas en el punto, M2b)
   crates/rt-sim/            el simulador de partículas sin estado (S4a): `FXAM` ⇄ `AmbientParams`, `evaluate`
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG, TIFF o DNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
@@ -470,10 +472,10 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
-| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
+| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -592,7 +594,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   `BMAP` conserva los mapas cargados, como uno sin `MESH` conserva las
   mallas.
 - **Texturas** (contrato de M2a, el motor lo lee desde M2b): ver
-  *Texturas en el RSB* al final de este apartado.
+  *Texturas en el RSB* al final de este apartado y §5.2 decies.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
 - **`RNDR`** (52 B desde E5b-1; los de 28, 36 y 40 B se leen con los valores
@@ -768,14 +770,20 @@ que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en 
 clave de mallas del escritor TypeScript incluye los ids de las imágenes,
 de modo que un cambio de imagen manda la escena entera.
 
-**Texturas en el RSB** (contrato escrito en M2a; `rt-core` lo lee en M2b).
+**Texturas en el RSB** (contrato escrito en M2a; `rt-core` lo lee desde M2b).
 El escritor TypeScript lo escribe **solo cuando la vista lo pide**
-(`SceneView.textures`, que M2b enciende cuando el motor dice que lo lee: una
-exportación `rt_features` de `rt.wasm` con el bit 0, y lo mismo en
-`/api/info` del lanzador); apagado, que es lo que hay hasta M2b, los bytes
-son los de antes de M2a para cualquier escena (test: la misma escena con
-sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
-`tests/rsb.test.ts` no cambian). Encendido escribe tres cosas:
+(`SceneView.textures`), y la vista lo pide cuando el motor dice que lo lee:
+`rt_features()` de `rt.wasm` (bit 0, `rt_core::FEATURE_TEXTURES`; un `rt.wasm`
+anterior no la exporta y vale 0) y `features` de `/api/info` del lanzador
+(`render/engine.ts` `readsTextures`: el *pool* y `NativeEngine` lo ponen en las
+vistas de *Completo* y de *Render*). Antes de escribir la escena, `main.ts`
+decodifica las imágenes que usan los materiales (`decodeTexturePixels`, cuando
+cambian los materiales y antes de cada render; si llegan píxeles nuevos, el
+visor rehace su escena). Apagado, los bytes son los de antes de M2a para
+cualquier escena (test: la misma escena con sus texturas y sin ellas da los
+mismos bytes, y las escenas fijadas de `tests/rsb.test.ts` no cambian); encendido
+sin ninguna imagen, el motor pinta los mismos píxeles que sin bloques
+(`an_empty_texture_block_and_the_uv_sets_change_no_pixel`). Encendido escribe tres cosas:
 
 1. **`IMGS`** (nueva, una como máximo, viaja con las mallas: un RSB de
    actualización sin `MESH` tampoco la lleva y el motor conserva las
@@ -820,11 +828,27 @@ sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
    ```
 
    Tamaño: `100 + 4·(1 + 90 + 3 + 1 + 19·n)` bytes. Cada ranura lleva ya
-   resuelto el mapeado que usa (el suyo o el común).
+   resuelto el mapeado que usa (el suyo o el común). El lector de `rt-core`
+   (M2b) lee el bloque cuando la sección sigue en el byte 100 y su versión es
+   1 (otra versión es de un fichero más nuevo: se salta); un código de
+   proyección, eje, juego de UV, borde o canal fuera de su rango, un
+   `size_mm` que no sea positivo, una etiqueta sin tamaño o de alcance
+   negativo, un bloque cortado o un índice de imagen que no esté en `IMGS`
+   hacen el fichero inválido.
 3. **`MESH`**: tras `material_id`, `u32 uv_sets` (0, 1 o 2) y cada juego de
    `2n` `f32`. Las posiciones de `MESH` son el espacio propio de la pieza (las
    instancias llevan su transformación), que es el de las proyecciones y las
-   etiquetas.
+   etiquetas. Más de dos juegos, o uno que no tenga un par por vértice, es
+   error.
+
+`IMGS` viaja con las mallas en el motor también: una actualización sin `MESH`
+ni `IMGS` conserva las imágenes cargadas (y sus *mipmaps*); una con `MESH` y sin
+`IMGS` se queda sin ninguna. El escritor de `rt-core` escribe lo mismo que el
+TypeScript cuando la escena tiene imágenes o bloques (o `Scene::textured`, un
+fichero cuyas mallas traían sus UV sin más): `IMGS` detrás de las `FXAM` y
+delante de las `BMAP`, el bloque de cada material que lo tiene y las UV de
+todas las mallas; `tests/fixtures/m2b.rsb` (`rt --write-m2b-example`) se lee y
+se escribe en TypeScript a los mismos bytes (`tests/textures-engine.test.ts`).
 
 Semántica (la de `SPEC.md` §3.3 y `src/core/textures.ts`, cuyas funciones
 son la referencia que los tests fijan y el *shader* de Rápido sigue): las
@@ -1341,7 +1365,10 @@ antes de interpolar: el rgb de una imagen sRGB por la tabla `SRGB_TO_LINEAR`
 (`c = byte/255`; `c ≤ 0,04045 ? c/12,92 : powf((c + 0,055)/1,055, 2,4)`, en
 f32 con `fmath::powf`), el de una de datos y el alfa como `byte/255`; luego
 `lerp` en x de las dos filas y `lerp` en y. Es el nivel 0, bilineal: el
-motor filtrará con mipmaps (M2b), la prueba cruzada usa el nivel 0.
+motor filtrará con mipmaps (M2b), la prueba cruzada usa el nivel 0. Desde M2b
+esa lectura existe en el motor, en cualquier nivel:
+`rt_core::texture::image::TextureImage::bilinear` (y `sample`, trilineal, con
+los *mipmaps* que calcula al leer `IMGS`; §5.2 decies).
 
 **El ruido** (`core/noise.ts`; de K. Perlin, *Improving noise*, 2002, y de
 S. Gustavson, *Simplex noise demystified*, 2005; sin la tabla de
@@ -1927,6 +1954,79 @@ por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
   el 13,7 % del render (antes de los lotes, el 29,1 %), por debajo del 25 %
   de la regla de coste.
 
+### 5.2 decies · Texturas de imagen y etiquetas en el sombreado (M2b, `rt_core::texture`)
+
+El motor pinta en *Completo* y en *Render* las ranuras y las etiquetas de M2a
+donde las pinta *Rápido* (`render/texture-shader.ts`), con la matemática de
+`core/textures.ts` en `f32` y `fmath`: los dos lados leen
+`tests/fixtures/texture-mapping.json` (proyecciones y etiquetas en puntos de
+muestra; TypeScript lo fija y Rust lo cumple a 2·10⁻⁵), y un test de navegador
+(`tests/textures-full-browser.test.ts`) pinta una esfera con cuadros por sus UV,
+una caja girada con proyección caja y la etiqueta del frasco en *Rápido* y con
+el `rt.wasm` real y compara dónde caen las casillas y la etiqueta.
+
+- **Imágenes** (`texture::image`). Se guardan como bytes en su codificación;
+  los *mipmaps* se calculan al leer la escena: cada nivel la mitad del anterior
+  (por defecto, al menos 1), cada téxel la media de caja de los téxeles que
+  cubre del nivel anterior (pesos fraccionarios si un lado es impar), en lineal,
+  guardada en bytes otra vez (sRGB por la entrada más cercana de la tabla de
+  decodificación); el alfa, recto, como la pirámide de la GPU. La lectura es la
+  del `TEX` de M3a (§5.2 quater) en cualquier nivel; la de nivel de detalle `λ`
+  mezcla los niveles `⌊λ⌋` y `⌊λ⌋ + 1` (trilineal, L. Williams, *Pyramidal
+  Parametrics*, 1983). `λ = log2` del eje más largo de la huella en téxeles del
+  nivel 0 (el filtro isótropo de una GPU).
+- **Huella** (`texture::shade::Footprint`). Un rayo de cámara lleva sus
+  diferenciales (H. Igehy, *Tracing Ray Differentials*, SIGGRAPH 1999,
+  escrito desde el artículo): los de la cámara estenopeica de `CAMR` (una lente
+  fina, y la óptica de O1 y O2, se tratan como su estenopo: en el plano de foco
+  cambian igual), llevados al punto y proyectados sobre su plano. Después del
+  primer vértice, el ancho del cono del camino: el del vértice anterior más el
+  ángulo de un píxel por la distancia, estirado por `1/|cos|` en la dirección
+  en que se inclina el rayo (sin término de curvatura ni de rugosidad: más fino
+  de lo ideal, lo que la integración del camino promedia). Todo a **un cuarto
+  de píxel** (`FOOTPRINT_SCALE`): el trazador ya promedia las muestras sobre el
+  píxel, y la huella entera lo emborronaría dos veces; un cuarto lo deja tan
+  nítido como la muestra filtrada de *Rápido*.
+- **Ranuras** (`texture::shade`). En el espacio de la pieza (la malla; la
+  transformación de la instancia lleva el punto y los vectores): color ×
+  color base (en un emisor, × su radiancia), rugosidad y metal × los suyos (el
+  canal, invertido si lo dice), alfa × opacidad o recorte por debajo del umbral,
+  emisión `tinte × imagen × intensidad` sumada a lo que la superficie refleja.
+  La caja mezcla los texeles de sus tres ejes por `|n|⁴` de la normal
+  interpolada antes de leer el canal. Un mapa de normales dobla la normal de
+  sombreado en el marco de los gradientes de superficie de las coordenadas
+  (`T ∝ ∇u`, `B ∝ ∇v`, los dos escalados por el mayor, el marco que construye
+  *Rápido* con derivadas de pantalla, M. Schüler 2013; con UV, los de la UV del
+  triángulo; con proyección, los suyos exactos), cada eje de la caja en el suyo
+  y mezclados; un mapa de alturas, `normalize(n − ∇ₛh)` por diferencias
+  centradas de un téxel del nivel leído. Trabaja sobre la normal ya biselada
+  (E6) y con el dibujo procedural, girada al exterior de la pieza y vuelta (el
+  relieve se lee igual por los dos lados); el punto del terminador y la normal
+  geométrica no cambian.
+- **Etiquetas**, en orden: cada una sobre lo de debajo por su alfa; su
+  rugosidad y su barniz sustituyen a los de la superficie en esa proporción;
+  bajo la cobertura `A`, la superficie conserva `1 − A` de su metal, de su
+  transmisión (el papel es opaco: una etiqueta sobre vidrio no se ve a través)
+  y de su emisión; el borde del papel dobla la normal por el gradiente de
+  `Σ aᵢ · reliefᵢ · 0,15 mm`, con el rectángulo de la etiqueta incluido.
+- **El integrador** las lee en cada impacto de cámara o de BSDF de una
+  instancia con texturas (`Prepared::textures`; las partículas no tienen),
+  después del bisel y del dibujo; un recorte o una opacidad por punto los ve el
+  rayo de cámara y también el de sombra (una instancia con imagen de alfa es
+  atravesable; el material de un recorte o de una pared fina que cruza un rayo
+  de sombra se lee en el nivel 0), y el pase de albedo da el color con
+  texturas. Un emisor cuya radiancia cambia por la superficie (imagen de color
+  o de emisión, o etiquetas) **no se muestrea como luz**: lo encuentran los
+  rayos que le dan (sin sesgo, con más ruido). Los fotones de las cáusticas ven
+  el material sin texturas, como ven los dibujos de E6.
+- **Coste y determinismo.** Una escena sin texturas no hace nada nuevo (sus
+  *hash* fijados no se mueven); una con texturas lee como mucho tres
+  coordenadas por ranura y dos niveles por lectura. El ejemplo
+  `rt_core::example::m2b_scene` tiene su *hash* fijado
+  (`PINNED_M2B_TEXTURES_4SPP`) en todas las rutas SIMD, en `rt-cli` y `rt-app`
+  con 1, 4 y 16 hilos, en WASI y en el `rt.wasm` real (CI), y sus seis pases
+  (`PINNED_M2B_PASS_*`).
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -2489,6 +2589,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente fina no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente fina y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
 | Ventana de la lente (O2b) | `tests/lens-peek.test.ts` (con el `rt.wasm` real), `tests/lens-peek-browser.test.ts`, `tools/lens-hover-check.mjs` | A qué cámara se pregunta y que la lente puesta es la cámara tal cual; la caché (una pregunta por lente, compartida la que está en vuelo, otra al cambiar focal, foco, f/, encuadre o ajustes, la negativa se guarda y «sin motor» y el fallo no, acotada); el reposo de 300 ms (cruzar la lista no abre nada), cerrar al salir, con Esc y al elegir, y no reabrir hasta que vuelve el puntero; las tarjetas con solo los números del motor (cargando, sin motor y negada, sin números ni dibujo; es y en); la colocación dentro de la ventana; los números de lentes que no están en la cámara contra los del motor real. En Chromium, sobre la sección de verdad: abre junto a la lista y junto al chip con el nombre, la fuente, el dibujo y los números de esa lente, no toma foco ni puntero, el teclado la abre y la mueve de lente en lente, y elegir pone la lente. Con la aplicación y el motor reales: los números de la ventana son los de la sección al poner la lente, y volver a pasar no vuelve a preguntar al módulo |
 | Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
+| Texturas en el motor (M2b) | `texture::tests` de rt-core (con `tests/fixtures/texture-mapping.json`, que `tests/texture-mapping.test.ts` fija contra `core/textures.ts`), `render::tests` y `passes_tests` (fijados M2B), `rt-cli/tests/example.rs` y `rt-app` (hilos); `tests/textures-engine.test.ts` (con el `rt.wasm` real), `tests/textures-full-browser.test.ts` | Las cinco proyecciones y las etiquetas en 858 puntos del fixture (±2·10⁻⁵ relativo), gradientes contra diferencias finitas, *mipmaps* en lineal, nivel de detalle y huella de la cámara, marco del mapa de normales, recorte y cobertura también en las sombras, etiquetas en orden con su borde; ida y vuelta RSB, ficheros viejos y `m2b.rsb` byte a byte con el escritor de la página; el mismo fijado con 1, 4 y 16 hilos y en cada ruta SIMD; comparación por regiones con *Rápido* en Chromium (≥ 97 % de los píxeles asentados, control movido una casilla < 15 %; etiqueta con intersección sobre unión > 0,9) |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |

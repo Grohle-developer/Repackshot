@@ -30,7 +30,7 @@ pub mod triangle;
 mod tests;
 
 pub use bvh::{BvhStats, BvhWidth, BINS, SAH_DEPTH_LIMIT};
-pub use mesh::{Mesh, MeshError, MAX_TRIANGLES};
+pub use mesh::{Mesh, MeshError, MAX_TRIANGLES, MAX_UV_SETS};
 pub use particles::{is_clear_material, ParticleSet, PixelFootprint, ScreenProjection, MIN_PIXELS};
 pub use transform::Transform;
 pub use triangle::{intersect_triangle, Cull, TriangleHit};
@@ -471,6 +471,14 @@ impl Geometry {
         ) {
             (Some(p), Some(i)) if !p.identity => i.transform.transpose_vector(n),
             _ => n,
+        }
+    }
+
+    /// A displacement in world space in instance `instance`'s mesh space (by the inverse).
+    pub(crate) fn vector_to_object(&self, instance: u32, v: Vec3) -> Vec3 {
+        match self.prepared.get(instance as usize) {
+            Some(p) if !p.identity => p.to_local.vector(v),
+            _ => v,
         }
     }
 

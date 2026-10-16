@@ -202,6 +202,9 @@ pub fn scene() -> Scene {
         bitmaps: Vec::new(),
         patterns: Vec::new(),
         effects: Vec::new(),
+        images: Vec::new(),
+        textures: Vec::new(),
+        textured: false,
     }
 }
 
@@ -591,6 +594,370 @@ pub fn e6_patterns_scene() -> Scene {
             seed: 0,
         },
     ];
+    scene
+}
+
+/// The images of the M2b example, made here (no image file in the repository): 0 a red and cream
+/// checker (64 × 64, sRGB RGB), 1 a normal map of round bumps (32 × 32, linear RGB), 2 a label
+/// (64 × 32, sRGB RGBA: a dark card with rounded corners and two light bands), 3 grey bands (16 ×
+/// 16, linear grey), 4 a mask of round holes (32 × 32, linear grey), 5 a warm ring (32 × 32,
+/// sRGB RGB), 6 a grey checker (16 × 16, sRGB grey), 7 a gradient (8 × 8, sRGB RGBA).
+pub fn m2b_images() -> Vec<crate::texture::TextureImage> {
+    use crate::texture::image::{COLOR_LINEAR, COLOR_SRGB};
+    use crate::texture::TextureImage;
+    let image = |w: u32, h: u32, c: u32, space: u32, f: &dyn Fn(u32, u32) -> Vec<u8>| {
+        let data: Vec<u8> = (0..h)
+            .flat_map(|y| (0..w).flat_map(move |x| f(x, y)))
+            .collect();
+        TextureImage::new(w, h, c, space, data).expect("a valid example image")
+    };
+    // Distance from the centre of an 8 × 8 cell, 0 at its centre, 1 at its edge.
+    let cell = |x: u32, y: u32, n: u32| -> (f32, f32) {
+        let fx = ((x % n) as f32 + 0.5) / n as f32 * 2.0 - 1.0;
+        let fy = ((y % n) as f32 + 0.5) / n as f32 * 2.0 - 1.0;
+        (fx, fy)
+    };
+    vec![
+        image(64, 64, 3, COLOR_SRGB, &|x, y| {
+            if ((x / 8) + (y / 8)) % 2 == 0 {
+                vec![200, 40, 30]
+            } else {
+                vec![235, 225, 200]
+            }
+        }),
+        image(32, 32, 3, COLOR_LINEAR, &|x, y| {
+            let (fx, fy) = cell(x, y, 8);
+            let r2 = fx * fx + fy * fy;
+            let (nx, ny) = if r2 < 0.8 {
+                (fx * 0.6, -fy * 0.6)
+            } else {
+                (0.0, 0.0)
+            };
+            let nz = (1.0 - nx * nx - ny * ny).max(0.0).sqrt();
+            let b = |v: f32| ((v * 0.5 + 0.5) * 255.0).round() as u8;
+            vec![b(nx), b(ny), b(nz)]
+        }),
+        image(64, 32, 4, COLOR_SRGB, &|x, y| {
+            let (dx, dy) = (
+                (x as f32 + 0.5 - 32.0).abs() - 26.0,
+                (y as f32 + 0.5 - 16.0).abs() - 10.0,
+            );
+            let outside = (dx.max(0.0) * dx.max(0.0) + dy.max(0.0) * dy.max(0.0)).sqrt();
+            let alpha = (255.0 * (6.0 - outside).clamp(0.0, 1.0)) as u8;
+            let band = (10..14).contains(&y) || (19..22).contains(&y);
+            if band && (8..56).contains(&x) {
+                vec![240, 236, 220, alpha]
+            } else {
+                vec![30, 40, 70, alpha]
+            }
+        }),
+        image(16, 16, 1, COLOR_LINEAR, &|x, _| {
+            vec![if (x / 4) % 2 == 0 { 60 } else { 230 }]
+        }),
+        image(32, 32, 1, COLOR_LINEAR, &|x, y| {
+            let (fx, fy) = cell(x, y, 16);
+            vec![if fx * fx + fy * fy < 0.35 { 0 } else { 255 }]
+        }),
+        image(32, 32, 3, COLOR_SRGB, &|x, y| {
+            let (fx, fy) = cell(x, y, 32);
+            let r = (fx * fx + fy * fy).sqrt();
+            if (0.55..0.8).contains(&r) {
+                vec![255, 170, 60]
+            } else {
+                vec![0, 0, 0]
+            }
+        }),
+        image(16, 16, 1, COLOR_SRGB, &|x, y| {
+            vec![if ((x / 2) + (y / 2)) % 2 == 0 {
+                90
+            } else {
+                170
+            }]
+        }),
+        image(8, 8, 4, COLOR_SRGB, &|x, y| {
+            vec![(x * 36) as u8, (y * 36) as u8, 255 - (x * 30) as u8, 255]
+        }),
+    ]
+}
+
+/// The M2b texture scene (`render.rs` pins its hash; `rt --write-m2b-example` writes it for
+/// `tools/wasm-parity.mjs`): the E6 floor, camera and key light with every kind of texture read.
+/// The floor with a grey checker by a planar projection (minified far off: its mipmaps); a box
+/// turned 20° about Z with a box-projected checker, a box-projected normal map of bumps and a
+/// label on its front with a paper edge; a ball with a spherical checker, roughness from grey
+/// bands (luminance, inverted) and metal from them; a bottle with cylindrical bands (mirrored)
+/// and a label wrapped on its front within its reach; a card behind them, turned to the camera
+/// (UVs, the second set for its emission), with round holes cut out, a warm emission ring and a
+/// height map; a small emitter tinted by a gradient image (found by the rays that hit it, not
+/// sampled as a light). Instances: 0 floor, 1 box, 2 ball, 3 bottle, 4 card, 5 emitter.
+pub fn m2b_scene() -> Scene {
+    use crate::texture::{
+        Label, MaterialTextures, TextureSlot, AXIS_X, AXIS_Y, AXIS_Z, CHANNEL_LUMINANCE,
+        PROJECTION_BOX, PROJECTION_CYLINDRICAL, PROJECTION_PLANAR, PROJECTION_SPHERICAL,
+        PROJECTION_UV, SLOT_ALPHA, SLOT_COLOR, SLOT_EMISSION, SLOT_FLAG_CUTOUT, SLOT_FLAG_HEIGHT,
+        SLOT_FLAG_INVERT, SLOT_METAL, SLOT_NORMAL, SLOT_ROUGHNESS, WRAP_CLAMP, WRAP_MIRROR,
+    };
+    let mut scene = e6_scene();
+    // The card: 60 mm square in its own plane y = 0, both UV sets (the second turned).
+    let card = {
+        let p = [
+            Vec3::new(-30.0, 0.0, 0.0),
+            Vec3::new(30.0, 0.0, 0.0),
+            Vec3::new(30.0, 0.0, 60.0),
+            Vec3::new(-30.0, 0.0, 60.0),
+        ];
+        let n = [Vec3::new(0.0, -1.0, 0.0); 4];
+        Mesh::new(&p, &n, &[0, 1, 2, 0, 2, 3], 0)
+            .and_then(|m| {
+                m.with_uvs(vec![
+                    vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+                    vec![[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+                ])
+            })
+            .unwrap_or_default()
+    };
+    let lamp = {
+        let p = [
+            Vec3::new(-20.0, 0.0, 0.0),
+            Vec3::new(20.0, 0.0, 0.0),
+            Vec3::new(20.0, 0.0, 24.0),
+            Vec3::new(-20.0, 0.0, 24.0),
+        ];
+        Mesh::new(&p, &[], &[0, 1, 2, 0, 2, 3], 0)
+            .and_then(|m| m.with_uvs(vec![vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]]))
+            .unwrap_or_default()
+    };
+    let meshes = vec![
+        floor_quad(0.0, 900.0, 0),
+        split_box(
+            Vec3::new(-40.0, -30.0, 0.0),
+            Vec3::new(40.0, 30.0, 44.0),
+            &[0, 1, 2, 3, 4, 5],
+        ),
+        icosphere(Vec3::ZERO, 32.0, 2),
+        cylinder(0.0, 0.0, 22.0, 0.0, 74.0, 48),
+        card,
+        lamp,
+    ];
+    let (s20, c20) = crate::fmath::sin_cos(20.0 * crate::fmath::DEG_TO_RAD);
+    let (s25, c25) = crate::fmath::sin_cos(25.0 * crate::fmath::DEG_TO_RAD);
+    let instances = vec![
+        Instance::new(0, Transform::IDENTITY, 0),
+        Instance::new(
+            1,
+            Transform::from_rows([
+                [c20, -s20, 0.0, -78.0],
+                [s20, c20, 0.0, 30.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]),
+            1,
+        ),
+        Instance::new(2, Transform::translation(Vec3::new(74.0, 34.0, 32.0)), 2),
+        Instance::new(3, Transform::translation(Vec3::new(22.0, -58.0, 0.0)), 3),
+        Instance::new(
+            4,
+            Transform::from_rows([
+                [c25, -s25, 0.0, -10.0],
+                [s25, c25, 0.0, 80.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]),
+            4,
+        ),
+        Instance::new(5, Transform::translation(Vec3::new(60.0, 140.0, 70.0)), 5),
+    ];
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.materials = vec![
+        Material {
+            base_color: Rgb::new(0.6, 0.6, 0.62),
+            roughness: 0.7,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::WHITE,
+            roughness: 0.4,
+            bevel_mm: 2.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.95, 0.95, 0.95),
+            roughness: 0.6,
+            metallic: 0.8,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.9, 0.92, 0.95),
+            roughness: 0.25,
+            coat: 0.6,
+            coat_roughness: 0.05,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.2, 0.5, 0.8),
+            roughness: 0.5,
+            ..Material::default()
+        },
+        Material {
+            kind: crate::scene::MATERIAL_EMISSIVE,
+            emission: Rgb::WHITE,
+            emission_power: 2.0,
+            flags: crate::scene::MATERIAL_FLAG_LIGHT,
+            ..Material::default()
+        },
+    ];
+    scene.images = m2b_images().into_iter().map(std::sync::Arc::new).collect();
+    let slot = |image: u32, projection: u32, size_mm: f32| TextureSlot {
+        image: Some(image),
+        projection,
+        size_mm,
+        ..TextureSlot::default()
+    };
+    let with = |slots: &[(usize, TextureSlot)], labels: Vec<Label>| {
+        let mut t = MaterialTextures {
+            labels,
+            ..MaterialTextures::default()
+        };
+        for &(k, s) in slots {
+            t.slots[k] = s;
+        }
+        t
+    };
+    let label = |origin: Vec3, width: f32, depth: f32, relief: f32| Label {
+        image: Some(2),
+        origin,
+        u: Vec3::new(1.0, 0.0, 0.0),
+        v: Vec3::new(0.0, 0.0, 1.0),
+        normal: Vec3::new(0.0, -1.0, 0.0),
+        width_mm: width,
+        height_mm: width / 2.0,
+        depth_mm: depth,
+        roughness: 0.6,
+        coat: 0.3,
+        relief,
+    };
+    let floor = with(
+        &[(
+            SLOT_COLOR,
+            TextureSlot {
+                axis: AXIS_Z,
+                ..slot(6, PROJECTION_PLANAR, 160.0)
+            },
+        )],
+        Vec::new(),
+    );
+    let boxed = with(
+        &[
+            (
+                SLOT_COLOR,
+                TextureSlot {
+                    rotation_deg: 10.0,
+                    ..slot(0, PROJECTION_BOX, 48.0)
+                },
+            ),
+            (
+                SLOT_NORMAL,
+                TextureSlot {
+                    strength: 0.8,
+                    ..slot(1, PROJECTION_BOX, 24.0)
+                },
+            ),
+        ],
+        vec![label(Vec3::new(0.0, -30.0, 22.0), 50.0, 4.0, 1.0)],
+    );
+    let ball = with(
+        &[
+            (
+                SLOT_COLOR,
+                TextureSlot {
+                    axis: AXIS_Z,
+                    repeat: [2.0, 2.0],
+                    ..slot(0, PROJECTION_SPHERICAL, 100.0)
+                },
+            ),
+            (
+                SLOT_ROUGHNESS,
+                TextureSlot {
+                    channel: CHANNEL_LUMINANCE,
+                    flags: SLOT_FLAG_INVERT,
+                    axis: AXIS_Z,
+                    ..slot(3, PROJECTION_SPHERICAL, 100.0)
+                },
+            ),
+            (
+                SLOT_METAL,
+                TextureSlot {
+                    axis: AXIS_Z,
+                    ..slot(3, PROJECTION_SPHERICAL, 100.0)
+                },
+            ),
+        ],
+        Vec::new(),
+    );
+    let bottle = with(
+        &[(
+            SLOT_COLOR,
+            TextureSlot {
+                axis: AXIS_Z,
+                offset: [0.25, 0.0],
+                repeat: [3.0, 1.0],
+                wrap: WRAP_MIRROR,
+                ..slot(3, PROJECTION_CYLINDRICAL, 138.2)
+            },
+        )],
+        vec![label(Vec3::new(0.0, -22.0, 36.0), 34.0, 12.0, 0.5)],
+    );
+    let card = with(
+        &[
+            (
+                SLOT_ALPHA,
+                TextureSlot {
+                    flags: SLOT_FLAG_CUTOUT,
+                    cutoff: 0.5,
+                    ..slot(4, PROJECTION_UV, 100.0)
+                },
+            ),
+            (
+                SLOT_EMISSION,
+                TextureSlot {
+                    uv_set: 1,
+                    strength: 3.0,
+                    wrap: WRAP_CLAMP,
+                    ..slot(5, PROJECTION_UV, 100.0)
+                },
+            ),
+            (
+                SLOT_NORMAL,
+                TextureSlot {
+                    flags: SLOT_FLAG_HEIGHT,
+                    strength: 1.5,
+                    axis: AXIS_Y,
+                    ..slot(3, PROJECTION_PLANAR, 30.0)
+                },
+            ),
+        ],
+        Vec::new(),
+    );
+    let lamp_t = with(
+        &[(
+            SLOT_COLOR,
+            TextureSlot {
+                axis: AXIS_X,
+                ..slot(7, PROJECTION_UV, 100.0)
+            },
+        )],
+        Vec::new(),
+    );
+    let mut card = card;
+    card.emission_tint = Rgb::new(1.0, 0.9, 0.8);
+    scene.textures = vec![
+        Some(floor),
+        Some(boxed),
+        Some(ball),
+        Some(bottle),
+        Some(card),
+        Some(lamp_t),
+    ];
+    scene.render.width = 160;
+    scene.render.height = 120;
     scene
 }
 

@@ -167,6 +167,12 @@ decisiones escritas (datos, contratos, revisión), no código.
   irradiancia, MIS con la misma probabilidad en el vértice del rayo BSDF;
   el atrapasombras y los fotones siguen por flujo; sin chispas en los sets
   con *pool*; 614 tests del motor — **Opus**.
+- **M2b** · Texturas y etiquetas en el motor: `IMGS`, el bloque de
+  texturas de `MATL` y las UV de `MESH` en `rt-core`, *mipmaps* y huella por
+  diferenciales de rayo y cono, las cinco proyecciones de *Rápido*, mapas de
+  normales y de alturas, recorte y opacidad por punto también en las sombras,
+  etiquetas como capa; `rt_features`; los mismos píxeles sin texturas; 474
+  tests de `rt-core` — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -3238,7 +3244,7 @@ texturas queda para M2b: propuesto `rt_features` (bit 0) en `rt.wasm` y en
 FBX con textura en los *fixtures*, el camino de los cargadores de three se
 prueba en el navegador con un Collada y su imagen (el mismo código).
 
-## M2b · Texturas y etiquetas en el motor — **Opus** (tras E6 y E9)
+## M2b · Texturas y etiquetas en el motor — **Opus** (tras E6 y E9) — hecha
 
 **Qué.** `rt-core` lee `IMGS` y el mapeado de `MATL`: muestreo bilineal
 con mipmaps por diferenciales de rayo (Igehy 1999, escrito desde el
@@ -3256,6 +3262,124 @@ textura de cuadros y una caja con proyección caja renderizadas por `rt`
 coinciden con la vista previa Rápido en posición de la textura
 (comparación por regiones); la etiqueta del criterio de M2a renderiza
 en su sitio en Completo.
+
+**Hecho.** Módulo nuevo `rt_core::texture` (ARCHITECTURE §5.2 decies):
+`image` (la imagen de `IMGS` como bytes en su codificación, sus *mipmaps* al
+leer la escena —caja en lineal, pesos fraccionarios en lados impares, de
+vuelta a bytes sRGB por la entrada más cercana de la tabla—, la lectura del
+`TEX` de M3a en cualquier nivel, trilineal y el nivel de detalle `log2` del eje
+mayor de la huella), `mapping` (las cinco proyecciones de `core/textures.ts`
+en `f32` con sus gradientes de superficie exactos, y las etiquetas) y `shade`
+(`TextureSetup` por instancia, la huella: diferenciales de Igehy de la cámara
+estenopeica en el primer impacto y el ancho del cono del camino después, a
+`FOOTPRINT_SCALE` = ¼ de píxel; las seis ranuras, el mapa de normales en el
+marco de `∇u`, `∇v` como el de Schüler de *Rápido*, cada eje de la caja en el
+suyo, el de alturas por diferencias centradas de un téxel, las etiquetas en
+orden con su acabado y el relieve de su borde). **RSB**: `IMGS`, el bloque de
+`MATL` desde el byte 100 y las UV de `MESH`, en el lector y en el escritor de
+`rt-core` (los bytes del TypeScript: `tests/fixtures/m2b.rsb` ida y vuelta), con
+sus validaciones; las imágenes viajan con las mallas en una actualización; un
+fichero sin datos de textura se lee como antes. **Integrador**: el material con
+texturas en cada impacto de cámara o de BSDF, tras el bisel y el dibujo de E6;
+la emisión de una imagen se suma (un emisor la toma en su radiancia); el
+recorte y la opacidad por punto los ven la cámara y los rayos de sombra (una
+instancia con alfa es atravesable); el pase de albedo con texturas; un emisor
+con imagen no se muestrea como luz (`light.rs`, una condición). Cambios pequeños en
+`walk` y `shadow_from_exit` (dos líneas cada uno: el material de un recorte o
+de una pared fina que cruza un rayo de sombra, con sus texturas, nivel 0).
+**La palabra del motor**: `rt_core::FEATURES` (bit 0, `FEATURE_TEXTURES`),
+`rt_features` en `rt.wasm`, `features` en `/api/info`; el *pool*
+(`Pool.features`, del mensaje `ready` del *worker*) y `NativeEngine` ponen
+`textures: true` en las vistas de *Completo* y de *Render*
+(`render/engine.ts` `readsTextures`), y `main.ts` decodifica las imágenes antes
+de escribir la escena (al cambiar los materiales, rehace la del visor cuando
+llegan píxeles nuevos; antes de cada render; *Exportar escena del motor* las
+lleva). La nota del inspector deja el *próximamente*. **Ejemplo y fijados**:
+`rt_core::example::m2b_scene` (`rt --write-m2b-example`): suelo con cuadros por
+proyección plana (minificados: sus *mipmaps*), caja girada con cuadros y mapa
+de normales por caja y etiqueta con borde, bola con cuadros esféricos y
+rugosidad y metal de unas bandas, frasco con bandas cilíndricas en espejo y una
+etiqueta envuelta, tarjeta con agujeros recortados, aro de emisión por el
+segundo juego de UV y mapa de alturas, y un emisor teñido por una imagen. Fijados
+**nuevos** (ninguno se movió): `PINNED_M2B_TEXTURES_4SPP` **`0x5d94b21c`**
+(todas las ISA, WASI, `rt-cli` y `rt-app` con 1, 4 y 16 hilos, el `rt.wasm` real
+en CI y por el código de la página) y sus seis pases `PINNED_M2B_PASS_*` (albedo
+`0x478bfcc8`, normal `0xc1491d6a`, profundidad `0x30474c2a`, ids `0xb4c6eb60`,
+círculo de confusión `0x6ad58dc5`), con su bloque de paridad en `engine.yml`.
+**Tests** (cada uno falla sin lo que prueba): 18 de `rt-core` en
+`texture/tests.rs` (las proyecciones y las etiquetas contra
+`tests/fixtures/texture-mapping.json`, que `tests/texture-mapping.test.ts` fija
+contra `core/textures.ts`: 810 casos de proyección y 48 de etiqueta; los
+gradientes contra diferencias finitas; *mipmaps*, lecturas, bordes y v arriba;
+el nivel de detalle y la huella de la cámara; el marco del mapa de normales con
+UV, UV giradas, plana y caja; el mapa de alturas; color, rugosidad, metal, alfa
+y emisión, y el emisor que deja de ser luz; el recorte y la cobertura, también
+para los rayos de sombra; las etiquetas en orden y su borde; la ida y vuelta
+RSB, los ficheros viejos y los bloques malos, las actualizaciones; un bloque
+vacío y las UV no cambian un píxel; las mismas cifras en cada ruta SIMD), el
+fijado y los pases, los hilos en `rt-cli` y `rt-app`, `features` en
+`/api/info`; en TypeScript `tests/textures-engine.test.ts` (el interruptor con
+un motor que lee texturas y con uno de antes, los bytes de `m2b.rsb`, el
+`rt.wasm` real: `rt_features`, el mensaje `ready` del propio *worker* del
+*pool* con sus `features`, el fijado por el código de la página, una escena del
+proyecto con y sin texturas) y la **comparación por regiones**
+`tests/textures-full-browser.test.ts`: *Rápido* en Chromium y el `rt.wasm` con
+el escritor de la página pintan la misma escena a 240 × 160 (24 muestras) y se
+clasifica cada píxel por su tono. Esfera con cuadros por sus UV y caja girada
+30° con proyección caja: de 1722 píxeles lejos de los bordes de casilla en los
+dos, coinciden **el 100 %**; con la imagen del motor movida una casilla, **el
+0 %**. La etiqueta del frasco del criterio de M2a: intersección sobre unión
+**0,989** (364 píxeles). Cada test se comprobó a mano contra su fallo: 25
+mutaciones del motor (cada proyección, la v, los bordes, los *mipmaps*, el
+nivel de detalle, la huella, el marco y el signo del relieve, el recorte, la
+capa de las etiquetas y su borde, la emisión y el emisor como luz, las sombras,
+el material del integrador, el albedo, el lector RSB y sus actualizaciones) y 8
+de la página (el interruptor, el *pool*, el *worker*, el escritor, las
+referencias de proyección y de etiqueta) ponen cada una su test en rojo.
+**Coste** (`rt` nativo, AVX2, máquina compartida,
+rondas alternadas; la escena M2b, con texturas en todo, el suelo incluido,
+contra la misma sin `IMGS`, sin bloques y sin UV):
+
+| Medida | Con texturas | Sin texturas | Diferencia |
+| --- | --- | --- | --- |
+| 1 hilo, 320 × 240, 16 muestras, 6 rondas (mediana) | 2,48 s (1,64 Mrayos/s) | 2,08 s (2,00 Mrayos/s) | +19 % de tiempo, +22 % por rayo |
+| 4 hilos, 640 × 480, 64 muestras, 5 rondas (mediana) | 13,69 s (4,76 Mrayos/s) | 11,77 s (5,65 Mrayos/s) | +16 % de tiempo, +19 % por rayo |
+| La escena sin texturas, motor de antes (`09d8196`) y de M2b, 1 hilo, 6 rondas | 2,13 s (M2b) | 2,11 s (antes) | +1 %, ruido; el mismo PNG byte a byte |
+
+No encajó con el plan: (1) La huella es **un cuarto de píxel** y no uno: el
+trazador ya integra el píxel con sus muestras, y con la huella entera la
+textura saldría el doble de blanda que en *Rápido*; con un cuarto, la nitidez
+es la de su muestra trilineal y anisótropa (a costa de algo de ruido con pocas
+muestras en lo minificado). (2) Los diferenciales de la cámara son los de su
+estenopo también con lente fina, O1 u O2 (en el plano de foco cambian igual;
+fuera, la lente ya emborrona), y el cono de los rebotes no tiene término de
+curvatura ni de rugosidad (más fino de lo ideal; el camino lo promedia). El
+filtrado es isótropo (el eje mayor; el cuarto de píxel absorbe hasta 4:1). (3)
+El mapa de alturas y el borde del papel derivan por diferencias de un téxel del
+nivel leído, no de un píxel de pantalla como *Rápido*: de cerca, el borde de
+una etiqueta es una cresta más fina que la de *Rápido*. (4) Una etiqueta **quita
+transmisión** (el papel es opaco: sobre vidrio no se ve a través); *Rápido* no
+lo hace. Sobre un emisor, una etiqueta tapa su luz pero no refleja (un emisor
+no tiene BSDF). (5) Un emisor cuya imagen cambia su luz **no se muestrea como
+luz** (sin sesgo, con más ruido en lo que ilumina); los fotones de las
+cáusticas ven los materiales sin texturas, como los dibujos de E6. (6) El pase
+de normales es el del bisel, sin el mapa de normales ni el relieve (como con
+los dibujos de E6); el de albedo sí lleva las texturas. (7) El lector es
+estricto con el bloque de texturas (un código fuera de rango o un índice de
+imagen que no está hacen el RSB inválido, como `LENS`); el contrato no decía
+nada. (8) La malla técnica de E6: la opacidad por punto existe (el alfa de una
+imagen recorta, y los rayos de sombra lo ven), pero la tela procedural no da
+aún agujeros propios: cuánto abrir el tafetán es una receta y un criterio
+visual (regla 11), anotado para el responsable; con una imagen de alfa ya se
+puede. (9) **Tamaño**: sigue en mm, como en M2a; si debe seguir al del sólido
+es la decisión pendiente de `TRIAGE.md` 5.1 (no se toma aquí). (10) Los
+materiales de nodos siguen con la media de sus salidas hasta M3b; una ranura
+de imagen propia de uno de ellos se pinta encima, como en *Rápido*. (11) La
+comparación por regiones necesita Chromium y `rt.wasm`: se salta en el trabajo
+del motor de CI; su mitad de Node (`textures-engine.test.ts`) va en el paso
+*Passes through the page's own code* con el `rt.wasm` real. (12) Cada
+*worker* guarda su copia de las imágenes y de sus *mipmaps* (un tercio más),
+como de las mallas.
 
 ## M3a · Editor de materiales por nodos: modelo, editor y vista previa — **Opus** (tras U11) — hecha
 
@@ -9751,7 +9875,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 
 - **1.1 y 5.1** (tipo de mapeado, tamaño, desplazamiento, tamaño relativo
   al sólido): los mandos de M2a existen, pero solo salen con una imagen en
-  la ranura y *Completo* no los dibuja hasta **M2b**.
+  la ranura; *Completo* y *Render* los dibujan desde **M2b** (hecha). Lo
+  demás de 1.1 y la decisión de 5.1 siguen pendientes.
 - **1.6** (los nodos no pilotan el material en *Completo*, el modo por
   defecto): **M3b**.
 - **3.1** (vista en vivo del render seleccionado en la cola): fase nueva

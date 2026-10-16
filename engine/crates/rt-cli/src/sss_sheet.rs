@@ -261,6 +261,7 @@ pub fn spheres(size: (u32, u32), with_medium: bool) -> Scene {
         bitmaps: Vec::new(),
         patterns: Vec::new(),
         effects: Vec::new(),
+        ..Scene::default()
     }
 }
 

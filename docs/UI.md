@@ -806,9 +806,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    Simple** · *Cancelar*. El menú contextual de la pieza tiene en
    *Material ▸* la entrada **Editar con nodos…**, y la paleta de comandos
    *Abrir el editor de material*.
-2. **Texturas** (fase M2a) — Una nota dice que *Rápido* muestra texturas y
-   etiquetas y que el motor las pinta en *Completo* y en *Render*
-   (*próximamente*, fase M2b). Una fila por **ranura**: *Color*,
+2. **Texturas** (fase M2a) — Una nota dice que *Rápido*, *Completo* y
+   *Render* dibujan las texturas y las etiquetas en el mismo sitio (el motor
+   las pinta desde M2b). Una fila por **ranura**: *Color*,
    *Rugosidad*, *Metal*, *Normal*, *Alfa*, *Emisión*, cada una con la
    vista previa de su imagen (un cuadrado rayado sin imagen), su nombre y
    debajo el archivo y su tamaño en píxeles (o *Sin imagen*), **Cargar…**
@@ -2221,7 +2221,7 @@ guardar montajes (L4), biblioteca *Míos* (U4), cara CAD entera, pelusa,
 desgaste visible, campo claro por entorno, cielo procedural, HDRI de
 archivo, colocación por reflejo exacta, vídeo, pases de render, etiquetas
 y texturas de imagen (fase M2a en la interfaz y la vista previa, M2b en el
-motor), vista en sección. Todo está en `ROADMAP.md` con su
+motor; hechas las dos), vista en sección. Todo está en `ROADMAP.md` con su
 fase y su responsable. En la interfaz, cada uno de esos huecos se marca
 con la palabra *próximamente* en texto auxiliar, nunca con un control que
 parezca funcionar y no haga nada.

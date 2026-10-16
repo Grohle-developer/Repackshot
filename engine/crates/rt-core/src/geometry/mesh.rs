@@ -14,6 +14,8 @@ const MESH_LEAVES: BuildParams = BuildParams {
 
 /// Largest number of triangles in one mesh (a limit of the leaf encoding).
 pub const MAX_TRIANGLES: usize = MAX_LEAF_FIRST;
+/// Most sets of texture coordinates a mesh carries (M2b: the first and the second).
+pub const MAX_UV_SETS: usize = 2;
 
 /// Why a mesh could not be built.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +32,11 @@ pub enum MeshError {
     NonFiniteNormal,
     /// More than [`MAX_TRIANGLES`] triangles or `u32::MAX` vertices.
     TooLarge,
+    /// A set of texture coordinates (M2b) does not have one pair per vertex, or there are more
+    /// than [`MAX_UV_SETS`] sets.
+    UvCount,
+    /// A texture coordinate is NaN or infinite.
+    NonFiniteUv,
 }
 
 impl MeshError {
@@ -42,6 +49,8 @@ impl MeshError {
             MeshError::NonFinitePosition => "non-finite vertex position",
             MeshError::NonFiniteNormal => "non-finite vertex normal",
             MeshError::TooLarge => "too many triangles or vertices",
+            MeshError::UvCount => "texture coordinates are not one pair per vertex",
+            MeshError::NonFiniteUv => "non-finite texture coordinate",
         }
     }
 }
@@ -96,6 +105,8 @@ pub struct Mesh {
     inside_out: bool,
     /// The sharp and boundary edges, extracted on first use (E6, the edge bevel).
     edges: EdgeCache,
+    /// Sets of texture coordinates (M2b): one `(u, v)` pair per vertex each, v up.
+    uvs: Vec<Vec<[f32; 2]>>,
 }
 
 impl Mesh {
@@ -153,6 +164,7 @@ impl Mesh {
             packets: Vec::new(),
             inside_out: false,
             edges: EdgeCache::default(),
+            uvs: Vec::new(),
         };
         mesh.inside_out = mesh.normals_oppose_winding();
         mesh.build_bvh(width);
@@ -280,6 +292,29 @@ impl Mesh {
             self.position(b as usize)?,
             self.position(c as usize)?,
         ])
+    }
+
+    /// The mesh with its sets of texture coordinates (M2b; `MESH` after `material_id`): each set
+    /// one `(u, v)` pair per vertex (v up), at most [`MAX_UV_SETS`] sets.
+    pub fn with_uvs(mut self, sets: Vec<Vec<[f32; 2]>>) -> Result<Mesh, MeshError> {
+        if sets.len() > MAX_UV_SETS || sets.iter().any(|s| s.len() != self.vertex_count()) {
+            return Err(MeshError::UvCount);
+        }
+        if !sets.iter().flatten().flatten().all(|v| v.is_finite()) {
+            return Err(MeshError::NonFiniteUv);
+        }
+        self.uvs = sets;
+        Ok(self)
+    }
+
+    /// Number of sets of texture coordinates (0, 1 or 2).
+    pub fn uv_sets(&self) -> usize {
+        self.uvs.len()
+    }
+
+    /// The texture coordinates of vertex `i` in set `set`.
+    pub fn uv(&self, set: usize, i: usize) -> Option<[f32; 2]> {
+        self.uvs.get(set)?.get(i).copied()
     }
 
     /// Material of the mesh's implicit instance.
