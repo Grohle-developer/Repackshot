@@ -3,6 +3,33 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Interfaz
+
+- **Doctor de motor**: el Doctor gana los chequeos que leen el motor, en el mismo popover y con la misma forma que los de escena (cada uno con su frase, su arreglo y *Arreglar todo*). **Motor**: `rt.wasm` cargado y con sus *workers*, con la razón si no (no está compilado, es anterior a la página, no arrancó, el sistema no da *workers*) y aviso si el *pool* es de uno solo. **SIMD**: avisa de que corre la compilación escalar y por qué (el sistema no tiene simd128, *SIMD* está en *Desactivado*, falta `rt-simd.wasm`, el motor de escritorio no tiene camino vectorial). **Denoise**: en el visor pero no en el render, a fuerza 0, o un motor sin *denoiser*; apagado en todas partes es una decisión y no avisa. **Tono**: con *Estándar*, las altas luces recortadas de lo que el motor ha acumulado. **Fireflies**: muestras aisladas muy brillantes en la acumulación del visor *Completo*. **Formato de salida**: vídeo (códec que no se codifica aquí, o un solo archivo que un fallo pierde). **Presupuesto de tiempo**: el tiempo no alcanza las muestras, con la velocidad que el motor midió (D1).
+- Lo que el proyecto puede cambiar tiene *Arreglar* (una entrada de deshacer, *Doctor: Denoise*) y entra en *Arreglar todo*; lo que no (falta `rt.wasm`, un solo *worker*, sin simd128) es un aviso que dice por qué y *No se arregla aquí*, sin arreglo falso; si una fila de *Ajustes* lo limita (*Hilos*, *SIMD*), el botón **Ajustes** la abre resaltada y el Doctor no cambia los ajustes de la aplicación (D1).
+- Los chequeos que no se pueden decir ahora salen apagados con su motivo (*El motor todavía está cargando*, *Necesita el visor en Completo…*, *Midiendo…*, *Aún sin medir…*) en lugar del genérico *No disponible aún: necesita el motor* (D1).
+- El Doctor se vuelve a pasar cuando cambia lo que leen los de motor (ajustes de imagen, de motor, de presupuesto y de salida de animación del render, o la imagen del visor) y también tras **deshacer** y **rehacer**, que antes dejaban los hallazgos con que se guardó el estado (D1).
+- Los textos de *Motor*, *Denoise*, *Tono*, *Fireflies* y *Formato de salida* del catálogo del Doctor, que hablaban de Cycles, ahora hablan del motor de Repackshot; sus claves siguen. Entran dos claves nuevas, `simd` y `budget` (D1).
+- `status().scan` en los dos motores (el *pool* y el lanzador): lo que el Doctor lee de la acumulación (píxeles que son *fireflies*, el encuadre por paradas), leído de nuevo cuando las muestras se doblan; los *workers* dicen en su primer mensaje si su `rt.wasm` exporta el *denoiser* (D1).
+
+### Correcciones
+
+- Una acción que un oyente del *store* enviaba mientras se le avisaba de un deshacer, un rehacer, un reinicio o el cierre de una transacción esperaba al siguiente `dispatch`, que podía tardar mucho; ahora se aplica al acabar el aviso (D1).
+
+### Herramientas
+
+- `tools/doctor-engine-check.mjs`: el Doctor con el motor de verdad en Chromium (*SIMD* en *Desactivado*, *denoise* solo en el visor, un presupuesto de 5 s, *Arreglar todo* y un deshacer) y la captura `docs/ui/doctor-engine.png` (D1).
+
+### Limitaciones conocidas de esta versión
+
+- Los umbrales de *Tono*, *Fireflies* y *Presupuesto de tiempo* son una propuesta, pendiente de decisión (ROADMAP D1, «Qué no encajó»).
+- Con el motor del lanzador y su *denoise* del visor encendido, las sumas que llegan a la página son la imagen filtrada: los *fireflies* salen como «no hay nada que contar» (el encuadre por paradas sí se lee).
+- Dos *fireflies* pegados se ven uno al otro como vecino brillante y no cuentan; en *Rápido* no hay acumulación que leer.
+- El chequeo de vídeo no se dispara todavía con ajustes de esta versión: el vídeo codificado llega con N1 y hasta entonces la salida es una secuencia de fotogramas.
+- No hay cambios en el motor de Rust (`engine/`): no se ha movido ningún hash fijado.
+
 ## v0.1.14 — 2026-10-17
 
 ### Motor

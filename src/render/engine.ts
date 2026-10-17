@@ -6,6 +6,7 @@
 
 import type { PixelFilterFields } from '../core/antialias';
 import type { CameraId } from '../core/camera';
+import type { FrameScan } from '../core/doctor-engine';
 import type { PassKey } from '../core/passes';
 import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
@@ -112,6 +113,12 @@ export interface EngineStatus {
    * the noise target from the last pass (-1: unknown). The engine's numbers, as the meter prints them.
    */
   adaptive?: { min: number; max: number; noise: number; eta: number };
+  /**
+   * Path tracer (D1): what the Doctor reads of the view's accumulation, once every pixel has a few samples: the
+   * fireflies and the frame's brightness by the stop (core/doctor-engine.ts `FrameScan`, made by render/frame-scan.ts).
+   * Absent while there is no full-resolution accumulation to read.
+   */
+  scan?: FrameScan;
   /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
   msaa?: { samples: number; max: number };
   /**

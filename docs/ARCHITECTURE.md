@@ -113,6 +113,7 @@ src/
     motion-hint.ts          lo que el visor dibuja de la animación elegida (N6): su objetivo y su pista
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
+    doctor-engine.ts        los chequeos del Doctor que leen el motor (D1): `rt.wasm` y workers, SIMD, denoise, transformada de vista, fireflies, salida de vídeo y presupuesto de tiempo; `EngineFacts` (lo que la página le cuenta, `setEngineFacts`, como el tope de partículas de `effects.ts`), `FrameScan` (lo que dice la acumulación) y `sameImage`; los arreglos solo tocan el proyecto
     physics.ts              físicas (S2): la sección Físicas de un nodo, qué se simula (`physicsSpec`), las poses del simulador de vuelta a los nodos, la pista del clip PHYSICS y su ancla, las acciones `physics/*` (§5.6)
     effects.ts              los efectos de Ambiente (S4a): el efecto como dato, sus acciones `effect/*`, la región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos de un archivo
     section.ts              la vista en sección (Q1): el plano como dato (`state.section`), sus acciones `section/*`, desde un clic y un eje o desde dos puntos, resuelto en un instante de la animación para los motores, qué piezas corta, cuáles tapa y cuáles son estudio (`partIsExempt`)
@@ -155,6 +156,7 @@ src/
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
+    frame-scan.ts           lo que el Doctor lee de la acumulación del visor Completo (D1): fireflies (píxeles brillantes, aislados y de una sola muestra) y el histograma del encuadre por paradas; `status().scan` en los dos motores, con `ScanCache`
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
     pass-planes.ts          los pases exactos del motor en la página (X2): junta los de rt.wasm por baldosa y lee el RPP1 del lanzador
     physics-worker.ts       el worker del simulador (S2): su rt.wasm, una simulación a la vez, al ritmo del reloj y con acuse de recibo (§5.6)
@@ -185,6 +187,7 @@ src/
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
+    doctor-facts.ts         lo que sabe el Doctor del motor (D1): `engineFactsFrom` (estado de la interfaz y `status()` del visor a `EngineFacts`) e `installDoctorFacts`, que se lo entrega cuando cambia (`doctor/refresh`, también tras deshacer y rehacer)
     section-commands.ts     los comandos de la vista en sección (Q1): encender, cambiar de lado, armar el siguiente clic del visor y lo que hace
     lens-peek.ts            lo que decide la ventana de una lente (O2b), sin DOM: a qué cámara se pregunta al motor y la caché de respuestas por lente y por lo que los números dependen de (`lensPeekCache`, una por puerto), cuándo se abre y se cierra (`createPeekController`, 300 ms de reposo) y lo que dice cada tarjeta (`peekCard`: nada que el motor no haya dicho, regla 10)
     theme.css  layout.css  components.css  …
@@ -430,6 +433,20 @@ Reglas:
   y lo carga con una versión de esquema y migraciones.
 - Las acciones de deshacer no incluyen `meta.lang`, `meta.theme`, el
   plegado de paneles ni el `playhead`: son estado de interfaz.
+- **El Doctor** (`doctor.results`) se vuelve a pasar en cada acción que
+  cambia lo que mira: las partes de la escena de sus chequeos de escena y,
+  desde D1, lo que leen los chequeos del motor (`engineInputsChanged`,
+  `core/doctor-engine.ts`: los ajustes de imagen, los de motor, el
+  presupuesto y la salida de animación del `render`, y todo lo que da otra
+  imagen al visor Completo). Lo que el motor y el sistema dicen no es
+  proyecto: la página lo entrega como `EngineFacts` (`setEngineFacts`,
+  `ui/doctor-facts.ts`) y pide `doctor/refresh`, volátil (sin entrada de
+  deshacer ni cambio de `meta.dirty`) y sin efecto si los resultados son los
+  mismos; tras deshacer y rehacer lo pide el propio *store* a través de
+  `installDoctorFacts`, porque el estado vuelve con los hallazgos con que se
+  guardó. Una acción que un oyente envía mientras se le avisa de un
+  deshacer, rehacer, reinicio o cierre de transacción se aplica en cuanto
+  acaba el aviso (antes esperaba al siguiente `dispatch`).
 
 ---
 
@@ -473,7 +490,18 @@ export interface RenderEngine {
   usa para miniaturas (`quick`).
 - `status()` del trazador incluye, además de muestras y tiempo, los
   workers, si hay SIMD, la escala de resolución, los fotogramas por
-  segundo, el tiempo por fotograma y si está renderizando.
+  segundo, el tiempo por fotograma y si está renderizando. Desde D1,
+  también `scan` (`FrameScan`, `core/doctor-engine.ts`): lo que el Doctor
+  lee de la acumulación a resolución completa cuando todos los píxeles
+  llevan al menos 16 muestras (`SCAN_MIN_SAMPLES`) y cada vez que esas
+  muestras se doblan: cuántos píxeles son *fireflies*, el histograma del
+  encuadre por paradas (17 casillas, de 2⁻⁸ a 2⁸, del canal más brillante)
+  y el proyecto del que sale (`basis`). Es el mismo objeto hasta la
+  siguiente lectura, y no hay `scan` en *Rápido*, durante un gesto ni
+  antes de la muestra 16. Los workers dicen en su primer mensaje si su
+  `rt.wasm` exporta el denoiser (`denoise` en `ready`; `Pool.hasDenoiser`,
+  `PathTracerEngine.canDenoise`), que la interfaz guarda en
+  `EngineInfo.denoise`.
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
@@ -3029,6 +3057,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |
+| Doctor de motor (D1) | `tests/doctor-engine.test.ts` (un motor falso que simula cada estado y el `installDoctorFacts` de verdad), `tests/frame-scan.test.ts` (la lectura de la acumulación y el `status().scan` del pool con *workers* falsos), `tests/store.test.ts` (las acciones de un oyente durante un deshacer); `tools/doctor-engine-check.mjs` | Cada chequeo se dispara y su arreglo lo limpia (proyecto por el *store*, una entrada de deshacer; lo que no es del proyecto, solo la explicación y, si una fila de Ajustes lo limita, el botón que la abre); *Arreglar todo* en un clic; sin hechos del motor, todo *no disponible* como antes; los umbrales en sus fronteras; `sameImage` coincide con `touchesImage` de los dos motores; las frases en los dos idiomas; en el navegador, el Doctor con dos avisos de motor (`docs/ui/doctor-engine.png`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |

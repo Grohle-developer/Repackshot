@@ -620,6 +620,8 @@ export interface SequencePreset {
 
 export type DoctorCheckKey =
   | 'engine'
+  /** D1: the SIMD build of the engine runs (not ported; it follows `engine`). */
+  | 'simd'
   | 'lighttree'
   | 'denoise'
   | 'color'
@@ -633,6 +635,8 @@ export type DoctorCheckKey =
   | 'caustics'
   | 'persist'
   | 'output'
+  /** D1: the render's time budget against the speed the engine measured (not ported; it follows `output`). */
+  | 'budget'
   | 'aspect'
   /** S2: a dynamic part starts below the floor (not ported). */
   | 'physics'

@@ -30,8 +30,11 @@ export type WorkerRequest =
   | { type: 'denoise'; id: number; width: number; height: number; samples: number; y0: number; y1: number; lo: number; hi: number; input: ArrayBuffer; preset?: DenoisePreset; strength?: number };
 
 export type WorkerReply =
-  /** M2b: `features`, the engine's `rt_features` (absent, or 0, in an rt.wasm of before: it reads no textures). */
-  | { type: 'ready'; version: number; features?: number }
+  /**
+   * M2b: `features`, the engine's `rt_features` (absent, or 0, in an rt.wasm of before: it reads no textures). D1:
+   * `denoise`, whether this rt.wasm exports the denoiser (an older build does not; absent: not said).
+   */
+  | { type: 'ready'; version: number; features?: number; denoise?: boolean }
   | { type: 'failed'; reason: string }
   /** The scene is loaded; E5b-1: `caustics`, the caustic photons per sample it renders (0: none; `rt_scene_caustics`). */
   | { type: 'scene'; id: number; error: string | null; caustics?: number }

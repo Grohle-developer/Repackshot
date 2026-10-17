@@ -218,7 +218,7 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           return;
         }
         rt = exports;
-        post({ type: 'ready', version: rt.rt_version(), features: rt.rt_features ? rt.rt_features() >>> 0 : 0 });
+        post({ type: 'ready', version: rt.rt_version(), features: rt.rt_features ? rt.rt_features() >>> 0 : 0, denoise: hasDenoiseExport(rt) });
       } catch (err) {
         post({ type: 'failed', reason: err instanceof Error ? err.message : String(err) });
       }

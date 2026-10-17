@@ -5,6 +5,14 @@ Render (U5): `render.ts` (the render window's settings, `RenderJob`, the queue r
 `name-template.ts` (output names with `{project}`, `{camera}`, `{studio}`, `{date}`, `{n}`), `results.ts` (the
 results history's record and eviction).
 
+Doctor of the engine (D1): `doctor-engine.ts` (the Doctor's checks that read the engine: `rt.wasm` and its workers, SIMD,
+denoise, view transform, fireflies, video output, time budget. What the engine and the system say is not project state:
+the page hands it in as `EngineFacts` (`setEngineFacts`, as `effects.ts` does with the particle cap) and asks for
+`doctor/refresh`; with no facts every check here is `UNAVAILABLE`. `FrameScan` is what the Full viewport's accumulation
+says (fireflies, brightness by the stop) and belongs to one project's image: `sameImage` says when it is no longer this
+one. Fixes change the project and nothing else; what the project cannot change is a warning that says why, naming the
+Settings row when one holds it back).
+
 Aspect ratio (U13): `aspect.ts` (a camera's image ratio: a preset of `data/aspects.ts` or its own `w : h`, its reading and its text; the size of an image follows the active camera's: `sizeForWidth`, `aspectForSize` and `syncOutputSize` in `render.ts`).
 
 Settings (U6): `settings.ts` (the application settings: one typed record with a schema version, defaults,

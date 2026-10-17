@@ -20,6 +20,11 @@ never on ui (the RSB writer of `io/` reaches the path tracer through `SceneSourc
 - `pass-planes.ts`: the engine's exact passes (X2, `core/passes.ts`): the planes of `rt_render_tile_passes` and
   `rt_render_tile_albedo` put together like the image (`PassAccumulator`), and the reader of the launcher's
   `RPP1` file (`parsePasses`). Render hands them back as `RenderPasses` when `RenderOptions.passes` asks.
+- `frame-scan.ts` (D1): what the Doctor reads of the Full viewport's accumulation, without an engine and without a DOM:
+  the fireflies (isolated pixels where one sample carries most of the light, told with the squared luminance when the
+  denoise keeps it) and the frame's pixels by the stop of their brightest channel. Both engines hand it out as
+  `status().scan`, read again when the samples double (`ScanCache`); the pool's workers say in their first message
+  whether their `rt.wasm` can denoise.
 - `tiles.ts`: the pure parts (tiles, passes, generations, accumulation, resolution choice), and the 16-bit and
   linear conversions of the sums (16-bit PNG and TIFF, EXR with premultiplied alpha, 32-bit TIFF and DNG with straight alpha).
 - `schedule.ts`: when a render stops (U5): finish by samples, time, or whichever comes first, at the pass boundary

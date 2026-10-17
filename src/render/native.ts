@@ -70,6 +70,7 @@ import { abortError, adaptiveProgress, budgetProgress, type PassBudget } from '.
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, retryDelay, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
+import { ScanCache, scanFrame } from './frame-scan';
 
 /** How the engine reaches the launcher (io/native.ts's NativeClient, handed in by main.ts). */
 export interface NativeTransport {
@@ -253,6 +254,8 @@ interface ViewJob {
   gen: number;
   scale: number;
   acc: Accumulator;
+  /** D1: the project the job was posted from (what the Doctor's scan of its sums is about). */
+  state: ProjectState;
   /** The scene of the job (`bytesKey` of its update bytes). */
   key: string;
   share: number;
@@ -337,6 +340,8 @@ export class NativeEngine {
   /** Look through (L4): the camera the viewport renders from, for a state; null: the active one. */
   private viewCamera: ((state: ProjectState) => CameraState | null) | null = null;
   private readonly frameListeners = new Set<() => void>();
+  /** D1: what the Doctor reads of the view's sums, made again when the samples double. */
+  private readonly scans = new ScanCache();
   private tileImage: ImageData | null = null;
   private renderChain: Promise<unknown> = Promise.resolve();
   /** Jobs of renders in progress (cancelled if the page goes away). */
@@ -702,7 +707,7 @@ export class NativeEngine {
     this.failure = null;
     this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, filter: { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 }, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController(), adaptive: null };
+    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), state, key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, filter: { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 }, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController(), adaptive: null };
     this.job = job;
     this.dirty.clear();
     this.shownPass = 0;
@@ -966,6 +971,9 @@ export class NativeEngine {
     const renderShare = job?.shared ? 'SHARED' : job?.paused ? 'PAUSED' : this.rendering > 0 && (live || !job) ? (share > 0 ? 'SHARED' : 'PAUSED') : undefined;
     const issue = this.issue(now);
     const wantKey = this.wantKey();
+    // D1: what the Doctor reads of the sums the launcher handed out. While its live denoise is on those are the denoised
+    // image, which holds no fireflies to count (the brightness by the stop it still says).
+    const scan = full && job.pass > 0 ? this.scans.get(job.acc, job.samples, () => scanFrame(job.acc, job.state, { denoised: job.denoised }), job.denoised ? 'denoised' : '') : null;
     return {
       samples,
       seconds: full ? job.seconds : 0,
@@ -994,6 +1002,7 @@ export class NativeEngine {
       ...(job?.caustics && this.state ? { caustics: CAUSTICS_PRESETS[this.state.render.advanced.causticsQuality].photons } : {}),
       ...(full && job.adaptive ? { adaptive: { ...job.adaptive } } : {}),
       ...(full ? { pixelFilter: { ...job.filter } } : {}),
+      ...(scan ? { scan } : {}),
     };
   }
 

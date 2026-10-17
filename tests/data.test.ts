@@ -610,13 +610,20 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has the 14 upstream checks in their order, with unique keys, and ours after them (U13: aspect, S2: physics, S4a: particles)', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(17);
+  it('has the 14 upstream checks in their order, with unique keys, and ours among them (D1: simd after engine, budget after output) and after them (U13: aspect, S2: physics, S4a: particles)', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(19);
     expect(DOCTOR_CHECKS.at(-1)?.key).toBe('particles');
-    expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
-      'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
-      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'aspect', 'physics',
+    const keys = DOCTOR_CHECKS.map((c) => c.key);
+    expect(keys).toEqual([
+      'engine', 'simd', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
+      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'budget', 'aspect', 'physics',
       'particles',
+    ]);
+    expect(new Set(keys).size).toBe(keys.length);
+    // The 14 of upstream are in their order once ours are taken out.
+    expect(keys.filter((k) => k !== 'simd' && k !== 'budget').slice(0, 14)).toEqual([
+      'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
+      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output',
     ]);
   });
 
