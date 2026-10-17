@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import { describe, it, expect } from 'vitest';
 import {
   AIMING_MOVES,
@@ -116,7 +114,7 @@ describe('quality and resolution presets', () => {
     expect(QUALITY_PRESETS.FINAL).toMatchObject({ samples: 1024, threshold: 0.005, resPct: 100, bounces: 12 });
   });
 
-  it('has five resolution presets with the upstream sizes', () => {
+  it('has five resolution presets with their sizes', () => {
     expect(RESOLUTION_PRESETS.map((r) => [r.key, r.width, r.height])).toEqual([
       ['HD', 1920, 1080],
       ['UHD', 3840, 2160],
@@ -185,7 +183,7 @@ describe('studio presets', () => {
 });
 
 describe('light setups', () => {
-  it('has 95 setups with unique keys: the 16 sets of L6 first, then the 72 of EZ Packshot with PRESET first, then the 7 of Interior (K1)', () => {
+  it('has 95 setups with unique keys: the 16 sets of L6 first, then the 72 of the base catalogue with PRESET first, then the 7 of Interior (K1)', () => {
     expect(LIGHT_SETUPS).toHaveLength(95);
     expect(unique(LIGHT_SETUPS.map((s) => s.key))).toBe(true);
     expect(LIGHT_SETUPS.slice(0, 16).every((s) => s.style === 'SETS')).toBe(true);
@@ -298,7 +296,7 @@ describe('light setups', () => {
 });
 
 describe('materials', () => {
-  it('has 7 categories and 92 presets with unique keys (77 of EZ Packshot, the 5 set pieces of L6, 9 translucent of E9b, the crystal of E9c)', () => {
+  it('has 7 categories and 92 presets with unique keys (77 base presets, the 5 set pieces of L6, 9 translucent of E9b, the crystal of E9c)', () => {
     expect(MATERIAL_CATEGORIES.map((c) => c.key)).toEqual(CATEGORIES);
     expect(MATERIAL_PRESETS).toHaveLength(92);
     expect(unique(MATERIAL_PRESETS.map((m) => m.key))).toBe(true);
@@ -589,8 +587,7 @@ describe('animation catalogues', () => {
     expect(MOVE_GROUPS.map((g) => g.key)).toEqual(['PARTS', 'CAMERA', 'LIGHT', 'MATERIAL']);
   });
 
-  // Upstream has 16 sequence presets, not 15: CATALOG (four empty shots) is
-  // the sixteenth.
+  // CATALOG (four empty shots) is the sixteenth.
   it('has 16 sequence presets', () => {
     expect(SEQUENCE_PRESETS).toHaveLength(16);
     expect(unique(SEQUENCE_PRESETS.map((p) => p.key))).toBe(true);
@@ -638,7 +635,7 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has the 14 upstream checks in their order, with unique keys, and ours among them (D1: simd after engine, budget after output) and after them (U13: aspect, S2: physics, S4a: particles)', () => {
+  it('has the 14 base checks in their order, with unique keys, and the new ones among them (D1: simd after engine, budget after output) and after them (U13: aspect, S2: physics, S4a: particles)', () => {
     expect(DOCTOR_CHECKS).toHaveLength(19);
     expect(DOCTOR_CHECKS.at(-1)?.key).toBe('particles');
     const keys = DOCTOR_CHECKS.map((c) => c.key);
@@ -648,7 +645,7 @@ describe('doctor checks and environment', () => {
       'particles',
     ]);
     expect(new Set(keys).size).toBe(keys.length);
-    // The 14 of upstream are in their order once ours are taken out.
+    // The 14 base checks are in their order once the D1 ones are taken out.
     expect(keys.filter((k) => k !== 'simd' && k !== 'budget').slice(0, 14)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
       'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output',

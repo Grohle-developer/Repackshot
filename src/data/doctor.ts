@@ -1,13 +1,11 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type { DoctorCheck } from './types';
 import { INTERIOR_DOCTOR_CHECKS } from './doctor-interior';
 
-// Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the
-// ones of Repackshot's own phases: `aspect`, U13; `physics`, S2; `particles`, S4a).
-// D1 (the checks that read the engine): the upstream texts of `engine`, `denoise`, `color`, `caustics` and
-// `output` spoke of Blender's Cycles, so they are rewritten for Repackshot's engine (their keys, and the
-// order of the upstream ones, stay); `simd` follows `engine` and `budget` follows `output`, both new.
+// Scene doctor checks: the 14 base checks in their order, then those of later
+// phases: `aspect`, U13; `physics`, S2; `particles`, S4a.
+// D1 (the checks that read the engine): the texts of `engine`, `denoise`, `color`, `caustics` and `output`
+// speak of Repackshot's engine (their keys, and the order of the base checks, stay); `simd` follows
+// `engine` and `budget` follows `output`, both new.
 // These are descriptors only: what each check looks at and what its one-click fix
 // does. The logic that runs them lives with the scene code (core/doctor.ts) and, for the checks that read
 // the engine, in core/doctor-engine.ts, not here.
@@ -24,7 +22,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       en: 'No fix in the project: what is missing or limited belongs to the system or to Settings, and the warning says where to look.',
     },
   },
-  // D1, not ported: right after `engine`.
+  // D1: right after `engine`.
   {
     key: 'simd',
     label: { es: 'SIMD', en: 'SIMD' },
@@ -194,7 +192,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       en: 'Switches the animation output to a frame sequence, which is written image by image and can be resumed.',
     },
   },
-  // D1, not ported: right after `output`.
+  // D1: right after `output`.
   {
     key: 'budget',
     label: { es: 'Presupuesto de tiempo', en: 'Time budget' },
@@ -207,7 +205,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       en: 'Raises the time budget to what those samples need at that speed, and a quarter more, because the speed moves from one reading to the next.',
     },
   },
-  // Not from upstream (U13): appended, so the upstream order above is intact.
+  // U13: appended, so the order of the base checks above is intact.
   {
     key: 'aspect',
     label: { es: 'Proporcion de la animacion', en: 'Animation aspect ratio' },
@@ -220,8 +218,8 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       en: "Gives the cameras of those shots the output size's aspect ratio.",
     },
   },
-  // S2, not ported: a part a simulation would drop starts inside the floor (Spanish with accents, like the other
-  // data that is not ported). Appended after U13's.
+  // S2: a part a simulation would drop starts inside the floor (Spanish with accents, like the other data
+  // outside the base catalogue). Appended after U13's.
   {
     key: 'physics',
     label: { es: 'Físicas', en: 'Physics' },

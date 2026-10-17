@@ -402,7 +402,7 @@ describe('project to RSB: lights', () => {
   it('the flux gives the irradiance Cycles gives the recipe, on axis and far away', () => {
     // A small panel 2 m away, part size 200 mm. In Blender Cycles the recipe's power P over an area A
     // is the radiance L = P / (4 A), so on axis and far away E = P / (4 dist^2): pi times the
-    // isotropic-source P / (4 pi dist^2) the add-on's comment speaks of. The engine's one-sided
+    // isotropic-source P / (4 pi dist^2) the recipes' `share` is stated in. The engine's one-sided
     // Lambertian panel of flux F has the intensity F / pi, so E = F / (pi d^2).
     const power = 30;
     const partMm = 200;

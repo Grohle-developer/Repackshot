@@ -126,7 +126,7 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     },
   });
   const roundness = slider({ value: o0.roundness, min: 0, max: 1, step: 0.01, ariaLabel: t('camera.roundness'), onChange: (v, g) => set({ roundness: v }, 'camera.roundness', g) });
-  const rotation = numberField({ value: o0.rotationDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.rotation'), onChange: (v, g) => set({ rotationDeg: v }, 'camera.rotation', g) });
+  const rotation = slider({ value: o0.rotationDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.rotation'), onChange: (v, g) => set({ rotationDeg: v }, 'camera.rotation', g) });
   const profile = select(
     PUPIL_PROFILES.map((p) => ({ value: p.key, label: lbl(p.label) })),
     o0.profile,

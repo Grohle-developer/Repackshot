@@ -4,10 +4,9 @@ Repackshot es un renderizador de producto al estilo KeyShot, de código
 disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
 escrito **desde cero en sala limpia**, que corre en el navegador: importa
 un modelo, asigna materiales, ilumina con un estudio y renderiza una
-imagen bonita, rápido. Toma sus ideas de EZ Packshot (addon de Blender del
-mismo autor): tipos de producto, catálogo de montajes de luz por estilos,
-materiales con desgaste procedural, Doctor, selección por niveles,
-lenguaje de fotógrafo.
+imagen bonita, rápido. Sus pilares: tipos de producto, catálogo de
+montajes de luz por estilos, materiales con desgaste procedural, Doctor,
+selección por niveles, lenguaje de fotógrafo.
 
 ## Lee esto en este orden
 

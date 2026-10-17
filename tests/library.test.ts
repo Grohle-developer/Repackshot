@@ -7,6 +7,7 @@ import { exportLibrary, importLibrary } from '../src/io/library';
 import * as cmd from '../src/ui/commands';
 import { paletteItems, rank } from '../src/ui/components/palette';
 import type { AppServices, ViewportPort } from '../src/ui/ports';
+import type { ConfirmSpec } from '../src/ui/components/widgets';
 import type { Ctx } from '../src/ui/reactive';
 import { setLang, t } from '../src/ui/strings';
 import { studioLabel, thumbKey } from '../src/ui/names';
@@ -524,9 +525,12 @@ describe('the commands behind Save… and the Mine tabs', () => {
     await cmd.saveSetupToLibrary(ctx, 'My rig');
     const key = libraryKey(itemsOf(lib(ctx), 'lightSetup')[0].id);
     ctx.store.dispatch({ type: 'studio/setPreset', key: 'WATCH' });
-    expect(cmd.requestSetup(ctx, key)).toBeNull();
+    // L7: with lights in the scene it asks what happens to them (Replace, Hide, Add); Replace is what it always did.
+    const first = cmd.requestSetup(ctx, key);
+    expect(first?.options.map((o) => o.label)).toEqual(['Replace', 'Hide', 'Add']);
+    first!.options[0].run();
     expect(ctx.store.get().studio.lightSetup).toBe(key);
-    expect(ctx.store.history().undo[0]).toBe('Light setup: My rig');
+    expect(ctx.store.history().undo[0]).toBe('Light setup: My rig (replace the lights)');
     expect(Math.abs(total(ctx.store.get()) - presetIrradiance('WATCH'))).toBeLessThan(1e-6);
     // Edited by hand: Yes / No before it is replaced.
     ctx.store.dispatch({ type: 'studio/setLight', id: ctx.store.get().studio.lights[0].id, patch: { el: 10 } });
@@ -680,7 +684,8 @@ describe('the palette lists the user’s own items', () => {
     expect(s.materials[s.scene.nodes[ids.body].material!].name).toBe('Mi oro');
     run('Mi tipo');
     expect(ctx.store.get().studio.preset).toMatch(/^LIB:typ-/);
-    run('Mi luz');
+    // L7: over the lights there are, it asks (the palette shows the question); Replace answers it.
+    (run('Mi luz') as ConfirmSpec).options[0].run();
     expect(ctx.store.get().studio.lightSetup).toMatch(/^LIB:set-/);
     ctx.store.dispatch({ type: 'camera/view', view: 'TOP' });
     run('Mi estudio');

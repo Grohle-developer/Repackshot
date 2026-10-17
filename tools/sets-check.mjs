@@ -6,11 +6,12 @@
 //
 // Without --url it serves dist/ with `vite preview` on port 4291 and stops it at the end.
 //
-//   catalogue  the Light section's style chips start with All and Sets; Sets shows the 16 sets in two columns, square
-//              and twice as tall as a setup's thumbnail of another style (three columns, 4:3); the tooltip of a set
+//   catalogue  (L7) the Light section opens on its Sets group: the 16 sets and the product type's own rig, every
+//              thumbnail the size of one of the Lights group (Dark field's: three columns, 4:3); the tooltip of a set
 //              says its reason;
 //   apply      the example comes in dressed by the product type's set (In the set lists its pieces); choosing Long
-//              strip and black edge is one undo step and lists its backdrop, floor and two cards; switching a card
+//              strip and black edge asks what happens to the lights there are, Replace is one undo step and lists
+//              its backdrop, floor and two cards; switching a card
 //              off hides it (one undo step, "Hide Black card 1"); Use the set's camera is one undo step;
 //   reset      Reset setup takes the pieces away (In the set is gone) and choosing the set again brings them back.
 //
@@ -69,17 +70,17 @@ const ok = (cond, text, failures) => {
 const light = (page) =>
   page.evaluate(() => {
     const sec = document.querySelector('[data-section="light"]');
-    const chips = [...(sec?.querySelectorAll('[role="tablist"] .chip') ?? [])].map((c) => c.textContent);
+    const group = sec?.querySelector('.seg button[aria-pressed="true"]')?.textContent ?? '';
     const box = (el) => {
       const r = el?.getBoundingClientRect();
       return r ? { w: r.width, h: r.height } : null;
     };
-    const sets = sec?.querySelector('.thumbs[data-sets]');
-    const others = sec?.querySelector('.thumbs.cols-3');
+    const sets = sec?.querySelector('.thumbs[data-group="SETS"]');
+    const others = sec?.querySelector('.thumbs[data-group="LIGHTS"]');
     const setRows = [...(sec?.querySelectorAll('[data-set] .row .field-label') ?? [])].map((n) => n.textContent);
     return {
-      chips,
-      sets: sets ? sets.querySelectorAll('.thumb.large').length : 0,
+      group,
+      sets: sets ? sets.querySelectorAll('.thumb').length : 0,
       setColumns: sets ? getComputedStyle(sets).gridTemplateColumns.split(' ').length : 0,
       setImage: box(sets?.querySelector('.thumb img')),
       otherImage: box(others?.querySelector('.thumb img')),
@@ -115,32 +116,33 @@ try {
 
     let s = await light(page);
     log.start = s;
-    ok(s.chips[0] === 'All' && s.chips[1] === 'Sets', `the style chips start with All and Sets: ${s.chips.join(', ')}`, f);
+    ok(s.group === 'Sets', `the Light section opens on Sets: ${s.group}`, f);
     ok(s.inSet === 'GRADIENT_POOL' && s.setRows.length > 0, `the example comes in dressed by the Standard type's set: ${s.inSet} ${s.setRows.join(', ')}`, f);
 
-    // Sets: 16, two columns, square, twice as tall as a thumbnail of another style.
-    await page.locator('[data-section="light"] .chip', { hasText: /^Product$/ }).click();
+    // Sets: 17 (the 16 and the type's own rig), the same size as a thumbnail of the Lights (L7).
+    await page.locator('[data-section="light"] .seg button', { hasText: /^Lights$/ }).click();
     await settle(page, 200);
     const other = (await light(page)).otherImage;
-    await page.locator('[data-section="light"] .chip', { hasText: /^Sets$/ }).click();
+    await page.locator('[data-section="light"] .seg button', { hasText: /^Sets$/ }).click();
     await settle(page, 300);
     s = await light(page);
     log.sets = { count: s.sets, columns: s.setColumns, image: s.setImage, other };
-    ok(s.sets === 16 && s.setColumns === 2, `Sets shows 16 large thumbnails in two columns: ${s.sets}, ${s.setColumns}`, f);
-    ok(s.setImage && Math.abs(s.setImage.w - s.setImage.h) < 1.5, `a set's thumbnail is square: ${JSON.stringify(s.setImage)}`, f);
-    ok(s.setImage && other && s.setImage.h >= 1.9 * other.h, `a set's thumbnail is twice as tall as another style's: ${JSON.stringify(s.setImage)} vs ${JSON.stringify(other)}`, f);
+    ok(s.sets === 17 && s.setColumns === 3, `Sets shows 17 thumbnails in three columns: ${s.sets}, ${s.setColumns}`, f);
+    ok(s.setImage && other && Math.abs(s.setImage.w - other.w) < 1 && Math.abs(s.setImage.h - other.h) < 1, `a set's thumbnail is the size of a setup's: ${JSON.stringify(s.setImage)} vs ${JSON.stringify(other)}`, f);
     ok(/black edge sets it apart from the background/.test(s.tips[0] ?? ''), `the tooltip says the set's reason: ${s.tips[0]}`, f);
 
     // Choose Long strip and black edge.
-    await page.locator('[data-section="light"] .thumb.large', { hasText: 'Long strip and black edge' }).click();
+    await page.locator('[data-section="light"] .thumb', { hasText: 'Long strip and black edge' }).click();
+    await settle(page, 200);
+    await page.locator('[data-light-question] .btn', { hasText: /^Replace$/ }).click();
     await settle(page, 400);
     s = await light(page);
     log.applied = s;
     ok(s.inSet === 'STRIP_EDGE', `the set is in force: ${s.inSet}`, f);
     ok(['Backdrop', 'Set floor', 'Black card 1', 'White card 2'].every((n) => s.setRows.includes(n)), `In the set lists its pieces: ${s.setRows.join(', ')}`, f);
-    ok(s.undo === 'Undo: Light setup: Long strip and black edge', `one undo step: ${s.undo}`, f);
+    ok(s.undo === 'Undo: Light setup: Long strip and black edge (replace the lights)', `one undo step: ${s.undo}`, f);
     ok(s.camera, 'Use the set’s camera is there', f);
-    await page.screenshot({ path: join(SHOTS, 'sets-catalogue.png') });
+    if (args.includes('--shots')) await page.screenshot({ path: join(SHOTS, 'sets-catalogue.png') });
 
     // A card off.
     await page.locator('[data-section="light"] [data-set] .row', { hasText: 'Black card 1' }).locator('[role="switch"]').click();
@@ -167,7 +169,7 @@ try {
     await settle(page, 300);
     s = await light(page);
     ok(s.setRows.length === 0, `Reset setup takes the pieces away: ${s.setRows.join(', ')}`, f);
-    await page.locator('[data-section="light"] .thumb.large', { hasText: 'Long strip and black edge' }).click();
+    await page.locator('[data-section="light"] .thumb', { hasText: 'Long strip and black edge' }).click();
     await settle(page, 300);
     s = await light(page);
     ok(s.setRows.length === 4, `choosing the set again brings them back: ${s.setRows.join(', ')}`, f);
