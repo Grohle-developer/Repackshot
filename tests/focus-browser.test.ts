@@ -4,7 +4,7 @@
 // does: the engine's chief ray of the pixel from the page's rt.wasm, cast at the preview's geometry through both faces,
 // then the interface's focus action. Node applies the action and asks the engine (the real rt.wasm) what the clicked
 // pixel of the Full view shows: the focus distance written for that view must be the engine's own focus for that
-// surface point (its depth for the thin lens, the hinge rule with a tilt, a traced lens's least confusion), through a
+// surface point (its depth for the thin lens, the hinge rule with a tilt, a traced lens's best focus), through a
 // traced lens's distortion, a saved camera looked through with its own frame, the timeline's pose and the backs of the
 // tiles; and in the thin lens's final frame, rendered, the sharp band runs through the clicked pixel.
 // Skipped without Chromium (REPACKSHOT_CHROMIUM, /opt/pw-browsers); the engine's checks need rt.wasm (npm run engine:build).

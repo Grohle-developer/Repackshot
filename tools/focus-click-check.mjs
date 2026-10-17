@@ -14,9 +14,12 @@
 //   (d) Focus ▸ Distance keeps the distance the camera was focused at; a typed one then survives a plain click on the
 //       bottle (it selects the part);
 //   (e) on a camera whose focus sat at the orbit distance (Distance), the same zoom takes the focus along;
-//   (f) F1: Keep in focus in the bottle's context menu puts the camera in Object, with the part's name.
+//   (f) F1: Keep in focus in the bottle's context menu puts the camera in Object, with the part's name;
+//   (g) F1: with the camera selected (Cameras tab), the viewport marks the point it is focused on.
 //
-// Results: out/focus-click-check.json.
+// Results: out/focus-click-check.json. With --shots <dir> (docs/ui for the gallery) it also writes the captures of F1:
+// f1-focus-inspector.png (the camera's Focus block in Point after the click) and f1-focus-marker.png (the viewport
+// round the clicked point, the camera selected).
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -31,6 +34,8 @@ const opt = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 const BASE = opt('url', null);
+const SHOTS = opt('shots', null) ? resolve(ROOT, opt('shots', null)) : null;
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const OUT = join(ROOT, 'out');
 mkdirSync(OUT, { recursive: true });
 
@@ -86,7 +91,7 @@ const num = (v) => (v === null || v === undefined ? NaN : Number(v));
 
 /** Opens the example; records every value the Focus distance field takes from now on in window.__focusLog. */
 async function open(browser, base) {
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -96,10 +101,14 @@ async function open(browser, base) {
   await settle(page, 1500);
   await page.keyboard.press('Escape');
   await settle(page, 300);
+  // The field is drawn again when the Focus mode changes: the log follows whichever one is on the page.
   await page.evaluate((sel) => {
-    const el = document.querySelector(sel);
-    window.__focusLog = [el?.getAttribute('aria-valuenow')];
-    new MutationObserver(() => window.__focusLog.push(el.getAttribute('aria-valuenow'))).observe(el, { attributes: true, attributeFilter: ['aria-valuenow'] });
+    const now = () => document.querySelector(sel)?.getAttribute('aria-valuenow') ?? null;
+    window.__focusLog = [now()];
+    new MutationObserver(() => {
+      const v = now();
+      if (v !== null && v !== window.__focusLog[window.__focusLog.length - 1]) window.__focusLog.push(v);
+    }).observe(document.body, { attributes: true, attributeFilter: ['aria-valuenow'], childList: true, subtree: true });
   }, FIELD);
   const canvas = await page.locator('canvas[aria-label="viewport"], .vp-canvas-host canvas:not(.vp-backdrop)').first().boundingBox();
   return { context, page, canvas, errors };
@@ -143,7 +152,7 @@ try {
     await point.scrollIntoViewIfNeeded();
     await point.click();
     await settle(page, 300);
-    check('pick_mode_on', (await point.getAttribute('aria-pressed')) === 'true' && (await page.locator('.ov-pick:not(.ov-look)').first().isVisible()), { pressed: await point.getAttribute('aria-pressed') });
+    check('pick_mode_on', (await point.getAttribute('aria-pressed')) === 'true' && (await page.locator('.ov-pick:not(.ov-look):visible').count()) > 0, { pressed: await point.getAttribute('aria-pressed') });
     // The example's bottle sits in the middle of the frame: a point a little below and left of the centre.
     const x = canvas.x + canvas.width / 2 - 10;
     const y = canvas.y + canvas.height / 2 + 40;
@@ -157,6 +166,15 @@ try {
     const pickBtn = page.locator('[data-section="camera"] button[aria-label="Focus with a click"]').first();
     check('point_mode_shows_the_pick_and_the_part', (await pickBtn.count()) === 1 && /^On /.test((await page.locator('[data-section="camera"] [data-focus-on]').first().textContent()) ?? ''), {});
     check('field_read_only_in_point', (await page.locator(FIELD).first().getAttribute('class'))?.includes('is-disabled') === true, {});
+    if (SHOTS) {
+      await page.mouse.move(canvas.x + 20, canvas.y + 20);
+      await settle(page, 300);
+      // The camera's block down to Projection: the lens, the Focus modes, the slider and the point.
+      const sec = await page.locator('[data-section="camera"]').first().boundingBox();
+      const proj = await page.locator('[data-section="camera"]').getByText('Projection', { exact: true }).first().boundingBox();
+      const bottom = proj ? proj.y - 6 : sec.y + sec.height;
+      await page.screenshot({ path: join(SHOTS, 'f1-focus-inspector.png'), clip: { x: sec.x, y: sec.y, width: sec.width, height: Math.round(bottom - sec.y) } });
+    }
 
     // (c) the wheel after the pick: the camera comes nearer, the focus comes along with the point.
     await zoom(page, canvas, -400);
@@ -201,10 +219,36 @@ try {
     const item = page.locator('[role="menuitem"]', { hasText: 'Keep in focus' }).first();
     await item.click();
     await settle(page, 600);
+    // The click selected the part: Escape goes back to the scene's inspector, where the camera is.
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
     const object = page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Object"]').first();
     const on = (await page.locator('[data-section="camera"] [data-focus-on]').first().textContent()) ?? '';
     check('keep_in_focus_is_object', (await object.getAttribute('aria-pressed')) === 'true' && /^On \S/.test(on), { on });
     check('no_page_errors_object', errors.length === 0, { errors });
+    await context.close();
+  }
+
+  // (g) the mark of the point in the viewport: drawn while the camera is selected, not otherwise.
+  {
+    const { context, page, canvas, errors } = await open(browser, base);
+    await page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Point"]').first().click();
+    await settle(page, 300);
+    const x = canvas.x + canvas.width / 2 - 10;
+    const y = canvas.y + canvas.height / 2 + 40;
+    await click(page, x, y);
+    const clip = { x: Math.round(x - 320), y: Math.round(y - 200), width: 640, height: 400 };
+    await page.mouse.move(canvas.x + 20, canvas.y + 20);
+    await settle(page, 600);
+    const plain = await page.screenshot({ clip });
+    await page.locator('.side-left [role="tab"]', { hasText: 'Cameras' }).click();
+    await settle(page);
+    await page.locator('.list-row', { hasText: 'Camera 1' }).first().click();
+    await page.mouse.move(canvas.x + 20, canvas.y + 20);
+    await settle(page, 1200);
+    const marked = await page.screenshot({ clip, ...(SHOTS ? { path: join(SHOTS, 'f1-focus-marker.png') } : {}) });
+    check('selected_camera_marks_its_point', !plain.equals(marked), {});
+    check('no_page_errors_marker', errors.length === 0, { errors });
     await context.close();
   }
 } finally {

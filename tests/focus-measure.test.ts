@@ -11,7 +11,7 @@
 //     of the Full view's image (the viewport, one image pixel per CSS pixel) at the clicked pixel and of the final
 //     frame at the pixel the click lands on: the focus distance written to the RSB minus the depth there, in mm;
 //   - the engine's own focus for what that pixel shows (`rt_scene_pick` on the whole scene: the hinge rule of a tilt,
-//     a traced lens's least confusion), minus the focus written: in mm, 0 when the pixel is in focus;
+//     a traced lens's best focus), minus the focus written: in mm, 0 when the pixel is in focus;
 //   - the final frame rendered (the native `rt`, the same rt-core) for some clicks, searched for where the checker is
 //     sharpest along the depth's gradient through the clicked pixel: how far the sharp band is from it, in pixels.
 //
@@ -24,11 +24,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { activeCamera, cameraFrameRect, orbitPatch, type CameraState } from '../src/core/camera';
+import { activeCamera, cameraBasis, cameraFrameRect, cameraPosition, orbitPatch, type CameraState } from '../src/core/camera';
 import { setFocusSolver } from '../src/core/focus';
 import { passMask } from '../src/core/passes';
 import { reduce, type Action, type ProjectState } from '../src/core/store';
-import { viewedCamera, type ViewObject } from '../src/core/view-objects';
+import { viewedCamera, viewProjector, type ViewObject } from '../src/core/view-objects';
 import { lensInfoRsb, projectScene, writeRsb, type SceneView } from '../src/io/rsb';
 import { enginePick, focusSolverOf, hasFocusExports } from '../src/render/focus-pick';
 import { hasLensInfoExport, readLensInfo } from '../src/render/lens-info';
@@ -36,7 +36,7 @@ import { PassAccumulator, Scratch, tileExact } from '../src/render/pass-planes';
 import { tileGrid } from '../src/render/tiles';
 import type { FocusPickRun } from './browser/focus-page';
 import { focusScene, lookCameraId, type FocusCase } from './browser/focus-scene';
-import { cocAt, depthAt, engine, sharpness, sharpPeak, type FocusImage } from './focus-measure';
+import { bandSharpness, cocAt, depthAt, engine, sharpPeak, type FocusImage } from './focus-measure';
 
 function findChromium(): string | null {
   const fromEnv = process.env.REPACKSHOT_CHROMIUM;
@@ -196,6 +196,8 @@ interface ClickResult {
   finalCocPx: number;
   /** Final frame rendered: the sharp band's distance from that pixel along the depth's gradient, px (null: not rendered). */
   sharpPx: number | null;
+  /** After the pick (orbit, zoom, the part moved): how far off a focus left at the picked distance would be, mm. */
+  staleMm?: number | null;
 }
 
 describe.skipIf(!RUN)(`focus with a click, measured (${TAG})`, { timeout: 7200000 }, () => {
@@ -206,7 +208,7 @@ describe.skipIf(!RUN)(`focus with a click, measured (${TAG})`, { timeout: 720000
   const results: { name: string; engineRay: boolean; clicks: ClickResult[] }[] = [];
 
   beforeAll(async () => {
-    // The engine's focus solver, as main.ts gives it (a traced lens's least confusion).
+    // The engine's focus solver, as main.ts gives it (a traced lens's best focus).
     const r = await engine();
     if (hasFocusExports(r)) setFocusSolver(focusSolverOf(r, (cam) => lensInfoRsb(cam, cam.aspect.w, cam.aspect.h)));
     server = await createServer({ configFile: false, logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false } });
@@ -229,24 +231,24 @@ describe.skipIf(!RUN)(`focus with a click, measured (${TAG})`, { timeout: 720000
 
   afterAll(async () => {
     setFocusSolver(null);
-    await page?.close().catch(() => undefined);
-    await browser?.close();
-    await server?.close();
     mkdirSync('out', { recursive: true });
     const file = `out/focus-measure-${TAG}`;
     writeFileSync(`${file}.json`, JSON.stringify(results, null, 2));
     const fmt = (v: number | null, d = 2) => (v === null || !Number.isFinite(v) ? '—' : v.toFixed(d));
     const lines = [
-      `| case | spot | focus mm | Full: − depth mm | Full: − engine's focus mm | Full: CoC px | final: − depth mm | final: − engine's focus mm | final: CoC px | final: sharp band px |`,
-      `|---|---|---|---|---|---|---|---|---|---|`,
+      `| case | spot | focus mm | Full: − depth mm | Full: − engine's focus mm | Full: CoC px | final: − depth mm | final: − engine's focus mm | final: CoC px | final: sharp band px | a focus left behind: mm |`,
+      `|---|---|---|---|---|---|---|---|---|---|---|`,
     ];
     for (const r of results) {
       for (const c of r.clicks) {
-        lines.push(`| ${r.name} | ${c.spot} | ${fmt(c.focusMm, 1)} | ${fmt(c.fullDepthMm)} | ${fmt(c.fullEngineMm)} | ${fmt(c.fullCocPx, 1)} | ${fmt(c.finalDepthMm)} | ${fmt(c.finalEngineMm)} | ${fmt(c.finalCocPx, 1)} | ${fmt(c.sharpPx, 1)} |`);
+        lines.push(`| ${r.name} | ${c.spot} | ${fmt(c.focusMm, 1)} | ${fmt(c.fullDepthMm)} | ${fmt(c.fullEngineMm)} | ${fmt(c.fullCocPx, 1)} | ${fmt(c.finalDepthMm)} | ${fmt(c.finalEngineMm)} | ${fmt(c.finalCocPx, 1)} | ${fmt(c.sharpPx, 1)} | ${fmt(c.staleMm ?? null)} |`);
       }
     }
     writeFileSync(`${file}.md`, lines.join('\n') + '\n');
-  });
+    await page?.close().catch(() => undefined);
+    await browser?.close();
+    await server?.close();
+  }, 120000);
 
   for (const c of CASES) {
     it(c.name, async () => {
@@ -284,6 +286,20 @@ describe.skipIf(!RUN)(`focus with a click, measured (${TAG})`, { timeout: 720000
           const tr = s.scene.nodes[board].transform;
           s = reduce(s, { type: 'scene/setTransforms', transforms: { [board]: { ...tr, position: [tr.position[0], tr.position[1] + 15, tr.position[2]] } } });
         }
+        // After the pick the camera or the part moved: the clicked point is where it went (the focus follows the point,
+        // not the pixel). `staleMm` is what a focus left at the picked distance would be off by there.
+        let at = { x: click.x, y: click.y };
+        let staleMm: number | null = null;
+        if (c.after && click.hit && click.action) {
+          const moved: [number, number, number] = c.after === 'move' ? [click.hit.point[0], click.hit.point[1] + 15, click.hit.point[2]] : click.hit.point;
+          const seenNow = viewedCamera(s, look);
+          const q = viewProjector(seenNow, c.view.w, c.view.h, seenNow.aspect.w, seenNow.aspect.h)(moved);
+          if (q) at = { x: q.x, y: q.y };
+          const picked = viewedCamera(reduce(state0, click.action as Action), look).focusDistance;
+          const b = cameraBasis(seenNow.azimuth, seenNow.elevation);
+          const d = moved.map((v, k) => v - cameraPosition(seenNow)[k]);
+          staleMm = picked - (d[0] * b.forward[0] + d[1] * b.forward[1] + d[2] * b.forward[2]);
+        }
         // The Full view: what the viewport renders (the camera looked through, its frame, the pose).
         const cameraPatch = look ? (({ id: _id, ...rest }) => rest)(s.camera.cameras[look.id]) : undefined;
         const full = await exactPasses(s, { width: c.view.w, height: c.view.h, maxSamples: 1, maxSeconds: 0, viewport: { viewW: c.view.w, viewH: c.view.h }, ...(cameraPatch ? { cameraPatch } : {}) });
@@ -292,21 +308,22 @@ describe.skipIf(!RUN)(`focus with a click, measured (${TAG})`, { timeout: 720000
         const fr = cameraFrameRect(viewedCamera(s, look), c.view.w, c.view.h);
         const W = finalState.render.width;
         const H = finalState.render.height;
-        const fx = ((click.x - fr.x) / fr.width) * W;
-        const fy = ((click.y - fr.y) / fr.height) * H;
+        const fx = ((at.x - fr.x) / fr.width) * W;
+        const fy = ((at.y - fr.y) / fr.height) * H;
         const finalPasses = await exactPasses(finalState, { width: W, height: H, maxSamples: 1, maxSeconds: 0 });
-        const fullEngine = await engineFocusOfPixel(full.rsb, c.view.w, c.view.h, click.x, click.y);
+        const fullEngine = await engineFocusOfPixel(full.rsb, c.view.w, c.view.h, at.x, at.y);
         const finalEngine = await engineFocusOfPixel(finalPasses.rsb, W, H, fx, fy);
         let sharpPx: number | null = null;
         if (c.sharp && SHARP_SPOTS.has(spot.name) && click.hit) {
           const img = await renderFinal(finalState, `${TAG}-${c.name.replace(/[^a-z0-9]+/gi, '_')}-${spot.name.replace(/ /g, '_')}`);
-          const peak = sharpPeak(img, sharpness(img), fx, fy);
+          const peak = sharpPeak(img, bandSharpness(img), fx, fy, 60, 14, { band: true });
           if (peak && peak.contrast > 2) sharpPx = peak.offsetPx;
         }
         out.push({
           spot: spot.name,
-          x: click.x,
-          y: click.y,
+          x: at.x,
+          y: at.y,
+          staleMm,
           hit: !!click.hit,
           focusMm: finalPasses.focusDist,
           fullDepthMm: full.focusDist - depthAt(full, click.x, click.y),

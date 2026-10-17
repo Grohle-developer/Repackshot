@@ -84,6 +84,45 @@ export function sharpness(img: FocusImage, r = 2): Float32Array {
   return out;
 }
 
+/** The mean of a plane over a (2r+1)² window, clamped at the border. */
+function boxMean(src: Float32Array, w: number, h: number, r: number): Float32Array {
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      let n = 0;
+      for (let dy = -r; dy <= r; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -r; dx <= r; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          s += src[yy * w + xx];
+          n++;
+        }
+      }
+      out[y * w + x] = s / n;
+    }
+  }
+  return out;
+}
+
+/**
+ * The local contrast of detail a few pixels across: the luminance a 3 × 3 window sees against a 9 × 9 one, squared and
+ * over the larger's level. A Laplacian is the sample noise of a traced lens wide open (its weights vary sample to
+ * sample) before it is the board; this band keeps the checker and drops the noise.
+ */
+export function bandSharpness(img: FocusImage): Float32Array {
+  const { width: w, height: h } = img;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) lum[i] = luma(img.rgb, i);
+  const fine = boxMean(lum, w, h, 1);
+  const coarse = boxMean(lum, w, h, 4);
+  const out = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) out[i] = (fine[i] - coarse[i]) ** 2 / Math.max(1e-6, coarse[i] * coarse[i]);
+  return out;
+}
+
 /** Bilinear read of a plane at (x, y) (pixel centres at integer + 0.5); NaN outside. */
 function sample(plane: Float32Array, w: number, h: number, x: number, y: number): number {
   const fx = x - 0.5;
@@ -112,10 +151,11 @@ export function cocAt(img: FocusImage, x: number, y: number): number {
 
 /**
  * Where the sharpness peaks along the depth's gradient through image point (x, y): the signed distance from the point
- * to the peak in image pixels (positive towards greater depth), the depth there, and the sharpness profile. Null when
- * the line leaves the board or the board is not sharp anywhere near.
+ * to the peak in image pixels (positive towards greater depth), the depth there, and the sharpness profile; with `band`,
+ * to the middle of the band above half its height instead. Null when the line leaves the board or the board is not
+ * sharp anywhere near.
  */
-export function sharpPeak(img: FocusImage, sharp: Float32Array, x: number, y: number, reach = 60, across = 6): { offsetPx: number; depthMm: number; contrast: number } | null {
+export function sharpPeak(img: FocusImage, sharp: Float32Array, x: number, y: number, reach = 60, across = 6, opts: { band?: boolean } = {}): { offsetPx: number; depthMm: number; contrast: number } | null {
   const { width: w, height: h } = img;
   const d0 = depthAt(img, x, y);
   const gx = depthAt(img, x + 2, y) - depthAt(img, x - 2, y);
@@ -163,6 +203,16 @@ export function sharpPeak(img: FocusImage, sharp: Float32Array, x: number, y: nu
   }
   const min = Math.min(...sm.map((p) => p.s));
   const contrast = min > 0 ? sm[best].s / min : Infinity;
+  if (opts.band) {
+    // The middle of the band: where the smoothed sharpness stays above half way from its floor to its peak, on either
+    // side of the peak (a wide band's peak is its noise; its middle is where the focus is).
+    const half = 0.5 * (sm[best].s + min);
+    let lo = best;
+    let hi = best;
+    while (lo > 0 && sm[lo - 1].s > half) lo--;
+    while (hi < sm.length - 1 && sm[hi + 1].s > half) hi++;
+    t = 0.5 * (sm[lo].t + sm[hi].t);
+  }
   return { offsetPx: t, depthMm: depthAt(img, x + ux * t, y + uy * t), contrast };
 }
 
