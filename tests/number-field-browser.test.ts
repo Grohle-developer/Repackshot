@@ -48,13 +48,16 @@ describe.skipIf(!executablePath)('the step buttons of the number field, in a bro
     await server?.close();
   });
 
-  /** A fresh page with the fields, on a fake clock (time moves only when the test says). */
+  /** A fresh page with the fields, on a paused fake clock (time moves only when the test says). */
   async function open(): Promise<Page> {
     const context = await browser.newContext({ viewport: { width: 600, height: 600 }, reducedMotion: 'reduce' });
     const page = await context.newPage();
     await page.clock.install();
     await page.goto(`${url}tests/browser/number-field.html`, { waitUntil: 'load', timeout: 60000 });
     await page.waitForFunction(() => window.nfReady === true, undefined, { timeout: 120000, polling: 50 });
+    // The installed clock still flows with real time: stop it, so that a loaded machine does not repeat a press.
+    const now = await page.evaluate(() => Date.now());
+    await page.clock.pauseAt(now + 1000);
     return page;
   }
 
