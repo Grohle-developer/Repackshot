@@ -790,11 +790,11 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    profundidad de la escena desde la cámara: de la mitad de la esquina más
    cercana de la caja del producto a lo largo del eje de la vista al doble
    de la más lejana, al menos una década, y siempre con la distancia dentro
-   (◆ Fable: el rango y la escala). Con *Distancia* se edita (una entrada
+   (decidido). Con *Distancia* se edita (una entrada
    de deshacer por gesto, *Cámara: Distancia de enfoque*). Con *Punto* y
    *Objeto* enseña la distancia que la cámara calcula para el punto o el
-   objeto donde están ahora (el cabezal incluido), **apagado** (◆ Fable: o
-   que moverlo pase a *Distancia*); debajo, en *Punto*, el botón ***Enfocar
+   objeto donde están ahora (el cabezal incluido), y **moverlo pasa la cámara a
+   *Distancia*** desde ahí, en la misma entrada de deshacer (decidido); debajo, en *Punto*, el botón ***Enfocar
    con clic*** (icono de enfoque, pulsado mientras se pica; deshacer
    *Enfocar con clic*) y *En «pieza»* (o *Nada elegido todavía*); en
    *Objeto*, ***Elegir qué enfocar*** (icono de diana) y *En «nombre»*; y

@@ -7,7 +7,7 @@
 //   part's transforms and animation; the focus distance is the one that puts that point in focus from the camera as it
 //   is at that moment.
 // - OBJECT: a part, a group or the model (`focusObject`); the point of it the focus follows is, for now, the centre of
-//   its bounds (◆ Fable: `OBJECT_FOCUS_POINT`, with the other two candidates ready below).
+//   its bounds (decided: `OBJECT_FOCUS_POINT`, with the other two candidates written below and unused).
 //
 // "In focus" is the engine's rule (rt-core `focus`): the thin lens focuses the plane square to the view axis at the
 // focus distance, so a point's distance is its depth along the axis; a tilted lens (O1) focuses the plane of the hinge
@@ -66,7 +66,7 @@ export function anchorOf(state: ProjectState, node: NodeId, world: Vec3, pose?: 
 }
 
 /**
- * Which point of an object the focus follows (◆ Fable decides; the default is the centre of its bounds):
+ * Which point of an object the focus follows (decided: the centre of its bounds; the other two are kept, unused):
  * - `BOUNDS_CENTRE`: the centre of the box round the object's parts, as they are at that moment;
  * - `NEAREST`: the object's vertex nearest the camera along the view axis (its front);
  * - `SILHOUETTE`: the surface the camera sees at the centre of the object's outline on the image (the box round its
@@ -74,7 +74,7 @@ export function anchorOf(state: ProjectState, node: NodeId, world: Vec3, pose?: 
  */
 export type ObjectFocusPoint = 'BOUNDS_CENTRE' | 'NEAREST' | 'SILHOUETTE';
 export const OBJECT_FOCUS_POINTS: readonly ObjectFocusPoint[] = ['BOUNDS_CENTRE', 'NEAREST', 'SILHOUETTE'];
-/** ◆ Fable: the point of an object the focus follows. */
+/** The point of an object the focus follows (decided). */
 export const OBJECT_FOCUS_POINT: ObjectFocusPoint = 'BOUNDS_CENTRE';
 
 /** The world positions of a part's vertices at a pose (none without its mesh data). */
@@ -317,7 +317,7 @@ export function focusDistanceAt(state: ProjectState, camId: CameraId, t: number 
 }
 
 /**
- * The range of the focus distance's slider (◆ Fable: the range and its logarithmic scale): from half the nearest to
+ * The range of the focus distance's slider (decided, with its logarithmic scale): from half the nearest to
  * twice the farthest depth of the product's box along the camera's view axis (its eight corners; the whole scene's
  * without a product), at least a decade wide, and always with `value` in it. Millimetres, never below 1.
  */

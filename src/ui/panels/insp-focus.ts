@@ -61,7 +61,7 @@ export function focusRows(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLEl
 /**
  * The focus distance as a logarithmic slider with its field. In Distance it is the camera's own; in Point and Object
  * it shows the distance worked out for the point or the object, and moving it switches the camera to Distance from
- * there (the decision on F1's ◆: one undo entry, the switch and the gesture together).
+ * there (decided: one undo entry, the switch and the gesture together).
  */
 function distanceRow(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
   const { store } = ctx;

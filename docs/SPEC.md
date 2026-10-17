@@ -1092,9 +1092,9 @@ así), `POINT` (un punto picado con un clic, `focusPoint: { node, point }`,
 guardado **en las coordenadas de la pieza que tocó**, de modo que sigue a
 sus transformaciones y a su animación) u `OBJECT` (una pieza, un grupo o el
 modelo, `focusObject`, al nivel de selección con el que se eligió; el punto
-que se sigue es por ahora el **centro de su caja**, ◆ Fable: las otras dos
+que se sigue es el **centro de su caja** (decidido; las otras dos
 candidatas, el vértice más cercano a lo largo del eje y la superficie que se
-ve en el centro de su silueta, están escritas en `objectFocusPoint`). En
+ve en el centro de su silueta, están escritas en `objectFocusPoint` y sin usar). En
 `POINT` y `OBJECT` la distancia de enfoque **se calcula** desde la cámara tal
 como está en cada momento y el punto donde está en ese momento: al navegar,
 al mirar a través, en cada fotograma de una animación, en la ventana de
@@ -1113,9 +1113,11 @@ cuyo plano de la regla de la bisagra pasa por el punto; una lente trazada
 (O2) se enfoca paraxialmente, pero abierta su aberración esférica y la
 curvatura de campo ponen su imagen más nítida a milímetros de ese plano, y
 el motor resuelve la distancia con sus propios rayos (donde el detalle fino
-que ve el punto del sensor tiene más contraste, `rt_scene_focus_at`; ◆
-Fable: 10 y 5 pares de líneas por milímetro del cuadro de 36 mm); sin `rt.wasm`
-se usa la paraxial. Una lente trazada respira, así que el clic se asienta:
+que ve el punto del sensor tiene más contraste, `rt_scene_focus_at`:
+10 y 5 pares de líneas por milímetro del cuadro de 36 mm, decidido); sin `rt.wasm`
+se usa la paraxial. Una panorámica (K3) no tiene profundidad de campo: su
+distancia es la del punto; con verticales rectas cuenta la cámara nivelada
+que se renderiza. Una lente trazada respira, así que el clic se asienta:
 se repite con la cámara ya enfocada hasta que el píxel muestra el mismo
 punto. **Enfocar con clic** pica el píxel exacto en
 la vista exacta: el rayo principal del motor para ese píxel (la cámara

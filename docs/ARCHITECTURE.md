@@ -2673,6 +2673,14 @@ TypeScript:
   una lente trazada pone su mejor foco a milímetros del plano paraxial, varias
   profundidades de campo; resolverlo cuesta de 0,4 a 0,6 s en `rt.wasm` con la
   máquina cargada.
+- **Las cámaras de K3** (§5.2 quindecies). El pico pasa por `generate_ray`,
+  así que la ortográfica, la equirectangular y el ojo de pez pican sin más; una
+  panorámica es estenopeica, y su distancia de enfoque, como la profundidad de
+  su pico y de su pase, es la distancia al punto (también detrás de la
+  cámara). Con verticales rectas el motor recibe la cámara nivelada
+  (`renderedCamera`): la interfaz resuelve sobre ella y guarda esa distancia
+  entre cos(inclinación corregida), que es lo que `renderedCamera` vuelve a
+  multiplicar.
 - **`frame_sensor_mm`** (al final de `LENS`, tras la prescripción, opcional):
   el sensor del cuadro de salida a lo largo de su lado largo cuando el de la
   cámara abarca más (la imagen del visor). La lente trazada saca de él lo que

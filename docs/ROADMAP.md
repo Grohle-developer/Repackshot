@@ -11765,20 +11765,12 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   claros en oscuro, lo que aplana la jerarquía de grises. Decidir: subirlos,
   limitar el texto auxiliar a `bg-0`, `bg-1` y *hover* (`#4e4e4e` /
   `#afafaf`) o aceptar 4,5:1 para el texto secundario.
-- **F1** (los ◆ de su párrafo): qué punto sigue *Enfoque ▸ Objeto* (hoy el
-  centro de su caja; escritas y sin usar, la superficie más cercana a lo largo
-  del eje y la que se ve en el centro de su silueta, `objectFocusPoint`); el
-  rango y la escala del deslizador de la distancia (hoy logarítmico, de la
-  mitad de la esquina más cercana de la caja del producto al doble de la más
-  lejana, una década como mínimo y siempre con el valor dentro); si en
-  *Punto* y *Objeto* el deslizador está deshabilitado con la distancia que
-  sale (hoy) o moverlo pasa la cámara a *Distancia*; el criterio del mejor
-  foco de una lente trazada (hoy el contraste de 10 y 5 pares de líneas por
-  mm del cuadro de 36 mm, el máximo más cercano a la menor confusión; la menor
-  confusión quedaba a milímetros, y otra frecuencia lo mueve 1–3 mm a f/1,4); qué hace un cambio de foco animado
-  (clip `FOCUS`) en una cámara en *Punto* (hoy tira desde la distancia que
-  sigue y el último gana); y si el clic en un vidrio enfoca su cara delantera
-  (hoy) o lo que se ve a través.
+- **F1** — **decididas** (17-10, por el responsable de la sesión; el párrafo
+  de F1 las recoge): el centro de la caja para *Objeto*; el rango y la escala
+  del deslizador, como están; mover el deslizador en *Punto* u *Objeto* pasa a
+  *Distancia*; el criterio del mejor foco, como está (la esquina con
+  distorsión +1 queda abierta); el clip de foco gana; el clic en vidrio, su
+  cara delantera.
 
 - **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
   de las flechas (hoy un par más fino, siempre visible, en los campos con
@@ -11970,31 +11962,49 @@ deshaciéndolo: el test correspondiente falla (el informe del PR los lista).
 5. **El lector de cámaras de la biblioteca** (`io/library.ts`) sigue sin leer
    la óptica de una cámara (ya era así); lee los modos de enfoque.
 6. **`slider()`** cambió por dentro lo justo: una escala opcional
-   (`toUnit`/`fromUnit`, 1000 posiciones); las flechas del campo son de U15.
-7. **El clic en vidrio** enfoca su cara delantera, como el resto (◆).
+   (`toUnit`/`fromUnit`, 1000 posiciones), junto a las flechas, la variante
+   compacta y `setDisabled` de U15 (fusionadas).
+7. **El clic en vidrio** enfoca su cara delantera, como el resto (decidido).
 8. **La esquina de una lente trazada con distorsión artística +1** (abajo a
    la derecha, a f/1,4) sigue con la banda a −38,5 px del clic, fuera de ella:
    el enfoque escrito es el del motor para ese píxel (0,00 mm), así que lo que
    no casa es el criterio del mejor foco con lo que el render ve allí (un
    punto del sensor muy fuera, con mucha aberración); el resto de esquinas
-   trazadas cae dentro de la banda. Queda con el criterio (◆).
+   trazadas cae dentro de la banda. El criterio se aceptó; esta esquina queda
+   abierta.
 9. **`cargo test --workspace`** con la máquina cargada: cuatro tests de
    `rt-app` (descargas y actualizaciones con servidores locales, el
    adaptativo con varios hilos) y cuatro de `rt-cli` (TIFF) fallan a veces y
    pasan solos; no tocan F1.
 
-**Para K3** (la cámara de interiores, en su rama): el rayo del pico es el de
-`Camera::generate_ray` con la pupila en su centro, así que las cámaras nuevas
-(descentramiento de interiores, ortográfica, panorámica, ojo de pez) pican
-solas; lo que hay que extender es `Camera::focus_distance_to` (qué distancia
-enfoca un punto con cada cámara nueva) y su espejo `core/focus.ts
-focusDistanceFor`, con su test de paridad, y `viewCamera`/`cameraToRsb` son
-comunes a los dos.
+**Con K3 y N2** (fusionadas tras la fase): el rayo del pico es el de
+`Camera::generate_ray` con la pupila en su centro, así que la ortográfica, las
+dos panorámicas y las verticales rectas pican solas. `Camera::focus_distance_to`
+y `core/focus.ts focusDistanceFor` se extendieron: una panorámica es
+estenopeica y su distancia de enfoque (y la profundidad del pico, como su
+pase) es la distancia al punto, también detrás de la cámara; con verticales
+rectas la cámara que se renderiza es la nivelada (`renderedCamera`), y la
+distancia es la de esa cámara entre cos(inclinación corregida), una lente
+trazada resuelta sobre ella. Tests: el pico y el rayo principal en
+`rt-core focus::tests` con cámaras ortográfica, equirectangular y ojo de pez;
+la paridad TS–`rt.wasm` y el camino del clic, una por proyección, en
+`focus-modes.test.ts`. N2: la cola y los lotes ya escriben la distancia que
+sigue cada cámara (la resuelve la frontera del motor, `viewCamera`, con la
+cámara y la pose del trabajo); `batch.test.ts` lo comprueba en un lote de
+cámaras × estudios y en los fotogramas de una animación, y falla sin esa
+resolución.
 
-**◆ Fable** (en «Decisiones para Fable»): el punto de un *Objeto*; el rango y
-la escala del deslizador; deslizador deshabilitado en *Punto* y *Objeto* o
-moverlo pasa a *Distancia*; el criterio del mejor foco de una lente trazada;
-un cambio de foco animado sobre una cámara en *Punto*; el clic en vidrio.
+**Decisiones** (17-10, del responsable de la sesión; eran ◆): el *Objeto*
+sigue el centro de su caja (las otras dos candidatas siguen escritas y sin
+usar); el rango y la escala logarítmica del deslizador, como están; en
+*Punto* y *Objeto* el deslizador enseña la distancia que sale y **moverlo pasa
+la cámara a *Distancia*** desde ahí, en una sola entrada de deshacer (el
+deslizador no se vuelve a dibujar al cambiar de modo, así que el arrastre
+sigue; `tools/focus-click-check.mjs` lo comprueba); el mejor foco de una lente
+trazada por el contraste de 10 y 5 pares de líneas por milímetro, el máximo
+más cercano a la menor confusión (la esquina con distorsión +1 queda abierta);
+un clip de foco sobre una cámara en *Punto* gana, como ahora; el clic en un
+vidrio enfoca su cara delantera.
 
 ## Orden sugerido
 
