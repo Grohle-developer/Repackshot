@@ -5,6 +5,23 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Cámara y lente
+
+- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
+- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada siguen en la rejilla con su miniatura y dicen en qué lente están (O4).
+- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
+- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
+
+### Motor
+
+- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
+
+### Herramientas
+
+- `tools/o4-check.mjs`: las dos lentes en la aplicación construida (secciones de cada una, el plano por dos puntos como una entrada de deshacer, el plano en el visor, la inclinación de la trazada con el ángulo del motor, la vuelta a la lente simple) y sus capturas; `tools/lens-check.mjs` y `tools/optics-check.mjs` siguen a O4 (O4).
+
+## v0.1.17 — 2026-10-17
+
 ### Motor
 
 - Dos proyecciones nuevas de cámara: **panorámica equirectangular** (360° × 180° en una imagen 2:1) y **ojo de pez** equidistante (hasta 360°, negro fuera del círculo de imagen), al final de `CAMR`; un archivo sin ellas conserva sus bytes (K3).
@@ -31,32 +48,20 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Flechas de paso en todos los valores**: cada campo numérico lleva a su derecha dos flechas apiladas **▲ ▼**. Un clic sube o baja un paso (con `Shift`, una décima; con `Ctrl`, diez), y mantenidas repiten tras una pausa; una pulsación, por larga que sea, es una sola entrada de deshacer. La flecha que llega al mínimo o al máximo se apaga, y un campo deshabilitado apaga las dos. No son paradas de tabulación: el campo sigue con el teclado, el arrastre y la escritura de siempre. En los tripletes X, Y, Z y en el campo de un deslizador el par es más fino, y el valor conserva el sitio que tenía (U15).
 - **Deslizadores donde convienen**: un valor con un rango natural (un factor de 0 a 1, un porcentaje, un ángulo en un rango fijo) pasa a deslizador con su campo y sus flechas al lado: *Rozamiento* y *Rebote*; *Giro* del bokeh, *Inclinación* y *Eje de la inclinación*; el *Ángulo* de un filtro y de un patrón circular; el *Ángulo de suavizado*; el *Giro* de una textura y de una etiqueta; en un foco propio *Acimut*, *Elevación*, *Giro*, *Dispersión*, *Ángulo de cono*, *Transición* y *Disco del sol*; en la ventana de render la *Calidad* del JPEG, el *Ruido* y la *Intensidad* de la reducción de ruido; en Ajustes *Velocidad de órbita*, *Velocidad de zoom*, *Tamaño del gizmo* e *Intervención por defecto*. Las distancias, tamaños, potencias, cuentas y tiempos siguen siendo campos (U15).
 - El campo **Tiempo** de la ventana de render (`hh:mm:ss`) es ahora un campo numérico como los demás: se arrastra, tiene sus flechas (un minuto por paso) y se escribe como hora, `mm:ss` o segundos (U15).
-- Los mandos de la lente simple que se apagan con una lente trazada (*Intensidad del perfil*, *Ojo de gato*, *Inclinación*, *Eje de la inclinación*) ya no se pueden arrastrar mientras están apagados (U15; con O4, abajo, ya no salen con una lente trazada).
+- Los mandos de la lente fina que se apagan con una lente trazada (*Intensidad del perfil*, *Ojo de gato*, *Inclinación*, *Eje de la inclinación*) ya no se pueden arrastrar mientras están apagados (U15).
 - **Pases** en la ventana de render, donde decía *próximamente*: *Alfa*, *Profundidad*, *Normales* e *Id de pieza*, cada uno un archivo junto a la imagen (`<nombre>_alpha`, `_depth`, `_normal`, `_partId`), en **EXR** de 32 bits flotantes o **PNG de 16 bits**; el id de pieza lleva una leyenda `.json` de quién es quién (N2).
 - **Estudio** en la ventana de render: la escena como está, un estudio guardado o **todos**; con *Todas las cámaras*, un **lote cámaras × estudios** (2 × 2 son cuatro imágenes, cámara por cámara), con la plantilla `{project}_{camera}_{studio}`. El estudio se pone sobre una copia del proyecto: el proyecto abierto no se toca y la cámara conserva su vista (N2).
 - La ventana dice el tamaño del lote (*Lote de 4 imágenes: cámaras 2 × estudios 2*) y avisa cuando la plantilla daría el mismo nombre a dos archivos (N2).
 - **ZIP**: un interruptor empaqueta los archivos de lo que una orden *Render* o *+ Añadir a la cola* metió en la cola en un solo ZIP (escritor propio, sin comprimir, sin dependencias), que se descarga al acabar el último trabajo del grupo; si el ZIP no se pudiera crear, los archivos se guardan uno a uno (N2).
 - La cola enseña el estudio de cada trabajo junto a su cámara y *+3 pases · ZIP* al final del nombre; *Detener* el segundo de tres trabajos lo deja *Cancelado* y la cola sigue con el tercero (N2).
 - `{studio}` en el nombre es el estudio guardado del trabajo; sin él, el nombre del tipo de producto como antes. Un estudio que ya no está guardado hace fallar su trabajo con el motivo y la cola sigue (N2).
-- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
-
-### Cámara y lente
-
-- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
-- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada siguen en la rejilla con su miniatura y dicen en qué lente están (O4).
-- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
-- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
-
-### Motor
-
-- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
 
 ### Herramientas
 
+- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 - `tools/light-catalogue-check.mjs` comprueba en el navegador los dos grupos, sus filtros, la pregunta y los tamaños, y hace las capturas de L7; `tools/sets-check.mjs` y `tools/scene-type-check.mjs` siguen la sección nueva (L7).
 - `tools/number-fields-check.mjs`: las flechas en todos los campos de la pantalla inicial, un clic y una pulsación mantenida sobre *Focal* (un paso, una entrada de deshacer cada uno), los ángulos de un foco propio y las velocidades de *Preferencias* como deslizadores; capturas `docs/ui/u15-light-fields.png`, `u15-part-triplets.png` y `u15-settings-sliders.png` (U15).
 - `tools/doctor-engine-check.mjs` escribe el tiempo del render en el campo numérico nuevo (U15).
-- `tools/o4-check.mjs`: las dos lentes en la aplicación construida (secciones de cada una, el plano por dos puntos como una entrada de deshacer, el plano en el visor, la inclinación de la trazada con el ángulo del motor, la vuelta a la lente simple) y sus capturas; `tools/lens-check.mjs` y `tools/optics-check.mjs` siguen a O4 (O4).
 - `tools/k3-check.mjs`: la cámara de interiores en el navegador sobre una habitación de prueba (verticales rectas, planta con el techo oculto, panorámica, cromo acromático), con tres capturas nuevas (K3).
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
 

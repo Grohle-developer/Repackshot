@@ -22,11 +22,29 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 48 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 48 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas (L7); flechas de paso en todos los valores y deslizadores donde convienen (U15); la ventana de render con un lote de cámaras × estudios y la cola con él terminado (N2); la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1 (K3); la lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada (O4). Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy; `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7; y con O4 las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`).
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`).
+
+#### O4 · Lente simple y trazada: opciones de cada una
+
+<a id="c-o4-simple-optics"></a><img src="ui/o4-simple-optics.png" width="331" alt="Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V."><br>
+`o4-simple-optics.png` · `f4f5e12` · Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V.
+
+<a id="c-o4-tilt-overlay"></a><img src="ui/o4-tilt-overlay.png" width="480" alt="El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro."><br>
+`o4-tilt-overlay.png` · `f4f5e12` · El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro.
+
+<a id="c-o4-traced-more"></a><img src="ui/o4-traced-more.png" width="331" alt="Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos."><br>
+`o4-traced-more.png` · `f4f5e12` · Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos.
+
+<a id="c-o4-traced-tilt"></a><img src="ui/o4-traced-tilt.png" width="480" alt="La hoja rt --tilt-sheet: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas."><br>
+`o4-traced-tilt.png` · `f4f5e12` · La hoja `rt --tilt-sheet`: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas.
+
+### v0.1.17 · 2026-10-17
+
+El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado.
 
 #### L7 · Sets y Luces: catálogo reorganizado
 
@@ -81,20 +99,6 @@ El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos 
 <a id="c-k3-panorama-fast"></a><img src="ui/k3-panorama-fast.png" width="480" alt="La panorámica 360° (2:1) en Rápido, dibujada desde las seis caras de un cubo: la habitación entera alrededor de la cámara"><br>
 `k3-panorama-fast.png` · `0082860` · La panorámica 360° en Rápido, dibujada desde las seis caras de un cubo con el mismo mapa que el motor; encima no se dibuja nada (contorno, *gizmo*).
 
-#### O4 · Lente simple y trazada: opciones de cada una
-
-<a id="c-o4-simple-optics"></a><img src="ui/o4-simple-optics.png" width="331" alt="Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V."><br>
-`o4-simple-optics.png` · `f4f5e12` · Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V.
-
-<a id="c-o4-tilt-overlay"></a><img src="ui/o4-tilt-overlay.png" width="480" alt="El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro."><br>
-`o4-tilt-overlay.png` · `f4f5e12` · El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro.
-
-<a id="c-o4-traced-more"></a><img src="ui/o4-traced-more.png" width="331" alt="Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos."><br>
-`o4-traced-more.png` · `f4f5e12` · Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos.
-
-<a id="c-o4-traced-tilt"></a><img src="ui/o4-traced-tilt.png" width="480" alt="La hoja rt --tilt-sheet: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas."><br>
-`o4-traced-tilt.png` · `f4f5e12` · La hoja `rt --tilt-sheet`: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas.
-
 ### v0.1.16 · 2026-10-17
 
 Animación y vídeo: el asistente en tres pasos con la rejilla de tipos, la curva personalizada, los fundidos entre planos y el vídeo codificado en la ventana de render.
@@ -120,7 +124,7 @@ Tipo de escena (Producto, Interior, Catálogo), el estilo de luz Interior con si
 #### K1 · Tipo de escena, luz de interior y Doctor de interiores
 
 <a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm."><br>
-`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en Sin publicar: Interior es un estilo del grupo Luces de L7)*
+`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en v0.1.17: Interior es un estilo del grupo Luces de L7)*
 
 #### D1 · Doctor de motor
 
@@ -263,7 +267,7 @@ Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector 
 #### L6 · Sets de estudio con criterio fotográfico
 
 <a id="c-sets-catalogue"></a><img src="ui/sets-catalogue.png" width="480" alt="El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas)."><br>
-`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas). *(regrabada en Sin publicar: el grupo Sets de L7, las miniaturas del tamaño de las demás)*
+`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas). *(regrabada en v0.1.17: el grupo Sets de L7, las miniaturas del tamaño de las demás)*
 
 #### P6 · Plugins, y el plugin de película (aintfilm)
 
@@ -556,7 +560,7 @@ La primera versión: interfaz, importadores, motor en Rust con modos Rápido y C
 `library-save.png` · `92db14a` · Guardar material como…: el cuadro para dar nombre al material del tapón y guardarlo en la biblioteca.
 
 <a id="c-library-setups"></a><img src="ui/library-setups.png" width="480" alt="Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca."><br>
-`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca. *(superada en Sin publicar: con L7, *Míos* es un valor del filtro Estilo del grupo Luces; ver `light-lights.png`)*
+`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca. *(superada en v0.1.17: con L7, *Míos* es un valor del filtro Estilo del grupo Luces; ver `light-lights.png`)*
 
 <a id="c-library-studios"></a><img src="ui/library-studios.png" width="480" alt="La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca."><br>
 `library-studios.png` · `92db14a` · La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca.
@@ -575,16 +579,16 @@ La primera versión: interfaz, importadores, motor en Rust con modos Rápido y C
 #### U5 · Ventana de render y visor de resultados
 
 <a id="c-render-window-image"></a><img src="ui/render-window-image.png" width="480" alt="La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras."><br>
-`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras. *(regrabada en Sin publicar)*
+`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras. *(regrabada en v0.1.17)*
 
 <a id="c-render-window-animation"></a><img src="ui/render-window-animation.png" width="480" alt="La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma."><br>
-`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma. *(regrabada en Sin publicar)*
+`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma. *(regrabada en v0.1.17)*
 
 <a id="c-queue-drawer"></a><img src="ui/queue-drawer.png" width="480" alt="El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados."><br>
-`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados. *(regrabada en Sin publicar)*
+`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados. *(regrabada en v0.1.17)*
 
 <a id="c-results-split"></a><img src="ui/results-split.png" width="480" alt="El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo."><br>
-`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo. *(regrabada en Sin publicar)*
+`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo. *(regrabada en v0.1.17)*
 
 #### I2 · STEP e IGES
 
@@ -623,8 +627,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) (v0.1.4): la interfaz entera con el visor en Completo: árbol de piezas, pedestal y fondo infinito, y el catálogo de montajes de luz.
 
-- [`u15-light-fields.png`](#c-u15-light-fields) · Sin publicar · U15
-- [`u15-part-triplets.png`](#c-u15-part-triplets) · Sin publicar · U15
+- [`u15-light-fields.png`](#c-u15-light-fields) · v0.1.17 · U15
+- [`u15-part-triplets.png`](#c-u15-part-triplets) · v0.1.17 · U15
 - [`primitives-add-menu.png`](#c-primitives-add-menu) · v0.1.4 · U9
 - [`primitives-base-box.png`](#c-primitives-base-box) · v0.1.4 · U9
 - [`primitives-pedestal.png`](#c-primitives-pedestal) · v0.1.4 · U9
@@ -669,10 +673,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`sets-catalogue.png`](#c-sets-catalogue) (v0.1.6): los sets de estudio con sus miniaturas y un set ya aplicado al frasco.
 
-- [`light-sets.png`](#c-light-sets) · Sin publicar · L7
-- [`light-lights.png`](#c-light-lights) · Sin publicar · L7
-- [`light-question.png`](#c-light-question) · Sin publicar · L7
-- [`light-thumb-sizes.png`](#c-light-thumb-sizes) · Sin publicar · L7
+- [`light-sets.png`](#c-light-sets) · v0.1.17 · L7
+- [`light-lights.png`](#c-light-lights) · v0.1.17 · L7
+- [`light-question.png`](#c-light-question) · v0.1.17 · L7
+- [`light-thumb-sizes.png`](#c-light-thumb-sizes) · v0.1.17 · L7
 - [`ies-light.png`](#c-ies-light) · v0.1.14 · L5
 - [`ies-light-full.png`](#c-ies-light-full) · v0.1.14 · L5
 - [`sets-catalogue.png`](#c-sets-catalogue) · v0.1.6 · L6 **← propuesta**
@@ -692,8 +696,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · Sin publicar · O4
 - [`o4-traced-more.png`](#c-o4-traced-more) · Sin publicar · O4
 - [`o4-traced-tilt.png`](#c-o4-traced-tilt) · Sin publicar · O4
-- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
-- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
+- [`k3-verticals.png`](#c-k3-verticals) · v0.1.17 · K3
+- [`k3-panorama.png`](#c-k3-panorama) · v0.1.17 · K3
 - [`lens-hover.png`](#c-lens-hover) · v0.1.8 · O2b
 - [`lens-hover-dark.png`](#c-lens-hover-dark) · v0.1.8 · O2b
 - [`lens-hover-chip.png`](#c-lens-hover-chip) · v0.1.8 · O2b
@@ -711,8 +715,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
 
-- [`batch-window.png`](#c-batch-window) · Sin publicar · N2
-- [`batch-queue.png`](#c-batch-queue) · Sin publicar · N2
+- [`batch-window.png`](#c-batch-window) · v0.1.17 · N2
+- [`batch-queue.png`](#c-batch-queue) · v0.1.17 · N2
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
@@ -773,10 +777,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`scene-type-interior.png`](#c-scene-type-interior) (v0.1.15): el tipo de escena Interior con las siete recetas de luz de ventana, lámparas y hora azul.
 
-- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
-- [`k3-plan.png`](#c-k3-plan) · Sin publicar · K3
-- [`k3-plan-fast.png`](#c-k3-plan-fast) · Sin publicar · K3
-- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
+- [`k3-verticals.png`](#c-k3-verticals) · v0.1.17 · K3
+- [`k3-plan.png`](#c-k3-plan) · v0.1.17 · K3
+- [`k3-plan-fast.png`](#c-k3-plan-fast) · v0.1.17 · K3
+- [`k3-panorama.png`](#c-k3-panorama) · v0.1.17 · K3
 - [`scene-type-interior.png`](#c-scene-type-interior) · v0.1.15 · K1 **← propuesta**
 
 ### IA
@@ -810,7 +814,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`desktop-linux.png`](#c-desktop-linux) (v0.1.0): la aplicación de escritorio con el motor nativo (4 hilos, AVX2) en el visor Completo.
 
-- [`u15-settings-sliders.png`](#c-u15-settings-sliders) · Sin publicar · U15
+- [`u15-settings-sliders.png`](#c-u15-settings-sliders) · v0.1.17 · U15
 - [`settings-plugins.png`](#c-settings-plugins) · v0.1.6 · P6
 - [`render-plugins-film.png`](#c-render-plugins-film) · v0.1.6 · P6
 - [`update-install.png`](#c-update-install) · v0.1.6 · P5
