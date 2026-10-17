@@ -1786,6 +1786,31 @@ pub fn o2_scene() -> Scene {
     scene
 }
 
+/// The O4 parity scene (`render.rs` pins its hash; `rt --write-o4-example` writes it for
+/// `tools/wasm-parity.mjs`): [`o2_scene`] with the traced double Gauss tilted 6° about the
+/// horizontal axis (the plane of sharp focus leans back to the floor, through the big sphere) and
+/// shifted 3 mm down and 2 mm right.
+pub fn o4_scene() -> Scene {
+    let mut scene = o2_scene();
+    let lens = Lens::new(LensParams {
+        blades: 7,
+        roundness: 0.3,
+        tilt_deg: 6.0,
+        tilt_axis_deg: 0.0,
+        shift_x_mm: 2.0,
+        shift_y_mm: -3.0,
+        prescription: Some(double_gauss()),
+        ..LensParams::default()
+    })
+    .unwrap_or_else(|_| unreachable!("the double Gauss is valid"));
+    scene.camera.lens = Some(lens);
+    scene
+        .camera
+        .prepare_lens()
+        .unwrap_or_else(|_| unreachable!("the tilted double Gauss forms an image"));
+    scene
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -45,6 +45,7 @@ USAGE:
     rt --write-o3a-example <scene.rsb>
     rt --write-film-thumb <scene.rsb>
     rt --write-o2-example <scene.rsb>
+    rt --write-o4-example <scene.rsb>
     rt --write-l5-example <scene.rsb>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
@@ -183,6 +184,9 @@ OPTIONS:
         --write-o2-example <f>
                             write the O2 parity scene (the example through the traced double
                             Gauss, and bokeh lights) as an RSB file
+        --write-o4-example <f>
+                            write the O4 parity scene (the O2 scene with the traced lens tilted
+                            and shifted) as an RSB file
         --write-lens-catalogue <f>
                             write the prescriptions of the 16 lenses of src/data/lenses.json as
                             the engine reads them (tests/fixtures/lens-catalogue.json)
@@ -474,6 +478,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the O4 parity scene (`rt_core::example::o4_scene`) as an RSB file.
+    WriteO4Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -561,6 +570,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_o3a = None;
     let mut write_film_thumb = None;
     let mut write_o2 = None;
+    let mut write_o4 = None;
     let mut write_lens_catalogue = None;
     let mut sheet_dir = None;
     let mut pattern_dir = None;
@@ -704,6 +714,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-o3a-example" => write_o3a = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-film-thumb" => write_film_thumb = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-o2-example" => write_o2 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-o4-example" => write_o4 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-lens-catalogue" => {
                 write_lens_catalogue = Some(PathBuf::from(value(&mut it, arg)?))
             }
@@ -883,6 +894,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-o2-example takes no other option".into());
         }
         return Ok(Command::WriteO2Example { path });
+    }
+    if let Some(path) = write_o4 {
+        if args.len() != 2 {
+            return Err("--write-o4-example takes no other option".into());
+        }
+        return Ok(Command::WriteO4Example { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -1150,6 +1167,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteO2Example { path } => {
             let bytes = rt_core::example::o2_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteO4Example { path } => {
+            let bytes = rt_core::example::o4_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())

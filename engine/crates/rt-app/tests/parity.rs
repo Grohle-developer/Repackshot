@@ -645,4 +645,10 @@ fn the_lens_information_through_the_api_is_the_engines() {
     assert_eq!(thin.status, 200);
     assert_eq!(thin.text(), "{\"traced\":false}");
     assert_eq!(t.api("POST", "/api/lens/info", b"not an rsb").status, 400);
+    // O4: a tilted lens says the angle it takes.
+    let tilted = rt_core::example::o4_scene();
+    let r = t.api("POST", "/api/lens/info", &tilted.to_rsb());
+    assert_eq!(r.status, 200, "{}", r.text());
+    assert_eq!(r.text(), tilted.camera.lens_info_json());
+    assert!(r.text().contains("\"tiltDeg\":"), "{}", r.text());
 }
