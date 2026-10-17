@@ -13,6 +13,12 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Motor
 
+- `rt.wasm` exporta `rt_scene_pick` (el rayo principal de un punto de la imagen y lo que toca) y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS` admite al final `frame_sensor_mm`. Ningún *hash* de render fijado cambia; los picos de las escenas de O1 y O2 quedan fijados y comprobados en `rt.wasm` en CI (F1).
+
+## v0.1.17 — 2026-10-17
+
+### Motor
+
 - Dos proyecciones nuevas de cámara: **panorámica equirectangular** (360° × 180° en una imagen 2:1) y **ojo de pez** equidistante (hasta 360°, negro fuera del círculo de imagen), al final de `CAMR`; un archivo sin ellas conserva sus bytes (K3).
 - **Visible a cámara** por instancia (bit 2 de `INST.flags`, `INSTANCE_NO_CAMERA`): la cámara no ve la pieza y las sombras, los rebotes y los reflejos sí; es la planta con el techo que sigue dando luz (K3).
 - **Multiplicador de exterior** en el rayo de cámara: oscurece lo que la cámara ve del entorno, también por las ventanas, sin oscurecer la luz que entra (K3).
@@ -21,7 +27,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - `rt_render_tile_alpha` en `rt.wasm` y en el pool; el archivo `RPP1` del lanzador lo lleva el último, y el *pool* y el lanzador dan el mismo plano (N2).
 - Los *hash* fijados de los seis pases de X2 y de las imágenes no se mueven; el alfa tiene los suyos (`PINNED_PASS_ALPHA`, `PINNED_E5_PASS_ALPHA`), iguales en escalar, SSE2 y AVX2, en WASI, en el `rt.wasm` real (`tools/wasm-parity.mjs --expect-alpha`, dos bloques nuevos de CI) y por la API del lanzador (N2).
 - Con un fondo transparente y solo objetos opacos, el pase alfa es el alfa de la película bit a bit, también con muestras de borde (N2).
-- `rt.wasm` exporta `rt_scene_pick` (el rayo principal de un punto de la imagen y lo que toca) y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS` admite al final `frame_sensor_mm`. Ningún *hash* de render fijado cambia; los picos de las escenas de O1 y O2 quedan fijados y comprobados en `rt.wasm` en CI (F1).
 
 ### Interfaz
 
@@ -45,10 +50,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **ZIP**: un interruptor empaqueta los archivos de lo que una orden *Render* o *+ Añadir a la cola* metió en la cola en un solo ZIP (escritor propio, sin comprimir, sin dependencias), que se descarga al acabar el último trabajo del grupo; si el ZIP no se pudiera crear, los archivos se guardan uno a uno (N2).
 - La cola enseña el estudio de cada trabajo junto a su cámara y *+3 pases · ZIP* al final del nombre; *Detener* el segundo de tres trabajos lo deja *Cancelado* y la cola sigue con el tercero (N2).
 - `{studio}` en el nombre es el estudio guardado del trabajo; sin él, el nombre del tipo de producto como antes. Un estudio que ya no está guardado hace fallar su trabajo con el motivo y la cola sigue (N2).
-- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 
 ### Herramientas
 
+- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 - `tools/light-catalogue-check.mjs` comprueba en el navegador los dos grupos, sus filtros, la pregunta y los tamaños, y hace las capturas de L7; `tools/sets-check.mjs` y `tools/scene-type-check.mjs` siguen la sección nueva (L7).
 - `tools/number-fields-check.mjs`: las flechas en todos los campos de la pantalla inicial, un clic y una pulsación mantenida sobre *Focal* (un paso, una entrada de deshacer cada uno), los ángulos de un foco propio y las velocidades de *Preferencias* como deslizadores; capturas `docs/ui/u15-light-fields.png`, `u15-part-triplets.png` y `u15-settings-sliders.png` (U15).
 - `tools/doctor-engine-check.mjs` escribe el tiempo del render en el campo numérico nuevo (U15).
