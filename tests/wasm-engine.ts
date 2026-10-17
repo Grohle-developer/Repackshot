@@ -7,8 +7,8 @@
 // it are skipped, unless REPACK_REQUIRE_RT_WASM or REPACK_REQUIRE_POST_WASM is set.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { PASS_KEYS, type RenderPasses } from '../src/core/passes';
-import { hasPassExports, PassAccumulator, Scratch, tileAlbedo, tileExact, type RtPassExports } from '../src/render/pass-planes';
+import { AI_PASS_KEYS, type RenderPasses } from '../src/core/passes';
+import { ALPHA_BIT, hasPassExports, PassAccumulator, Scratch, tileAlbedo, tileAlpha, tileExact, type RtPassExports } from '../src/render/pass-planes';
 import { Accumulator, tileGrid } from '../src/render/tiles';
 
 const PATHS = [process.env.REPACK_RT_WASM, 'public/engine/rt.wasm', 'engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm'].filter((p): p is string => !!p);
@@ -48,14 +48,17 @@ export function renderWithPasses(rt: Rt, rsb: Uint8Array, width: number, height:
       if (passes.exactMask) passes.setExact(t.index, tileExact(rt, handle, t, mask, scratch));
       const rgba = new Float32Array(t.w * t.h * 4 * samples);
       const albedo = new Float32Array(t.w * t.h * 3 * samples);
+      const alpha = new Float32Array(t.w * t.h * samples);
       for (let s = 0; s < samples; s++) {
         const status = rt.rt_render_tile_rgba(handle, t.x, t.y, t.w, t.h, s, out);
         if (status !== 0) throw new Error(`rt_render_tile_rgba returned ${status}`);
         rgba.set(new Float32Array(rt.memory.buffer, out, t.w * t.h * 4), s * t.w * t.h * 4);
         if (mask & 1) tileAlbedo(rt, handle, t, s, scratch, albedo, s * t.w * t.h * 3);
+        if (mask & ALPHA_BIT) tileAlpha(rt, handle, t, s, scratch, alpha, s * t.w * t.h);
       }
       image.add(t.index, 0, samples, rgba);
       if (mask & 1) passes.addAlbedo(t.index, 0, samples, albedo);
+      if (mask & ALPHA_BIT) passes.addAlpha(t.index, 0, samples, alpha);
     }
   } finally {
     rt.rt_free(out, 32 * 32 * 4 * 4);
@@ -89,13 +92,13 @@ export function pinned(file: string, name: string): number {
   return Number.parseInt(m[1].replaceAll('_', ''), 16) >>> 0;
 }
 
-/** The pinned pass hashes of a scene (`PINNED_<prefix>PASS_*`), in the order of PASS_KEYS. */
+/** The pinned pass hashes of a scene (`PINNED_<prefix>PASS_*`), in the order of the six X2 keys (`AI_PASS_KEYS`). */
 export function pinnedPasses(prefix: '' | 'E5_' | 'E6_'): number[] {
   const file = 'engine/crates/rt-core/src/render/passes_tests.rs';
   return ['ALBEDO', 'NORMAL', 'DEPTH', 'PART_ID', 'MATERIAL_ID', 'COC'].map((k) => pinned(file, `PINNED_${prefix}PASS_${k}`));
 }
 
-/** FNV-1a of every plane of `passes`, in the order of PASS_KEYS. */
+/** FNV-1a of every plane of the six X2 passes, in the order of `AI_PASS_KEYS` (the alpha, N2, is `fnv1a(passes.alpha!)`). */
 export function passHashes(passes: RenderPasses): number[] {
-  return PASS_KEYS.map((k) => fnv1a(passes[k]!));
+  return AI_PASS_KEYS.map((k) => fnv1a(passes[k]!));
 }

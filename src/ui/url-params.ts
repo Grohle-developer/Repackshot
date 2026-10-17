@@ -90,9 +90,8 @@ export function applyUrlParams(ctx: Ctx, p: UrlParams): void {
   }
   if (p.setup) {
     cmd.chooseSetup(ctx, p.setup);
-    // Show the style of the chosen setup so it is visible in the catalogue.
-    const style = lightSetup(p.setup)?.style;
-    if (style && p.setup !== 'PRESET') ctx.ui.set({ lightStyle: style });
+    // Show the chosen setup in the catalogue: its group (Sets or Lights, L7) and, for Lights, its style.
+    if (p.setup !== 'PRESET') cmd.revealSetup(ctx, p.setup);
   }
   if (p.select) {
     const s = ctx.store.get();

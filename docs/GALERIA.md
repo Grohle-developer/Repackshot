@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 128 archivos: 126 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 143 archivos: 141 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,64 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 43 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 45 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
+El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado. F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic.
+
+#### L7 · Sets y Luces: catálogo reorganizado
+
+<a id="c-light-sets"></a><img src="ui/light-sets.png" width="480" alt="La sección Luz en el grupo Sets: los filtros Tipo de producto y Sujeto, con Frasco elegido; 7 de 17 sets, todos con miniaturas del mismo tamaño, y el rig del tipo de producto en vigor el primero, atenuado y marcado fuera de los filtros."><br>
+`light-sets.png` · `71fa0a1` · La sección *Luz* en el grupo *Sets*: los filtros *Tipo de producto* y *Sujeto*, con *Frasco* elegido; *7 de 17 sets*, todas las miniaturas del mismo tamaño, y el rig del tipo de producto en vigor el primero, atenuado y marcado *Fuera de los filtros*.
+
+<a id="c-light-lights"></a><img src="ui/light-lights.png" width="480" alt="El grupo Luces con el filtro Estilo en Cinematográfico: 11 de 78 montajes, con miniaturas del tamaño de las de los sets."><br>
+`light-lights.png` · `71fa0a1` · El grupo *Luces* con el filtro *Estilo* en *Cinematográfico*: *11 de 78 montajes*, con miniaturas del tamaño de las de los sets.
+
+<a id="c-light-question"></a><img src="ui/light-question.png" width="480" alt="En español: al elegir Clave baja con focos en la escena, la pregunta en línea «Hay focos en la escena. ¿Qué pasa con ellos al entrar Clave baja?» con Sustituir, Ocultar, Añadir, Cancelar y Recordar mi elección."><br>
+`light-question.png` · `71fa0a1` · En español: al elegir *Clave baja* con focos en la escena, la pregunta en línea «Hay focos en la escena. ¿Qué pasa con ellos al entrar Clave baja?» con *Sustituir*, *Ocultar*, *Añadir*, *Cancelar* y *Recordar mi elección*.
+
+<a id="c-light-thumb-sizes"></a><img src="ui/light-thumb-sizes.png" width="480" alt="Las miniaturas pequeñas (cuatro columnas, solo la imagen) y grandes (dos columnas), elegidas con el botón de la derecha de la cabecera de Luz; tras Ocultar sobre un set, En el set sigue con su fondo y su suelo."><br>
+`light-thumb-sizes.png` · `71fa0a1` · Las miniaturas pequeñas (cuatro columnas, solo la imagen) y grandes (dos columnas), elegidas con el botón de la derecha de la cabecera de *Luz*; tras *Ocultar* sobre un set, *En el set* sigue con su fondo y su suelo.
+
+#### U15 · Flechas y deslizadores en los valores
+
+<a id="c-u15-light-fields"></a><img src="ui/u15-light-fields.png" width="480" alt="Un foco propio (Área) elegido: en el inspector, Ancho, Distancia, Temperatura y Potencia son campos con sus flechas ▲ ▼ a la derecha; Acimut, Elevación y Dispersión, deslizadores con su campo y sus flechas al lado (Dispersión en 180°, su máximo, con ▲ apagada); las Coordenadas X, Y, Z llevan el par compacto."><br>
+`u15-light-fields.png` · `84f0673` · Un foco propio (Área) elegido: en el inspector, Ancho, Distancia, Temperatura y Potencia son campos con sus flechas ▲ ▼ a la derecha; Acimut, Elevación y Dispersión, deslizadores con su campo y sus flechas al lado (Dispersión en 180°, su máximo, con ▲ apagada); las Coordenadas X, Y, Z llevan el par compacto.
+
+<a id="c-u15-part-triplets"></a><img src="ui/u15-part-triplets.png" width="339" alt="La columna del inspector con la sección Pieza: Posición, Rotación y Escala en tripletes X, Y, Z de 102 px con el par compacto de flechas, el puntero sobre ▲ de la X de Posición; debajo, el Bisel de aristas con el par normal."><br>
+`u15-part-triplets.png` · `84f0673` · La columna del inspector con la sección Pieza: Posición, Rotación y Escala en tripletes X, Y, Z de 102 px con el par compacto de flechas, el puntero sobre ▲ de la X de Posición; debajo, el Bisel de aristas con el par normal.
+
+<a id="c-u15-settings-sliders"></a><img src="ui/u15-settings-sliders.png" width="480" alt="Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %)."><br>
+`u15-settings-sliders.png` · `84f0673` · Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %).
+
+#### N2 · Cola, pases y lotes
+
+<a id="c-batch-window"></a><img src="ui/batch-window.png" width="480" alt="La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido."><br>
+`batch-window.png` · `8816f19` · La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido.
+
+<a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes."><br>
+`batch-queue.png` · `8816f19` · El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes.
+
+#### K3 · Cámara de interiores
+
+<a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado."><br>
+`k3-verticals.png` · `0082860` · La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado.
+
+<a id="c-k3-plan-fast"></a><img src="ui/k3-plan-fast.png" width="480" alt="La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo."><br>
+`k3-plan-fast.png` · `0082860` · La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo.
+
+<a id="c-k3-plan"></a><img src="ui/k3-plan.png" width="480" alt="La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado."><br>
+`k3-plan.png` · `0082860` · La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado.
+
+<a id="c-k3-panorama"></a><img src="ui/k3-panorama.png" width="480" alt="La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado."><br>
+`k3-panorama.png` · `0082860` · La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado.
+
+<a id="c-k3-verticals-fast"></a><img src="ui/k3-verticals-fast.png" width="480" alt="La habitación de prueba en Rápido con Verticales rectas encendidas: la cámara a 1,5 m mirando 10° hacia abajo y las aristas verticales paralelas; el inspector dice el desplazamiento de −4,2 mm que lo corrige"><br>
+`k3-verticals-fast.png` · `0082860` · La misma corrección en Rápido: con *Verticales rectas* las aristas verticales salen paralelas, y el inspector dice el desplazamiento que aplica (−4,2 mm para 10° de inclinación), con los presets de altura de ojo y las focales de interior.
+
+<a id="c-k3-panorama-fast"></a><img src="ui/k3-panorama-fast.png" width="480" alt="La panorámica 360° (2:1) en Rápido, dibujada desde las seis caras de un cubo: la habitación entera alrededor de la cámara"><br>
+`k3-panorama-fast.png` · `0082860` · La panorámica 360° en Rápido, dibujada desde las seis caras de un cubo con el mismo mapa que el motor; encima no se dibuja nada (contorno, *gizmo*).
 
 #### F1 · Enfoque por punto y por objeto
 
@@ -64,7 +117,7 @@ Tipo de escena (Producto, Interior, Catálogo), el estilo de luz Interior con si
 #### K1 · Tipo de escena, luz de interior y Doctor de interiores
 
 <a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm."><br>
-`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm.
+`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en Sin publicar: Interior es un estilo del grupo Luces de L7)*
 
 #### D1 · Doctor de motor
 
@@ -207,7 +260,7 @@ Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector 
 #### L6 · Sets de estudio con criterio fotográfico
 
 <a id="c-sets-catalogue"></a><img src="ui/sets-catalogue.png" width="480" alt="El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas)."><br>
-`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas).
+`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas). *(regrabada en Sin publicar: el grupo Sets de L7, las miniaturas del tamaño de las demás)*
 
 #### P6 · Plugins, y el plugin de película (aintfilm)
 
@@ -500,7 +553,7 @@ La primera versión: interfaz, importadores, motor en Rust con modos Rápido y C
 `library-save.png` · `92db14a` · Guardar material como…: el cuadro para dar nombre al material del tapón y guardarlo en la biblioteca.
 
 <a id="c-library-setups"></a><img src="ui/library-setups.png" width="480" alt="Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca."><br>
-`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca.
+`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca. *(superada en Sin publicar: con L7, *Míos* es un valor del filtro Estilo del grupo Luces; ver `light-lights.png`)*
 
 <a id="c-library-studios"></a><img src="ui/library-studios.png" width="480" alt="La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca."><br>
 `library-studios.png` · `92db14a` · La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca.
@@ -567,6 +620,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) (v0.1.4): la interfaz entera con el visor en Completo: árbol de piezas, pedestal y fondo infinito, y el catálogo de montajes de luz.
 
+- [`u15-light-fields.png`](#c-u15-light-fields) · Sin publicar · U15
+- [`u15-part-triplets.png`](#c-u15-part-triplets) · Sin publicar · U15
 - [`primitives-add-menu.png`](#c-primitives-add-menu) · v0.1.4 · U9
 - [`primitives-base-box.png`](#c-primitives-base-box) · v0.1.4 · U9
 - [`primitives-pedestal.png`](#c-primitives-pedestal) · v0.1.4 · U9
@@ -611,6 +666,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`sets-catalogue.png`](#c-sets-catalogue) (v0.1.6): los sets de estudio con sus miniaturas y un set ya aplicado al frasco.
 
+- [`light-sets.png`](#c-light-sets) · Sin publicar · L7
+- [`light-lights.png`](#c-light-lights) · Sin publicar · L7
+- [`light-question.png`](#c-light-question) · Sin publicar · L7
+- [`light-thumb-sizes.png`](#c-light-thumb-sizes) · Sin publicar · L7
 - [`ies-light.png`](#c-ies-light) · v0.1.14 · L5
 - [`ies-light-full.png`](#c-ies-light-full) · v0.1.14 · L5
 - [`sets-catalogue.png`](#c-sets-catalogue) · v0.1.6 · L6 **← propuesta**
@@ -626,6 +685,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
+- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
 - [`lens-hover.png`](#c-lens-hover) · v0.1.8 · O2b
 - [`lens-hover-dark.png`](#c-lens-hover-dark) · v0.1.8 · O2b
 - [`lens-hover-chip.png`](#c-lens-hover-chip) · v0.1.8 · O2b
@@ -646,6 +707,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
 
+- [`batch-window.png`](#c-batch-window) · Sin publicar · N2
+- [`batch-queue.png`](#c-batch-queue) · Sin publicar · N2
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
@@ -706,6 +769,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`scene-type-interior.png`](#c-scene-type-interior) (v0.1.15): el tipo de escena Interior con las siete recetas de luz de ventana, lámparas y hora azul.
 
+- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
+- [`k3-plan.png`](#c-k3-plan) · Sin publicar · K3
+- [`k3-plan-fast.png`](#c-k3-plan-fast) · Sin publicar · K3
+- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
 - [`scene-type-interior.png`](#c-scene-type-interior) · v0.1.15 · K1 **← propuesta**
 
 ### IA
@@ -739,6 +806,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`desktop-linux.png`](#c-desktop-linux) (v0.1.0): la aplicación de escritorio con el motor nativo (4 hilos, AVX2) en el visor Completo.
 
+- [`u15-settings-sliders.png`](#c-u15-settings-sliders) · Sin publicar · U15
 - [`settings-plugins.png`](#c-settings-plugins) · v0.1.6 · P6
 - [`render-plugins-film.png`](#c-render-plugins-film) · v0.1.6 · P6
 - [`update-install.png`](#c-update-install) · v0.1.6 · P5

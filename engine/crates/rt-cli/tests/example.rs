@@ -1,6 +1,6 @@
 //! Integration tests: the library entry points that `rt` is built from, no subprocesses.
 
-use rt_cli::cli::{parse_args, run, Command, Options};
+use rt_cli::cli::{parse_args, run, Command, K3View, Options};
 use rt_core::scene::Scene;
 use std::path::PathBuf;
 
@@ -143,6 +143,63 @@ fn write_l5_example_produces_a_readable_rsb_file() {
     run(Command::WriteL5Example { path: path.clone() }).expect("write succeeds");
     let bytes = std::fs::read(&path).expect("RSB written");
     assert_eq!(Scene::from_rsb(&bytes), Ok(rt_core::example::l5_scene()));
+}
+
+#[test]
+fn the_k3_views_render_the_same_pixels_on_one_four_and_sixteen_threads() {
+    // K3: the panoramic projections, the exterior factor and the instance hidden to the camera are
+    // the same arithmetic whoever runs them. 160 x 120 is twenty tiles, so sixteen threads all work.
+    for view in [K3View::Plan, K3View::Panorama, K3View::Fisheye] {
+        let mut scene = view.scene();
+        scene.render.width = 160;
+        scene.render.height = 120;
+        let one = rt_cli::render(&scene, 2, 1);
+        for threads in [4, 16] {
+            let many = rt_cli::render(&scene, 2, threads);
+            assert_eq!(one.film, many.film, "{view:?}, {threads} threads");
+            assert_eq!(one.rays, many.rays, "{view:?}, {threads} threads");
+        }
+        let read = Scene::from_rsb(&scene.to_rsb()).expect("the scene reads back");
+        assert_eq!(rt_cli::render(&read, 2, 4).film, one.film, "{view:?}");
+    }
+}
+
+#[test]
+fn write_k3_examples_produce_readable_rsb_files() {
+    for (view, flag, name) in [
+        (K3View::Plan, "--write-k3-plan-example", "k3-plan.rsb"),
+        (
+            K3View::Panorama,
+            "--write-k3-panorama-example",
+            "k3-panorama.rsb",
+        ),
+        (
+            K3View::Fisheye,
+            "--write-k3-fisheye-example",
+            "k3-fisheye.rsb",
+        ),
+    ] {
+        let path = scratch(name);
+        let args = [flag.to_string(), path.to_str().unwrap().to_string()];
+        let command = parse_args(&args).expect("valid arguments");
+        assert_eq!(
+            command,
+            Command::WriteK3Example {
+                view,
+                path: path.clone()
+            }
+        );
+        run(command).expect("write succeeds");
+        let bytes = std::fs::read(&path).expect("RSB written");
+        assert_eq!(Scene::from_rsb(&bytes), Ok(view.scene()));
+        let extra = [
+            flag.to_string(),
+            name.to_string(),
+            "--samples".into(),
+            "2".into(),
+        ];
+        assert!(parse_args(&extra).is_err(), "{flag} takes no other option");
+    }
 }
 
 #[test]

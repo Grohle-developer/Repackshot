@@ -51,9 +51,6 @@ under other terms, including commercial ones. Without that second part the
 author could not offer commercial licences of the project as a whole. If
 you cannot agree to it, do not contribute.
 
-Catalogue data was ported from EZPackshot (GPL-3.0) by the project's author,
-who relicenses it for this project.
-
 Dependencies: only permissive licences (MIT, Apache-2.0, BSD, ISC, CC0)
 are compatible with this setup. Copyleft (GPL, AGPL) or noncommercial
 dependencies cannot be added to the code base. The one exception is

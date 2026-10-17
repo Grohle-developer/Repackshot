@@ -1,12 +1,19 @@
 // Exact per-pixel passes written next to the image (AI-POST.md §3.1, §7.4):
-// what the AI guard leans on, and later the render passes of N2. This is the
-// contract between X2 (the engine writes them), X3 (the pipeline reads them)
-// and X4 (the Fast-mode preview draws the same passes with three.js). Phases
-// add passes at the end; they do not change these.
+// what the AI guard leans on, and the render passes of N2 (the alpha matte,
+// appended by that phase). This is the contract between X2 (the engine writes
+// them), X3 (the pipeline reads them), X4 (the Fast-mode preview draws the same
+// passes with three.js) and N2 (the files of the render window). Phases add
+// passes at the end; they do not change these.
 
 /** Pass keys, in the order of their bits in the RNDR pass mask (bit i is PASS_KEYS[i]). Stable: add at the end. */
-export const PASS_KEYS = ['albedo', 'normal', 'depth', 'partId', 'materialId', 'coc'] as const;
+export const PASS_KEYS = ['albedo', 'normal', 'depth', 'partId', 'materialId', 'coc', 'alpha'] as const;
 export type PassKey = (typeof PASS_KEYS)[number];
+
+/**
+ * The six passes of the AI guard's contract (X2, AI-POST.md §7.4): `PASS_KEYS` before N2 appended the alpha. The
+ * Fast-mode preview draws exactly these with three.js, and the pinned hashes of X2 are over these.
+ */
+export const AI_PASS_KEYS: readonly PassKey[] = ['albedo', 'normal', 'depth', 'partId', 'materialId', 'coc'];
 
 /**
  * `partId` and `materialId` of the studio floor (the RSB floor, not an instance). The floor is a surface
@@ -16,7 +23,7 @@ export type PassKey = (typeof PASS_KEYS)[number];
 export const FLOOR_ID = 0xffff_ffff;
 
 /** Floats (or u32 for the ids) per pixel of each pass. */
-export const PASS_CHANNELS: Readonly<Record<PassKey, 1 | 3>> = { albedo: 3, normal: 3, depth: 1, partId: 1, materialId: 1, coc: 1 };
+export const PASS_CHANNELS: Readonly<Record<PassKey, 1 | 3>> = { albedo: 3, normal: 3, depth: 1, partId: 1, materialId: 1, coc: 1, alpha: 1 };
 
 /** Bit of a pass in the RNDR pass mask. */
 export function passBit(key: PassKey): number {
@@ -51,4 +58,11 @@ export interface RenderPasses {
   materialId?: Uint32Array;
   /** Circle-of-confusion diameter in output pixels from the thin-lens camera: 0 on the focus plane and with depth of field off. */
   coc?: Float32Array;
+  /**
+   * N2: coverage of the scene's objects, 0..1: the share of the pixel's samples whose camera ray meets a surface of an
+   * instance (so the edges are anti-aliased, like the albedo). The studio floor, the environment, the background and the
+   * light panels the camera sees are not coverage, whatever the render's background is. Cut-outs and glass count as
+   * surfaces, as for every pass ray.
+   */
+  alpha?: Float32Array;
 }

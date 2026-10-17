@@ -189,6 +189,17 @@
 .rw .num {
   width: 104px;
 }
+/* U15: a slider's field takes the slider's own column, not the window's usual field width; the slider itself a
+   comfortable track beside its row's note, or beside the format it belongs to. */
+.rw .slider .num {
+  width: 100%;
+}
+.rw-stack > .slider {
+  width: min(100%, 300px);
+}
+.rw-inline > .slider {
+  width: 220px;
+}
 .rw .select {
   width: auto;
   max-width: 100%;
@@ -644,12 +655,13 @@
   padding: 10px 12px 10px 16px;
   border-top: 1px solid var(--line);
 }
+/* The summary is whole at any width: it wraps onto a second line (N2: a batch adds images, passes and the ZIP, and
+   the end of the line is what an ellipsis used to cut). The buttons keep their place, centred on the footer. */
 .rw-summary {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .rw-foot-actions {
   display: flex;

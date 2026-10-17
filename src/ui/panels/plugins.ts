@@ -17,6 +17,7 @@ import type { RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
 import * as cmd from '../commands';
 import { select, slider, toggle } from '../components/controls';
+import { filterChipRows, type ChipRows } from '../components/filter-chips';
 import { splitCompare, type SplitCompare } from '../components/split-compare';
 import { h, icon } from '../dom';
 import { dyn } from '../names';
@@ -141,7 +142,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   // P6b: the plugin's recipe filters as rows of chips (All and its options), combined; the count of what they leave.
   const chipsEl = h('div', { class: 'rw-pl-filters' });
   const countLine = h('div', { class: 'note tabular rw-pl-count', role: 'status' });
-  const chipButtons = new Map<string, HTMLButtonElement>();
+  let chipRows: ChipRows | null = null;
   let ordered: PluginPreset[] = [];
   let shownKey = '';
   const chosenFilters = () => activeFilters(presets?.filters ?? [], kept()?.filters);
@@ -151,17 +152,13 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   };
   const drawChips = () => {
     if (!presets || presets.filters.length === 0) return;
-    chipButtons.clear();
-    chipsEl.replaceChildren(
-      ...presets.filters.map((f) => {
-        const chip = (value: string | null, text: string) => {
-          const b = h('button', { type: 'button', class: 'chip rw-pl-chip', 'aria-pressed': 'false', 'data-value': value ?? '', onclick: () => setFilter(f.id, value, f.label) }, text) as HTMLButtonElement;
-          chipButtons.set(`${f.id}=${value ?? ''}`, b);
-          return b;
-        };
-        return h('div', { class: 'rw-pl-chips', role: 'group', 'aria-label': lbl(f.label), 'data-filter': f.id }, h('span', { class: 'rw-pl-chips-name aux' }, lbl(f.label)), chip(null, t('rw.pl.filterAll')), ...f.options.map((o) => chip(o.value, lbl(o.label))));
-      }),
+    const offered = presets.filters;
+    chipRows = filterChipRows(
+      offered.map((f) => ({ id: f.id, label: lbl(f.label), options: f.options.map((o) => ({ value: o.value, label: lbl(o.label) })) })),
+      t('rw.pl.filterAll'),
+      (f, value) => setFilter(f.id, value, offered.find((x) => x.id === f.id)!.label),
     );
+    chipsEl.replaceChildren(...chipRows.rows);
   };
   const cardOf = (p: PluginPreset, outside = false): RecipeCard => ({ id: p.id, name: p.aux ? `${lbl(p.name)} · ${lbl(p.aux)}` : lbl(p.name), category: lbl(presets!.categories.find((x) => x.id === p.category)?.label ?? { en: p.category, es: p.category }), ...(outside ? { outside: true } : {}) });
   /** The cards the filters leave (the chosen recipe first when they leave it out), rebuilt only when that changes. */
@@ -170,10 +167,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     const f = chosenFilters();
     const res = filterPresets(ordered, f, recipe());
     const key = `${JSON.stringify(f)}|${res.kept?.id ?? ''}`;
-    for (const [k, b] of chipButtons) {
-      const [fid, value] = k.split('=');
-      b.setAttribute('aria-pressed', String((f[fid] ?? '') === value));
-    }
+    chipRows?.set(f);
     setText(countLine, presets.filters.length ? (res.count === 0 ? t('rw.pl.filterNone', { total: res.total }) : t('rw.pl.filterCount', { n: res.count, total: res.total })) : '');
     if (key === shownKey) return;
     shownKey = key;

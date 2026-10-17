@@ -9,7 +9,7 @@ import { kelvinToRgb, polar, toWorldAzimuth } from '../src/core/light-math';
 import { instanceFromPreset } from '../src/core/materials';
 import { lightPosition, rigPivot } from '../src/core/lighting';
 import { getMesh } from '../src/core/meshes';
-import { PASS_KEYS } from '../src/core/passes';
+import { AI_PASS_KEYS, PASS_KEYS } from '../src/core/passes';
 import { CAUSTICS_PRESETS, isCaster, lightAngleDeg, SMALL_LIGHT_DEG } from '../src/core/caustics';
 import { areaLightFlux, areaLightRadiance, EMIT_RADIANCE_PER_WATT } from '../src/core/photometry';
 import { allParts, worldMatrix } from '../src/core/scene';
@@ -402,7 +402,7 @@ describe('project to RSB: lights', () => {
   it('the flux gives the irradiance Cycles gives the recipe, on axis and far away', () => {
     // A small panel 2 m away, part size 200 mm. In Blender Cycles the recipe's power P over an area A
     // is the radiance L = P / (4 A), so on axis and far away E = P / (4 dist^2): pi times the
-    // isotropic-source P / (4 pi dist^2) the add-on's comment speaks of. The engine's one-sided
+    // isotropic-source P / (4 pi dist^2) the recipes' `share` is stated in. The engine's one-sided
     // Lambertian panel of flux F has the intensity F / pi, so E = F / (pi d^2).
     const power = 30;
     const partMm = 200;
@@ -618,7 +618,10 @@ describe('project to RSB: environment, floor and render settings', () => {
     expect(r0().passes).toBe(0);
     const asked = projectScene(s, view(s, { passes: ['albedo', 'depth', 'coc'] })).scene;
     expect(asked.render.passes).toBe(0b100101);
-    expect(projectScene(s, view(s, { passes: [...PASS_KEYS] })).scene.render.passes).toBe(0b111111);
+    expect(projectScene(s, view(s, { passes: [...AI_PASS_KEYS] })).scene.render.passes).toBe(0b111111);
+    // N2: the alpha is the seventh, appended after the six (bit 6), and every key is a bit.
+    expect(projectScene(s, view(s, { passes: ['alpha'] })).scene.render.passes).toBe(0b1000000);
+    expect(projectScene(s, view(s, { passes: [...PASS_KEYS] })).scene.render.passes).toBe(0b1111111);
     const payload = sections(writeRsb(asked)).find((x) => x.tag === 'RNDR')!.payload;
     expect(payload.byteLength).toBe(64);
     expect(payload.getUint32(36, true)).toBe(0b100101);

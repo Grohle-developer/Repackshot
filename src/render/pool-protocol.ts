@@ -10,7 +10,7 @@ export type WorkerRequest =
   /**
    * Render samples first .. first + count - 1 of these tiles (x, y, w, h, index each). With `passes` (a
    * core/passes.ts mask; Render only), also the albedo of every sample and, in the job whose `first` is 0,
-   * the exact planes of every tile (phase X2).
+   * the exact planes of every tile (phase X2); N2: and, with the alpha bit, its coverage of every sample.
    */
   | { type: 'job'; generation: number; tiles: Int32Array; first: number; count: number; passes?: number }
   /**
@@ -39,10 +39,11 @@ export type WorkerReply =
   /** The scene is loaded; E5b-1: `caustics`, the caustic photons per sample it renders (0: none; `rt_scene_caustics`). */
   | { type: 'scene'; id: number; error: string | null; caustics?: number }
   /**
-   * A tile's samples. With passes: `albedo`, `count` samples of `w * h * 3` floats each, and once (the job
-   * with `first` 0) `exact`, the tile's exact planes in key order (render/pass-planes.ts).
+   * A tile's samples. With passes: `albedo`, `count` samples of `w * h * 3` floats each, N2: `alpha`, `count` samples of
+   * `w * h` floats each, and once (the job with `first` 0) `exact`, the tile's exact planes in key order
+   * (render/pass-planes.ts).
    */
-  | { type: 'tile'; generation: number; index: number; first: number; count: number; data: Float32Array; albedo?: Float32Array; exact?: Uint32Array; block?: { x: number; y: number; w: number; h: number } }
+  | { type: 'tile'; generation: number; index: number; first: number; count: number; data: Float32Array; albedo?: Float32Array; alpha?: Float32Array; exact?: Uint32Array; block?: { x: number; y: number; w: number; h: number } }
   | { type: 'done'; generation: number }
   | { type: 'error'; generation: number; reason: string }
   | { type: 'pixels'; id: number; bytes: Uint8ClampedArray }

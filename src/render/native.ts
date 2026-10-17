@@ -59,7 +59,7 @@ import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
-import { readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
+import { readsCameras, readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
 import { adaptiveKey, QUIET_MS, viewAdaptive, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
@@ -71,6 +71,7 @@ import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, retryDelay, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
 import { ScanCache, scanFrame } from './frame-scan';
+import { autoExposure, ExposureMeter, meterExposure } from '../core/image-passes';
 
 /** How the engine reaches the launcher (io/native.ts's NativeClient, handed in by main.ts). */
 export interface NativeTransport {
@@ -342,6 +343,8 @@ export class NativeEngine {
   private readonly frameListeners = new Set<() => void>();
   /** D1: what the Doctor reads of the view's sums, made again when the samples double. */
   private readonly scans = new ScanCache();
+  /** K3: the automatic exposure of the viewport. */
+  private readonly meter = new ExposureMeter();
   private tileImage: ImageData | null = null;
   private renderChain: Promise<unknown> = Promise.resolve();
   /** Jobs of renders in progress (cancelled if the page goes away). */
@@ -636,6 +639,8 @@ export class NativeEngine {
         ...(readsPrograms(this.info.features) ? { programs: true } : {}),
         // L5: the IES lights, when this engine renders them.
         ...(readsIes(this.info.features) ? { ies: true } : {}),
+        // K3: the interior cameras, when this engine reads them.
+        ...(readsCameras(this.info.features) ? { cameras: true } : {}),
       },
     };
   }
@@ -874,10 +879,21 @@ export class NativeEngine {
     this.pendingSince = 0;
   }
 
+  /**
+   * K3: the automatic exposure of the view, metered from the launcher's sums of the full-resolution pass on screen when
+   * its samples have doubled (core/image-passes.ts `ExposureMeter`); the last reading while a new image fills in.
+   */
+  meteredExposure(): number | null {
+    const job = this.job;
+    if (job && job.scale === 1 && job.pass > 0) return this.meter.read(job.acc, job.samples, () => meterExposure(job.acc));
+    return this.meter.last;
+  }
+
   private displayCurve(): DisplayCurve {
     const tone = this.source.tone(this.state!);
-    if (!this.curve || this.curve.ev !== tone.exposureEv || this.curve.curve !== tone.tonemap) {
-      this.curve = new DisplayCurve(tone.exposureEv, tone.tonemap);
+    const ev = tone.auto ? tone.exposureEv + (this.meteredExposure() ?? 0) : tone.exposureEv;
+    if (!this.curve || this.curve.ev !== ev || this.curve.curve !== tone.tonemap) {
+      this.curve = new DisplayCurve(ev, tone.tonemap);
       if (this.job && this.job.scale === 1 && this.job.pass > 0) for (const t of this.job.acc.tiles) this.dirty.add(t.index);
       this.presentAll = true;
     }
@@ -976,7 +992,10 @@ export class NativeEngine {
     // D1: what the Doctor reads of the sums the launcher handed out. While its live denoise is on those are the denoised
     // image, which holds no fireflies to count (the brightness by the stop it still says).
     const scan = full && job.pass > 0 ? this.scans.get(job.acc, job.samples, () => scanFrame(job.acc, job.state, { denoised: job.denoised }), job.denoised ? 'denoised' : '') : null;
+    // K3: the automatic exposure's reading, for the meter.
+    const metered = this.state && autoExposure(this.state.image) ? { meteredEv: this.meteredExposure() } : {};
     return {
+      ...metered,
       samples,
       seconds: full ? job.seconds : 0,
       // Done: at the samples, or stopped by the viewport's time limit.
@@ -1053,6 +1072,8 @@ export class NativeEngine {
         ...(readsPrograms(this.info.features) ? { programs: true } : {}),
         // L5: the IES lights, when this engine renders them.
         ...(readsIes(this.info.features) ? { ies: true } : {}),
+        // K3: the interior cameras, when this engine reads them.
+        ...(readsCameras(this.info.features) ? { cameras: true } : {}),
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
@@ -1101,7 +1122,12 @@ export class NativeEngine {
       const passes = opts.passes?.length && !opts.passesInLauncher ? await this.passesOf(id, f.width, f.height, init) : undefined;
       this.deleteJob(id);
       if (!f.sums) throw new Error('the render has no image');
-      const tone = this.source.tone(state);
+      // K3: an automatic exposure is metered from the finished sums, those before the denoise when the launcher sends
+      // them (the same for both images).
+      const tone0 = this.source.tone(state);
+      const meteredSums = f.noisy ?? f.sums;
+      const metered = tone0.auto && f.samples > 0 ? meterExposure({ width: f.width, height: f.height, sum: meteredSums, samplesAt: () => f.samples }) : null;
+      const tone = { exposureEv: tone0.exposureEv + (metered ?? 0), tonemap: tone0.tonemap };
       const data = await exactBytesSliced(f.sums, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap);
       // E5b-1: the launcher's last frame is the denoised image, with the one before denoise when asked.
       const denoised = (f.flags & FLAG_DENOISED) !== 0;
@@ -1148,9 +1174,12 @@ export class NativeEngine {
       if (!res.ok) throw new Error(await failureText(res));
       const f = parseFrame(await res.arrayBuffer());
       if (!f.sums || f.samples <= 0) return;
-      if (!this.liveCurve || this.liveCurve.state !== state) {
-        const tone = this.source.tone(state);
-        this.liveCurve = { state, curve: new DisplayCurve(tone.exposureEv, tone.tonemap) };
+      // K3: an automatic exposure is metered from each picture's sums (a box of the image, a few thousand pixels).
+      const tone = this.source.tone(state);
+      const metered = tone.auto ? meterExposure({ width: f.width, height: f.height, sum: f.sums, samplesAt: () => f.samples }) : null;
+      const ev = tone.exposureEv + (metered ?? 0);
+      if (!this.liveCurve || this.liveCurve.state !== state || this.liveCurve.curve.ev !== ev) {
+        this.liveCurve = { state, curve: new DisplayCurve(ev, tone.tonemap) };
       }
       opts.onFrame?.(liveFrameOf({ sum: f.sums, width: f.width, height: f.height, samples: f.samples }, box, this.liveCurve.curve, { renderWidth: opts.width, renderHeight: opts.height, samples: f.samples, seconds: f.seconds, ...(f.adaptive ? { minSamples: f.adaptive.min } : {}) }));
     } catch (err) {

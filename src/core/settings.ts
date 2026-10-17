@@ -23,6 +23,7 @@ import { QUALITY_KEYS, QUALITY_PRESETS } from '../data/quality';
 import { DEFAULT_SYSTEM_PROMPT, normaliseSystemPrompt } from './ai-prompt';
 import { IMPORT_UNITS, LARGE_MODEL_MM, SMALL_MODEL_MM, TESSELLATION_PRESETS, UNIT_TO_MM, type ImportDetected, type ImportMessage, type ImportOptions, type ImportUnit } from './import-options';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
+import type { PreviousLights } from './previous-lights';
 import { DEFAULT_DPI } from './print-size';
 import { patchSettings, type Destination, type OutputFormat } from './render';
 import type { SelectionLevel } from './scene';
@@ -91,6 +92,11 @@ export interface Settings {
   'import.upAxis': 'FILE' | 'Y' | 'Z';
   'import.tessellation': 'LOW' | 'MEDIUM' | 'HIGH';
   'import.sheet': 'ALWAYS' | 'UNSURE';
+  /**
+   * L7: what a light setup or a set does with the lights already in the scene: ask each time, or the choice remembered
+   * (Replace deletes them, Hide switches them off, Add keeps them on; core/previous-lights.ts).
+   */
+  'light.previous': 'ASK' | PreviousLights;
   'render.nameTemplate': string;
   'render.destination': Destination;
   'render.format': OutputFormat;
@@ -171,6 +177,12 @@ export interface Layout {
   /** Folded sections of the inspector and the windows, by id. */
   sections: Record<string, boolean>;
   lightStyle: string;
+  /** L7: the group of the light catalogue on show, Sets or Lights. */
+  lightGroup: 'SETS' | 'LIGHTS';
+  /** L7: the filters of the Sets group chosen (`type`, `hero`); a filter that is not here is at All. */
+  lightFilters: Record<string, string>;
+  /** L7: the size of the light catalogue's thumbnails: small (four columns), medium (three) or large (two). */
+  thumbSize: ThumbSize;
   materialCategory: string;
   tuneOpen: boolean;
   space: string;
@@ -192,6 +204,10 @@ export interface Layout {
   /** Where the material editor (M3a) was moved to and how large it was made (CSS pixels); null: centred, its own size. */
   materialEditorRect: EditorRect | null;
 }
+
+/** The size of a catalogue thumbnail (L7): small, medium (the size every setup had) or large. */
+export type ThumbSize = 'S' | 'M' | 'L';
+export const THUMB_SIZES: readonly ThumbSize[] = ['S', 'M', 'L'];
 
 /** A window's place and size, CSS pixels. */
 export interface EditorRect {
@@ -233,6 +249,7 @@ export function defaultSettings(): Settings {
     'import.upAxis': 'FILE',
     'import.tessellation': 'MEDIUM',
     'import.sheet': 'ALWAYS',
+    'light.previous': 'ASK',
     'render.nameTemplate': DEFAULT_NAME_TEMPLATE,
     'render.destination': { kind: 'DOWNLOADS' },
     'render.format': 'PNG',
@@ -293,6 +310,9 @@ export function defaultLayout(): Layout {
     rightCollapsed: false,
     sections: {},
     lightStyle: 'ALL',
+    lightGroup: 'SETS',
+    lightFilters: {},
+    thumbSize: 'M',
     materialCategory: 'METAL',
     tuneOpen: false,
     space: 'GLOBAL',
@@ -407,6 +427,8 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('import.upAxis', 'preferences', 'import', choice(['FILE', 'Y', 'Z']), kw('import, up axis, y up, z up', 'importar, eje arriba, y arriba, z arriba'), { aux: true }),
   setting('import.tessellation', 'preferences', 'import', choice(['LOW', 'MEDIUM', 'HIGH']), kw('tessellation, cad, step, iges, quality, triangles', 'teselado, cad, step, iges, calidad, triángulos')),
   setting('import.sheet', 'preferences', 'import', choice(['ALWAYS', 'UNSURE']), kw('import sheet, ask, options', 'hoja de importación, preguntar, opciones'), { aux: true }),
+  // Preferences ▸ Lights (L7)
+  setting('light.previous', 'preferences', 'lights', choice(['ASK', 'REPLACE', 'HIDE', 'ADD']), kw('previous lights, setup, set, replace, hide, add, ask, remember', 'focos anteriores, montaje, set, sustituir, ocultar, añadir, preguntar, recordar'), { aux: true }),
   // Preferences ▸ Render defaults for new projects
   setting('render.nameTemplate', 'preferences', 'render', { kind: 'text', maxLength: 200 }, kw('name, template, file name, output', 'nombre, plantilla, archivo, salida'), { newProjects: true }),
   setting('render.destination', 'preferences', 'render', { kind: 'custom' }, kw('folder, downloads, output, destination', 'carpeta, descargas, salida, destino'), { newProjects: true }),
@@ -492,7 +514,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   row('about.version', 'about', 'version', kw('version, about', 'versión, acerca de')),
   row('about.licence', 'about', 'licence', kw('licence, license, polyform, noncommercial', 'licencia, polyform, no comercial')),
   row('about.thirdParty', 'about', 'thirdParty', kw('third party, licences, three.js, rhino3dm, occt, opencascade, lgpl, mit, apache', 'terceros, licencias, three.js, rhino3dm, occt, opencascade, lgpl, mit, apache')),
-  row('about.credits', 'about', 'credits', kw('credits, ez packshot, thanks', 'créditos, ez packshot, agradecimientos')),
+  row('about.credits', 'about', 'credits', kw('credits, thanks', 'créditos, agradecimientos')),
 ];
 
 const SETTING_META = new Map<SettingKey, SettingMeta>();
@@ -600,6 +622,17 @@ export function validateLayout(raw: unknown): Layout {
     out.sections = sections;
   }
   if (str('lightStyle')) out.lightStyle = raw.lightStyle as string;
+  // L7: the catalogue's group. A document of before has none: its style says which (Sets or All were the sets on top).
+  if (raw.lightGroup === 'SETS' || raw.lightGroup === 'LIGHTS') out.lightGroup = raw.lightGroup;
+  else out.lightGroup = out.lightStyle === 'SETS' || out.lightStyle === 'ALL' ? 'SETS' : 'LIGHTS';
+  // Sets is a group now, not a style of the Lights.
+  if (out.lightStyle === 'SETS') out.lightStyle = 'ALL';
+  if (isRecord(raw.lightFilters)) {
+    const f: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw.lightFilters)) if (k.length <= 16 && typeof v === 'string' && v.length <= 64) f[k] = v;
+    out.lightFilters = f;
+  }
+  if ((THUMB_SIZES as readonly unknown[]).includes(raw.thumbSize)) out.thumbSize = raw.thumbSize as ThumbSize;
   if (str('materialCategory')) out.materialCategory = raw.materialCategory as string;
   if (raw.space === 'GLOBAL' || raw.space === 'LOCAL') out.space = raw.space;
   if (raw.viewportMode === 'FAST' || raw.viewportMode === 'FULL') out.viewportMode = raw.viewportMode;

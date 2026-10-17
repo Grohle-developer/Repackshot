@@ -46,6 +46,9 @@ USAGE:
     rt --write-film-thumb <scene.rsb>
     rt --write-o2-example <scene.rsb>
     rt --write-l5-example <scene.rsb>
+    rt --write-k3-plan-example <scene.rsb>
+    rt --write-k3-panorama-example <scene.rsb>
+    rt --write-k3-fisheye-example <scene.rsb>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
@@ -169,6 +172,13 @@ OPTIONS:
                             write the L5 parity scene (the example lit by two IES lights, a
                             downlight profile and a wall washer, whose files travel in the
                             IESP sections) as an RSB file
+        --write-k3-plan-example <f>
+        --write-k3-panorama-example <f>
+        --write-k3-fisheye-example <f>
+                            write a K3 parity scene (a room of boxes lit by an uplight and the
+                            sky through a window): its plan from above, orthographic, with the
+                            ceiling hidden to the camera; an equirectangular panorama from
+                            inside; an equidistant fisheye) as an RSB file
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -292,6 +302,28 @@ impl Options {
             Duration::try_from_secs_f32(seconds).ok()
         } else {
             None
+        }
+    }
+}
+
+/// The views of the K3 parity room (`rt --write-k3-*-example`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum K3View {
+    /// `rt_core::example::k3_plan_scene`: the plan from above, the ceiling hidden to the camera.
+    Plan,
+    /// `rt_core::example::k3_panorama_scene`: the equirectangular panorama from inside.
+    Panorama,
+    /// `rt_core::example::k3_fisheye_scene`: the equidistant fisheye.
+    Fisheye,
+}
+
+impl K3View {
+    /// The parity scene of this view.
+    pub fn scene(self) -> rt_core::scene::Scene {
+        match self {
+            K3View::Plan => rt_core::example::k3_plan_scene(),
+            K3View::Panorama => rt_core::example::k3_panorama_scene(),
+            K3View::Fisheye => rt_core::example::k3_fisheye_scene(),
         }
     }
 }
@@ -444,6 +476,14 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write a K3 parity scene (`rt_core::example::k3_plan_scene`, `k3_panorama_scene` or
+    /// `k3_fisheye_scene`) as an RSB file.
+    WriteK3Example {
+        /// Which view of the room.
+        view: K3View,
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
     WriteAmbientExample {
         /// RSB file to write.
@@ -554,6 +594,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e11 = None;
     let mut write_q1 = None;
     let mut write_l5 = None;
+    let mut write_k3 = None;
     let mut write_e10 = None;
     let mut adaptive_noise_dir = None;
     let mut write_ambient = None;
@@ -680,6 +721,15 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-q1-example" => write_q1 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-l5-example" => write_l5 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-k3-plan-example" => {
+                write_k3 = Some((K3View::Plan, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-k3-panorama-example" => {
+                write_k3 = Some((K3View::Panorama, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-k3-fisheye-example" => {
+                write_k3 = Some((K3View::Fisheye, PathBuf::from(value(&mut it, arg)?)))
+            }
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--rounds" => options.rounds = Some(positive(value(&mut it, arg)?, arg)?),
@@ -832,6 +882,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-l5-example takes no other option".into());
         }
         return Ok(Command::WriteL5Example { path });
+    }
+    if let Some((view, path)) = write_k3 {
+        if args.len() != 2 {
+            return Err("--write-k3-*-example takes no other option".into());
+        }
+        return Ok(Command::WriteK3Example { view, path });
     }
     if let Some(path) = write_e10 {
         if args.len() != 2 {
@@ -1074,6 +1130,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteL5Example { path } => {
             let bytes = rt_core::example::l5_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteK3Example { view, path } => {
+            let bytes = view.scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())

@@ -10,7 +10,7 @@ import type { IesRef, LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind }
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
 import { normaliseAspect } from '../core/aspect';
 import { normaliseFocus } from '../core/focus';
-import type { CameraState } from '../core/camera';
+import { CAMERA_PROJECTIONS, type CameraState } from '../core/camera';
 import {
   COLLECTION,
   LIBRARY_FORMAT,
@@ -364,7 +364,7 @@ function camera(v: unknown, path: string): CameraState {
     focalMm: num(o.focalMm, `${path}.focalMm`, 4, 2000),
     fstop: num(o.fstop, `${path}.fstop`, 0.5, 64),
     focusDistance: num(o.focusDistance, `${path}.focusDistance`, 0, 1e9),
-    projection: oneOf(o.projection, `${path}.projection`, ['PERSPECTIVE', 'ORTHOGRAPHIC'] as const),
+    projection: oneOf(o.projection, `${path}.projection`, CAMERA_PROJECTIONS),
     orthoWidth: num(o.orthoWidth, `${path}.orthoWidth`, 0, 1e9),
     clipStart: num(o.clipStart, `${path}.clipStart`, 0, 1e9),
     clipEnd: num(o.clipEnd, `${path}.clipEnd`, 0, 1e9),
@@ -374,6 +374,9 @@ function camera(v: unknown, path: string): CameraState {
     aspect: normaliseAspect(o.aspect),
     // F1: its focus by point or by object (none before F1, or one that cannot be read: by distance).
     ...normaliseFocus(o),
+    // K3: the fisheye's field and the straight verticals, when the camera has them.
+    ...(o.fisheyeFovDeg !== undefined ? { fisheyeFovDeg: num(o.fisheyeFovDeg, `${path}.fisheyeFovDeg`, 1, 3600) } : {}),
+    ...(o.straightVerticals === true ? { straightVerticals: true } : {}),
   };
 }
 

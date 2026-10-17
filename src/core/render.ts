@@ -20,6 +20,7 @@ import { ASPECT_PRESETS } from '../data/aspects';
 import { CAUSTICS_MODES, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseBits, type CausticsMode, type CausticsQuality, type DenoiseMode } from './caustics';
 import { nextId } from './ids';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
+import { NO_PASSES, normalisePasses, type PassesOutput } from './pass-files';
 import { normalisePlugins, NO_PLUGINS, type PluginsSettings } from './plugins';
 import { clampDpi, DEFAULT_DPI, lockedSide, PRINT_UNITS, type PrintUnit } from './print-size';
 
@@ -63,6 +64,17 @@ export function clampNoiseThreshold(percent: number): number {
 export type Destination = { kind: 'DOWNLOADS' } | { kind: 'FOLDER'; id: string; name: string };
 /** The camera of the render window: the active one, one by id, or every camera (one job each). */
 export type CameraChoice = { kind: 'ACTIVE' } | { kind: 'ALL' } | { kind: 'ONE'; id: CameraId };
+/**
+ * The studio of the render window (N2): the scene as it is, one saved studio (the Studios tab or an older project's),
+ * or every one of them: a job each and, with All cameras, a job for each camera in each studio. `name` is the studio's
+ * name when it was chosen, for `{studio}` in the file name and for the queue.
+ */
+export type StudioChoice = { kind: 'CURRENT' } | { kind: 'ALL' } | { kind: 'ONE'; id: string; name: string };
+/** A saved studio as the batch lists them: its id (library or project) and its name. */
+export interface StudioRef {
+  id: string;
+  name: string;
+}
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
 
 /** Engine settings under Advanced; they map to RNDR fields the engine reads (io/rsb.ts). */
@@ -204,6 +216,21 @@ export interface RenderSettings {
   transparent: boolean;
   camera: CameraChoice;
   /**
+   * N2: the studio the image is rendered in: the scene as it is, a saved studio, or each of them (cameras × studios).
+   * Images only: an animation renders the scene as it is.
+   */
+  studio: StudioChoice;
+  /**
+   * N2: the passes written next to each image (alpha, depth, normals, part id), as 16-bit PNG or EXR, one file each.
+   * Images only. `NO_PASSES`: none.
+   */
+  passes: PassesOutput;
+  /**
+   * N2: the files of the jobs one Render or Add to queue makes go into a single ZIP (store method, our own writer)
+   * once the last of them ends, in place of one download each.
+   */
+  zip: boolean;
+  /**
    * The size in pixels. An image keeps the width and takes its height from the active camera's aspect ratio
    * (U13: `syncOutputSize`, and `reduceRender` for a size typed in the window); an animation has the size of its
    * own, as the window shows it.
@@ -255,6 +282,11 @@ export interface RenderJob {
   createdAt: number;
   startedAt: number | null;
   finishedAt: number | null;
+  /**
+   * N2: the id of the ZIP its files go into, shared by the jobs one Render or Add to queue made (null: they are saved one
+   * by one). The ZIP is written when the last job of the group ends.
+   */
+  zip: string | null;
   /** Results this job wrote to the history (the results store), oldest first. */
   resultIds: string[];
   error: string | null;
@@ -390,6 +422,9 @@ export function defaultRenderSettings(): RenderSettings {
     jpegQuality: 92,
     transparent: false,
     camera: { kind: 'ACTIVE' },
+    studio: { kind: 'CURRENT' },
+    passes: NO_PASSES,
+    zip: false,
     width: 1920,
     height: 1080,
     aspectLock: true,
@@ -408,6 +443,8 @@ export function defaultRenderSettings(): RenderSettings {
   };
 }
 
+const DEFAULT_STUDIO: StudioChoice = { kind: 'CURRENT' };
+
 export function defaultRenderState(): RenderState {
   return { ...defaultRenderSettings(), queue: [], running: null, seq: 0 };
 }
@@ -424,6 +461,9 @@ export function settingsOf(r: RenderSettings): RenderSettings {
     jpegQuality: r.jpegQuality,
     transparent: r.transparent,
     camera: r.camera,
+    studio: r.studio ?? DEFAULT_STUDIO,
+    passes: r.passes ?? NO_PASSES,
+    zip: r.zip ?? false,
     width: r.width,
     height: r.height,
     aspectLock: r.aspectLock,
@@ -481,6 +521,19 @@ export function aspectForSize(width: number, height: number): CameraAspect {
 }
 
 /**
+ * A studio choice from anything that looks like one: CURRENT, ALL, or ONE with an id (and its name, kept as given or the id
+ * when it has none). Anything else is `base`. Returns `base` itself when nothing differs (watchers compare by reference).
+ */
+export function normaliseStudio(raw: unknown, base: StudioChoice = DEFAULT_STUDIO): StudioChoice {
+  if (!isRecord(raw)) return base;
+  const same = (c: StudioChoice) => (c.kind === base.kind && (c.kind !== 'ONE' || (base.kind === 'ONE' && c.id === base.id && c.name === base.name)) ? base : c);
+  if (raw.kind === 'ALL') return same({ kind: 'ALL' });
+  if (raw.kind === 'ONE' && typeof raw.id === 'string' && raw.id !== '') return same({ kind: 'ONE', id: raw.id, name: typeof raw.name === 'string' && raw.name !== '' ? raw.name : raw.id });
+  if (raw.kind === 'CURRENT') return same({ kind: 'CURRENT' });
+  return base;
+}
+
+/**
  * Applies a patch of settings with every rule of the window: sizes clamped, the aspect lock (one
  * side typed: the other follows the locked ratio; both given, as a preset does: that becomes the
  * ratio), formats without alpha switch transparency off, 16 bits only in PNG, the samples away
@@ -520,6 +573,10 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
   if (!supportsAlpha(next.format)) next.transparent = false;
   if (!bitDepthsOf(next.format).includes(next.bitDepth)) next.bitDepth = 8;
   if (p.jpegQuality !== undefined) next.jpegQuality = clampInt(p.jpegQuality, 1, 100);
+  // N2: the studio, the passes and the ZIP; a settings object of before has none of them.
+  next.studio = normaliseStudio(next.studio, s.studio ?? DEFAULT_STUDIO);
+  next.passes = normalisePasses(next.passes, s.passes ?? NO_PASSES);
+  next.zip = typeof next.zip === 'boolean' ? next.zip : (s.zip ?? false);
   // Engine.
   if (p.advanced !== undefined) {
     const a = { ...s.advanced, ...p.advanced };
@@ -563,9 +620,31 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
 
 // ------------------------------------------------------------------ jobs
 
-/** The settings a job keeps: the camera resolved (an animation follows the camera track). */
-function jobSettings(s: RenderSettings, camera: CameraId | null): RenderSettings {
-  return { ...s, camera: camera ? { kind: 'ONE', id: camera } : { kind: 'ACTIVE' } };
+/**
+ * The settings a job keeps: the camera resolved (an animation follows the camera track) and, N2, the studio resolved
+ * (null: the scene as it is). An animation renders the scene as it is and writes no pass files, whatever the window says.
+ */
+function jobSettings(s: RenderSettings, camera: CameraId | null, studio: StudioRef | null = null): RenderSettings {
+  const base = { ...s, camera: camera ? { kind: 'ONE' as const, id: camera } : { kind: 'ACTIVE' as const } };
+  if (s.mode === 'ANIMATION') return { ...base, studio: DEFAULT_STUDIO, passes: NO_PASSES };
+  return { ...base, studio: studio ? { kind: 'ONE', id: studio.id, name: studio.name } : DEFAULT_STUDIO };
+}
+
+/** N2: the saved studio a job renders in; null for the scene as it is (and always for an animation). */
+export function jobStudio(job: Pick<RenderJob, 'settings'>): StudioRef | null {
+  const { studio, mode } = job.settings;
+  return mode !== 'ANIMATION' && studio?.kind === 'ONE' ? { id: studio.id, name: studio.name } : null;
+}
+
+/**
+ * The studios a choice stands for, in the order given (`all`: every saved studio, as the caller lists them): the one
+ * chosen, each of them, or null alone for the scene as it is. ALL with no studio saved is the scene as it is. An
+ * animation has none (null alone).
+ */
+export function studiosOf(choice: StudioChoice | undefined, all: readonly StudioRef[], animation = false): (StudioRef | null)[] {
+  if (animation || !choice || choice.kind === 'CURRENT') return [null];
+  if (choice.kind === 'ONE') return [{ id: choice.id, name: choice.name }];
+  return all.length > 0 ? all.map((x) => ({ id: x.id, name: x.name })) : [null];
 }
 
 /** The camera a job renders through (null: the camera track of the timeline). */
@@ -605,23 +684,41 @@ function sizedFor(state: ProjectState, s: RenderSettings, camera: CameraId | nul
  * The jobs a set of settings becomes: one per camera for "All cameras", one for an animation
  * (whatever the camera says: the camera track decides). Ids and render numbers continue the queue's.
  */
-export function expandJobs(state: ProjectState, settings: RenderSettings, at: number): RenderJob[] {
+export function expandJobs(state: ProjectState, settings: RenderSettings, at: number, studios: readonly StudioRef[] = []): RenderJob[] {
   const r = state.render;
   const s = patchSettings(settings, {});
-  const cams = s.mode === 'ANIMATION' ? [null] : camerasOf(state, s.camera);
+  const animation = s.mode === 'ANIMATION';
+  const cams = animation ? [null] : camerasOf(state, s.camera);
+  // N2, cameras × studios: every camera in each studio, camera by camera (so the files read in the order of the template).
+  const looks = studiosOf(s.studio, studios, animation);
   const taken = r.queue.map((j) => j.id);
-  return cams.map((cam, k) => {
-    const id = nextId('j', taken);
-    taken.push(id);
-    return { id, seq: r.seq + k + 1, settings: jobSettings(sizedFor(state, s, cam), cam), createdAt: at, ...freshRuntime() };
-  });
+  // The jobs of one action share a ZIP when the settings ask for one; its id is the render number of the first.
+  const zip = s.zip ? `z${r.seq + 1}` : null;
+  const jobs: RenderJob[] = [];
+  for (const cam of cams) {
+    for (const look of looks) {
+      const id = nextId('j', taken);
+      taken.push(id);
+      jobs.push({ id, seq: r.seq + jobs.length + 1, settings: jobSettings(sizedFor(state, s, cam), cam, look), createdAt: at, ...freshRuntime(), zip });
+    }
+  }
+  return jobs;
+}
+
+/** N2: how many jobs a Render of these settings makes: cameras × studios (an animation is one). */
+export function batchSize(state: ProjectState, settings: RenderSettings, studios: readonly StudioRef[] = []): number {
+  const animation = settings.mode === 'ANIMATION';
+  return (animation ? 1 : camerasOf(state, settings.camera).length) * studiosOf(settings.studio, studios, animation).length;
 }
 
 export type RenderAction =
   | ({ type: 'render/quality'; quality: QualityKey } & ActionBase)
   | ({ type: 'render/set'; patch: Partial<RenderSettings> } & ActionBase)
-  /** Adds the jobs of `settings` (default: the window's) first or last. `at`: now, in ms. */
-  | ({ type: 'render/enqueue'; at: number; position: 'FIRST' | 'LAST'; settings?: RenderSettings } & ActionBase)
+  /**
+   * Adds the jobs of `settings` (default: the window's) first or last. `at`: now, in ms. `studios` (N2): the saved studios
+   * "All studios" stands for, as the interface lists them (the library's, then the project's).
+   */
+  | ({ type: 'render/enqueue'; at: number; position: 'FIRST' | 'LAST'; settings?: RenderSettings; studios?: readonly StudioRef[] } & ActionBase)
   /** Edit: new settings for a job that is not running; it waits in the queue again. */
   | ({ type: 'render/updateJob'; id: string; settings: RenderSettings } & ActionBase)
   | ({ type: 'render/duplicateJob'; id: string; at: number } & ActionBase)
@@ -699,7 +796,7 @@ export function reduceRender(state: ProjectState, action: RenderAction): Project
     case 'render/set':
       return setSettings(state, action.patch);
     case 'render/enqueue': {
-      const jobs = expandJobs(state, action.settings ?? settingsOf(r), action.at);
+      const jobs = expandJobs(state, action.settings ?? settingsOf(r), action.at, action.studios ?? []);
       if (jobs.length === 0) return state;
       const queue = action.position === 'FIRST' ? [...jobs, ...r.queue] : [...r.queue, ...jobs];
       return withQueue(queue, { seq: r.seq + jobs.length });
@@ -709,14 +806,19 @@ export function reduceRender(state: ProjectState, action: RenderAction): Project
       if (!job || job.status === 'RUNNING') return state;
       const s = patchSettings(action.settings, {});
       const cam = s.mode === 'ANIMATION' ? null : camerasOf(state, s.camera.kind === 'ALL' ? job.settings.camera : s.camera)[0];
-      const settings = jobSettings(s, cam);
-      return withQueue(r.queue.map((j) => (j.id === action.id ? { ...j, settings, status: 'QUEUED', progress: 0, error: null, startedAt: null, finishedAt: null, frame: 0, frames: 0 } : j)));
+      // One job is one studio: "All studios" in an edit keeps the job's own (as All cameras does with its camera).
+      const look = s.studio.kind === 'ALL' ? jobStudio(job) : studiosOf(s.studio, [], s.mode === 'ANIMATION')[0];
+      const settings = jobSettings(s, cam, look);
+      // Asking for a ZIP in an edit puts the job in a group of its own; not asking leaves its group.
+      const zip = s.zip ? (job.zip ?? `z${job.seq}`) : null;
+      return withQueue(r.queue.map((j) => (j.id === action.id ? { ...j, settings, zip, status: 'QUEUED', progress: 0, error: null, startedAt: null, finishedAt: null, frame: 0, frames: 0 } : j)));
     }
     case 'render/duplicateJob': {
       const i = r.queue.findIndex((j) => j.id === action.id);
       if (i < 0) return state;
       const id = nextId('j', r.queue.map((j) => j.id));
-      const copy: RenderJob = { ...r.queue[i], id, seq: r.seq + 1, createdAt: action.at, ...freshRuntime() };
+      // A copy starts a ZIP of its own when its settings ask for one (the group of the original may be written already).
+      const copy: RenderJob = { ...r.queue[i], id, seq: r.seq + 1, createdAt: action.at, ...freshRuntime(), zip: r.queue[i].settings.zip ? `z${r.seq + 1}` : null };
       const queue = [...r.queue];
       queue.splice(i + 1, 0, copy);
       return withQueue(queue, { seq: r.seq + 1 });
@@ -867,6 +969,10 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     jpegQuality: num(raw.jpegQuality),
     transparent: bool(raw.transparent),
     camera,
+    // N2: before it there was no studio choice, no passes and no ZIP: the scene as it is, none, one file each.
+    studio: isObj(raw.studio) ? normaliseStudio(raw.studio, DEFAULT_STUDIO) : undefined,
+    passes: isObj(raw.passes) ? normalisePasses(raw.passes, NO_PASSES) : undefined,
+    zip: bool(raw.zip),
     aspectLock: bool(raw.aspectLock),
     dpi: num(raw.dpi),
     printUnit: oneOf<PrintUnit>(raw.printUnit, PRINT_UNITS),
@@ -929,7 +1035,8 @@ function migrateJob(raw: unknown, index: number): RenderJob | null {
   return {
     id: raw.id,
     seq: Math.max(1, Math.round(num(raw.seq) ?? index + 1)),
-    settings: jobSettings(settings, settings.mode === 'ANIMATION' ? null : settings.camera.kind === 'ONE' ? settings.camera.id : null),
+    settings: jobSettings(settings, settings.mode === 'ANIMATION' ? null : settings.camera.kind === 'ONE' ? settings.camera.id : null, settings.studio.kind === 'ONE' ? { id: settings.studio.id, name: settings.studio.name } : null),
+    zip: settings.zip ? (str(raw.zip) ?? `z${Math.max(1, Math.round(num(raw.seq) ?? index + 1))}`) : null,
     status,
     progress: status === 'DONE' ? 1 : status === 'QUEUED' ? 0 : Math.max(0, Math.min(1, num(raw.progress) ?? 0)),
     createdAt: num(raw.createdAt) ?? 0,

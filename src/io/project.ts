@@ -99,7 +99,9 @@ import { checkTextureFile, registerTextureImage, textureImageId } from '../core/
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
 import { mapGraphImages, normalizeGraph } from '../core/material-graph';
 import type { MaterialInstance } from '../core/materials';
-import { withCameraAspects } from '../core/camera';
+import { CAMERA_PROJECTIONS, withCameraAspects, type CameraState } from '../core/camera';
+import { exteriorOf } from '../core/interior-camera';
+import { fisheyeFov } from '../core/panorama';
 import { withNormalFocus } from '../core/focus';
 import { migrateRender, syncOutputSize } from '../core/render';
 import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
@@ -107,7 +109,7 @@ import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
 import { emptyBox } from '../core/math';
-import { createInitialState, type ProjectState } from '../core/store';
+import { createInitialState, type EnvironmentState, type ImageState, type ProjectState } from '../core/store';
 import { baseMeshId } from '../core/transform';
 import { base64ToBytes, bytesToBase64 } from './base64';
 import { glbToMesh, meshToGlb, packUint32, unpackUint32 } from './glb';
@@ -425,7 +427,51 @@ function checkState(raw: RawState): ProjectState {
   const typeBase = normalizeTypeBase((raw.scene as { typeBase?: unknown } | undefined)?.typeBase, s);
   const { typeBase: _drop, ...sceneRest } = s.scene;
   s.scene = { ...sceneRest, type: sceneType, ...(typeBase && sceneType !== 'PRODUCT' ? { typeBase } : {}) };
-  return s;
+  return withInteriorCamera(s);
+}
+
+/**
+ * K3: the interior camera's fields as this version reads them (a project saved before K3 has none of them and opens as
+ * it was): a projection it does not know is perspective, the fisheye's field a number in its range, the straight
+ * verticals and a part hidden to the camera only when true; the exterior factor a number in its range, the exposure
+ * mode MANUAL or AUTO (anything else: by hand).
+ */
+function withInteriorCamera(s: ProjectState): ProjectState {
+  let cameras: Record<string, CameraState> | null = null;
+  for (const [id, c] of Object.entries(s.camera.cameras)) {
+    const raw = c as unknown as Record<string, unknown>;
+    let next = c;
+    if (!(CAMERA_PROJECTIONS as readonly unknown[]).includes(raw.projection)) next = { ...next, projection: 'PERSPECTIVE' };
+    if (raw.fisheyeFovDeg !== undefined) {
+      const { fisheyeFovDeg: _f, ...rest } = next;
+      next = typeof raw.fisheyeFovDeg === 'number' && Number.isFinite(raw.fisheyeFovDeg) ? { ...rest, fisheyeFovDeg: fisheyeFov({ fisheyeFovDeg: raw.fisheyeFovDeg }) } : rest;
+    }
+    if (raw.straightVerticals !== undefined && raw.straightVerticals !== true) {
+      const { straightVerticals: _v, ...rest } = next;
+      next = rest;
+    }
+    if (next !== c) (cameras ??= { ...s.camera.cameras })[id] = next;
+  }
+  let out = cameras ? { ...s, camera: { ...s.camera, cameras } } : s;
+  const env = out.environment as EnvironmentState & { exterior?: unknown };
+  if (env.exterior !== undefined) {
+    const { exterior: _e, ...rest } = env;
+    const k = typeof env.exterior === 'number' && Number.isFinite(env.exterior) ? exteriorOf(env.exterior) : 1;
+    out = { ...out, environment: k === 1 ? rest : { ...rest, exterior: k } };
+  }
+  const img = out.image as ImageState & { exposureMode?: unknown };
+  if (img.exposureMode !== undefined && img.exposureMode !== 'AUTO') {
+    const { exposureMode: _m, ...rest } = img;
+    out = { ...out, image: rest };
+  }
+  let nodes: Record<string, SceneNode> | null = null;
+  for (const [id, n] of Object.entries(out.scene.nodes)) {
+    const hidden = (n as { cameraHidden?: unknown }).cameraHidden;
+    if (hidden === undefined || hidden === true) continue;
+    const { cameraHidden: _h, ...rest } = n;
+    (nodes ??= { ...out.scene.nodes })[id] = rest;
+  }
+  return nodes ? { ...out, scene: { ...out.scene, nodes } } : out;
 }
 
 /**

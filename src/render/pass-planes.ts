@@ -3,20 +3,25 @@
 // No DOM and no workers here, so the tests run it in Node, with the real rt.wasm where it is built.
 //
 //   - Per tile, `rt_render_tile_passes` gives the exact planes (normal, depth, the ids, coc: one ray through
-//     each pixel's centre) once, and `rt_render_tile_albedo` the albedo of every sample. `PassAccumulator`
-//     adds the albedo samples in index order in f32 (a Float32Array rounds every sum) and divides by the
-//     f32 reciprocal of their count, like `Film::resolve` and the image's `Accumulator`, so the planes are
-//     the native engine's bit for bit (engine/tools/wasm-parity.mjs and tests/passes-wasm.test.ts).
+//     each pixel's centre) once, and `rt_render_tile_albedo` the albedo of every sample (N2: and
+//     `rt_render_tile_alpha` the coverage of every sample). `PassAccumulator` adds the samples in index order in
+//     f32 (a Float32Array rounds every sum) and divides by the f32 reciprocal of their count, like
+//     `Film::resolve` and the image's `Accumulator`, so the planes are the native engine's bit for bit
+//     (engine/tools/wasm-parity.mjs and tests/passes-wasm.test.ts).
 //   - `RPP1` (engine/crates/rt-app/src/kept.rs): 32 bytes of header (magic, header length, width, height,
 //     mask, samples, render id, 0), then the planes of the mask in key order, little-endian words.
 
 import { PASS_CHANNELS, PASS_KEYS, type PassKey, type RenderPasses } from '../core/passes';
 import type { Tile } from './tiles';
 
-/** Bit of the albedo, the only pass that follows the samples. */
+/** Bit of the albedo, a pass that follows the samples. */
 export const ALBEDO_BIT = 1;
-/** The passes of the centre ray (all but the albedo). */
-export const EXACT_BITS = ((1 << PASS_KEYS.length) - 1) & ~ALBEDO_BIT;
+/** N2: bit of the alpha, the other pass that follows the samples. */
+export const ALPHA_BIT = 1 << PASS_KEYS.indexOf('alpha');
+/** The passes that follow the samples of the image. */
+export const SAMPLED_BITS = ALBEDO_BIT | ALPHA_BIT;
+/** The passes of the centre ray (all but the sampled ones). */
+export const EXACT_BITS = ((1 << PASS_KEYS.length) - 1) & ~SAMPLED_BITS;
 
 /** The known passes of a mask, in key order. */
 export function keysOfMask(mask: number): PassKey[] {
@@ -51,6 +56,10 @@ export class PassAccumulator {
   readonly albedoSamples: Int32Array;
   /** The sample index each tile's albedo continues from. */
   private readonly albedoNext: Int32Array;
+  /** N2: alpha (coverage) sums, 1 per pixel (empty without the alpha), and the samples summed into each tile. */
+  readonly alphaSum: Float32Array;
+  readonly alphaSamples: Int32Array;
+  private readonly alphaNext: Int32Array;
   /** U11, a live viewport's guides: the albedo may skip samples (it is rendered while the switch is on), in index order still. */
   private readonly gaps: boolean;
   private readonly planes = new Map<PassKey, Float32Array | Uint32Array>();
@@ -64,6 +73,9 @@ export class PassAccumulator {
     this.albedoSum = new Float32Array(this.mask & ALBEDO_BIT ? n * 3 : 0);
     this.albedoSamples = new Int32Array(tiles.length);
     this.albedoNext = new Int32Array(tiles.length);
+    this.alphaSum = new Float32Array(this.mask & ALPHA_BIT ? n : 0);
+    this.alphaSamples = new Int32Array(tiles.length);
+    this.alphaNext = new Int32Array(tiles.length);
     this.gaps = opts.gaps === true;
     for (const k of keysOfMask(this.mask & EXACT_BITS)) this.planes.set(k, blank(k, n));
   }
@@ -93,6 +105,25 @@ export class PassAccumulator {
     }
     this.albedoSamples[index] += count;
     this.albedoNext[index] = first + count;
+    return true;
+  }
+
+  /** N2: the alpha counterpart of `addAlbedo`: `count` samples of tile `index`, each `w * h` coverages. */
+  addAlpha(index: number, first: number, count: number, data: Float32Array): boolean {
+    const t = this.tiles[index];
+    const next = this.alphaNext[index];
+    if (!(this.mask & ALPHA_BIT) || !t || (this.gaps ? first < next : first !== next) || count <= 0 || data.length < count * t.w * t.h) return false;
+    const stride = t.w * t.h;
+    const sum = this.alphaSum;
+    for (let s = 0; s < count; s++) {
+      for (let y = 0; y < t.h; y++) {
+        let o = (t.y + y) * this.width + t.x;
+        let i = s * stride + y * t.w;
+        for (let x = 0; x < t.w; x++) sum[o++] += data[i++];
+      }
+    }
+    this.alphaSamples[index] += count;
+    this.alphaNext[index] = first + count;
     return true;
   }
 
@@ -129,6 +160,19 @@ export class PassAccumulator {
       }
       out.albedo = albedo;
     }
+    if (this.mask & ALPHA_BIT) {
+      const alpha = new Float32Array(this.alphaSum.length);
+      for (const t of this.tiles) {
+        const n = this.alphaSamples[t.index];
+        if (n <= 0) continue;
+        const inv = Math.fround(1 / n);
+        for (let y = 0; y < t.h; y++) {
+          const o = (t.y + y) * this.width + t.x;
+          for (let x = 0; x < t.w; x++) alpha[o + x] = Math.fround(this.alphaSum[o + x] * inv);
+        }
+      }
+      out.alpha = alpha;
+    }
     for (const [k, plane] of this.planes) (out as unknown as Record<PassKey, Float32Array | Uint32Array>)[k] = plane;
     return out;
   }
@@ -143,12 +187,19 @@ export interface RtPassExports {
   rt_free(ptr: number, len: number): void;
   rt_render_tile_passes(handle: number, x: number, y: number, w: number, h: number, mask: number, out: number): number;
   rt_render_tile_albedo(handle: number, x: number, y: number, w: number, h: number, sample: number, out: number): number;
+  /** N2: the coverage of one sample of a tile (`w * h` floats). Absent from an rt.wasm older than N2. */
+  rt_render_tile_alpha?(handle: number, x: number, y: number, w: number, h: number, sample: number, out: number): number;
 }
 
 /** True when a compiled engine can render passes (an rt.wasm older than X2 cannot). */
 export function hasPassExports(e: object): e is RtPassExports {
   const x = e as Partial<RtPassExports>;
   return typeof x.rt_render_tile_passes === 'function' && typeof x.rt_render_tile_albedo === 'function';
+}
+
+/** N2: true when a compiled engine can render the alpha pass (an rt.wasm older than N2 cannot). */
+export function hasAlphaExport(e: object): e is RtPassExports & Required<Pick<RtPassExports, 'rt_render_tile_alpha'>> {
+  return typeof (e as Partial<RtPassExports>).rt_render_tile_alpha === 'function';
 }
 
 /** A buffer in wasm memory that grows as needed. */
@@ -187,6 +238,16 @@ export function tileAlbedo(rt: RtPassExports, handle: number, t: { x: number; y:
   const ptr = scratch.get(n * 4);
   const status = rt.rt_render_tile_albedo(handle, t.x, t.y, t.w, t.h, sample, ptr);
   if (status !== 0) throw new Error(`rt_render_tile_albedo returned ${status}`);
+  out.set(new Float32Array(rt.memory.buffer, ptr, n), offset);
+}
+
+/** N2: the coverage of sample `sample` of a tile into `out` at `offset` (w * h floats); a status other than 0 throws. */
+export function tileAlpha(rt: RtPassExports, handle: number, t: { x: number; y: number; w: number; h: number }, sample: number, scratch: Scratch, out: Float32Array, offset: number): void {
+  if (!hasAlphaExport(rt)) throw new Error('this rt.wasm renders no alpha pass (npm run engine:build)');
+  const n = t.w * t.h;
+  const ptr = scratch.get(n * 4);
+  const status = rt.rt_render_tile_alpha(handle, t.x, t.y, t.w, t.h, sample, ptr);
+  if (status !== 0) throw new Error(`rt_render_tile_alpha returned ${status}`);
   out.set(new Float32Array(rt.memory.buffer, ptr, n), offset);
 }
 

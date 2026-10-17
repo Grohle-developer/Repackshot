@@ -11,18 +11,15 @@ que enlaza (`SPEC.md`, `ARCHITECTURE.md`, `UI.md`) y el repositorio.
 Repackshot es un renderizador de producto al estilo KeyShot, de código
 disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
 escrito desde cero en **sala limpia** (reglas en `../README.md`,
-innegociables) y que corre en el navegador. Reutiliza las ideas y varias
-soluciones de **EZ Packshot**, un addon de Blender del mismo autor
-(GPL-3.0; los catálogos y fórmulas se han portado con su permiso y la
-implementación es nueva): tipos de producto, catálogo de montajes de luz
-por estilos con normalización de exposición, materiales con desgaste
-procedural, Doctor, selección por niveles, lenguaje de fotógrafo, guía
-con flechas que no tapa.
+innegociables) y que corre en el navegador. Sus pilares: tipos de
+producto, catálogo de montajes de luz por estilos con normalización de
+exposición, materiales con desgaste procedural, Doctor, selección por
+niveles, lenguaje de fotógrafo, guía con flechas que no tapa.
 
 **Ficheros clave:**
 
 - `src/core/` — modelo de datos puro y *store* (`ARCHITECTURE.md` §4)
-- `src/data/` — catálogos portados: 16 estudios, 72 montajes, 77
+- `src/data/` — catálogos: 16 estudios, 72 montajes, 77
   materiales, desgaste, ópticas, movimientos, secuencias, Doctor
 - `engine/` — **el motor**: Rust desde cero, sin dependencias, portable
   (`ARCHITECTURE.md` §5.1); `rt-core`, `rt-cli`, `rt-wasm`
@@ -108,7 +105,7 @@ decisiones escritas (datos, contratos, revisión), no código.
   **Fable**.
 - **A1** · Andamiaje Vite + TypeScript + vitest + captura con Chromium
   local (`tools/screenshot.mjs`) — **Sonnet**.
-- **A2** · Catálogos portados a `src/data/` con tipos, y matemáticas de
+- **A2** · Catálogos en `src/data/` con tipos, y matemáticas de
   luz en `src/core/light-math.ts`, `rig.ts`, `wear.ts`, con tests de
   recuento, fórmula y normalización 16 × 71 — **Sonnet**.
 - **A3** · `.github/workflows/qa.yml`, plantilla de PR, `CONTRIBUTING.md`
@@ -181,6 +178,14 @@ decisiones escritas (datos, contratos, revisión), no código.
   con *muxers* propios y el Doctor `output` conectado; un proyecto de U1
   reproduce lo mismo; 2907 tests web y 1098 del motor (sin tocar) — **Opus**.
 
+- **N2** · Cola, pases y lotes: el pase **alfa** (el séptimo, `RNDR.passes` bit 6,
+  `rt_render_tile_alpha`, con *hash* propios y los seis de X2 sin moverse), los pases
+  *Alfa*, *Profundidad*, *Normales* e *Id de pieza* como archivos junto a la imagen
+  (EXR o PNG de 16 bits), el **lote cámaras × estudios** con la plantilla de nombre, el
+  **ZIP propio** de la cola (método *store*, sin dependencias) y la prueba de que
+  detener el segundo deja el tercero; un fallo antiguo de la cola corregido;
+  3005 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
+
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
 
@@ -202,9 +207,9 @@ Vite 8, TypeScript 7, vitest 5, three 0.186, playwright-core 1.64.
 marcador. La captura usa `--use-gl=swiftshader` y espera a
 `#app[data-ready="1"]`.
 
-## A2 · Catálogos portados — **Sonnet** — hecha
+## A2 · Catálogos — **Sonnet** — hecha
 
-Ver `src/data/README.md`. Las claves son las de EZ Packshot. Los tests
+Ver `src/data/README.md`. Las claves son estables. Los tests
 fijan: 16 estudios; 72 montajes (PRODUCT 12, TRADITIONAL 13, CINEMATIC
 11, CREATIVE 8, EMOTIONAL 8, EXPERIMENTAL 8, SIGNATURE 6, SPICY 6; tres
 con `world: 'SKY'`); 77 materiales en 7 categorías; 8 ópticas; 16
@@ -728,7 +733,7 @@ lienzo en cada fotograma; acción de la paleta *Exportar escena del motor
 no tienen equivalente en el motor todavía; el ACES del motor da NaN por
 encima de ~1e19 de radiancia. Dos correcciones del responsable al
 recibir la fase: el **ángulo del sol** estaba documentado en radianes y
-salía como un disco de 31°, cuando en EZ Packshot está en **grados**
+salía como un disco de 31°, cuando el catálogo lo da en **grados**
 (0,545° es el sol real; ahora se pasa tal cual, con test de regresión); y
 *Render* **ya no cae a la vista previa** cuando falta `rt.wasm`: lo dice
 y no renderiza, como decidió el usuario.
@@ -3263,6 +3268,122 @@ No encajó con el plan:
   salía el otro y el test fallaba sin que el *bundle* cambiara. Ahora lo
   busca por su nombre exacto.
 
+## L7 · Sets y Luces: catálogo reorganizado — **Opus** — hecha
+
+**Petición del usuario** (2026-10-17), literal:
+
+> «Vamos a reorganizar el tema de las luces y studio. Quiero que los agrupemos por Sets / Lights. Dentro de sets, tendremos todos los que crean cosas aparte de las luces, y en lights los que solo aplican luces. Dentro de cada uno de estos habrá filtros, en los cuales podrás elegir si jewellry, dark field... Todos los que eran producto type lo meteremos como un filtro al lado de sets que sea product type. Si ya había unas luces aplicadas dejar elegir si se borran las anteriores luces, si solo se ocultan, o si simplemente se añaden. Todos los thumbnails serán del mismo tamaño que Dark field y el resto, pero quiero a la derecha del inicio de seccion un icono que permita cambiar el tamaño de los thumbnails.»
+
+**Qué.** La sección *Luz* en dos grupos, **Sets** (lo que crea algo además de
+focos) y **Luces** (lo que solo pone focos), clasificados por lo que hace cada
+entrada y no por su estilo, sin cambiar claves ni orden (regla 7); filtros en
+cada grupo, combinados como los de P6b, con el tipo de producto como filtro de
+*Sets*; al elegir con focos en la escena, *Sustituir · Ocultar · Añadir* en una
+entrada de deshacer, con *Recordar mi elección* en *Ajustes*; todas las
+miniaturas del tamaño de las de los montajes y un botón en la cabecera que
+cambia el tamaño.
+
+**Hecho.** *Clasificación* (`core/setup-groups.ts`): una entrada es *Set* si
+trae decoración (`hasDecoration` de `core/sets.ts`: fondo, suelo, charco o
+tarjetas), y *Luces* si no. Leyendo `sets.ts` y `rig.ts` salen **17 Sets y 78
+Luces** con un tipo de producto que es un set, y 16 y 79 con *Mobiliario
+exterior*: los 16 sets de L6, más `PRESET` (*El del tipo de producto*), que con
+15 de los 16 tipos viste la escena con el set del tipo y con *Mobiliario
+exterior* solo pone su sol; en *Luces*, los 71 montajes de antes y las 7 recetas
+de *Interior*. Dos sorpresas: `PRESET` cambia de grupo según el tipo en vigor,
+y las recetas de *Interior* (y `SUN`, `GOLDEN_HOUR`, `DAWN`) cambian el
+entorno (cielo, exposición, intensidad) sin crear nada; se cuentan como *Luces*
+(◆ 1). `tests/light-catalogue.test.ts` fija las cuentas con los 16 tipos y
+aplica cada una de las 95 entradas para comprobar que la que es *Set* deja
+decoración y la de *Luces* no.
+
+*Filtros*: *Sets* por **Tipo de producto** (los 16; deja el set que es el rig
+propio de ese tipo, `StudioPreset.set`, y `PRESET` si es el tipo en vigor) y por
+**Sujeto** (el `hero` del set: *Frasco, Caja, Anillo, Cromado, Zapato,
+Esferas*); *Luces* por **Estilo** (los nueve de siempre salvo *Sets*, y
+*Míos*). Se combinan (Y), con la cuenta (*7 de 17 sets*), un aviso corto si no
+queda nada, y la entrada en vigor que dejan fuera la primera, atenuada y
+marcada *Fuera de los filtros*, como la receta de un plugin. Las filas son el
+componente de P6b, sacado a `ui/components/filter-chips.ts` (el panel de
+plugins lo usa también, con el mismo DOM). Grupo, filtros, estilo y tamaño se
+guardan en el `layout` de los ajustes (por persona, como el estilo de antes);
+un documento de antes abre *Sets* si su estilo era *Sets* o *Todos*, y
+`lightStyle: 'SETS'` (una URL de antes) es el grupo *Sets*.
+
+*Los focos que hay* (`core/previous-lights.ts`): `studio/setSetup` y
+`studio/applySetup` ganan `previous` (`REPLACE`, `HIDE`, `ADD`) y `keptNames`.
+*Sustituir* es lo de siempre; *Ocultar* y *Añadir* conservan los focos que no
+son decoración detrás de los nuevos, con su `id`, `own` y un nombre de origen
+(«Principal · Rembrandt»); *Ocultar* con `enabled: false`. **Los focos ya
+tenían ese interruptor** (`LightInstance.enabled`, el de la lista *Luces*), así
+que el formato del proyecto no cambia y no hace falta migración: los proyectos
+de `tests/fixtures/project-v1.json` y `-v2.json` se abren con sus focos
+idénticos, y uno con focos ocultos va y vuelve igual. Un set que entra
+sustituye la decoración del anterior siempre; un montaje de *Luces* con
+*Ocultar* o *Añadir* deja la decoración, el charco y el aspecto del set (◆ 4).
+Una entrada de deshacer con la respuesta en su nombre. La interfaz pregunta
+(en línea, sobre la rejilla; también desde la paleta, que enseña la pregunta)
+salvo que `light.previous` (*Ajustes ▸ Preferencias ▸ Luces*: *Preguntar ·
+Sustituir · Ocultar · Añadir*) recuerde una respuesta; *Recordar mi elección*
+la escribe. Sin focos, o eligiendo otra vez el montaje en vigor, no pregunta.
+
+*Miniaturas*: un solo tamaño para todas, el de los montajes (*Campo oscuro*:
+tres columnas, 4:3; los sets dejan de ir en dos columnas cuadradas), y el botón
+de la derecha de la cabecera de *Luz* da la vuelta *pequeñas* (cuatro columnas,
+solo la imagen) → *medianas* → *grandes* (dos). Las etiquetas ya no se cortan
+a dos líneas: se parten en las que hagan falta.
+
+*Tests*: `tests/light-catalogue.test.ts` (19: la clasificación y sus cuentas,
+los filtros y su combinación, Sustituir/Ocultar/Añadir con su deshacer y los
+ocultos que se vuelven a encender, set sobre set y luces sobre set, un montaje
+propio, la pregunta y *Recordar*, el ajuste y el `layout`, la persistencia, los
+proyectos de antes) y `tests/light-panel-browser.test.ts` (4: en `en` y `es`, a
+1600 × 1000 y 1280 × 800, nada recortado ni fuera de la columna, una sola
+medida de miniatura por grupo y tamaño, el botón cambia el tamaño y se
+recuerda tras recargar, la pregunta). `data.test.ts`, `sets.test.ts` y
+`rig.test.ts`, sin tocar. Comprobación de navegador y capturas:
+`tools/light-catalogue-check.mjs`.
+
+**No encajó con el plan:**
+- No hizo falta un estado nuevo para *Ocultar*: `enabled` ya estaba, y con él
+  no hay cambio de formato ni migración.
+- Todo proyecto empieza con los focos del tipo de producto, así que con
+  *Preguntar* (el ajuste de partida) la pregunta sale casi siempre que se
+  elige un montaje; *Recordar mi elección* la quita (◆ 5). Por eso
+  `tests/library.test.ts` responde ahora *Sustituir* en dos sitios donde antes
+  el montaje entraba directo; nada más cambia en él.
+- La pregunta sale encima de la rejilla, no junto a la miniatura pulsada, y la
+  sección se desplaza hasta ella.
+- La paleta enseña la pregunta con sus tres respuestas, sin *Recordar*.
+- La fila *Tipo de producto* son 16 *chips*: a 340 px ocupan seis líneas.
+- Las miniaturas de los sets son cuadradas y se recortan a 4:3 como las demás.
+- *En el set* sigue enseñando las piezas de un set tras *Ocultar* o *Añadir*
+  un montaje de *Luces*, sin *Usar la cámara del set* (ya no es el set en
+  vigor).
+- `tools/sets-check.mjs`, `tools/scene-type-check.mjs` y
+  `tools/viewport-stress.mjs` siguen la sección nueva (contestan *Sustituir*);
+  `sets-catalogue.png` y `scene-type-interior.png` se regrabaron;
+  `library-setups.png` no tiene herramienta y queda marcada como superada.
+- La variante `large` de las miniaturas (L6) se quitó: nadie la usa.
+
+**◆ Para Fable** (regla 11; también en *Decisiones para Fable*):
+1. Que los montajes que cambian el entorno sin crear nada (las 7 recetas de
+   *Interior*, los tres de sol) sean *Luces*, y que `PRESET` cambie de grupo con
+   el tipo de producto.
+2. El tipo de producto solo filtra *Sets*: ningún montaje de *Luces* está
+   ligado a un tipo (salvo `PRESET` con *Mobiliario exterior*). Y el filtro
+   usa solo `StudioPreset.set` (casi todos los tipos dejan un set); una tabla
+   de qué sets sirven a qué tipo es una decisión fotográfica, sin hacer.
+3. El segundo filtro de *Sets*, *Sujeto* (el `hero`), que no pidió nadie.
+4. Lo que pasa con la geometría de un set: un set que entra sustituye la del
+   anterior con cualquier respuesta; *Luces* con *Ocultar* o *Añadir* la deja,
+   con su charco encendido y su exposición.
+5. Preguntar por defecto, también con los focos sin tocar del tipo de
+   producto (lo literal de la petición), frente a preguntar solo si están
+   modificados o hay focos propios.
+6. Los tres tamaños (cuatro, tres y dos columnas; el pequeño sin etiqueta) y
+   un solo tamaño para los dos grupos.
+
 ## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus** — hecha
 
 **Qué.** La parte sin motor de M2 (el modelo ya tiene `textures`, los
@@ -5103,8 +5224,8 @@ material (el campo *Bisel de arista* del inspector deja de decir
 diedro > 20° y una rejilla o BVH propio de aristas), mezclando la normal
 de las dos caras según la distancia a la arista con un perfil circular;
 vale para el reflejo (la luz coge la arista) y para la sombra; límite de
-coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, portar a
-`rt-core` las recetas procedurales de EZ Packshot (veta
+coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, llevar a
+`rt-core` las recetas procedurales del catálogo (veta
 de anillos con dos colores, variación, ruido axial y poro; trama de hilos
 con tipo de tejido, hilos por cm y relieve) como funciones de sombreado
 con ruido propio (Perlin o *simplex*, escrito aquí y con la estadística
@@ -5290,7 +5411,7 @@ ARCHITECTURE §5.2 octies).
   40…; antes 14 para el roble, por pieza); el mando nuevo *Escala* los
   multiplica. SPEC §3.3 lo dice. Un proyecto guardado conserva su
   `ringDensity` antiguo, que ahora se lee por 100 mm.
-- **Campos nuevos que el catálogo de EZ Packshot no tiene**: `ringContrast`,
+- **Campos nuevos**: `ringContrast`,
   `poreSize`, `poreBand`, `woodFigure`, `woodScale` y los cuatro de los
   nudos (claves nuevas; ninguna renombrada).
 - **El relieve de los anillos, fuera** (decisión del líder: las esferas
@@ -5393,8 +5514,8 @@ ARCHITECTURE §5.2 octies).
   Un proyecto guardado conserva su `threadCount` antiguo, que
   ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
   cm, invisible).
-- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
-  EZ Packshot es 2/2 y la siguen usando la sarga y el carbono): con 2/2 su
+- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` es
+  2/2 y la siguen usando la sarga y el carbono): con 2/2 su
   color medio era un gris azulado (la mitad de la cara, trama blanca); el
   de verdad es de urdimbre. Cambia su color en la vista *Rápida*. La hoja
   enseña los dos para el veredicto.
@@ -6041,7 +6162,7 @@ navegador, en CI): las 72 miniaturas de montaje (160 × 120 y 64 × 64) con
 la pieza de ejemplo en gris neutro, y las esferas de los 77 materiales,
 con el hash de su receta en un chunk `tEXt` del PNG; `--check` falla si
 alguna está desactualizada y la suite lo ejecuta. Sustituye las PNG
-portadas de EZ Packshot en `public/thumbs/`.
+anteriores de `public/thumbs/`.
 
 **Depende de.** E4, E5 (para que las de color y vidrio salgan bien).
 
@@ -6198,8 +6319,8 @@ No encajó con el plan:
 
 ## M1 · Cara CAD entera — **Sonnet** — hecha
 
-**Qué.** Selección de caras por continuidad de superficie, portando el
-algoritmo E2 de EZ Packshot: adyacencia por **posición** de vértice
+**Qué.** Selección de caras por continuidad de superficie: adyacencia
+por **posición** de vértice
 (soldadura a 1e-5 del tamaño de la malla), cruce de arista si el diedro es
 menor que el ángulo de arista viva (30°) **y** menor que 2.5 veces la
 curvatura propia de la cara clicada; las aristas marcadas por el
@@ -6237,14 +6358,12 @@ marcada, rangos CAD, piezas separadas; las mutaciones se cuentan en
 No encajó con el plan:
 
 - **Límite del borde con curvatura suave (decisión pendiente de
-  Fable).** Se cambió una cosa del algoritmo de EZ Packshot: su
-  estimación de la curvatura contaba también las aristas que son
-  frontera (marcadas o más agudas que 30°), y un triángulo en el borde
-  de una cara plana, junto a una pared, medía la curvatura de la
-  esquina y la cara se escapaba por un chaflán; aquí solo cuentan las
-  aristas que se podrían cruzar (test *a flat face is flat to its
-  rim*). Queda el caso que un clic sobre una malla no puede
-  distinguir: un triángulo en el borde de una cara plana cuya única
+  Fable).** La estimación de la curvatura solo cuenta las aristas que
+  se podrían cruzar (test *a flat face is flat to its rim*): si contara
+  también las que son frontera (marcadas o más agudas que 30°), un
+  triángulo en el borde de una cara plana, junto a una pared, mediría la
+  curvatura de la esquina y la cara se escaparía por un chaflán. Queda
+  el caso que un clic sobre una malla no puede distinguir: un triángulo en el borde de una cara plana cuya única
   arista que gira es un redondeo suave (unos pocos grados por paso)
   parece una faceta de una cara curva, y la cara sigue el redondeo; el
   interior de la misma cara plana no. No afecta a STEP ni IGES (los
@@ -6859,7 +6978,7 @@ ignoradas), como antes.
   ← →) desde el árbol; se oculta a las ayudas técnicas. Si se quiere un control
   propio para el cabezal, va fuera del árbol (otra estructura del cajón).
 
-## N2 · Cola, pases y lotes — **Sonnet**
+## N2 · Cola, pases y lotes — **Sonnet** — hecha
 
 **Qué.** Cola de render con progreso y cancelación sobre `render()` del
 motor; pases alfa, profundidad, normales e id de pieza como salidas
@@ -6872,6 +6991,136 @@ dependencia: el formato *store* de ZIP es trivial).
 
 **Criterio.** Tests de nombre de archivo y de cola (orden, cancelar el
 segundo deja el tercero); un lote de 2 × 2 produce 4 imágenes.
+
+**Hecho.** La auditoría de abajo dice qué había (la cola, su cancelación, los seis
+pases del motor y el lote por cámaras venían de U5, U14, X2 y E4) y qué faltaba; N2
+construyó solo lo que faltaba:
+
+- **Motor: el pase alfa** (`rt_core::passes`, el séptimo, bit 6 de `RNDR.passes`, sin
+  cambiar el tamaño de la sección ni mover un *hash*): la cobertura de objetos de cada
+  píxel, de 0 a 1; se muestrea como el albedo (comparte con él el rayo de cámara de cada
+  muestra, así que los bordes salen suavizados igual que la imagen) y se divide por el
+  recíproco del número de muestras, bit a bit como `Film::resolve`. `PASS_EXACT` sigue
+  siendo `0b111110` y `PASS_X2` (los seis de antes) es lo que fijan los *hash* de X2.
+  `rt_render_tile_alpha` en `rt.wasm` (sin bit de `rt_features` nuevo), el pool de la
+  página y el `RPP1` del lanzador lo llevan, y el lector del `RPP1` ya no tiene un brazo
+  que se habría tragado un plano nuevo.
+- **Pases como archivos**: *Alfa*, *Profundidad*, *Normales* e *Id de pieza* junto a la
+  imagen, en EXR de 32 bits (por defecto) o PNG de 16 bits (`encodeExrPlanes`,
+  `encodePngWords`, `core/pass-files.ts`, `io/passes.ts`), con la leyenda de piezas
+  (`<nombre>_partId.json`) y el rango de la profundidad en un trozo `tEXt`.
+- **Lote cámaras × estudios**: *Estudio* en la ventana (la escena como está, uno guardado,
+  o todos); con *Todas las cámaras*, 2 × 2 son cuatro trabajos, cámara por cámara, cada uno
+  con su cámara y su estudio y con el nombre de la plantilla; aviso de nombres repetidos.
+- **ZIP propio** (`io/zip.ts`, método *store*, CRC-32, nombres UTF-8, sin ZIP64) y el grupo de
+  ZIP de la cola: una orden *Render* es un solo archivo al acabar el último trabajo, con
+  alternativa de archivos sueltos si no se puede armar.
+- **Cola**: la prueba que faltaba (*Detener* el segundo deja el tercero) y un fallo antiguo
+  de `ensureLoop` (ver abajo).
+
+Números. Web: `npm run qa` en verde (tipos, interfaz y 177 archivos de prueba con 3005 tests y 6 omitidos, tras fusionar `main`; antes de la fase eran 168 archivos y 2902 tests). Motor: `cargo test --workspace --release` 1112 tests y `npm run engine:test` 1106 (depuración), sin fallos; en WebAssembly (WASI) 588 de `rt-core`, escalar y con simd128; `cargo fmt`, `clippy -D warnings` (también para Windows), `cargo check` para aarch64 y riscv64, y el `rt.wasm` real igual al nativo en cada bloque de paridad de `engine.yml`. Con la máquina muy cargada, `ai_post::retries_lower_the_strength_…` (una espera por muestreo) falló en dos pasadas completas y pasa sola (9 de 9): no toca nada de esta fase. Pruebas nuevas: `tests/batch.test.ts` (28),
+`tests/zip.test.ts` (10), `tests/pass-files.test.ts` (17), 6 en
+`tests/passes-engine.test.ts` y, en el motor, las del alfa en `passes_tests.rs` (cobertura,
+suelo y fondo, igual a la película con fondo transparente bit a bit, con otros pases y con
+otros mosaicos, panel de luz, con muestras de borde, igual en escalar, SSE2 y AVX2), en
+`rt-wasm` (`the_alpha_pass_through_the_c_api_is_the_engines`) y en `rt-app` (`RPP1` con
+máscara 127). **Hashes nuevos** fijados: `PINNED_PASS_ALPHA = 0xd4eaac78` (ejemplo) y
+`PINNED_E5_PASS_ALPHA = 0xef9ead68` (E5), iguales en el `rt.wasm` real
+(`wasm-parity.mjs --expect-alpha`, en `engine.yml`) y en WASI escalar y simd128; **ninguno
+de los anteriores se movió** (albedo `0x43571da9`, normales `0x0aabfd24`, profundidad
+`0x25f8dd11`, ids `0xccd3d6c7`, círculo `0xdf87494c`, ni los de las imágenes). Cada prueba
+nueva se comprobó con una mutación: 46 mutantes (38 en la página, uno en la cola y 7 en
+el motor), todos muertos; dos enseñaron algo: dividir entre el número de muestras en vez de
+multiplicar por su recíproco sobrevivía hasta que se probó con 7 muestras, y un mutante
+colgaba las pruebas (era el fallo de `ensureLoop`). `tools/batch-check.mjs` (Chromium y el `rt.wasm`
+real): un lote 2 × 2 con tres pases en un ZIP de 20 archivos que `unzip` y `fflate` aceptan,
+los EXR leídos por la especificación, los PNG de 16 bits, y *Detener* el segundo deja el
+tercero. Capturas `batch-window.png` y `batch-queue.png`.
+
+**Auditoría al empezar** (sobre `main` en v0.1.16, punto por punto del
+brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
+
+| Punto | Estado al empezar | De qué fase | Qué hizo N2 |
+| --- | --- | --- | --- |
+| Cola de render con orden y progreso, sobre `render()` del motor | Hecho | U5 (cajón, reordenar, editar, duplicar, pausar, terminados), U14 (vista en vivo), E4 (el trazador) | Nada que rehacer |
+| Cancelación | Hecho | U5: *Detener* el trabajo en curso (acaba *Cancelado* y sigue el siguiente), *Quitar* uno en espera, *Pausar* | Nada que rehacer; la prueba |
+| Pases de profundidad, normales e id de pieza como salida del integrador, con máscara en `RNDR` | Hecho en el motor | X2 (`RNDR.passes`, `rt_core::passes`, seis pases con hashes fijados), X4 (los dibuja three.js para la IA) | Nada que rehacer en el motor; solo los leen la guarda de la IA y el *denoise*: ningún pase llega a un archivo |
+| Pase alfa | Falta (solo existía el alfa de la imagen con fondo transparente) | — | El séptimo pase, `alpha`, bit 6 de la máscara: sin cambiar el tamaño de `RNDR` ni mover un *hash* |
+| Los pases como archivos: PNG de 16 bits o EXR | Falta (escritores de la imagen sí: PNG 8/16 bits, EXR, TIFF, DNG) | U5, U12 | `encodePngWords` y `encodeExrPlanes`, los números de cada pase y sus nombres |
+| Pases elegibles en la ventana de render | Falta (una fila *próximamente*) | U5 | Fichas y formato |
+| Lote por cámaras | Hecho | U5 (*Todas las cámaras*, un trabajo por cámara con su proporción) | — |
+| Lote por estudios | Falta (los estudios guardados no eran un eje de la cola) | U4 (los estudios de la biblioteca), L6 | El estudio como eje: `studio` en los ajustes y en el trabajo |
+| Nombre por plantilla con proyecto, cámara y estudio | Hecho en lo que importa | U5 (`{project}`, `{camera}`, `{studio}`, `{date}`, `{n}`: las claves en inglés, las fichas en es y en) | `{studio}` pasa a ser el estudio guardado del trabajo (era el nombre del tipo de producto); aviso de nombres repetidos |
+| Descarga en ZIP propio | Falta (un escritor de ZIP solo en `tests/zip.ts` para los archivos de prueba, y fflate para *leer* el 3MF) | — | `io/zip.ts` y el grupo de ZIP de la cola |
+| Criterio: pruebas de nombre y de cola en orden | Parcial: el orden y detener el primero | U5 (`tests/render-queue.test.ts`) | `tests/batch.test.ts` |
+| Criterio: cancelar el segundo deja el tercero | Falta | — | Dos pruebas (detenerlo y quitarlo) y el mismo caso en Chromium |
+| Criterio: un lote de 2 × 2 produce 4 imágenes | Falta | — | Prueba con la cola, el ZIP leído por fflate y `tools/batch-check.mjs` |
+| E8, lotes nativos (`rt` lee proyectos) | Falta | — | No se construye aquí (se solapa; sigue en su fase) |
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- **Las fichas del nombre** son `{project}`, `{camera}`, `{studio}`, `{date}` y
+  `{n}` (el modelo de U5, con las claves en inglés y las fichas con su etiqueta
+  en cada idioma), no `{proyecto}_{camara}_{estudio}` como dice el encargo: se
+  mantiene lo que hay, que ya hace lo que pide (en español la ficha dice *Proyecto*,
+  *Cámara*, *Estudio*). No hay alias en español dentro de la plantilla.
+- **`{studio}` cambia de significado en los lotes**: era el nombre del tipo de producto
+  (*Joyería*) y ahora, en un trabajo con estudio guardado, es el nombre de ese estudio;
+  sin él (todo lo de antes) sigue siendo el tipo de producto.
+- ◆ **Qué es el alfa.** El encargo pedía un pase «alfa» sin más. Se construyó como
+  **máscara de objetos**: cada muestra cuenta si su rayo de cámara encuentra una
+  superficie de una instancia; el suelo del estudio (visible o atrapasombras), el
+  entorno, el fondo y los paneles de luz visibles valen 0, y los recortes y el vidrio
+  cuentan como superficie, como en todos los pases de X2. No es, por tanto, el alfa de la
+  imagen con *Fondo transparente* cuando hay un atrapasombras (ahí el alfa es la
+  sombra) ni en lo que el camino ve a través del vidrio; donde solo hay objetos opacos y
+  fondo, es el alfa de la película bit a bit (test). Decidir si el suelo entra en la
+  máscara, y si los recortes con textura de alfa deben dar cobertura parcial (hoy no).
+- ◆ **Qué pases se ofrecen**: los cuatro del encargo. El motor renderiza también el albedo, el
+  id de material y el círculo de confusión (los de la IA): se podrían ofrecer con el mismo
+  cauce, y el id de material necesitaría su leyenda.
+- ◆ **Cómo se escriben los números.** Formato por defecto de los pases, **EXR** (la
+  profundidad y las normales son flotantes); en PNG de 16 bits, la profundidad es un mapa de
+  z con **lo cercano blanco**, 0 el fondo y el rango de distancias en un trozo `tEXt`; las
+  normales, `n × ½ + ½` (el fondo, el gris medio); los ids, el número de instancia con el
+  suelo en 65535 y un tope de 65534 piezas. Todo eso es preparado, no decidido: son
+  elecciones fotográficas y de convención.
+- ◆ **El ZIP**: apagado por defecto (hoy cada archivo se descarga aparte, como siempre), un
+  grupo es lo que mete **una** orden *Render* o *+ Añadir a la cola*, y se llama
+  `Proyecto_0001-0004.zip` (con los números de render). Decidir si un lote a *Descargas*
+  debería ir empaquetado por defecto, y el nombre.
+- ◆ **El orden de un lote** es cámara por cámara (cada cámara en todos los estudios), el de
+  las plantillas `{camera}_{studio}`; el otro orden (estudio por estudio) es igual de
+  defendible.
+- **El estudio no mueve la cámara.** `studio/restore` sí pone la cámara del estudio (su
+  vista y su óptica); un lote la conserva (la del trabajo), porque si no, 2 cámaras × 2
+  estudios serían 2 imágenes. Una `restoreStudio` con `{ camera: false }`, pura, hace las dos cosas.
+- **Los estudios del lote son los guardados**: los de la pestaña *Estudios* (biblioteca, del
+  navegador o de la carpeta de datos del escritorio) y los que un proyecto antiguo guardaba
+  dentro. Un trabajo guarda el id y el nombre, no el estudio: abierto en otro equipo sin
+  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto.
+- **Un trabajo con estudio no pasa por la IA** (sus pases se dibujan del proyecto abierto en
+  el modo Rápido); lo dice un aviso y se guarda la imagen del motor. Los plugins de trabajos
+  guardan aparte, fuera del ZIP.
+- **Los pases son para imágenes**: una animación no los escribe (ni lleva estudio), y con
+  *Terminar por ruido* el alfa, como el albedo, lleva las muestras de la primera ronda.
+- **El ZIP se arma en memoria** y se escribe al acabar el último trabajo del grupo: cerrar la
+  página antes lo pierde (los resultados de la imagen están en el historial), no hay ZIP64 y
+  un lote enorme de EXR de 32 bits puede no caber. Un grupo que se pausa espera en memoria.
+- **Cancelar**: ya estaba; faltaba la prueba. *Detener* (el que corre) y *Quitar* (uno en
+  espera) son los dos modos; un trabajo en espera no pasa a *Cancelado*, sale de la lista.
+- **El escritorio**: el lanzador renderiza el alfa y lo guarda en su `RPP1` (probado por la
+  API con 1 y 4 hilos, y el lector de la página con un archivo que escribe el lanzador),
+  pero `tools/batch-check.mjs` solo recorre la web: el lote en la ventana nativa no se
+  grabó. **E8** (lotes nativos de línea de órdenes) no se construye aquí.
+- **Cambios fuera del plan, de un bug que casi entra**: el lector del `RPP1` del lanzador
+  (`kept.rs`) tenía un brazo `_ =>` que habría guardado cualquier plano nuevo en el círculo de
+  confusión; ahora el alfa tiene el suyo y el archivo de prueba
+  `tests/fixtures/passes-3x2.rpp` lo incluye (sus seis primeros planos son los mismos bytes).
+- **Un fallo antiguo de la cola, encontrado al probar**: un *Iniciar* sin nada en espera
+  terminaba el bucle antes de su primer `await` y dejaba la promesa ya acabada como «el
+  bucle en marcha»; ningún *Iniciar* posterior arrancaba otro. Arreglado en `ensureLoop`
+  (la promesa se limpia sola al acabar) y con su prueba, que falla si vuelve el código viejo.
 
 ## D1 · Doctor de motor — **Sonnet** — hecha
 
@@ -8021,7 +8270,7 @@ filas que nombran algo que no existe aún están en «Qué no encajó»):
 | Cámara | no escribe | 28 mm en cada cámara que no esté bloqueada | 50 mm |
 
 *Estilo Interior.* `LIGHT_STYLES` pasa de 9 a 10 entradas (`INTERIOR` la última) y `LIGHT_SETUPS` de 88 a 95: las siete
-recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes de EZ Packshot y los
+recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes del catálogo base y los
 16 sets, intactos: un test compara los 71 rigs con el fixture de antes de L6). Cada receta es un set sin decoración:
 elige su mundo (`SKY` con un foco de sol que coloca el sol del cielo, o `STUDIO`), y trae su desvío de exposición
 (`exposureEv`) y la intensidad del entorno (`envStrength`), porque la hora del día **es** el brillo de la imagen y aquí,
@@ -8170,8 +8419,8 @@ volver a *Producto*); captura `docs/ui/scene-type-interior.png`.
 **Qué.** Nodo `ROOM` paramétrico de `INTERIORS.md` §3.2 (ancho, fondo,
 alto; aberturas con posición, tamaño y alféizar; material por superficie;
 zócalo; *ocultar pared del lado de la cámara*; variante ciclorama con el
-perfil de EZ Packshot), editable en el inspector y en el visor (asas en
-las aberturas), guardado en el proyecto y exportado al RSB como mallas
+perfil del barrido infinito de las primitivas), editable en el inspector
+y en el visor (asas en las aberturas), guardado en el proyecto y exportado al RSB como mallas
 más una sección `PORT` por abertura; **portales automáticos** también
 para habitaciones importadas (heurística: cuadriláteros de vidrio o
 transparentes en la envolvente), sin jerga en la interfaz; material
@@ -8188,7 +8437,7 @@ oculta solo en cámara); la heurística marca el vidrio de un fixture de
 habitación importada y no marca un vaso; captura de la sala de ejemplo
 en la vista previa.
 
-## K3 · Cámara de interiores — **Opus**
+## K3 · Cámara de interiores — **Opus** — hecha
 
 **Qué.** `INTERIORS.md` §3.4: *shift* con cálculo automático
 (*verticales rectas*, apagable), altura de ojo con presets, ópticas de
@@ -8206,6 +8455,101 @@ de un cubo quedan paralelas en la proyección (±0,1 px a 1080p); la
 panorámica de la vista previa coincide con la del motor en seis
 direcciones de prueba; la planta no muestra el techo y la habitación
 sigue iluminada por él (comparación de medias); capturas.
+
+**Hecho.**
+
+*Motor.* Dos proyecciones nuevas en `rt_core::scene` (`Projection`, `Camera::panorama_dir`): la **equirectangular**
+(longitud y latitud sobre la imagen, 360° × 180° en 2:1) y el **ojo de pez equidistante** (`θ` proporcional a la distancia
+al centro, negro más allá de media vuelta), estenopeicas y desde la base de la cámara; la profundidad de los pases es la
+distancia, y las huellas de píxel de partículas, texturas y cáusticas toman el cono de la esfera. `CAMR` gana 16 bytes al
+final (`u32 projection; f32 fov_x_deg fov_y_deg exterior`) que **solo se escriben si alguno no es el de por defecto**: los
+archivos de antes conservan sus bytes y ningún *hash* se movió. **Visible a cámara** por instancia: `INST.flags` bit 2
+(`INSTANCE_NO_CAMERA`, valor 4, junto al bit 1 de `INSTANCE_NO_SECTION`); solo las consultas `RayClass::Camera` (rayos
+primarios y sus continuaciones rectas, pases, tapas de sección) se la saltan, en la BVH, en la fuerza bruta y en las
+tapas. El **multiplicador de exterior** (`CAMR.exterior`) multiplica el entorno que ve un rayo de cámara al escapar
+(también por paredes finas y recortes) y el fondo del atrapasombras. `rt_features` y `/api/info` suben el bit 4 (valor
+16, `FEATURE_CAMERAS`). Tres escenas de paridad sobre la habitación de cajas de `example::k3_room` (`rt
+--write-k3-plan-example`, `--write-k3-panorama-example`, `--write-k3-fisheye-example`, y sus `tests/fixtures/k3-*.rsb`):
+`PINNED_K3_PLAN_4SPP` = `0x6efb1e66`, `PINNED_K3_PANORAMA_4SPP` = `0x96de8d73`, `PINNED_K3_FISHEYE_4SPP` = `0x9b85a1b6`,
+iguales en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, en WASI escalar y `simd128`, en el `rt.wasm` real y (la
+panorámica) por la API del lanzador; un bloque de paridad K3 en `engine.yml`, imagen sola y con `--passes`.
+
+*Página.* `CameraState.projection` (`PERSPECTIVE · ORTHOGRAPHIC · EQUIRECTANGULAR · FISHEYE`) en la lista *Proyección* de la
+sección *Cámara*, `fisheyeFovDeg` (60°–360° en la diagonal del encuadre) y las vistas *Alzado* y *Planta* (ortográficas).
+**Verticales rectas** (`straightVerticals`, `core/interior-camera.ts`): se escribe la cámara nivelada en la misma
+posición y el mismo acimut, con el *shift* `−f · tan(inclinación)` sumado al de la óptica en el `LENS` de O1 que ya
+existía (como pidió O4: una herramienta que mueve el *shift*, sin reordenar la óptica); la vista previa pone la misma
+corrección en la proyección (`render/camera-projection.ts`, `P · Rx`), así que el picado, el contorno y el *gizmo* la
+siguen. **Altura de ojo** (`camera/eyeHeight`, presets *De pie* 1,5 m y *Sentado* 1,1 m) y **ópticas de interior**
+(`camera/interiorLens`, 24 · 28 · 35 mm), una entrada de deshacer cada una, nada con la cámara bloqueada. **Visible a
+cámara** en *Pieza* (`SceneNode.cameraHidden`, heredado, `scene/setCameraHidden`): bit 2 de `INST` para el motor; en
+Rápido, un material que no escribe color ni profundidad y sigue dando sombra, fuera del picado, de la caja, de los
+tintes y del pase de ids. **Panorámicas en Rápido** (`render/panorama-pass.ts`): la escena en las seis caras de un cubo
+(medio flotante, lineal) y el lienzo desde el cubo con `PANORAMA_GLSL`, el mismo mapa que el motor
+(`core/panorama.ts`), sobre el lienzo entero con el encuadre de salida dentro, como la imagen del visor Completo; el
+picado sigue el mapa. **Exposición como pase** del estado `image` (`core/image-passes.ts`): `exposureMode` *A mano ·
+Automática*; la automática mide en la página las sumas de la acumulación (luminancia `f32`, `log2` del motor, 10 % más
+oscuro y 5 % más claro fuera, media al gris del 18 %, ±16 EV, centésimas), y `exposureEv` pasa a ser la compensación
+*Brillo (EV)*; el visor la rehace cuando las muestras se duplican, y el render final mide sus sumas antes del
+*denoise*, en el *pool* y en el lanzador. Presets *Día luminoso · EV 7* y *Tarde de lámparas · EV 5* (exposición a mano,
+`log2(683/1,2) − EV₁₀₀`) y el deslizador *Exterior (rayo de cámara)* (`environment.exterior`, también en el fondo de
+Rápido). El tipo *Interior* enciende las verticales rectas y la exposición automática por el mecanismo de casillas de
+K1 (`image.exposureMode`, `camera.verticals:<id>`): volver de tipo deja el proyecto como estaba. Proyecto, biblioteca y
+estudio guardan y normalizan los campos nuevos; un proyecto de antes abre igual.
+
+*Criterio, en números.* **Verticales**: con la cámara inclinada 10° (28 mm, 1920 × 1080), las aristas verticales de un
+cubo de 600 mm quedan a **0 px** de paralelas en la proyección de la página y en la de Rápido, y a **0,0001 px** con los
+rayos del motor (`rt-core`, leyendo el archivo que escribe la página, `tests/fixtures/k3-verticals.rsb`); sin
+verticales rectas, 7,5 px (página) y 6,4 px (motor). Rápido y motor coinciden punto a punto a < 0,01 px; el objetivo
+sigue en el centro (< 10⁻⁶ px). **Panorámica**: en un cuarto cerrado de seis paredes de seis colores, las seis
+direcciones ±X ±Y ±Z de la equirectangular (y cinco del ojo de pez de 360°, y negro fuera del círculo de imagen) dan
+el color de su pared en el `rt.wasm` real y en Chromium, y el picado de Rápido coge esa pared. **Planta**: en la
+habitación de prueba, la media del suelo visto desde arriba con el techo oculto a cámara es **0,010220**; la misma
+habitación vista desde debajo del techo, **0,010220** (+0,0000 %); sin techo, 0,002109 (20,6 %), y el techo no aparece
+(0,000000 de lo que la cámara ve de él). En el navegador (`tools/k3-check.mjs`), la planta con el techo oculto cambia la
+imagen de Rápido y el visor Completo la muestra iluminada (media del visor 85 sobre 255; el umbral de la prueba es 12) con la exposición automática medida (+2,6 EV).
+
+*Pruebas.* `scene::camera_tests` y `render::k3_tests` de rt-core (mapas, CAMR de ida y vuelta e inválidos, verticales,
+las tres imágenes fijadas, medias de la planta, pases, clases de rayo con tapas, exterior exacto a la mitad, la
+habitación sin campos K3 igual que antes), `rt-cli/tests/example.rs` (1, 4 y 16 hilos, escribir los ejemplos),
+`rt-app/tests/parity.rs`; `tests/interior-camera.test.ts` (24: el criterio de verticales en página y Rápido, el
+límite, altura de ojo, ópticas, vistas, mapas, `CAMR` e `INST` byte a byte con `rt`, herencia, exterior, proyecto,
+`readsCameras`, *Interior* de ida y vuelta, el `rt.wasm` real con los tres fijados y las seis direcciones),
+`tests/image-passes.test.ts` (11: el medidor), `tests/panorama-browser.test.ts` (4, Chromium: seis y cinco direcciones,
+el círculo de imagen, una pared oculta a cámara ni se dibuja ni se pica) y una prueba del *pool* en
+`tests/pathtracer.test.ts`. **Mutaciones**: 28, todas detectadas. En el motor (8): la BVH que no se salta lo oculto a cámara, lo oculto para todos los rayos (también las sombras), la fuerza bruta que no se lo salta, la tapa de sección de una pieza oculta vista por la cámara, el signo de la longitud equirectangular, el ojo de pez sin ceguera más allá de media vuelta, el exterior sin aplicar y los campos de `CAMR` escritos siempre. En la página (20): el signo de la longitud en el mapa y en el GLSL, el círculo del ojo de pez en el GLSL, el signo del *shift*, la cámara que no se nivela, la proyección de Rápido sin girar, el bit de `INST` sin escribir y escrito para un motor que no lo lee, el exterior sin escribir, los campos de `CAMR` escritos siempre, la herencia de *Visible a cámara*, Rápido que dibuja y que pica una pieza oculta, los dos recortes del medidor, la suma en vez de la media de las muestras, el logaritmo de la media, el medidor progresivo que mide cada fotograma, el *pool* que no da la lectura y el preset contra el cero equivocado. Tres sobrevivieron a la primera pasada (el círculo del ojo de pez en el GLSL, lo oculto también para las sombras y la tapa oculta) y se reforzaron las pruebas hasta detectarlas: una esquina del lienzo fuera del círculo de imagen, un segmento de sombra que termina entre el techo y el suelo, y dos rayos a la altura de la tapa del techo, desde el lado quitado y desde dentro de la losa.
+
+*Capturas.* `docs/ui/k3-verticals.png` (la habitación en Completo con las verticales rectas y la sección *Cámara*),
+`k3-plan.png` (la planta en Completo con el techo oculto y la exposición automática en la barra de estado) y
+`k3-panorama.png` (la panorámica 2:1 en Completo), con sus versiones de Rápido en `-fast`; entradas en `GALERIA.md`
+bajo *Sin publicar*.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de **Fable** y queda propuesto, sin decidir):
+(1) **No hay recorrido WASD** con altura fija: lo cubre N3 (*Paseo de cámara*), con la especificación aplazada en `TODO.md` §3 (*Paseos a pie*).
+(2) **No hay nodo `ROOM`** (es K2): las pruebas y la comprobación del navegador usan una habitación de cajas y la
+visibilidad a cámara por pieza, que vale para cualquier geometría; la pared frontal oculta y el recorte cercano
+automático de `INTERIORS.md` §3.4 quedan para K2. (3) **El motor no renderiza la panorámica por franjas**: la renderiza
+entera, por baldosas como cualquier imagen; las franjas para tamaños grandes son de K6. (4) **El *shift* va en `LENS`,
+no en `CAMR`**: las verticales rectas mueven el *shift* de la óptica de O1 (lo que pidió O4); el motor no sabe de ellas.
+(5) **La curva es la transformada de vista**: *Low contrast*, el rodillo largo y ISO y obturador en *Avanzado* siguen sin
+hacer; el pase de curva es `RNDR.tonemap`. (6) **Interior no mueve la cámara a la altura de ojo**: hacerlo como una
+casilla más rompía el viaje de ida y vuelta de los chequeos del Doctor de interiores de K1 (que miden el encuadre); los
+presets están en *Cámara*. (7) En Rápido no se dibuja nada encima de una panorámica (contorno, *gizmo*, glifos), y el
+fondo degradado o de imagen se ve como color. (8) La planta es ortográfica a 89,9° (el tope de elevación de la cámara),
+no a 90°. (9) No se añadió al Doctor un chequeo de «cámara inclinada sin verticales rectas». (10) La exposición
+automática la mide la página: una escena exportada y renderizada con `rt` fuera de la aplicación lleva solo la
+compensación en `RNDR.exposure_ev`. (11) **Para F1** (picado exacto por el rayo primario del motor): una API de píxel →
+rayo tiene que servir a la ortográfica (origen en el plano de la imagen, dirección fija), a las dos panorámicas (el
+mapa de `Camera::panorama_dir` desde la posición, sin lente, y «nada» fuera del círculo del ojo de pez) y a las
+verticales rectas (la cámara que se renderiza, `renderedCamera`, no la de la órbita); `focusDistanceFor` ya da la
+distancia de enfoque con verticales rectas y no se usa hasta F1. ◆ (12) **Presets de altura de ojo** 1,5 y 1,1 m y
+**ópticas de interior** 24 · 28 · 35 mm (28 sin preset de lente: `INT_28` es solo una focal), tomados de §3.4. ◆ (13)
+**Medición de la exposición automática**: media logarítmica recortada (10 % abajo, 5 % arriba) al gris del 18 %, ±16 EV.
+◆ (14) **Presets de EV** 7 y 5 de §3.4 y su calibración `EV₁₀₀ = log2(683/1,2) − exposición` (que EV 0 del motor sea
+EV₁₀₀ ≈ 9,15). ◆ (15) **Multiplicador de exterior** 1 por defecto (sin efecto) y 0,05–1 de rango. ◆ (16) **Interior
+enciende las verticales rectas** por defecto (como dice §3.1), y hasta **30°** de inclinación corregida
+(`VERTICALS_MAX_TILT_DEG`). ◆ (17) El ojo de pez de 180° **en la diagonal** del encuadre (llena el encuadre; más ancho,
+se ve el círculo).
 
 ## K4 · Motor para interiores, conjunto mínimo — **Opus**
 
@@ -10438,6 +10782,162 @@ trabajo en curso en la vista, en los dos temas.
 - En `engine/crates/rt-app/README.md` la tabla de banderas de la trama no
   tenía las de E5b-1 (64, 128, 256): están, con la 512.
 
+## U15 · Flechas y deslizadores en los valores — **Opus** — hecha
+
+Petición del usuario (17-10): «quiero aparte flechas de up y down en todos
+los valores, o sliders cuando convenga más. En enfoque creo que se serviría
+de ambas. Un slider y al lado el valor con up and down».
+
+**Qué.** Flechas ▲ ▼ visibles en **todo** campo numérico, puestas en el
+propio `numberField` para que las lleven todos sus usos: un clic sube o baja
+un paso (`Shift` más fino, `Ctrl` más grueso, como el arrastre), mantenidas
+repiten tras una pausa, una pulsación entera es un gesto y una entrada de
+deshacer, el valor se queda en sus límites y la flecha del límite se apaga,
+respeta *deshabilitado*, no arrastra el campo, llama a `onHold`/`onRelease`
+y no son paradas de tabulación (el *spinbutton* sigue con el teclado). Que
+quepan en las columnas estrechas del inspector, en los tripletes X, Y, Z, en
+la línea de tiempo y en las filas de Ajustes **sin recortar nada ni hacer
+crecer las filas**, medido en un navegador. Y una **regla escrita** de
+cuándo un valor es mejor como deslizador con su campo y sus flechas al lado
+(`UI.md` §4.4), aplicada en el inspector, la línea de tiempo, la ventana de
+render y Ajustes. La *Distancia de enfoque* de la cámara no se toca: la
+rehace la fase F1 como deslizador con su campo, y recibe las flechas de este
+cambio.
+
+**Criterio.** Tests del campo (clic con `Shift` y `Ctrl`, mantener, una
+entrada de deshacer por pulsación en el *store*, límites, deshabilitado,
+escribir y arrastrar, `onHold`/`onRelease`) y un test de navegador de la
+disposición en los estados principales, en es y en, a 1600 × 1000 y
+1280 × 800, que se comprueba que falla rompiendo el CSS; `npm run qa` en
+verde; capturas.
+
+**Hecho.**
+
+- **Las flechas** (`ui/components/controls.ts`, `numberField`): dos
+  `button` apilados al final del campo (`.num-steps`, `.num-up`,
+  `.num-down`), con los `chevronUp`/`chevronDown` del juego de iconos a
+  12 px (1,5 px de trazo), en `ink-2`, `ink-0` con fondo `soft` al pasar el
+  ratón y `line` al pulsar; dentro del marco y de su altura, 26 px, sin
+  crecer. El relleno derecho del campo (7 px) pasa a ser su columna (14 px
+  y 4 px de margen). La pulsación va en `pointerdown` (y `click` sin puntero,
+  `detail` 0, para un lector de pantalla o un script: un paso): para la
+  propagación (no hay arrastre), evita que el botón tome el foco y se lo da
+  al *spinbutton*, captura el puntero en el par (la pulsación acaba donde se
+  suelte, también si la flecha se apaga bajo el dedo al llegar al límite) y
+  repite: un paso al pulsar, otro a los `STEP_REPEAT_DELAY_MS` = 400 ms y uno
+  cada `STEP_REPEAT_MS` = 50 ms; `Shift` y `Ctrl` pulsados mientras tanto
+  cambian los pasos siguientes. Todo con el mismo `newGesture('step')`, así
+  que el *store* lo junta en una entrada; `onHold` al pulsar y `onRelease` al
+  soltar (la vista previa de la IA y la de los plugins esperan). Un campo que
+  desaparece bajo la pulsación (su panel se redibuja) o se deshabilita la
+  termina. Doble clic sobre una flecha son dos pasos, no la edición; si se
+  estaba escribiendo, la pulsación toma lo escrito y sube desde ahí. Se
+  llaman *Increase*/*Aumentar* y *Decrease*/*Disminuir*
+  (`common.increase`, `common.decrease`), `tabindex` −1.
+- **Deshabilitado**: el campo mira también la clase `is-disabled` (la que
+  ponen las filas *próximamente* de Ajustes) para el arrastre, las teclas,
+  la edición y las flechas, y gana `setDisabled` (`NumberControl`; también
+  en `lengthField` y `slider`), que usan los términos de la proporción
+  (`insp-aspect.ts`, antes tocaban las props a mano) y los mandos de la lente
+  fina con una lente trazada (`insp-lens.ts`: antes se apagaban sus `input`
+  pero el campo se seguía arrastrando).
+- **Variante compacta** (◆ Fable): un campo con etiqueta en línea (X, Y, Z;
+  U, V; H, V) y el campo de un deslizador (`slider()` la pide) llevan un par
+  de 10 px con iconos de 10 px, 5 px de relleno izquierdo y márgenes de 3 y
+  2 px junto a la etiqueta y la unidad: el valor conserva el sitio de antes
+  (en un triplete de 102 px, 47 px de valor, como antes; en el campo de un
+  deslizador de 78 px, 59 px frente a 62). Es la propuesta por defecto; la
+  alternativa (las flechas solo al pasar el ratón o con el foco) mueve el
+  valor o tapa la unidad al aparecer.
+- **El campo de tiempo** de la ventana de render (`timeField`) deja de ser un
+  `input` de texto y es un `numberField` de segundos que se ve y se escribe
+  como `hh:mm:ss` (nuevo `parse` del campo: con él, la edición empieza por el
+  texto que se ve): arrastrable, con sus flechas (un minuto; `Shift` 6 s,
+  `Ctrl` 10 min), una entrada de deshacer por gesto; lo que no es una hora o
+  no pasa de 0 se rechaza, como antes. Sin máximo en el campo (el *store* lo
+  limita a una semana): un campo acotado recorre todo su rango en 240 px.
+  `tools/doctor-engine-check.mjs` escribe en él con doble clic.
+- **La regla y lo convertido** (`UI.md` §4.4; ◆ Fable confirma la lista):
+  un valor con rango natural acotado (factor 0–1, porcentaje, ángulo en un
+  rango fijo, opacidad) es deslizador con su campo y sus flechas; una
+  magnitud física o sin tope (mm, tamaños, potencias, kelvin, cuentas,
+  tiempos, semillas) sigue en campo con flechas. Convertidos: **inspector**
+  —*Rozamiento* (0–2) y *Rebote* (0–1) de físicas; *Giro* del bokeh
+  (±180°), *Inclinación* (±12°) y *Eje de la inclinación* (±180°) de la
+  óptica avanzada; el *Ángulo* de un filtro (±180°); el *Ángulo de
+  suavizado* (0–180°); el *Ángulo* de un patrón circular (±360°); el *Giro*
+  de una textura y de una etiqueta (±360°); en un foco propio *Acimut*
+  (±180°), *Elevación* (±89°), *Giro* (±180°), *Dispersión* (1–180°),
+  *Ángulo de cono* (1–179°), *Transición* (0–100 %) y *Disco del sol*
+  (0–5°)—; **ventana de render** —*Calidad* del JPEG (1–100), *Ruido* de
+  *Terminar por ruido* (0,5–5 %) e *Intensidad* de la reducción de ruido
+  (0–100 %)—; **Ajustes** —*Velocidad de órbita*, *Velocidad de zoom*
+  (25–300 %), *Tamaño del gizmo* (50–200 %) e *Intervención por defecto*
+  (0–100), en `SLIDER_SETTINGS` de `settings-rows.ts`—. Los parámetros de
+  material ya eran deslizadores hasta 2,5 (`insp-parts.ts`) y los del editor
+  de nodos con un rango de 10 o menos; las sensaciones de *Ambiente*, las
+  de la IA y las de los plugins ya lo eran. CSS: `.rw .slider .num`,
+  `.rw-stack > .slider` (hasta 300 px), `.rw-inline > .slider` (220 px, la
+  calidad junto al formato) y `.sw-slider` (hasta 240 px).
+- **Tests**: `tests/number-field-browser.test.ts` (10, con la página
+  `tests/browser/number-field.html`: el campo, el deslizador y el de tiempo
+  reales escribiendo en un *store* real, con el reloj falso de Playwright para
+  la repetición): el par en cada campo, a la derecha, dentro, sin pisar el
+  valor y sin ser parada de tabulación; clic, `Shift` y `Ctrl`, una entrada
+  por clic; mantener (nada antes de 400 ms, luego uno cada 50 ms, `Shift`
+  durante la repetición, nada tras soltar, **una** entrada que un deshacer
+  quita entera, soltar fuera del botón); límites y flecha apagada (también
+  con una pulsación mantenida hasta el máximo y con el teclado); deshabilitado
+  y `setDisabled`, también a mitad de una pulsación; `onHold`/`onRelease`;
+  sin arrastre, sin edición con doble clic y con el foco en el campo; escribir,
+  arrastrar y las teclas; el deslizador y el de tiempo; un clic sin puntero.
+  `tests/number-layout-browser.test.ts` (2, uno por idioma): los estados de
+  abajo, cada uno a los dos tamaños.
+- **Medidas**: en un Chromium real (sin GPU), antes de las flechas ningún campo de los
+  estados del ejemplo recortaba nada; con ellas, el test de disposición mide
+  por idioma 1 592 campos y 620 deslizadores en 34 vistas (siete estados a
+  los dos tamaños y las diez secciones de Ajustes a los dos tamaños), **0
+  problemas** en es y en (524 s los dos). El margen más justo entre el valor
+  y su sitio es de 13 px (*Automático* en *Hilos*, campo de 110 px), 14 px
+  (*-183* en un triplete de coordenadas de 102 px) y 17 px (*fps*, 84 px).
+  **Que el test caza un recorte**: con `.num { height: 16px }` a propósito
+  (menos que su contenido), el de inglés falla con 3 184 problemas (*its
+  content is taller than it (17 > 14)*, *the step buttons are not a stacked
+  pair*…); deshecho, vuelve a verde. Y ocho mutaciones del campo, cada una
+  con algún test de `number-field-browser` en rojo: un gesto por repetición
+  (una entrada de deshacer por paso), sin repetición, las flechas sin
+  apagarse en el límite, sin `onRelease`, el arrastre desde las flechas, el
+  foco en la flecha, las flechas en un campo deshabilitado y sin `Shift`.
+- **Comprobación de navegador** `tools/number-fields-check.mjs`: (a) las
+  flechas en todos los campos de la pantalla inicial; (b) un clic en ▲ de
+  *Focal* es un paso y una entrada, y mantener ▼ un segundo son muchos pasos
+  y otra entrada que un deshacer quita entera; (c) los ángulos de un foco
+  propio son deslizadores y *Distancia* y *Potencia* campos; (d) las
+  velocidades de *Preferencias* son deslizadores y *Tamaño de la interfaz*
+  un campo. Capturas `docs/ui/u15-light-fields.png`,
+  `u15-part-triplets.png` y `u15-settings-sliders.png`.
+
+**Qué no encajó con el plan** (regla 12):
+
+- Los tests «en el entorno DOM de los tests de componentes»: vitest corre en
+  Node sin DOM y ningún test usaba `numberField`; los componentes con DOM se
+  prueban en Chromium a través de Vite (`tests/browser/*.html`), así que los
+  del campo son una página de esas, con reloj falso.
+- `SPEC.md` no describe el campo numérico: no cambia.
+- No se convirtieron, por la regla de no apretar filas: el acimut, la
+  elevación, la parte y el tamaño de las luces de un estudio (rejilla de dos
+  con etiqueta en línea, `insp-scene.ts`) y las asas de la curva; tampoco
+  *Tamaño de la interfaz* ni *Tamaño del texto* (porcentajes, pero
+  reescalan la ventana bajo el pulgar mientras se arrastra) ni la dirección
+  del viento de *Ambiente* (da la vuelta, sin rango). La hoja de importación
+  (el ángulo de teselado) no estaba en las zonas del encargo.
+- Un valor largo en un campo estrecho ya se cortaba antes (`overflow:
+  hidden` en el valor; en un triplete, más de unos 6 caracteres); la
+  variante compacta deja el mismo sitio, no más. El test de disposición mide
+  los valores de los estados que abre.
+- Los ◆ (la variante compacta, la lista de lo convertido y el ritmo de la
+  repetición) están en *Decisiones para Fable*.
+
 ## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
 
 Petición del usuario (14-10): en animación faltaban las **explosiones
@@ -11251,6 +11751,14 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   (centrado en el corte, como mucho medio plano, sin fundido al final); y
   la calidad del vídeo (automática, unos 0,1 bits por píxel, sin alfa ni
   sonido).
+- **L7** (los ◆ de su párrafo): que las recetas de *Interior* y los tres
+  montajes de sol (cambian el entorno, no crean nada) sean *Luces* y que
+  `PRESET` cambie de grupo con el tipo de producto; el tipo de producto solo
+  como filtro de *Sets* y solo por `StudioPreset.set` (falta una tabla de qué
+  sets sirven a cada tipo); el filtro *Sujeto*; que un set que entra sustituya
+  siempre la decoración del anterior y que *Luces* con *Ocultar* o *Añadir* la
+  deje; preguntar por defecto también con los focos sin tocar; los tres
+  tamaños de miniatura (4, 3 y 2 columnas, la pequeña sin etiqueta).
 - **H1** (pasada v0.1.16): los grises auxiliares `ink-2` e `ink-3` quedan
   por debajo de 7:1 en 36 pares. Para llegar a 7:1 en todas las superficies
   tendrían que ser `#434343` o más oscuros en claro y `#b5b5b5` o más
@@ -11271,6 +11779,17 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   (clip `FOCUS`) en una cámara en *Punto* (hoy tira desde la distancia que
   sigue y el último gana); y si el clic en un vidrio enfoca su cara delantera
   (hoy) o lo que se ve a través.
+
+- **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
+  de las flechas (hoy un par más fino, siempre visible, en los campos con
+  etiqueta en línea y en el de un deslizador; la otra opción, flechas solo
+  al pasar el ratón o con el foco); la **lista de lo convertido a
+  deslizador** (`UI.md` §4.4: físicas, ángulos de la óptica, de los filtros,
+  del suavizado, de los patrones, de texturas y etiquetas y de un foco
+  propio; calidad JPEG, ruido e intensidad de la reducción de ruido;
+  velocidades, gizmo e intervención en Ajustes) y lo que se quedó en campo
+  (las luces del estudio, las asas, *Tamaño de la interfaz* y *del texto*);
+  y el ritmo de la repetición (400 ms y luego cada 50 ms).
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
@@ -11370,7 +11889,7 @@ banda nítida en píxeles del render desde el clic, y error de enfoque en mm:
 
 **Qué se hizo.**
 
-- **El motor** (`rt_core::focus`, ARCHITECTURE §5.2 quindecies):
+- **El motor** (`rt_core::focus`, ARCHITECTURE §5.2 septendecies):
   `rt_scene_pick` (el rayo principal de un punto de la imagen, el de
   `generate_ray` con la pupila en su centro, y lo que toca por las dos caras)
   y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS

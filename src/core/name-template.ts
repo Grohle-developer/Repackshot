@@ -87,3 +87,30 @@ export function outputFileName(template: string, v: NameValues, ext: string, fra
   if (frame && !hasNumberToken(template)) return `${safeFileName(expandTemplate(template, v))}_${padNumber(v.n)}.${ext}`;
   return `${safeFileName(expandTemplate(template, v))}.${ext}`;
 }
+
+/**
+ * The names that more than one file would have (N2: a batch whose template lacks `{camera}`, `{studio}` and `{n}` writes
+ * the same name for several images), compared as file systems compare them (case-insensitively), in the order they first
+ * repeat. Each is given once, spelled as its first occurrence.
+ */
+export function repeatedNames(names: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  const first = new Map<string, string>();
+  for (const n of names) {
+    const k = n.toLowerCase();
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+    if (!first.has(k)) first.set(k, n);
+  }
+  return [...seen].filter(([, c]) => c > 1).map(([k]) => first.get(k)!);
+}
+
+/**
+ * The name of the ZIP that holds the files of a batch (N2): the project's name and the render numbers of its jobs, as the
+ * template numbers an image: `Bottle_0001-0004.zip` (`Bottle_0001.zip` for one job).
+ */
+export function zipFileName(project: string, seqs: readonly number[]): string {
+  const lo = Math.min(...seqs);
+  const hi = Math.max(...seqs);
+  const numbers = seqs.length === 0 || lo === hi ? padNumber(lo === Infinity ? 0 : lo) : `${padNumber(lo)}-${padNumber(hi)}`;
+  return `${safeFileName(project, 'render')}_${numbers}.zip`;
+}

@@ -218,6 +218,11 @@ fn cone_one_minus_cos(r: f32, d: f32) -> f32 {
 fn pixel_footprint(scene: &Scene) -> f32 {
     let camera = &scene.camera;
     let (w, h) = (scene.render.width.max(1), scene.render.height.max(1));
+    if camera.panoramic() {
+        // K3: an angle per pixel (the field across the width), at the target's distance.
+        let distance = (camera.target - camera.position).length();
+        return distance * camera.fov_x_deg * crate::fmath::DEG_TO_RAD / w as f32;
+    }
     if camera.ortho {
         return camera.ortho_width.abs() / w as f32;
     }

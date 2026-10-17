@@ -162,7 +162,7 @@ fn the_passes_of_the_example_have_pinned_hashes_on_every_platform() {
     let tiles = tile_grid(w, h, 32);
     let mut reference = None;
     for isa in Isa::available() {
-        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let passes = passes_of(&scene, PASS_X2, 4, &tiles, isa);
         let got = hashes(&passes);
         for (key, hash) in PASS_KEYS.iter().zip(&got) {
             eprintln!("example {key} on {}: {hash:#010x}", isa.name());
@@ -175,7 +175,7 @@ fn the_passes_of_the_example_have_pinned_hashes_on_every_platform() {
     let mut odd = tile_grid(w, h, 13);
     odd.reverse();
     assert_eq!(
-        passes_of(&scene, PASS_ALL, 4, &odd, Isa::detect()),
+        passes_of(&scene, PASS_X2, 4, &odd, Isa::detect()),
         reference
     );
     // A subset of the passes is the same planes.
@@ -201,7 +201,7 @@ fn the_passes_of_the_e5_example_have_pinned_hashes_on_every_platform() {
     let scene = crate::example::e5_scene(false);
     let tiles = tile_grid(scene.render.width, scene.render.height, 32);
     for isa in Isa::available() {
-        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let passes = passes_of(&scene, PASS_X2, 4, &tiles, isa);
         let got = hashes(&passes);
         for (key, hash) in PASS_KEYS.iter().zip(&got) {
             eprintln!("E5 {key} on {}: {hash:#010x}", isa.name());
@@ -232,7 +232,7 @@ fn the_passes_of_the_e6_example_have_pinned_hashes_on_every_platform() {
     let scene = crate::example::e6_scene();
     let tiles = tile_grid(scene.render.width, scene.render.height, 32);
     for isa in Isa::available() {
-        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let passes = passes_of(&scene, PASS_X2, 4, &tiles, isa);
         let got = hashes(&passes);
         for (key, hash) in PASS_KEYS.iter().zip(&got) {
             eprintln!("E6 {key} on {}: {hash:#010x}", isa.name());
@@ -243,7 +243,7 @@ fn the_passes_of_the_e6_example_have_pinned_hashes_on_every_platform() {
     for m in &mut sharp.materials {
         m.bevel_mm = 0.0;
     }
-    let plain = hashes(&passes_of(&sharp, PASS_ALL, 4, &tiles, Isa::detect()));
+    let plain = hashes(&passes_of(&sharp, PASS_X2, 4, &tiles, Isa::detect()));
     assert_ne!(
         plain[1], PINNED_E6_PASS_NORMAL,
         "the bevel shows in the normal pass"
@@ -280,7 +280,7 @@ fn the_passes_of_the_m2b_example_have_pinned_hashes_on_every_platform() {
     let scene = crate::example::m2b_scene();
     let tiles = tile_grid(scene.render.width, scene.render.height, 32);
     for isa in Isa::available() {
-        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let passes = passes_of(&scene, PASS_X2, 4, &tiles, isa);
         let got = hashes(&passes);
         for (key, hash) in PASS_KEYS.iter().zip(&got) {
             eprintln!("M2b {key} on {}: {hash:#010x}", isa.name());
@@ -289,7 +289,7 @@ fn the_passes_of_the_m2b_example_have_pinned_hashes_on_every_platform() {
     }
     let mut plain = scene.clone();
     plain.textures.clear();
-    let without = hashes(&passes_of(&plain, PASS_ALL, 4, &tiles, Isa::detect()));
+    let without = hashes(&passes_of(&plain, PASS_X2, 4, &tiles, Isa::detect()));
     assert_ne!(
         without[0], PINNED_M2B_PASS_ALBEDO,
         "the textures show in the albedo pass"
@@ -308,7 +308,7 @@ fn the_passes_of_the_m3b_example_have_pinned_hashes_on_every_platform() {
     let scene = crate::example::m3b_scene();
     let tiles = tile_grid(scene.render.width, scene.render.height, 32);
     for isa in Isa::available() {
-        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let passes = passes_of(&scene, PASS_X2, 4, &tiles, isa);
         let got = hashes(&passes);
         for (key, hash) in PASS_KEYS.iter().zip(&got) {
             eprintln!("M3b {key} on {}: {hash:#010x}", isa.name());
@@ -317,7 +317,7 @@ fn the_passes_of_the_m3b_example_have_pinned_hashes_on_every_platform() {
     }
     let mut plain = scene.clone();
     plain.programs.clear();
-    let without = hashes(&passes_of(&plain, PASS_ALL, 4, &tiles, Isa::detect()));
+    let without = hashes(&passes_of(&plain, PASS_X2, 4, &tiles, Isa::detect()));
     assert_ne!(
         without[0], PINNED_M3B_PASS_ALBEDO,
         "the programs show in the albedo pass"
@@ -634,6 +634,238 @@ fn the_albedo_is_the_base_colour_at_the_first_hit_averaged_over_the_samples() {
     let centre = (8 * 48 + 4) * 3;
     assert!((p.albedo[centre] - diffuse.r).abs() < 1.0e-6);
 }
+
+/// The scene of the alpha tests: a quad in front of the sky and of a floor, 40 × 30 pixels.
+fn quad_over_floor() -> Scene {
+    let mut scene = looking_along_y(200.0, 50.0, 40, 30);
+    scene.camera.target = Vec3::new(0.0, 0.0, 35.0);
+    scene.materials = vec![lambert(Rgb::new(0.7, 0.2, 0.1))];
+    scene.geometry = Geometry::from_meshes(vec![quad(0.0, (-12.0, 12.0), (20.0, 60.0), 0, false)]);
+    scene
+}
+
+#[test]
+fn alpha_is_the_coverage_of_the_objects_and_nothing_else() {
+    // N2: 1 inside the quad, 0 on the floor (visible, a shadow catcher or absent), the sky, the
+    // colour and the transparency; fractional only along the quad's edge, where the samples of a
+    // pixel see both sides. The floor and the background do not change a bit of it.
+    let mut scene = quad_over_floor();
+    let mut reference: Option<Vec<f32>> = None;
+    for mode in [
+        FloorMode::Visible,
+        FloorMode::ShadowCatcher,
+        FloorMode::None,
+    ] {
+        for background in [BACKGROUND_COLOR, BACKGROUND_TRANSPARENT] {
+            scene.floor = Floor {
+                mode,
+                z: 0.0,
+                color: Rgb::new(0.3, 0.6, 0.9),
+            };
+            scene.environment.background_mode = background;
+            let p = passes_of(
+                &scene,
+                PASS_ALPHA | PASS_PART_ID,
+                8,
+                &whole(&scene),
+                Isa::detect(),
+            );
+            assert!(
+                p.albedo.is_empty() && p.depth.is_empty(),
+                "only what was asked"
+            );
+            let (mut inside, mut outside, mut edge) = (0, 0, 0);
+            for y in 0..30usize {
+                for x in 0..40usize {
+                    let i = y * 40 + x;
+                    // Whether the pixel and its eight neighbours all see the quad, or none does.
+                    let around = |want: bool| {
+                        (y.saturating_sub(1)..=(y + 1).min(29)).all(|yy| {
+                            (x.saturating_sub(1)..=(x + 1).min(39))
+                                .all(|xx| (p.part_id[yy * 40 + xx] == 1) == want)
+                        })
+                    };
+                    let a = p.alpha[i];
+                    assert!((0.0..=1.0).contains(&a), "({x}, {y}): {a}");
+                    if around(true) {
+                        assert_eq!(a, 1.0, "inside at ({x}, {y})");
+                        inside += 1;
+                    } else if around(false) {
+                        assert_eq!(a, 0.0, "outside at ({x}, {y}), {mode:?}, {background}");
+                        outside += 1;
+                    } else if a > 0.0 && a < 1.0 {
+                        edge += 1;
+                    }
+                }
+            }
+            assert!(inside > 20 && outside > 100, "{inside} in, {outside} out");
+            assert!(edge > 10, "the edge is anti-aliased: {edge} pixels");
+            match &reference {
+                None => reference = Some(p.alpha),
+                Some(r) => assert_eq!(&p.alpha, r, "{mode:?} over {background}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn alpha_is_the_alpha_of_a_transparent_render_of_opaque_objects() {
+    // Where nothing but opaque objects and the background are, the coverage the pass counts is the
+    // film's own alpha with a transparent background, bit for bit: the same camera sample, the same
+    // answer, the same division. (Glass the path goes through and the floor's shadow are not
+    // coverage in the pass: that is the difference, noted in the module's table.)
+    let mut scene = quad_over_floor();
+    scene.floor = Floor {
+        mode: FloorMode::None,
+        z: 0.0,
+        color: Rgb::BLACK,
+    };
+    scene.environment.background_mode = BACKGROUND_TRANSPARENT;
+    scene.render.max_samples = 8;
+    let prepared = Prepared::new(&scene);
+    let mut film = Film::new(40, 30);
+    for tile in tile_grid(40, 30, 16) {
+        for sample in 0..8 {
+            render_tile_prepared(&scene, &prepared, tile, sample, &mut film, Isa::detect());
+        }
+    }
+    let p = passes_of(&scene, PASS_ALPHA, 8, &tile_grid(40, 30, 16), Isa::detect());
+    let image = film.resolve_alpha();
+    assert!(image.iter().any(|&a| a > 0.0 && a < 1.0), "has soft edges");
+    assert_eq!(p.alpha, image);
+}
+
+#[test]
+fn alpha_with_edge_samples_is_the_alpha_of_the_film_with_them() {
+    // E11: an edge pixel renders k samples of each index and splats their mean once; the pass does
+    // the same with the coverage of those k samples, so it is still the film's alpha bit for bit
+    // (and finer than the base samples alone could tell: an eighth, from 2 samples at k = 4).
+    let mut scene = quad_over_floor();
+    scene.floor = Floor {
+        mode: FloorMode::None,
+        z: 0.0,
+        color: Rgb::BLACK,
+    };
+    scene.environment.background_mode = BACKGROUND_TRANSPARENT;
+    scene.render.edge_supersample = 4;
+    let prepared = Prepared::new(&scene);
+    let isa = Isa::detect();
+    let mut film = Film::new(40, 30);
+    let mut passes = Passes::new(40, 30, PASS_ALPHA);
+    for tile in tile_grid(40, 30, 16) {
+        let edges = crate::pixel_filter::EdgeMask::of(&scene, &prepared, tile, isa);
+        let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, PASS_ALPHA);
+        for sample in 0..2 {
+            render_tile_edges(&scene, &prepared, None, &edges, sample, &mut film, isa);
+            render_tile_albedo_edges(&scene, &prepared, &edges, sample, &mut pf, isa);
+        }
+        passes.copy_region(tile.x, tile.y, &pf.resolve());
+    }
+    assert_eq!(passes.alpha, film.resolve_alpha());
+    assert!(
+        passes
+            .alpha
+            .iter()
+            .any(|&a| (a * 8.0).fract() == 0.0 && (a * 8.0) as u32 % 2 == 1),
+        "an edge pixel has an odd eighth: its sub-samples were counted"
+    );
+}
+
+#[test]
+fn a_light_panel_the_camera_sees_has_no_coverage() {
+    let mut scene = looking_along_y(100.0, 0.0, 24, 24);
+    scene.materials = vec![lambert(Rgb::splat(0.5))];
+    scene.geometry = Geometry::from_meshes(vec![quad(0.0, (-60.0, 60.0), (-60.0, 60.0), 0, true)]);
+    let panel = Light {
+        kind: LightKind::Rect,
+        position: Vec3::new(-6.0, -50.0, 0.0),
+        direction: Vec3::new(0.0, -1.0, 0.0),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        size_x: 10.0,
+        size_y: 10.0,
+        power: 2.0,
+        flags: LIGHT_FLAG_CAMERA | LIGHT_FLAG_GLOSSY,
+        ..Light::default()
+    };
+    let without = passes_of(&scene, PASS_ALPHA, 2, &whole(&scene), Isa::detect());
+    assert!(
+        without.alpha.iter().all(|&a| a == 1.0),
+        "the quad fills the frame"
+    );
+    scene.lights = vec![panel];
+    let with = passes_of(
+        &scene,
+        PASS_ALPHA | PASS_PART_ID,
+        2,
+        &whole(&scene),
+        Isa::detect(),
+    );
+    let behind = with.part_id.iter().filter(|&&id| id == 0).count();
+    assert!(behind > 10, "{behind} pixels behind the panel");
+    for (a, id) in with.alpha.iter().zip(&with.part_id) {
+        if *id == 0 {
+            assert_eq!(*a, 0.0, "background where the panel is");
+        }
+    }
+}
+
+#[test]
+fn alpha_with_the_other_passes_and_in_any_tiling_is_the_same_plane() {
+    let scene = quad_over_floor();
+    let tiles = tile_grid(40, 30, 32);
+    let alone = passes_of(&scene, PASS_ALPHA, 4, &tiles, Isa::detect());
+    let mut odd = tile_grid(40, 30, 7);
+    odd.reverse();
+    assert_eq!(
+        passes_of(&scene, PASS_ALPHA, 4, &odd, Isa::detect()).alpha,
+        alone.alpha
+    );
+    // With the albedo asked too (one trace serves both) and with every pass.
+    assert_eq!(
+        passes_of(&scene, PASS_ALPHA | PASS_ALBEDO, 4, &tiles, Isa::detect()).alpha,
+        alone.alpha
+    );
+    let all = passes_of(&scene, PASS_ALL, 4, &tiles, Isa::detect());
+    assert_eq!(all.alpha, alone.alpha);
+    // And the albedo does not change with the alpha beside it.
+    assert_eq!(
+        passes_of(&scene, PASS_ALBEDO, 4, &tiles, Isa::detect()).albedo,
+        all.albedo
+    );
+    // Without the pass the plane is empty, and asking for it costs no ray when no sampled pass is asked.
+    let none = passes_of(&scene, PASS_DEPTH, 4, &tiles, Isa::detect());
+    assert!(none.alpha.is_empty());
+}
+
+#[test]
+fn the_alpha_of_the_example_and_of_the_e5_example_have_pinned_hashes_on_every_platform() {
+    // N2: the alpha plane of the two scenes the X2 pins use, 4 samples, on every SIMD path (the
+    // glass sphere and the cut-out card count as objects: every surface stops the pass ray).
+    // `tools/wasm-parity.mjs --expect-alpha` checks the real `rt_wasm.wasm` against the same values.
+    for (name, scene, pinned) in [
+        ("example", crate::example::scene(), PINNED_PASS_ALPHA),
+        ("E5", crate::example::e5_scene(false), PINNED_E5_PASS_ALPHA),
+    ] {
+        let tiles = tile_grid(scene.render.width, scene.render.height, 32);
+        for isa in Isa::available() {
+            let p = passes_of(&scene, PASS_ALPHA, 4, &tiles, isa);
+            let got = hashes(&p);
+            eprintln!("{name} alpha on {}: {:#010x}", isa.name(), got[0]);
+            assert_eq!(got, [pinned], "{name} on {}", isa.name());
+            assert!(
+                p.alpha.contains(&0.0)
+                    && p.alpha.contains(&1.0)
+                    && p.alpha.iter().any(|&a| a > 0.0 && a < 1.0),
+                "{name}: background, object and edge"
+            );
+        }
+    }
+}
+
+/// The pinned hash of the example's alpha plane (4 samples; `PINNED_PASS_ALPHA` for CI).
+pub(crate) const PINNED_PASS_ALPHA: u32 = 0xd4ea_ac78;
+/// The same for the E5 example (`PINNED_E5_PASS_ALPHA` for CI).
+pub(crate) const PINNED_E5_PASS_ALPHA: u32 = 0xef9e_ad68;
 
 #[test]
 fn normals_face_the_camera_on_both_sides_of_a_triangle() {

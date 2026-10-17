@@ -322,6 +322,10 @@ summary.sw-block-title {
 .sw-num {
   min-width: 110px;
 }
+/* U15: a setting drawn as a slider with its field. */
+.sw-slider {
+  width: min(240px, 100%);
+}
 .sw-text-input {
   width: min(260px, 100%);
 }

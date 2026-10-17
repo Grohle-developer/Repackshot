@@ -29,7 +29,11 @@ export interface CameraState {
   fstop: number;
   /** Millimetres from the camera. */
   focusDistance: number;
-  projection: 'PERSPECTIVE' | 'ORTHOGRAPHIC';
+  /**
+   * PERSPECTIVE and ORTHOGRAPHIC; K3 adds the panoramas (core/panorama.ts): EQUIRECTANGULAR, the whole sphere around the
+   * camera on a 2:1 image, and FISHEYE, an equidistant fisheye of `fisheyeFovDeg` across the frame's diagonal.
+   */
+  projection: CameraProjection;
   /** Width of the orthographic view, millimetres. */
   orthoWidth: number;
   clipStart: number;
@@ -60,6 +64,14 @@ export interface CameraState {
   focusPoint?: FocusPoint | null;
   /** F1, OBJECT: the part, group or model the focus follows. */
   focusObject?: NodeId | null;
+  /** K3, FISHEYE: the field of view across the diagonal of the frame, degrees (absent: 180). */
+  fisheyeFovDeg?: number;
+  /**
+   * K3, straight verticals (core/interior-camera.ts): a perspective camera renders level, with the lens shift that keeps
+   * its target where it was in the frame, so vertical lines stay parallel; an equirectangular one renders level.
+   * Absent: off (every camera of before K3).
+   */
+  straightVerticals?: boolean;
 }
 
 /** F1: how a camera's focus is set (CameraState.focusMode). */
@@ -74,24 +86,38 @@ export interface FocusPoint {
   point: Vec3;
 }
 
+/** The projections of a camera, in the order of the control. */
+export const CAMERA_PROJECTIONS = ['PERSPECTIVE', 'ORTHOGRAPHIC', 'EQUIRECTANGULAR', 'FISHEYE'] as const;
+export type CameraProjection = (typeof CAMERA_PROJECTIONS)[number];
+
+/** K3: true for the panoramic projections, which the preview draws from six cube faces and the engine as a pinhole. */
+export function isPanoramic(p: CameraProjection): boolean {
+  return p === 'EQUIRECTANGULAR' || p === 'FISHEYE';
+}
+
 /** Width of the reference sensor, millimetres (applies to the longer image side). */
 export const SENSOR_MM = 36;
 
 /** Margin of the reference framing: the part fills 1 / 1.1 of the frame. */
 export const FRAME_MARGIN = 1.1;
 
-export type ViewKey = 'THREE_QUARTER' | 'FRONT' | 'SIDE' | 'TOP' | 'BACK';
+export type ViewKey = 'THREE_QUARTER' | 'FRONT' | 'SIDE' | 'TOP' | 'BACK' | 'ELEVATION' | 'PLAN';
 
-/** Standard views: world azimuth and elevation. */
-export const VIEWS: Readonly<Record<ViewKey, { azimuth: number; elevation: number }>> = {
+/**
+ * Standard views: world azimuth and elevation. K3 adds the architect's two (INTERIORS.md §3.4), orthographic: the
+ * elevation, level from the front, and the plan, from straight above (89.9°, the steepest the camera's basis takes).
+ */
+export const VIEWS: Readonly<Record<ViewKey, { azimuth: number; elevation: number; ortho?: true }>> = {
   THREE_QUARTER: { azimuth: CAMERA_AZIMUTH_DEG, elevation: CAMERA_ELEVATION_DEG },
   FRONT: { azimuth: 0, elevation: 4 },
   SIDE: { azimuth: 90, elevation: 4 },
   TOP: { azimuth: 0, elevation: 89 },
   BACK: { azimuth: 180, elevation: 8 },
+  ELEVATION: { azimuth: 0, elevation: 0, ortho: true },
+  PLAN: { azimuth: 0, elevation: 89.9, ortho: true },
 };
 
-export const VIEW_KEYS: readonly ViewKey[] = ['THREE_QUARTER', 'FRONT', 'SIDE', 'TOP', 'BACK'];
+export const VIEW_KEYS: readonly ViewKey[] = ['THREE_QUARTER', 'FRONT', 'SIDE', 'TOP', 'BACK', 'ELEVATION', 'PLAN'];
 
 /** Reference camera for a part of `partSizeMm` (three-quarter view, 85 mm). */
 export function makeCamera(id: CameraId, name: string, partSizeMm: number): CameraState {
@@ -420,7 +446,7 @@ export function reduceCamera(state: ProjectState, action: CameraAction): Project
       const cam = activeCamera(state);
       const v = VIEWS[action.view];
       if (!cam || !v) return state;
-      return frameActive(setCamera(state, { ...cam, azimuth: v.azimuth, elevation: v.elevation }));
+      return frameActive(setCamera(state, { ...cam, azimuth: v.azimuth, elevation: v.elevation, ...(v.ortho ? { projection: 'ORTHOGRAPHIC' as const } : {}) }));
     }
     case 'camera/lens': {
       const cam = activeCamera(state);

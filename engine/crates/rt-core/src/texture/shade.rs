@@ -107,9 +107,12 @@ pub struct CameraCone {
     right: Vec3,
     up: Vec3,
     focal: f32,
-    /// Sensor millimetres per pixel (perspective) or scene millimetres per pixel (orthographic).
+    /// Sensor millimetres per pixel (perspective) or scene millimetres per pixel (orthographic);
+    /// for a panorama (K3) radians per pixel, with a focal length of 1.
     pixel: f32,
     ortho: bool,
+    /// K3: a panoramic camera, whose image is no plane: the footprint is the cone of its pixel.
+    panoramic: bool,
 }
 
 impl Default for CameraCone {
@@ -124,6 +127,17 @@ impl CameraCone {
         let camera = &scene.camera;
         let (w, h) = (scene.render.width.max(1), scene.render.height.max(1));
         let (forward, right, up) = camera.basis();
+        if camera.panoramic() {
+            return CameraCone {
+                forward,
+                right,
+                up,
+                focal: 1.0,
+                pixel: camera.fov_x_deg * crate::fmath::DEG_TO_RAD / w as f32,
+                ortho: false,
+                panoramic: true,
+            };
+        }
         let pixel = if camera.ortho {
             camera.ortho_width / w as f32
         } else {
@@ -137,6 +151,7 @@ impl CameraCone {
             focal: camera.focal_mm.max(1.0e-3),
             pixel,
             ortho: camera.ortho,
+            panoramic: false,
         }
     }
 
@@ -162,6 +177,9 @@ impl CameraCone {
     /// The footprint of the camera ray along `dir` (unit) at distance `t` on a surface of unit
     /// normal `n`: the ray differentials transferred to the hit and projected onto its plane.
     pub fn footprint(&self, dir: Vec3, t: f32, n: Vec3) -> Footprint {
+        if self.panoramic {
+            return Footprint::cone(dir, self.spread() * t, n);
+        }
         let (dpx, dpy) = if self.ortho {
             (self.right * self.pixel, self.up * self.pixel)
         } else {

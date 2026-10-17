@@ -72,3 +72,7 @@ scale; the PHYSICS clip's baked track, base64 f32 written a frame at a time by `
 carried by the node's moves since its anchor; the `physics/*` actions, where a run is one gesture and Reset another
 step; the Doctor's dynamic-part-below-the-floor test). `animation.ts` plays PHYSICS clips first and `playheadPose`
 says what the viewport and a still show at the playhead, at 0 too for what a recorded simulation holds.
+- `pass-files.ts` (N2): the passes the render window offers (alpha, depth, normals, part id; each one an engine pass of
+  `passes.ts`), `PassesOutput` (which, and in which format, 16-bit PNG or EXR), the 16-bit words each becomes, the file
+  names (`<image>_depth.exr`) and the part-id legend. `render.ts` gains the studio of a job (`StudioChoice`,
+  `studiosOf`, `batchSize`: cameras × studios), `passes` and the ZIP group of its settings and jobs.

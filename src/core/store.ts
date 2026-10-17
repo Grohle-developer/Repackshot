@@ -9,6 +9,7 @@ import type { SkyModel } from './sky';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
+import { reduceInteriorCamera, type InteriorCameraAction } from './interior-camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
 import { engineInputsChanged } from './doctor-engine';
 import { reduceEffects, type AmbientEffect, type EffectAction } from './effects';
@@ -20,6 +21,7 @@ import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 import { reducePhysics, type PhysicsAction } from './physics';
 import { reduceSceneType, type SceneTypeAction, type TypeMemory } from './scene-type';
+import { reducePrevious } from './previous-lights';
 import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
 import { reduceGraph, type GraphAction } from './material-graph';
@@ -69,11 +71,23 @@ export interface EnvironmentState {
   skyModel: SkyModel;
   /** Where the sky's sun is when the rig has no sun light: degrees, camera-relative like a light's. */
   skySun: { az: number; el: number };
+  /**
+   * K3, the exterior factor on the camera ray (INTERIORS.md §3.4): what the camera sees of the environment (through a
+   * window too) is multiplied by it, and nothing it lights: the window darkens, the room does not (`CAMR.exterior`).
+   * Absent: 1, every project of before K3.
+   */
+  exterior?: number;
 }
 
 /** Image settings applied after the render (SPEC §3.6). All zero = unchanged. */
 export interface ImageState {
+  /**
+   * The exposure in stops; K3, with `exposureMode` AUTO, the compensation over the metered exposure (core/image-passes.ts):
+   * one dial, *Brillo (EV)*, in both modes.
+   */
   exposureEv: number;
+  /** K3: the exposure set by hand (MANUAL, also when absent: every project of before K3) or metered from the image (AUTO). */
+  exposureMode?: 'MANUAL' | 'AUTO';
   viewTransform: 'STANDARD' | 'FILMIC' | 'AGX';
   bloom: number;
   sharpen: number;
@@ -151,6 +165,7 @@ export type Action =
   | GraphAction
   | StudioAction
   | CameraAction
+  | InteriorCameraAction
   | AnimationAction
   | RenderAction
   | DoctorAction
@@ -291,10 +306,12 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       // A material as a graph of nodes (M3a).
       return reduceGraph(state, action as GraphAction);
     case 'studio':
-      // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's.
-      return reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
+      // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's. A
+      // setup that keeps the lights there were (Hide, Add: L7) goes through core/previous-lights.ts first.
+      return reducePrevious(state, action as StudioAction) ?? reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
     case 'camera':
-      return reduceCamera(state, action as CameraAction);
+      // K3: the eye height and the interior lenses (core/interior-camera.ts) share the prefix.
+      return action.type === 'camera/eyeHeight' || action.type === 'camera/interiorLens' ? reduceInteriorCamera(state, action) : reduceCamera(state, action as CameraAction);
     case 'anim':
       return reduceAnimation(state, action as AnimationAction);
     case 'render':

@@ -7,7 +7,8 @@ import { doctorCheck } from '../../data/doctor';
 import { effectPreset } from '../../data/effects';
 import { warningCount, type DoctorResult } from '../../core/doctor';
 import { ENGINE_CHECKS } from '../../core/doctor-engine';
-import { activeCamera } from '../../core/camera';
+import { activeCamera, isPanoramic } from '../../core/camera';
+import { autoExposure } from '../../core/image-passes';
 import { filterActive, filtersOf, opticsOf } from '../../core/optics';
 import { allParts, triangleCount } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
@@ -316,6 +317,8 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
   // S4a: what the preview draws of the ambient effects, as the engine evaluated them (hidden without effects).
   const particlesSep = h('span', { class: 'sep', style: 'display:none' });
   const particles = h('span', { class: 'tabular', 'data-meter': 'particles', style: 'display:none' });
+  const exposureSep = h('span', { class: 'sep', style: 'display:none' });
+  const exposure = h('span', { class: 'tabular', 'data-meter': 'exposure', style: 'display:none' });
   const port = services.viewport;
   if (port) {
     let last = 0;
@@ -333,7 +336,9 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       const filtersApprox = port.kind !== 'pathtracer' && filtersOf(opticsOf(cam)).some(filterActive) ? ` · ${t('status.filtersApprox')}` : '';
       // O2: and so is its picture of a traced lens (distortion and falloff from the engine's tables).
       const lensApprox = port.kind !== 'pathtracer' && !!opticsOf(cam).traced && cam.projection !== 'ORTHOGRAPHIC' ? ` · ${t('status.lensApprox')}` : '';
-      const approx = filtersApprox + lensApprox;
+      // K3: and so is its panorama (six cube faces).
+      const panoApprox = port.kind !== 'pathtracer' && isPanoramic(cam.projection) ? ` · ${t('status.panorama')}` : '';
+      const approx = filtersApprox + lensApprox + panoApprox;
       engine.textContent =
         port.kind !== 'pathtracer'
           ? t('status.engineFast', { device: st.device }) + approx
@@ -343,6 +348,10 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       const n = st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: formatNumber(st.samples, getLang(), 0) });
       // The path tracer reports the time it has been converging; the preview, the time of its last frame.
       samples.textContent = port.kind === 'pathtracer' ? `${n} · ${formatClock(st.seconds)}` : `${n} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
+      // K3: the automatic exposure's reading, as the engine's image metered it (rule 10).
+      const auto = autoExposure(store.get().image);
+      exposureSep.style.display = exposure.style.display = auto ? '' : 'none';
+      if (auto) exposure.textContent = typeof st.meteredEv === 'number' ? t('status.autoExposure', { ev: `${st.meteredEv >= 0 ? '+' : ''}${formatNumber(st.meteredEv, getLang(), 2)}` }) : t('status.autoExposureNone');
       const p = port.kind === 'preview' ? st.particles : undefined;
       particles.style.display = particlesSep.style.display = p ? '' : 'none';
       if (p) particles.textContent = p.boxesOnly ? t('status.particlesBoxes') : t('status.particles', { shown: formatNumber(p.shown, getLang(), 0), total: formatNumber(p.total, getLang(), 0) });
@@ -362,6 +371,8 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
     engine,
     h('span', { class: 'sep' }),
     samples,
+    exposureSep,
+    exposure,
     particlesSep,
     particles,
     h('div', { class: 'status-right' }, runtimeNote(ctx, scope), updateNotice(ctx, scope), langBtn, h('span', { class: 'tabular' }, `v${VERSION}`)),

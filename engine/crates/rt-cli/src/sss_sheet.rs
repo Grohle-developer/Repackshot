@@ -247,6 +247,7 @@ pub fn spheres(size: (u32, u32), with_medium: bool) -> Scene {
             ortho: false,
             ortho_width: 100.0,
             lens: None,
+            ..Camera::default()
         },
         materials,
         geometry: Geometry::new(vec![mesh], instances).unwrap_or_default(),

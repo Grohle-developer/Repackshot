@@ -4,7 +4,7 @@
 import { UNIT_TO_MM } from '../../core/import-options';
 import type { LengthUnit } from '../../core/settings';
 import { formatNumber, getLang, t, type StringKey } from '../strings';
-import { h, hexToLinear, linearToHex } from '../dom';
+import { h, hexToLinear, icon, linearToHex } from '../dom';
 
 let gestureCounter = 0;
 /** A fresh gesture token: actions carrying it collapse into one undo entry. */
@@ -21,7 +21,7 @@ export interface NumberFieldProps {
   value: number;
   min?: number;
   max?: number;
-  /** Step of the arrow keys; also the drag sensitivity for unbounded fields. */
+  /** Step of the arrow keys and the step buttons; also the drag sensitivity for unbounded fields. */
   step?: number;
   unit?: string;
   /** Unit written before the value (f/). */
@@ -33,14 +33,30 @@ export interface NumberFieldProps {
   disabled?: boolean;
   /** Draw a thin bar for where the value sits between min and max. */
   fill?: boolean;
+  /**
+   * The thinner pair of step buttons and tighter spacing, for a narrow field. By default a field with an inline label
+   * (the X, Y, Z of a triplet) and a slider's field are compact (◆ Fable: the look of the compact variant).
+   */
+  compact?: boolean;
   /** Custom display of the value (the field still edits the raw number). */
   format?: (value: number) => string;
+  /** Reads what was typed (a time as hh:mm:ss); null refuses it. With it, typing starts from the shown text. */
+  parse?: (text: string) => number | null;
   /** Called on every change with the gesture token of the drag / edit. */
   onChange(value: number, gesture: string): void;
-  /** A drag began / ended: what is costly to redo (the AI preview) waits for the release. */
+  /** A drag or a press of a step button began / ended: what is costly to redo (the AI preview) waits for the release. */
   onHold?(): void;
   onRelease?(): void;
 }
+
+/** A NumberField's control: also switches the field and its step buttons on and off (a row that enables it). */
+export interface NumberControl extends Control<number> {
+  setDisabled(disabled: boolean): void;
+}
+
+/** Holding a step button: the first step at once, the next after this pause, then one each `STEP_REPEAT_MS`. */
+export const STEP_REPEAT_DELAY_MS = 400;
+export const STEP_REPEAT_MS = 50;
 
 function clampTo(v: number, min?: number, max?: number): number {
   if (min !== undefined && v < min) v = min;
@@ -54,21 +70,35 @@ function roundTo(v: number, step: number): number {
   return Math.round(v * k) / k;
 }
 
+/** Shift fine, Ctrl (⌘) coarse: the same factor for the drag, the arrow keys and the step buttons. */
+const stepFactor = (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): number => (e.shiftKey ? 0.1 : e.ctrlKey || e.metaKey ? 10 : 1);
+
 /**
- * One numeric field (UI.md §4.4): drag horizontally to change (Shift fine,
- * Ctrl coarse), arrows ±1 step, double click or Enter to type, Enter
- * confirms, Esc restores. A drag is one gesture: one undo entry.
+ * One numeric field (UI.md §4.4): drag horizontally to change (Shift fine, Ctrl coarse), arrows ±1 step, double
+ * click or Enter to type, Enter confirms, Esc restores. Two step buttons at its right end (▲ ▼) step it too, with
+ * the same Shift and Ctrl; held, they repeat. A drag, or one press of a step button however long, is one gesture:
+ * one undo entry. The buttons are for the pointer: the spinbutton keeps the keyboard (they are not tab stops).
  */
-export function numberField(p: NumberFieldProps): Control<number> {
+export function numberField(p: NumberFieldProps): NumberControl {
   let value = p.value;
   const step = p.step ?? 1;
   const digits = p.digits ?? (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
   const valueEl = h('span', { class: 'num-value' });
   const fillEl = p.fill && p.min !== undefined && p.max !== undefined ? h('span', { class: 'num-fill' }) : null;
+  const compact = p.compact ?? p.label !== undefined;
+  const stepButton = (dir: 1 | -1) =>
+    h(
+      'button',
+      { type: 'button', class: `num-step ${dir > 0 ? 'num-up' : 'num-down'}`, tabindex: -1, 'aria-label': t(dir > 0 ? 'common.increase' : 'common.decrease') },
+      icon(dir > 0 ? 'chevronUp' : 'chevronDown', compact ? 10 : 12),
+    ) as HTMLButtonElement;
+  const upEl = stepButton(1);
+  const downEl = stepButton(-1);
+  const stepsEl = h('span', { class: 'num-steps' }, upEl, downEl);
   const el = h(
     'div',
     {
-      class: `num${p.disabled ? ' is-disabled' : ''}`,
+      class: `num${compact ? ' is-compact' : ''}${p.disabled ? ' is-disabled' : ''}`,
       tabindex: p.disabled ? -1 : 0,
       role: 'spinbutton',
       'aria-label': p.ariaLabel ?? p.label ?? '',
@@ -79,14 +109,23 @@ export function numberField(p: NumberFieldProps): Control<number> {
     p.prefix ? h('span', { class: 'num-unit', style: 'margin:0 3px 0 0' }, p.prefix) : null,
     valueEl,
     p.unit ? h('span', { class: 'num-unit' }, p.unit) : null,
+    stepsEl,
     fillEl,
   );
+  /** Off by its props, or by the row that holds it (Settings' coming soon, the aspect terms): the class says so too. */
+  const off = () => p.disabled === true || el.classList.contains('is-disabled');
+  const atMax = () => p.max !== undefined && value >= p.max;
+  const atMin = () => p.min !== undefined && value <= p.min;
+  const display = () => (p.format ? p.format(value) : formatNumber(value, getLang(), digits));
   const render = () => {
-    valueEl.textContent = p.format ? p.format(value) : formatNumber(value, getLang(), digits);
+    valueEl.textContent = display();
     el.setAttribute('aria-valuenow', String(value));
     if (fillEl && p.min !== undefined && p.max !== undefined) {
-      fillEl.style.width = `${(100 * (value - p.min)) / (p.max - p.min || 1)}%`;
+      // The bar runs under the value, not under the step buttons.
+      fillEl.style.width = `calc((100% - var(--num-steps-w)) * ${(value - p.min) / (p.max - p.min || 1)})`;
     }
+    upEl.disabled = off() || atMax();
+    downEl.disabled = off() || atMin();
   };
   render();
 
@@ -100,9 +139,9 @@ export function numberField(p: NumberFieldProps): Control<number> {
 
   let editing: HTMLInputElement | null = null;
   const startEdit = () => {
-    if (p.disabled || editing) return;
+    if (off() || editing) return;
     el.classList.add('is-editing');
-    const input = h('input', { type: 'text', value: String(value), 'aria-label': p.ariaLabel ?? p.label ?? '' }) as HTMLInputElement;
+    const input = h('input', { type: 'text', value: p.parse ? display() : String(value), 'aria-label': p.ariaLabel ?? p.label ?? '' }) as HTMLInputElement;
     editing = input;
     el.appendChild(input);
     input.focus();
@@ -110,13 +149,13 @@ export function numberField(p: NumberFieldProps): Control<number> {
     const gesture = newGesture('edit');
     const finish = (ok: boolean) => {
       if (!editing) return;
-      const text = input.value.replace(',', '.').trim();
+      const text = input.value.trim();
       editing = null;
       input.remove();
       el.classList.remove('is-editing');
-      if (ok) {
-        const v = Number(text);
-        if (text !== '' && Number.isFinite(v)) commit(v, gesture);
+      if (ok && text !== '') {
+        const v = p.parse ? p.parse(text) : Number(text.replace(',', '.'));
+        if (v !== null && Number.isFinite(v)) commit(v, gesture);
       }
       el.focus();
     };
@@ -128,10 +167,13 @@ export function numberField(p: NumberFieldProps): Control<number> {
     input.addEventListener('blur', () => finish(true));
   };
 
+  /** Whether a pointer event started on the step buttons (they never start a drag, nor a double-click edit). */
+  const onSteps = (e: Event) => e.target instanceof Element && stepsEl.contains(e.target);
+
   // Drag to scrub.
   let drag: { x: number; start: number; moved: boolean; gesture: string; acc: number } | null = null;
   el.addEventListener('pointerdown', (e) => {
-    if (p.disabled || editing || e.button !== 0) return;
+    if (off() || editing || e.button !== 0 || onSteps(e)) return;
     e.preventDefault();
     el.focus();
     el.setPointerCapture(e.pointerId);
@@ -146,8 +188,7 @@ export function numberField(p: NumberFieldProps): Control<number> {
     el.classList.add('is-dragging');
     drag.x = e.clientX;
     const perPx = p.min !== undefined && p.max !== undefined ? (p.max - p.min) / 240 : step;
-    const k = e.shiftKey ? 0.1 : e.ctrlKey || e.metaKey ? 10 : 1;
-    drag.acc += dx * perPx * k;
+    drag.acc += dx * perPx * stepFactor(e);
     commit(drag.start + drag.acc, drag.gesture);
   });
   const endDrag = () => {
@@ -158,13 +199,86 @@ export function numberField(p: NumberFieldProps): Control<number> {
   };
   el.addEventListener('pointerup', endDrag);
   el.addEventListener('pointercancel', endDrag);
-  el.addEventListener('dblclick', startEdit);
+  el.addEventListener('dblclick', (e) => {
+    if (!onSteps(e)) startEdit();
+  });
+
+  // The step buttons: a press steps at once and, held, repeats after a pause; the whole press is one gesture.
+  let hold: { dir: 1 | -1; k: number; gesture: string; timer: number; pointerId: number } | null = null;
+  const stepOnce = (dir: 1 | -1, k: number, gesture: string) => commit(value + dir * step * k, gesture);
+  const keys = (e: KeyboardEvent) => {
+    if (hold) hold.k = stepFactor(e);
+  };
+  const endHold = () => {
+    if (!hold) return;
+    const { timer, pointerId } = hold;
+    hold = null;
+    window.clearTimeout(timer);
+    window.removeEventListener('keydown', keys, true);
+    window.removeEventListener('keyup', keys, true);
+    window.removeEventListener('blur', endHold);
+    if (stepsEl.hasPointerCapture?.(pointerId)) stepsEl.releasePointerCapture(pointerId);
+    el.classList.remove('is-stepping');
+    render();
+    p.onRelease?.();
+  };
+  const tick = () => {
+    if (!hold) return;
+    // The field went away under the press (its panel was drawn again): the press ends there.
+    if (!el.isConnected || off()) return endHold();
+    // At its limit the field stops stepping, and the press still ends where the pointer is let go.
+    if (hold.dir > 0 ? atMax() : atMin()) return;
+    stepOnce(hold.dir, hold.k, hold.gesture);
+    hold.timer = window.setTimeout(tick, STEP_REPEAT_MS);
+  };
+  const startHold = (dir: 1 | -1, e: PointerEvent) => {
+    if (off() || hold || (dir > 0 ? atMax() : atMin())) return;
+    // A value being typed is taken first; the step goes from it.
+    if (editing) editing.blur();
+    el.focus();
+    // The pointer stays with the pair until it is let go, wherever it goes (and a button that reaches its limit and
+    // is disabled under it does not swallow the release).
+    stepsEl.setPointerCapture?.(e.pointerId);
+    hold = { dir, k: stepFactor(e), gesture: newGesture('step'), timer: 0, pointerId: e.pointerId };
+    window.addEventListener('keydown', keys, true);
+    window.addEventListener('keyup', keys, true);
+    window.addEventListener('blur', endHold);
+    el.classList.add('is-stepping');
+    p.onHold?.();
+    stepOnce(dir, hold.k, hold.gesture);
+    hold.timer = window.setTimeout(tick, STEP_REPEAT_DELAY_MS);
+  };
+  for (const [button, dir] of [
+    [upEl, 1],
+    [downEl, -1],
+  ] as const) {
+    button.addEventListener('pointerdown', (e) => {
+      // Not the field's drag, and the focus stays on the spinbutton (no focus ring on a button that is not a tab stop).
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.button === 0) startHold(dir, e);
+    });
+    button.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // A pointer steps on its press; a click with no pointer (an assistive technology, a script) is one step.
+      if (e.detail !== 0 || off() || button.disabled) return;
+      const gesture = newGesture('step');
+      p.onHold?.();
+      stepOnce(dir, stepFactor(e), gesture);
+      p.onRelease?.();
+    });
+  }
+  stepsEl.addEventListener('pointerup', endHold);
+  stepsEl.addEventListener('pointercancel', endHold);
+  stepsEl.addEventListener('lostpointercapture', endHold);
+  // A long press on a touch screen is a hold, not the context menu.
+  stepsEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
   let keyGesture = newGesture('key');
   let keyTimer = 0;
   el.addEventListener('keydown', (e) => {
-    if (p.disabled || editing) return;
-    const k = e.shiftKey ? 0.1 : e.ctrlKey || e.metaKey ? 10 : 1;
+    if (off() || editing) return;
+    const k = stepFactor(e);
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
       e.preventDefault();
       e.stopPropagation();
@@ -186,8 +300,18 @@ export function numberField(p: NumberFieldProps): Control<number> {
   return {
     el,
     set(v) {
-      if (editing || drag || v === value) return;
+      if (editing || drag || hold || v === value) return;
       value = v;
+      render();
+    },
+    setDisabled(disabled) {
+      p.disabled = disabled;
+      el.classList.toggle('is-disabled', disabled);
+      el.tabIndex = disabled ? -1 : 0;
+      if (disabled) {
+        el.setAttribute('aria-disabled', 'true');
+        endHold();
+      } else el.removeAttribute('aria-disabled');
       render();
     },
   };
@@ -218,7 +342,7 @@ export function lengthText(mm: number): string {
  * A NumberField for a length the model keeps in millimetres, shown and typed in the interface units (mm, cm, m,
  * in). Steps become the power of ten nearest to the same length; the decimals grow with the unit.
  */
-export function lengthField(p: NumberFieldProps): Control<number> {
+export function lengthField(p: NumberFieldProps): NumberControl {
   const unit = lengthUnit;
   if (unit === 'mm') return numberField({ ...p, unit: p.unit ?? 'mm' });
   const k = UNIT_TO_MM[unit];
@@ -234,7 +358,7 @@ export function lengthField(p: NumberFieldProps): Control<number> {
     unit: t(`set.general.units.${unit}` as StringKey),
     onChange: (v, g) => p.onChange(v * k, g),
   });
-  return { el: field.el, set: (mm) => field.set(mm / k) };
+  return { el: field.el, set: (mm) => field.set(mm / k), setDisabled: field.setDisabled };
 }
 
 export interface SliderProps extends NumberFieldProps {
@@ -251,8 +375,11 @@ export interface SliderProps extends NumberFieldProps {
 /** Positions of a slider with its own scale (F1). */
 const SCALE_STEPS = 1000;
 
-/** A slider always paired with its value field. */
-export function slider(p: SliderProps): Control<number> {
+/**
+ * A slider always paired with its value field (UI.md §4.4): the track on the left, the field with its step buttons
+ * on the right. For a value with a natural bounded range (a 0–1 factor, a percentage, an angle in a fixed range).
+ */
+export function slider(p: SliderProps): NumberControl {
   const step = p.step ?? 0.01;
   const sc = p.scale;
   const position = (v: number): string => (sc ? String(Math.round(Math.min(1, Math.max(0, sc.toUnit(v))) * SCALE_STEPS)) : String(v));
@@ -269,6 +396,7 @@ export function slider(p: SliderProps): Control<number> {
   let gesture = newGesture('slide');
   const field = numberField({
     ...p,
+    compact: p.compact ?? true,
     onChange: (v, g) => {
       range.value = position(v);
       p.onChange(v, g);
@@ -303,6 +431,10 @@ export function slider(p: SliderProps): Control<number> {
       if (!dragging) range.value = position(v);
       field.set(v);
     },
+    setDisabled(disabled) {
+      range.disabled = disabled;
+      field.setDisabled(disabled);
+    },
   };
 }
 
@@ -310,7 +442,7 @@ export function slider(p: SliderProps): Control<number> {
  * A slider for a length the model keeps in millimetres (F1, the camera's focus distance), shown and typed in the
  * interface units like `lengthField`; its `scale` works in millimetres.
  */
-export function lengthSlider(p: SliderProps): Control<number> {
+export function lengthSlider(p: SliderProps): NumberControl {
   const unit = lengthUnit;
   if (unit === 'mm') return slider({ ...p, unit: p.unit ?? 'mm' });
   const k = UNIT_TO_MM[unit];
@@ -328,7 +460,7 @@ export function lengthSlider(p: SliderProps): Control<number> {
     ...(sc ? { scale: { toUnit: (v: number) => sc.toUnit(v * k), fromUnit: (u: number) => sc.fromUnit(u) / k } } : {}),
     onChange: (v, g) => p.onChange(v * k, g),
   });
-  return { el: ctl.el, set: (mm) => ctl.set(mm / k) };
+  return { el: ctl.el, set: (mm) => ctl.set(mm / k), setDisabled: ctl.setDisabled };
 }
 
 export interface SegOption<T extends string> {
@@ -552,36 +684,25 @@ export function parseHms(text: string): number | null {
   return Number.isFinite(s) ? Math.round(s) : null;
 }
 
-/** A time field in `hh:mm:ss`: commits on Enter or blur, Esc restores, anything else that is not a time is refused. */
-export function timeField(seconds: number, onCommit: (seconds: number) => void, ariaLabel: string): Control<number> {
-  let value = seconds;
-  const el = h('input', { type: 'text', class: 'text-input time-input tabular', value: formatHms(seconds), 'aria-label': ariaLabel, inputmode: 'numeric', spellcheck: 'false' }) as HTMLInputElement;
-  const commit = () => {
-    const v = parseHms(el.value);
-    if (v === null || v <= 0) {
-      el.value = formatHms(value);
-      return;
-    }
-    el.value = formatHms(v);
-    if (v !== value) {
-      value = v;
-      onCommit(v);
-    }
-  };
-  el.addEventListener('keydown', (e) => {
-    e.stopPropagation();
-    if (e.key === 'Enter') el.blur();
-    else if (e.key === 'Escape') {
-      el.value = formatHms(value);
-      el.blur();
-    }
-  });
-  el.addEventListener('blur', commit);
-  return {
-    el,
-    set(v) {
-      value = v;
-      if (document.activeElement !== el) el.value = formatHms(v);
+/**
+ * A time field in `hh:mm:ss` (the render window's time budget): a NumberField of seconds, shown and typed as a time
+ * (`hh:mm:ss`, `mm:ss` or plain seconds), with its step buttons. Anything typed that is not a time, or not more than
+ * nothing, is refused. The step is a minute (Shift 6 s, Ctrl 10 min).
+ */
+export function timeField(seconds: number, onChange: (seconds: number, gesture: string) => void, ariaLabel: string): NumberControl {
+  // No maximum here: a bounded field drags its whole range in 240 px, and a week of seconds would fly by.
+  const f = numberField({
+    value: seconds,
+    min: 1,
+    step: 60,
+    format: formatHms,
+    parse: (text) => {
+      const v = parseHms(text);
+      return v !== null && v > 0 ? v : null;
     },
-  };
+    ariaLabel,
+    onChange,
+  });
+  f.el.classList.add('time-input');
+  return f;
 }

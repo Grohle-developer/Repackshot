@@ -1,4 +1,4 @@
-// K1, not ported from EZ Packshot: the scene types of INTERIORS.md §3.1. A scene type is not a mode: it rewrites default
+// K1: the scene types of INTERIORS.md §3.1. A scene type is not a mode: it rewrites default
 // values and leaves every control where it is. This file is the table of those values; what applies them, and remembers
 // what they replaced so that switching back leaves the project as it was, is src/core/scene-type.ts.
 
@@ -38,6 +38,10 @@ export interface SceneTypeDefaults {
   denoise?: boolean;
   /** Row "Cámara": the focal length of every camera that is not locked. */
   focalMm?: number;
+  /** K3, row "Cámara", "verticales rectas": the straight verticals of every camera that is not locked. */
+  straightVerticals?: boolean;
+  /** K3, row "Exposición": the automatic exposure (the dial becomes its compensation). */
+  autoExposure?: boolean;
 }
 
 export interface SceneTypeEntry {
@@ -63,8 +67,8 @@ export const SCENE_TYPES: readonly SceneTypeEntry[] = [
     key: 'INTERIOR',
     label: { es: 'Interior', en: 'Interior' },
     intent: {
-      es: 'Mobiliario en su contexto: sol y cielo por la ventana, más rebotes, sin cáusticas, AgX, muestras adaptativas con denoise y una óptica ancha.',
-      en: 'Furniture in its context: sun and sky through the window, more bounces, no caustics, AgX, adaptive samples with denoise and a wide lens.',
+      es: 'Mobiliario en su contexto: sol y cielo por la ventana, más rebotes, sin cáusticas, AgX, muestras adaptativas con denoise, una óptica ancha con verticales rectas y exposición automática.',
+      en: 'Furniture in its context: sun and sky through the window, more bounces, no caustics, AgX, adaptive samples with denoise, a wide lens with straight verticals, and automatic exposure.',
     },
     defaults: {
       environment: 'SKY',
@@ -76,6 +80,8 @@ export const SCENE_TYPES: readonly SceneTypeEntry[] = [
       adaptive: true,
       denoise: true,
       focalMm: 28,
+      straightVerticals: true,
+      autoExposure: true,
     },
   },
   {

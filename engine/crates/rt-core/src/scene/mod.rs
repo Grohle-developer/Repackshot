@@ -2,6 +2,8 @@
 //!
 //! Units are millimetres for distances and degrees for angles. The world is Z-up.
 
+#[cfg(test)]
+mod camera_tests;
 pub mod rsb;
 #[cfg(test)]
 mod section_rsb_tests;
@@ -13,7 +15,8 @@ pub use crate::optics::{Lens, LensParams};
 
 pub use crate::geometry::{
     Geometry, GeometryError, Hit, Instance, Mesh, MeshError, ParticleSet, PixelFootprint, RayHit,
-    SectionPlane, Solid, Transform, CAP_TRIANGLE, INSTANCE_NO_SECTION, INSTANCE_ONE_SIDED,
+    SectionPlane, Solid, Transform, CAP_TRIANGLE, INSTANCE_NO_CAMERA, INSTANCE_NO_SECTION,
+    INSTANCE_ONE_SIDED,
 };
 pub use crate::texture::{MaterialTextures, TextureImage};
 pub use rsb::RsbError;
@@ -47,7 +50,44 @@ pub(crate) fn particle_sets(
         .collect()
 }
 
-/// A camera: thin lens perspective or orthographic.
+/// How a camera maps its image onto directions (`CAMR.projection`, K3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Projection {
+    /// 0, the default (and what a file without the field means): the camera of `CAMR.ortho_flag`,
+    /// a perspective through the thin lens (or the traced lens of `LENS`), or orthographic.
+    #[default]
+    Standard,
+    /// 1: an equirectangular panorama around the camera: the longitude runs across the image's
+    /// width, the latitude across its height ([`Camera::fov_x_deg`], [`Camera::fov_y_deg`]).
+    Equirectangular,
+    /// 2: an equidistant fisheye: the angle from the view axis is proportional to the distance from
+    /// the centre of the image ([`Camera::fov_x_deg`] across its width, square pixels).
+    Fisheye,
+}
+
+impl Projection {
+    /// Decodes the RSB value: 1 equirectangular, 2 fisheye, anything else (0, and values a newer
+    /// writer may add) the standard camera.
+    pub fn from_u32(value: u32) -> Projection {
+        match value {
+            1 => Projection::Equirectangular,
+            2 => Projection::Fisheye,
+            _ => Projection::Standard,
+        }
+    }
+
+    /// The RSB value of this projection.
+    pub fn to_u32(self) -> u32 {
+        match self {
+            Projection::Standard => 0,
+            Projection::Equirectangular => 1,
+            Projection::Fisheye => 2,
+        }
+    }
+}
+
+/// A camera: thin lens perspective or orthographic, or (K3) a panorama: equirectangular or a
+/// fisheye.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Camera {
     /// Position of the lens centre.
@@ -69,8 +109,26 @@ pub struct Camera {
     /// Width of the orthographic view in scene units (used when `ortho` is true).
     pub ortho_width: f32,
     /// The optics beyond the plain thin lens (the `LENS` section, [`crate::optics`]); `None` is
-    /// the plain thin lens. An orthographic camera ignores it.
+    /// the plain thin lens. An orthographic or panoramic camera ignores it.
     pub lens: Option<Lens>,
+    /// K3: how the image maps onto directions. A panoramic camera (not [`Projection::Standard`])
+    /// is a pinhole at `position` looking along the basis of `target` and `up`; it ignores
+    /// `ortho`, the focal length, the sensor, the aperture and the lens.
+    pub projection: Projection,
+    /// K3, panoramic cameras: the field across the image's width, degrees. Equirectangular: the
+    /// longitude it spans (360: the whole turn; a viewport image that is wider than the output
+    /// frame spans more, and wraps). Fisheye: the angle from the left edge to the right edge through
+    /// the centre (the angle from the axis is `fov_x_deg / width` per pixel of distance from the
+    /// centre; beyond 180° from the axis a sample sees nothing).
+    pub fov_x_deg: f32,
+    /// K3, equirectangular: the latitude the image's height spans, degrees (180: pole to pole; past
+    /// a pole the rays go on over it). The fisheye does not read it (its pixels are square).
+    pub fov_y_deg: f32,
+    /// K3: the factor of what camera rays see of the environment, the background when it is the
+    /// environment: a camera ray that escapes, also through cut-outs and thin walls (the window of a
+    /// room), brings `exterior` times the environment's radiance; nothing else changes, so the
+    /// window darkens and the room it lights does not. 1: no change.
+    pub exterior: f32,
 }
 
 impl Default for Camera {
@@ -86,6 +144,10 @@ impl Default for Camera {
             ortho: false,
             ortho_width: 1000.0,
             lens: None,
+            projection: Projection::Standard,
+            fov_x_deg: 360.0,
+            fov_y_deg: 180.0,
+            exterior: 1.0,
         }
     }
 }
@@ -112,6 +174,66 @@ impl Camera {
         (forward, right, up)
     }
 
+    /// K3: true for a panoramic camera (equirectangular or fisheye).
+    pub fn panoramic(&self) -> bool {
+        self.projection != Projection::Standard
+    }
+
+    /// True when the camera's rays go through its lens: a perspective camera of the standard
+    /// projection (not orthographic, not panoramic). Only then do the aperture, the `LENS` optics and
+    /// its filters apply.
+    pub fn through_lens(&self) -> bool {
+        !self.ortho && !self.panoramic()
+    }
+
+    /// K3: the direction of a panoramic camera through the image point `(u, v)` (as in
+    /// [`Camera::generate_ray`]), unit length up to rounding; `None` where a fisheye sees nothing
+    /// (more than 180° from its axis) and for the standard projection. Equirectangular: longitude
+    /// `(u − ½)·fov_x` from the view axis towards the right, latitude `(½ − v)·fov_y` towards `up`;
+    /// fisheye: the angle `θ = √(x² + y²)` from the axis for `x = (u − ½)·fov_x` and
+    /// `y = (½ − v)·fov_x / aspect`, turned towards `(x, y)`. Only `+ − × ÷ sqrt` and
+    /// [`crate::fmath`]: the same bits on every platform.
+    pub fn panorama_dir(&self, aspect: f32, u: f32, v: f32) -> Option<Vec3> {
+        let (forward, right, up) = self.basis();
+        match self.projection {
+            Projection::Standard => None,
+            Projection::Equirectangular => {
+                let lon = (u - 0.5) * (self.fov_x_deg * crate::fmath::DEG_TO_RAD);
+                let lat = (0.5 - v) * (self.fov_y_deg * crate::fmath::DEG_TO_RAD);
+                let (s_lat, c_lat) = crate::fmath::sin_cos(lat);
+                let (s_lon, c_lon) = crate::fmath::sin_cos(lon);
+                Some(forward * (c_lat * c_lon) + right * (c_lat * s_lon) + up * s_lat)
+            }
+            Projection::Fisheye => {
+                let k = self.fov_x_deg * crate::fmath::DEG_TO_RAD;
+                let x = (u - 0.5) * k;
+                let y = (0.5 - v) * k / aspect.max(1.0e-6);
+                let theta = (x * x + y * y).sqrt();
+                if theta.is_nan() || theta > crate::fmath::PI {
+                    return None;
+                }
+                if theta == 0.0 {
+                    return Some(forward);
+                }
+                let (s, c) = crate::fmath::sin_cos(theta);
+                Some(forward * c + (right * x + up * y) * (s / theta))
+            }
+        }
+    }
+
+    /// K3: the ray of a panoramic camera through `(u, v)`: from `position` along
+    /// [`Camera::panorama_dir`]; where a fisheye sees nothing, a ray along the axis that can meet
+    /// nothing (its interval is empty) — [`Camera::sample_ray`] weighs it black.
+    fn panorama_ray(&self, aspect: f32, u: f32, v: f32) -> Ray {
+        match self.panorama_dir(aspect, u, v) {
+            Some(dir) => Ray::new(self.position, dir),
+            None => Ray {
+                t_max: 0.0,
+                ..Ray::new(self.position, self.basis().0)
+            },
+        }
+    }
+
     /// What a traced lens is prepared for: the optics of this camera, not its placement (O2).
     pub fn optics_key(&self) -> crate::optics::traced::CameraOptics {
         crate::optics::traced::CameraOptics {
@@ -128,8 +250,9 @@ impl Camera {
     /// fields of a camera with a traced lens calls it again (the RSB reader does).
     pub fn prepare_lens(&mut self) -> Result<(), &'static str> {
         let key = self.optics_key();
+        let through = self.through_lens();
         match &mut self.lens {
-            Some(lens) if !self.ortho => lens.prepare(key),
+            Some(lens) if through => lens.prepare(key),
             _ => Ok(()),
         }
     }
@@ -137,7 +260,7 @@ impl Camera {
     /// O2: what the engine computed of the camera's traced lens, as JSON
     /// ([`crate::optics::traced::LensInfo::to_json`]: focal length, back focus, f-number, T-stop,
     /// transmittance, distortion and relative illumination against image height), or
-    /// `{"traced":false}` for the thin lens or an orthographic camera. The hosts (`rt_wasm`, the
+    /// `{"traced":false}` for the thin lens or an orthographic or panoramic camera. The hosts (`rt_wasm`, the
     /// launcher's `/api/lens/info`) hand it to the interface, which shows these numbers and never
     /// its own (rule 10).
     pub fn lens_info_json(&self) -> String {
@@ -145,16 +268,17 @@ impl Camera {
             .lens
             .as_ref()
             .and_then(|l| l.traced())
-            .filter(|_| !self.ortho)
+            .filter(|_| self.through_lens())
         {
             Some(traced) => traced.info().to_json(),
             None => "{\"traced\":false}".to_string(),
         }
     }
 
-    /// Radius of the lens aperture in scene units, zero for a pinhole.
+    /// Radius of the lens aperture in scene units, zero for a pinhole (and an orthographic or
+    /// panoramic camera).
     pub fn lens_radius(&self) -> f32 {
-        if self.fstop > 0.0 && self.focus_dist > 0.0 && !self.ortho {
+        if self.fstop > 0.0 && self.focus_dist > 0.0 && self.through_lens() {
             self.focal_mm / self.fstop * 0.5
         } else {
             0.0
@@ -165,8 +289,12 @@ impl Camera {
     ///
     /// `u` runs left to right and `v` top to bottom, both in `[0, 1]`. `aspect` is
     /// `width / height`. `lens` is a point in the unit disk used to sample the aperture; it is
-    /// ignored for a pinhole or orthographic camera. The returned direction is normalised.
+    /// ignored for a pinhole, orthographic or panoramic camera. The returned direction is
+    /// normalised (a panoramic one up to rounding).
     pub fn generate_ray(&self, aspect: f32, u: f32, v: f32, lens: (f32, f32)) -> Ray {
+        if self.panoramic() {
+            return self.panorama_ray(aspect, u, v);
+        }
         if let (Some(optics), false) = (&self.lens, self.ortho) {
             return optics.thin_ray(self, aspect, u, v, lens);
         }
@@ -207,6 +335,16 @@ impl Camera {
         v: f32,
         sampler: &crate::sampler::PixelSampler,
     ) -> (Ray, Rgb) {
+        if self.panoramic() {
+            // K3: a pinhole; a fisheye's sample beyond 180° from its axis brings nothing.
+            let ray = self.panorama_ray(aspect, u, v);
+            let weight = if ray.t_max > 0.0 {
+                Rgb::WHITE
+            } else {
+                Rgb::BLACK
+            };
+            return (ray, weight);
+        }
         if let (Some(optics), false) = (&self.lens, self.ortho) {
             return optics.sample(self, aspect, u, v, sampler);
         }
@@ -378,7 +516,7 @@ impl LightKind {
 
 /// Light flag (bit 0): the light is seen by BSDF-sampled rays (reflections) and lights every
 /// lobe. Without it the light only lights the diffuse lobe, through explicit sampling, and is
-/// invisible in reflections (Blender's "glossy" ray visibility, where the recipes come from).
+/// invisible in reflections (like Blender's "glossy" ray visibility).
 pub const LIGHT_FLAG_GLOSSY: u32 = 1;
 /// Light flag (bit 1): the light is directly visible to camera rays.
 pub const LIGHT_FLAG_CAMERA: u32 = 2;

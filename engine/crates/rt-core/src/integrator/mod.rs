@@ -22,7 +22,10 @@
 //!   shadow. With a transparent background the shadow becomes alpha over black.
 //! * **Background**: camera rays that escape see the environment (with sun discs flagged
 //!   `camera`), the background colour, the background image, or nothing (alpha 0), per
-//!   `ENVR.background_mode`. The environment lights the scene in every mode.
+//!   `ENVR.background_mode`. The environment lights the scene in every mode. K3: the environment a
+//!   camera ray sees (also through cut-outs and thin walls, and behind a shadow catcher) is
+//!   multiplied by the camera's `exterior` factor, and only that: a window darkens, the room it
+//!   lights does not.
 //!
 //! **Glass and other clear materials** (E5). A refracted ray continues inside the solid; the
 //! surface it leaves through is told apart by the side the ray arrives from
@@ -61,9 +64,9 @@
 //! caster.
 //!
 //! **Anisotropy**: the shading frame's tangent runs around the instance's local Z axis through
-//! the centre of its mesh's bounds (Blender's default radial tangent, which the recipes' brushed
-//! metals were tuned with), projected onto the tangent plane; where that degenerates, the
-//! instance's X axis; then any.
+//! the centre of its mesh's bounds (the radial tangent Blender uses by default, which the
+//! catalogue's brushed metals are tuned for), projected onto the tangent plane; where that
+//! degenerates, the instance's X axis; then any.
 
 pub mod dispersion;
 pub mod medium;
@@ -1177,7 +1180,9 @@ pub fn radiance_weighted<T: Tracer>(
         if t_nearest == f32::INFINITY {
             match (primary, prepared.background) {
                 (true, Background::Environment) => {
-                    sum += throughput * lights.escaped(ray.dir, None);
+                    // K3: the camera sees the environment (through a window too) times its
+                    // exterior factor; what it lights is not touched.
+                    sum += throughput * exterior(scene, lights.escaped(ray.dir, None));
                 }
                 (true, Background::Color | Background::Backplate) => {
                     sum += throughput * prepared.backdrop(screen);
@@ -1827,8 +1832,20 @@ fn shadow_catcher<T: Tracer>(
     };
     match prepared.background {
         Background::Transparent => (Rgb::BLACK, 1.0 - unshadowed),
-        Background::Environment => (shown(lights.escaped(ray.dir, None)), 1.0),
+        Background::Environment => (shown(exterior(scene, lights.escaped(ray.dir, None))), 1.0),
         Background::Color | Background::Backplate => (shown(prepared.backdrop(screen)), 1.0),
+    }
+}
+
+/// K3: what a camera ray sees of the environment, `seen`, times the camera's exterior factor
+/// ([`crate::scene::Camera::exterior`]); unchanged at 1.
+#[inline]
+fn exterior(scene: &Scene, seen: Rgb) -> Rgb {
+    let k = scene.camera.exterior;
+    if k == 1.0 {
+        seen
+    } else {
+        seen * k
     }
 }
 

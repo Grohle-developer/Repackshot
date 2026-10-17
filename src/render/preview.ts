@@ -15,7 +15,12 @@ import type { MotionHint } from '../core/motion-hint';
 import { materialPreset } from '../data/materials';
 import { evalParticles, PARTICLE_FLOATS, previewTint, tintSeed, type RtParticleExports } from './particles';
 import type { Projection, Rect } from '../core/box-select';
-import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
+import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, isPanoramic, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
+import { exteriorOf, verticalsOf } from '../core/interior-camera';
+import { autoExposure, effectiveExposure } from '../core/image-passes';
+import { panoramaDirection, panoramaFov } from '../core/panorama';
+import { perspectiveProjection, shiftNdc, viewElevation, type ProjectionFrame } from './camera-projection';
+import { cubeFaceSize, PanoramaPass, type PanoramaBasis } from './panorama-pass';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { iesProfileOf, iesSpot } from '../core/ies';
@@ -27,7 +32,7 @@ import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
 import { areaLightRadiance, pointLightIntensity, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { ancestors, isSetPiece, partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { ancestors, hiddenToCamera, isSetPiece, partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type Glyph, type ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
@@ -416,6 +421,14 @@ export class PreviewEngine implements RenderEngine {
     blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
   });
   private readonly raycaster = new THREE.Raycaster();
+  /** K3: the camera the perspective projection was last placed for, and the frame it frames (`applyPerspective`). */
+  private projected: { cam: CameraState; frame: ProjectionFrame } | null = null;
+  /** K3: the six cube faces of a panorama and the pass through its projection. */
+  private readonly panorama = new PanoramaPass();
+  /** K3: the automatic exposure's last reading of the engine's image (main.ts: `setExposureMeter`). */
+  private exposureMeter: () => number | null = () => null;
+  /** K3: the materials of the parts hidden to the camera, one per side: nothing drawn, the shadows cast. */
+  private readonly hiddenMaterials = new Map<THREE.Side, THREE.MeshBasicMaterial>();
   /** The gizmo of the move tool, drawn over everything after the outline. */
   private readonly overlayScene = new THREE.Scene();
   private readonly overlayRoot = new THREE.Group();
@@ -585,6 +598,14 @@ export class PreviewEngine implements RenderEngine {
    * filters of camera `c` when it has any (O3a, `drawFiltered`).
    */
   private drawScene(cam: THREE.Camera, c: CameraState): void {
+    // K3: a panorama is drawn from six cube faces.
+    const pano = this.panoramaOf();
+    if (pano) {
+      this.aaTarget?.dispose();
+      this.aaTarget = null;
+      this.drawPanorama(pano, this.width, this.height, true);
+      return;
+    }
     if (this.drawFiltered(cam, c)) return;
     const samples = this.msaaPath();
     if (samples === null) {
@@ -944,6 +965,8 @@ export class PreviewEngine implements RenderEngine {
         return opacity < 1 ? this.fades.faded(`${id}|${m ?? ''}`, cut, opacity, faded) : cut;
       };
       obj.material = ids ? ids.map((m, i) => get(i === 0 ? node.material : m)) : get(node.material);
+      // K3: a part hidden to the camera draws nothing and still casts its shadows (three.js makes them from its depth).
+      if (node && hiddenToCamera(state, id)) obj.material = Array.isArray(obj.material) ? obj.material.map((m) => this.hiddenMaterial(m)) : this.hiddenMaterial(obj.material);
     }
     this.section.pruneStudio(studio);
     this.fades.prune(faded);
@@ -953,6 +976,23 @@ export class PreviewEngine implements RenderEngine {
       this.knotMaterials.delete(key);
       this.knotPrograms.delete(key);
     }
+  }
+
+  /** K3: what a part hidden to the camera draws with: no colour and no depth, the side of `m` for its shadows. */
+  private hiddenMaterial(m: THREE.Material): THREE.MeshBasicMaterial {
+    let h = this.hiddenMaterials.get(m.side);
+    if (!h) {
+      h = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: m.side });
+      h.userData.hiddenToCamera = true;
+      this.hiddenMaterials.set(m.side, h);
+    }
+    return h;
+  }
+
+  /** K3: true for a part drawn with `hiddenMaterial` (hidden to the camera). */
+  private static hiddenToCamera(o: THREE.Object3D): boolean {
+    const m = (o as THREE.Mesh).material;
+    return !!m && (Array.isArray(m) ? m.length > 0 && m.every((x) => x.userData.hiddenToCamera) : !!(m as THREE.Material).userData.hiddenToCamera);
   }
 
   /**
@@ -1145,7 +1185,8 @@ export class PreviewEngine implements RenderEngine {
     this.scene.environmentIntensity = env.strength;
     this.scene.environmentRotation.set(0, rot, 0);
     this.scene.backgroundRotation.set(0, rot, 0);
-    this.scene.backgroundIntensity = env.strength;
+    // K3: the exterior factor of the camera ray (what the camera sees of the environment, not what it lights).
+    this.scene.backgroundIntensity = env.strength * exteriorOf(env.exterior);
     const color = () => new THREE.Color().setRGB(env.color[0], env.color[1], env.color[2], THREE.LinearSRGBColorSpace);
     if (env.background === 'COLOR') {
       this.scene.background = color();
@@ -1209,7 +1250,16 @@ export class PreviewEngine implements RenderEngine {
   private syncImage(state: ProjectState): void {
     const img = state.image;
     this.renderer.toneMapping = img.viewTransform === 'AGX' ? THREE.AgXToneMapping : img.viewTransform === 'STANDARD' ? THREE.LinearToneMapping : THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = Math.pow(2, img.exposureEv);
+    // K3: an automatic exposure takes the last reading of the engine's image (main.ts hands the meter in; the Fast
+    // mode has no linear image of its own to meter), the compensation alone before there is one.
+    this.renderer.toneMappingExposure = Math.pow(2, effectiveExposure(img, autoExposure(img) ? this.exposureMeter() : null));
+  }
+
+  /** K3: where the automatic exposure's last reading comes from (main.ts: the path tracer's meter). */
+  setExposureMeter(read: () => number | null): void {
+    this.exposureMeter = read;
+    if (this.state && this.renderer) this.syncImage(this.state);
+    this.needsRender = true;
   }
 
   private syncFloor(state: ProjectState): void {
@@ -1256,18 +1306,10 @@ export class PreviewEngine implements RenderEngine {
     this.persp.near = Math.max(cam.clipStart, 0.01);
     this.persp.far = Math.max(cam.clipEnd, this.persp.near * 10);
     this.persp.updateProjectionMatrix();
-    // O1: a lens shift moves the frame on the sensor without turning the camera (rt-core `optics`): the projection's
-    // centre moves by the shift over the half size of the view, in millimetres of the 36 mm sensor.
-    const shiftX = cam.optics?.shiftXMm ?? 0;
-    const shiftY = cam.optics?.shiftYMm ?? 0;
-    if (shiftX !== 0 || shiftY !== 0) {
-      const frameW = outAspect >= 1 ? SENSOR_MM : SENSOR_MM * outAspect;
-      const frameH = outAspect >= 1 ? SENSOR_MM / outAspect : SENSOR_MM;
-      const e = this.persp.projectionMatrix.elements;
-      e[8] = shiftX / ((frameW / 2) * (w / Math.max(1, frame.width)));
-      e[9] = shiftY / ((frameH / 2) * k);
-      this.persp.projectionMatrixInverse.copy(this.persp.projectionMatrix).invert();
-    }
+    // O1: a lens shift moves the frame on the sensor without turning the camera (rt-core `optics`); K3: the straight
+    // verticals turn the view level and shift the frame (render/camera-projection.ts). Both in the projection.
+    this.projected = { cam, frame: { viewW: w, viewH: h, frameW: frame.width, frameH: frame.height, outAspect } };
+    this.applyPerspective();
     const halfH = (cam.orthoWidth / outAspect / 2) * k;
     const halfW = halfH * (w / Math.max(1, h));
     this.ortho.left = -halfW;
@@ -1283,6 +1325,96 @@ export class PreviewEngine implements RenderEngine {
       this.controls.target.copy(target);
       this.controls.update();
     }
+  }
+
+  /**
+   * The perspective camera's projection for the camera it was placed for (`placeCamera`): its frustum, the optics'
+   * shift and, with straight verticals, the level view and the shift that keeps the frame, from the orientation the
+   * camera has now (a gesture turns it before the store hears of it).
+   */
+  private applyPerspective(): void {
+    const p = this.projected;
+    if (!p) return;
+    const cam = p.cam;
+    let shiftY = cam.optics?.shiftYMm ?? 0;
+    const shiftX = cam.optics?.shiftXMm ?? 0;
+    let level = 0;
+    if (cam.straightVerticals && cam.projection === 'PERSPECTIVE') {
+      // The camera's elevation is that of its position above the target: the view looks down by it.
+      const v = verticalsOf({ ...cam, elevation: -viewElevation(this.persp) });
+      if (v) {
+        level = v.correctedDeg;
+        shiftY += v.shiftYMm;
+      }
+    }
+    if (shiftX === 0 && shiftY === 0 && level === 0) {
+      this.persp.updateProjectionMatrix();
+      return;
+    }
+    perspectiveProjection(this.persp.fov, this.persp.aspect, this.persp.near, this.persp.far, shiftNdc(shiftX, shiftY, p.frame), level, this.persp.projectionMatrix);
+    this.persp.projectionMatrixInverse.copy(this.persp.projectionMatrix).invert();
+  }
+
+  /** K3: the projection of the camera on screen when it is a panorama (EQUIRECTANGULAR or FISHEYE), else null. */
+  private panoramaOf(): CameraState | null {
+    const s = this.state;
+    if (!s) return null;
+    const c = this.viewCamera(s);
+    return isPanoramic(c.projection) ? c : null;
+  }
+
+  /**
+   * K3: the panorama's frame in three.js space, from the perspective camera's orientation now (the navigation's): level
+   * with straight verticals on an equirectangular panorama.
+   */
+  private panoramaBasis(c: CameraState): PanoramaBasis {
+    this.persp.updateMatrixWorld();
+    const forward = this.persp.getWorldDirection(new THREE.Vector3());
+    if (c.straightVerticals && c.projection === 'EQUIRECTANGULAR' && Math.hypot(forward.x, forward.z) > 1e-6) forward.setY(0).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+    if (right.lengthSq() < 1e-12) right.setFromMatrixColumn(this.persp.matrixWorld, 0);
+    right.normalize();
+    const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+    return { forward, right, up };
+  }
+
+  /** K3: the fields of view of a panorama over the whole canvas (the output frame inset in it, as the engine has it). */
+  private panoramaFields(c: CameraState, w: number, h: number, inset: boolean): { x: number; y: number } {
+    const outW = c.aspect?.w ?? 16;
+    const outH = c.aspect?.h ?? 9;
+    const frame = inset ? outputFrameRect(w, h, outW, outH) : { width: w, height: h };
+    return panoramaFov(c, frame.width, frame.height, w, h);
+  }
+
+  /** K3: draws the scene through the panorama `c` onto the current target, `w × h` CSS pixels, its frame inset or whole. */
+  private drawPanorama(c: CameraState, w: number, h: number, inset: boolean): void {
+    const fov = this.panoramaFields(c, w, h, inset);
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const face = cubeFaceSize(size.x, fov.x, Math.min(2048, this.renderer.capabilities.maxCubemapSize));
+    const near = Math.max(c.clipStart, 0.01);
+    const far = Math.max(c.clipEnd, near * 10);
+    // A background drawn in screen space (an image, a gradient) has no direction: the panorama shows its colour.
+    const bg = this.scene.background;
+    if (bg instanceof THREE.Texture && bg.mapping !== THREE.EquirectangularReflectionMapping && bg.mapping !== THREE.CubeReflectionMapping) {
+      const env = this.state!.environment;
+      this.scene.background = new THREE.Color().setRGB(env.color[0], env.color[1], env.color[2], THREE.LinearSRGBColorSpace);
+    }
+    this.persp.updateMatrixWorld();
+    this.panorama.render(this.renderer, this.scene, this.persp.position, this.panoramaBasis(c), c.projection === 'FISHEYE' ? 2 : 1, fov, w / Math.max(1, h), face, near, far);
+    this.scene.background = bg;
+  }
+
+  /** K3: the ray of a panorama through the canvas point `x`, `y` (CSS pixels), into the raycaster; false where it sees nothing. */
+  private panoramaRay(c: CameraState, x: number, y: number): boolean {
+    const fov = this.panoramaFields(c, this.width, this.height, true);
+    const d = panoramaDirection(c.projection as 'EQUIRECTANGULAR' | 'FISHEYE', fov.x, fov.y, this.width / Math.max(1, this.height), x / Math.max(1, this.width), y / Math.max(1, this.height));
+    if (!d) return false;
+    const b = this.panoramaBasis(c);
+    const dir = b.forward.clone().multiplyScalar(d[0]).addScaledVector(b.right, d[1]).addScaledVector(b.up, d[2]).normalize();
+    this.raycaster.set(this.persp.position, dir);
+    this.raycaster.near = 0;
+    this.raycaster.far = Infinity;
+    return true;
   }
 
   /** The view the controls have now. */
@@ -1403,9 +1535,20 @@ export class PreviewEngine implements RenderEngine {
   }
 
   frame(): void {
-    if (!this.renderer || !this.needsRender || !this.state) return;
+    if (!this.renderer || !this.state) return;
+    // K3: an automatic exposure follows the meter's last reading (the engine's image may have been metered again).
+    if (autoExposure(this.state.image)) {
+      const want = Math.pow(2, effectiveExposure(this.state.image, this.exposureMeter()));
+      if (want !== this.renderer.toneMappingExposure) {
+        this.renderer.toneMappingExposure = want;
+        this.needsRender = true;
+      }
+    }
+    if (!this.needsRender) return;
     this.needsRender = false;
     const t0 = performance.now();
+    // K3: the straight verticals follow the camera's orientation as the navigation turns it.
+    if (this.projected?.cam.straightVerticals) this.applyPerspective();
     const cam = this.camera;
     this.renderer.setClearColor(0x000000, 0);
     // Full mode with nothing to draw over the image: one clear, then no GL work at all (camera
@@ -1558,9 +1701,13 @@ export class PreviewEngine implements RenderEngine {
     this.lightRoot.visible = false;
     if (this.grid) this.grid.visible = false;
     for (const m of tints) m.visible = false;
+    // K3: what the camera does not see hides nothing either.
+    const hidden = [...this.objects.values()].filter((o) => o.visible && PreviewEngine.hiddenToCamera(o));
+    for (const o of hidden) o.visible = false;
     this.scene.overrideMaterial = this.depthOnly;
     this.renderer.render(this.scene, cam);
     this.scene.overrideMaterial = null;
+    for (const o of hidden) o.visible = true;
     this.renderer.autoClear = false;
     for (const m of tints) {
       m.visible = true;
@@ -1574,6 +1721,8 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private drawOutline(cam: THREE.Camera): void {
+    // K3: what is drawn over a panorama would need its projection: nothing is.
+    if (this.panoramaOf()) return;
     const anySelected = [...this.objects.values()].some((o) => o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER));
     if (!anySelected) return;
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -1799,6 +1948,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private drawGizmo(cam: THREE.Camera): void {
+    if (this.panoramaOf()) return;
     const gizmo = this.gizmo.visible && !this.gizmoPosed();
     // N6: the track of the animation selected in the timeline goes over everything too, also while it plays.
     const motion = this.motionLines.visible || this.motionDots.visible;
@@ -1816,6 +1966,17 @@ export class PreviewEngine implements RenderEngine {
 
   /** The ray through what the screen shows at `x`, `y` (CSS pixels): through a traced lens's profile, its source (O2). */
   private rayAt(x: number, y: number): THREE.Raycaster {
+    // K3: through a panorama, the panorama's own ray (one that sees nothing points nowhere).
+    const pano = this.panoramaOf();
+    if (pano) {
+      if (!this.panoramaRay(pano, x, y)) {
+        this.raycaster.set(this.persp.position, this.persp.getWorldDirection(new THREE.Vector3()));
+        this.raycaster.far = 0;
+      }
+      return this.raycaster;
+    }
+    this.raycaster.near = 0;
+    this.raycaster.far = Infinity;
     const p = this.sourceAt(x, y);
     const ndc = new THREE.Vector2((p.x / this.width) * 2 - 1, -(p.y / this.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -1862,7 +2023,9 @@ export class PreviewEngine implements RenderEngine {
 
   status(): EngineStatus {
     const msaa = this.msaa();
-    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
+    // K3: an automatic exposure draws with the path tracer's last reading of its image.
+    const metered = this.state && autoExposure(this.state.image) ? { meteredEv: this.exposureMeter() } : {};
+    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...metered, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
   }
 
   // ------------------------------------------------------------------ ambient effects (S4a)
@@ -2026,7 +2189,8 @@ export class PreviewEngine implements RenderEngine {
     };
     // Q1: through a section, what is cut away takes no click, and the cap of a cut solid is the solid: the caps' meshes
     // join the ray's, the back of a closed solid being what the engine reads as the cut (`firstKept`).
-    const meshes = [...this.objects.values(), ...this.section.capMeshes()].filter((o) => o instanceof THREE.Mesh && visible(o));
+    // K3: what the camera does not see takes no click either.
+    const meshes = [...this.objects.values(), ...this.section.capMeshes()].filter((o) => o instanceof THREE.Mesh && visible(o) && !PreviewEngine.hiddenToCamera(o));
     const found = this.section.firstKept(this.raycaster.intersectObjects(meshes, false), this.raycaster.ray);
     if (!found) return null;
     const { hit, cap } = found;
@@ -2093,7 +2257,8 @@ export class PreviewEngine implements RenderEngine {
 
   /** How the parts are projected as they are drawn now (core/box-select.ts): the viewport's size and a matrix for each part. */
   projection(): Projection | null {
-    if (!this.state || this.width <= 0) return null;
+    // K3: a panorama is not a projective image: no box selection through it.
+    if (!this.state || this.width <= 0 || this.panoramaOf()) return null;
     const cam = this.camera;
     cam.updateMatrixWorld();
     const viewProj = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
@@ -2107,7 +2272,8 @@ export class PreviewEngine implements RenderEngine {
       mvp: (id) => {
         const obj = this.objects.get(id);
         // Q1: a part the section cuts away entirely is not there to select.
-        if (!(obj instanceof THREE.Mesh) || this.section.removed(obj, true)) return null;
+        // K3: nor one the camera does not see.
+        if (!(obj instanceof THREE.Mesh) || this.section.removed(obj, true) || PreviewEngine.hiddenToCamera(obj)) return null;
         obj.updateWorldMatrix(true, false);
         return new THREE.Matrix4().multiplyMatrices(viewProj, obj.matrixWorld).elements.slice();
       },
@@ -2182,13 +2348,16 @@ export class PreviewEngine implements RenderEngine {
       r.setRenderTarget(this.idTarget);
       r.setClearColor(0x000000, 1);
       r.clear();
-      // Everything else is the occluder; the part is drawn after it, with its ids.
+      // Everything else is the occluder (K3: but what the camera does not see); the part is drawn after it, with its ids.
       ids.visible = false;
       obj.visible = false;
+      const hidden = [...this.objects.values()].filter((o) => o !== obj && o.visible && PreviewEngine.hiddenToCamera(o));
+      for (const o of hidden) o.visible = false;
       this.scene.overrideMaterial = this.idBlack;
       r.autoClear = false;
       r.render(this.scene, cam);
       this.scene.overrideMaterial = null;
+      for (const o of hidden) o.visible = true;
       // Only `ids` (the part's child) is drawn now, as the root, over the depth of the rest.
       ids.visible = true;
       obj.visible = true;
@@ -2308,7 +2477,9 @@ export class PreviewEngine implements RenderEngine {
       if (opts.transparent) this.scene.background = null;
       this.renderer.setClearColor(0x000000, 0);
       const three = cam.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
-      if (!this.drawFiltered(three, cam)) this.renderer.render(this.scene, three);
+      // K3: a panorama through its six cube faces, the output frame the whole picture.
+      if (isPanoramic(cam.projection)) this.drawPanorama(cam, opts.width, opts.height, false);
+      else if (!this.drawFiltered(three, cam)) this.renderer.render(this.scene, three);
       out.getContext('2d')!.drawImage(this.renderer.domElement, 0, 0);
     } finally {
       this.scene.background = bg;
@@ -2419,6 +2590,8 @@ export class PreviewEngine implements RenderEngine {
     for (const m of this.materials.values()) m.dispose();
     for (const m of this.knotMaterials.values()) m.dispose();
     this.section.dispose();
+    this.panorama.dispose();
+    for (const m of this.hiddenMaterials.values()) m.dispose();
     this.textures.dispose();
     this.envTexture?.dispose();
     this.envMap?.dispose();

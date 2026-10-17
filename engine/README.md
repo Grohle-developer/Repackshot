@@ -136,6 +136,9 @@ cargo run --release -p rt-cli -- --sheet ../out/sheet          # the contact she
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 1024 --noise 1   # adaptive, until every block is below 1 % noise
 cargo run --release -p rt-cli -- --write-e10-example e10.rsb # the E10 parity scene (the E5b-1 scene sampled adaptively)
 cargo run --release -p rt-cli -- --write-l5-example l5.rsb   # the L5 parity scene (the example lit by two IES lights)
+cargo run --release -p rt-cli -- --write-k3-plan-example k3-plan.rsb          # K3: the room of boxes in plan, its ceiling hidden to the camera
+cargo run --release -p rt-cli -- --write-k3-panorama-example k3-panorama.rsb  # K3: the room as an equirectangular panorama
+cargo run --release -p rt-cli -- --write-k3-fisheye-example k3-fisheye.rsb    # K3: the room through a 300-degree fisheye
 cargo run --release -p rt-cli -- --adaptive-noise ../out/noise --size 480x360 --max-seconds 20 --samples 4096 --rounds 3
 ```
 
@@ -271,9 +274,9 @@ twice (0: off).
   masked by the direction from its centre: 1 inside the inner cone, a smoothstep to 0 at the
   edge of its cone of `spread_deg` (the soft edge `angle_deg` wide). `flags` bit 0 **glossy**:
   seen by BSDF-sampled rays and lighting every lobe (with MIS); without it the light lights only
-  the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
-  visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
-  sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
+  the diffuse lobe, by light sampling alone, and is invisible in reflections (like Blender's
+  "glossy" visibility). Bit 1 **camera**: visible to camera rays (a point's sphere too).
+  Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
   not darkened by it either). **One light per vertex, chosen per point** (E12): in proportion to a
   bound of the irradiance each light can give the shading point unoccluded, the flat case of the
   light tree of Conty Estevez and Kulla (HPG 2018) with its orientation bound (§4.3): `lum(I) ·
@@ -568,6 +571,34 @@ mutations of the engine (a fold of φ, the handedness of φ, the mask, the radiu
 static weight, the slope term of the flux, the deduplication of profiles, the interpolation in φ,
 the range of γ and the normalisation by the peak) were each caught by tests.
 
+## Interior cameras (K3)
+
+`rt_core::scene::Projection` adds two camera models to the standard one (pinhole, thin lens,
+traced lens or orthographic): an **equirectangular** panorama (longitude `(u - 1/2) * fov_x` to the
+right, latitude `(1/2 - v) * fov_y` up; 360 x 180 on a 2:1 image is the whole sphere) and an
+**equidistant fisheye** (`x = (u - 1/2) * fov_x`, `y = (1/2 - v) * fov_x / aspect`, the angle from
+the axis `theta = sqrt(x^2 + y^2)`; beyond half a turn there is nothing to see and the sample
+weighs black). Both are pinholes from the camera's position in its own basis
+(`Camera::panorama_dir`, `Camera::through_lens` is false); the passes give the distance as their
+depth, and the pixel footprints of particles, textures and caustics take a pixel's cone of the
+sphere. `INSTANCE_NO_CAMERA` (`INST.flags` bit 2) hides an instance from camera-class queries only
+(primary rays and their straight continuations, the passes, section caps), in the BVH, the brute
+force and the caps: shadows, bounces and reflections still see it (a plan view whose ceiling still
+lights the room). `Camera::exterior` multiplies the environment a camera ray sees when it escapes
+(through thin walls and cut-outs too) and the shadow catcher's background, not what the
+environment lights; 1 is exactly what was. Straight verticals and the automatic exposure are the
+page's (a level camera with the existing `LENS` shift; a meter over the accumulation's sums): the
+engine's camera test reads the page's file (`tests/fixtures/k3-verticals.rsb`) and finds a cube's
+vertical edges parallel within 0.0001 px at 1920 x 1080 (6.4 px without the shift). The page
+writes all this when `rt_features` bit 4 (`rt_core::FEATURE_CAMERAS`) is set.
+`PINNED_K3_PLAN_4SPP` (`0x6efb1e66`, plan, 96 x 72), `PINNED_K3_PANORAMA_4SPP` (`0x96de8d73`,
+128 x 64) and `PINNED_K3_FISHEYE_4SPP` (`0x9b85a1b6`, 300 degrees, 96 x 72) hold on every SIMD
+path, by `rt` with 1, 4 and 16 threads, in WASI and through the real module (CI); the panorama
+also through the launcher's API. No earlier hash moved. Eight mutations of the engine (the BVH, the brute force and the section caps not
+stepping over an instance hidden to the camera, hiding it from every ray, the sign of the
+equirectangular longitude, a fisheye that sees beyond half a turn, the exterior factor left out,
+and the K3 fields of `CAMR` always written) were each caught by tests.
+
 ## Exact passes (X2)
 
 `rt_core::passes` writes, next to the image, the per-pixel planes the AI post-processing guard
@@ -582,11 +613,14 @@ them, bit `i` for `PASS_KEYS[i]`:
 | 8 | `partId` | `u32` | RSB instance index + 1, what `Scene::pick` finds; the studio floor `0xffffffff` (0) |
 | 16 | `materialId` | `u32` | RSB material index + 1 of that instance; the floor `0xffffffff` (0) |
 | 32 | `coc` | `f32` | circle-of-confusion diameter in output pixels of the thin lens (0, also without depth of field) |
+| 64 | `alpha` | `f32` | N2: coverage of the scene's objects, 0 to 1: the share of the pixel's samples whose camera ray meets a surface of an instance; the studio floor, the environment, the background and camera-visible light panels are not coverage (0) |
 
 `normal`, `depth`, the ids and `coc` come from **one ray through the centre of the pixel, through
 the centre of the lens, without jitter** (`render::centre_ray`, `render_tile_exact`, once per tile):
-exact, never blended across an edge. `albedo` follows the camera ray of every sample of the image
-(`render_tile_albedo`), summed in sample order in `f32` and divided like `Film::resolve`. The first
+exact, never blended across an edge. `albedo` and `alpha` follow the camera ray of every sample of the image
+(`render_tile_albedo`: one `first_hit` serves both), summed in sample order in `f32` and divided like
+`Film::resolve` (each by its own count of samples); an edge pixel (E11) adds the mean of its sub-samples,
+as the image does. The first
 hit (`integrator::first_hit`) is the nearer of the geometry and the floor; every surface stops it
 (cut-outs and glass too), and a camera-visible area light crossed first makes the pixel
 background, like the environment, the backdrop and transparency. `coc` is `coc_diameter`, the
@@ -595,6 +629,15 @@ the measured blur of `Camera::generate_ray`'s own lens within 1 %. The passes ha
 own: they never change a pixel of the image, whose pinned hashes stay. The six planes of the
 example and of the E5 example are pinned too (`crates/rt-core/src/render/passes_tests.rs`), on
 every SIMD path, in the WASI runs, through the real `rt_wasm.wasm` and through the launcher.
+
+N2 appended the seventh pass, `alpha` (bit 6; "phases add passes at the end"), as an **object matte**:
+cut-outs and glass count as surfaces, as for every pass ray, and so the alpha is not the film's alpha of
+a transparent-background render where the path goes through glass or the floor shows a shadow; where
+only opaque objects and the background are, the two are equal bit for bit (a test renders both). The
+six planes of X2 keep their pinned hashes (`PASS_X2` is `PASS_ALL` without the alpha, and the tests
+and CI that pin them are over it); the alpha has pins of its own, `PINNED_PASS_ALPHA` (the example) and
+`PINNED_E5_PASS_ALPHA`. With adaptive sampling (E10) the alpha, like the albedo, has the samples of the
+first round.
 
 ## Geometry, BVH and SIMD
 
@@ -692,7 +735,10 @@ node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /t
 With `--passes` the tool also renders every exact pass interleaved with the image (per tile
 `rt_render_tile_passes` once, `rt_render_tile_albedo` after every sample) and prints each plane's
 hash; `--expect-passes h1,…,h6` (the `PINNED_PASS_*` or `PINNED_E5_PASS_*` values, in `PASS_KEYS`
-order) checks them, as CI does, and the image must keep its hash.
+order) checks them, as CI does, and the image must keep its hash. `--alpha` (N2) also renders the alpha
+pass, `rt_render_tile_alpha` after every sample, summed and divided like the image;
+`--expect-alpha h` (`PINNED_PASS_ALPHA` or `PINNED_E5_PASS_ALPHA`) checks its plane. It is a flag of
+its own so the six hashes of `--expect-passes` stay what X2 pinned.
 
 ## Produce the WebAssembly module
 
@@ -713,8 +759,9 @@ The module imports nothing (no WASI, no JavaScript glue). Exports:
 | `rt_scene_free(handle) -> status` | Forgets a scene |
 | `rt_render_tile(handle, x, y, w, h, sample_index, out_ptr) -> status` | Writes `w * h * 3` linear RGB floats for one sample of a tile |
 | `rt_render_tile_rgba(handle, x, y, w, h, sample_index, out_ptr) -> status` | The same with coverage: `w * h * 4` floats, RGB premultiplied by alpha (0 where a transparent background shows) |
-| `rt_render_tile_passes(handle, x, y, w, h, mask, out_ptr) -> status` | X2: the exact passes of `mask` (normal 2, depth 4, partId 8, materialId 16, coc 32; the albedo bit and unknown bits are ignored) of a tile, one plane after another in that order, `w * h * channels` little-endian words each (`f32`, `u32` for the ids). The same for every sample: once per tile |
+| `rt_render_tile_passes(handle, x, y, w, h, mask, out_ptr) -> status` | X2: the exact passes of `mask` (normal 2, depth 4, partId 8, materialId 16, coc 32; the albedo bit, the alpha bit and unknown bits are ignored) of a tile, one plane after another in that order, `w * h * channels` little-endian words each (`f32`, `u32` for the ids). The same for every sample: once per tile |
 | `rt_render_tile_albedo(handle, x, y, w, h, sample_index, out_ptr) -> status` | X2: the albedo of one sample of a tile, `w * h * 3` floats; the host sums the samples in index order in `f32` and divides like the image |
+| `rt_render_tile_alpha(handle, x, y, w, h, sample_index, out_ptr) -> status` | N2: the coverage of one sample of a tile, `w * h` floats (1 where that sample's camera ray met an instance, 0 otherwise; the mean of the sub-samples for an edge pixel); summed and divided like the albedo |
 
 Status: 0 ok, 1 bad handle, 2 empty or oversized tile, 3 null pointer, 4 invalid scene update (the
 message is the last load error; the scene is unchanged). The scene's lights are prepared once, when
@@ -760,7 +807,11 @@ most one: flags with bit 0 = cap, the plane's normal and distance) and the `INST
 see "Section view" above. L5 added `LGHT` kind 5 (an IES light: its record is 80 bytes, the extra word
 naming its profile) and `IESP` (the text of an IES file, once per distinct profile, after the lights),
 which the page writes when the engine says it renders them (`rt_features` bit 3, `rt_core::FEATURE_IES`);
-a scene without IES lights is byte for byte what it was; see "IES lights (L5)". The exact field layout and the semantics
+a scene without IES lights is byte for byte what it was; see "IES lights (L5)". K3 added 16 bytes at the end
+of `CAMR` (`u32 projection; f32 fov_x_deg fov_y_deg exterior`), written only when one is not its
+default so that older files keep their bytes, and the `INST.flags` bit 2 (value 4,
+`INSTANCE_NO_CAMERA`), with `rt_features` bit 4 (`rt_core::FEATURE_CAMERAS`); see "Interior cameras
+(K3)". The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -833,6 +884,10 @@ byte for byte.
   bevel weight, cut-outs for camera and shadow rays, emission (an emitter whose program varies is
   not sampled as a light); `rt_features` bit 1, the M3b parity scene (`rt --write-m3b-example`).
 
+* **K3**: interior cameras: `Projection::{Equirectangular, Fisheye}` with `Camera::panorama_dir`,
+  the `CAMR` fields of K3, `INSTANCE_NO_CAMERA`, the exterior factor of the camera ray,
+  `rt_features` bit 4, the three K3 parity scenes (`rt --write-k3-plan-example`,
+  `--write-k3-panorama-example`, `--write-k3-fisheye-example`).
 * **L5**: IES lights: `rt_core::ies` (the LM-63 reader, strict, type C; bilinear lookup with the
   file's symmetries; the flux of the interpolant in closed form), `LightKind::Ies` and `Light::ies`
   (a point or sphere masked by the profile's share of its peak, through the spot's code),

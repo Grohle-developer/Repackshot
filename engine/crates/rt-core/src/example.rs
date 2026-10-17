@@ -135,6 +135,7 @@ pub fn scene() -> Scene {
             ortho: false,
             ortho_width: 600.0,
             lens: None,
+            ..Camera::default()
         },
         materials: vec![
             Material {
@@ -1783,6 +1784,215 @@ pub fn o2_scene() -> Scene {
         .camera
         .prepare_lens()
         .unwrap_or_else(|_| unreachable!("the double Gauss forms an image"));
+    scene
+}
+
+/// K3: instance of the ceiling of [`k3_room`] (the one the plan view hides from the camera).
+pub const K3_CEILING: usize = 1;
+/// K3: instance of the window pane of [`k3_room`] (thin glass, which camera rays cross straight).
+pub const K3_WINDOW: usize = 7;
+
+/// The room of the K3 parity scenes (millimetres, Z up), built from boxes the way a test room is
+/// before the `ROOM` node of K2: a floor slab and a ceiling slab 100 mm thick over an inside of
+/// 4 × 3 m and 2.6 m high, four walls (the front one, at −y, in four pieces around a window
+/// 1.6 m wide and 1.2 m high on a 0.8 m sill, with a pane of thin clear glass in it), a sofa-like
+/// box, a side table and a ball. It is lit only from inside, by a disc on the floor behind the sofa
+/// that shines at the white ceiling (an uplight: the room has the light the ceiling sends back) and,
+/// through the window, by the daylight sky. No studio floor (`FLOR` none).
+///
+/// Instances: 0 floor, 1 ceiling ([`K3_CEILING`]), 2 back wall, 3 left wall, 4 right wall, 5–6 the
+/// front wall left and right of the window, 7 the pane ([`K3_WINDOW`]), 8 under the window, 9 over
+/// it, 10 sofa, 11 table, 12 ball. The camera is set by [`k3_plan_scene`], [`k3_panorama_scene`] and
+/// [`k3_fisheye_scene`].
+pub fn k3_room() -> Scene {
+    use crate::scene::{MATERIAL_FLAG_THIN, MATERIAL_GLASS};
+    let all = [0, 1, 2, 3, 4, 5];
+    let slab = |lo: Vec3, hi: Vec3| split_box(lo, hi, &all);
+    let (x0, x1, y0, y1, h) = (-2000.0, 2000.0, -1500.0, 1500.0, 2600.0);
+    let (t, w0, w1, sill, head) = (100.0, -800.0, 800.0, 800.0, 2000.0);
+    let meshes = vec![
+        slab(
+            Vec3::new(x0 - t, y0 - t, -t),
+            Vec3::new(x1 + t, y1 + t, 0.0),
+        ),
+        slab(
+            Vec3::new(x0 - t, y0 - t, h),
+            Vec3::new(x1 + t, y1 + t, h + t),
+        ),
+        slab(Vec3::new(x0 - t, y1, 0.0), Vec3::new(x1 + t, y1 + t, h)),
+        slab(Vec3::new(x0 - t, y0 - t, 0.0), Vec3::new(x0, y1, h)),
+        slab(Vec3::new(x1, y0 - t, 0.0), Vec3::new(x1 + t, y1, h)),
+        slab(Vec3::new(x0, y0 - t, 0.0), Vec3::new(w0, y0, h)),
+        slab(Vec3::new(w1, y0 - t, 0.0), Vec3::new(x1, y0, h)),
+        // The pane: a single quad facing the room, in the middle of the wall's thickness.
+        Mesh::new(
+            &[
+                Vec3::new(w0, y0 - 0.5 * t, sill),
+                Vec3::new(w1, y0 - 0.5 * t, sill),
+                Vec3::new(w1, y0 - 0.5 * t, head),
+                Vec3::new(w0, y0 - 0.5 * t, head),
+            ],
+            &[],
+            &[0, 1, 2, 0, 2, 3],
+            0,
+        )
+        .unwrap_or_default(),
+        slab(Vec3::new(w0, y0 - t, 0.0), Vec3::new(w1, y0, sill)),
+        slab(Vec3::new(w0, y0 - t, head), Vec3::new(w1, y0, h)),
+        slab(
+            Vec3::new(-900.0, 600.0, 0.0),
+            Vec3::new(900.0, 1400.0, 700.0),
+        ),
+        cylinder(1300.0, 900.0, 300.0, 0.0, 550.0, 32),
+        icosphere(Vec3::new(-400.0, -300.0, 250.0), 250.0, 2),
+    ];
+    // Materials: 0 white plaster (walls and ceiling), 1 oak-coloured floor, 2 the pane, 3 the sofa's
+    // fabric, 4 the table's lacquer, 5 the ball's satin metal.
+    let materials = vec![
+        Material {
+            base_color: Rgb::new(0.85, 0.84, 0.82),
+            roughness: 0.9,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.55, 0.38, 0.24),
+            roughness: 0.45,
+            coat: 0.6,
+            coat_roughness: 0.15,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.96, 0.97, 0.98),
+            roughness: 0.0,
+            transmission: 1.0,
+            flags: MATERIAL_FLAG_THIN,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.25, 0.34, 0.5),
+            roughness: 0.95,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.12, 0.11, 0.1),
+            roughness: 0.2,
+            coat: 1.0,
+            coat_roughness: 0.05,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.95, 0.75, 0.45),
+            metallic: 1.0,
+            roughness: 0.3,
+            ..Material::default()
+        },
+    ];
+    let material_of = [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 3, 4, 5];
+    let instances = material_of
+        .iter()
+        .enumerate()
+        .map(|(i, &m)| Instance::new(i as u32, Transform::IDENTITY, m))
+        .collect();
+    let uplight = Vec3::new(0.0, 1450.0, 150.0);
+    Scene {
+        geometry: Geometry::new(meshes, instances).unwrap_or_default(),
+        materials,
+        lights: vec![Light {
+            kind: LightKind::Disk,
+            position: uplight,
+            direction: (Vec3::new(0.0, 700.0, h) - uplight).normalize(),
+            size_x: 300.0,
+            size_y: 300.0,
+            color: Rgb::new(1.0, 0.86, 0.7),
+            power: 30.0,
+            spread_deg: 120.0,
+            flags: LIGHT_FLAG_GLOSSY,
+            ..Light::default()
+        }],
+        environment: Environment {
+            kind: EnvKind::Sky,
+            sun_azimuth_deg: -100.0,
+            sun_elevation_deg: 30.0,
+            floor: 0.25,
+            strength: 0.6,
+            ..Environment::default()
+        },
+        floor: Floor::default(),
+        render: RenderSettings {
+            width: 96,
+            height: 64,
+            max_depth: 10,
+            ..RenderSettings::default()
+        },
+        ..Scene::default()
+    }
+}
+
+/// The K3 plan view: [`k3_room`] from straight above through an orthographic camera 4.6 m wide,
+/// its ceiling hidden to the camera ([`crate::geometry::INSTANCE_NO_CAMERA`]) so the picture is the
+/// room's floor plan, while the uplight's light still comes back from the ceiling; outside the room
+/// the camera sees the sky's ground at half its brightness (`exterior` 0.5). `render::k3_tests`
+/// pins it; `rt --write-k3-plan-example` writes it for `tools/wasm-parity.mjs`.
+pub fn k3_plan_scene() -> Scene {
+    let mut scene = k3_room();
+    let mut instances = scene.geometry.instances().to_vec();
+    instances[K3_CEILING].flags |= crate::geometry::INSTANCE_NO_CAMERA;
+    let meshes = std::mem::take(&mut scene.geometry).into_meshes();
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.camera = Camera {
+        position: Vec3::new(0.0, 0.0, 9000.0),
+        target: Vec3::ZERO,
+        up: Vec3::new(0.0, 1.0, 0.0),
+        ortho: true,
+        ortho_width: 4600.0,
+        exterior: 0.5,
+        ..Camera::default()
+    };
+    scene.render.width = 96;
+    scene.render.height = 72;
+    scene
+}
+
+/// The K3 panorama: [`k3_room`] seen from inside at eye height (1.5 m) by an equirectangular camera
+/// of the whole sphere (360° × 180°, 128 × 64), the window behind it to the left, the sky through
+/// the pane at 40 % (`exterior` 0.4). `render::k3_tests` pins it; `rt --write-k3-panorama-example`
+/// writes it for `tools/wasm-parity.mjs`.
+pub fn k3_panorama_scene() -> Scene {
+    use crate::scene::Projection;
+    let mut scene = k3_room();
+    let eye = Vec3::new(600.0, 300.0, 1500.0);
+    scene.camera = Camera {
+        position: eye,
+        target: eye + Vec3::new(-0.3, 1.0, 0.0),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        projection: Projection::Equirectangular,
+        exterior: 0.4,
+        ..Camera::default()
+    };
+    scene.render.width = 128;
+    scene.render.height = 64;
+    scene
+}
+
+/// The K3 fisheye: [`k3_room`] through an equidistant fisheye of 300° across the width of a
+/// 96 × 72 image, from a corner near the ceiling looking down at the room (its corners, more than
+/// 180° from the axis, see nothing). `render::k3_tests` pins it; `rt --write-k3-fisheye-example`
+/// writes it for `tools/wasm-parity.mjs`.
+pub fn k3_fisheye_scene() -> Scene {
+    use crate::scene::Projection;
+    let mut scene = k3_room();
+    let eye = Vec3::new(1600.0, 1100.0, 2300.0);
+    scene.camera = Camera {
+        position: eye,
+        target: Vec3::new(-200.0, -200.0, 400.0),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        projection: Projection::Fisheye,
+        fov_x_deg: 300.0,
+        ..Camera::default()
+    };
+    scene.render.width = 96;
+    scene.render.height = 72;
     scene
 }
 

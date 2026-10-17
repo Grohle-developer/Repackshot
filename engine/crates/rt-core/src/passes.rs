@@ -1,5 +1,6 @@
 //! The exact per-pixel passes written next to the image (phase X2, AI-POST.md §3.1 and §7.4):
-//! what the AI post-processing guard leans on (`rt-post`), and later the render passes of N2.
+//! what the AI post-processing guard leans on (`rt-post`), and the render passes of N2 (the alpha
+//! matte is the seventh, appended by that phase).
 //! The contract is `src/core/passes.ts`: one plane per pass, `width × height`, rows from the top
 //! left like the image, in the order of [`PASS_KEYS`] (bit `i` of `RNDR.passes` is pass `i`).
 //!
@@ -11,12 +12,14 @@
 //! | `partId` | u32 | RSB instance index + 1 (what `Scene::pick` finds); the studio floor [`FLOOR_ID`]; a particle of an ambient effect (S4a) the number of instances + the effect's index + 1 | 0 |
 //! | `materialId` | u32 | RSB material index + 1 of that instance (of that effect for a particle); the floor [`FLOOR_ID`] | 0 |
 //! | `coc` | f32 | Circle-of-confusion diameter in output pixels, of the thin lens ([`coc_diameter`]) | 0 (also without depth of field) |
+//! | `alpha` | f32 | N2: coverage of the scene's objects, 0 to 1: the share of the pixel's samples whose camera ray meets a surface of an instance, averaged like the albedo (so the edges are anti-aliased). The studio floor, the environment, the background and the light panels the camera sees are not coverage | 0 |
 //!
 //! `normal`, `depth`, the ids and `coc` come from **one ray through the centre of the pixel,
 //! without jitter, through the centre of the lens** ([`crate::render::centre_ray`]): they are
-//! exact and never blend the two sides of an edge. `albedo` follows the camera ray of every
-//! sample of the image (the same jitter and lens point) and is summed in sample order in `f32`
-//! and divided like [`crate::image::Film::resolve`], so every host gets the same bits.
+//! exact and never blend the two sides of an edge. `albedo` and `alpha` follow the camera ray of
+//! every sample of the image (the same jitter and lens point), one trace for both, and are summed
+//! in sample order in `f32` and divided like [`crate::image::Film::resolve`], so every host gets
+//! the same bits.
 //!
 //! The background (0) is what the guard never changes: the environment, the background colour
 //! or image, transparency, and the light panels the camera sees ([`crate::integrator::FirstHit`]).
@@ -46,17 +49,33 @@ pub const PASS_PART_ID: u32 = 1 << 3;
 pub const PASS_MATERIAL_ID: u32 = 1 << 4;
 /// Bit of the circle of confusion pass.
 pub const PASS_COC: u32 = 1 << 5;
+/// Bit of the alpha pass (N2).
+pub const PASS_ALPHA: u32 = 1 << 6;
 /// Every pass this engine knows.
 pub const PASS_ALL: u32 = (1 << PASS_KEYS.len()) - 1;
-/// The passes of the centre ray (all but the albedo).
-pub const PASS_EXACT: u32 = PASS_ALL & !PASS_ALBEDO;
+/// The six passes of phase X2, the AI guard's contract (`AI-POST.md` §7.4): `PASS_ALL` before N2
+/// appended the alpha. Their pinned hashes are over these.
+pub const PASS_X2: u32 = PASS_ALL & !PASS_ALPHA;
+/// The passes that follow the samples of the image (the albedo and the alpha): a camera ray per
+/// sample, summed and divided like the film.
+pub const PASS_SAMPLED: u32 = PASS_ALBEDO | PASS_ALPHA;
+/// The passes of the centre ray (all but the sampled ones).
+pub const PASS_EXACT: u32 = PASS_ALL & !PASS_SAMPLED;
 
 /// The pass names, in the order of their bits (`PASS_KEYS` of `src/core/passes.ts`). Stable:
 /// passes are added at the end.
-pub const PASS_KEYS: [&str; 6] = ["albedo", "normal", "depth", "partId", "materialId", "coc"];
+pub const PASS_KEYS: [&str; 7] = [
+    "albedo",
+    "normal",
+    "depth",
+    "partId",
+    "materialId",
+    "coc",
+    "alpha",
+];
 
 /// Words (an `f32` or a `u32`) per pixel of each pass, in the order of [`PASS_KEYS`].
-pub const PASS_CHANNELS: [usize; 6] = [3, 3, 1, 1, 1, 1];
+pub const PASS_CHANNELS: [usize; 7] = [3, 3, 1, 1, 1, 1, 1];
 
 /// `partId` and `materialId` of the studio floor (the `FLOR` plane, not an instance).
 pub const FLOOR_ID: u32 = u32::MAX;
@@ -124,7 +143,8 @@ pub fn coc_diameter(camera: &Camera, depth: f32, long_side: u32) -> f32 {
 pub struct Exact {
     /// Unit shading normal facing the camera (0 on the background).
     pub normal: Vec3,
-    /// Distance along the view axis (+∞ on the background).
+    /// Distance along the view axis (+∞ on the background); for a panoramic camera (K3), the
+    /// distance from the camera.
     pub depth: f32,
     /// RSB instance index + 1, [`FLOOR_ID`] or 0.
     pub part_id: u32,
@@ -166,8 +186,13 @@ impl Exact {
         let camera = &scene.camera;
         let forward = camera.basis().0;
         // Along the axis from the camera's plane: the lens centre for a perspective camera (the
-        // ray starts there), the point on the image plane for an orthographic one.
-        let depth = t * ray.dir.dot(forward) + (ray.origin - camera.position).dot(forward);
+        // ray starts there), the point on the image plane for an orthographic one. K3: a panorama
+        // has no axis for what it sees around it: the distance from the camera.
+        let depth = if camera.panoramic() {
+            t * ray.dir.length()
+        } else {
+            t * ray.dir.dot(forward) + (ray.origin - camera.position).dot(forward)
+        };
         let long_side = scene.render.width.max(scene.render.height);
         Exact {
             normal,
@@ -186,6 +211,17 @@ pub fn albedo_of(scene: &Scene, hit: FirstHit) -> Rgb {
         FirstHit::Background => Rgb::BLACK,
         FirstHit::Floor { .. } => scene.floor.color,
         FirstHit::Surface { albedo, .. } => albedo,
+    }
+}
+
+/// The coverage of what a camera ray met (the `alpha` pass, one sample): 1 for a surface of an
+/// instance, 0 for the background, the light panels the camera sees and the studio floor (visible
+/// or a shadow catcher: the floor is a surface the other passes name, not an object to cut out).
+/// Cut-outs and glass count as surfaces, as for every pass ray.
+pub fn coverage_of(hit: FirstHit) -> f32 {
+    match hit {
+        FirstHit::Surface { .. } => 1.0,
+        FirstHit::Background | FirstHit::Floor { .. } => 0.0,
     }
 }
 
@@ -219,6 +255,10 @@ pub struct PassFilm {
     pub material_id: Vec<u32>,
     /// Circle of confusion per pixel.
     pub coc: Vec<f32>,
+    /// Summed coverage, per pixel (N2).
+    pub alpha: Vec<f32>,
+    /// Samples summed into each pixel's alpha.
+    pub alpha_weight: Vec<f32>,
 }
 
 /// `n` values of `v` when `on`, else none.
@@ -255,6 +295,8 @@ impl PassFilm {
             part_id: plane(has(PASS_PART_ID), n, 0),
             material_id: plane(has(PASS_MATERIAL_ID), n, 0),
             coc: plane(has(PASS_COC), n, 0.0),
+            alpha: plane(has(PASS_ALPHA), n, 0.0),
+            alpha_weight: plane(has(PASS_ALPHA), n, 0.0),
         }
     }
 
@@ -278,6 +320,18 @@ impl PassFilm {
             self.albedo[i * 3 + 1] += c.g;
             self.albedo[i * 3 + 2] += c.b;
             self.albedo_weight[i] += 1.0;
+        }
+    }
+
+    /// Adds one sample's coverage `a` (0 to 1) to pixel `(x, y)` (nothing without the alpha pass).
+    #[inline]
+    pub fn add_alpha(&mut self, x: u32, y: u32, a: f32) {
+        if self.mask & PASS_ALPHA == 0 {
+            return;
+        }
+        if let Some(i) = self.index(x, y) {
+            self.alpha[i] += a;
+            self.alpha_weight[i] += 1.0;
         }
     }
 
@@ -317,6 +371,13 @@ impl PassFilm {
                 }
             }
         }
+        // The alpha is divided the same way, by its own count of samples.
+        let mut alpha = vec![0.0; self.alpha.len()];
+        for (i, &w) in self.alpha_weight.iter().enumerate() {
+            if w > 0.0 {
+                alpha[i] = self.alpha[i] * (1.0 / w);
+            }
+        }
         Passes {
             width: self.width,
             height: self.height,
@@ -327,6 +388,7 @@ impl PassFilm {
             part_id: self.part_id.clone(),
             material_id: self.material_id.clone(),
             coc: self.coc.clone(),
+            alpha,
         }
     }
 }
@@ -353,6 +415,8 @@ pub struct Passes {
     pub material_id: Vec<u32>,
     /// Circle of confusion per pixel.
     pub coc: Vec<f32>,
+    /// Coverage per pixel (N2).
+    pub alpha: Vec<f32>,
 }
 
 impl Passes {
@@ -389,6 +453,7 @@ impl Passes {
         copy(&mut self.normal, &region.normal, 3);
         copy(&mut self.depth, &region.depth, 1);
         copy(&mut self.coc, &region.coc, 1);
+        copy(&mut self.alpha, &region.alpha, 1);
         let copy_ids = |dst: &mut Vec<u32>, src: &[u32]| {
             if dst.is_empty() || src.is_empty() {
                 return;
@@ -415,6 +480,7 @@ impl Passes {
             Plane::U32(&self.part_id),
             Plane::U32(&self.material_id),
             Plane::F32(&self.coc),
+            Plane::F32(&self.alpha),
         ];
         all.into_iter()
             .enumerate()
@@ -440,7 +506,7 @@ impl Passes {
 /// One pass plane, borrowed.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Plane<'a> {
-    /// Floats (albedo, normal, depth, coc).
+    /// Floats (albedo, normal, depth, coc, alpha).
     F32(&'a [f32]),
     /// Ids.
     U32(&'a [u32]),
@@ -481,7 +547,9 @@ mod tests {
 
     #[test]
     fn masks_follow_the_order_of_the_keys() {
-        assert_eq!(PASS_ALL, 0b11_1111);
+        assert_eq!(PASS_ALL, 0b111_1111);
+        assert_eq!(PASS_X2, 0b11_1111, "the six of X2 stay the six");
+        assert_eq!(PASS_SAMPLED, 0b100_0001);
         assert_eq!(PASS_EXACT, 0b11_1110);
         assert_eq!(mask_of_keys(""), Ok(0));
         assert_eq!(mask_of_keys("albedo"), Ok(PASS_ALBEDO));
@@ -500,7 +568,10 @@ mod tests {
             keys_of_mask(PASS_NORMAL | PASS_COC | 1 << 9),
             ["normal", "coc"]
         );
-        assert_eq!(words_per_pixel(PASS_ALL), 10);
+        assert_eq!(words_per_pixel(PASS_ALL), 11);
+        assert_eq!(words_per_pixel(PASS_X2), 10);
+        assert_eq!(mask_of_keys("alpha"), Ok(PASS_ALPHA));
+        assert_eq!(PASS_KEYS[6], "alpha", "appended at the end");
         assert_eq!(words_per_pixel(PASS_ALBEDO | PASS_PART_ID), 4);
         assert_eq!(words_per_pixel(1 << 20), 0, "unknown bits hold nothing");
     }
@@ -526,6 +597,17 @@ mod tests {
         let sum = 0.1f32 + 0.7 + 0.3;
         assert_eq!(f.resolve().albedo[9], sum * (1.0 / 3.0));
         assert_eq!(f.albedo_weight, [0.0, 0.0, 0.0, 3.0]);
+        // Alpha: four samples, three of them on an object, divided by its own count.
+        for a in [1.0, 1.0, 0.0, 1.0] {
+            f.add_alpha(10, 20, a);
+        }
+        f.add_alpha(9, 20, 1.0); // outside: ignored
+        assert_eq!(f.alpha_weight, [4.0, 0.0, 0.0, 0.0]);
+        assert_eq!(f.resolve().alpha, [0.75, 0.0, 0.0, 0.0]);
+        // A film without the alpha pass ignores the samples.
+        let mut none = PassFilm::new(2, 2, PASS_ALBEDO);
+        none.add_alpha(0, 0, 1.0);
+        assert!(none.alpha.is_empty() && none.resolve().alpha.is_empty());
         f.set_exact(
             10,
             20,
@@ -566,7 +648,10 @@ mod tests {
         tile.set_exact(2, 1, &e);
         tile.set_exact(3, 1, &e); // beyond the image's right edge
         tile.add_albedo(2, 1, Rgb::new(0.5, 0.25, 1.0));
+        tile.add_alpha(2, 1, 1.0);
+        tile.add_alpha(2, 1, 0.0);
         whole.copy_region(2, 0, &tile.resolve());
+        assert_eq!(whole.alpha, [0.0, 0.0, 0.0, 0.0, 0.0, 0.5]);
         assert_eq!(whole.part_id, [0, 0, 0, 0, 0, 7]);
         assert_eq!(whole.depth[5], 4.0);
         assert_eq!(whole.depth[2], f32::INFINITY);
@@ -574,13 +659,30 @@ mod tests {
         let mut bytes = Vec::new();
         whole.write_planes(&mut bytes);
         assert_eq!(bytes.len(), whole.byte_len());
-        assert_eq!(bytes.len(), 6 * 10 * 4);
+        assert_eq!(bytes.len(), 6 * 11 * 4);
         // The part ids come after albedo (18 words), normal (18) and depth (6).
         let at = |w: usize| u32::from_le_bytes(bytes[w * 4..w * 4 + 4].try_into().unwrap());
         assert_eq!(at(18 + 18 + 6 + 5), 7);
         assert_eq!(f32::from_bits(at(18 + 18 + 5)), 4.0);
-        assert_eq!(whole.planes().len(), 6);
+        assert_eq!(whole.planes().len(), 7);
         assert_ne!(whole.planes()[3].fnv1a(), Plane::U32(&[0; 6]).fnv1a());
+    }
+
+    #[test]
+    fn coverage_is_one_on_an_instance_and_zero_on_everything_else() {
+        let surface = FirstHit::Surface {
+            instance: 0,
+            t: 1.0,
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            albedo: Rgb::WHITE,
+        };
+        let floor = FirstHit::Floor {
+            t: 1.0,
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        };
+        assert_eq!(coverage_of(surface), 1.0);
+        assert_eq!(coverage_of(floor), 0.0, "the floor is not an object");
+        assert_eq!(coverage_of(FirstHit::Background), 0.0);
     }
 
     #[test]

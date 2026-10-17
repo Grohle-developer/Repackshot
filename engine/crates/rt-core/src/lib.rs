@@ -91,10 +91,18 @@ pub const FEATURE_SECTION: u32 = 4;
 /// an IES light as the spot light that approximates it (the Fast preview's) for such an engine.
 pub const FEATURE_IES: u32 = 8;
 
+/// [`FEATURES`] bit 4 (K3): the engine reads the interior cameras of the RSB: the projection and
+/// the exterior factor at the end of `CAMR` (the equirectangular panorama and the fisheye,
+/// [`scene::Projection`]) and the instances hidden to the camera (`INST.flags` bit 2,
+/// [`geometry::INSTANCE_NO_CAMERA`]). An engine without it renders the standard camera of `CAMR` and
+/// shows every instance, so the page writes none of them for such an engine.
+pub const FEATURE_CAMERAS: u32 = 16;
+
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
 /// page writes only what the engine says it reads.
-pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_SECTION | FEATURE_IES;
+pub const FEATURES: u32 =
+    FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_SECTION | FEATURE_IES | FEATURE_CAMERAS;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

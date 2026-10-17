@@ -17,8 +17,6 @@ export interface ThumbProps {
   onClick(): void;
   /** Drag payload (a material: "preset:GOLD"), when the thumbnail can be dragged onto a part (pointer events). */
   drag?: string;
-  /** L6: a large, square thumbnail (the sets of the light catalogue). */
-  large?: boolean;
 }
 
 export function thumb(p: ThumbProps): HTMLButtonElement {
@@ -27,7 +25,7 @@ export function thumb(p: ThumbProps): HTMLButtonElement {
     'button',
     {
       type: 'button',
-      class: `thumb${p.sphere ? ' sphere' : ''}${p.large ? ' large' : ''}${p.active ? ' is-active' : ''}`,
+      class: `thumb${p.sphere ? ' sphere' : ''}${p.active ? ' is-active' : ''}`,
       'aria-pressed': String(p.active),
       'data-tip': p.title,
       onclick: p.onClick,
@@ -54,7 +52,10 @@ export function setThumbImage(el: HTMLElement, src: string): void {
 export interface ConfirmOption {
   label: string;
   primary?: boolean;
-  run(): void;
+  /** The tooltip of the button: what this answer does. */
+  title?: string;
+  /** `remember`: the question's Remember my choice was ticked (false when it has none). */
+  run(remember?: boolean): void;
 }
 
 export interface ConfirmSpec {
@@ -62,33 +63,40 @@ export interface ConfirmSpec {
   options: ConfirmOption[];
   /** Label of the dismiss button (default: Cancel). */
   cancelLabel?: string;
+  /** L7: a Remember my choice box under the answers, with this label (and `rememberAux` in its tooltip). */
+  remember?: string;
+  rememberAux?: string;
 }
 
 /** An inline confirmation in place (UI.md §4.3): two or three buttons, Esc cancels. */
 export function confirmBox(spec: ConfirmSpec, onDone: () => void): HTMLElement {
+  const box = spec.remember ? (h('input', { type: 'checkbox' }) as HTMLInputElement) : null;
   const buttons = spec.options.map((o) =>
     h(
       'button',
       {
         type: 'button',
         class: `btn${o.primary ? ' btn-primary' : ''}`,
+        ...(o.title ? { 'data-tip': o.title } : {}),
         onclick: () => {
+          const remember = box?.checked === true;
           onDone();
-          o.run();
+          o.run(remember);
         },
       },
       o.label,
     ),
   );
   const cancel = h('button', { type: 'button', class: 'btn', onclick: onDone }, spec.cancelLabel ?? t('common.cancel'));
-  const el = h('div', { class: 'confirm', role: 'alertdialog', 'aria-label': spec.message }, h('div', { class: 'confirm-msg' }, spec.message), h('div', { class: 'confirm-actions' }, ...buttons, cancel));
+  const remember = box ? h('label', { class: 'confirm-remember note', ...(spec.rememberAux ? { 'data-tip': spec.rememberAux } : {}) }, box, h('span', null, spec.remember!)) : null;
+  const el = h('div', { class: 'confirm', role: 'alertdialog', 'aria-label': spec.message }, h('div', { class: 'confirm-msg' }, spec.message), h('div', { class: 'confirm-actions' }, ...buttons, cancel), remember);
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
       onDone();
     } else if (e.key === 'Tab') {
       // The question keeps the focus until it is answered: Tab goes round its answers.
-      const answers: HTMLElement[] = [...buttons, cancel];
+      const answers: HTMLElement[] = [...buttons, cancel, ...(box ? [box] : [])];
       const at = answers.indexOf(document.activeElement as HTMLElement);
       e.preventDefault();
       const next = e.shiftKey ? (at <= 0 ? answers.length - 1 : at - 1) : at < 0 || at === answers.length - 1 ? 0 : at + 1;

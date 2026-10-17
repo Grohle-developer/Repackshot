@@ -334,7 +334,7 @@ Project rules already require clean-room work and permissive-only dependencies [
 - Papers, standards and specs: Preetham, Hošek–Wilkie (paper and the BSD source only to check or port tables with notice), Perez/CIE definitions, the Radiance and OpenEXR specs.
 - Public manuals of other tools, for behaviour only (KeyShot manual, Latitude and PolyStudio docs).
 - Third-party library **taxonomy and metadata** (category names, tags): facts.
-- Photographic textbooks, the author's own measurements, and the author's earlier data (EZ Packshot, `light-setups.ts`).
+- Photographic textbooks, the author's own measurements, and the existing catalogue (`light-setups.ts`).
 - Layout ideas (key at 45°, strip at 120°) are ideas, not expression.
 
 **May not look at or use**

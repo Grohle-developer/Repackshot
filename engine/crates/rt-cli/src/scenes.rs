@@ -185,6 +185,7 @@ fn camera(position: Vec3, target: Vec3, focal_mm: f32) -> Camera {
         ortho: false,
         ortho_width: 100.0,
         lens: None,
+        ..Camera::default()
     }
 }
 

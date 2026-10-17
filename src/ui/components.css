@@ -160,6 +160,18 @@ kbd,
 .seg button:last-child {
   border-right: 0;
 }
+/* An icon is a block: beside it, its label stays on the same line (else it drops under the icon and the 26 px clip it). */
+.seg button:has(> .icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.seg button:has(> .icon) > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .seg button:hover:not([aria-pressed='true']):not(:disabled) {
   background: var(--hover);
 }
@@ -336,7 +348,8 @@ kbd,
   height: 26px;
   min-width: 0;
   width: 100%;
-  padding: 0 7px;
+  /* The right side is the step buttons' column (.num-steps). */
+  padding: 0 0 0 7px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-0);
@@ -371,15 +384,82 @@ kbd,
 }
 .num input {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  inset: 0 var(--num-steps-w) 0 0;
+  width: auto;
   border: 0;
-  padding: 0 7px;
+  padding: 0 0 0 7px;
   text-align: right;
   background: var(--bg-0);
-  border-radius: var(--radius);
+  border-radius: var(--radius) 0 0 var(--radius);
   outline: none;
   font-variant-numeric: tabular-nums;
+}
+/* The step buttons (UI.md §4.4): ▲ ▼ stacked at the right end, inside the frame; together they are the field's
+   height, so the field stays one line high. Not tab stops: the spinbutton keeps the keyboard. */
+.num {
+  --num-steps-w: 18px;
+}
+.num .num-steps {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  align-self: stretch;
+  width: 14px;
+  margin-left: 4px;
+}
+.num .num-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: default;
+  touch-action: none;
+  transition: color var(--ease), background var(--ease);
+}
+.num .num-step .icon {
+  pointer-events: none;
+}
+.num .num-up {
+  border-top-right-radius: calc(var(--radius) - 1px);
+}
+.num .num-down {
+  border-bottom-right-radius: calc(var(--radius) - 1px);
+}
+.num .num-step:not(:disabled):hover {
+  color: var(--ink-0);
+  background: var(--soft);
+}
+.num .num-step:not(:disabled):active {
+  background: var(--line);
+}
+.num .num-step:disabled {
+  color: var(--ink-3);
+  opacity: 0.45;
+}
+/* Compact (a field with an inline label, a slider's field): a thinner pair and tighter spacing, so the value keeps
+   the room it had before the step buttons (◆ Fable: the look of this variant). */
+.num.is-compact {
+  --num-steps-w: 12px;
+  padding-left: 5px;
+}
+.num.is-compact .num-label {
+  margin-right: 3px;
+}
+.num.is-compact .num-unit {
+  margin-left: 2px;
+}
+.num.is-compact .num-steps {
+  width: 10px;
+  margin-left: 2px;
+}
+.num.is-compact input {
+  padding-left: 5px;
 }
 .num.is-disabled {
   color: var(--ink-3);
@@ -559,13 +639,29 @@ kbd,
 .thumbs.cols-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-/* L6: the sets, twice as tall as a setup's thumbnail (two columns, square). */
+/* Two columns: the large thumbnails of the light catalogue (L7; L6 drew the sets so, square). */
 .thumbs.cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.thumb.large img,
-.thumb.large .thumb-ph {
-  aspect-ratio: 1;
+/* L7: the light catalogue's thumbnails, one size for every entry (a setup's, 4:3), chosen in the section's header:
+   small four columns, medium three, large two. A caption wraps to its whole length (nothing is cut); a small one is
+   the picture alone, its name in its label and its tooltip. */
+.thumbs[data-size] .thumb-caption {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.thumbs[data-size='S'] .thumb-caption {
+  display: none;
+}
+/* The entry in force when the filters leave it out: first, dimmed, its tooltip saying so (as a plugin's recipe, P6b). */
+.thumb.is-outside img,
+.thumb.is-outside .thumb-caption {
+  opacity: 0.45;
+}
+.thumb.is-outside .thumb-caption {
+  font-style: italic;
 }
 .thumb {
   display: flex;
@@ -635,6 +731,17 @@ kbd,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+/* L7: Remember my choice, under the answers. */
+.confirm-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.confirm-remember input {
+  margin: 0;
+  accent-color: var(--ink-0);
 }
 
 /* Floating: menus, popovers, palette, tooltip, toasts ------------------- */
