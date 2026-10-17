@@ -1464,7 +1464,12 @@ vuelve a empezar: un render no se reanuda a medias) e **Iniciar cola** si
 no, desactivado cuando no hay nada en espera. Un *Reanudar* pulsado
 mientras el trabajo pausado aún se está parando no se pierde. Los
 terminados quedan en la lista con su miniatura; clic abre el visor de
-resultados.
+resultados. **Estudios que vinieron con el proyecto** (N2b): por cada estudio que los
+trabajos llevan dentro del proyecto y no está en la biblioteca (un proyecto abierto en
+otro equipo u otro perfil), una línea entre la cabecera y la lista: *El estudio «Estudio
+A» vino con el proyecto; no está en tu biblioteca* con el botón **Añadir a mi
+biblioteca**, que lo guarda en *Míos* con su id (el aviso *Guardado «Estudio A» en Míos*)
+y quita la línea. Sin añadirlo, los trabajos se renderizan igual, con la copia.
 
 **Vista en vivo** (U14, petición del usuario: «al irme a queue quiero poder
 ver un preview en tiempo real de un render seleccionado»). Clic (o `⏎`) en la
@@ -1631,7 +1636,10 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   **lote** (*Lote de 4 imágenes: cámaras 2 × estudios 2*) y, si la plantilla daría el mismo
   nombre a dos archivos, lo avisa (*4 archivos tendrían el mismo nombre (Botella.png):
   añade {camera}, {studio} o {n} al nombre*). En *Animación* está deshabilitado. El estudio
-  se pone sobre una copia del proyecto al renderizar: la escena abierta no cambia.
+  se pone sobre una copia del proyecto al renderizar: la escena abierta no cambia. N2b:
+  el trabajo guarda en el proyecto una copia del estudio, que es lo que renderiza; al
+  editar un trabajo cuyo estudio ya no está en la biblioteca pero sí en el proyecto, la
+  lista lo nombra *Estudio A (en el proyecto)* (sin copia tampoco: *(ya no está guardado)*).
 - **ZIP** (N2): interruptor *Empaquetar los archivos en un ZIP* con una nota (*Cuando
   termina el último trabajo de este Render: una sola descarga, sin comprimir*); sin él,
   cada archivo se guarda como antes. El resumen del pie añade lo que hay (*4 imágenes ·
