@@ -7,6 +7,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Interfaz
 
+- *Ajustes ▸ Preferencias ▸ Render por defecto para proyectos nuevos*: los botones *Descargas* y *Elegir carpeta…* de *Carpeta al terminar* ya no salen cortados. El icono iba en su propia línea y el texto caía debajo, fuera de los 26 px del botón; ahora icono y texto van en la misma línea en cualquier control segmentado con icono. Lo guarda `tests/seg-clip-browser.test.ts`, en el navegador y en los dos idiomas.
 - *Acerca de*: los créditos se quedan en la literatura pública que sigue el motor y en las licencias de terceros.
 
 ### Herramientas
