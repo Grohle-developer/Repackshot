@@ -19,9 +19,12 @@ export interface LensParams {
   ortho: boolean;
 }
 
-/** The lens of a camera as io/rsb.ts `cameraToRsb` hands it to the engine (the output frame itself, no viewport). */
+/**
+ * The lens of a camera as io/rsb.ts `cameraToRsb` hands it to the engine (the output frame itself, no viewport). K3: a
+ * panorama, like an orthographic camera, has no aperture (`ortho` here means "no lens": no depth of field).
+ */
 export function lensOf(cam: Pick<CameraState, 'focalMm' | 'fstop' | 'focusDistance' | 'projection'>, sensorMm: number = SENSOR_MM): LensParams {
-  return { focalMm: Math.max(1, cam.focalMm), fstop: Math.max(0, cam.fstop), focusDist: Math.max(0, cam.focusDistance), sensorMm, ortho: cam.projection === 'ORTHOGRAPHIC' };
+  return { focalMm: Math.max(1, cam.focalMm), fstop: Math.max(0, cam.fstop), focusDist: Math.max(0, cam.focusDistance), sensorMm, ortho: cam.projection !== 'PERSPECTIVE' };
 }
 
 /** Whether the lens blurs anything at all (the engine's `lens_radius() > 0`). */

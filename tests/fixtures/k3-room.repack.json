@@ -1,0 +1,1991 @@
+{
+ "format": "repackshot-project",
+ "schema": 2,
+ "state": {
+  "meta": {
+   "name": "",
+   "version": "0.1.16",
+   "dirty": false,
+   "lang": "en",
+   "theme": "system"
+  },
+  "scene": {
+   "nodes": {
+    "n1": {
+     "id": "n1",
+     "name": "Test room",
+     "kind": "MODEL",
+     "parent": null,
+     "children": [
+      "n2",
+      "n3",
+      "n4",
+      "n5",
+      "n6",
+      "n7",
+      "n8",
+      "n9",
+      "n10",
+      "n11",
+      "n12",
+      "n13",
+      "n14"
+     ],
+     "transform": {
+      "position": [
+       0,
+       0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       0.9523809523809523,
+       0.9523809523809523,
+       0.9523809523809523
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "initial": {
+      "position": [
+       0,
+       0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n2": {
+     "id": "n2",
+     "name": "Floor",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       -50
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:0",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -2100,
+        -1600,
+        -50
+       ],
+       "max": [
+        2100,
+        1600,
+        50
+       ]
+      }
+     },
+     "material": "m2",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       0,
+       -50
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n3": {
+     "id": "n3",
+     "name": "Ceiling",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       2650
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:1",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -2100,
+        -1600,
+        -50
+       ],
+       "max": [
+        2100,
+        1600,
+        50
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       0,
+       2650
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n4": {
+     "id": "n4",
+     "name": "Back wall",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       1550,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:2",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -2100,
+        -50,
+        -1300
+       ],
+       "max": [
+        2100,
+        50,
+        1300
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       1550,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n5": {
+     "id": "n5",
+     "name": "Left wall",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       -2050,
+       0,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:3",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -50,
+        -1500,
+        -1300
+       ],
+       "max": [
+        50,
+        1500,
+        1300
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       -2050,
+       0,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n6": {
+     "id": "n6",
+     "name": "Right wall",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       2050,
+       0,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:4",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -50,
+        -1500,
+        -1300
+       ],
+       "max": [
+        50,
+        1500,
+        1300
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       2050,
+       0,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n7": {
+     "id": "n7",
+     "name": "Front wall left",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       -1400,
+       -1550,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:5",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -600,
+        -50,
+        -1300
+       ],
+       "max": [
+        600,
+        50,
+        1300
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       -1400,
+       -1550,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n8": {
+     "id": "n8",
+     "name": "Front wall right",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       1400,
+       -1550,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:6",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -600,
+        -50,
+        -1300
+       ],
+       "max": [
+        600,
+        50,
+        1300
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       1400,
+       -1550,
+       1300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n9": {
+     "id": "n9",
+     "name": "Under the window",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       -1550,
+       400
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:7",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -800,
+        -50,
+        -400
+       ],
+       "max": [
+        800,
+        50,
+        400
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       -1550,
+       400
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n10": {
+     "id": "n10",
+     "name": "Over the window",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       -1550,
+       2300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:8",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -800,
+        -50,
+        -300
+       ],
+       "max": [
+        800,
+        50,
+        300
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       -1550,
+       2300
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n11": {
+     "id": "n11",
+     "name": "Window pane",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       -1550,
+       1400
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:9",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -800,
+        -3,
+        -600
+       ],
+       "max": [
+        800,
+        3,
+        600
+       ]
+      }
+     },
+     "material": "m3",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       -1550,
+       1400
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n12": {
+     "id": "n12",
+     "name": "Sofa",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       1000,
+       350
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:10",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -900,
+        -400,
+        -350
+       ],
+       "max": [
+        900,
+        400,
+        350
+       ]
+      }
+     },
+     "material": "m4",
+     "smooth": false,
+     "initial": {
+      "position": [
+       0,
+       1000,
+       350
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n13": {
+     "id": "n13",
+     "name": "Side table",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       1300,
+       900,
+       275
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:11",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -300,
+        -300,
+        -275
+       ],
+       "max": [
+        300,
+        300,
+        275
+       ]
+      }
+     },
+     "material": "m5",
+     "smooth": false,
+     "initial": {
+      "position": [
+       1300,
+       900,
+       275
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n14": {
+     "id": "n14",
+     "name": "Ball",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       -400,
+       -300,
+       250
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "k3room:12",
+      "vertices": 24,
+      "triangles": 12,
+      "bounds": {
+       "min": [
+        -250,
+        -250,
+        -250
+       ],
+       "max": [
+        250,
+        250,
+        250
+       ]
+      }
+     },
+     "material": "m6",
+     "smooth": false,
+     "initial": {
+      "position": [
+       -400,
+       -300,
+       250
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    }
+   },
+   "roots": [
+    "n1"
+   ],
+   "partSizeMm": 4000,
+   "type": "INTERIOR",
+   "typeBase": {
+    "environment.kind": {
+     "base": "STUDIO",
+     "applied": "SKY"
+    },
+    "studio.shadow": {
+     "base": true,
+     "applied": false
+    },
+    "image.exposureMode": {
+     "base": "MANUAL",
+     "applied": "AUTO"
+    },
+    "image.viewTransform": {
+     "base": "FILMIC",
+     "applied": "AGX"
+    },
+    "render.samples": {
+     "base": {
+      "quality": "PREVIEW",
+      "maxSamples": 256
+     },
+     "applied": {
+      "quality": "CUSTOM",
+      "maxSamples": 512
+     }
+    },
+    "render.finishBy": {
+     "base": "SAMPLES",
+     "applied": "NOISE"
+    },
+    "render.maxBounces": {
+     "base": null,
+     "applied": 16
+    },
+    "render.caustics": {
+     "base": "AUTO",
+     "applied": "OFF"
+    },
+    "camera.focal:cam1": {
+     "base": {
+      "focalMm": 85,
+      "lens": null
+     },
+     "applied": {
+      "focalMm": 28,
+      "lens": null
+     }
+    },
+    "camera.verticals:cam1": {
+     "base": false,
+     "applied": true
+    }
+   }
+  },
+  "selection": {
+   "level": "PART",
+   "ids": []
+  },
+  "materials": {
+   "m1": {
+    "id": "m1",
+    "name": null,
+    "preset": "ABS_MATTE",
+    "origin": "ABS_MATTE",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "PLASTIC",
+    "params": {
+     "baseColor": [
+      0.85,
+      0.84,
+      0.82,
+      1
+     ],
+     "roughness": 0.55
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 4,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.37925,
+      0.37925,
+      0.38249999999999995,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.2,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.3,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.05,
+     "patinaColor": [
+      0.72,
+      0.62,
+      0.4,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.02475,
+      0.02475,
+      0.027500000000000004,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "emission": null,
+     "mapping": {
+      "projection": "UV",
+      "axis": "Z",
+      "uvSet": 0,
+      "sizeMm": 100,
+      "rotationDeg": 0,
+      "offset": [
+       0,
+       0
+      ],
+      "repeat": [
+       1,
+       1
+      ],
+      "wrap": "REPEAT"
+     },
+     "labels": []
+    },
+    "bevelRadiusMm": 10
+   },
+   "m2": {
+    "id": "m2",
+    "name": null,
+    "preset": "ABS_MATTE",
+    "origin": "ABS_MATTE",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "PLASTIC",
+    "params": {
+     "baseColor": [
+      0.5,
+      0.34,
+      0.2,
+      1
+     ],
+     "roughness": 0.55
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 4,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.37925,
+      0.37925,
+      0.38249999999999995,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.2,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.3,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.05,
+     "patinaColor": [
+      0.72,
+      0.62,
+      0.4,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.02475,
+      0.02475,
+      0.027500000000000004,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "emission": null,
+     "mapping": {
+      "projection": "UV",
+      "axis": "Z",
+      "uvSet": 0,
+      "sizeMm": 100,
+      "rotationDeg": 0,
+      "offset": [
+       0,
+       0
+      ],
+      "repeat": [
+       1,
+       1
+      ],
+      "wrap": "REPEAT"
+     },
+     "labels": []
+    },
+    "bevelRadiusMm": 10
+   },
+   "m3": {
+    "id": "m3",
+    "name": null,
+    "preset": "GLASS_CLEAR",
+    "origin": "GLASS_CLEAR",
+    "edited": false,
+    "family": "GLASS",
+    "category": "GLASS",
+    "params": {
+     "baseColor": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "roughness": 0,
+     "ior": 1.52,
+     "transmission": 1,
+     "walls": "THIN"
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 4,
+     "edges": 0,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.1,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.35,
+     "smudgeScale": 1,
+     "dust": 0.05,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.05,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0,
+     "patinaColor": [
+      0.76,
+      0.76,
+      0.72,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.1,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.55,
+      0.55,
+      0.55,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "emission": null,
+     "mapping": {
+      "projection": "UV",
+      "axis": "Z",
+      "uvSet": 0,
+      "sizeMm": 100,
+      "rotationDeg": 0,
+      "offset": [
+       0,
+       0
+      ],
+      "repeat": [
+       1,
+       1
+      ],
+      "wrap": "REPEAT"
+     },
+     "labels": []
+    },
+    "bevelRadiusMm": 10
+   },
+   "m4": {
+    "id": "m4",
+    "name": null,
+    "preset": "ABS_MATTE",
+    "origin": "ABS_MATTE",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "PLASTIC",
+    "params": {
+     "baseColor": [
+      0.25,
+      0.34,
+      0.5,
+      1
+     ],
+     "roughness": 0.55
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 4,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.37925,
+      0.37925,
+      0.38249999999999995,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.2,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.3,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.05,
+     "patinaColor": [
+      0.72,
+      0.62,
+      0.4,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.02475,
+      0.02475,
+      0.027500000000000004,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "emission": null,
+     "mapping": {
+      "projection": "UV",
+      "axis": "Z",
+      "uvSet": 0,
+      "sizeMm": 100,
+      "rotationDeg": 0,
+      "offset": [
+       0,
+       0
+      ],
+      "repeat": [
+       1,
+       1
+      ],
+      "wrap": "REPEAT"
+     },
+     "labels": []
+    },
+    "bevelRadiusMm": 10
+   },
+   "m5": {
+    "id": "m5",
+    "name": null,
+    "preset": "ABS_MATTE",
+    "origin": "ABS_MATTE",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "PLASTIC",
+    "params": {
+     "baseColor": [
+      0.12,
+      0.11,
+      0.1,
+      1
+     ],
+     "roughness": 0.55
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 4,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.37925,
+      0.37925,
+      0.38249999999999995,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.2,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.3,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.05,
+     "patinaColor": [
+      0.72,
+      0.62,
+      0.4,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.02475,
+      0.02475,
+      0.027500000000000004,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "emission": null,
+     "mapping": {
+      "projection": "UV",
+      "axis": "Z",
+      "uvSet": 0,
+      "sizeMm": 100,
+      "rotationDeg": 0,
+      "offset": [
+       0,
+       0
+      ],
+      "repeat": [
+       1,
+       1
+      ],
+      "wrap": "REPEAT"
+     },
+     "labels": []
+    },
+    "bevelRadiusMm": 10
+   },
+   "m6": {
+    "id": "m6",
+    "name": null,
+    "preset": "ABS_MATTE",
+    "origin": "ABS_MATTE",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "PLASTIC",
+    "params": {
+     "baseColor": [
+      0.9,
+      0.7,
+      0.4,
+      1
+     ],
+     "roughness": 0.55
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 4,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.37925,
+      0.37925,
+      0.38249999999999995,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.2,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.3,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.05,
+     "patinaColor": [
+      0.72,
+      0.62,
+      0.4,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.02475,
+      0.02475,
+      0.027500000000000004,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "emission": null,
+     "mapping": {
+      "projection": "UV",
+      "axis": "Z",
+      "uvSet": 0,
+      "sizeMm": 100,
+      "rotationDeg": 0,
+      "offset": [
+       0,
+       0
+      ],
+      "repeat": [
+       1,
+       1
+      ],
+      "wrap": "REPEAT"
+     },
+     "labels": []
+    },
+    "bevelRadiusMm": 10
+   }
+  },
+  "studio": {
+   "preset": "GENERIC",
+   "lightSetup": "PRESET",
+   "built": true,
+   "floor": false,
+   "shadow": false,
+   "lights": [
+    {
+     "id": "l1",
+     "role": "KEY",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 3,
+     "sizeY": 2.5,
+     "az": -40,
+     "el": 40,
+     "dist": 2.2,
+     "spread": 180,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 74.19995737689,
+     "glossy": true,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": true,
+     "enabled": true
+    },
+    {
+     "id": "l2",
+     "role": "FILL",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 3,
+     "sizeY": 3,
+     "az": 60,
+     "el": 20,
+     "dist": 3.5,
+     "spread": 180,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 29.67998295076,
+     "glossy": false,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": false,
+     "enabled": true
+    },
+    {
+     "id": "l3",
+     "role": "RIM",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 0.3,
+     "sizeY": 3,
+     "az": 165,
+     "el": 70,
+     "dist": 3,
+     "spread": 180,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 22.25998721307,
+     "glossy": true,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": true,
+     "enabled": true
+    }
+   ],
+   "modified": false,
+   "saved": []
+  },
+  "environment": {
+   "kind": "SKY",
+   "strength": 0.6,
+   "rotationDeg": 0,
+   "background": "COLOR",
+   "color": [
+    0.05,
+    0.05,
+    0.05,
+    1
+   ],
+   "gradient": {
+    "top": [
+     0.1,
+     0.1,
+     0.1
+    ],
+    "bottom": [
+     0.02,
+     0.02,
+     0.02
+    ]
+   },
+   "groundShadow": 0.6,
+   "groundReflection": 0,
+   "hdri": null,
+   "backplate": null,
+   "backplateFit": "FILL",
+   "skyTurbidity": 3,
+   "skyModel": "PHYSICAL",
+   "skySun": {
+    "az": -55,
+    "el": 55
+   }
+  },
+  "effects": [],
+  "section": null,
+  "camera": {
+   "active": "cam1",
+   "cameras": {
+    "cam1": {
+     "id": "cam1",
+     "name": "",
+     "azimuth": 38,
+     "elevation": 10,
+     "distance": 2400,
+     "target": [
+      0,
+      900,
+      1083.2443735993672
+     ],
+     "focalMm": 24,
+     "fstop": 0,
+     "focusDistance": 2400,
+     "projection": "PERSPECTIVE",
+     "orthoWidth": 304.76190476190476,
+     "clipStart": 10,
+     "clipEnd": 200000,
+     "locked": false,
+     "lens": "WIDE",
+     "aspect": {
+      "preset": "16:9",
+      "w": 16,
+      "h": 9
+     },
+     "straightVerticals": false
+    }
+   }
+  },
+  "image": {
+   "exposureEv": 0,
+   "viewTransform": "AGX",
+   "bloom": 0,
+   "sharpen": 0,
+   "saturation": 0,
+   "contrast": 0,
+   "vignette": 0,
+   "exposureMode": "AUTO"
+  },
+  "animation": {
+   "shots": [],
+   "clips": [],
+   "fps": 24,
+   "playhead": 0,
+   "playing": false
+  },
+  "render": {
+   "mode": "IMAGE",
+   "name": "{project}_{camera}_{n}",
+   "destination": {
+    "kind": "DOWNLOADS"
+   },
+   "showWhenDone": true,
+   "format": "PNG",
+   "bitDepth": 8,
+   "jpegQuality": 92,
+   "transparent": false,
+   "camera": {
+    "kind": "ACTIVE"
+   },
+   "width": 1920,
+   "height": 1080,
+   "aspectLock": true,
+   "aspect": 1.7777777777777777,
+   "dpi": 300,
+   "printUnit": "MM",
+   "finishBy": "NOISE",
+   "quality": "CUSTOM",
+   "maxSamples": 512,
+   "maxSeconds": 120,
+   "noiseThreshold": 1,
+   "advanced": {
+    "maxBounces": 16,
+    "clampIndirect": 0,
+    "seed": 0,
+    "denoise": "BOTH",
+    "denoiseStrength": 100,
+    "saveNoisy": false,
+    "caustics": "OFF",
+    "causticsQuality": "MEDIUM"
+   },
+   "animation": {
+    "range": "ALL",
+    "rangeUnit": "FRAMES",
+    "from": 1,
+    "to": 1,
+    "fps": 24,
+    "output": "FRAMES",
+    "video": "MP4"
+   },
+   "ai": {
+    "enabled": false,
+    "previewFullEngine": false,
+    "intervention": 30,
+    "light": 50,
+    "bounce": 40,
+    "wear": 20,
+    "style": "NATURAL",
+    "styleStrength": 30,
+    "seed": 0,
+    "userPrompt": "",
+    "variants": 1
+   },
+   "plugins": {},
+   "queue": [],
+   "running": null,
+   "seq": 0
+  },
+  "doctor": {
+   "results": [
+    {
+     "key": "engine",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "simd",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "lighttree",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "denoise",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "color",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "scale",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "transform",
+     "status": "OK",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "origin",
+     "status": "WARN",
+     "fixable": true,
+     "detail": {
+      "offCentre": 1,
+      "floorGap": -95.24
+     }
+    },
+    {
+     "key": "shading",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "bevel",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "clip",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "lights",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "caustics",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "persist",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "output",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "budget",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "aspect",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "physics",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "particles",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorScale",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorOpening",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorGlass",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorLens",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorEye",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorClip",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "interiorNormals",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    }
+   ],
+   "stamp": 4
+  }
+ },
+ "meshes": [
+  {"id":"k3room:0","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTowIiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206MCIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstMjEwMCwtMTYwMCwtNTBdLCJtYXgiOlsyMTAwLDE2MDAsNTBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAQANFAADIxAAASMIAQANFAADIRAAASMIAQANFAADIRAAASEIAQANFAADIxAAASEIAQAPFAADIxAAASMIAQAPFAADIxAAASEIAQAPFAADIRAAASEIAQAPFAADIRAAASMIAQAPFAADIRAAASMIAQAPFAADIRAAASEIAQANFAADIRAAASEIAQANFAADIRAAASMIAQAPFAADIxAAASMIAQANFAADIxAAASMIAQANFAADIxAAASEIAQAPFAADIxAAASEIAQAPFAADIxAAASEIAQANFAADIxAAASEIAQANFAADIRAAASEIAQAPFAADIRAAASEIAQAPFAADIxAAASMIAQAPFAADIRAAASMIAQANFAADIRAAASMIAQANFAADIxAAASMIAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:1","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbToxIiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206MSIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstMjEwMCwtMTYwMCwtNTBdLCJtYXgiOlsyMTAwLDE2MDAsNTBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAQANFAADIxAAASMIAQANFAADIRAAASMIAQANFAADIRAAASEIAQANFAADIxAAASEIAQAPFAADIxAAASMIAQAPFAADIxAAASEIAQAPFAADIRAAASEIAQAPFAADIRAAASMIAQAPFAADIRAAASMIAQAPFAADIRAAASEIAQANFAADIRAAASEIAQANFAADIRAAASMIAQAPFAADIxAAASMIAQANFAADIxAAASMIAQANFAADIxAAASEIAQAPFAADIxAAASEIAQAPFAADIxAAASEIAQANFAADIxAAASEIAQANFAADIRAAASEIAQAPFAADIRAAASEIAQAPFAADIxAAASMIAQAPFAADIRAAASMIAQANFAADIRAAASMIAQANFAADIxAAASMIAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:2","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbToyIiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206MiIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstMjEwMCwtNTAsLTEzMDBdLCJtYXgiOlsyMTAwLDUwLDEzMDBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAQANFAABIwgCAosQAQANFAABIQgCAosQAQANFAABIQgCAokQAQANFAABIwgCAokQAQAPFAABIwgCAosQAQAPFAABIwgCAokQAQAPFAABIQgCAokQAQAPFAABIQgCAosQAQAPFAABIQgCAosQAQAPFAABIQgCAokQAQANFAABIQgCAokQAQANFAABIQgCAosQAQAPFAABIwgCAosQAQANFAABIwgCAosQAQANFAABIwgCAokQAQAPFAABIwgCAokQAQAPFAABIwgCAokQAQANFAABIwgCAokQAQANFAABIQgCAokQAQAPFAABIQgCAokQAQAPFAABIwgCAosQAQAPFAABIQgCAosQAQANFAABIQgCAosQAQANFAABIwgCAosQAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:3","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTozIiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206MyIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstNTAsLTE1MDAsLTEzMDBdLCJtYXgiOls1MCwxNTAwLDEzMDBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAAEhCAIC7xACAosQAAEhCAIC7RACAosQAAEhCAIC7RACAokQAAEhCAIC7xACAokQAAEjCAIC7xACAosQAAEjCAIC7xACAokQAAEjCAIC7RACAokQAAEjCAIC7RACAosQAAEjCAIC7RACAosQAAEjCAIC7RACAokQAAEhCAIC7RACAokQAAEhCAIC7RACAosQAAEjCAIC7xACAosQAAEhCAIC7xACAosQAAEhCAIC7xACAokQAAEjCAIC7xACAokQAAEjCAIC7xACAokQAAEhCAIC7xACAokQAAEhCAIC7RACAokQAAEjCAIC7RACAokQAAEjCAIC7xACAosQAAEjCAIC7RACAosQAAEhCAIC7RACAosQAAEhCAIC7xACAosQAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:4","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTo0IiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206NCIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstNTAsLTE1MDAsLTEzMDBdLCJtYXgiOls1MCwxNTAwLDEzMDBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAAEhCAIC7xACAosQAAEhCAIC7RACAosQAAEhCAIC7RACAokQAAEhCAIC7xACAokQAAEjCAIC7xACAosQAAEjCAIC7xACAokQAAEjCAIC7RACAokQAAEjCAIC7RACAosQAAEjCAIC7RACAosQAAEjCAIC7RACAokQAAEhCAIC7RACAokQAAEhCAIC7RACAosQAAEjCAIC7xACAosQAAEhCAIC7xACAosQAAEhCAIC7xACAokQAAEjCAIC7xACAokQAAEjCAIC7xACAokQAAEhCAIC7xACAokQAAEhCAIC7RACAokQAAEjCAIC7RACAokQAAEjCAIC7xACAosQAAEjCAIC7RACAosQAAEhCAIC7RACAosQAAEhCAIC7xACAosQAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:5","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTo1IiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206NSIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstNjAwLC01MCwtMTMwMF0sIm1heCI6WzYwMCw1MCwxMzAwXX0seyJidWZmZXJWaWV3IjoxLCJjb21wb25lbnRUeXBlIjo1MTI2LCJjb3VudCI6MjQsInR5cGUiOiJWRUMzIn0seyJidWZmZXJWaWV3IjoyLCJjb21wb25lbnRUeXBlIjo1MTI1LCJjb3VudCI6MzYsInR5cGUiOiJTQ0FMQVIifV0sImJ1ZmZlclZpZXdzIjpbeyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjAsImJ5dGVMZW5ndGgiOjI4OCwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjI4OCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6NTc2LCJieXRlTGVuZ3RoIjoxNDQsInRhcmdldCI6MzQ5NjN9XSwiYnVmZmVycyI6W3siYnl0ZUxlbmd0aCI6NzIwfV19ICAg0AIAAEJJTgAAABZEAABIwgCAosQAABZEAABIQgCAosQAABZEAABIQgCAokQAABZEAABIwgCAokQAABbEAABIwgCAosQAABbEAABIwgCAokQAABbEAABIQgCAokQAABbEAABIQgCAosQAABbEAABIQgCAosQAABbEAABIQgCAokQAABZEAABIQgCAokQAABZEAABIQgCAosQAABbEAABIwgCAosQAABZEAABIwgCAosQAABZEAABIwgCAokQAABbEAABIwgCAokQAABbEAABIwgCAokQAABZEAABIwgCAokQAABZEAABIQgCAokQAABbEAABIQgCAokQAABbEAABIwgCAosQAABbEAABIQgCAosQAABZEAABIQgCAosQAABZEAABIwgCAosQAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:6","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTo2IiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206NiIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstNjAwLC01MCwtMTMwMF0sIm1heCI6WzYwMCw1MCwxMzAwXX0seyJidWZmZXJWaWV3IjoxLCJjb21wb25lbnRUeXBlIjo1MTI2LCJjb3VudCI6MjQsInR5cGUiOiJWRUMzIn0seyJidWZmZXJWaWV3IjoyLCJjb21wb25lbnRUeXBlIjo1MTI1LCJjb3VudCI6MzYsInR5cGUiOiJTQ0FMQVIifV0sImJ1ZmZlclZpZXdzIjpbeyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjAsImJ5dGVMZW5ndGgiOjI4OCwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjI4OCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6NTc2LCJieXRlTGVuZ3RoIjoxNDQsInRhcmdldCI6MzQ5NjN9XSwiYnVmZmVycyI6W3siYnl0ZUxlbmd0aCI6NzIwfV19ICAg0AIAAEJJTgAAABZEAABIwgCAosQAABZEAABIQgCAosQAABZEAABIQgCAokQAABZEAABIwgCAokQAABbEAABIwgCAosQAABbEAABIwgCAokQAABbEAABIQgCAokQAABbEAABIQgCAosQAABbEAABIQgCAosQAABbEAABIQgCAokQAABZEAABIQgCAokQAABZEAABIQgCAosQAABbEAABIwgCAosQAABZEAABIwgCAosQAABZEAABIwgCAokQAABbEAABIwgCAokQAABbEAABIwgCAokQAABZEAABIwgCAokQAABZEAABIQgCAokQAABbEAABIQgCAokQAABbEAABIwgCAosQAABbEAABIQgCAosQAABZEAABIQgCAosQAABZEAABIwgCAosQAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:7","glb":"Z2xURgIAAAAoBgAAPAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTo3IiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206NyIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstODAwLC01MCwtNDAwXSwibWF4IjpbODAwLDUwLDQwMF19LHsiYnVmZmVyVmlldyI6MSwiY29tcG9uZW50VHlwZSI6NTEyNiwiY291bnQiOjI0LCJ0eXBlIjoiVkVDMyJ9LHsiYnVmZmVyVmlldyI6MiwiY29tcG9uZW50VHlwZSI6NTEyNSwiY291bnQiOjM2LCJ0eXBlIjoiU0NBTEFSIn1dLCJidWZmZXJWaWV3cyI6W3siYnVmZmVyIjowLCJieXRlT2Zmc2V0IjowLCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0IjoyODgsImJ5dGVMZW5ndGgiOjI4OCwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjU3NiwiYnl0ZUxlbmd0aCI6MTQ0LCJ0YXJnZXQiOjM0OTYzfV0sImJ1ZmZlcnMiOlt7ImJ5dGVMZW5ndGgiOjcyMH1dfSDQAgAAQklOAAAASEQAAEjCAADIwwAASEQAAEhCAADIwwAASEQAAEhCAADIQwAASEQAAEjCAADIQwAASMQAAEjCAADIwwAASMQAAEjCAADIQwAASMQAAEhCAADIQwAASMQAAEhCAADIwwAASMQAAEhCAADIwwAASMQAAEhCAADIQwAASEQAAEhCAADIQwAASEQAAEhCAADIwwAASMQAAEjCAADIwwAASEQAAEjCAADIwwAASEQAAEjCAADIQwAASMQAAEjCAADIQwAASMQAAEjCAADIQwAASEQAAEjCAADIQwAASEQAAEhCAADIQwAASMQAAEhCAADIQwAASMQAAEjCAADIwwAASMQAAEhCAADIwwAASEQAAEhCAADIwwAASEQAAEjCAADIwwAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAABAAAAAgAAAAAAAAACAAAAAwAAAAQAAAAFAAAABgAAAAQAAAAGAAAABwAAAAgAAAAJAAAACgAAAAgAAAAKAAAACwAAAAwAAAANAAAADgAAAAwAAAAOAAAADwAAABAAAAARAAAAEgAAABAAAAASAAAAEwAAABQAAAAVAAAAFgAAABQAAAAWAAAAFwAAAA=="},
+  {"id":"k3room:8","glb":"Z2xURgIAAAAoBgAAPAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTo4IiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206OCIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstODAwLC01MCwtMzAwXSwibWF4IjpbODAwLDUwLDMwMF19LHsiYnVmZmVyVmlldyI6MSwiY29tcG9uZW50VHlwZSI6NTEyNiwiY291bnQiOjI0LCJ0eXBlIjoiVkVDMyJ9LHsiYnVmZmVyVmlldyI6MiwiY29tcG9uZW50VHlwZSI6NTEyNSwiY291bnQiOjM2LCJ0eXBlIjoiU0NBTEFSIn1dLCJidWZmZXJWaWV3cyI6W3siYnVmZmVyIjowLCJieXRlT2Zmc2V0IjowLCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0IjoyODgsImJ5dGVMZW5ndGgiOjI4OCwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjU3NiwiYnl0ZUxlbmd0aCI6MTQ0LCJ0YXJnZXQiOjM0OTYzfV0sImJ1ZmZlcnMiOlt7ImJ5dGVMZW5ndGgiOjcyMH1dfSDQAgAAQklOAAAASEQAAEjCAACWwwAASEQAAEhCAACWwwAASEQAAEhCAACWQwAASEQAAEjCAACWQwAASMQAAEjCAACWwwAASMQAAEjCAACWQwAASMQAAEhCAACWQwAASMQAAEhCAACWwwAASMQAAEhCAACWwwAASMQAAEhCAACWQwAASEQAAEhCAACWQwAASEQAAEhCAACWwwAASMQAAEjCAACWwwAASEQAAEjCAACWwwAASEQAAEjCAACWQwAASMQAAEjCAACWQwAASMQAAEjCAACWQwAASEQAAEjCAACWQwAASEQAAEhCAACWQwAASMQAAEhCAACWQwAASMQAAEjCAACWwwAASMQAAEhCAACWwwAASEQAAEhCAACWwwAASEQAAEjCAACWwwAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAABAAAAAgAAAAAAAAACAAAAAwAAAAQAAAAFAAAABgAAAAQAAAAGAAAABwAAAAgAAAAJAAAACgAAAAgAAAAKAAAACwAAAAwAAAANAAAADgAAAAwAAAAOAAAADwAAABAAAAARAAAAEgAAABAAAAASAAAAEwAAABQAAAAVAAAAFgAAABQAAAAWAAAAFwAAAA=="},
+  {"id":"k3room:9","glb":"Z2xURgIAAAAoBgAAPAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbTo5IiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJrM3Jvb206OSIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMiLCJtaW4iOlstODAwLC0zLC02MDBdLCJtYXgiOls4MDAsMyw2MDBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0gICDQAgAAQklOAAAASEQAAEDAAAAWxAAASEQAAEBAAAAWxAAASEQAAEBAAAAWRAAASEQAAEDAAAAWRAAASMQAAEDAAAAWxAAASMQAAEDAAAAWRAAASMQAAEBAAAAWRAAASMQAAEBAAAAWxAAASMQAAEBAAAAWxAAASMQAAEBAAAAWRAAASEQAAEBAAAAWRAAASEQAAEBAAAAWxAAASMQAAEDAAAAWxAAASEQAAEDAAAAWxAAASEQAAEDAAAAWRAAASMQAAEDAAAAWRAAASMQAAEDAAAAWRAAASEQAAEDAAAAWRAAASEQAAEBAAAAWRAAASMQAAEBAAAAWRAAASMQAAEDAAAAWxAAASMQAAEBAAAAWxAAASEQAAEBAAAAWxAAASEQAAEDAAAAWxAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAABAAAAAgAAAAAAAAACAAAAAwAAAAQAAAAFAAAABgAAAAQAAAAGAAAABwAAAAgAAAAJAAAACgAAAAgAAAAKAAAACwAAAAwAAAANAAAADgAAAAwAAAAOAAAADwAAABAAAAARAAAAEgAAABAAAAASAAAAEwAAABQAAAAVAAAAFgAAABQAAAAWAAAAFwAAAA=="},
+  {"id":"k3room:10","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbToxMCIsIm1lc2giOjAsInJvdGF0aW9uIjpbLTAuNzA3MTA2NzgxMTg2NTQ3NiwwLDAsMC43MDcxMDY3ODExODY1NDc2XSwic2NhbGUiOlswLjAwMSwwLjAwMSwwLjAwMV19XSwibWVzaGVzIjpbeyJuYW1lIjoiazNyb29tOjEwIiwicHJpbWl0aXZlcyI6W3siYXR0cmlidXRlcyI6eyJQT1NJVElPTiI6MCwiTk9STUFMIjoxfSwiaW5kaWNlcyI6MiwibW9kZSI6NH1dfV0sImFjY2Vzc29ycyI6W3siYnVmZmVyVmlldyI6MCwiY29tcG9uZW50VHlwZSI6NTEyNiwiY291bnQiOjI0LCJ0eXBlIjoiVkVDMyIsIm1pbiI6Wy05MDAsLTQwMCwtMzUwXSwibWF4IjpbOTAwLDQwMCwzNTBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAAGFEAADIwwAAr8MAAGFEAADIQwAAr8MAAGFEAADIQwAAr0MAAGFEAADIwwAAr0MAAGHEAADIwwAAr8MAAGHEAADIwwAAr0MAAGHEAADIQwAAr0MAAGHEAADIQwAAr8MAAGHEAADIQwAAr8MAAGHEAADIQwAAr0MAAGFEAADIQwAAr0MAAGFEAADIQwAAr8MAAGHEAADIwwAAr8MAAGFEAADIwwAAr8MAAGFEAADIwwAAr0MAAGHEAADIwwAAr0MAAGHEAADIwwAAr0MAAGFEAADIwwAAr0MAAGFEAADIQwAAr0MAAGHEAADIQwAAr0MAAGHEAADIwwAAr8MAAGHEAADIQwAAr8MAAGFEAADIQwAAr8MAAGFEAADIwwAAr8MAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:11","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbToxMSIsIm1lc2giOjAsInJvdGF0aW9uIjpbLTAuNzA3MTA2NzgxMTg2NTQ3NiwwLDAsMC43MDcxMDY3ODExODY1NDc2XSwic2NhbGUiOlswLjAwMSwwLjAwMSwwLjAwMV19XSwibWVzaGVzIjpbeyJuYW1lIjoiazNyb29tOjExIiwicHJpbWl0aXZlcyI6W3siYXR0cmlidXRlcyI6eyJQT1NJVElPTiI6MCwiTk9STUFMIjoxfSwiaW5kaWNlcyI6MiwibW9kZSI6NH1dfV0sImFjY2Vzc29ycyI6W3siYnVmZmVyVmlldyI6MCwiY29tcG9uZW50VHlwZSI6NTEyNiwiY291bnQiOjI0LCJ0eXBlIjoiVkVDMyIsIm1pbiI6Wy0zMDAsLTMwMCwtMjc1XSwibWF4IjpbMzAwLDMwMCwyNzVdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAAJZDAACWwwCAicMAAJZDAACWQwCAicMAAJZDAACWQwCAiUMAAJZDAACWwwCAiUMAAJbDAACWwwCAicMAAJbDAACWwwCAiUMAAJbDAACWQwCAiUMAAJbDAACWQwCAicMAAJbDAACWQwCAicMAAJbDAACWQwCAiUMAAJZDAACWQwCAiUMAAJZDAACWQwCAicMAAJbDAACWwwCAicMAAJZDAACWwwCAicMAAJZDAACWwwCAiUMAAJbDAACWwwCAiUMAAJbDAACWwwCAiUMAAJZDAACWwwCAiUMAAJZDAACWQwCAiUMAAJbDAACWQwCAiUMAAJbDAACWwwCAicMAAJbDAACWQwCAicMAAJZDAACWQwCAicMAAJZDAACWwwCAicMAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="},
+  {"id":"k3room:12","glb":"Z2xURgIAAAAsBgAAQAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6Imszcm9vbToxMiIsIm1lc2giOjAsInJvdGF0aW9uIjpbLTAuNzA3MTA2NzgxMTg2NTQ3NiwwLDAsMC43MDcxMDY3ODExODY1NDc2XSwic2NhbGUiOlswLjAwMSwwLjAwMSwwLjAwMV19XSwibWVzaGVzIjpbeyJuYW1lIjoiazNyb29tOjEyIiwicHJpbWl0aXZlcyI6W3siYXR0cmlidXRlcyI6eyJQT1NJVElPTiI6MCwiTk9STUFMIjoxfSwiaW5kaWNlcyI6MiwibW9kZSI6NH1dfV0sImFjY2Vzc29ycyI6W3siYnVmZmVyVmlldyI6MCwiY29tcG9uZW50VHlwZSI6NTEyNiwiY291bnQiOjI0LCJ0eXBlIjoiVkVDMyIsIm1pbiI6Wy0yNTAsLTI1MCwtMjUwXSwibWF4IjpbMjUwLDI1MCwyNTBdfSx7ImJ1ZmZlclZpZXciOjEsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoyNCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjUsImNvdW50IjozNiwidHlwZSI6IlNDQUxBUiJ9XSwiYnVmZmVyVmlld3MiOlt7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6MCwiYnl0ZUxlbmd0aCI6Mjg4LCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mjg4LCJieXRlTGVuZ3RoIjoyODgsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0Ijo1NzYsImJ5dGVMZW5ndGgiOjE0NCwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo3MjB9XX0g0AIAAEJJTgAAAHpDAAB6wwAAesMAAHpDAAB6QwAAesMAAHpDAAB6QwAAekMAAHpDAAB6wwAAekMAAHrDAAB6wwAAesMAAHrDAAB6wwAAekMAAHrDAAB6QwAAekMAAHrDAAB6QwAAesMAAHrDAAB6QwAAesMAAHrDAAB6QwAAekMAAHpDAAB6QwAAekMAAHpDAAB6QwAAesMAAHrDAAB6wwAAesMAAHpDAAB6wwAAesMAAHpDAAB6wwAAekMAAHrDAAB6wwAAekMAAHrDAAB6wwAAekMAAHpDAAB6wwAAekMAAHpDAAB6QwAAekMAAHrDAAB6QwAAekMAAHrDAAB6wwAAesMAAHrDAAB6QwAAesMAAHpDAAB6QwAAesMAAHpDAAB6wwAAesMAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAQAAAAIAAAAAAAAAAgAAAAMAAAAEAAAABQAAAAYAAAAEAAAABgAAAAcAAAAIAAAACQAAAAoAAAAIAAAACgAAAAsAAAAMAAAADQAAAA4AAAAMAAAADgAAAA8AAAAQAAAAEQAAABIAAAAQAAAAEgAAABMAAAAUAAAAFQAAABYAAAAUAAAAFgAAABcAAAA="}
+ ]
+}

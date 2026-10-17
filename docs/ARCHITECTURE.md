@@ -107,7 +107,10 @@ src/
     lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
     ies.ts                  perfiles fotométricos IES (L5): el lector del formato LM-63 (puerto del de `rt_core::ies`, con el mismo fichero de conformidad), la intensidad y el flujo del perfil, el foco que lo aproxima en Rápido y las curvas del gráfico polar
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
-    camera.ts               óptica, encuadre, cámaras guardadas
+    camera.ts               óptica, encuadre, cámaras guardadas; las proyecciones (`CAMERA_PROJECTIONS`: perspectiva, ortográfica, equirectangular, ojo de pez, K3) y las vistas *Alzado* y *Planta*
+    interior-camera.ts      la cámara de interiores (K3): verticales rectas (`verticalsOf`, `renderedCamera`: la cámara nivelada con el *shift* que conserva el encuadre), altura de ojo y ópticas de interior (`camera/eyeHeight`, `camera/interiorLens`), el multiplicador de exterior (`exteriorOf`)
+    panorama.ts             el mapa de las panorámicas (K3): equirectangular y ojo de pez equidistante, dirección ↔ punto de la imagen en TS y en GLSL (`PANORAMA_GLSL`), los campos del marco de salida (`panoramaFov`); el mismo mapa que `Camera::panorama_dir` del motor
+    image-passes.ts         los pases del estado `image` (K3): su orden, cuáles se aplican (exposición y curva), la exposición automática determinista (`meterExposure`, `ExposureMeter`), la compensación y los presets de brillo
     optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2)
     traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
@@ -155,6 +158,8 @@ src/
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
     particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
+    camera-projection.ts    la proyección de la cámara de Rápido como función pura (K3): el *shift* en NDC y la matriz con las verticales rectas (`perspectiveProjection`)
+    panorama-pass.ts        las panorámicas de Rápido (K3): la escena en las seis caras de un cubo (medio flotante, lineal) y el lienzo dibujado desde él con `PANORAMA_GLSL`
     section-preview.ts      la vista en sección en Rápido (Q1): el plano compartido por los materiales del modelo, las tapas, el estudio sin plano, la selección y el cardán sin lo quitado
     fade-preview.ts         los fundidos y colores de material de la animación en Rápido (N1): el material compartido puesto como lo deja el clip, una copia translúcida por pieza que se funde
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
@@ -241,6 +246,7 @@ tools/                      scripts de desarrollo: capturas, generadores, hojas 
   setup-thumbs.mjs          las miniaturas de montaje (L6): escenas con el código de la app (tests/setup-thumbs-dump.test.ts, vitest) y `rt`
   sets-sheet.mjs            la hoja de contactos de los sets (L6): out/sets-sheet.html; rt-batch.mjs, lo que comparten
   sets-check.mjs            comprobación en el navegador de los sets (L6): catálogo, aplicar, En el set, Restablecer; docs/ui/sets-catalogue.png
+  k3-check.mjs              comprobación en el navegador de la cámara de interiores (K3) sobre la habitación de prueba (tests/fixtures/k3-room.repack.json): verticales rectas, planta con el techo oculto a cámara y la exposición automática medida, panorámica 2:1 y altura de ojo, cromo acromático; docs/ui/k3-verticals.png, k3-plan.png, k3-panorama.png (y sus -fast) y out/k3-check.json
   scene-type-check.mjs      comprobación en el navegador del tipo de escena (K1): el control, que no cambian los controles, las siete recetas de Interior, las siete filas del Doctor, ida y vuelta, en inglés y en español; docs/ui/scene-type-interior.png
   plugin-pack.mjs  plugin-unpack.mjs  empaquetar y abrir un .rpk (P6, §9); plugins-check.mjs, la comprobación de navegador
   plugins/                  build-film.mjs (el paquete de película desde un checkout de aintfilm), brand-scan.mjs (D112),
@@ -599,6 +605,16 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   (`INSTANCE_NO_SECTION`): el plano no corta ni tapa esa instancia (el
   estudio, §5.2 terdecies). `rt_features` y `/api/info` suben el bit 2
   (valor 4, `FEATURE_SECTION`). Reglas en §5.2 terdecies.
+- **`CAMR`** (K3; 60 B como siempre, 76 B con lo de K3): detrás de
+  `ortho_width`, `u32 projection` (0 la de siempre, la estenopeica, la
+  lente fina o la ortográfica según `ortho`; 1 equirectangular; 2 ojo de
+  pez equidistante; ≥ 3 es error), `f32 fov_x_deg` (360), `f32 fov_y_deg`
+  (180) y `f32 exterior` (1). Solo se escriben si alguno no es el de por
+  defecto, así que los archivos de antes conservan sus bytes y sus
+  *hashes*. `INST.flags` gana el bit 2 (`INSTANCE_NO_CAMERA`, valor 4,
+  junto al 1 de `INSTANCE_NO_SECTION`): la cámara no ve esa instancia y el
+  resto de los rayos sí. `rt_features` y `/api/info` suben el bit 4 (valor
+  16, `FEATURE_CAMERAS`). Reglas en §5.2 quindecies.
 - **`PATN`** (E6, nueva, repetible, 108 B): el dibujo procedural de un
   material (`u32 material kind; f32 color_a[3] color_b[3] scale_mm
   params[16]; u32 variant seed`, §5.2 octies). `kind` 1 madera, 2 tela; un
@@ -2519,6 +2535,76 @@ sobre su eje; 160 × 120), igual en cada ruta SIMD, en `rt` con 1, 4 y 16 hilos,
 en WASI y en el `rt.wasm` real (CI y `tests/ies-engine.test.ts`); ningún hash
 anterior se movió.
 
+### 5.2 quindecies · Cámaras de interiores (K3)
+
+**Proyecciones** (`rt_core::scene::Projection`, `Camera::panorama_dir`).
+`Standard` es la cámara de siempre (estenopeica, lente fina, lente trazada u
+ortográfica); las dos panorámicas son estenopeicas (sin lente, sin *shift*:
+`Camera::through_lens` es falso) y parten de `position` con la base de la
+cámara (`forward`, `right`, `up`). **Equirectangular**: longitud `(u − ½) ·
+fov_x` hacia la derecha y latitud `(½ − v) · fov_y` hacia arriba, dirección
+`forward cos φ cos λ + right cos φ sin λ + up sin φ`; con 360 × 180 la imagen
+2:1 entera es la esfera. **Ojo de pez** equidistante: `x = (u − ½) · fov_x`,
+`y = (½ − v) · fov_x / aspecto` (en radianes, píxeles cuadrados), `θ = √(x² +
+y²)` es el ángulo con el eje y la dirección es `forward cos θ + (right x + up
+y) sin θ / θ`; más allá de `θ > π` no hay nada que ver: el rayo es de
+intervalo vacío y su muestra pesa negro (el círculo de imagen). Los pases
+dan la distancia (no la profundidad sobre el eje) como profundidad de una
+panorámica, y las huellas de píxel de partículas, texturas y cáusticas
+toman el cono de un píxel de la esfera. **La página** (`core/panorama.ts`) tiene
+el mismo mapa y su inverso, y la vista previa lo dibuja en GLSL desde un
+cubo (`render/panorama-pass.ts`); la prueba son seis direcciones de un cuarto
+de seis colores en la imagen del `rt.wasm` real y en la de Chromium. El render
+por franjas de una panorámica es de K6: hoy el motor la renderiza entera, por
+baldosas como cualquier imagen.
+
+**Visible a cámara** (`INSTANCE_NO_CAMERA`, `PreparedInstance::camera_hidden`).
+Solo las consultas de clase `RayClass::Camera` (los rayos primarios y sus
+continuaciones rectas por recortes y paredes finas, los pases y las tapas de
+sección) se la saltan, en la BVH, en la fuerza bruta y en las tapas; las
+sombras, los rebotes y los reflejos la ven. Es la planta: el techo da su luz
+y su sombra y la cámara mira por encima.
+
+**Multiplicador de exterior** (`CAMR.exterior`, `integrator::exterior`):
+multiplica el entorno que un rayo de cámara ve al escapar (también tras
+paredes finas y recortes) y el fondo del atrapasombras; lo que el entorno
+ilumina no cambia. 1 es exactamente lo de antes (la rama no multiplica).
+
+**Verticales rectas: en la página.** El motor no sabe de ellas: la página
+escribe la cámara nivelada en la misma posición y el *shift* vertical
+`−f · tan(inclinación)` sumado al de la óptica, en el `LENS` de O1 que ya
+existía (`core/interior-camera.ts` `renderedCamera`); la prueba del motor lee
+el archivo que escribe la página (`tests/fixtures/k3-verticals.rsb`) y mide
+las aristas verticales de un cubo a 0,0001 px de paralelas a 1920 × 1080
+(6,4 px sin *shift*).
+
+**Exposición automática: en la página.** `core/image-passes.ts` mide las sumas
+de la acumulación (luminancia en `f32`, `log2` de `core/f32math.ts`, orden,
+10 % abajo y 5 % arriba fuera, media al gris del 18 %, ±16, centésimas): la
+misma imagen da la misma exposición en cualquier máquina. El visor la rehace
+cuando las muestras se duplican y el render final mide sus sumas antes del
+*denoise*. En `RNDR.exposure_ev` va solo la compensación: el visor, el
+render y la cola convierten la imagen con la exposición que les da la
+página, pero una escena exportada y renderizada con `rt` fuera de la
+aplicación sale sin la medida (limitación de K3).
+
+**Interruptor.** `rt_features` bit 4 (valor 16, `rt_core::FEATURE_CAMERAS`);
+`render/engine.ts` `readsCameras`, y el *pool*, `NativeEngine` y *Exportar
+escena del motor* ponen `SceneView.cameras`. A un motor anterior la página le
+escribe la cámara de perspectiva de siempre, sin el bit 2 de `INST` ni el
+exterior.
+
+**Hashes.** `PINNED_K3_PLAN_4SPP` = `0x6efb1e66` (`rt --write-k3-plan-example`:
+la habitación de cajas de `example::k3_room` vista en planta ortográfica
+desde arriba con el techo oculto a cámara y el exterior a 0,5; 96 × 72),
+`PINNED_K3_PANORAMA_4SPP` = `0x96de8d73` (`--write-k3-panorama-example`:
+equirectangular 128 × 64 desde dentro, exterior 0,4) y
+`PINNED_K3_FISHEYE_4SPP` = `0x9b85a1b6` (`--write-k3-fisheye-example`: ojo de
+pez de 300°, 96 × 72), iguales en cada ruta SIMD, en `rt` con 1, 4 y 16 hilos,
+en WASI y en el `rt.wasm` real (CI y `tests/interior-camera.test.ts`), y la
+panorámica también por la API del lanzador con 1 y 4 hilos
+(`rt-app/tests/parity.rs`); ningún hash anterior se movió.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -3232,6 +3318,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Luces IES (L5) | `ies::tests`, `light::tests`, `integrator::tests` y `scene::rsb::tests` de rt-core, `render::tests` (fijado L5), `rt-cli/tests/example.rs` (1, 4 y 16 hilos), `tests/ies.test.ts` (con `tests/fixtures/ies/conformance.json`, que escriben las pruebas del motor), `ies-lights`, `ies-switch`, `ies-engine` (con el `rt.wasm` real); `tools/ies-check.mjs` | Los dos perfiles escritos a mano: la intensidad que muestrea el motor a 0°, 30° y 60° es la del archivo (pruebas de muestreo y de la imagen de un suelo, a 1e-4 del pico, y la interpolación entre nodos y la orientación de φ); el flujo contra el caso cerrado (isótropo `4π c`, 1000 cos² con 1° de paso a 1e-4, contra una cuadratura numérica de la propia función); las simetrías (un mismo reparto escrito como cuadrante, bilateral y completo da lo mismo en cada dirección y en flujo); 68 archivos (sanos y mal formados: cortados, cuentas de más y de menos, negativos, ángulos, TILT, tipos A y B) con lo que hace el motor, que el lector de la página repite con los mismos mensajes; RSB con el perfil una vez por cada distinto y `LGHT` de 80 B, los bytes de antes sin luces IES y `l5.rsb` byte a byte con el escritor de la página; selección por punto y estática; el interruptor `FEATURE_IES` del *pool* y del lanzador; el mismo fijado con 1, 4 y 16 hilos y en el `rt.wasm` real; proyecto, estudio, montaje y biblioteca; Playwright con Chromium en *Rápido* y *Completo* (menú, archivo, gráfico polar, multiplicador, cambiar perfil, archivo rechazado). Nueve mutaciones del motor, todas detectadas |
+| Cámara de interiores (K3) | `scene::camera_tests` y `render::k3_tests` de rt-core, `rt-cli/tests/example.rs` (1, 4 y 16 hilos), `rt-app/tests/parity.rs`; `tests/interior-camera.test.ts` (con el `rt.wasm` real y `tests/fixtures/k3-*.rsb`), `image-passes`, `panorama-browser` (Chromium), una del *pool* en `pathtracer`; `tools/k3-check.mjs` | Verticales rectas: las aristas de un cubo con la cámara inclinada 10° a 1080p, paralelas a 0 px en la página y en Rápido y a 0,0001 px con los rayos del motor leyendo el archivo de la página (7,5 y 6,4 px sin ellas); el límite de 30°, la cámara que se renderiza; altura de ojo, ópticas, vistas; los mapas de las panorámicas y su inverso, seis direcciones en el `rt.wasm` y en Chromium (y el círculo del ojo de pez, y una pared oculta a cámara que ni se dibuja ni se pica); `CAMR` e `INST` byte a byte con `rt`, archivos de antes con sus bytes, inválidos; la planta: la media bajo el techo oculto igual a la de debajo del techo (+0,0000 %) y el techo sin ver; exterior exacto a la mitad; el medidor de exposición (gris, recortes, media logarítmica, orden, límites, el medidor progresivo); los tres fijados en cada ruta SIMD, hilos, WASI y wasm. 28 mutaciones (8 del motor, 20 de la página), todas detectadas |
 | Ambiente (S4a, S4b) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests`, `geometry::tests`, `geometry::particles::grid_tests`, `bsdf::forward::tests` e `integrator::particle_tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %). En S4b, además: la rejilla de pantalla da los impactos de la fuerza bruta (estenopeica y lente fina, las tres formas, partículas en el plano de la cámara); el lóbulo hacia delante integra 1 con g como coseno medio, se muestrea con su densidad, el horno blanco de su BSDF y de una mota da 1, y la NEE sola, el BSDF solo y el MIS coinciden (1 %); los caminos tras un lóbulo ancho no ven una gota sin sombra (bit a bit) y la cruzan con la transmitancia de la sombra, la cámara la sigue viendo refractar, y la regla de las gotas lisas no cambia la media |
 | Vista en sección (Q1) | `tests/section.test.ts`, `solid.test.ts`, `section-rsb.test.ts` (con el `rt.wasm` real), `section-full-browser.test.ts` (Chromium y `rt.wasm`); `geometry::section_tests`, `integrator::section_tests`, `scene::section_rsb_tests` y `render::section_tests` de rt-core, `rt-cli/tests/example.rs`; `tools/section-check.mjs` | El plano desde un clic y cada eje, desde dos puntos y desde números; las acciones por el *store* (deshacer, gestos, nada para lo que no cambia), guardar y abrir; `SECTION` interpolado con la curva del clip, sumando, partido y repetido; `SECT` byte a byte frente a `rt --write-q1-example` y dónde la pone el escritor; en el motor, el rayo ignora el lado quitado y no deja que bloquee una sombra, una caja cortada por la mitad se tapa con el área de su sección y su color, las mallas abiertas y las de pared fina no, el vidrio cortado refracta por su tapa como un vidrio macizo que acabara ahí, el estudio (referencia: modelo solo + estudio solo = lo más cercano de los dos, con tapa y sin ella), el *hash* fijado en cada ISA y con 1, 4 y 16 hilos y en wasm; la comparación por regiones del criterio (botella cortada, acuerdo por píxel 1,000 y IoU de las secciones 0,963, controles que se caen, el suelo del set entero en los dos y cortado como pieza corriente) y el cardán y la selección en caja sin lo quitado |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |

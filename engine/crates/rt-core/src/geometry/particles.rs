@@ -181,6 +181,16 @@ impl PixelFootprint {
     /// applies to the longer side, as [`Camera::generate_ray`] does).
     pub fn of(camera: &Camera, width: u32, height: u32) -> PixelFootprint {
         let (width, height) = (width.max(1), height.max(1));
+        if camera.panoramic() {
+            // K3: a pinhole whose pixels are an angle wide (the field across the width over the
+            // pixels), and no screen grid (its image is no plane).
+            return PixelFootprint {
+                origin: camera.position,
+                per_distance: camera.fov_x_deg * crate::fmath::DEG_TO_RAD / width as f32,
+                constant: 0.0,
+                screen: None,
+            };
+        }
         if camera.ortho {
             return PixelFootprint {
                 origin: camera.position,

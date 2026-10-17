@@ -7,6 +7,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Motor
 
+- Dos proyecciones nuevas de cámara: **panorámica equirectangular** (360° × 180° en una imagen 2:1) y **ojo de pez** equidistante (hasta 360°, negro fuera del círculo de imagen), al final de `CAMR`; un archivo sin ellas conserva sus bytes (K3).
+- **Visible a cámara** por instancia (bit 2 de `INST.flags`, `INSTANCE_NO_CAMERA`): la cámara no ve la pieza y las sombras, los rebotes y los reflejos sí; es la planta con el techo que sigue dando luz (K3).
+- **Multiplicador de exterior** en el rayo de cámara: oscurece lo que la cámara ve del entorno, también por las ventanas, sin oscurecer la luz que entra (K3).
+- `rt_features` y `/api/info` dicen que el motor lee las cámaras de interiores (bit 4, `FEATURE_CAMERAS`); tres imágenes fijadas nuevas (planta, panorámica y ojo de pez), iguales en todas las rutas SIMD, con 1, 4 y 16 hilos, en WASI y en el `rt.wasm`; ninguna anterior se movió (K3).
 - Un pase nuevo, **alfa** (el séptimo, bit 6 de `RNDR.passes`): la cobertura de los objetos, de 0 a 1, con los bordes suavizados como la imagen (cada muestra de cámara cuenta si su rayo encuentra una superficie). El suelo del estudio, el entorno, el fondo y los paneles de luz que ve la cámara valen 0 (N2).
 - `rt_render_tile_alpha` en `rt.wasm` y en el pool; el archivo `RPP1` del lanzador lo lleva el último, y el *pool* y el lanzador dan el mismo plano (N2).
 - Los *hash* fijados de los seis pases de X2 y de las imágenes no se mueven; el alfa tiene los suyos (`PINNED_PASS_ALPHA`, `PINNED_E5_PASS_ALPHA`), iguales en escalar, SSE2 y AVX2, en WASI, en el `rt.wasm` real (`tools/wasm-parity.mjs --expect-alpha`, dos bloques nuevos de CI) y por la API del lanzador (N2).
@@ -17,6 +21,11 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - La sección **Luz** agrupa el catálogo en **Sets** (lo que monta fondo, suelo, tarjetas o charco de luz con sus focos: los 16 sets y el rig del tipo de producto) y **Luces** (lo que solo coloca focos: los montajes de siempre y las recetas de *Interior*). Cada grupo tiene sus filtros, que se combinan: *Tipo de producto* y *Sujeto* en *Sets*, *Estilo* (con *Míos*) en *Luces*, con la cuenta de lo que dejan y un aviso corto si no dejan nada. Ninguna clave cambia (L7).
 - Con focos en la escena, elegir un set o un montaje pregunta qué pasa con ellos: **Sustituir**, **Ocultar** (se quedan apagados y la lista *Luces* los vuelve a encender) o **Añadir**, con *Recordar mi elección*; se cambia en *Ajustes ▸ Preferencias ▸ Luces*. Una entrada de deshacer que dice la respuesta (L7).
 - Todas las miniaturas del catálogo de luz tienen el mismo tamaño (el de los montajes, como *Campo oscuro*), y un botón a la derecha de la cabecera de la sección las pone pequeñas, medianas o grandes; se recuerda (L7).
+- **Verticales rectas** en la sección *Cámara*: la cámara se renderiza nivelada y la lente se desplaza para conservar el encuadre, con la nota del desplazamiento; el tipo *Interior* las enciende (K3).
+- **Altura de ojo** con los presets *De pie* 1,5 m y *Sentado* 1,1 m, y **ópticas de interior** 24, 28 y 35 mm (K3).
+- **Proyección**: *Perspectiva*, *Ortográfica*, *Panorámica 360° (2:1)* y *Ojo de pez*; las vistas *Alzado* y *Planta*; el modo Rápido dibuja las panorámicas desde las seis caras de un cubo con el mismo mapa que el motor (K3).
+- **Visible a cámara** en la sección *Pieza*, en Rápido y en Completo (K3).
+- **Exposición automática** en la sección *Imagen*, con el mando *Brillo (EV)*, la medida en una nota y en la barra de estado, los presets *Día luminoso · EV 7* y *Tarde de lámparas · EV 5* y el deslizador *Exterior (rayo de cámara)*; el tipo *Interior* la enciende (K3).
 - *Ajustes ▸ Preferencias ▸ Render por defecto para proyectos nuevos*: los botones *Descargas* y *Elegir carpeta…* de *Carpeta al terminar* ya no salen cortados. El icono iba en su propia línea y el texto caía debajo, fuera de los 26 px del botón; ahora icono y texto van en la misma línea en cualquier control segmentado con icono. Lo guarda `tests/seg-clip-browser.test.ts`, en el navegador y en los dos idiomas.
 - *Acerca de*: los créditos se quedan en la literatura pública que sigue el motor y en las licencias de terceros.
 - **Flechas de paso en todos los valores**: cada campo numérico lleva a su derecha dos flechas apiladas **▲ ▼**. Un clic sube o baja un paso (con `Shift`, una décima; con `Ctrl`, diez), y mantenidas repiten tras una pausa; una pulsación, por larga que sea, es una sola entrada de deshacer. La flecha que llega al mínimo o al máximo se apaga, y un campo deshabilitado apaga las dos. No son paradas de tabulación: el campo sigue con el teclado, el arrastre y la escritura de siempre. En los tripletes X, Y, Z y en el campo de un deslizador el par es más fino, y el valor conserva el sitio que tenía (U15).
@@ -36,10 +45,17 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - `tools/light-catalogue-check.mjs` comprueba en el navegador los dos grupos, sus filtros, la pregunta y los tamaños, y hace las capturas de L7; `tools/sets-check.mjs` y `tools/scene-type-check.mjs` siguen la sección nueva (L7).
 - `tools/number-fields-check.mjs`: las flechas en todos los campos de la pantalla inicial, un clic y una pulsación mantenida sobre *Focal* (un paso, una entrada de deshacer cada uno), los ángulos de un foco propio y las velocidades de *Preferencias* como deslizadores; capturas `docs/ui/u15-light-fields.png`, `u15-part-triplets.png` y `u15-settings-sliders.png` (U15).
 - `tools/doctor-engine-check.mjs` escribe el tiempo del render en el campo numérico nuevo (U15).
+- `tools/k3-check.mjs`: la cámara de interiores en el navegador sobre una habitación de prueba (verticales rectas, planta con el techo oculto, panorámica, cromo acromático), con tres capturas nuevas (K3).
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
 
 ### Limitaciones conocidas de esta versión
 
+- No hay recorrido WASD con altura fija: queda para la fase de recorridos (N3) (K3).
+- La panorámica se renderiza entera, no por franjas: las franjas son de los entregables (K6) (K3).
+- En Rápido, nada se dibuja encima de una panorámica (contorno, *gizmo*, glifos) y la panorámica no lleva fondo degradado ni imagen de fondo: se ven como color (K3).
+- La exposición automática la mide la página: una escena exportada y renderizada con `rt` fuera de la aplicación lleva solo la compensación (K3).
+- La curva de la imagen es la transformada de vista; *Low contrast*, el rodillo largo, ISO y obturador siguen sin hacer (K3).
+- El tipo *Interior* no mueve la cámara a la altura de ojo; los presets están en la sección *Cámara* (K3).
 - El pase alfa es una **máscara de objetos**: no es el alfa de un render con fondo transparente cuando el camino atraviesa vidrio (que sí cuenta como superficie) o el suelo es un atrapasombras con su sombra; los recortes de una textura cuentan como superficie. Con *Terminar por ruido* lleva las muestras de la primera ronda (N2).
 - Los pases son para imágenes: una animación no los escribe. De los seis pases del motor solo se ofrecen cuatro (el albedo, el id de material y el círculo de confusión no) (N2).
 - Un trabajo con un estudio de lote no pasa por el post-procesado IA, y los plugins de trabajos guardan sus imágenes aparte, fuera del ZIP (N2).

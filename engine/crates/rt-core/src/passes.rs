@@ -143,7 +143,8 @@ pub fn coc_diameter(camera: &Camera, depth: f32, long_side: u32) -> f32 {
 pub struct Exact {
     /// Unit shading normal facing the camera (0 on the background).
     pub normal: Vec3,
-    /// Distance along the view axis (+∞ on the background).
+    /// Distance along the view axis (+∞ on the background); for a panoramic camera (K3), the
+    /// distance from the camera.
     pub depth: f32,
     /// RSB instance index + 1, [`FLOOR_ID`] or 0.
     pub part_id: u32,
@@ -185,8 +186,13 @@ impl Exact {
         let camera = &scene.camera;
         let forward = camera.basis().0;
         // Along the axis from the camera's plane: the lens centre for a perspective camera (the
-        // ray starts there), the point on the image plane for an orthographic one.
-        let depth = t * ray.dir.dot(forward) + (ray.origin - camera.position).dot(forward);
+        // ray starts there), the point on the image plane for an orthographic one. K3: a panorama
+        // has no axis for what it sees around it: the distance from the camera.
+        let depth = if camera.panoramic() {
+            t * ray.dir.length()
+        } else {
+            t * ray.dir.dot(forward) + (ray.origin - camera.position).dot(forward)
+        };
         let long_side = scene.render.width.max(scene.render.height);
         Exact {
             normal,

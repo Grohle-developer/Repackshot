@@ -57,6 +57,12 @@ pub const INSTANCE_ONE_SIDED: u32 = 1;
 /// the studio around the product (a set's backdrop, floor and cards), not the model.
 pub const INSTANCE_NO_SECTION: u32 = 2;
 
+/// Instance flag (K3): the instance is invisible to camera rays ([`RayClass::Camera`]: the camera's
+/// rays and the rays that continue them straight through cut-outs and thin walls) and to nothing
+/// else: reflections, refractions, shadows, photons and the light it sends all see it. The plan
+/// view of a room through its ceiling: the ceiling is not in the picture and still lights the room.
+pub const INSTANCE_NO_CAMERA: u32 = 4;
+
 /// Largest number of instances in one [`Geometry`] (particle sets included).
 pub const MAX_INSTANCES: usize = MAX_LEAF_FIRST;
 
@@ -65,7 +71,8 @@ pub const MAX_INSTANCES: usize = MAX_LEAF_FIRST;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RayClass {
     /// Camera rays (and the rays that continue them straight): the effects seen by the camera,
-    /// widened to the minimum size on screen.
+    /// widened to the minimum size on screen. The only class that does not see the instances hidden
+    /// to the camera ([`INSTANCE_NO_CAMERA`], K3).
     Camera,
     /// Rays scattered by a surface (reflection, refraction, diffuse): the effects seen in
     /// reflections.
@@ -175,6 +182,8 @@ pub(crate) struct PreparedInstance {
     pub cull: Cull,
     /// False for instances that can never be hit (empty mesh, singular transform).
     active: bool,
+    /// K3: the instance is hidden to the camera ([`INSTANCE_NO_CAMERA`]): camera rays step over it.
+    pub camera_hidden: bool,
 }
 
 impl PreparedInstance {
@@ -336,6 +345,7 @@ impl Geometry {
                 identity: instance.transform.is_identity(),
                 cull: instance.cull(),
                 active: live,
+                camera_hidden: instance.flags & INSTANCE_NO_CAMERA != 0,
             });
             if live {
                 let b = instance_bounds(mesh, &instance.transform);
@@ -461,6 +471,14 @@ impl Geometry {
             .meshes
             .get(self.instances[instance as usize].mesh as usize)?;
         Some((mesh, prepared))
+    }
+
+    /// K3: true when `instance` is hidden to the camera ([`INSTANCE_NO_CAMERA`]).
+    #[inline]
+    pub(crate) fn camera_hidden(&self, instance: u32) -> bool {
+        self.prepared
+            .get(instance as usize)
+            .is_some_and(|p| p.camera_hidden)
     }
 
     /// The mesh and the instance of an instance that can be hit.

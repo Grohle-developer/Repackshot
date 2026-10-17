@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 134 archivos: 132 repartidos por versión y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 140 archivos: 138 repartidos por versión y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -26,7 +26,7 @@ De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las ca
 
 ### Sin publicar
 
-El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado.
+El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado.
 
 #### L7 · Sets y Luces: catálogo reorganizado
 
@@ -60,6 +60,26 @@ El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos 
 
 <a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes."><br>
 `batch-queue.png` · `8816f19` · El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes.
+
+#### K3 · Cámara de interiores
+
+<a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado."><br>
+`k3-verticals.png` · `0082860` · La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado.
+
+<a id="c-k3-plan-fast"></a><img src="ui/k3-plan-fast.png" width="480" alt="La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo."><br>
+`k3-plan-fast.png` · `0082860` · La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo.
+
+<a id="c-k3-plan"></a><img src="ui/k3-plan.png" width="480" alt="La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado."><br>
+`k3-plan.png` · `0082860` · La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado.
+
+<a id="c-k3-panorama"></a><img src="ui/k3-panorama.png" width="480" alt="La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado."><br>
+`k3-panorama.png` · `0082860` · La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado.
+
+<a id="c-k3-verticals-fast"></a><img src="ui/k3-verticals-fast.png" width="480" alt="La habitación de prueba en Rápido con Verticales rectas encendidas: la cámara a 1,5 m mirando 10° hacia abajo y las aristas verticales paralelas; el inspector dice el desplazamiento de −4,2 mm que lo corrige"><br>
+`k3-verticals-fast.png` · `0082860` · La misma corrección en Rápido: con *Verticales rectas* las aristas verticales salen paralelas, y el inspector dice el desplazamiento que aplica (−4,2 mm para 10° de inclinación), con los presets de altura de ojo y las focales de interior.
+
+<a id="c-k3-panorama-fast"></a><img src="ui/k3-panorama-fast.png" width="480" alt="La panorámica 360° (2:1) en Rápido, dibujada desde las seis caras de un cubo: la habitación entera alrededor de la cámara"><br>
+`k3-panorama-fast.png` · `0082860` · La panorámica 360° en Rápido, dibujada desde las seis caras de un cubo con el mismo mapa que el motor; encima no se dibuja nada (contorno, *gizmo*).
 
 ### v0.1.16 · 2026-10-17
 
@@ -654,6 +674,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
+- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
 - [`lens-hover.png`](#c-lens-hover) · v0.1.8 · O2b
 - [`lens-hover-dark.png`](#c-lens-hover-dark) · v0.1.8 · O2b
 - [`lens-hover-chip.png`](#c-lens-hover-chip) · v0.1.8 · O2b
@@ -733,6 +755,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`scene-type-interior.png`](#c-scene-type-interior) (v0.1.15): el tipo de escena Interior con las siete recetas de luz de ventana, lámparas y hora azul.
 
+- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
+- [`k3-plan.png`](#c-k3-plan) · Sin publicar · K3
+- [`k3-plan-fast.png`](#c-k3-plan-fast) · Sin publicar · K3
+- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
 - [`scene-type-interior.png`](#c-scene-type-interior) · v0.1.15 · K1 **← propuesta**
 
 ### IA

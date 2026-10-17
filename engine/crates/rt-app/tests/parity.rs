@@ -356,6 +356,27 @@ fn ies_lights_through_the_api_are_the_pinned_image_with_one_and_four_threads() {
 }
 
 #[test]
+fn the_k3_panorama_through_the_api_is_the_pinned_image_with_one_and_four_threads() {
+    // K3: the scene file carries the projection and the exterior factor at the end of CAMR; the
+    // launcher reads them, and its film is `rt`'s and the pinned one with any number of threads.
+    let mut scene = rt_core::example::k3_panorama_scene();
+    scene.render.max_samples = 4;
+    let rsb = scene.to_rsb();
+    let want = pinned(
+        include_str!("../../rt-core/src/render/k3_tests.rs"),
+        "PINNED_K3_PANORAMA_4SPP",
+    );
+    let reference = rt_cli::render(&scene, 4, 3);
+    assert_eq!(fnv1a(&reference.film.resolve()), want, "rt itself");
+    for threads in [1usize, 4] {
+        let t = TestServer::start("parity-k3", threads);
+        let f = render(&t, "final", &rsb, "");
+        assert_eq!(f.samples, 4);
+        assert_eq!(fnv1a(&resolve(&f)), want, "{threads} threads");
+    }
+}
+
+#[test]
 fn a_viewport_update_without_meshes_renders_the_same_film() {
     let t = TestServer::start("parity-viewport", 2);
     let mut scene = rt_core::example::scene();

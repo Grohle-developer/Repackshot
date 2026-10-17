@@ -50,6 +50,18 @@ export function readsIes(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_IES) !== 0;
 }
 
+/**
+ * K3: bit 4 of the engine's features (rt_core::FEATURE_CAMERAS): it reads the interior cameras, the panoramic projection
+ * and the exterior factor at the end of CAMR and the parts hidden to the camera (`INST.flags` bit 2), so the page writes
+ * them; for an engine without the bit it writes none of them (io/rsb.ts `SceneView.cameras`).
+ */
+export const ENGINE_FEATURE_CAMERAS = 16;
+
+/** True when an engine of `features` reads the interior cameras (K3). */
+export function readsCameras(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_CAMERAS) !== 0;
+}
+
 export interface EngineStatus {
   samples: number;
   seconds: number;
@@ -87,6 +99,11 @@ export interface EngineStatus {
   pixels?: number;
   /** The native engine of the desktop launcher (render/native.ts) is rendering. */
   native?: boolean;
+  /**
+   * K3: with the automatic exposure, what the engine's image metered (stops; core/image-passes.ts), null while nothing
+   * was metered yet. Absent with the exposure by hand.
+   */
+  meteredEv?: number | null;
   /** Native engine: its render threads. */
   threads?: number;
   /** Native engine: its SIMD path (`avx2`, `sse2`, `neon`, `scalar`). */

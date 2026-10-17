@@ -82,6 +82,8 @@ export interface EngineStatus {
   pixels?: number;
   /** The desktop launcher's native engine renders (threads and SIMD path below). */
   native?: boolean;
+  /** K3: with the automatic exposure, what the engine's image metered (stops), null while nothing was metered. */
+  meteredEv?: number | null;
   threads?: number;
   isa?: string;
   /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */

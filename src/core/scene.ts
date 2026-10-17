@@ -152,6 +152,12 @@ export interface SceneNode {
    * business, replaced when another set is applied and removed by Reset setup (core/sets.ts).
    */
   setPiece?: SetPiece;
+  /**
+   * K3, Visible to camera off (INTERIORS.md §3.4): the camera does not see the node (and what is under it), in the Fast
+   * preview and in the engine (`INST.flags` bit 2); it still lights, reflects and casts its shadows. The ceiling of a
+   * plan view. Absent: seen, like every node of before K3.
+   */
+  cameraHidden?: boolean;
 }
 
 /** What a part of a set's decoration is (L6). */
@@ -200,6 +206,8 @@ export type SceneAction =
   | ({ type: 'scene/isolate'; ids: NodeId[] } & ActionBase)
   | ({ type: 'scene/showAll' } & ActionBase)
   | ({ type: 'scene/setLocked'; ids: NodeId[]; locked: boolean } & ActionBase)
+  /** K3: Visible to camera, on or off for these nodes (`SceneNode.cameraHidden`). */
+  | ({ type: 'scene/setCameraHidden'; ids: NodeId[]; hidden: boolean } & ActionBase)
   | ({ type: 'scene/rename'; id: NodeId; name: string } & ActionBase)
   | ({ type: 'scene/delete'; ids: NodeId[] } & ActionBase)
   | ({ type: 'scene/restOnFloor'; ids: NodeId[] } & ActionBase)
@@ -278,6 +286,12 @@ export function effectiveVisible(state: ProjectState, id: NodeId): boolean {
   const node = state.scene.nodes[id];
   if (!node || !node.visible) return false;
   return ancestors(state, id).every((a) => state.scene.nodes[a]?.visible !== false);
+}
+
+/** K3: true when the camera does not see the node: it or one of its ancestors is hidden to the camera. */
+export function hiddenToCamera(state: Pick<ProjectState, 'scene'>, id: NodeId): boolean {
+  for (let n: SceneNode | undefined = state.scene.nodes[id]; n; n = n.parent ? state.scene.nodes[n.parent] : undefined) if (n.cameraHidden) return true;
+  return false;
 }
 
 /** Tree order of every node, depth first: what the tree panel draws. */
@@ -673,6 +687,13 @@ export function reduceScene(state: ProjectState, action: SceneAction): ProjectSt
       return patchNodes(state, Object.keys(state.scene.nodes), (n) => (n.visible ? n : { ...n, visible: true }));
     case 'scene/setLocked':
       return patchNodes(state, action.ids, (n) => (n.locked === action.locked ? n : { ...n, locked: action.locked }));
+    case 'scene/setCameraHidden':
+      return patchNodes(state, action.ids, (n) => {
+        if (!!n.cameraHidden === action.hidden) return n;
+        if (action.hidden) return { ...n, cameraHidden: true };
+        const { cameraHidden: _seen, ...rest } = n;
+        return rest;
+      });
     case 'scene/rename': {
       const name = action.name.trim();
       if (!name) return state;

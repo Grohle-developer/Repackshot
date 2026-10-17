@@ -15,6 +15,7 @@
 // Pure: no DOM, no engine.
 
 import { QUALITY_PRESETS } from '../data/quality';
+import { effectiveExposure } from './image-passes';
 import type { DoctorCheckKey } from '../data/types';
 import { adaptiveOf, advancedTouchesView, DEFAULT_ADVANCED, MAX_SECONDS, reduceRender, type VideoCodec } from './render';
 import { denoiseIn } from './caustics';
@@ -53,6 +54,11 @@ export interface FrameScan {
    * is brighter. The view transform check reads it for any exposure without looking at the image again.
    */
   stops: readonly number[];
+  /**
+   * K3: the automatic exposure of the frame (core/image-passes.ts `meterExposure`), stops; null when nothing was metered.
+   * Absent on a scan of before (and of a test): treated as null.
+   */
+  metered?: number | null;
 }
 
 /** Everything the checks read of the engine and the system. Built by `ui/doctor-facts.ts`. */
@@ -249,7 +255,8 @@ function checkColor(state: ProjectState, f: EngineFacts): DoctorResult {
   if (!f.full) return unavailable('color', 'noFull');
   const scan = freshScan(f, state);
   if (!scan) return unavailable('color', 'measuring');
-  const clipped = clippedFraction(scan, state.image.exposureEv);
+  // K3: the exposure the image is shown with (the metered one plus the compensation, in automatic).
+  const clipped = clippedFraction(scan, effectiveExposure(state.image, scan.metered ?? null));
   return clipped >= CLIP_FRACTION ? warn('color', { percent: round(clipped * 100, 1), samples: scan.samples }, true) : ok('color');
 }
 
