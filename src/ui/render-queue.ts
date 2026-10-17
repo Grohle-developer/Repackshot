@@ -38,6 +38,15 @@
 // provenance (seed0 and the rule). A plugin that is not installed, or fails,
 // leaves the engine's images as they are and says so once.
 //
+// Batches (N2): a job may carry a saved studio (`settings.studio`, cameras × studios): the studio is put on a copy of
+// the project (core/lighting.ts `restoreStudio`, keeping the job's camera) and that copy is what the engine renders;
+// the open project is never touched. A job may also ask for passes (alpha, depth, normals, part id): the engine renders
+// them with the image and the frame comes back with their files (`FrameResult.extras`), saved beside it under its name
+// plus `_<pass>`. The jobs one Render or Add to queue made share a ZIP when the settings say so (`job.zip`): their files
+// are kept in memory instead of saved, and the ZIP is written, with our own writer, when the last of them ends (done,
+// failed, stopped or removed); if the ZIP cannot be made the files are saved one by one, so nothing is lost. A job with a
+// studio does not go through the AI (its passes are drawn from the open project).
+//
 // Live view (U14): a job that runs while the live view shows it (a click on
 // its row: `ui.liveView`) gets pictures of its render as it accumulates
 // (`liveTap`: at most every LIVE_FRAME_MS, only while the view shows it and
@@ -45,11 +54,13 @@
 // the view becomes the results viewer of that result.
 
 import { shotFadeAt, totalDuration } from '../core/animation';
+import { restoreStudio } from '../core/lighting';
+import { findItem, savedStudioOf } from '../core/library';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { FrameCadence, liveBox } from '../core/live-frame';
-import { outputFileName, type NameValues } from '../core/name-template';
-import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, videoExtension, videoLabel, type JobRuntime, type JobStatus, type RenderJob, type RenderProgress, type RenderSettings } from '../core/render';
+import { outputFileName, zipFileName, type NameValues } from '../core/name-template';
+import { formatExtension, frameRange, frameTime, jobCamera, jobStudio, needsDisplayCopy, videoExtension, videoLabel, type Destination, type JobRuntime, type JobStatus, type RenderJob, type RenderProgress, type RenderSettings, type StudioRef } from '../core/render';
 import { controlsFor, frameControls, seedProvenance, type PluginLabel, type PluginManifest, type PluginRenderSettings } from '../core/plugins';
 import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
@@ -92,14 +103,17 @@ export function queueMode(ctx: Ctx): Runner['mode'] {
   return runnerOf(ctx).mode;
 }
 
-/** Values of the name tokens for a job, now. */
+/**
+ * Values of the name tokens for a job, now. `{studio}` is the saved studio of a batch job (N2) and, for any other, the
+ * product type's name, as before.
+ */
 export function nameValues(state: ProjectState, job: Pick<RenderJob, 'seq' | 'settings'>, cameraId: string | null, n = job.seq, date = new Date()): NameValues {
   const lang = state.meta.lang;
   const cam = cameraId ? state.camera.cameras[cameraId] : state.camera.cameras[state.camera.active];
   return {
     project: state.meta.name || tIn(lang, 'app.untitled'),
     camera: cameraName(state, cam, lang),
-    studio: studioLabel(state.studio.preset, state.studio.customPreset)[lang],
+    studio: jobStudio(job)?.name ?? studioLabel(state.studio.preset, state.studio.customPreset)[lang],
     date,
     n,
   };
@@ -196,6 +210,7 @@ export async function aiStep(
   onProgress: (p: AiStepProgress) => void = () => undefined,
   done: AiVariantDone[] = [],
   measure: (seconds: number) => void = () => undefined,
+  save: (name: string, blob: Blob) => Promise<unknown> = (n, b) => ctx.services.files.save(s.destination, n, b),
 ): Promise<AiVariantDone[] | null> {
   const port = ctx.services.ai;
   if (!port) return null;
@@ -239,7 +254,7 @@ export async function aiStep(
         continue;
       }
       const blob = await port.encode(result.image, opts);
-      await ctx.services.files.save(s.destination, name, blob);
+      await save(name, blob);
       // Browsers do not show EXR, TIFF or DNG: the thumbnail comes from an 8-bit picture of the same image (as the engine's does).
       const shown = needsDisplayCopy(s.format) ? await port.encode(result.image, { ...opts, format: 'PNG', bitDepth: 8 }) : blob;
       done.push({ blob, info: { name, thumb: await thumbnailOf(shown), bytes: blob.size, report: result.report } });
@@ -372,11 +387,151 @@ export function liveTap(ctx: Ctx, jobId: string, now: () => number = Date.now): 
   };
 }
 
+// ------------------------------------------------------------------ batches (N2): studios and the ZIP
+
+/** The saved studio with this id: the library's (the Studios tab) or one an older project kept inside itself. */
+export function savedStudioOfId(ctx: Ctx, id: string): ReturnType<typeof savedStudioOf> | null {
+  const item = findItem(ctx.ui.get().library, 'studio', id);
+  if (item) return savedStudioOf(item);
+  return ctx.store.get().studio.saved.find((x) => x.id === id) ?? null;
+}
+
+/** The saved studios a batch can use, in the order the window lists them: the library's, then the project's own (older files). */
+export function studioRefs(ctx: Ctx): StudioRef[] {
+  const lib = ctx.ui.get().library.studios.map((x) => ({ id: x.id, name: x.name }));
+  const own = ctx.store.get().studio.saved.filter((x) => !lib.some((l) => l.id === x.id)).map((x) => ({ id: x.id, name: x.name }));
+  return [...lib, ...own];
+}
+
+/** The project a job renders: the open one, or, for a job with a saved studio, a copy with the studio on and the job's camera kept. */
+export function jobProject(ctx: Ctx, job: RenderJob): ProjectState {
+  const look = jobStudio(job);
+  const state = ctx.store.get();
+  if (!look) return state;
+  const saved = savedStudioOfId(ctx, look.id);
+  if (!saved) throw new Error(t('render.studioMissing', { name: look.name }));
+  return restoreStudio(state, saved, { camera: false });
+}
+
+/** The files of a ZIP waiting for the last job of its group. */
+interface Bundle {
+  entries: { name: string; data: Blob }[];
+  destination: Destination;
+  project: string;
+  seqs: number[];
+}
+
+interface Bundles {
+  groups: Map<string, Bundle>;
+  /** Watching the queue while files wait: a group with no job left to run is written. */
+  unwatch: (() => void) | null;
+  /** The write in progress, if any: a call that comes meanwhile waits for it (and makes it look once more). */
+  running: Promise<void> | null;
+  again: boolean;
+}
+
+const bundleStores = new WeakMap<object, Bundles>();
+
+function bundlesOf(ctx: Ctx): Bundles {
+  let b = bundleStores.get(ctx.store);
+  if (!b) {
+    b = { groups: new Map(), unwatch: null, running: null, again: false };
+    bundleStores.set(ctx.store, b);
+  }
+  return b;
+}
+
+/** How many files wait in ZIPs that are not written yet (the interface can say so). */
+export function pendingZipFiles(ctx: Ctx): number {
+  let n = 0;
+  for (const g of bundlesOf(ctx).groups.values()) n += g.entries.length;
+  return n;
+}
+
+/**
+ * Saves a file of a job: straight to its destination, or, when the job belongs to a ZIP group, into the group's bundle
+ * (the ZIP is written when the last job of the group ends). Resolves where the file will be: a folder or a download.
+ */
+export async function saveOutput(ctx: Ctx, job: RenderJob, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'> {
+  const dest = job.settings.destination;
+  if (!job.zip || !ctx.services.archive) return ctx.services.files.save(dest, name, blob);
+  const stores = bundlesOf(ctx);
+  let b = stores.groups.get(job.zip);
+  if (!b) {
+    const st = ctx.store.get();
+    b = { entries: [], destination: dest, project: st.meta.name || tIn(st.meta.lang, 'app.untitled'), seqs: [] };
+    stores.groups.set(job.zip, b);
+    stores.unwatch ??= ctx.store.subscribe(() => void flushIdleZips(ctx));
+  }
+  b.entries.push({ name, data: blob });
+  if (!b.seqs.includes(job.seq)) b.seqs.push(job.seq);
+  return dest.kind === 'FOLDER' ? 'FOLDER' : 'DOWNLOAD';
+}
+
+/** Writes one bundle: the ZIP, or, if it cannot be made, its files one by one. Never throws. */
+async function writeBundle(ctx: Ctx, b: Bundle): Promise<void> {
+  const files = ctx.services.files;
+  try {
+    const archive = ctx.services.archive;
+    if (!archive) throw new Error('no archive service');
+    const blob = await archive.zip(b.entries);
+    const name = zipFileName(b.project, b.seqs);
+    await files.save(b.destination, name, blob);
+    ctx.ui.toast(b.destination.kind === 'FOLDER' ? t('render.zipFolder', { name, n: b.entries.length, folder: b.destination.name }) : t('render.zipSaved', { name, n: b.entries.length }));
+  } catch (err) {
+    ctx.ui.toast(t('render.zipFailed', { reason: err instanceof Error ? err.message : String(err) }));
+    for (const e of b.entries) {
+      try {
+        await files.save(b.destination, e.name, e.data);
+      } catch (inner) {
+        console.warn(`could not save ${e.name}: ${inner instanceof Error ? inner.message : String(inner)}`);
+      }
+    }
+  }
+}
+
+/**
+ * Writes the ZIP of every group that has files and no job left to run (a job waiting or running keeps its group open; a
+ * job that ended, was stopped, failed or left the queue does not). Called when a job ends and on every change of the
+ * queue while files wait, so removing the last waiting job of a batch (or undoing its Add) writes what the others made.
+ */
+export function flushIdleZips(ctx: Ctx): Promise<void> {
+  const stores = bundlesOf(ctx);
+  if (stores.running) {
+    stores.again = true;
+    return stores.running;
+  }
+  // Started on the next tick, so `running` is set before the body can end (a body that has nothing to write would
+  // otherwise leave a finished promise there for good).
+  const run = Promise.resolve().then(async () => {
+    try {
+      do {
+        stores.again = false;
+        for (;;) {
+          const queue = ctx.store.get().render.queue;
+          const ready = [...stores.groups].find(([id]) => !queue.some((j) => j.zip === id && (j.status === 'QUEUED' || j.status === 'RUNNING')));
+          if (!ready) break;
+          stores.groups.delete(ready[0]);
+          await writeBundle(ctx, ready[1]);
+        }
+      } while (stores.again);
+    } finally {
+      stores.running = null;
+      if (stores.groups.size === 0) {
+        stores.unwatch?.();
+        stores.unwatch = null;
+      }
+    }
+  });
+  stores.running = run;
+  return run;
+}
+
 /**
  * Renders one job: every frame with the path tracer, each saved under its name where the job
  * says, the first image kept in the history. Throws an AbortError when stopped.
  */
-export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now: () => number = Date.now): Promise<{ resultIds: string[]; names: string[] }> {
+export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now: () => number = Date.now): Promise<{ resultIds: string[]; names: string[]; extras: number }> {
   const state = ctx.store.get();
   const s = job.settings;
   const cam = jobCamera(job, state);
@@ -388,6 +543,10 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
   // N1: a video: every frame goes to the browser's encoder and the job saves one file at the end.
   const video = isVideoJob(s);
   patchJob(ctx, job.id, { status: 'RUNNING', progress: 0, startedAt: now(), finishedAt: null, error: null, frame: 0, frames: anim ? total : 0 });
+  // N2: the project the job renders (a saved studio on a copy; the open project is not touched) and where its files go.
+  const look = jobStudio(job);
+  const project = jobProject(ctx, job);
+  const save = (name: string, blob: Blob) => saveOutput(ctx, job, name, blob);
   let writer: VideoWriterPort | null = null;
   if (video) {
     const port = ctx.services.video;
@@ -401,12 +560,17 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
     writer?.close();
   }
 
-  async function renderFrames(): Promise<{ resultIds: string[]; names: string[] }> {
+  async function renderFrames(): Promise<{ resultIds: string[]; names: string[]; extras: number }> {
     const resultIds: string[] = [];
     const saved: string[] = [];
+    let extras = 0;
     let lastTick = 0;
     // AI post-processing: single images only (animations arrive later), after the engine's image is safe.
-    const withAi = s.ai.enabled && !anim && !!ctx.services.ai;
+    // A studio of a batch is not posted to the AI: the passes it works from are drawn from the open project (N2).
+    const withAi = s.ai.enabled && !anim && !!ctx.services.ai && !look;
+    if (s.ai.enabled && !anim && look && ctx.services.ai) ctx.ui.toast(t('render.aiNoStudio', { name: look.name }));
+    // N2: the pass files of an image (not of an animation), named from the image.
+    const passes = !anim && s.passes.keys.length > 0 ? s.passes : null;
     // Plugins switched on for render jobs (decision 9): every image, a frame's seed its own (a video's frames: not yet).
     const plugins = video ? [] : jobPlugins(ctx, s);
     const renderSource = async () => {
@@ -449,6 +613,9 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         advanced: video ? { ...s.advanced, saveNoisy: false } : s.advanced,
         // N1: the camera track's fade to a colour at this frame (a change of shot with a fade).
         ...(anim && f.time !== undefined ? { fade: shotFadeAt(state, f.time) } : {}),
+        // N2: a saved studio on a copy of the project, and the passes beside the image.
+        ...(look ? { state: project } : {}),
+        ...(passes ? { passes, imageName: names[k] } : {}),
         signal,
         onProgress: (p, samples, seconds, adaptive) => tick(p, samples, seconds, false, adaptive),
         frameBox: live.frameBox,
@@ -464,15 +631,21 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       let where: 'DOWNLOAD' | 'FOLDER' = s.destination.kind === 'FOLDER' ? 'FOLDER' : 'DOWNLOAD';
       if (writer) await writer.add(out.file, k);
       else {
-        where = await ctx.services.files.save(s.destination, names[k], out.file);
+        where = await save(names[k], out.file);
         saved.push(names[k]);
       }
       if (signal.aborted) throw new DOMException('aborted', 'AbortError');
       // E5b-1: the image before denoise, next to it (`<name>-noisy`).
       if (out.noisyFile && !writer) {
         const noisy = noisyName(names[k]);
-        await ctx.services.files.save(s.destination, noisy, out.noisyFile);
+        await save(noisy, out.noisyFile);
         saved.push(noisy);
+      }
+      // N2: the pass files (and the part-id legend), under the image's name.
+      for (const extra of out.extras ?? []) {
+        await save(extra.name, extra.blob);
+        saved.push(extra.name);
+        extras++;
       }
       // A measured throughput for the window's estimate (the whole render, upload and conversion included).
       if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
@@ -499,7 +672,7 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         const measure = (seconds: number) => seconds > 0 && ctx.ui.set({ aiThroughput: (out.width * out.height) / seconds });
         if (withAi) {
           try {
-            await aiStep(ctx, s, out, cam, names[k], signal, aiTick, variants, measure);
+            await aiStep(ctx, s, out, cam, names[k], signal, aiTick, variants, measure, save);
           } catch (err) {
             interrupted = err;
           }
@@ -548,10 +721,10 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       // N1: every frame encoded: the video, muxed and saved as one file.
       const file = await writer.finish();
       if (signal.aborted) throw new DOMException('aborted', 'AbortError');
-      await ctx.services.files.save(s.destination, names[0], file);
+      await save(names[0], file);
       saved.push(names[0]);
     }
-    return { resultIds, names: saved };
+    return { resultIds, names: saved, extras };
   }
 }
 
@@ -593,10 +766,13 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
       let error: string | null = null;
       try {
         const out = await runJob(ctx, job, abort.signal);
-        const n = out.names.length;
+        const n = out.names.length - out.extras;
         const dest = job.settings.destination;
-        if (n > 1) ctx.ui.toast(t('render.doneFrames', { n }));
-        else ctx.ui.toast(dest.kind === 'FOLDER' ? t('render.doneFolder', { name: out.names[0] ?? '', folder: dest.name }) : t('render.done', { name: out.names[0] ?? '' }));
+        const first = out.names[0] ?? '';
+        if (job.zip) ctx.ui.toast(out.extras > 0 ? t('render.donePassesPacked', { name: first, n: out.extras }) : t('render.donePacked', { name: first }));
+        else if (n > 1) ctx.ui.toast(t('render.doneFrames', { n }));
+        else if (out.extras > 0) ctx.ui.toast(t('render.donePasses', { name: first, n: out.extras }));
+        else ctx.ui.toast(dest.kind === 'FOLDER' ? t('render.doneFolder', { name: first, folder: dest.name }) : t('render.done', { name: first }));
         // Its result opens in the viewer when the job says so, or when the live view was watching it (U14: the view
         // in progress becomes the result's).
         const watched = ctx.ui.get().liveView?.jobId === job.id;
@@ -625,6 +801,8 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
           });
         }
         ctx.store.dispatch({ type: 'render/running', running: null });
+        // N2: the last job of a ZIP group has ended (or was removed): the ZIP is written.
+        await flushIdleZips(ctx);
       }
     }
   } finally {
@@ -641,7 +819,14 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
 }
 
 function ensureLoop(ctx: Ctx, r: Runner): void {
-  if (!r.loop) r.loop = loop(ctx, r);
+  if (r.loop) return;
+  // A loop with nothing to run ends before its first `await`: its own `finally` has run by the time it returns, so
+  // assigning the promise as it is would leave a finished loop in `r.loop` for good (no later Start could begin one,
+  // and `queueSettled` would never return). The promise clears itself once it settles.
+  const done: Promise<void> = loop(ctx, r).finally(() => {
+    if (r.loop === done) r.loop = null;
+  });
+  if (!r.loop) r.loop = done;
 }
 
 /** Start queue: every waiting job, in order. After a Pause (Resume): what was paused goes on. */

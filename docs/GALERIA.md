@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 132 archivos: 130 repartidos por versión y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 140 archivos: 138 repartidos por versión y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,11 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 44 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 45 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7.
+El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado.
 
 #### L7 · Sets y Luces: catálogo reorganizado
 
@@ -53,6 +53,14 @@ El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos 
 <a id="c-u15-settings-sliders"></a><img src="ui/u15-settings-sliders.png" width="480" alt="Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %)."><br>
 `u15-settings-sliders.png` · `84f0673` · Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %).
 
+#### N2 · Cola, pases y lotes
+
+<a id="c-batch-window"></a><img src="ui/batch-window.png" width="480" alt="La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido."><br>
+`batch-window.png` · `8816f19` · La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido.
+
+<a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes."><br>
+`batch-queue.png` · `8816f19` · El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes.
+
 #### K3 · Cámara de interiores
 
 <a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado."><br>
@@ -66,6 +74,12 @@ El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos 
 
 <a id="c-k3-panorama"></a><img src="ui/k3-panorama.png" width="480" alt="La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado."><br>
 `k3-panorama.png` · `0082860` · La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado.
+
+<a id="c-k3-verticals-fast"></a><img src="ui/k3-verticals-fast.png" width="480" alt="La habitación de prueba en Rápido con Verticales rectas encendidas: la cámara a 1,5 m mirando 10° hacia abajo y las aristas verticales paralelas; el inspector dice el desplazamiento de −4,2 mm que lo corrige"><br>
+`k3-verticals-fast.png` · `0082860` · La misma corrección en Rápido: con *Verticales rectas* las aristas verticales salen paralelas, y el inspector dice el desplazamiento que aplica (−4,2 mm para 10° de inclinación), con los presets de altura de ojo y las focales de interior.
+
+<a id="c-k3-panorama-fast"></a><img src="ui/k3-panorama-fast.png" width="480" alt="La panorámica 360° (2:1) en Rápido, dibujada desde las seis caras de un cubo: la habitación entera alrededor de la cámara"><br>
+`k3-panorama-fast.png` · `0082860` · La panorámica 360° en Rápido, dibujada desde las seis caras de un cubo con el mismo mapa que el motor; encima no se dibuja nada (contorno, *gizmo*).
 
 ### v0.1.16 · 2026-10-17
 
@@ -679,6 +693,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
 
+- [`batch-window.png`](#c-batch-window) · Sin publicar · N2
+- [`batch-queue.png`](#c-batch-queue) · Sin publicar · N2
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**

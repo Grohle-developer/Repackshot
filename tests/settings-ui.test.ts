@@ -172,7 +172,7 @@ describe('import defaults', () => {
 });
 
 describe('render progress for screen readers', () => {
-  const job = (status: RenderJob['status'], progress: number): RenderJob => ({ id: 'j', seq: 1, settings: {} as never, status, progress, createdAt: 0, startedAt: 0, finishedAt: null, resultIds: [], error: null, frame: 0, frames: 1 });
+  const job = (status: RenderJob['status'], progress: number): RenderJob => ({ id: 'j', seq: 1, settings: {} as never, status, progress, createdAt: 0, startedAt: 0, finishedAt: null, zip: null, resultIds: [], error: null, frame: 0, frames: 1 });
   it('speaks at the start, every quarter and the end, once each', () => {
     const said: string[] = [];
     let q = -1;

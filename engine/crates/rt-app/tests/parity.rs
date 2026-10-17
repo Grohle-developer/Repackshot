@@ -117,13 +117,22 @@ fn pinned_example_hash() -> u32 {
     )
 }
 
-/// The pinned hashes of the example's passes, in the order of `PASS_KEYS`.
+/// The pinned hashes of the example's passes, in the order of `PASS_KEYS`: the six of X2, then the
+/// alpha of N2.
 fn pinned_pass_hashes() -> Vec<u32> {
     let src = include_str!("../../rt-core/src/render/passes_tests.rs");
-    ["ALBEDO", "NORMAL", "DEPTH", "PART_ID", "MATERIAL_ID", "COC"]
-        .iter()
-        .map(|k| pinned(src, &format!("PINNED_PASS_{k}")))
-        .collect()
+    [
+        "ALBEDO",
+        "NORMAL",
+        "DEPTH",
+        "PART_ID",
+        "MATERIAL_ID",
+        "COC",
+        "ALPHA",
+    ]
+    .iter()
+    .map(|k| pinned(src, &format!("PINNED_PASS_{k}")))
+    .collect()
 }
 
 fn job_id(reply: &rt_app::client::Reply) -> u32 {
@@ -137,8 +146,8 @@ fn job_id(reply: &rt_app::client::Reply) -> u32 {
 
 #[test]
 fn passes_through_the_api_are_the_pinned_ones_and_leave_the_image_alone() {
-    // The example at 4 samples with every pass (X2): the image is still the pinned film, the
-    // passes the launcher keeps are rt-core's pinned planes, with 1 and 4 threads.
+    // The example at 4 samples with every pass (X2, and the alpha of N2): the image is still the
+    // pinned film, the passes the launcher keeps are rt-core's pinned planes, with 1 and 4 threads.
     let mut scene = rt_core::example::scene();
     scene.render.max_samples = 4;
     let rsb = scene.to_rsb();
@@ -152,9 +161,9 @@ fn passes_through_the_api_are_the_pinned_ones_and_leave_the_image_alone() {
         );
         assert_eq!(reply.status, 200, "{}", reply.text());
         assert!(
-            reply
-                .text()
-                .contains(r#""passes":["albedo","normal","depth","partId","materialId","coc"]"#),
+            reply.text().contains(
+                r#""passes":["albedo","normal","depth","partId","materialId","coc","alpha"]"#
+            ),
             "{}",
             reply.text()
         );

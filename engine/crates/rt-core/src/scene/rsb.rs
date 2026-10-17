@@ -281,7 +281,8 @@
 //!   indirect contribution (0: off). `max_seconds` is honoured by the host between sample
 //!   passes. `passes` (X2) is the mask of the exact passes the host writes next to the image:
 //!   bit `i` is [`crate::passes::PASS_KEYS`]`[i]` (albedo, normal, depth, partId, materialId,
-//!   coc); 0, or a file written before X2, asks for none, and unknown bits are kept and ignored.
+//!   coc, and, N2, alpha); 0, or a file written before X2, asks for none, and unknown bits are
+//!   kept and ignored.
 //!   Asking for passes never changes a pixel of the image. `denoise` (E5b-1) tells the host what
 //!   to hand out: bit 0 the denoised image, bit 1 also the one without denoise; the renderer
 //!   ignores it. `caustic_photons` (E5b-1) is the number of photons traced per sample index for

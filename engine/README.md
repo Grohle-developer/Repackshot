@@ -613,11 +613,14 @@ them, bit `i` for `PASS_KEYS[i]`:
 | 8 | `partId` | `u32` | RSB instance index + 1, what `Scene::pick` finds; the studio floor `0xffffffff` (0) |
 | 16 | `materialId` | `u32` | RSB material index + 1 of that instance; the floor `0xffffffff` (0) |
 | 32 | `coc` | `f32` | circle-of-confusion diameter in output pixels of the thin lens (0, also without depth of field) |
+| 64 | `alpha` | `f32` | N2: coverage of the scene's objects, 0 to 1: the share of the pixel's samples whose camera ray meets a surface of an instance; the studio floor, the environment, the background and camera-visible light panels are not coverage (0) |
 
 `normal`, `depth`, the ids and `coc` come from **one ray through the centre of the pixel, through
 the centre of the lens, without jitter** (`render::centre_ray`, `render_tile_exact`, once per tile):
-exact, never blended across an edge. `albedo` follows the camera ray of every sample of the image
-(`render_tile_albedo`), summed in sample order in `f32` and divided like `Film::resolve`. The first
+exact, never blended across an edge. `albedo` and `alpha` follow the camera ray of every sample of the image
+(`render_tile_albedo`: one `first_hit` serves both), summed in sample order in `f32` and divided like
+`Film::resolve` (each by its own count of samples); an edge pixel (E11) adds the mean of its sub-samples,
+as the image does. The first
 hit (`integrator::first_hit`) is the nearer of the geometry and the floor; every surface stops it
 (cut-outs and glass too), and a camera-visible area light crossed first makes the pixel
 background, like the environment, the backdrop and transparency. `coc` is `coc_diameter`, the
@@ -626,6 +629,15 @@ the measured blur of `Camera::generate_ray`'s own lens within 1 %. The passes ha
 own: they never change a pixel of the image, whose pinned hashes stay. The six planes of the
 example and of the E5 example are pinned too (`crates/rt-core/src/render/passes_tests.rs`), on
 every SIMD path, in the WASI runs, through the real `rt_wasm.wasm` and through the launcher.
+
+N2 appended the seventh pass, `alpha` (bit 6; "phases add passes at the end"), as an **object matte**:
+cut-outs and glass count as surfaces, as for every pass ray, and so the alpha is not the film's alpha of
+a transparent-background render where the path goes through glass or the floor shows a shadow; where
+only opaque objects and the background are, the two are equal bit for bit (a test renders both). The
+six planes of X2 keep their pinned hashes (`PASS_X2` is `PASS_ALL` without the alpha, and the tests
+and CI that pin them are over it); the alpha has pins of its own, `PINNED_PASS_ALPHA` (the example) and
+`PINNED_E5_PASS_ALPHA`. With adaptive sampling (E10) the alpha, like the albedo, has the samples of the
+first round.
 
 ## Geometry, BVH and SIMD
 
@@ -723,7 +735,10 @@ node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /t
 With `--passes` the tool also renders every exact pass interleaved with the image (per tile
 `rt_render_tile_passes` once, `rt_render_tile_albedo` after every sample) and prints each plane's
 hash; `--expect-passes h1,…,h6` (the `PINNED_PASS_*` or `PINNED_E5_PASS_*` values, in `PASS_KEYS`
-order) checks them, as CI does, and the image must keep its hash.
+order) checks them, as CI does, and the image must keep its hash. `--alpha` (N2) also renders the alpha
+pass, `rt_render_tile_alpha` after every sample, summed and divided like the image;
+`--expect-alpha h` (`PINNED_PASS_ALPHA` or `PINNED_E5_PASS_ALPHA`) checks its plane. It is a flag of
+its own so the six hashes of `--expect-passes` stay what X2 pinned.
 
 ## Produce the WebAssembly module
 
@@ -744,8 +759,9 @@ The module imports nothing (no WASI, no JavaScript glue). Exports:
 | `rt_scene_free(handle) -> status` | Forgets a scene |
 | `rt_render_tile(handle, x, y, w, h, sample_index, out_ptr) -> status` | Writes `w * h * 3` linear RGB floats for one sample of a tile |
 | `rt_render_tile_rgba(handle, x, y, w, h, sample_index, out_ptr) -> status` | The same with coverage: `w * h * 4` floats, RGB premultiplied by alpha (0 where a transparent background shows) |
-| `rt_render_tile_passes(handle, x, y, w, h, mask, out_ptr) -> status` | X2: the exact passes of `mask` (normal 2, depth 4, partId 8, materialId 16, coc 32; the albedo bit and unknown bits are ignored) of a tile, one plane after another in that order, `w * h * channels` little-endian words each (`f32`, `u32` for the ids). The same for every sample: once per tile |
+| `rt_render_tile_passes(handle, x, y, w, h, mask, out_ptr) -> status` | X2: the exact passes of `mask` (normal 2, depth 4, partId 8, materialId 16, coc 32; the albedo bit, the alpha bit and unknown bits are ignored) of a tile, one plane after another in that order, `w * h * channels` little-endian words each (`f32`, `u32` for the ids). The same for every sample: once per tile |
 | `rt_render_tile_albedo(handle, x, y, w, h, sample_index, out_ptr) -> status` | X2: the albedo of one sample of a tile, `w * h * 3` floats; the host sums the samples in index order in `f32` and divides like the image |
+| `rt_render_tile_alpha(handle, x, y, w, h, sample_index, out_ptr) -> status` | N2: the coverage of one sample of a tile, `w * h` floats (1 where that sample's camera ray met an instance, 0 otherwise; the mean of the sub-samples for an edge pixel); summed and divided like the albedo |
 
 Status: 0 ok, 1 bad handle, 2 empty or oversized tile, 3 null pointer, 4 invalid scene update (the
 message is the last load error; the scene is unchanged). The scene's lights are prepared once, when

@@ -219,7 +219,8 @@ pub fn read_passes(bytes: &[u8]) -> Option<(u32, u32, Passes)> {
                 0 => passes.albedo = floats,
                 1 => passes.normal = floats,
                 2 => passes.depth = floats,
-                _ => passes.coc = floats,
+                5 => passes.coc = floats,
+                _ => passes.alpha = floats,
             }
         }
     }
@@ -466,10 +467,16 @@ mod tests {
                 word(24),
                 word(28)
             ],
-            [32, 3, 2, 63, 5, 9, 0]
+            [32, 3, 2, 127, 5, 9, 0]
         );
-        // Planes in key order: albedo (18 words), normal (18), depth (6), then the part ids.
+        // Planes in key order: albedo (18 words), normal (18), depth (6), then the part ids; the
+        // alpha (N2) is the last, after the circle of confusion.
         assert_eq!(word(32 + (18 + 18 + 6) * 4), 9);
+        assert_eq!(
+            word(32 + (18 + 18 + 6 + 6 + 6 + 6) * 4),
+            0,
+            "alpha starts at 0"
+        );
         let (id, samples, back) = read_passes(&bytes).unwrap();
         assert_eq!((id, samples), (9, 5));
         assert_eq!(&back, r.passes.as_ref());
@@ -496,6 +503,7 @@ mod tests {
 
     /// The passes of `tests/fixtures/passes-3x2.rpp`: every plane a formula of the pixel index,
     /// the last pixel background, the one before it the floor (the page's reader checks the same).
+    /// N2 appended the alpha plane: the file's first six planes are the bytes X2 wrote.
     fn fixture_passes() -> Passes {
         let mut p = Passes::new(3, 2, PASS_ALL);
         for i in 0..6usize {
@@ -507,6 +515,7 @@ mod tests {
             p.part_id[i] = i as u32;
             p.material_id[i] = 2 * i as u32;
             p.coc[i] = i as f32 / 8.0;
+            p.alpha[i] = i as f32 / 5.0;
         }
         p.part_id[4] = rt_core::passes::FLOOR_ID;
         p.material_id[4] = rt_core::passes::FLOOR_ID;

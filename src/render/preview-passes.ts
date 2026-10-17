@@ -23,7 +23,7 @@
 import * as THREE from 'three';
 import { cocPass, type LensParams } from '../core/lens-coc';
 import { indexPassIds, type PassCamera, type PassFloor, type PassIds, type PassIndex } from '../core/pass-ids';
-import { FLOOR_ID, PASS_KEYS, type PassKey, type RenderPasses } from '../core/passes';
+import { AI_PASS_KEYS, FLOOR_ID, type PassKey, type RenderPasses } from '../core/passes';
 
 /** A visible part of the preview: its mesh (with current world matrix) and the material key of each geometry group. */
 export interface PassMesh {
@@ -327,7 +327,7 @@ function target(width: number, height: number, type: THREE.TextureDataType): THR
  */
 export function drawPasses(input: DrawPassesInput): RenderPasses {
   const { renderer, camera, width, height } = input;
-  const wanted = input.passes.length > 0 ? input.passes : PASS_KEYS;
+  const wanted = input.passes.length > 0 ? input.passes : AI_PASS_KEYS;
   const needs = (k: PassKey) => wanted.includes(k);
   const floor = input.ids.floor ?? null;
   // With a floor the parts' depth decides which is in front, even when no depth is asked for.

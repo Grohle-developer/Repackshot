@@ -10,7 +10,7 @@ import { aiFileName, failedItems, limitedPercent, previewSize, reportItems, swit
 import { cameraPosition, SENSOR_MM } from '../src/core/camera';
 import { cocDiameter, cocPass, hasDepthOfField, lensOf } from '../src/core/lens-coc';
 import { indexPassIds } from '../src/core/pass-ids';
-import { FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
+import { AI_PASS_KEYS, FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
 import { cameraToRsb, FLOOR_SHADOW_CATCHER, projectScene, writeRsb } from '../src/io/rsb';
 import { assemblePasses, floorHits, packId, unpackIds } from '../src/render/preview-passes';
 import { loadRt, renderWithPasses, RT_WASM } from './wasm-engine';
@@ -55,7 +55,7 @@ describe('assembling the planes', () => {
   // The model-space images of three's axes (toThree maps (x, y, z) to (x, z, -y)): +X, +Y → model +Z, +Z → model -Y.
   const axes = [[1, 0, 0], [0, 0, 1], [0, -1, 0]] as const;
   const lens = { focalMm: 85, fstop: 0, focusDist: 400, sensorMm: 36, ortho: false };
-  const out = assemblePasses({ part, material, nd, albedo }, 2, 2, axes, lens, PASS_KEYS);
+  const out = assemblePasses({ part, material, nd, albedo }, 2, 2, axes, lens, AI_PASS_KEYS);
 
   it('flips the rows, unpacks the ids and keeps the background 0', () => {
     expect([...out.partId!]).toEqual([0, 1, 2, 2]);
@@ -121,7 +121,7 @@ describe('the studio floor in the three.js passes (X3c)', () => {
     nd.set([0, 0, 1, d * 2], (W / 2) * 4);
     part.set(packId(2), (W / 2 + 1) * 4);
     nd.set([0, 0, 1, d / 2], (W / 2 + 1) * 4);
-    const out = assemblePasses({ part, material: part, nd, albedo: null }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, PASS_KEYS, one);
+    const out = assemblePasses({ part, material: part, nd, albedo: null }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, AI_PASS_KEYS, one);
     expect(out.partId![bottom]).toBe(FLOOR_ID);
     expect(out.materialId![bottom]).toBe(FLOOR_ID);
     expect(out.depth![bottom]).toBe(Math.fround(d));
@@ -143,11 +143,11 @@ describe('the studio floor in the three.js passes (X3c)', () => {
       const s = low(projection, elevation);
       const nodes = Object.fromEntries(Object.entries(s.scene.nodes).map(([k, n]) => [k, n.kind === 'PART' ? { ...n, visible: false } : n]));
       const floorOnly = { ...s, scene: { ...s.scene, nodes } };
-      const { scene, ids } = projectScene(floorOnly, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...PASS_KEYS] });
+      const { scene, ids } = projectScene(floorOnly, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...AI_PASS_KEYS] });
       expect(scene.instances).toEqual([]);
-      const engine = renderWithPasses(rt, writeRsb(scene), W, H, 1, passMask([...PASS_KEYS])).passes;
+      const engine = renderWithPasses(rt, writeRsb(scene), W, H, 1, passMask([...AI_PASS_KEYS])).passes;
       const empty = new Uint8Array(W * H * 4);
-      const out = assemblePasses({ part: empty, material: empty, nd: new Float32Array(W * H * 4), albedo: new Float32Array(W * H * 4) }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, PASS_KEYS, ids.floor!);
+      const out = assemblePasses({ part: empty, material: empty, nd: new Float32Array(W * H * 4), albedo: new Float32Array(W * H * 4) }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, AI_PASS_KEYS, ids.floor!);
       let floor = 0;
       let background = 0;
       let down = 0;

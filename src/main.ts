@@ -24,9 +24,10 @@ import './ui/guards.css';
 import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';
 import { notBuiltService } from './ai/not-built';
-import { buildPrompt, guardMaterials } from './ai/prompt';
+import { buildPrompt, guardMaterials, materialName as promptMaterialName } from './ai/prompt';
 import type { AiPostService, LinearImage } from './core/ai';
 import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
+import { enginePasses, type LegendPart } from './core/pass-files';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
@@ -37,7 +38,7 @@ import { openPluginStore } from './plugins/store';
 import { activeCamera, orbitPatch, type CameraState } from './core/camera';
 import { lookThroughAction, lookThroughCamera, sameObject, viewedCamera, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
-import { createInitialState, createStore } from './core/store';
+import { createInitialState, createStore, type ProjectState } from './core/store';
 import { autoExposure } from './core/image-passes';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
@@ -56,6 +57,8 @@ import { NativeInstaller } from './io/update-install';
 import { fetchLatestRelease } from './io/updates';
 import { lensInfoRsb, projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { decodeTexturePixels } from './io/texture-pixels';
+import { encodePassFiles } from './io/passes';
+import { zipStore } from './io/zip';
 import { loadCameraPictures } from './io/aperture';
 import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
@@ -789,6 +792,18 @@ const videoSupport = (): Promise<VideoSupport> => (videoProbe ??= probeVideo(vid
 const videoUi = (v: VideoSupport): VideoSupportUi => ({ MP4: v.MP4 ? 'H264' : null, WEBM: v.WEBM ? (v.WEBM.track === 'VP8' ? 'VP8' : 'VP9') : null });
 void videoSupport().then((v) => ui.set({ video: videoUi(v) }));
 
+/**
+ * N2: who each id of the part-id pass is: the engine's instance order (`projectScene(...).ids`, what `partId` counts from 1),
+ * with the part's name and the material it wears.
+ */
+function partLegendOf(project: ProjectState, camera?: string): LegendPart[] {
+  const { ids } = projectScene(project, { width: 16, height: 16, maxSamples: 1, maxSeconds: 0, ...(camera ? { camera } : {}) });
+  return ids.instances.map((inst, i) => {
+    const material = inst.material ? project.materials[inst.material] : undefined;
+    return { id: i + 1, part: project.scene.nodes[inst.node]?.name ?? inst.node, material: material ? promptMaterialName(material) : null };
+  });
+}
+
 const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
   viewport,
@@ -805,11 +820,17 @@ const services: AppServices = {
     // Render and every queue job use the path tracer, whatever the viewport shows; without the engine there is
     // no render (the preview is never passed off as one).
     if (!tracer) throw new Error(t('render.noEngine'));
+    // N2: a job with a saved studio renders a copy of the project with the studio on (the open one is not touched).
+    const project = req.state ?? store.get();
     // M2b: the texture images the engine reads, decoded before the scene is written.
-    await decodeTexturePixels(store.get());
+    await decodeTexturePixels(project);
     const linear = needsLinearSums(req.format, req.bitDepth);
     // The AI step of a Render on the desktop: the launcher keeps the image with the guard's passes (X3c).
     const kept = req.aiPasses === true && tracer instanceof NativeEngine;
+    // N2: the pass files asked for. With the AI step beside them the launcher renders both sets (and keeps them for the
+    // AI all the same), but then the page reads the planes back too, so they do not stay in the launcher alone.
+    const wanted = req.passes && req.passes.keys.length > 0 ? req.passes : null;
+    const passKeys = [...new Set([...(kept ? AI_GUARD_PASSES : []), ...(wanted ? enginePasses(wanted.keys) : [])])];
     const px = await tracer.renderPixels({
       width: req.width,
       height: req.height,
@@ -819,12 +840,14 @@ const services: AppServices = {
       transparent: req.transparent,
       signal: req.signal,
       keepLinear: linear,
+      ...(req.state ? { state: req.state } : {}),
       ...(req.camera ? { camera: req.camera } : {}),
       ...(req.time !== undefined ? { time: req.time } : {}),
       ...(req.advanced ? { advanced: req.advanced } : {}),
       // E10: Finish by Noise samples adaptively to its threshold.
       ...adaptiveOf({ finishBy: req.finishBy, noiseThreshold: req.noiseThreshold ?? DEFAULT_NOISE_THRESHOLD }),
-      ...(kept ? { passes: AI_GUARD_PASSES, passesInLauncher: true } : {}),
+      ...(passKeys.length > 0 ? { passes: passKeys } : {}),
+      ...(kept && !wanted ? { passesInLauncher: true } : {}),
       // U14: the queue's live view of the job (its box and cadence are the queue's).
       ...(req.frameBox && req.onFrame ? { frameBox: req.frameBox, onFrame: req.onFrame } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds, p.adaptive),
@@ -868,6 +891,13 @@ const services: AppServices = {
     const { file, display } = await encode(px.data, px.sum);
     // E5b-1, Also save without denoise: the same render before the engine's denoiser, in the same format.
     const noisyFile = px.noisy ? (await encode(px.noisy.data, px.noisy.sum)).file : undefined;
+    // N2: the pass files, from the planes the engine rendered with the image.
+    let extras: { name: string; blob: Blob }[] | undefined;
+    if (wanted) {
+      if (!px.passes) throw new Error(t('render.noPasses'));
+      const legend = wanted.keys.includes('partId') ? partLegendOf(project, req.camera) : undefined;
+      extras = (await encodePassFiles(px.passes, wanted, { imageName: req.imageName ?? 'render.png', dpi: req.dpi, ...(legend ? { legend } : {}) })).map((f) => ({ name: f.name, blob: f.blob }));
+    }
     return {
       file,
       display,
@@ -879,8 +909,11 @@ const services: AppServices = {
       ...(kept && px.renderId !== undefined ? { renderId: String(px.renderId) } : {}),
       ...(px.denoised ? { denoised: true } : {}),
       ...(noisyFile ? { noisyFile } : {}),
+      ...(extras ? { extras } : {}),
     };
   },
+  // N2: the ZIP of a batch, written by our own store-method writer.
+  archive: { zip: (entries) => zipStore(entries) },
   results: {
     persistent: async () => (await resultsReady).persistent,
     list: async () => (await resultsReady).list(),
