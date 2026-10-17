@@ -9,7 +9,8 @@ import type { DoctorCheckKey, IesRef, Label, Lang, SceneType, StudioPreset } fro
 import { sceneTypeEntry } from '../data/scene-types';
 import { aiFileName } from '../core/ai-post';
 import { aiImagesOf, aiVariantsOf } from '../core/results';
-import { activeCamera, type CameraId } from '../core/camera';
+import { activeCamera, type CameraId, type CameraState, type FocusMode } from '../core/camera';
+import { playheadPose } from '../core/animation';
 import { opticsOf } from '../core/optics';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import {
@@ -63,7 +64,7 @@ import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '..
 import { resolvePreset } from '../core/rig';
 import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
 import { isProjectName, PROJECT_EXTENSION } from '../core/project-names';
-import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
+import { focusCameraOf, focusModeAction, focusObjectAction, lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
 import { imageIdsInUse, retainImages } from '../core/images';
@@ -1967,6 +1968,54 @@ export function editCamera(ctx: Ctx, id: string): void {
   ctx.ui.set({ sceneTab: 'cameras' });
   ctx.store.dispatch({ type: 'scene/select', ids: [id], mode: 'set' });
   revealInspectorSection(ctx, 'cameraEdit');
+}
+
+// --- F1: focus by distance, point and object -------------------------------------------------
+
+/** The camera the focus commands act on: `camera` when named, else the one looked through, the shot's at the playhead or the active. */
+export function focusCamera(ctx: Ctx, camera?: string): CameraState | null {
+  const s = ctx.store.get();
+  return focusCameraOf(s, ctx.ui.get().lookThrough, playheadPose(s), camera);
+}
+
+/** Starts the pick of a focus point (the next click on a part), for `camera` or the camera that is seen; again ends it. */
+export function pickFocusPoint(ctx: Ctx, camera?: string): void {
+  const pm = ctx.ui.get().pickMode;
+  ctx.ui.set({ pickMode: pm?.kind === 'focus' ? null : { kind: 'focus', ...(camera ? { camera } : {}) } });
+}
+
+/** Starts the pick of an object to keep in focus (a part, group or model at the selection level); again ends it. */
+export function pickFocusObject(ctx: Ctx, camera?: string): void {
+  const pm = ctx.ui.get().pickMode;
+  ctx.ui.set({ pickMode: pm?.kind === 'focusObject' ? null : { kind: 'focusObject', ...(camera ? { camera } : {}) } });
+}
+
+/** Keeps a node in focus (the first of `ids`, the selection's by default): the scene tree's and the palette's way. */
+export function focusOnNodes(ctx: Ctx, ids?: readonly NodeId[], camera?: string): void {
+  const s = ctx.store.get();
+  const id = (ids ?? selectedNodes(s)).find((n) => s.scene.nodes[n]);
+  if (!id) return;
+  const action = focusObjectAction(s, ctx.ui.get().lookThrough, id, { label: L('undo.focusObject', { name: s.scene.nodes[id].name }) }, playheadPose(s), camera);
+  if (action) ctx.store.dispatch(action);
+}
+
+/**
+ * The camera's Focus mode (the segmented control): Distance keeps the distance it is focused at now; Point and Object
+ * go back to the point or the object it kept, or start their pick when it has none.
+ */
+export function setFocusMode(ctx: Ctx, mode: FocusMode, camera?: string): void {
+  const cam = focusCamera(ctx, camera);
+  if (!cam) return;
+  const s = ctx.store.get();
+  const action = focusModeAction(s, cam.id, mode, { label: L('undo.focusMode', { mode: L(dyn(`camera.focusMode.${mode}`)) }) }, playheadPose(s));
+  if (action) {
+    if (ctx.ui.get().pickMode?.kind === 'focus' || ctx.ui.get().pickMode?.kind === 'focusObject') ctx.ui.set({ pickMode: null });
+    ctx.store.dispatch(action);
+    return;
+  }
+  if (mode === 'POINT') pickFocusPoint(ctx, camera);
+  else if (mode === 'OBJECT') pickFocusObject(ctx, camera);
+  else if (ctx.ui.get().pickMode?.kind === 'focus' || ctx.ui.get().pickMode?.kind === 'focusObject') ctx.ui.set({ pickMode: null });
 }
 
 export function activateCamera(ctx: Ctx, id: string): void {

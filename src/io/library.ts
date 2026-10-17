@@ -9,6 +9,7 @@ import { IES_MAX_BYTES, parseIes } from '../core/ies';
 import type { IesRef, LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
 import { normaliseAspect } from '../core/aspect';
+import { normaliseFocus } from '../core/focus';
 import type { CameraState } from '../core/camera';
 import {
   COLLECTION,
@@ -371,6 +372,8 @@ function camera(v: unknown, path: string): CameraState {
     lens: o.lens === null ? null : str(o.lens, `${path}.lens`, 64),
     // U13: a studio saved before the camera carried its ratio has none (16:9, as every camera was).
     aspect: normaliseAspect(o.aspect),
+    // F1: its focus by point or by object (none before F1, or one that cannot be read: by distance).
+    ...normaliseFocus(o),
   };
 }
 

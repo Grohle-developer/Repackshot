@@ -787,7 +787,7 @@ export class PreviewEngine implements RenderEngine {
     // light's or a camera's gizmo follows the light (and the product it is placed around) and the camera.
     const objectsMoved = full || nodesChanged || state.studio !== prev.studio || state.camera !== prev.camera || state.scene.partSizeMm !== prev.scene.partSizeMm || state.render.width !== prev.render.width || state.render.height !== prev.render.height;
     if (this.gizmoSpec && (full || nodesChanged || planeMoved || state.selection !== prev.selection || (this.gizmoSpec.object && objectsMoved))) this.placeGizmo();
-    if (objectsMoved || state.selection !== prev.selection) this.syncGlyphs();
+    if (objectsMoved || poseChanged || state.selection !== prev.selection) this.syncGlyphs();
     this.needsRender = true;
   }
 
@@ -1701,7 +1701,9 @@ export class PreviewEngine implements RenderEngine {
 
   private syncGlyphs(): void {
     const s = this.state;
-    this.glyphs = s ? glyphsOf(s, this.glyphSpec) : [];
+    // F1: a camera's focus mark sits where its point is at the playhead.
+    const focusMark = this.glyphSpec.selected?.kind === 'CAMERA' && this.poseActive;
+    this.glyphs = s ? glyphsOf(s, { ...this.glyphSpec, pose: s && focusMark ? evaluate(s, s.animation.playhead) : null }) : [];
     const selected = this.glyphSpec.selected;
     const lines: number[] = [];
     const strong: number[] = [];
@@ -2037,6 +2039,53 @@ export class PreviewEngine implements RenderEngine {
     }
     const normal = face.normal.clone().transformDirection(hit.object.matrixWorld);
     const n = fromThree(normal);
+    return { node, face: hit.faceIndex ?? 0, point: fromThree(hit.point), normal: [n[0], n[1], n[2]] };
+  }
+
+  /** F1: a material that takes rays on both faces, for `pickAlong` (the engine's triangles have no back). */
+  private readonly bothSides = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+
+  /**
+   * F1, focus with a click: what the ray from `origin` along `dir` (model space: the engine's chief ray of the clicked
+   * pixel, render/focus-pick.ts) meets first, as the engine sees it: every visible part through both faces of each
+   * triangle (the engine's are two-sided; the view draws the front ones only, so a part seen from behind, or a face
+   * whose normal points away, let the old pick through to what lay behind it), and through a section what it keeps
+   * (`firstKept`, the caps included). Null when it meets nothing.
+   */
+  pickAlong(origin: Vec3, dir: Vec3): PickHit | null {
+    if (!this.state) return null;
+    const o = toThree(origin);
+    const d = toThree(dir).normalize();
+    if (![o.x, o.y, o.z, d.x, d.y, d.z].every(Number.isFinite)) return null;
+    this.raycaster.set(o, d);
+    this.raycaster.near = 0;
+    this.raycaster.far = Infinity;
+    const visible = (obj: THREE.Object3D): boolean => {
+      for (let p: THREE.Object3D | null = obj; p; p = p.parent) if (!p.visible) return false;
+      return true;
+    };
+    this.modelRoot.updateMatrixWorld(true);
+    const meshes = [...this.objects.values(), ...this.section.capMeshes()].filter((m): m is THREE.Mesh => m instanceof THREE.Mesh && visible(m));
+    // Both faces: each part casts with a two-sided material (one material for all its groups: every triangle counts).
+    // While a section cuts, the parts' materials are two-sided already and the caps decide the cut (`firstKept`).
+    const swap = this.section.active ? [] : meshes;
+    const own = swap.map((m) => m.material);
+    for (const m of swap) m.material = this.bothSides;
+    let hits: THREE.Intersection[];
+    try {
+      hits = this.raycaster.intersectObjects(meshes, false);
+    } finally {
+      swap.forEach((m, i) => (m.material = own[i]));
+    }
+    const found = this.section.firstKept(hits, this.raycaster.ray);
+    if (!found || !found.hit.face) return null;
+    const { hit, cap } = found;
+    const node = hit.object.userData.nodeId as NodeId;
+    if (cap) {
+      const n = fromThree(cap.normal);
+      return { node, face: hit.faceIndex ?? 0, point: fromThree(cap.point), normal: [n[0], n[1], n[2]] };
+    }
+    const n = fromThree(hit.face!.normal.clone().transformDirection(hit.object.matrixWorld));
     return { node, face: hit.faceIndex ?? 0, point: fromThree(hit.point), normal: [n[0], n[1], n[2]] };
   }
 

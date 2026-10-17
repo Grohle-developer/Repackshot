@@ -47,6 +47,31 @@ export interface CameraState {
    * viewport's frame and the render window's size follow the active camera's.
    */
   aspect: CameraAspect;
+  /**
+   * F1: how the focus is set (core/focus.ts). DISTANCE (absent on cameras made before F1, which read as it): the
+   * typed `focusDistance`. POINT: a point picked with a click, `focusPoint`, which stays in focus whatever the camera
+   * or its part does. OBJECT: a part, group or model, `focusObject`, followed the same way. In POINT and OBJECT the
+   * focus distance is worked out from the camera and the point wherever it is needed (core/focus.ts
+   * `resolvedFocusDistance`), and `focusDistance` keeps the last one it came to at rest, which the camera falls back
+   * to when the point's part or the object is gone.
+   */
+  focusMode?: FocusMode;
+  /** F1, POINT: the picked point, anchored to the part it hit (in that part's own coordinates). */
+  focusPoint?: FocusPoint | null;
+  /** F1, OBJECT: the part, group or model the focus follows. */
+  focusObject?: NodeId | null;
+}
+
+/** F1: how a camera's focus is set (CameraState.focusMode). */
+export type FocusMode = 'DISTANCE' | 'POINT' | 'OBJECT';
+
+/** F1: the modes, in the order the inspector shows them. */
+export const FOCUS_MODES: readonly FocusMode[] = ['DISTANCE', 'POINT', 'OBJECT'];
+
+/** F1: a focus point anchored to a part: the part and the point in its own coordinates (mm). */
+export interface FocusPoint {
+  node: NodeId;
+  point: Vec3;
 }
 
 /** Width of the reference sensor, millimetres (applies to the longer image side). */
@@ -308,7 +333,9 @@ export function sameView(cam: CameraState, patch: Partial<Omit<CameraState, 'id'
  * True when the focus plane still sits at the orbit distance, as a fresh or orbited camera has it. A focus that was
  * picked or typed is somewhere else, and orbiting must not drag it back to the target.
  */
-export function focusFollowsOrbit(cam: Pick<CameraState, 'focusDistance' | 'distance'>): boolean {
+export function focusFollowsOrbit(cam: Pick<CameraState, 'focusDistance' | 'distance' | 'focusMode'>): boolean {
+  // F1: a focus on a point or an object follows that (core/focus.ts), not the orbit.
+  if (cam.focusMode === 'POINT' || cam.focusMode === 'OBJECT') return false;
   return Math.abs(cam.focusDistance - cam.distance) <= Math.max(cam.distance, 1) * 1e-6;
 }
 

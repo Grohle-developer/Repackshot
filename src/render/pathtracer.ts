@@ -77,6 +77,8 @@ export interface TracerView {
   camera?: string;
   cameraPatch?: Partial<Omit<CameraState, 'id'>>;
   viewport?: { viewW: number; viewH: number };
+  /** F1: a gesture's frames: a traced lens's followed focus takes the engine's last answer (io/rsb.ts SceneView). */
+  focusFast?: boolean;
   /** Animation: the instant whose pose is rendered. */
   time?: number;
   /** Advanced engine settings (bounces, indirect clamp, seed). */
@@ -948,6 +950,8 @@ export class PathTracerEngine implements RenderEngine {
       maxSeconds: 0,
       viewport: { viewW: this.viewW, viewH: this.viewH },
       ...(this.cameraPatch(state, patch) ? { cameraPatch: this.cameraPatch(state, patch)! } : {}),
+      // F1: a gesture's frames do not solve a traced lens's focus again (the store's view at rest does).
+      ...(scale > 1 ? { focusFast: true } : {}),
       // Caustics; the denoise is the live switch (U11), so the scene is the same either way: a full-resolution view
       // can always be denoised (a gesture's frames are gone before a denoise would finish).
       ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),

@@ -28,16 +28,16 @@ import { buildPrompt, guardMaterials } from './ai/prompt';
 import type { AiPostService, LinearImage } from './core/ai';
 import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
-import { evaluate, totalDuration } from './core/animation';
+import { evaluate, playheadPose, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
 import { PLUGIN_REGISTRY, validEntries, type PluginRegistryEntry } from './data/plugins';
 import { PluginHost, type WorkerLike } from './plugins/host';
 import { PluginsService } from './plugins/service';
 import { openPluginStore } from './plugins/store';
 import { activeCamera, orbitPatch, type CameraState } from './core/camera';
-import { lookThroughAction, lookThroughCamera, sameObject, viewedCamera, type ViewObject } from './core/view-objects';
+import { focusPickAction, lookThroughAction, lookThroughCamera, sameObject, viewedCamera, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
-import { createInitialState, createStore } from './core/store';
+import { createInitialState, createStore, reduce } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
 import { buildExample } from './core/example';
@@ -53,7 +53,7 @@ import { readPref, writePref } from './io/prefs';
 import { readProjectFile, serializeProject } from './io/project';
 import { NativeInstaller } from './io/update-install';
 import { fetchLatestRelease } from './io/updates';
-import { lensInfoRsb, projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { focusPickRsb, lensInfoRsb, projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { decodeTexturePixels } from './io/texture-pixels';
 import { loadCameraPictures } from './io/aperture';
 import { onAperturePicture } from './core/aperture';
@@ -63,6 +63,8 @@ import { msaaSamples } from './core/antialias';
 import { PreviewEngine } from './render/preview';
 import { hasParticleExport } from './render/particles';
 import { hasLensInfoExport, readLensInfo } from './render/lens-info';
+import { enginePick, focusSolverOf, hasFocusExports, settledFocusPick } from './render/focus-pick';
+import { setFocusSolver } from './core/focus';
 import { parseLensInfo, type EngineLensInfo } from './core/traced-lens';
 import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
 import { PhysicsClient } from './render/physics';
@@ -311,6 +313,47 @@ async function engineLensInfo(cam: CameraState): Promise<EngineLensInfo | null |
   lensInfoCache.set(key, info);
   return info;
 }
+// F1: focus with a click. The pixel's chief ray comes from the engine (render/focus-pick.ts), for the camera of the view
+// exactly as the Full view renders it (io/rsb.ts focusPickRsb: the playhead's pose, the camera looked through and its
+// frame, the viewport's image round the frame, a traced lens's distortion), and the preview casts it at its geometry
+// through both faces (as the engine's triangles are): the point the pixel shows. Without rt.wasm, or with one older than
+// F1, the preview's own pick.
+async function focusPickAt(x: number, y: number, opts: { settle?: boolean; camera?: string } = {}): Promise<ReturnType<NonNullable<typeof preview>['pick']>> {
+  const p = preview;
+  if (!p) return null;
+  const exports = await pageEngine();
+  const { w, h } = lastSize;
+  if (exports && hasFocusExports(exports) && w > 0 && h > 0) {
+    const look = lookingThrough;
+    const rsbOf = (s: ProjectStateOf) => {
+      const through = viewCameraFn?.(s) ?? null;
+      const cameraPatch = through ? (({ id: _id, ...rest }) => rest)(through) : undefined;
+      return focusPickRsb(s, { width: w, height: h, viewport: { viewW: w, viewH: h }, ...(cameraPatch ? { cameraPatch } : {}) });
+    };
+    // Focus on a point of the camera seen: the pick settles through the camera focused on what it meets (a traced
+    // lens breathes). A pick for another camera, or for an object, is the first one.
+    const focusedOn = opts.settle
+      ? (s: ProjectStateOf, hit: { node: string; point: [number, number, number] }) => {
+          const a = focusPickAction(s, look, hit, { label: '' }, playheadPose(s), opts.camera);
+          return a ? reduce(s, a) : null;
+        }
+      : null;
+    const cast = (o: [number, number, number], d: [number, number, number]) => p.pickAlong(o, d);
+    const hit = settledFocusPick(exports, store.get(), x / w, y / h, rsbOf, cast, focusedOn);
+    if (hit) return hit;
+    if (enginePick(exports, rsbOf(store.get()), x / w, y / h)) return null;
+  }
+  return p.pick(x, y);
+}
+// F1: a traced lens's exact focus on a point (the engine solves it from the lens's real rays: its spherical aberration
+// and field curvature put the sharpest image millimetres away from the paraxial focus wide open), for the camera of the
+// output frame (io/rsb.ts lensInfoRsb), the last answers kept.
+void pageEngine().then((exports) => {
+  if (!exports || !hasFocusExports(exports)) return;
+  setFocusSolver(focusSolverOf(exports, (cam) => lensInfoRsb(cam, cam.aspect.w, cam.aspect.h)));
+  // The Full view's focus on a point through a traced lens is the exact one from now on.
+  tracer?.sceneChanged();
+});
 // The particle cap of the engine that renders here (Settings ▸ Render engine ▸ Particles per effect): the Doctor
 // warns about what goes over it and the scene sent to the engine holds at most that many.
 const applyParticleCap = () => {
@@ -514,6 +557,8 @@ const viewport: ViewportPort | null = preview
       },
       // Picking is geometry: the preview's, in both modes.
       pick: (x, y) => preview!.pick(x, y),
+      // F1: focus with a click casts the engine's own ray of the pixel (the Full view's camera), else the preview's.
+      pickFocus: (x, y, opts) => focusPickAt(x, y, opts),
       setHover: (ids) => preview!.setHover(ids),
       setSelectedEffect: (id) => preview!.setSelectedEffect(id),
       setHoverFaces: (spec) => preview!.setHoverFaces(spec),

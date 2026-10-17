@@ -207,6 +207,13 @@ export function lengthIn(mm: number, unit: LengthUnit = lengthUnit): number {
   return mm / UNIT_TO_MM[unit];
 }
 
+/** A length in the interface units with the unit's name, for a sentence (F1's notice): as many decimals as its field. */
+export function lengthText(mm: number): string {
+  const k = UNIT_TO_MM[lengthUnit];
+  const digits = lengthUnit === 'mm' ? 0 : Math.ceil(Math.log10(k));
+  return `${formatNumber(mm / k, getLang(), digits)} ${t(`set.general.units.${lengthUnit}` as StringKey)}`;
+}
+
 /**
  * A NumberField for a length the model keeps in millimetres, shown and typed in the interface units (mm, cm, m,
  * in). Steps become the power of ten nearest to the same length; the decimals grow with the unit.
@@ -233,17 +240,29 @@ export function lengthField(p: NumberFieldProps): Control<number> {
 export interface SliderProps extends NumberFieldProps {
   min: number;
   max: number;
+  /**
+   * F1: the slider's own scale (a logarithmic one for a distance that spans orders of magnitude): `toUnit` puts a value
+   * at 0..1 along the slider and `fromUnit` takes it back; read at every move, so the range can follow the scene. The
+   * field keeps the value and its own limits (`min`, `max`). Absent: linear between `min` and `max`.
+   */
+  scale?: { toUnit(value: number): number; fromUnit(unit: number): number };
 }
+
+/** Positions of a slider with its own scale (F1). */
+const SCALE_STEPS = 1000;
 
 /** A slider always paired with its value field. */
 export function slider(p: SliderProps): Control<number> {
   const step = p.step ?? 0.01;
+  const sc = p.scale;
+  const position = (v: number): string => (sc ? String(Math.round(Math.min(1, Math.max(0, sc.toUnit(v))) * SCALE_STEPS)) : String(v));
+  const valueAt = (pos: string): number => (sc ? clampTo(roundTo(sc.fromUnit(Number(pos) / SCALE_STEPS), step / 10), p.min, p.max) : Number(pos));
   const range = h('input', {
     type: 'range',
-    min: p.min,
-    max: p.max,
-    step,
-    value: p.value,
+    min: sc ? 0 : p.min,
+    max: sc ? SCALE_STEPS : p.max,
+    step: sc ? 1 : step,
+    value: position(p.value),
     'aria-label': p.ariaLabel ?? p.label ?? '',
     disabled: p.disabled,
   }) as HTMLInputElement;
@@ -251,7 +270,7 @@ export function slider(p: SliderProps): Control<number> {
   const field = numberField({
     ...p,
     onChange: (v, g) => {
-      range.value = String(v);
+      range.value = position(v);
       p.onChange(v, g);
     },
   });
@@ -273,7 +292,7 @@ export function slider(p: SliderProps): Control<number> {
   });
   range.addEventListener('keydown', () => (gesture = newGesture('slide')));
   range.addEventListener('input', () => {
-    const v = Number(range.value);
+    const v = valueAt(range.value);
     field.set(v);
     p.onChange(v, gesture);
   });
@@ -281,10 +300,35 @@ export function slider(p: SliderProps): Control<number> {
   return {
     el,
     set(v) {
-      if (!dragging) range.value = String(v);
+      if (!dragging) range.value = position(v);
       field.set(v);
     },
   };
+}
+
+/**
+ * A slider for a length the model keeps in millimetres (F1, the camera's focus distance), shown and typed in the
+ * interface units like `lengthField`; its `scale` works in millimetres.
+ */
+export function lengthSlider(p: SliderProps): Control<number> {
+  const unit = lengthUnit;
+  if (unit === 'mm') return slider({ ...p, unit: p.unit ?? 'mm' });
+  const k = UNIT_TO_MM[unit];
+  const step = 10 ** Math.round(Math.log10((p.step ?? 1) / k));
+  const digits = (p.digits ?? (p.step !== undefined && p.step < 1 ? 2 : 0)) + Math.ceil(Math.log10(k));
+  const sc = p.scale;
+  const ctl = slider({
+    ...p,
+    value: p.value / k,
+    min: p.min / k,
+    max: p.max / k,
+    step,
+    digits,
+    unit: t(`set.general.units.${unit}` as StringKey),
+    ...(sc ? { scale: { toUnit: (v: number) => sc.toUnit(v * k), fromUnit: (u: number) => sc.fromUnit(u) / k } } : {}),
+    onChange: (v, g) => p.onChange(v * k, g),
+  });
+  return { el: ctl.el, set: (mm) => ctl.set(mm / k) };
 }
 
 export interface SegOption<T extends string> {

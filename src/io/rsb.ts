@@ -20,6 +20,7 @@ import { flattenGraph } from '../core/material-preview';
 import { compileGraph, encodeProgram, OUTPUT_KEYS, type Program } from '../core/material-program';
 import type { MaterialGraph } from '../core/material-graph';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
+import type { CameraAspect } from '../core/aspect';
 import { kelvinToRgb } from '../core/light-math';
 import { iesBytesOf, iesProfileOf, iesSpot } from '../core/ies';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -34,6 +35,7 @@ import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../co
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
 import { filtersOf, isNeutralOptics, type CameraOptics, type LensFilter } from '../core/optics';
+import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
 import { lensFilterType } from '../data/lens-filters';
 import type { CoatingId, LensSurface } from '../data/lenses';
@@ -200,6 +202,12 @@ export interface RsbLens {
   filters?: RsbLensFilter[];
   /** O2: the traced lens, after the filter slots (absent: the thin lens). */
   prescription?: RsbPrescription;
+  /**
+   * F1: after the prescription, the output frame's sensor along its longer side (mm) when the camera's sensor covers more
+   * than the frame (a viewport's image): the traced lens derives what belongs to the frame's corner from it, so the
+   * viewport sees the lens of the render. Absent or 0: the camera's own (and the bytes of before).
+   */
+  frameSensorMm?: number;
 }
 
 /** `LENS` surface kinds (rt-core `optics::traced::SURFACE_*`). */
@@ -743,7 +751,7 @@ function writesFilterSlots(l: RsbLens): boolean {
 /** A LENS payload: the numbers, the picture, zero padding to a multiple of four, the filters when there are any (or a prescription), and the prescription. */
 function lensBytes(l: RsbLens): number {
   const filters = writesFilterSlots(l) ? LENS_FILTER_SLOTS * LENS_FILTER_BYTES : 0;
-  const traced = l.prescription ? prescriptionSize(l.prescription) : 0;
+  const traced = l.prescription ? prescriptionSize(l.prescription) + (l.frameSensorMm ? 4 : 0) : 0;
   return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4) + filters + traced;
 }
 
@@ -909,7 +917,10 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
           w.u32(f.points);
         }
       }
-      if (lens.prescription) w.raw(prescriptionBytes(lens.prescription));
+      if (lens.prescription) {
+        w.raw(prescriptionBytes(lens.prescription));
+        if (lens.frameSensorMm) w.f32(lens.frameSensorMm);
+      }
     });
   }
   for (const m of scene.materials) {
@@ -1103,6 +1114,11 @@ export interface SceneView {
   camera?: CameraId;
   /** The camera as a gesture has it right now (orbit, pan, zoom before the store hears of it). */
   cameraPatch?: Partial<Omit<CameraState, 'id'>>;
+  /**
+   * F1: the frames of a gesture: a traced lens's focus on a point or an object takes the engine's last answer for the
+   * lens instead of solving it again (core/focus.ts `resolvedFocusDistance`).
+   */
+  focusFast?: boolean;
   /**
    * The viewport: the image covers a view of `viewW x viewH` CSS pixels in which the output
    * frame sits inset exactly as the preview draws it (`outputFrameRect`). Absent: the image is
@@ -1521,6 +1537,9 @@ export function cameraToRsb(cam: CameraState, outW: number, outH: number, width:
   }
   const ortho = cam.projection === 'ORTHOGRAPHIC';
   const lens = !ortho && cam.optics && !isNeutralOptics(cam.optics) ? lensToRsb(cam.optics, outW, outH) : null;
+  // F1: the sensor of a viewport's image covers the frame and what lies around it; a traced lens is still the frame's
+  // (its rims, the corner its artistic distortion is measured against), so the Full view and the render agree.
+  if (lens?.prescription && sensorMm !== SENSOR_MM) lens.frameSensorMm = SENSOR_MM;
   return {
     position: cameraPosition(cam),
     target: [cam.target[0], cam.target[1], cam.target[2]],
@@ -1800,13 +1819,15 @@ export function currentPose(state: ProjectState): Pose | null {
   return playheadPose(state);
 }
 
-/** The engine's scene for a project state and a view. */
-export function projectScene(state: ProjectState, view: SceneView): ProjectScene {
-  const pose = view.pose === undefined ? currentPose(state) : view.pose;
-  const width = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.width)));
-  const height = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.height)));
-
-  // Camera: the one asked for, the shot's when an animation poses it, a gesture's live view.
+/**
+ * The camera a view renders and the frame it takes (what `projectScene` writes): the one asked for, the shot's when an
+ * animation poses it, then a gesture's live view or the camera looked through (`cameraPatch`); the frame of a viewport
+ * image is the image of the camera on screen, with its ratio (U13): a camera looked through has its own (F1: it used to
+ * take the active camera's, and the Full view showed another picture than the one the click was picked on), the shot's
+ * camera of an animation the output's. Its focus distance is the one it resolves to as it is now (F1, core/focus.ts:
+ * a point or an object it follows, from the camera and the scene at the pose; `focusFast` for a gesture's frames).
+ */
+export function viewCamera(state: ProjectState, view: Pick<SceneView, 'camera' | 'cameraPatch' | 'focusFast'>, pose: Pose | null): { cam: CameraState; frame: CameraAspect } {
   const chosen = (view.camera && state.camera.cameras[view.camera]) || activeCamera(state);
   let cam: CameraState = chosen;
   if (!view.camera && pose?.camera) {
@@ -1814,8 +1835,42 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     cam = { ...base, ...pose.camera, id: base.id };
   }
   if (view.cameraPatch) cam = { ...cam, ...view.cameraPatch };
-  // The frame of a viewport image is the image of the camera on screen, with its ratio (U13).
-  const frame = chosen.aspect;
+  const frame = view.cameraPatch?.aspect ?? chosen.aspect;
+  cam = { ...cam, focusDistance: resolvedFocusDistance(state, cam, pose, { fast: view.focusFast === true }) };
+  return { cam, frame };
+}
+
+/**
+ * F1: the scene the engine reads to tell what a view's pixel shows (`rt_scene_pick`, focus with a click): the camera of
+ * `view` exactly as `projectScene` writes it (the pose, the camera looked through, the viewport's frame inset in its
+ * image), at the view's size, and nothing else: the engine gives the chief ray of a point of that image, and the
+ * viewport finds what it meets.
+ */
+export function focusPickRsb(state: ProjectState, view: Pick<SceneView, 'width' | 'height' | 'camera' | 'cameraPatch' | 'viewport' | 'pose'>): Uint8Array {
+  const pose = view.pose === undefined ? currentPose(state) : view.pose;
+  const width = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.width)));
+  const height = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.height)));
+  const { cam, frame } = viewCamera(state, view, pose);
+  return writeRsb({
+    camera: cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport),
+    materials: [],
+    meshes: [],
+    instances: null,
+    lights: [],
+    environment: defaultEnvironment(),
+    floor: defaultFloor(),
+    render: { ...defaultRender(), width, height },
+    bitmaps: [],
+  });
+}
+
+/** The engine's scene for a project state and a view. */
+export function projectScene(state: ProjectState, view: SceneView): ProjectScene {
+  const pose = view.pose === undefined ? currentPose(state) : view.pose;
+  const width = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.width)));
+  const height = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.height)));
+
+  const { cam, frame } = viewCamera(state, view, pose);
   const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
 
   // Geometry: a mesh per distinct (mesh, shading, face groups), an instance per visible part.

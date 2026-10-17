@@ -295,6 +295,8 @@ export function readLens(p: DataView): RsbLens {
         aspheric: [t.f32(), t.f32(), t.f32(), t.f32()] as [number, number, number, number],
       }));
       l.prescription = { stop, focusMode, fNumberMin, magnification: [m0, m1], distortion, vignetting, spherical, breathing, moving, surfaces };
+      // F1: the frame's sensor after the prescription, when the image covers more than the frame.
+      if (t.remaining >= 4) l.frameSensorMm = t.f32();
     }
   }
   return l;

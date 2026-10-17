@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { activeCamera, cameraBasis, cameraPosition, focusDistanceTo, focusFollowsOrbit, orbitPatch, type CameraState } from '../src/core/camera';
 import { add, dot, length, normalize, scale, sub, type Vec3 } from '../src/core/math';
-import { createStore } from '../src/core/store';
+import { allParts } from '../src/core/scene';
+import { createStore, type ProjectState } from '../src/core/store';
 import { focusPickAction, lookThroughAction, objectGizmoAction, type ViewObject } from '../src/core/view-objects';
 import { apply, exampleState } from './helpers';
 
@@ -43,6 +44,8 @@ describe('focus with a click (user report: the click did not focus exactly on th
 // The view the navigation reports when a gesture ends (preview.ts ViewChange): the camera's own orbit.
 const viewOf = (c: CameraState) => ({ azimuth: c.azimuth, elevation: c.elevation, distance: c.distance, target: c.target });
 const pickPoint = (c: CameraState, along: number): Vec3 => add(cameraPosition(c), scale(cameraBasis(c.azimuth, c.elevation).forward, along));
+/** A click's hit (F1: a point on a part): the example's first part, at `point`. */
+const hitAt = (s: ProjectState, point: Vec3) => ({ node: allParts(s)[0], point });
 
 describe('orbit patch (user report: Focus with a click was undone by the same click)', () => {
   const fresh = activeCamera(exampleState());
@@ -86,16 +89,17 @@ describe('orbit patch (user report: Focus with a click was undone by the same cl
     const store = createStore(exampleState());
     const cam = activeCamera(store.get());
     const point = pickPoint(cam, cam.distance - 28);
-    store.dispatch(focusPickAction(store.get(), null, point, { label: 'focus click' })!);
+    store.dispatch(focusPickAction(store.get(), null, hitAt(store.get(), point), { label: 'focus click' })!);
     const picked = activeCamera(store.get());
+    expect(picked.focusMode).toBe('POINT');
     expect(picked.focusDistance).toBeCloseTo(cam.distance - 28, 6);
     // main.ts: preview.onViewChange(view) on the pointer-up of that same click.
     const patch = orbitPatch(picked, viewOf(picked));
     if (patch) store.dispatch({ type: 'camera/set', id: picked.id, patch, label: 'orbit' });
     expect(activeCamera(store.get()).focusDistance).toBeCloseTo(cam.distance - 28, 6);
     expect(store.history().undo.at(-1)).toBe('focus click');
-    // Typed focus, then a click that selects a part: the same.
-    store.dispatch({ type: 'camera/set', id: picked.id, patch: { focusDistance: 638 } });
+    // Typed focus (Focus ▸ Distance), then a click that selects a part: the same.
+    store.dispatch({ type: 'camera/set', id: picked.id, patch: { focusMode: 'DISTANCE', focusDistance: 638 } });
     const typed = activeCamera(store.get());
     expect(orbitPatch(typed, viewOf(typed))).toBeNull();
   });
@@ -128,9 +132,9 @@ describe('focus with a click, measured from the camera that is seen', () => {
   it('the active camera when nothing is looked through', () => {
     const s = exampleState();
     const cam = activeCamera(s);
-    const a = focusPickAction(s, null, pickPoint(cam, 500))!;
-    expect(a).toMatchObject({ type: 'camera/set', id: cam.id });
-    expect(a.type === 'camera/set' && a.patch.focusDistance).toBeCloseTo(500, 6);
+    const a = focusPickAction(s, null, hitAt(s, pickPoint(cam, 500)))!;
+    expect(a).toMatchObject({ type: 'camera/set', id: cam.id, patch: { focusMode: 'POINT' } });
+    expect(activeCamera(apply(s, a)).focusDistance).toBeCloseTo(500, 6);
   });
 
   it('looking through a saved camera, that camera takes the focus, measured from it', () => {
@@ -139,9 +143,9 @@ describe('focus with a click, measured from the camera that is seen', () => {
     s = apply(s, { type: 'camera/set', id: side, patch: { azimuth: 75, elevation: 5, distance: 700 } }, { type: 'camera/activate', id: 'cam1' });
     const seen = s.camera.cameras[side];
     const point = pickPoint(seen, 420);
-    const a = focusPickAction(s, { kind: 'CAMERA', id: side }, point)!;
+    const a = focusPickAction(s, { kind: 'CAMERA', id: side }, hitAt(s, point))!;
     expect(a).toMatchObject({ type: 'camera/set', id: side });
-    expect(a.type === 'camera/set' && a.patch.focusDistance).toBeCloseTo(420, 6);
+    expect(apply(s, a).camera.cameras[side].focusDistance).toBeCloseTo(420, 6);
     // The active camera sees that point at another distance: it is not the one measured.
     expect(Math.abs(focusDistanceTo(activeCamera(s), point) - 420)).toBeGreaterThan(1);
     expect(apply(s, a).camera.cameras.cam1.focusDistance).toBe(activeCamera(s).focusDistance);
@@ -151,8 +155,8 @@ describe('focus with a click, measured from the camera that is seen', () => {
     const s = apply(exampleState(), { type: 'studio/addLight', kind: 'SPOT' });
     const spot = s.studio.lights[s.studio.lights.length - 1];
     const cam = activeCamera(s);
-    const a = focusPickAction(s, { kind: 'LIGHT', id: spot.id }, pickPoint(cam, 610))!;
+    const a = focusPickAction(s, { kind: 'LIGHT', id: spot.id }, hitAt(s, pickPoint(cam, 610)))!;
     expect(a).toMatchObject({ type: 'camera/set', id: cam.id });
-    expect(a.type === 'camera/set' && a.patch.focusDistance).toBeCloseTo(610, 6);
+    expect(activeCamera(apply(s, a)).focusDistance).toBeCloseTo(610, 6);
   });
 });
