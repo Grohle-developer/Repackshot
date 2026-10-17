@@ -532,7 +532,7 @@ summary.sw-block-title {
   opacity: 0.8;
 }
 .sw-aa-rank {
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .sw-aa-option[aria-checked='true'] .sw-aa-rank {
   color: inherit;

@@ -8,13 +8,15 @@
 // `ink-3` is the grey of what is off: disabled controls, hidden rows, separators, grips, the empty picture of a
 // thumbnail. WCAG 1.4.3 does not ask a contrast of inactive controls or of decoration, and raising it to 4.5:1 would put
 // it on top of `ink-2` (both #5f5f5f in the light theme): it is measured and kept under `ink-2`, with no floor of its
-// own in the plain themes; in high contrast it reaches 4.5:1 too.
+// own in the plain themes; in high contrast it reaches 4.5:1 too. Text that is read is not on it: the stylesheets are
+// scanned, and every rule that paints text in `ink-3` must be a disabled control or decoration (C1 moved the four that
+// were text, the *coming soon* label, the antialias rank and the names of hidden and switched-off rows, to `ink-2`).
 //
 // Surfaces: the solid greys (bg-0…bg-3 and the hover grey), the translucent `soft` composited over bg-0 (what it sits
 // on), and the translucent `overlay` composited over the viewport grey (the chrome over the viewport: the render behind
 // it is content, so the viewport grey is the backdrop the design assumes). The inverted pair is inv-ink on inv-bg.
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { composite, contrast, parseColour, ruleTokens, type Rgb } from './ui-tokens';
 
@@ -122,5 +124,41 @@ describe('text tokens reach their tier on the surfaces they sit on (7:1 primary,
     const ink3 = light.filter((p) => p.text === 'ink-3').map((p) => p.ratio);
     expect(Math.min(...ink3)).toBeLessThan(SECONDARY_RATIO);
     expect(Math.max(...light.filter((p) => p.text === 'ink-0').map((p) => p.ratio))).toBeGreaterThan(20);
+  });
+});
+
+/** Every rule of the interface's stylesheets with the colour of its text: selector (whitespace folded) and token. */
+function textColours(): { file: string; selector: string; ink: string }[] {
+  const out: { file: string; selector: string; ink: string }[] = [];
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => (statSync(`${dir}/${name}`).isDirectory() ? walk(`${dir}/${name}`) : name.endsWith('.css') ? [`${dir}/${name}`] : []));
+  for (const file of walk('src/ui')) {
+    const text = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const colour = /(?:^|[;\s])color:\s*var\(--(ink-\d)\)/.exec(m[2]);
+      if (colour) out.push({ file, selector: m[1].trim().replace(/\s+/g, ' '), ink: colour[1] });
+    }
+  }
+  return out;
+}
+
+/** What `ink-3` may paint: a disabled or rejected control, or decoration (separators, grips, placeholder pictures). */
+const OFF_ROLE = /:disabled|\.is-disabled|\.is-rejected|-sep\b|-grip\b|-icon\b|-pic-empty\b/;
+
+describe('C1: text that is read is not painted in the grey of what is off', () => {
+  it('every rule with ink-3 text is a disabled control or decoration', () => {
+    const rules = textColours();
+    expect(rules.length).toBeGreaterThan(50);
+    const text = rules.filter((r) => r.ink === 'ink-3' && !r.selector.split(',').every((part) => OFF_ROLE.test(part)));
+    expect(text.map((r) => `${r.file}: ${r.selector}`)).toEqual([]);
+  });
+
+  it('the coming-soon label, the antialias rank and the hidden and switched-off rows are secondary text (4.5:1)', () => {
+    const rules = textColours();
+    for (const selector of ['.fx-card-soon', '.sw-aa-rank', '.tree-row.is-hidden .tree-name', '.list-row.is-off .list-main']) {
+      const rule = rules.find((r) => r.selector.split(',').map((x) => x.trim()).includes(selector));
+      expect(rule?.ink, selector).toBe('ink-2');
+    }
+    // And ink-2 is 4.5:1 or more on every surface of every theme (above), so they are too.
+    for (const t of Object.values(THEMES)) expect(Math.min(...pairsOf(t).filter((p) => p.text === 'ink-2').map((p) => p.ratio))).toBeGreaterThanOrEqual(SECONDARY_RATIO);
   });
 });
