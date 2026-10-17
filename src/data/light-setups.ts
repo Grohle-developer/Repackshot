@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type {
   LightRole,
   LightSetup,
@@ -11,11 +9,10 @@ import type {
   SpecDefaults,
 } from './types';
 
-// Light-setup catalogue: the 16 sets of L6 first (style SETS, designed for Repackshot), then upstream LIGHT_SETUPS
-// (72 recipes, in upstream order, PRESET first), then the 7 of the Interior style (K1, designed for Repackshot, at the
-// end so that no earlier key moves). Each recipe defines the SHAPE and TONE of the light: how many
-// sources, where, how big, what colour. The LEVEL still comes from the product
-// preset (see core/rig.ts), so changing setup does not change the exposure.
+// Light-setup catalogue: the 16 sets of L6 first (style SETS), then the 72 recipes of the base catalogue (in their
+// order, PRESET first), then the 7 of the Interior style (K1, at the end so that no earlier key moves). Each
+// recipe defines the SHAPE and TONE of the light: how many sources, where, how big, what colour. The LEVEL still
+// comes from the product preset (see core/rig.ts), so changing setup does not change the exposure.
 //
 // Reference system: `az` is relative to the camera axis, 0 behind the camera,
 // negative camera-left, positive camera-right, 180 behind the part. `el` is
@@ -93,7 +90,7 @@ export const LIGHT_ROLES: Readonly<Record<LightRole, Omit<ResolvedLight, 'role'>
 };
 
 export const LIGHT_SETUPS: readonly LightSetup[] = [
-  // --- Sets (L6, not ported from EZ Packshot: designed for Repackshot) -------------------------------------------
+  // --- Sets (L6) ------------------------------------------------------------------------------------------------
   // A set is a setup with what the product reflects and stands on: cards, backdrop, floor, a pool of light behind,
   // an exposure offset and the dome's strength (types.ts). Principles, not tables: the family of angles and the
   // bright and dark fields of Hunter, Biver and Fuqua, *Light: Science & Magic*; the usual key / fill ratios; the
@@ -466,7 +463,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     exposureEv: -0.4,
   },
 
-  // --- The 72 setups ported from EZ Packshot, in upstream order ---------------------------------------------------
+  // --- The 72 setups of the base catalogue, in their order ------------------------------------------------------
   // Product
   {
     key: 'PRESET', style: 'PRODUCT', world: 'STUDIO',
@@ -1452,7 +1449,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     ],
   },
 
-  // --- Interior (K1, not ported from EZ Packshot: designed for Repackshot) ---------------------------------------------------
+  // --- Interior (K1) --------------------------------------------------------------------------------------------
   // Window light, lamps and white rooms for furniture in its context (INTERIORS.md §3.5). Each recipe picks its world (the
   // sun and sky of a window, or the studio dome) and brings its own exposure offset and strength of the environment, as a set
   // does (`exposureEv` over the product type's, `envStrength`; core/sets.ts): the hour of the day is the brightness of the

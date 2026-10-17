@@ -44,8 +44,8 @@
 //!   ([`energy::joint_norm`]). A solid clear material's coat is on its outside only, and the light
 //!   it lets into the solid is `1 - coat E_c(μo)`.
 //! * **Anisotropy**: with `anisotropy` `a > 0` the specular and clear lobes have the widths
-//!   `αx = α / s`, `αy = α s` with `s = √(1 - 0.9 a)` (B. Burley 2012, the convention of the
-//!   recipes' Blender materials) along the frame's `x` (the tangent the integrator gives) and `y`;
+//!   `αx = α / s`, `αy = α s` with `s = √(1 - 0.9 a)` (B. Burley 2012, the convention of
+//!   Blender's Principled BSDF) along the frame's `x` (the tangent the integrator gives) and `y`;
 //!   the distribution, Smith term and visible-normal sampling are the anisotropic GGX ones
 //!   (Heitz 2014, 2018). `a = 0` computes exactly what the isotropic lobe computes.
 //!

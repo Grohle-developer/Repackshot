@@ -1,6 +1,4 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
-// Default wear of a library material (upstream `wear_defaults`): the family
+// Default wear of a library material: the family
 // table, then substrate colours derived from the material's own colour, then
 // the patina colour of its category, then the adjustments of the preset.
 

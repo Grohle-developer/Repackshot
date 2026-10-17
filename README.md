@@ -32,13 +32,11 @@ clean-room implementation**: a TypeScript interface with no framework and a
 for the browser and to native binaries for the command line, that runs on
 any operating system and any CPU architecture.
 
-It takes its ideas, and several of its solutions, from
-[EZ Packshot](https://github.com/Grohle/EZPackshot), a Blender add-on by
-the same author: product-type studios, a catalogue of light setups chosen
-by eye, materials with procedural wear, a Doctor panel, four-level
-selection, and photographer's language everywhere. And it takes one idea
-from nowhere in particular: an interface in **black and white only**, so
-the only colour on screen is the image.
+It is built around product-type studios, a catalogue of light setups
+chosen by eye, materials with procedural wear, a Doctor panel, four-level
+selection, and photographer's language everywhere. And around one more
+idea: an interface in **black and white only**, so the only colour on
+screen is the image.
 
 ![studio](docs/ui/dark-studio.png) ![materials](docs/ui/light-materials.png)
 ![animation](docs/ui/animation-timeline.png)
@@ -215,13 +213,6 @@ those internals.
 
 ## Acknowledgments
 
-- **[EZ Packshot](https://github.com/Grohle/EZPackshot)** (GPL-3.0, same
-  author): the product-type studios, the 72 light setups, the 77 materials,
-  the wear tables and the photometric formulas were ported from it **by
-  its copyright holder**, who relicenses that data for this project
-  under the project's licence. The implementation is new; no Python code was copied. The
-  light-setup thumbnails under `public/thumbs/` come from the same source
-  and are replaced by ones rendered with the own engine in phase L2.
 - **[three.js](https://threejs.org)** (MIT): the interactive preview
   viewport while the camera moves. It is not the engine.
 - **Public literature** the engine cites in its modules: PCG random
@@ -263,8 +254,7 @@ Required Notice: Copyright 2026 Grohle (https://github.com/Grohle-developer/Repa
 Third-party components keep their own licences and notices: three.js
 (MIT), rhino3dm (MIT), the AI models a user downloads (each with its own
 licence, shown before download; see `docs/AI-POST.md`), and the public
-literature the engine cites. The catalogue data comes from EZ Packshot,
-relicensed for this project by its author.
+literature the engine cites.
 
 This is a summary for convenience; the [LICENSE](LICENSE) text is what
 applies.
