@@ -10,6 +10,7 @@ import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { RenderSettings } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { CameraId } from '../core/camera';
 import type { ImageRef } from '../core/images';
 import type { Space } from '../core/transform';
 import type { Vec3 } from '../core/math';
@@ -409,6 +410,8 @@ export interface UiState {
   materialEditor: { material: MaterialId } | null;
   /** Where it was moved to and its size (remembered); null: centred at its own size. */
   materialEditorRect: EditorRect | null;
+  /** O2c: the lens editor, open on one camera's traced lens; null: closed. */
+  lensEditor: { camera: CameraId } | null;
   resultView: ResultViewState | null;
   /** U14: the live view of a queue job (the results viewer in progress); null: closed. Never open with `resultView`. */
   liveView: LiveViewState | null;
@@ -592,6 +595,7 @@ export function defaultUiState(): UiState {
     renderWindowPos: null,
     materialEditor: null,
     materialEditorRect: null,
+    lensEditor: null,
     resultView: null,
     liveView: null,
     liveFrame: null,

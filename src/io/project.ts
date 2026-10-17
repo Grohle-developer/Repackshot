@@ -106,6 +106,7 @@ import {
   type MeshId,
 } from '../core/meshes';
 import { normalizeOptics } from '../core/optics';
+import { normalizeTracedLens } from '../core/traced-lens';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
@@ -393,6 +394,18 @@ function checkState(raw: RawState): ProjectState {
       if (raw === undefined) continue;
       const { optics: _drop, ...rest } = c;
       cameras[id] = raw === null ? rest : { ...rest, optics: normalizeOptics(raw) };
+    }
+    s.camera = { ...s.camera, cameras };
+  }
+  // O2c: the lens editor's copy of a camera's lens (absent on every camera of before O2c): one that cannot be read as
+  // an edited lens is dropped (the camera's own lens is untouched by it).
+  if (Object.values(s.camera.cameras).some((c) => 'lensDraft' in c)) {
+    const cameras = { ...s.camera.cameras };
+    for (const [id, c] of Object.entries(cameras)) {
+      if (!('lensDraft' in c)) continue;
+      const { lensDraft: raw, ...rest } = c;
+      const draft = normalizeTracedLens(raw);
+      cameras[id] = draft?.edited ? { ...rest, lensDraft: draft } : rest;
     }
     s.camera = { ...s.camera, cameras };
   }

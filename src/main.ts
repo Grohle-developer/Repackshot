@@ -20,6 +20,7 @@ import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
 import './ui/material-editor.css';
+import './ui/lens-editor.css';
 import './ui/guards.css';
 import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';
@@ -66,7 +67,7 @@ import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSour
 import { msaaSamples } from './core/antialias';
 import { PreviewEngine } from './render/preview';
 import { hasParticleExport } from './render/particles';
-import { hasLensInfoExport, readLensInfo } from './render/lens-info';
+import { hasLensInfoExport, readLensVerdict } from './render/lens-info';
 import { enginePick, focusSolverOf, hasFocusExports, settledFocusPick } from './render/focus-pick';
 import { setFocusSolver } from './core/focus';
 import { parseLensInfo, type EngineLensInfo } from './core/traced-lens';
@@ -86,7 +87,7 @@ import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck, syncInstall } from './ui/updates';
 import { maybeStartTour } from './ui/tour';
-import type { AiPort, AppServices, EngineConfig, PluginsPort, ViewportPort } from './ui/ports';
+import type { AiPort, AppServices, EngineConfig, LensCheck, PluginsPort, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo, type VideoSupportUi } from './ui/ui-state';
@@ -299,26 +300,53 @@ if (preview) {
   void pageEngine().then((exports) => p.setParticleEngine(exports && hasParticleExport(exports) ? exports : null));
 }
 // O2: the engine's numbers of a traced lens, from the page's module (or the launcher's, without it), the last few kept.
-const lensInfoCache = new Map<string, EngineLensInfo | null | undefined>();
-async function engineLensInfo(cam: CameraState): Promise<EngineLensInfo | null | undefined> {
-  if (!cam.optics?.traced || cam.projection === 'ORTHOGRAPHIC') return null;
+// O2c: with the engine's reason when it refuses the lens (the lens editor says why).
+const lensCheckCache = new Map<string, LensCheck>();
+async function engineLensCheck(cam: CameraState): Promise<LensCheck> {
+  if (!cam.optics?.traced || cam.projection === 'ORTHOGRAPHIC') return { state: 'none' };
   const rsb = lensInfoRsb(cam, cam.aspect.w, cam.aspect.h);
   const key = Array.from(rsb, (b) => b.toString(16).padStart(2, '0')).join('');
-  if (lensInfoCache.has(key)) return lensInfoCache.get(key);
-  let info: EngineLensInfo | null | undefined = null;
+  const kept = lensCheckCache.get(key);
+  if (kept) return kept;
+  let check: LensCheck = { state: 'none' };
   const exports = await pageEngine();
-  if (exports && hasLensInfoExport(exports)) info = readLensInfo(exports, rsb);
-  else if (platform.native) {
+  if (exports && hasLensInfoExport(exports)) {
+    try {
+      const v = readLensVerdict(exports, rsb);
+      check = v.state === 'ready' ? v : v.state === 'thin' ? { state: 'none' } : { state: 'refused', reason: v.reason };
+    } catch {
+      // The module trapped: nothing to say of this lens (never a crash of the page).
+      return { state: 'none' };
+    }
+  } else if (platform.native) {
     try {
       const res = await platform.native.request('/api/lens/info', { method: 'POST', body: rsb as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
-      info = res.ok ? parseLensInfo(await res.text()) : undefined;
+      const text = await res.text();
+      if (res.ok) {
+        const info = parseLensInfo(text);
+        check = info ? { state: 'ready', info } : info === null ? { state: 'none' } : { state: 'refused', reason: '' };
+      } else {
+        let reason = '';
+        try {
+          const m = (JSON.parse(text) as { message?: unknown }).message;
+          reason = typeof m === 'string' ? m : '';
+        } catch {
+          // Not the launcher's JSON: no reason to give.
+        }
+        check = { state: 'refused', reason };
+      }
     } catch {
-      info = null;
+      return { state: 'none' };
     }
   }
-  if (lensInfoCache.size >= 16) lensInfoCache.delete(lensInfoCache.keys().next().value!);
-  lensInfoCache.set(key, info);
-  return info;
+  if (lensCheckCache.size >= 16) lensCheckCache.delete(lensCheckCache.keys().next().value!);
+  lensCheckCache.set(key, check);
+  return check;
+}
+async function engineLensInfo(cam: CameraState): Promise<EngineLensInfo | null | undefined> {
+  if (!cam.optics?.traced || cam.projection === 'ORTHOGRAPHIC') return null;
+  const c = await engineLensCheck(cam);
+  return c.state === 'ready' ? c.info : c.state === 'refused' ? undefined : null;
 }
 // F1: focus with a click. The pixel's chief ray comes from the engine (render/focus-pick.ts), for the camera of the view
 // exactly as the Full view renders it (io/rsb.ts focusPickRsb: the playhead's pose, the camera looked through and its
@@ -1105,7 +1133,7 @@ const services: AppServices = {
     },
   },
   graphPreview: graphWorkers ? { previews: (program, channel) => graphWorkers.previews(program, channel) } : null,
-  lens: { info: engineLensInfo },
+  lens: { info: engineLensInfo, check: engineLensCheck },
 };
 
 const app = mountApp(appEl, store, ui, services);

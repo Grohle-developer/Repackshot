@@ -673,7 +673,15 @@ export interface LensPort {
    * engine to ask, undefined when the engine refuses the lens (it forms no image).
    */
   info(cam: CameraState): Promise<EngineLensInfo | null | undefined>;
+  /**
+   * O2c: the same question with the engine's own reason when it refuses the lens (the lens editor says why);
+   * `none` without an engine to ask. Absent: the editor asks `info` and has no reason to give.
+   */
+  check?(cam: CameraState): Promise<LensCheck>;
 }
+
+/** O2c: what the engine says of a camera's traced lens: its numbers, its refusal and why, or nothing (no engine here). */
+export type LensCheck = { state: 'ready'; info: EngineLensInfo } | { state: 'refused'; reason: string } | { state: 'none' };
 
 export interface AppServices {
   /** Null when WebGL is not available. */

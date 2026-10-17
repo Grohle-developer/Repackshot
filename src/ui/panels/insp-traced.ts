@@ -24,6 +24,7 @@ import { lensPeekCache, lensSourceLine, sensorHalf, type PeekAnswer } from '../l
 import { type Ctx, type Scope } from '../reactive';
 import { formatNumber, lbl, t, type StringKey } from '../strings';
 import { setLensModel } from '../lens-commands';
+import { canEditLens, openLensEditor } from '../lens-edit-commands';
 import { tiltShiftFields } from './insp-tilt';
 
 /** The heading of the artistic knobs, marked as not physical (STUDIO-TOOLS §0). */
@@ -64,7 +65,8 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
   /** Puts lens `key` on the camera (its own settings; the iris and the knobs of the optics stay). */
   const chooseLens = (key: string) => {
     const o = optics();
-    if (tracedOf(o)?.key === key) return;
+    // O2c: choosing the lens an edited one came from puts the catalogue's back.
+    if (tracedOf(o)?.key === key && !tracedOf(o)?.edited) return;
     dispatch({ ...o, traced: newTracedLens(key) }, 'camera.lensChoice');
   };
 
@@ -117,7 +119,7 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       listHost.replaceChildren(
         ...(items.length === 0
           ? [mineEmpty(t('camera.lensMineEmpty'))]
-          : mineRows(ctx, items, { active: same, choose: (i) => cmd.applyLibraryLens(ctx, camId(), i), title: (i) => lbl(lensPrescription(i.lens.traced.key)?.name ?? { en: i.name, es: i.name }), aux: (i) => lbl(lensPrescription(i.lens.traced.key)?.name ?? { en: '', es: '' }), icon: 'camera' }, confirm)),
+          : mineRows(ctx, items, { active: same, choose: (i) => cmd.applyLibraryLens(ctx, camId(), i), title: (i) => i.lens.traced.edited?.name ?? lbl(lensPrescription(i.lens.traced.key)?.name ?? { en: i.name, es: i.name }), aux: (i) => lbl(lensPrescription(i.lens.traced.key)?.name ?? { en: '', es: '' }), icon: 'camera' }, confirm)),
         confirm,
       );
       return;
@@ -154,7 +156,7 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
   let ownKey = '';
   let ownUpdates: ((t: TracedLens) => void)[] = [];
   const drawOwn = (tr: TracedLens, p: LensPrescription) => {
-    ownKey = tr.key;
+    ownKey = ownKeyOf(tr);
     ownUpdates = [];
     const rows: HTMLElement[] = [];
     if (isAdapter(p)) {
@@ -176,7 +178,8 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     );
     rows.push(tip(field(t('camera.lensCoating'), coating.el), 'camera.lensCoatingAux'));
     ownUpdates.push((x) => coating.set(x.coating ?? ''));
-    const gap = p.variable?.[0];
+    // O2c: an edited lens has its gaps in the lens editor (its variable gap is one of them).
+    const gap = tr.edited ? undefined : p.variable?.[0];
     if (gap) {
       const v = slider({ value: tr.variable ?? gap.normal, min: gap.min, max: gap.max, step: 0.01, digits: 2, unit: 'mm', ariaLabel: lbl(gap.label), onChange: (x, g) => setTraced({ variable: x }, 'camera.lensChoice', g) });
       const back = h('button', { type: 'button', class: 'btn', 'data-tip': t('camera.lensVariableNormalAux'), onclick: () => setTraced({ variable: null }, 'camera.lensChoice') }, t('camera.lensVariableNormal')) as HTMLButtonElement;
@@ -194,6 +197,11 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     rangeNote.style.display = range ? '' : 'none';
   };
   const rangeNote = h('div', { class: 'aux', 'data-lens-range': '' });
+  /** What the own rows are drawn for: the lens, and whether its elements are edited (O2c). */
+  const ownKeyOf = (tr: TracedLens) => `${tr.key}${tr.edited ? ':edited' : ''}`;
+  // O2c: an edited lens says so, and an edit open in the lens editor too.
+  const editedNote = h('div', { class: 'aux', 'data-lens-edited': '' });
+  const draftNote = h('div', { class: 'note', 'data-lens-draft': '' }, t('camera.lensEditing'));
 
   // --- the iris (shared with Advanced optics) ----------------------------------------------------------------------
   const o0 = optics();
@@ -262,7 +270,8 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     }
     info.replaceChildren(...rows, h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;padding-top:4px' }, ...charts), h('div', { class: 'aux' }, t('camera.lensInfoNote')));
     if (i.section) {
-      const name = lbl(lensPrescription(tracedOf(opticsOf(c))?.key ?? '')?.name ?? { en: '', es: '' });
+      const tr = tracedOf(opticsOf(c));
+      const name = tr?.edited?.name ?? lbl(lensPrescription(tr?.key ?? '')?.name ?? { en: '', es: '' });
       sectionHost.innerHTML = lensSectionSvg(i.section, { width: 280, height: 120, sensorHalfMm: sensorHalf(c), title: name });
     } else sectionHost.replaceChildren();
   };
@@ -276,6 +285,14 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     const port = ctx.services.lens;
     const lens = tracedOf(opticsOf(c));
     if (!port || !lens) return showInfo(c, null, false);
+    // O2c: an edited lens is its own (not the catalogue's of its key, which the window of the list shows).
+    if (lens.edited) {
+      showInfo(c, null, true);
+      void Promise.resolve(port.info(c))
+        .catch(() => null)
+        .then((i) => asked === key && showInfo(c, i, false));
+      return;
+    }
     // Through the cache of the window of the lens's elements: the lens on the camera is one question for both.
     const cache = lensPeekCache(port);
     const known = cache.known(c, lens.key);
@@ -348,11 +365,13 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       onclick: () => {
         const tr = tracedOf(optics());
         if (!tr) return;
-        namePrompt(promptHost, { label: t('camera.lensSaveName'), initial: lbl(lensPrescription(tr.key)?.name ?? { en: '', es: '' }), onSave: (name) => cmd.saveLensToLibrary(ctx, camId(), name) });
+        namePrompt(promptHost, { label: t('camera.lensSaveName'), initial: tr.edited?.name ?? lbl(lensPrescription(tr.key)?.name ?? { en: '', es: '' }), onSave: (name) => cmd.saveLensToLibrary(ctx, camId(), name) });
       },
     },
     t('camera.lensSaveAs'),
   );
+  // O2c: the lens editor, on a copy of this lens.
+  const editBtn = h('button', { type: 'button', class: 'btn', 'data-action': 'lens.editElements', 'data-tip': t('lensEditor.openAux'), onclick: () => openLensEditor(ctx, camId()) }, t('lensEditor.open')) as HTMLButtonElement;
 
   const tracedBox = h(
     'div',
@@ -360,6 +379,8 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     field(t('camera.lensCharacter'), chips),
     listHost,
     source,
+    editedNote,
+    draftNote,
     own,
     field(t('camera.blades'), blades.el),
     rangeNote,
@@ -367,7 +388,7 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     sectionHost,
     info,
     h('div', { class: 'stack' }, advancedHead, advancedBody),
-    h('div', { class: 'row' }, save),
+    h('div', { class: 'row', style: 'flex-wrap:wrap' }, editBtn, save),
     promptHost,
     h('div', { class: 'note' }, t('camera.lensFastNote')),
     h('div', { class: 'note' }, t('camera.lensThinOnly')),
@@ -388,7 +409,14 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       if (!tr) return;
       const p = lensPrescription(tr.key);
       if (!p) return;
-      if (tr.key !== ownKey) {
+      editedNote.textContent = tr.edited ? t('camera.lensEdited', { name: tr.edited.name }) : '';
+      editedNote.style.display = tr.edited ? '' : 'none';
+      if (tr.edited) editedNote.setAttribute('data-tip', t('camera.lensEditedAux', { name: lbl(p.name) }));
+      draftNote.style.display = c.lensDraft ? '' : 'none';
+      editBtn.disabled = !canEditLens(c);
+      if (editBtn.disabled) editBtn.setAttribute('data-tip', t('lensEditor.notEditable'));
+      else editBtn.setAttribute('data-tip', t('lensEditor.openAux'));
+      if (ownKeyOf(tr) !== ownKey) {
         // A new lens: its character's chip, its own rows.
         if (filter !== 'MINE') filter = p.character;
         drawChips();

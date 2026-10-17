@@ -15,6 +15,7 @@ export function fakeInfo(cam: CameraState): EngineLensInfo {
   const s = (z: number, kind: number, curvature: number, index: number, semiAperture = 10) => ({ z, kind, curvature, semiAperture, index, conic: 0, aspheric: [0, 0, 0, 0] as [number, number, number, number] });
   return {
     eflMm: cam.focalMm,
+    designEflMm: 100,
     bflMm: 30 + i,
     eflFocusedMm: cam.focalMm,
     imageScaleMm: cam.focalMm,
