@@ -1238,7 +1238,7 @@ const TABLE = {
   'anim.zoomIn': ['Zoom in on the timeline', 'Acercar la línea de tiempo'],
   'anim.zoomOut': ['Zoom out', 'Alejar'],
   'anim.zoomFit': ['Fit the whole animation', 'Ver toda la animación'],
-  'anim.keys': ['Space plays or pauses · Home / End · ← → one frame (Shift: ten) · Delete · Ctrl D duplicates', 'Espacio reproduce o pausa · Inicio / Fin · ← → un fotograma (Mayús: diez) · Supr · Ctrl D duplica'],
+  'anim.keys': ['Space plays or pauses · Home / End · ← → one frame (Shift: ten) · ↑ ↓ the animation above or below · Delete · Ctrl D duplicates', 'Espacio reproduce o pausa · Inicio / Fin · ← → un fotograma (Mayús: diez) · ↑ ↓ la animación de arriba o de abajo · Supr · Ctrl D duplica'],
   'anim.tree': ['What is animated', 'Qué se anima'],
   'anim.treeEmpty': ['Nothing is animated yet. Select a part and press Animate…, or pick a preset.', 'Aún no se anima nada. Elige una pieza y pulsa Animar…, o elige un preset.'],
   'anim.lanes': ['When: the bars of the animations', 'Cuándo: las barras de las animaciones'],

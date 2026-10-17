@@ -1177,9 +1177,12 @@ la versión de U1 con planos y tarjetas queda sustituida.
   edita).
 - **Teclado**, con el foco en el cajón (un clic en el árbol o en las
   pistas lo pone ahí): `Espacio` reproduce o pausa, `Inicio` / `Fin`,
-  `←` / `→` un fotograma (`Mayús`: diez), `Supr` borra las animaciones
-  elegidas y `Ctrl/⌘ D` las duplica. En un campo, el campo se queda sus
-  teclas.
+  `←` / `→` un fotograma (`Mayús`: diez), `↑` / `↓` la animación de arriba
+  o de abajo (N1), `Supr` borra las animaciones elegidas y `Ctrl/⌘ D` las
+  duplica. En un campo, el campo se queda sus teclas. El árbol es un
+  `tree` con nombre que guarda el foco y dice la fila activa con
+  `aria-activedescendant`; la regla es para el puntero (oculta a las ayudas
+  técnicas); los presets son botones dentro de una lista.
 - **En el árbol de la escena** (N1, como en KeyShot): bajo cada pieza o
   grupo, sus animaciones (las del modelo entero, bajo el modelo), cada una
   con el icono de su tipo y su frase corta en tinta secundaria, y la frase
@@ -1191,6 +1194,12 @@ la versión de U1 con planos y tarjetas queda sustituida.
 - El vídeo se renderiza desde la **ventana de render** en modo
   *Animación* (§2.7), con los mismos botones *Render* y *+ Añadir a la
   cola* que una imagen.
+
+Capturas de N1 (`tools/video-check.mjs`): `docs/ui/animation-n1-wizard.png`
+(la línea de tiempo con tres pistas —la de cámara con un fundido, el modelo y
+un material— y el asistente en el paso 1), `docs/ui/animation-n1-cards.png`
+(el paso 2, la rejilla de tipos de un material) y
+`docs/ui/animation-n1-curve.png` (la curva personalizada con un asa movida).
 
 **Cajón Físicas, la barra de físicas** (fase S2; `SPEC.md` §3.1 y §3.7):
 **▶ Iniciar** (simula las piezas cuyo papel es *Dinámico*) · **⏸ Pausar**,

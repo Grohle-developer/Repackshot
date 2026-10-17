@@ -16,6 +16,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El **asistente** de *+ Animar…* va en **tres pasos** con *Atrás* y *Siguiente*: el objetivo (también *Un material*), una **rejilla de tarjetas** de tipos agrupada en *Piezas*, *Cámara*, *Luz y entorno* y *Materiales*, y los números (N1).
 - Las animaciones aparecen **bajo su objetivo en el árbol de la escena** (las de una pieza o un grupo, y las del modelo bajo el modelo); un clic abre la línea de tiempo con ella elegida (N1).
 - Un proyecto de la primera interfaz se abre en la línea de tiempo con sus planos como tramos de la pista de cámara y sus movimientos como barras, y reproduce lo mismo que reproducía (N1).
+- En el cajón de animación, los presets se anuncian otra vez como botones (dentro de una lista), el árbol de lo animado dice a las ayudas técnicas qué fila está activa y **↑ ↓** van a la animación de arriba o de abajo; la regla, que es para el puntero, deja de tener una etiqueta sin papel (N1).
 
 ### Herramientas
 

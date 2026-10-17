@@ -17,7 +17,7 @@ import { L, formatNumber, getLang, lbl, t } from '../strings';
 import { SEQUENCE_PRESETS } from '../../data/animation';
 import { propsColumn } from './anim-props';
 import { laneCell, rulerCell, TimelineDrags, type Geometry } from './anim-timeline';
-import { treeCell, type RowInfo } from './anim-tree';
+import { clipRowId, treeCell, type RowInfo } from './anim-tree';
 
 /** Width of the tree column, px. */
 export const TREE_W = 232;
@@ -112,7 +112,9 @@ function head(ctx: Ctx, scope: Scope): HTMLElement {
 /** The tree and the lanes, one grid of rows under the ruler. */
 function rows(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
-  const host = h('div', { class: 'anim-rows', tabindex: 0, role: 'tree', 'aria-label': `${t('anim.tree')} · ${t('anim.keys')}` });
+  // The tree holds the focus (its rows are not focusable on their own): `aria-activedescendant` names the row of the
+  // animation the properties edit, ↑ ↓ move it, and the other keys are the timeline's.
+  const host = h('div', { class: 'anim-rows', tabindex: 0, role: 'tree', 'aria-multiselectable': 'true', 'aria-label': `${t('anim.tree')} · ${t('anim.keys')}` });
   const grid = h('div', { class: 'anim-grid', style: `--tree-w:${TREE_W}px` });
   host.append(grid);
   const playhead = h('div', { class: 'tl-playhead', 'aria-hidden': 'true' }, h('span', { class: 'tl-playhead-cap' }));
@@ -149,6 +151,9 @@ function rows(ctx: Ctx, scope: Scope): HTMLElement {
     for (const r of list) cells.push(treeCell(ctx, r, info), laneCell(ctx, r, geo, info, drags));
     if (s.animation.clips.length === 0) cells.push(h('div', { class: 'atr atr-empty note' }, t('anim.treeEmpty')), h('div', { class: 'tl-lane is-empty' }));
     grid.replaceChildren(...cells, playhead, snapLine);
+    const active = u.selectedClip && s.animation.clips.some((c) => c.id === u.selectedClip) ? clipRowId(u.selectedClip) : null;
+    if (active) host.setAttribute('aria-activedescendant', active);
+    else host.removeAttribute('aria-activedescendant');
     placePlayhead();
   };
   scope.watch(

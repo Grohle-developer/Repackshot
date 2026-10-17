@@ -24,7 +24,7 @@ import { explodeParts, newExplode } from '../core/explode';
 import { motionHint, type MotionHint } from '../core/motion-hint';
 import { partsUnder, selectedNodes, type NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
-import { targetKey } from '../core/timeline';
+import { targetKey, timelineRows } from '../core/timeline';
 import { isTyping } from './dom';
 import type { Ctx } from './reactive';
 import { clipTargetName } from './sentence';
@@ -287,6 +287,22 @@ export function stepFrames(ctx: Ctx, n: number): void {
 }
 
 /**
+ * N1: the animation above or below the one the properties edit, in the order of the tree's rows (folded targets
+ * skipped); the first one when none is. False when there is none to go to.
+ */
+export function stepClip(ctx: Ctx, dir: -1 | 1): boolean {
+  const s = ctx.store.get();
+  const order = timelineRows(s, ctx.ui.get().animFolded).flatMap((r) => (r.kind === 'CLIP' ? [r.clip] : []));
+  if (order.length === 0) return false;
+  const cur = ctx.ui.get().selectedClip;
+  const i = cur ? order.indexOf(cur) : -1;
+  const next = i < 0 ? (dir > 0 ? 0 : order.length - 1) : Math.max(0, Math.min(order.length - 1, i + dir));
+  if (order[next] === cur) return true;
+  selectClips(ctx, [order[next]]);
+  return true;
+}
+
+/**
  * The timeline's keys while the focus is in it: Space plays or pauses, Home and End jump, ← → move one frame (Shift:
  * ten), Delete removes the selected clips, Ctrl / ⌘ D duplicates them. True when the key was the timeline's.
  */
@@ -312,6 +328,10 @@ export function animKey(ctx: Ctx, e: KeyboardEvent): boolean {
     case 'ArrowRight':
       stepFrames(ctx, (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 10 : 1));
       return true;
+    case 'ArrowUp':
+    case 'ArrowDown':
+      // N1 (H1): the tree's own keys, the animation above or below.
+      return stepClip(ctx, e.key === 'ArrowUp' ? -1 : 1);
     case 'Delete':
     case 'Backspace':
       if (selectedClipIds(ctx).length === 0) return false;

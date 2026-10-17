@@ -107,6 +107,10 @@ function toggleFold(ctx: Ctx, key: string): void {
   ctx.ui.set({ animFolded: f });
 }
 
+/** The ids of the tree's items, for the tree's `aria-activedescendant` (the focus stays on the tree, H1 and N1). */
+export const clipRowId = (id: string): string => `anim-clip-${id.replace(/[^\w-]/g, '_')}`;
+export const targetRowId = (key: string): string => `anim-target-${key.replace(/[^\w-]/g, '_')}`;
+
 /** Click on a clip (row or bar): select it; Ctrl / ⌘ adds or takes it out; Shift adds it. */
 export function clickClip(ctx: Ctx, id: string, e: MouseEvent | PointerEvent): void {
   if (e.ctrlKey || e.metaKey) anim.toggleClip(ctx, id);
@@ -127,7 +131,9 @@ export function treeCell(ctx: Ctx, row: TimelineRow, info: RowInfo): HTMLElement
       {
         class: `atr atr-target${selected ? ' is-selected' : ''}${related ? ' is-related' : ''}`,
         role: 'treeitem',
+        id: targetRowId(row.key),
         'aria-level': 1,
+        'aria-selected': String(selected),
         'aria-expanded': row.clips.length > 0 ? String(!row.folded) : undefined,
         'data-target': row.key,
       },
@@ -157,6 +163,7 @@ export function treeCell(ctx: Ctx, row: TimelineRow, info: RowInfo): HTMLElement
     {
       class: `atr atr-clip${info.selected.has(clip.id) ? ' is-selected' : ''}${info.primary === clip.id ? ' is-primary' : ''}${info.related.has(clip.id) ? ' is-related' : ''}`,
       role: 'treeitem',
+      id: clipRowId(clip.id),
       'aria-level': 2,
       'aria-selected': String(info.selected.has(clip.id)),
       'data-clip': clip.id,

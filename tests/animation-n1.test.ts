@@ -468,3 +468,22 @@ describe('the wizard in three steps, the shots and the materials in the timeline
     expect(store.get().animation.shots[1].transition).toBeUndefined();
   });
 });
+
+describe('the tree’s own keys (N1, with H1)', () => {
+  it('↑ ↓ go to the animation above or below in the order of the rows; the first one when none is selected', () => {
+    const ctx: Ctx = { store: createStore(apply(exampleState(), { type: 'anim/preset', key: 'HERO' })), ui: createUiStore(), services: {} as AppServices };
+    const key = (k: string) => anim.animKey(ctx, { key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, target: null, isComposing: false } as unknown as KeyboardEvent);
+    const ids = ctx.store.get().animation.clips.map((c) => c.id);
+    expect(key('ArrowDown')).toBe(true);
+    expect(ctx.ui.get().selectedClip).toBe(ids[0]);
+    key('ArrowDown');
+    expect(ctx.ui.get().selectedClip).toBe(ids[1]);
+    key('ArrowUp');
+    key('ArrowUp');
+    // It stops at the first.
+    expect(ctx.ui.get().selectedClip).toBe(ids[0]);
+    // Without any animation the keys are not the tree's.
+    const empty: Ctx = { store: createStore(exampleState()), ui: createUiStore(), services: {} as AppServices };
+    expect(anim.stepClip(empty, 1)).toBe(false);
+  });
+});

@@ -151,7 +151,10 @@ export function rulerCell(ctx: Ctx, g: Geometry, drags: TimelineDrags): HTMLElem
   const lang = getLang();
   const el = h(
     'div',
-    { class: 'tl-ruler', 'aria-label': t('anim.ruler'), 'data-tip': t('anim.ruler'), 'data-px-per-s': String(g.pxPerS) },
+    // For the pointer only (its tip says how): the keyboard moves the playhead from the tree (Home, End, ← →), and the
+    // transport says where it is. It sits inside the tree, which owns only its rows, so it is hidden from assistive
+    // technology rather than a second control (H1, N1).
+    { class: 'tl-ruler', 'aria-hidden': 'true', 'data-tip': t('anim.ruler'), 'data-px-per-s': String(g.pxPerS) },
     ...minor.map((s) => h('span', { class: 'tl-tick', style: `left:${s * g.pxPerS}px` })),
     ...major.map((s) =>
       h(

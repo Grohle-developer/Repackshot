@@ -34,7 +34,7 @@ export function curveEditor(initial: CurveHandles, onChange: (handles: [number, 
   const arm1 = el('line', { class: 'anim-curve-arm' });
   const arm2 = el('line', { class: 'anim-curve-arm' });
   const knobs = [0, 1].map((i) =>
-    el('circle', { r: 3.4, class: 'anim-curve-handle', tabindex: 0, role: 'slider', 'data-handle': i + 1, 'aria-label': t(i === 0 ? 'anim.handle1' : 'anim.handle2') }),
+    el('circle', { r: 3.4, class: 'anim-curve-handle', tabindex: 0, role: 'slider', 'aria-valuemin': 0, 'aria-valuemax': 1, 'data-handle': i + 1, 'aria-label': t(i === 0 ? 'anim.handle1' : 'anim.handle2') }),
   );
   svg.append(axes, diag, line, arm1, arm2, ...knobs);
 
@@ -60,6 +60,8 @@ export function curveEditor(initial: CurveHandles, onChange: (handles: [number, 
       const y = h[i * 2 + 1];
       k.setAttribute('cx', String(px(x)));
       k.setAttribute('cy', String(py(y)));
+      // A handle moves in two directions: its value is its x, and the text says both.
+      k.setAttribute('aria-valuenow', x.toFixed(2));
       k.setAttribute('aria-valuetext', `x ${x.toFixed(2)}, y ${y.toFixed(2)}`);
     });
   };

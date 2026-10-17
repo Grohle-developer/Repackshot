@@ -424,8 +424,9 @@ function noneView(ctx: Ctx): HTMLElement {
     h('div', { class: 'field-label', style: 'font-weight:600;margin-top:4px' }, t('anim.presets')),
     h(
       'div',
-      { class: 'anim-presets', role: 'list', 'data-tip': t('anim.presetsTip') },
-      ...SEQUENCE_PRESETS.map((p) => h('button', { type: 'button', class: 'list-row anim-preset', role: 'listitem', 'data-preset': p.key, onclick: () => anim.applyPreset(ctx, p.key) }, lbl(p.label))),
+      { class: 'anim-presets', role: 'list', 'aria-label': t('anim.presets'), 'data-tip': t('anim.presetsTip') },
+      // Each preset is a button (announced as one) inside an item of the list.
+      ...SEQUENCE_PRESETS.map((p) => h('div', { role: 'listitem', class: 'anim-preset-item' }, h('button', { type: 'button', class: 'list-row anim-preset', 'data-preset': p.key, onclick: () => anim.applyPreset(ctx, p.key) }, lbl(p.label)))),
     ),
   );
 }
