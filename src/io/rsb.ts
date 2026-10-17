@@ -41,7 +41,7 @@ import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
 import { lensFilterType } from '../data/lens-filters';
 import type { CoatingId, LensSurface } from '../data/lenses';
-import { composeLens, type ComposedLens, type TracedLens } from '../core/traced-lens';
+import { composeLens, tracedLensTilts, type ComposedLens, type TracedLens } from '../core/traced-lens';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, hiddenToCamera, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -1658,8 +1658,10 @@ export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens 
     squeeze: Math.min(4, Math.max(1, composed ? composed.squeeze : o.squeeze)),
     shiftXMm: o.shiftXMm,
     shiftYMm: o.shiftYMm,
-    tiltDeg: Math.min(45, Math.max(-45, o.tiltDeg)),
-    tiltAxisDeg: o.tiltAxisDeg,
+    // O4: a traced lens has its own tilt (the simple lens's, which the engine ignored with a traced lens before O4,
+    // does not apply to it), and a lens with cylinders none.
+    tiltDeg: Math.min(45, Math.max(-45, composed ? (tracedLensTilts(o.traced!) ? (o.tracedTiltDeg ?? 0) : 0) : o.tiltDeg)),
+    tiltAxisDeg: composed ? (o.tracedTiltAxisDeg ?? 0) : o.tiltAxisDeg,
     caAmount: unit(o.caAmount),
     swirl: unit(o.swirl),
     fieldMm: frameFieldMm(outW, outH),

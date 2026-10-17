@@ -1,12 +1,16 @@
-// A camera's optics beyond the plain thin lens (phase O1, STUDIO-TOOLS §1 mode 1): the bokeh of the
-// enhanced thin lens, tilt and shift, the effect filters in front of the lens (phase O3a), and the traced lens
-// (phase O2, core/traced-lens.ts). What the engine does with it is rt-core `optics` (the RSB `LENS`
-// section, written by io/rsb.ts); this module is the project's side: the fields, the neutral optics (a
-// camera without them renders exactly as before O1), the parameters of a bokeh type, and the limits.
+// A camera's optics beyond the plain simple lens (phase O1, STUDIO-TOOLS §1 mode 1; the interface called it the thin
+// lens until O4): the bokeh of the simple lens, tilt and shift, the effect filters in front of the lens (phase O3a),
+// and the traced lens (phase O2, core/traced-lens.ts). What the engine does with it is rt-core `optics` (the RSB
+// `LENS` section, written by io/rsb.ts); this module is the project's side: the fields, the neutral optics (a camera
+// without them renders exactly as before O1), the parameters of a bokeh type, the two lens models, and the limits.
+//
+// O4: the bokeh and the Advanced optics are the simple lens's. A traced camera keeps them in its state (switching back
+// to the simple lens finds them as they were) but nothing applies a bokeh to it (`opticsForBokeh` refuses); the traced
+// lens has a tilt of its own (`tracedTiltDeg`), and the shift is the camera's, whichever lens it has.
 
 import { BOKEH_NEUTRAL, bokehParams, bokehType, type BokehThin, type PupilProfile } from '../data/bokeh';
 import { LENS_FILTER_GRADES, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../data/lens-filters';
-import { newTracedLens, normalizeTracedLens, type TracedLens } from './traced-lens';
+import { DEFAULT_MASTER, newTracedLens, normalizeTracedLens, tracedLensTilts, type TracedLens } from './traced-lens';
 
 /** One effect filter in front of the lens (O3a; data/lens-filters.ts). */
 export interface LensFilter {
@@ -30,9 +34,19 @@ export interface CameraOptics extends BokehThin {
   /** Lens shift on the sensor, millimetres (right, up): moves the frame without changing the perspective. */
   shiftXMm: number;
   shiftYMm: number;
-  /** Lens tilt, degrees, about an axis in the sensor plane `tiltAxisDeg` from the horizontal: the focus plane turns (Scheimpflug). */
+  /**
+   * The simple lens's tilt, degrees, about an axis in the sensor plane `tiltAxisDeg` from the horizontal: the focus
+   * plane turns (Scheimpflug). A traced lens has its own (`tracedTiltDeg`): before O4 the engine ignored this one with a
+   * traced lens, so an old traced camera with a tilt left here must not start tilting.
+   */
   tiltDeg: number;
   tiltAxisDeg: number;
+  /**
+   * O4: the traced lens's tilt and its axis, degrees, as `tiltDeg` (absent: 0). The engine turns the lens until its plane
+   * of sharp focus is the simple lens's of the same values. Kept while the camera has the simple lens.
+   */
+  tracedTiltDeg?: number;
+  tracedTiltAxisDeg?: number;
   /** O3a: the effect filters in front of the lens, in order, at most MAX_LENS_FILTERS (absent before O3a: none). */
   filters?: LensFilter[];
   /**
@@ -137,6 +151,8 @@ export function normalizeOptics(o: unknown): CameraOptics {
     shiftYMm: clamp(r.shiftYMm, OPTICS_LIMITS.shiftMm.min, OPTICS_LIMITS.shiftMm.max, n.shiftYMm),
     tiltDeg: clamp(r.tiltDeg, OPTICS_LIMITS.tiltDeg.min, OPTICS_LIMITS.tiltDeg.max, n.tiltDeg),
     tiltAxisDeg: clamp(r.tiltAxisDeg, -360, 360, n.tiltAxisDeg),
+    ...(r.tracedTiltDeg !== undefined ? { tracedTiltDeg: clamp(r.tracedTiltDeg, OPTICS_LIMITS.tiltDeg.min, OPTICS_LIMITS.tiltDeg.max, 0) } : {}),
+    ...(r.tracedTiltAxisDeg !== undefined ? { tracedTiltAxisDeg: clamp(r.tracedTiltAxisDeg, -360, 360, 0) } : {}),
     ...(Array.isArray(r.filters)
       ? { filters: r.filters.map(normalizeLensFilter).filter((f): f is LensFilter => f !== null).slice(0, MAX_LENS_FILTERS) }
       : {}),
@@ -171,17 +187,32 @@ export function isNeutralOptics(o: CameraOptics | undefined): boolean {
   );
 }
 
+/** The two lens models of Camera ▸ Lens (O4: *Simple lens* is the stored `thin`, the key every project keeps). */
+export type LensModel = 'thin' | 'traced';
+
+/** The lens model of optics: traced with a traced lens, the simple lens otherwise. */
+export function lensModelOf(o: CameraOptics | undefined): LensModel {
+  return tracedOf(o) ? 'traced' : 'thin';
+}
+
+/** True when a bokeh type can apply to optics `o`: only with the simple lens (O4; a traced lens makes its own). */
+export function bokehApplies(o: CameraOptics | undefined): boolean {
+  return lensModelOf(o) === 'thin';
+}
+
 /**
- * The optics of a bokeh type (and variant) on top of `current`: the type's thin-lens parameters replace the bokeh
- * fields and the camera goes back to the thin lens; a type of the traced lens (O2) puts its lens on the camera and
- * keeps the iris. The tilt, the shift and the filters stay. Null for a type nothing here can do (wave optics).
+ * The optics of a bokeh type (and variant) on top of `current`: the type's simple-lens parameters replace the bokeh
+ * fields; a type of the traced lens (O2) puts its lens on the camera (the bokeh fields stay, for the simple lens). The
+ * tilt, the shift and the filters stay. Null for a type nothing here can do (wave optics), and, since O4, for any type
+ * on a camera with a traced lens: the bokeh is a simple-lens option, and choosing one never takes a camera out of its
+ * traced lens.
  */
 export function opticsForBokeh(current: CameraOptics, key: string, variant?: string | null): CameraOptics | null {
   const type = bokehType(key);
-  if (!type) return null;
+  if (!type || !bokehApplies(current)) return null;
   if (type.requires === 'traced') {
     if (!type.lens || !normalizeTracedLens({ key: type.lens })) return null;
-    return { ...current, bokeh: key, variant: null, traced: newTracedLens(type.lens) };
+    return { ...current, traced: newTracedLens(type.lens) };
   }
   if (type.requires !== null) return null;
   const v = variant ?? null;
@@ -192,9 +223,35 @@ export function opticsForBokeh(current: CameraOptics, key: string, variant?: str
     ...thin,
     bokeh: key,
     variant: v && type.variants.some((x) => x.key === v) ? v : null,
-    // Back to the thin lens (a camera that never had a traced lens keeps no field for it).
-    ...(current.traced ? { traced: null } : {}),
   };
+}
+
+/**
+ * The optics with lens model `model` (Camera ▸ Lens ▸ Simple lens · Traced lens): everything else stays, the bokeh type
+ * chosen and the Advanced optics of the simple lens among it, so that switching back finds them as they were (O4).
+ * The traced lens comes in as the default one.
+ */
+export function opticsWithLensModel(o: CameraOptics, model: LensModel): CameraOptics {
+  if (model === lensModelOf(o)) return o;
+  return model === 'thin' ? { ...o, traced: null } : { ...o, traced: newTracedLens(DEFAULT_MASTER) };
+}
+
+/** The tilt the lens model of `o` uses, degrees, and its axis. */
+export function tiltOf(o: CameraOptics): { deg: number; axisDeg: number } {
+  return tracedOf(o) ? { deg: o.tracedTiltDeg ?? 0, axisDeg: o.tracedTiltAxisDeg ?? 0 } : { deg: o.tiltDeg, axisDeg: o.tiltAxisDeg };
+}
+
+/** The optics with the tilt of their lens model set (the other model's stays). */
+export function withTilt(o: CameraOptics, deg: number, axisDeg: number): CameraOptics {
+  const L = OPTICS_LIMITS.tiltDeg;
+  const d = Math.min(L.max, Math.max(L.min, deg));
+  return tracedOf(o) ? { ...o, tracedTiltDeg: d, tracedTiltAxisDeg: axisDeg } : { ...o, tiltDeg: d, tiltAxisDeg: axisDeg };
+}
+
+/** True when the lens of `o` can tilt: the simple lens always, a traced lens without cylinders (the engine refuses those). */
+export function canTilt(o: CameraOptics): boolean {
+  const tr = tracedOf(o);
+  return !tr || tracedLensTilts(tr);
 }
 
 /** The thin-lens parameters of `o` as the bokeh data names them (for comparing with a type). */

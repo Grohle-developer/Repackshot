@@ -12,6 +12,7 @@ import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { ImageRef } from '../core/images';
 import type { Space } from '../core/transform';
+import type { Vec3 } from '../core/math';
 import type { ClipTarget } from '../core/animation';
 import type { ViewObject } from '../core/view-objects';
 import type { SectionAxis, SectionPick } from '../core/section';
@@ -68,6 +69,8 @@ export type PickMode =
   | { kind: 'link'; parts: NodeId[] }
   /** Q1: the section plane, by a click and an axis, or by the two points of a line (the first, once clicked). */
   | { kind: 'section'; pick: SectionPick }
+  /** O4: the plane of sharp focus of camera `camera` through two points of the product (the first, once clicked). */
+  | { kind: 'tiltPlane'; camera: string; first: Vec3 | null }
   | null;
 
 /**
@@ -351,6 +354,13 @@ export interface UiState {
   /** Q1: the axis a click on the model cuts across (Section ▸ Cut across). */
   sectionAxis: SectionAxis;
   /**
+   * O4: the viewport draws the plane of sharp focus of camera `focusPlaneCamera`: always while `focusPlanePinned`
+   * (Show the plane), and while the pointer or the focus is on the tilt's controls (`focusPlaneHover`).
+   */
+  focusPlaneCamera: string | null;
+  focusPlanePinned: boolean;
+  focusPlaneHover: boolean;
+  /**
    * N6: every clip selected in the timeline (the multiple selection, `selectedClip` among them). Code that only knows
    * `selectedClip` keeps working: the commands of ui/anim-commands.ts keep the two in step.
    */
@@ -557,6 +567,9 @@ export function defaultUiState(): UiState {
     effectSelected: null,
     effectGallery: false,
     sectionAxis: 'Z',
+    focusPlaneCamera: null,
+    focusPlanePinned: false,
+    focusPlaneHover: false,
     selectedClips: [],
     animFolded: {},
     animZoom: 1,

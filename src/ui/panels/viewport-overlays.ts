@@ -24,6 +24,8 @@ import type { IconName } from '../icons';
 import { cameraLabel, cameraName, dyn, lightName, targetLabel } from '../names';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { finishSectionPick, sectionBanner } from '../section-commands';
+import { finishTiltPick, tiltBanner } from '../lens-commands';
+import { focusPlaneHint } from '../../core/focus-plane';
 import { kbdFor } from '../shortcuts';
 import { L, formatNumber, getLang, isaLabel, t } from '../strings';
 import { drawAllGlyphs, type Tool } from '../ui-state';
@@ -379,10 +381,25 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       else if (pm?.kind === 'pivot') pickBanner.textContent = t('viewport.pickPivot');
       else if (pm?.kind === 'link') pickBanner.textContent = t('viewport.pickLink');
       else if (pm?.kind === 'section') pickBanner.textContent = sectionBanner(pm.pick);
+      else if (pm?.kind === 'tiltPlane') pickBanner.textContent = tiltBanner(pm.first);
       else if (pm?.kind === 'surface') pickBanner.textContent = t('viewport.pickSurface', { light: lightName(s, pm.light, getLang()) });
       else if (pm?.kind === 'aim') pickBanner.textContent = t(pm.part ? 'viewport.pickAimPart' : 'viewport.pickAim', { light: lightName(s, pm.light, getLang()) });
     },
   );
+  // O4: the plane of sharp focus of the camera whose tilt is being set (while the pointer is on its controls, while
+  // Show the plane is on, and while picking it through two points), drawn in the overlay's ink.
+  scope.watch(
+    (s, u) => [u.focusPlanePinned || u.focusPlaneHover || u.pickMode?.kind === 'tiltPlane', u.focusPlaneCamera, u.pickMode, s.camera, s.scene] as const,
+    ([on, camera, pm]) => {
+      const picking = pm?.kind === 'tiltPlane' ? pm : null;
+      const hint = on ? focusPlaneHint(store.get(), picking?.camera ?? camera, picking?.first ? [picking.first] : []) : null;
+      port.setFocusPlane?.(hint);
+      if (hint) vp.dataset.focusPlane = '1';
+      else delete vp.dataset.focusPlane;
+    },
+    (a, b) => a.every((x, i) => x === b[i]),
+  );
+  scope.onDispose(() => port.setFocusPlane?.(null));
   // Lights and cameras (L4): the glyphs the viewport draws (all of them, or the selected one's) and what it looks
   // through. Looking through something that is gone (deleted, undone) comes back to the active camera.
   const objectName = (o: ViewObject) => {
@@ -642,6 +659,10 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       } else if (pm.kind === 'section') {
         // Q1: the section plane. A line goes on to its second point; everything else is done with this click.
         finishSectionPick(ctx, pm.pick, tg.hit.point, tg.hit.normal);
+        return;
+      } else if (pm.kind === 'tiltPlane') {
+        // O4: the plane of sharp focus through two points; the first click waits for the second.
+        finishTiltPick(ctx, tg.hit.point);
         return;
       } else {
         store.dispatch({ type: 'studio/placeLight', id: pm.light, point: tg.hit.point, normal: tg.hit.normal, label: L('undo.placeLight', { name: { en: lightName(s, pm.light, 'en'), es: lightName(s, pm.light, 'es') } }) });

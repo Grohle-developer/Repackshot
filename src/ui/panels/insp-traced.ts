@@ -1,15 +1,16 @@
 // The camera's Lens in the inspector (phase O2, UI.md §2.4 Camera ▸ Lens, STUDIO-TOOLS §1 "Editor de lentes"): the
-// thin lens or a traced lens of src/data/lenses.json, chosen by character; for a traced lens its source, the lens
+// simple lens (stored as `thin`) or a traced lens of src/data/lenses.json, chosen by character; for a traced lens its source, the lens
 // behind an adapter, the coating, the variable gap of the soft-focus lens and the iris; what the engine computes of
 // it (rule 10: the focal length, the back focus, the f-number in use and the T-stop, elements and groups, the length,
 // the entrance pupil, an anamorphic lens's squeeze, the distortion and the falloff, and its cross-section drawn from
-// the lens as the engine prepared it); the artistic adjustments marked not physical; and *Save lens as…* to the
-// library (U4). Everything goes through the store (camera/set with the camera's `optics`), one undo entry per change
+// the lens as the engine prepared it); More options (O4): its tilt and the shift (insp-tilt.ts), the rest of the iris
+// and the artistic adjustments marked not physical; and *Save lens as…* to the library (U4). Switching the model keeps
+// the simple lens's bokeh and Advanced optics (core/optics.ts `opticsWithLensModel`). Everything goes through the store (camera/set with the camera's `optics`), one undo entry per change
 // or drag. The numbers come from services.lens (the page's rt.wasm or the launcher's /api/lens/info).
 
 import type { CameraId, CameraState } from '../../core/camera';
 import { itemsOf, type LensItem } from '../../core/library';
-import { OPTICS_LIMITS, OPTICS_NEUTRAL, opticsOf, tracedOf, type CameraOptics } from '../../core/optics';
+import { lensModelOf, OPTICS_LIMITS, OPTICS_NEUTRAL, opticsOf, tracedOf, type CameraOptics } from '../../core/optics';
 import { DEFAULT_MASTER, isAdapter, masterLenses, newTracedLens, TRACED_LIMITS, type EngineLensInfo, type TracedLens } from '../../core/traced-lens';
 import { COATINGS, LENS_CHARACTERS, LENS_PRESCRIPTIONS, lensPrescription, type LensCharacter, type LensPrescription } from '../../data/lenses';
 import { createLensPeek } from '../components/lens-peek';
@@ -22,6 +23,8 @@ import { h } from '../dom';
 import { lensPeekCache, lensSourceLine, sensorHalf, type PeekAnswer } from '../lens-peek';
 import { type Ctx, type Scope } from '../reactive';
 import { formatNumber, lbl, t, type StringKey } from '../strings';
+import { setLensModel } from '../lens-commands';
+import { tiltShiftFields } from './insp-tilt';
 
 /** The heading of the artistic knobs, marked as not physical (STUDIO-TOOLS §0). */
 function artisticHead(): HTMLElement {
@@ -49,21 +52,20 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
   };
   const dispatch = (next: CameraOptics, what: StringKey, gesture?: string) =>
     store.dispatch({ type: 'camera/set', id: camId(), patch: { optics: next }, gesture, label: cmd.editLabel('camera', what) });
-  /** A change to the traced lens; the bokeh type chosen stays only when the lens does. */
+  /** A change to the traced lens (O4: the simple lens's bokeh type stays, for when the camera goes back to it). */
   const setTraced = (patch: Partial<TracedLens>, what: StringKey, gesture?: string) => {
     const o = optics();
     const cur = tracedOf(o);
     if (!cur) return;
-    const next = { ...cur, ...patch };
-    const sameLens = next.key === cur.key;
-    dispatch({ ...o, traced: next, ...(sameLens ? {} : { bokeh: null, variant: null }) }, what, gesture);
+    dispatch({ ...o, traced: { ...cur, ...patch } }, what, gesture);
   };
+  /** A knob the two lenses share (the iris, the artistic aberration and swirl): the simple lens's bokeh type is then custom. */
   const setOptics = (patch: Partial<CameraOptics>, what: StringKey, gesture?: string) => dispatch({ ...optics(), ...patch, bokeh: null, variant: null }, what, gesture);
   /** Puts lens `key` on the camera (its own settings; the iris and the knobs of the optics stay). */
   const chooseLens = (key: string) => {
     const o = optics();
     if (tracedOf(o)?.key === key) return;
-    dispatch({ ...o, traced: newTracedLens(key), bokeh: null, variant: null }, 'camera.lensChoice');
+    dispatch({ ...o, traced: newTracedLens(key) }, 'camera.lensChoice');
   };
 
   // --- thin or traced ---------------------------------------------------------------------------------------------
@@ -72,12 +74,9 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       { value: 'thin' as const, label: t('camera.lensThin') },
       { value: 'traced' as const, label: t('camera.lensTraced') },
     ],
-    tracedOf(optics()) ? 'traced' : 'thin',
-    (v) => {
-      const o = optics();
-      if (v === 'thin' && tracedOf(o)) dispatch({ ...o, traced: null, bokeh: null, variant: null }, 'camera.lensModel');
-      if (v === 'traced' && !tracedOf(o)) dispatch({ ...o, traced: newTracedLens(DEFAULT_MASTER), bokeh: null, variant: null }, 'camera.lensModel');
-    },
+    lensModelOf(optics()),
+    // O4: the simple lens's bokeh and Advanced optics stay in the camera for when it comes back.
+    (v) => setLensModel(ctx, camId(), v),
     { full: true, ariaLabel: t('camera.lensModel') },
   );
   const thinNote = h('div', { class: 'note' }, t('camera.lensThinAux'));
@@ -244,6 +243,8 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       row('camera.lensInfoPupil', `⌀ ${n(i.entrancePupilMm[1], 1)} mm`),
     ];
     if (Math.abs(i.squeeze - 1) > 1e-3) rows.push(row('camera.lensInfoSqueeze', `${n(i.squeeze, 2)}×`));
+    // O4: what the engine turns the lens by for the camera's tilt.
+    if (i.tiltDeg !== 0) rows.push(row('camera.lensInfoTilt', `${n(i.tiltDeg, 2)}°`, 'camera.lensInfoTiltAux'));
     const d = i.distortion;
     const ri = i.relativeIllumination;
     const charts: HTMLElement[] = [];
@@ -300,9 +301,24 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     [ca, (_tr, o) => o.caAmount],
     [swirl, (_tr, o) => o.swirl],
   ];
+  // O4: the rest of the iris (shared with the simple lens's Advanced optics, as the blades are): the traced lens's own.
+  const roundness = slider({ value: o0.roundness, min: 0, max: 1, step: 0.01, ariaLabel: t('camera.roundness'), onChange: (v, g) => setOptics({ roundness: v }, 'camera.roundness', g) });
+  const rotation = numberField({ value: o0.rotationDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.rotation'), onChange: (v, g) => setOptics({ rotationDeg: v }, 'camera.rotation', g) });
+  const obstruction = slider({ value: o0.obstruction, min: 0, max: OPTICS_LIMITS.obstruction.max, step: 0.01, ariaLabel: t('camera.obstruction'), onChange: (v, g) => setOptics({ obstruction: v }, 'camera.obstruction', g) });
+  const iris: [Control<number>, (o: CameraOptics) => number][] = [
+    [roundness, (o) => o.roundness],
+    [rotation, (o) => o.rotationDeg],
+    [obstruction, (o) => o.obstruction],
+  ];
   const advancedBody = h(
     'div',
-    { class: 'stack' },
+    { class: 'stack', 'data-lens-more': '' },
+    h('div', { class: 'field-label' }, t('camera.tiltShift')),
+    tiltShiftFields(ctx, scope, camId),
+    h('div', { class: 'field-label', style: 'margin-top:4px' }, t('camera.irisMore')),
+    field(t('camera.roundness'), roundness.el),
+    field(t('camera.rotation'), rotation.el),
+    field(t('camera.obstruction'), obstruction.el),
     artisticHead(),
     tip(field(t('camera.lensDistortion'), distortion.el), 'camera.lensDistortionAux'),
     tip(field(t('camera.lensVignetting'), vignetting.el), 'camera.lensVignettingAux'),
@@ -364,6 +380,8 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       const o = opticsOf(c);
       const tr = tracedOf(o);
       model.set(tr ? 'traced' : 'thin');
+      for (const [ctrl, get] of iris) ctrl.set(get(o));
+      roundness.el.toggleAttribute('data-disabled', o.blades === 0);
       thinNote.style.display = tr ? 'none' : '';
       tracedBox.style.display = tr ? '' : 'none';
       blades.set(o.blades);
@@ -384,6 +402,9 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
   drawChips();
   drawList();
 
-  return h('div', { class: 'stack', 'data-guide': 'camera-lens' }, field(t('camera.lensModel'), model.el), thinNote, tracedBox);
+  // O4: the label over the two models, so that their names fit in either language.
+  const modelRow = field(t('camera.lensModel'), model.el);
+  modelRow.classList.add('wide');
+  return h('div', { class: 'stack', 'data-guide': 'camera-lens' }, modelRow, thinNote, tracedBox);
 }
 

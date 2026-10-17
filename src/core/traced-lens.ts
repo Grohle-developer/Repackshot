@@ -83,6 +83,12 @@ export function normalizeTracedLens(v: unknown): TracedLens | null {
   };
 }
 
+/** True when the engine tilts `t` (O4): a lens with cylinders (the anamorphic adapter) does not. */
+export function tracedLensTilts(t: TracedLens): boolean {
+  const c = composeLens(t);
+  return !!c && c.surfaces.every((s) => s.kind !== 'cylinder');
+}
+
 /** What the engine is sent of a traced lens: one sequence of surfaces with its stop, focus and limits. */
 export interface ComposedLens {
   surfaces: LensSurface[];
@@ -199,6 +205,8 @@ export interface EngineLensInfo {
   sensorMm: number;
   /** An anamorphic lens's squeeze as traced at its focus (1 without cylinders): what the image is desqueezed by. */
   squeeze: number;
+  /** O4: the angle the lens turns against the sensor for the camera's tilt, degrees (0: upright). */
+  tiltDeg: number;
   /** Distortion, percent, against image height (mm on the sensor). */
   distortion: [number, number][];
   /** Relative illumination against image height. */
@@ -288,10 +296,11 @@ export function parseLensInfo(text: string): EngineLensInfo | null | undefined {
     groups: num('groups'),
     sensorMm: num('sensorMm'),
     squeeze: r.squeeze === undefined ? 1 : num('squeeze'),
+    tiltDeg: r.tiltDeg === undefined ? 0 : num('tiltDeg'),
     distortion: distortion ?? [],
     relativeIllumination: ri ?? [],
     section: parseSection(r.section),
   };
-  const numbers = [info.eflMm, info.bflMm, info.imageScaleMm, info.fNumber, info.tStop, info.lengthMm, info.elements, info.groups, info.squeeze, ...info.transmittance];
+  const numbers = [info.eflMm, info.bflMm, info.imageScaleMm, info.fNumber, info.tStop, info.lengthMm, info.elements, info.groups, info.squeeze, info.tiltDeg, ...info.transmittance];
   return numbers.every(Number.isFinite) && distortion && ri ? info : undefined;
 }

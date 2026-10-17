@@ -1356,3 +1356,73 @@
   text-transform: lowercase;
   color: var(--ink-3);
 }
+
+/* O4: the tilt's direction (Camera ▸ Advanced optics and Lens ▸ More options): a dial, four presets and the angle. */
+.tilt-recede {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.tilt-presets {
+  display: grid;
+  grid-template-columns: repeat(2, 24px);
+  gap: 2px;
+}
+.tilt-presets .icon-btn {
+  width: 24px;
+  height: 22px;
+}
+.tilt-recede .num {
+  width: 58px;
+  flex: none;
+}
+.tilt-dial {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+}
+.tilt-dial:active {
+  cursor: grabbing;
+}
+.tilt-dial:focus-visible {
+  outline: 1.5px solid var(--line-strong);
+  outline-offset: 1px;
+}
+.tilt-dial-ring {
+  fill: var(--bg-0);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.tilt-dial-needle {
+  stroke: var(--ink-0);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.tilt-dial-knob,
+.tilt-dial-hub {
+  fill: var(--ink-0);
+}
+.tilt-dial[data-off] .tilt-dial-needle {
+  stroke: var(--ink-3);
+}
+.tilt-dial[data-off] .tilt-dial-knob {
+  fill: var(--ink-3);
+}
+.tilt-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tilt-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* O4: Camera ▸ Lens ▸ Lens model, its label above: the two models share the inspector's width. */
+.field.wide > .field-control > .seg.full {
+  flex: 1;
+}
