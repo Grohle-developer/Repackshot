@@ -170,6 +170,21 @@ async function exportViewport(page) {
 
 const sizeSel = '.rw [data-section="rw.size"]';
 
+/**
+ * The results viewer opens when a job is DONE, not when its file is written: a download (or the third frame of a
+ * sequence) arrives while the job is still finishing. Esc sent before the viewer is there is not the viewer's: it
+ * reaches the scene and deselects the part (UI.md: Esc deselects), and the viewer then opens anyway. So wait for the
+ * viewer, close it, and wait for it to be gone.
+ */
+async function closeViewer(page) {
+  await page.waitForSelector('.rv[data-ready="1"]', { timeout: 60000 });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.rv', { state: 'detached', timeout: 10000 });
+}
+
+/** The names of the parts selected in the scene tree. */
+const selectedParts = (page) => page.locator('.tree-row[aria-selected="true"] .tree-name').allTextContents();
+
 // ------------------------------------------------------------------ main
 
 let BASE_URL = opt('url', null);
@@ -267,7 +282,7 @@ try {
     const jpg = await download(page, () => page.keyboard.press('Enter'));
     const density = jfifDensity(jpg.bytes);
     check('e_jpeg_density', density?.units === 1 && density.x === 72 && density.y === 72, { file: jpg.name, density });
-    await page.keyboard.press('Escape');
+    await closeViewer(page);
 
     // (f) An animation job: three frames, numbered.
     await page.keyboard.press('Control+Enter');
@@ -286,7 +301,7 @@ try {
     while (names.length < 3 && Date.now() - t0 < 120000) await page.waitForTimeout(250);
     await page.waitForTimeout(500);
     check('f_frames', names.length === 3 && names.every((n, i) => n === `frames-Camera 1_000${i + 1}.png`), { names });
-    await page.keyboard.press('Escape');
+    await closeViewer(page);
     // Back to an image for the rest.
     await page.keyboard.press('Control+Enter');
     await page.waitForSelector('.rw');
@@ -308,13 +323,21 @@ try {
     await page.keyboard.press('Enter');
     await page.waitForSelector('.rv[data-ready="1"]', { timeout: 240000 });
     const nameA = await page.locator('.rv-title').textContent();
-    await page.keyboard.press('Escape');
+    await closeViewer(page);
+    // Copper goes to the Body only: with nothing selected the palette asks "Replace all" inline and stays open (modal),
+    // and the next ⏎ would answer it instead of rendering.
+    const before = await selectedParts(page);
+    if (before.join() !== 'Body') fail(`(g) expected only the Body selected before applying Copper, got [${before.join(', ')}]`);
     await page.keyboard.press('Control+k');
     await page.keyboard.type('Copper');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-    // Ctrl ⇧ ⏎: the same settings, at once.
+    await page.waitForSelector('.palette', { state: 'detached', timeout: 10000 });
+    const copper = await page.locator('.tree-row', { has: page.locator('.tree-name', { hasText: /^Body$/ }) }).locator('.tree-mat').textContent();
+    if (copper !== 'Copper') fail(`(g) the Body's material is "${copper}" after the palette's Copper`);
+    // Ctrl ⇧ ⏎: the same settings, at once. It puts a new job first in the queue (the drawer is open since (d)).
+    const jobsBefore = await page.locator('.queue-row').count();
     await page.keyboard.press('Control+Shift+Enter');
+    await page.waitForFunction((n) => document.querySelectorAll('.queue-row').length > n, jobsBefore, { timeout: 10000 });
     await page.waitForFunction((a) => { const t = document.querySelector('.rv[data-ready="1"] .rv-title')?.textContent; return t && t !== a; }, nameA, { timeout: 240000 });
     await page.locator('.rv-actions button', { hasText: 'Compare with' }).click();
     await page.locator('.floating .menu-item').filter({ hasText: nameA }).first().click();

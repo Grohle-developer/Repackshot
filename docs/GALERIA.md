@@ -26,7 +26,7 @@ De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las ca
 
 ### Sin publicar
 
-Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.16).
+Ninguna captura nueva: todas las de `docs/ui/` están ya en una versión publicada (la última es v0.1.16). Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
 
 ### v0.1.16 · 2026-10-17
 
@@ -507,17 +507,17 @@ La primera versión: interfaz, importadores, motor en Rust con modos Rápido y C
 
 #### U5 · Ventana de render y visor de resultados
 
-<a id="c-render-window-image"></a><img src="ui/render-window-image.png" width="480" alt="La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR), tamaño en píxeles o en impresión y calidad por muestras."><br>
-`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR), tamaño en píxeles o en impresión y calidad por muestras.
+<a id="c-render-window-image"></a><img src="ui/render-window-image.png" width="480" alt="La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras."><br>
+`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras. *(regrabada en Sin publicar)*
 
-<a id="c-render-window-animation"></a><img src="ui/render-window-animation.png" width="480" alt="La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en secuencia de fotogramas (el vídeo, «próximamente») y tamaño de fotograma."><br>
-`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en secuencia de fotogramas (el vídeo, «próximamente») y tamaño de fotograma.
+<a id="c-render-window-animation"></a><img src="ui/render-window-animation.png" width="480" alt="La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma."><br>
+`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma. *(regrabada en Sin publicar)*
 
 <a id="c-queue-drawer"></a><img src="ui/queue-drawer.png" width="480" alt="El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados."><br>
-`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados.
+`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados. *(regrabada en Sin publicar)*
 
 <a id="c-results-split"></a><img src="ui/results-split.png" width="480" alt="El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo."><br>
-`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo.
+`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo. *(regrabada en Sin publicar)*
 
 #### I2 · STEP e IGES
 

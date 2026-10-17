@@ -22,6 +22,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - `{studio}` en el nombre es el estudio guardado del trabajo; sin él, el nombre del tipo de producto como antes. Un estudio que ya no está guardado hace fallar su trabajo con el motivo y la cola sigue (N2).
 - `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 
+### Herramientas
+
+- `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
+
 ### Limitaciones conocidas de esta versión
 
 - El pase alfa es una **máscara de objetos**: no es el alfa de un render con fondo transparente cuando el camino atraviesa vidrio (que sí cuenta como superficie) o el suelo es un atrapasombras con su sombra; los recortes de una textura cuentan como superficie. Con *Terminar por ruido* lleva las muestras de la primera ronda (N2).
