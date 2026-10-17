@@ -16,6 +16,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - `rt.wasm` exporta `rt_scene_pick` (el rayo principal de un punto de la imagen y lo que toca) y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS` admite al final `frame_sensor_mm`. Ningún *hash* de render fijado cambia; los picos de las escenas de O1 y O2 quedan fijados y comprobados en `rt.wasm` en CI (F1).
 
+### Interfaz
+
+- **El visor arranca siempre en *Rápido*.** Antes arrancaba en el último modo, y en una instalación nueva ese era *Completo*: el motor se ponía a renderizar nada más abrir la aplicación, sin modelo. Desaparece el ajuste *Modo del visor al arrancar*; *Completo* se elige en la barra de arriba. Lo guarda `tests/start-mode-browser.test.ts`, que falla con el arranque de antes.
+
 ## v0.1.17 — 2026-10-17
 
 ### Motor
