@@ -635,8 +635,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    línea del primero al segundo); mientras uno está armado el visor lo dice
    en la franja de arriba (*Sección: haz clic en la pieza para cortar según
    Z · Esc cancela*), pulsar otra vez el botón o `Esc` lo baja, un clic que
-   no hace plano se avisa y se espera otro, y cualquier clic armado hace
-   **una** entrada (*Colocar el plano de sección*). Con plano hay **Punto**
+   no hace plano se avisa y se espera otro, y el clic que hace el plano deja
+   **una** entrada (*Colocar el plano de sección*; el primero de los dos
+   puntos solo se recuerda y no deja ninguna). Con plano hay **Punto**
    y **Normal** en números (la normal se normaliza y una que no sea nada no
    se toma), **Tapar el corte**, **Cambiar de lado** y **Quitar el plano**;
    sin plano, una frase dice cómo hacer uno. Una nota enumera las piezas
