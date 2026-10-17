@@ -226,6 +226,7 @@ tools/                      scripts de desarrollo: capturas, generadores, hojas 
   setup-thumbs.mjs          las miniaturas de montaje (L6): escenas con el código de la app (tests/setup-thumbs-dump.test.ts, vitest) y `rt`
   sets-sheet.mjs            la hoja de contactos de los sets (L6): out/sets-sheet.html; rt-batch.mjs, lo que comparten
   sets-check.mjs            comprobación en el navegador de los sets (L6): catálogo, aplicar, En el set, Restablecer; docs/ui/sets-catalogue.png
+  scene-type-check.mjs      comprobación en el navegador del tipo de escena (K1): el control, que no cambian los controles, las siete recetas de Interior, las siete filas del Doctor, ida y vuelta, en inglés y en español; docs/ui/scene-type-interior.png
   plugin-pack.mjs  plugin-unpack.mjs  empaquetar y abrir un .rpk (P6, §9); plugins-check.mjs, la comprobación de navegador
   plugins/                  build-film.mjs (el paquete de película desde un checkout de aintfilm), brand-scan.mjs (D112),
                             film/manifest.json y film/plugin.js (el pegamento del ABI, nuestro)
