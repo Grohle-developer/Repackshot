@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { AI_STYLES, DEFAULT_AI_PIPELINE } from '../src/core/ai';
 import { nextSeed } from '../src/core/ai-post';
 import { AI_PERCENT_KEYS, DEFAULT_AI, defaultRenderSettings, migrateRender, normaliseAi, patchSettings, type AiSettings } from '../src/core/render';
-import { defaultSettings, migrateDoc, SETTINGS_SCHEMA, withProjectDefaults, withSetting } from '../src/core/settings';
+import { defaultSettings, migrateDoc, OLD_AI_FACTORY, SETTINGS_SCHEMA, withProjectDefaults, withSetting } from '../src/core/settings';
 import { SYNTHETIC_LIMITS } from '../src/ai/synthetic';
 import { createInitialState, createStore } from '../src/core/store';
 import { migrateProject, parseProject, serializeProject } from '../src/io/project';
@@ -41,13 +41,19 @@ describe('the AI settings of a project', () => {
     expect(withProjectDefaults(createInitialState(), d).render.ai.intervention).toBe(50);
   });
 
-  it('C1: a stored settings document keeps what it holds; only a value it does not have takes the new default', () => {
-    // The document stores every setting, so an old default cannot be told from a choice: it stays as stored.
-    const stored = migrateDoc({ schema: SETTINGS_SCHEMA, settings: { 'ai.intervention': 30, 'ai.guardDeltaE': 2, 'ai.guardDeltaE95': 3, 'ai.guardEdgePx': 2 }, layout: {} });
-    expect([stored.settings['ai.intervention'], stored.settings['ai.guardDeltaE'], stored.settings['ai.guardDeltaE95'], stored.settings['ai.guardEdgePx']]).toEqual([30, 2, 3, 2]);
-    const partial = migrateDoc({ schema: SETTINGS_SCHEMA, settings: { 'ai.intervention': 70 }, layout: {} });
-    expect(partial.settings['ai.intervention']).toBe(70);
-    expect(partial.settings['ai.guardDeltaE']).toBe(4);
+  it('C1: a stored document of before takes the new values where it held the old factory ones, and keeps a choice', () => {
+    const keys = ['ai.intervention', 'ai.guardDeltaE', 'ai.guardDeltaE95', 'ai.guardEdgePx'] as const;
+    const read = (doc: ReturnType<typeof migrateDoc>) => keys.map((k) => doc.settings[k]);
+    // Schema 1, the old factory values (what a document written before C1 holds untouched): the new ones.
+    expect(read(migrateDoc({ schema: 1, settings: { ...OLD_AI_FACTORY, 'general.lang': 'es' }, layout: {} }))).toEqual([50, 4, 6, 4]);
+    expect(migrateDoc({ schema: 1, settings: { ...OLD_AI_FACTORY, 'general.lang': 'es' }, layout: {} }).settings['general.lang']).toBe('es');
+    // Values the person chose stay, each on its own.
+    expect(read(migrateDoc({ schema: 1, settings: { 'ai.intervention': 35, 'ai.guardDeltaE': 2, 'ai.guardDeltaE95': 5, 'ai.guardEdgePx': 1 }, layout: {} }))).toEqual([35, 4, 5, 1]);
+    // A document written since C1 (schema 2) is read as it is: a 30 there is a choice.
+    expect(SETTINGS_SCHEMA).toBe(2);
+    expect(read(migrateDoc({ schema: SETTINGS_SCHEMA, settings: { ...OLD_AI_FACTORY }, layout: {} }))).toEqual([30, 2, 3, 2]);
+    // And a document without the keys takes the factory values.
+    expect(read(migrateDoc({ schema: 1, settings: {}, layout: {} }))).toEqual([50, 4, 6, 4]);
   });
 
   it('are integers 0..100, and an unknown style is Natural', () => {
