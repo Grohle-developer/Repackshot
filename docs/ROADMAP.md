@@ -10549,6 +10549,162 @@ trabajo en curso en la vista, en los dos temas.
 - En `engine/crates/rt-app/README.md` la tabla de banderas de la trama no
   tenía las de E5b-1 (64, 128, 256): están, con la 512.
 
+## U15 · Flechas y deslizadores en los valores — **Opus** — hecha
+
+Petición del usuario (17-10): «quiero aparte flechas de up y down en todos
+los valores, o sliders cuando convenga más. En enfoque creo que se serviría
+de ambas. Un slider y al lado el valor con up and down».
+
+**Qué.** Flechas ▲ ▼ visibles en **todo** campo numérico, puestas en el
+propio `numberField` para que las lleven todos sus usos: un clic sube o baja
+un paso (`Shift` más fino, `Ctrl` más grueso, como el arrastre), mantenidas
+repiten tras una pausa, una pulsación entera es un gesto y una entrada de
+deshacer, el valor se queda en sus límites y la flecha del límite se apaga,
+respeta *deshabilitado*, no arrastra el campo, llama a `onHold`/`onRelease`
+y no son paradas de tabulación (el *spinbutton* sigue con el teclado). Que
+quepan en las columnas estrechas del inspector, en los tripletes X, Y, Z, en
+la línea de tiempo y en las filas de Ajustes **sin recortar nada ni hacer
+crecer las filas**, medido en un navegador. Y una **regla escrita** de
+cuándo un valor es mejor como deslizador con su campo y sus flechas al lado
+(`UI.md` §4.4), aplicada en el inspector, la línea de tiempo, la ventana de
+render y Ajustes. La *Distancia de enfoque* de la cámara no se toca: la
+rehace la fase F1 como deslizador con su campo, y recibe las flechas de este
+cambio.
+
+**Criterio.** Tests del campo (clic con `Shift` y `Ctrl`, mantener, una
+entrada de deshacer por pulsación en el *store*, límites, deshabilitado,
+escribir y arrastrar, `onHold`/`onRelease`) y un test de navegador de la
+disposición en los estados principales, en es y en, a 1600 × 1000 y
+1280 × 800, que se comprueba que falla rompiendo el CSS; `npm run qa` en
+verde; capturas.
+
+**Hecho.**
+
+- **Las flechas** (`ui/components/controls.ts`, `numberField`): dos
+  `button` apilados al final del campo (`.num-steps`, `.num-up`,
+  `.num-down`), con los `chevronUp`/`chevronDown` del juego de iconos a
+  12 px (1,5 px de trazo), en `ink-2`, `ink-0` con fondo `soft` al pasar el
+  ratón y `line` al pulsar; dentro del marco y de su altura, 26 px, sin
+  crecer. El relleno derecho del campo (7 px) pasa a ser su columna (14 px
+  y 4 px de margen). La pulsación va en `pointerdown` (y `click` sin puntero,
+  `detail` 0, para un lector de pantalla o un script: un paso): para la
+  propagación (no hay arrastre), evita que el botón tome el foco y se lo da
+  al *spinbutton*, captura el puntero en el par (la pulsación acaba donde se
+  suelte, también si la flecha se apaga bajo el dedo al llegar al límite) y
+  repite: un paso al pulsar, otro a los `STEP_REPEAT_DELAY_MS` = 400 ms y uno
+  cada `STEP_REPEAT_MS` = 50 ms; `Shift` y `Ctrl` pulsados mientras tanto
+  cambian los pasos siguientes. Todo con el mismo `newGesture('step')`, así
+  que el *store* lo junta en una entrada; `onHold` al pulsar y `onRelease` al
+  soltar (la vista previa de la IA y la de los plugins esperan). Un campo que
+  desaparece bajo la pulsación (su panel se redibuja) o se deshabilita la
+  termina. Doble clic sobre una flecha son dos pasos, no la edición; si se
+  estaba escribiendo, la pulsación toma lo escrito y sube desde ahí. Se
+  llaman *Increase*/*Aumentar* y *Decrease*/*Disminuir*
+  (`common.increase`, `common.decrease`), `tabindex` −1.
+- **Deshabilitado**: el campo mira también la clase `is-disabled` (la que
+  ponen las filas *próximamente* de Ajustes) para el arrastre, las teclas,
+  la edición y las flechas, y gana `setDisabled` (`NumberControl`; también
+  en `lengthField` y `slider`), que usan los términos de la proporción
+  (`insp-aspect.ts`, antes tocaban las props a mano) y los mandos de la lente
+  fina con una lente trazada (`insp-lens.ts`: antes se apagaban sus `input`
+  pero el campo se seguía arrastrando).
+- **Variante compacta** (◆ Fable): un campo con etiqueta en línea (X, Y, Z;
+  U, V; H, V) y el campo de un deslizador (`slider()` la pide) llevan un par
+  de 10 px con iconos de 10 px, 5 px de relleno izquierdo y márgenes de 3 y
+  2 px junto a la etiqueta y la unidad: el valor conserva el sitio de antes
+  (en un triplete de 102 px, 47 px de valor, como antes; en el campo de un
+  deslizador de 78 px, 59 px frente a 62). Es la propuesta por defecto; la
+  alternativa (las flechas solo al pasar el ratón o con el foco) mueve el
+  valor o tapa la unidad al aparecer.
+- **El campo de tiempo** de la ventana de render (`timeField`) deja de ser un
+  `input` de texto y es un `numberField` de segundos que se ve y se escribe
+  como `hh:mm:ss` (nuevo `parse` del campo: con él, la edición empieza por el
+  texto que se ve): arrastrable, con sus flechas (un minuto; `Shift` 6 s,
+  `Ctrl` 10 min), una entrada de deshacer por gesto; lo que no es una hora o
+  no pasa de 0 se rechaza, como antes. Sin máximo en el campo (el *store* lo
+  limita a una semana): un campo acotado recorre todo su rango en 240 px.
+  `tools/doctor-engine-check.mjs` escribe en él con doble clic.
+- **La regla y lo convertido** (`UI.md` §4.4; ◆ Fable confirma la lista):
+  un valor con rango natural acotado (factor 0–1, porcentaje, ángulo en un
+  rango fijo, opacidad) es deslizador con su campo y sus flechas; una
+  magnitud física o sin tope (mm, tamaños, potencias, kelvin, cuentas,
+  tiempos, semillas) sigue en campo con flechas. Convertidos: **inspector**
+  —*Rozamiento* (0–2) y *Rebote* (0–1) de físicas; *Giro* del bokeh
+  (±180°), *Inclinación* (±12°) y *Eje de la inclinación* (±180°) de la
+  óptica avanzada; el *Ángulo* de un filtro (±180°); el *Ángulo de
+  suavizado* (0–180°); el *Ángulo* de un patrón circular (±360°); el *Giro*
+  de una textura y de una etiqueta (±360°); en un foco propio *Acimut*
+  (±180°), *Elevación* (±89°), *Giro* (±180°), *Dispersión* (1–180°),
+  *Ángulo de cono* (1–179°), *Transición* (0–100 %) y *Disco del sol*
+  (0–5°)—; **ventana de render** —*Calidad* del JPEG (1–100), *Ruido* de
+  *Terminar por ruido* (0,5–5 %) e *Intensidad* de la reducción de ruido
+  (0–100 %)—; **Ajustes** —*Velocidad de órbita*, *Velocidad de zoom*
+  (25–300 %), *Tamaño del gizmo* (50–200 %) e *Intervención por defecto*
+  (0–100), en `SLIDER_SETTINGS` de `settings-rows.ts`—. Los parámetros de
+  material ya eran deslizadores hasta 2,5 (`insp-parts.ts`) y los del editor
+  de nodos con un rango de 10 o menos; las sensaciones de *Ambiente*, las
+  de la IA y las de los plugins ya lo eran. CSS: `.rw .slider .num`,
+  `.rw-stack > .slider` (hasta 300 px), `.rw-inline > .slider` (220 px, la
+  calidad junto al formato) y `.sw-slider` (hasta 240 px).
+- **Tests**: `tests/number-field-browser.test.ts` (10, con la página
+  `tests/browser/number-field.html`: el campo, el deslizador y el de tiempo
+  reales escribiendo en un *store* real, con el reloj falso de Playwright para
+  la repetición): el par en cada campo, a la derecha, dentro, sin pisar el
+  valor y sin ser parada de tabulación; clic, `Shift` y `Ctrl`, una entrada
+  por clic; mantener (nada antes de 400 ms, luego uno cada 50 ms, `Shift`
+  durante la repetición, nada tras soltar, **una** entrada que un deshacer
+  quita entera, soltar fuera del botón); límites y flecha apagada (también
+  con una pulsación mantenida hasta el máximo y con el teclado); deshabilitado
+  y `setDisabled`, también a mitad de una pulsación; `onHold`/`onRelease`;
+  sin arrastre, sin edición con doble clic y con el foco en el campo; escribir,
+  arrastrar y las teclas; el deslizador y el de tiempo; un clic sin puntero.
+  `tests/number-layout-browser.test.ts` (2, uno por idioma): los estados de
+  abajo, cada uno a los dos tamaños.
+- **Medidas**: en un Chromium real (sin GPU), antes de las flechas ningún campo de los
+  estados del ejemplo recortaba nada; con ellas, el test de disposición mide
+  por idioma 1 592 campos y 620 deslizadores en 34 vistas (siete estados a
+  los dos tamaños y las diez secciones de Ajustes a los dos tamaños), **0
+  problemas** en es y en (524 s los dos). El margen más justo entre el valor
+  y su sitio es de 13 px (*Automático* en *Hilos*, campo de 110 px), 14 px
+  (*-183* en un triplete de coordenadas de 102 px) y 17 px (*fps*, 84 px).
+  **Que el test caza un recorte**: con `.num { height: 16px }` a propósito
+  (menos que su contenido), el de inglés falla con 3 184 problemas (*its
+  content is taller than it (17 > 14)*, *the step buttons are not a stacked
+  pair*…); deshecho, vuelve a verde. Y ocho mutaciones del campo, cada una
+  con algún test de `number-field-browser` en rojo: un gesto por repetición
+  (una entrada de deshacer por paso), sin repetición, las flechas sin
+  apagarse en el límite, sin `onRelease`, el arrastre desde las flechas, el
+  foco en la flecha, las flechas en un campo deshabilitado y sin `Shift`.
+- **Comprobación de navegador** `tools/number-fields-check.mjs`: (a) las
+  flechas en todos los campos de la pantalla inicial; (b) un clic en ▲ de
+  *Focal* es un paso y una entrada, y mantener ▼ un segundo son muchos pasos
+  y otra entrada que un deshacer quita entera; (c) los ángulos de un foco
+  propio son deslizadores y *Distancia* y *Potencia* campos; (d) las
+  velocidades de *Preferencias* son deslizadores y *Tamaño de la interfaz*
+  un campo. Capturas `docs/ui/u15-light-fields.png`,
+  `u15-part-triplets.png` y `u15-settings-sliders.png`.
+
+**Qué no encajó con el plan** (regla 12):
+
+- Los tests «en el entorno DOM de los tests de componentes»: vitest corre en
+  Node sin DOM y ningún test usaba `numberField`; los componentes con DOM se
+  prueban en Chromium a través de Vite (`tests/browser/*.html`), así que los
+  del campo son una página de esas, con reloj falso.
+- `SPEC.md` no describe el campo numérico: no cambia.
+- No se convirtieron, por la regla de no apretar filas: el acimut, la
+  elevación, la parte y el tamaño de las luces de un estudio (rejilla de dos
+  con etiqueta en línea, `insp-scene.ts`) y las asas de la curva; tampoco
+  *Tamaño de la interfaz* ni *Tamaño del texto* (porcentajes, pero
+  reescalan la ventana bajo el pulgar mientras se arrastra) ni la dirección
+  del viento de *Ambiente* (da la vuelta, sin rango). La hoja de importación
+  (el ángulo de teselado) no estaba en las zonas del encargo.
+- Un valor largo en un campo estrecho ya se cortaba antes (`overflow:
+  hidden` en el valor; en un triplete, más de unos 6 caracteres); la
+  variante compacta deja el mismo sitio, no más. El test de disposición mide
+  los valores de los estados que abre.
+- Los ◆ (la variante compacta, la lista de lo convertido y el ritmo de la
+  repetición) están en *Decisiones para Fable*.
+
 ## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
 
 Petición del usuario (14-10): en animación faltaban las **explosiones
@@ -11376,6 +11532,17 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   claros en oscuro, lo que aplana la jerarquía de grises. Decidir: subirlos,
   limitar el texto auxiliar a `bg-0`, `bg-1` y *hover* (`#4e4e4e` /
   `#afafaf`) o aceptar 4,5:1 para el texto secundario.
+
+- **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
+  de las flechas (hoy un par más fino, siempre visible, en los campos con
+  etiqueta en línea y en el de un deslizador; la otra opción, flechas solo
+  al pasar el ratón o con el foco); la **lista de lo convertido a
+  deslizador** (`UI.md` §4.4: físicas, ángulos de la óptica, de los filtros,
+  del suavizado, de los patrones, de texturas y etiquetas y de un foco
+  propio; calidad JPEG, ruido e intensidad de la reducción de ruido;
+  velocidades, gizmo e intervención en Ajustes) y lo que se quedó en campo
+  (las luces del estudio, las asas, *Tamaño de la interfaz* y *del texto*);
+  y el ritmo de la repetición (400 ms y luego cada 50 ms).
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de

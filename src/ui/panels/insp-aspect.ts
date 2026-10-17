@@ -35,8 +35,8 @@ export function aspectRows(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLE
     t('camera.aspect'),
   );
   // The terms scrub one pixel at a time (no maximum: the reducer keeps the ratio within the render window's limits).
-  const term = (which: 'w' | 'h') => {
-    const props = {
+  const term = (which: 'w' | 'h') => ({
+    ctl: numberField({
       value: current()[which],
       min: 1,
       step: 1,
@@ -48,17 +48,12 @@ export function aspectRows(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLE
         const next = customAspect(which === 'w' ? v : cur.w, which === 'h' ? v : cur.h);
         if (next) write(next, g);
       },
-    };
-    return { props, ctl: numberField(props) };
-  };
+    }),
+  });
   const w = term('w');
   const hh = term('h');
   const enable = (on: boolean) => {
-    for (const x of [w, hh]) {
-      x.props.disabled = !on;
-      x.ctl.el.classList.toggle('is-disabled', !on);
-      x.ctl.el.tabIndex = on ? 0 : -1;
-    }
+    for (const x of [w, hh]) x.ctl.setDisabled(!on);
   };
   enable(current().preset === CUSTOM);
   scope.watch(

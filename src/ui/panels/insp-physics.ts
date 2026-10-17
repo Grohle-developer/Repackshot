@@ -8,7 +8,7 @@ import { BUILT_ROLES, DEFAULT_DENSITY, DENSITY_BY_CATEGORY, PHYSICS_LIMITS, PHYS
 import { fallsAsParts, materialDensity, roleOf, shownBounciness, shownFriction, type PhysicsProps, type PhysicsRole } from '../../core/physics';
 import { ancestors, partsUnder, type NodeId } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
-import { field, numberField, segmented, toggle } from '../components/controls';
+import { field, numberField, segmented, slider, toggle } from '../components/controls';
 import { section } from '../components/section';
 import { h, icon } from '../dom';
 import { dyn, targetLabel } from '../names';
@@ -69,9 +69,10 @@ export function physicsSection(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLEleme
   density.el.setAttribute('data-field', 'phys.density');
   const densityNote = h('span', { class: 'aux' });
   const densityReset = h('button', { type: 'button', class: 'btn btn-sm', onclick: () => set({ density: null }) }, t('phys.densityReset'));
-  const friction = numberField({ value: 0.5, min: PHYSICS_LIMITS.friction.min, max: PHYSICS_LIMITS.friction.max, step: 0.05, digits: 2, fill: true, ariaLabel: t('phys.friction'), onChange: (v, g) => set({ friction: v }, g) });
+  // U15: bounded factors, so sliders with their field.
+  const friction = slider({ value: 0.5, min: PHYSICS_LIMITS.friction.min, max: PHYSICS_LIMITS.friction.max, step: 0.05, digits: 2, ariaLabel: t('phys.friction'), onChange: (v, g) => set({ friction: v }, g) });
   friction.el.setAttribute('data-field', 'phys.friction');
-  const bounce = numberField({ value: 0.2, min: PHYSICS_LIMITS.bounciness.min, max: PHYSICS_LIMITS.bounciness.max, step: 0.05, digits: 2, fill: true, ariaLabel: t('phys.bounciness'), onChange: (v, g) => set({ bounciness: v }, g) });
+  const bounce = slider({ value: 0.2, min: PHYSICS_LIMITS.bounciness.min, max: PHYSICS_LIMITS.bounciness.max, step: 0.05, digits: 2, ariaLabel: t('phys.bounciness'), onChange: (v, g) => set({ bounciness: v }, g) });
   bounce.el.setAttribute('data-field', 'phys.bounciness');
 
   const groups = ids.every((id) => store.get().scene.nodes[id]?.kind !== 'PART');

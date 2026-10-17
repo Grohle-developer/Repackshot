@@ -8,7 +8,7 @@ import type { CameraId, CameraState } from '../../core/camera';
 import { filtersOf, newLensFilter, OPTICS_NEUTRAL, opticsOf, type CameraOptics, type LensFilter } from '../../core/optics';
 import { GRADE_LABELS, LENS_FILTER_GRADES, LENS_FILTERS, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../../data/lens-filters';
 import * as cmd from '../commands';
-import { colorField, field, numberField, segmented, select } from '../components/controls';
+import { colorField, field, segmented, select, slider } from '../components/controls';
 import { h, icon } from '../dom';
 import { type Ctx, type Scope } from '../reactive';
 import { lbl, t, type StringKey } from '../strings';
@@ -124,7 +124,7 @@ export function filterFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
       updates.push((x) => points.set(String(x.points)));
     }
     if (type.angle) {
-      const angle = numberField({ value: f.angleDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.filterAngle'), onChange: (v, g) => edit(i, { angleDeg: v }, 'camera.filterAngle', g) });
+      const angle = slider({ value: f.angleDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.filterAngle'), onChange: (v, g) => edit(i, { angleDeg: v }, 'camera.filterAngle', g) });
       rows.push(field(t('camera.filterAngle'), angle.el));
       updates.push((x) => angle.set(x.angleDeg));
     }

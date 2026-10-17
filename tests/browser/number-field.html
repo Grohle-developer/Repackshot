@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Number field</title>
+    <link rel="stylesheet" href="/src/ui/theme.css" />
+    <link rel="stylesheet" href="/src/ui/layout.css" />
+    <link rel="stylesheet" href="/src/ui/components.css" />
+    <style>
+      body {
+        padding: 24px;
+        background: var(--bg-1);
+        color: var(--ink-0);
+        font-family: var(--font);
+        font-size: var(--fs-body);
+      }
+      .host {
+        display: grid;
+        grid-template-columns: 220px;
+        gap: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="before" type="button" class="btn">Before</button>
+    <div id="host" class="host"></div>
+    <script type="module" src="./number-field-page.ts"></script>
+  </body>
+</html>
