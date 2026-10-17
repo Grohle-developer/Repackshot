@@ -10994,6 +10994,19 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   un vidrio cortado refracta, como ahora en el motor, o es opaca del color
   del vidrio, como opción para el fotógrafo; y si el estudio puede cortarse
   alguna vez (hoy nunca, sin interruptor por pieza).
+- **K1** (los ◆ de su «no encajó», con las tablas de la propuesta): las
+  cifras de las siete recetas de interior (sol, paneles, partes, exposición
+  e intensidad del entorno), cuál es la de partida del tipo *Interior* (no
+  se eligió ninguna) y los umbrales del Doctor de interiores (escala de
+  100 mm a 30 m, óptica por debajo de 18 mm a 24 mm, altura de ojo de 0,3 a
+  2,2 m a 1,5 m, recorte cercano a la mitad de la distancia a la pared).
+- **D1** (los ◆ de su «no encajó»): si recortar con *Estándar* es un fallo
+  (los fondos blancos planos lo hacen) y si el arreglo es Filmic o AgX; los
+  umbrales de los *fireflies* (nivel 1, aislamiento ×4, parte 0,5, 16
+  muestras, 8 píxeles o 1e-5, recorte 10, que sesga); los del presupuesto
+  (suelo de 64 muestras, la mitad en *lo que llegue antes*, subir el tiempo
+  en vez de bajar muestras, 25 % de margen); y cuándo avisar del vídeo
+  (dormido hasta N1) y del *denoise*.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
