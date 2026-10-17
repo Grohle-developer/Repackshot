@@ -6846,6 +6846,14 @@ ignoradas), como antes.
   no se toca aquí. Por eso `render-window-animation.png` (U5) no se ha regrabado y
   sigue enseñando el vídeo como *próximamente*; lo de ahora está en
   `render-window-video.png`.
+  *Resuelto después, fuera de esta fase*: el fallo era de la herramienta, no de la
+  interfaz. Cerraba el visor de resultados con Esc nada más empezar la descarga del
+  JPEG, antes de que el trabajo terminase y el visor abriera; ese Esc llegaba a la
+  escena y deseleccionaba el cuerpo (`Esc` deselecciona, UI §2.3), así que *Copper* pedía
+  *Sustituir todos* dentro de la paleta, que seguía abierta (es modal) y se tragaba
+  Ctrl+Mayús+Intro. Pasaba o no según el momento. La herramienta espera ahora al visor,
+  comprueba la selección y que la paleta se cierre, y `render-window-animation.png` y las
+  otras tres capturas de U5 se regrabaron.
 - **La regla de la línea de tiempo** no es un `slider`: está dentro del árbol, que
   solo puede contener sus filas, y el cabezal ya tiene el teclado (Inicio, Fin,
   ← →) desde el árbol; se oculta a las ayudas técnicas. Si se quiere un control
