@@ -2106,10 +2106,6 @@ const TABLE = {
   'set.general.autosaveMinutes': ['Copy every', 'Copia cada'],
   'set.general.confirmClose': ['Confirm before closing with unsaved changes', 'Confirmar al cerrar con cambios sin guardar'],
   'set.general.confirmClose.aux': ['The browser asks before the page closes', 'El navegador pregunta antes de cerrar la página'],
-  'set.viewport.startMode': ['Viewport mode at start', 'Modo del visor al arrancar'],
-  'set.viewport.startMode.FAST': ['Fast', 'Rápido'],
-  'set.viewport.startMode.FULL': ['Full', 'Completo'],
-  'set.viewport.startMode.LAST': ['The last one', 'El último'],
   'set.viewport.mouse': ['Mouse', 'Ratón'],
   'set.viewport.mouse.aux': [
     'Which button orbits; the right button pans and the wheel zooms. With the Select tool, Ctrl/⌘ + drag draws a selection box in every case (add Shift to add, Alt to take out); where the left button is free, a plain drag does too',

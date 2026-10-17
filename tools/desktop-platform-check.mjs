@@ -353,7 +353,7 @@ try {
     await sleep(200);
     const doc = (await api(launcher, 'GET', '/api/store/settings')).json();
     // Fast mode: dozens of reloads would each leave a native viewport job behind (the launcher keeps at most 8).
-    doc.settings = { ...doc.settings, 'viewport.startMode': 'FAST', ...patch };
+    doc.settings = { ...doc.settings, ...patch };
     const put = await api(launcher, 'PUT', '/api/store/settings', JSON.stringify(doc));
     if (put.status !== 204) fail(`PUT settings: ${put.status} ${put.text}`);
     await open(launcher);

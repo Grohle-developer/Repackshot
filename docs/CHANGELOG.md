@@ -5,6 +5,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- **El visor arranca siempre en *Rápido*.** Antes arrancaba en el último modo, y en una instalación nueva ese era *Completo*: el motor se ponía a renderizar nada más abrir la aplicación, sin modelo. Desaparece el ajuste *Modo del visor al arrancar*; *Completo* se elige en la barra de arriba. Lo guarda `tests/start-mode-browser.test.ts`, que falla con el arranque de antes.
+
 ## v0.1.17 — 2026-10-17
 
 ### Motor

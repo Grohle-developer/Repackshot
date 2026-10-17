@@ -162,8 +162,8 @@ describe('settings: migration from the loose preferences of before (version 0)',
     expect(doc.settings['general.lang']).toBe('es');
     expect(doc.settings['general.theme']).toBe('light');
     expect(doc.layout).toMatchObject({ leftWidth: 300, rightWidth: 400, leftCollapsed: true, viewportMode: 'FAST', sections: { 'rw.advanced': false, material: true }, sceneTab: 'lights', lightStyle: 'CINEMATIC', materialCategory: 'WOOD', tuneOpen: true, space: 'LOCAL', scaleLock: false });
-    // The mode remembered before still starts the viewport: "The last one" is the factory value.
-    expect(startViewportMode(doc.settings, doc.layout.viewportMode)).toBe('FAST');
+    // The viewport always starts in Fast, whatever was remembered (Full rendered at once, with or without a model).
+    expect(startViewportMode()).toBe('FAST');
   });
 
   it('values the old code would not have written are left at their factory value', () => {
