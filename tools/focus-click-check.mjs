@@ -1,18 +1,20 @@
 #!/usr/bin/env node
-// Browser check of "Focus with a click" (user report 1.8: the click picked the right point, and the same click took the
-// focus back to the orbit distance), with the local Chromium and swiftshader.
+// Browser check of focus with a click (user report 1.8, phase B1, phase F1), with the local Chromium and swiftshader.
 //
 //   npm run build && node tools/focus-click-check.mjs [--url http://host:port]
 //
 // Without --url it serves dist/ with `vite preview` on port 4202 and stops it at the end. The page is the example in
-// the Fast view (the click is real: the pointer goes down and up on the example's bottle).
+// the Fast view (the clicks are real: the pointer goes down and up on the example's bottle).
 //
-//   (a) with Focus with a click on, a click on the bottle moves the Focus distance field once, to the clicked
-//       distance, and it stays there (it used to go 688 -> 660 -> 688);
+//   (a) Focus ▸ Point with no point yet starts the pick, and a click on the bottle puts the camera in Point: the
+//       Focus distance field moves once, to the clicked distance, and stays there (B1: it used to go 688 -> 660 -> 688);
 //   (b) the last entry of the undo history is "Focus with a click", not "Orbit";
-//   (c) a plain click on the bottle (selecting it) leaves a typed focus distance where it is;
-//   (d) zooming with the wheel after a picked focus leaves the focus where it was;
-//   (e) on a camera whose focus sat at the orbit distance, the same zoom takes the focus along.
+//   (c) F1: zooming with the wheel after the pick takes the focus along with the point (it stays on the point: the
+//       distance changes by what the camera moved), and the field is read-only in Point;
+//   (d) Focus ▸ Distance keeps the distance the camera was focused at; a typed one then survives a plain click on the
+//       bottle (it selects the part);
+//   (e) on a camera whose focus sat at the orbit distance (Distance), the same zoom takes the focus along;
+//   (f) F1: Keep in focus in the bottle's context menu puts the camera in Object, with the part's name.
 //
 // Results: out/focus-click-check.json.
 
@@ -137,11 +139,11 @@ try {
   {
     const { context, page, canvas, errors } = await open(browser, base);
     const initial = await readField(page);
-    const btn = page.locator('[data-section="camera"] button[aria-label="Focus with a click"]').first();
-    await btn.scrollIntoViewIfNeeded();
-    await btn.click();
+    const point = page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Point"]').first();
+    await point.scrollIntoViewIfNeeded();
+    await point.click();
     await settle(page, 300);
-    check('pick_mode_on', (await btn.getAttribute('aria-pressed')) === 'true', { pressed: await btn.getAttribute('aria-pressed') });
+    check('pick_mode_on', (await point.getAttribute('aria-pressed')) === 'true' && (await page.locator('.ov-pick:not(.ov-look)').first().isVisible()), { pressed: await point.getAttribute('aria-pressed') });
     // The example's bottle sits in the middle of the frame: a point a little below and left of the centre.
     const x = canvas.x + canvas.width / 2 - 10;
     const y = canvas.y + canvas.height / 2 + 40;
@@ -152,14 +154,21 @@ try {
     check('focus_moved_once_and_stays', changes.length === 2 && changes[0] === initial && Math.abs(picked - initial) > 1 && picked === changes[1], { initial, picked, values: changes });
     const tips = await undoTips(page);
     check('undo_is_the_focus_click', tips.length > 0 && /Focus with a click/.test(tips[0]) && !/Orbit/.test(tips[0]), { tips });
+    const pickBtn = page.locator('[data-section="camera"] button[aria-label="Focus with a click"]').first();
+    check('point_mode_shows_the_pick_and_the_part', (await pickBtn.count()) === 1 && /^On /.test((await page.locator('[data-section="camera"] [data-focus-on]').first().textContent()) ?? ''), {});
+    check('field_read_only_in_point', (await page.locator(FIELD).first().getAttribute('class'))?.includes('is-disabled') === true, {});
 
-    // (d) the wheel after the pick: the orbit distance changes, the picked focus does not.
+    // (c) the wheel after the pick: the camera comes nearer, the focus comes along with the point.
     await zoom(page, canvas, -400);
     const afterZoom = await readField(page);
-    check('zoom_keeps_picked_focus', afterZoom === picked, { picked, afterZoom });
+    check('zoom_follows_the_point', Number.isFinite(afterZoom) && afterZoom < picked - 1, { picked, afterZoom });
 
-    // (c) a typed focus distance, then a plain click on the bottle (it selects the part).
+    // (d) Focus ▸ Distance keeps that distance; a typed one survives a plain click on the bottle (it selects the part).
     await page.keyboard.press('Escape');
+    await page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Distance"]').first().click();
+    await settle(page, 400);
+    const kept = await readField(page);
+    check('distance_keeps_the_followed_distance', Math.abs(kept - afterZoom) < 0.5, { afterZoom, kept });
     await page.locator(FIELD).focus();
     for (let i = 0; i < 5; i++) await page.keyboard.press('Control+ArrowDown');
     await settle(page, 300);
@@ -168,7 +177,7 @@ try {
     await page.keyboard.press('Escape');
     await settle(page, 500);
     const afterClick = await readField(page);
-    check('typed_focus_survives_a_click', Number.isFinite(typed) && typed !== picked && afterClick === typed, { typed, afterClick });
+    check('typed_focus_survives_a_click', Number.isFinite(typed) && typed !== kept && afterClick === typed, { typed, afterClick });
     check('no_page_errors_pick', errors.length === 0, { errors });
     await context.close();
   }
@@ -181,6 +190,21 @@ try {
     const after = await readField(page);
     check('zoom_moves_following_focus', Number.isFinite(after) && Math.abs(after - before) > 1, { before, after });
     check('no_page_errors_follow', errors.length === 0, { errors });
+    await context.close();
+  }
+
+  // (f) Keep in focus, from the bottle's context menu: Object, with the part's name.
+  {
+    const { context, page, canvas, errors } = await open(browser, base);
+    await page.mouse.click(canvas.x + canvas.width / 2 - 10, canvas.y + canvas.height / 2 + 40, { button: 'right' });
+    await settle(page, 400);
+    const item = page.locator('[role="menuitem"]', { hasText: 'Keep in focus' }).first();
+    await item.click();
+    await settle(page, 600);
+    const object = page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Object"]').first();
+    const on = (await page.locator('[data-section="camera"] [data-focus-on]').first().textContent()) ?? '';
+    check('keep_in_focus_is_object', (await object.getAttribute('aria-pressed')) === 'true' && /^On \S/.test(on), { on });
+    check('no_page_errors_object', errors.length === 0, { errors });
     await context.close();
   }
 } finally {
