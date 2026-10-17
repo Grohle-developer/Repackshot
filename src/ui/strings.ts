@@ -431,8 +431,8 @@ const TABLE = {
   'section.lightEdit': ['Light', 'Foco'],
   'product.sceneType': ['Scene type', 'Tipo de escena'],
   'product.sceneTypeAux': [
-    'Sets the starting values (environment, bounces, view transform, samples, lens). Every control stays where it is, and going back leaves what you did not touch as it was.',
-    'Fija los valores de partida (entorno, rebotes, transformada, muestras, óptica). Todos los controles siguen donde están, y al volver queda como estaba lo que no tocaste.',
+    'Sets the starting values (environment, bounces, view transform, samples, lens). Every control stays; going back keeps what you changed.',
+    'Fija los valores de partida (entorno, rebotes, transformada, muestras, óptica). Todos los controles siguen ahí; al volver se queda lo que cambiaste.',
   ],
   'product.type': ['Product type', 'Tipo de producto'],
   'product.standard': ['Standard', 'Estándar'],
