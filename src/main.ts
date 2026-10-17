@@ -154,7 +154,7 @@ const ui = createUiStore(
   {
     library: loadedLibrary.lib,
     settings: startSettings,
-    viewportMode: startViewportMode(startSettings, settingsDoc.layout.viewportMode),
+    viewportMode: startViewportMode(),
     // The desktop launcher's window (P2): its folders and what draws the window, known before the first paint.
     desktop: nativeInfo
       ? {
@@ -1275,6 +1275,8 @@ void app.painted.then(() => {
     if (((firstFrame || !preview) && spheresDone && elapsed > 300) || elapsed > 9000) {
       requestAnimationFrame(() => {
         appEl.dataset.ready = '1';
+        // The mode asked for (not the one drawn, which is Fast without an engine too): what the start-mode test reads.
+        appEl.dataset.viewportMode = ui.get().viewportMode.toLowerCase();
         // Updates ▸ Check at startup: once, in the background, now that the interface is there. Never waited for.
         void startupUpdateCheck(app.ctx);
         // The guided tour (phase U10): by itself at the first start only, never under automation (ui/tour.ts). After the
