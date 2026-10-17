@@ -198,6 +198,9 @@ async function main() {
     const context = await browser.newContext({
       viewport: { width: opts.width, height: opts.height },
       deviceScaleFactor: 1,
+      // The chrome's 120 ms transitions would otherwise be caught half way (a segmented button with its old
+      // background and its new text colour); with reduced motion the page draws every state at once.
+      reducedMotion: 'reduce',
     });
     const page = await context.newPage();
     page.on('pageerror', (err) => console.error(`[page error] ${err.message}`));
