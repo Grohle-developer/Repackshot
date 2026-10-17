@@ -198,6 +198,18 @@ fn only_camera_rays_step_over_an_instance_hidden_to_the_camera() {
                 assert_eq!(hit.instance as usize, K3_CEILING, "{what}: {class:?}");
             }
             assert!(geometry.occluded_class(&down, isa, RayClass::Shadow));
+            // A segment that ends between the ceiling and the floor: the ceiling blocks a shadow
+            // ray (it still casts its shadow), and a camera-class query goes through it.
+            let mut short = down;
+            short.t_max = 2000.0;
+            assert!(
+                geometry.occluded_class(&short, isa, RayClass::Shadow),
+                "{what}: the ceiling's shadow"
+            );
+            assert!(
+                !geometry.occluded_class(&short, isa, RayClass::Camera),
+                "{what}: the camera sees through"
+            );
         }
         assert_eq!(
             geometry
@@ -218,17 +230,36 @@ fn only_camera_rays_step_over_an_instance_hidden_to_the_camera() {
     };
     check(&plan.geometry, "no section");
     // A section along x through the middle of the room that keeps the half the ray is in: the
-    // ceiling slab is cut and capped; a camera ray down the cut sees no cap of it.
+    // ceiling slab is cut and capped; a camera ray at the cap sees no cap of it.
     let mut cut = plan.clone();
     cut.section = crate::geometry::SectionPlane::new(Vec3::new(1.0, 0.0, 0.0), 1000.0, true);
     cut.apply_section();
     check(&cut.geometry, "a section");
-    let on_cut = Ray::new(Vec3::new(999.9, 50.0, 4000.0), Vec3::new(0.0, 0.0, -1.0));
-    let seen = cut
-        .geometry
-        .trace_class(&on_cut, Isa::detect(), RayClass::Camera)
-        .expect("a hit");
-    assert_ne!(seen.instance as usize, K3_CEILING);
+    // Level with the ceiling slab (z 2600 to 2700), at its cap in the plane x = 1000: from the
+    // side that is taken away, and from inside the slab towards the cut, every other class meets
+    // the cap and the camera goes through.
+    for at_cap in [
+        Ray::new(Vec3::new(3000.0, 50.0, 2650.0), Vec3::new(-1.0, 0.0, 0.0)),
+        Ray::new(Vec3::new(0.0, 50.0, 2650.0), Vec3::new(1.0, 0.0, 0.0)),
+    ] {
+        for isa in Isa::available() {
+            let seen = cut.geometry.trace_class(&at_cap, isa, RayClass::Camera);
+            assert!(
+                seen.is_none_or(|h| h.instance as usize != K3_CEILING),
+                "the camera sees the ceiling's cap along {:?}",
+                at_cap.dir
+            );
+            let shadow = cut
+                .geometry
+                .trace_class(&at_cap, isa, RayClass::Shadow)
+                .expect("the cap");
+            assert_eq!(
+                shadow.instance as usize, K3_CEILING,
+                "the cap for a shadow ray along {:?}",
+                at_cap.dir
+            );
+        }
+    }
 }
 
 #[test]

@@ -31,16 +31,16 @@ La cámara de interiores: verticales rectas, la planta con el techo oculto a cá
 #### K3 · Cámara de interiores
 
 <a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado."><br>
-`k3-verticals.png` · `HASHK3` · La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado.
+`k3-verticals.png` · `2923b65` · La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado.
 
 <a id="c-k3-plan-fast"></a><img src="ui/k3-plan-fast.png" width="480" alt="La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo."><br>
-`k3-plan-fast.png` · `HASHK3` · La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo.
+`k3-plan-fast.png` · `2923b65` · La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo.
 
 <a id="c-k3-plan"></a><img src="ui/k3-plan.png" width="480" alt="La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado."><br>
-`k3-plan.png` · `HASHK3` · La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado.
+`k3-plan.png` · `2923b65` · La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado.
 
 <a id="c-k3-panorama"></a><img src="ui/k3-panorama.png" width="480" alt="La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado."><br>
-`k3-panorama.png` · `HASHK3` · La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado.
+`k3-panorama.png` · `2923b65` · La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado.
 
 ### v0.1.16 · 2026-10-17
 

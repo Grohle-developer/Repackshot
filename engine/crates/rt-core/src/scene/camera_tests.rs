@@ -374,7 +374,12 @@ fn the_page_s_camera_with_straight_verticals_keeps_the_verticals_of_a_cube_paral
     assert!(camera.lens.is_some(), "the shift travels in LENS");
     let aspect = w / h;
     let mut worst = 0.0f32;
-    for (x, y) in [(-300.0, -300.0), (300.0, -300.0), (-300.0, 300.0), (300.0, 300.0)] {
+    for (x, y) in [
+        (-300.0, -300.0),
+        (300.0, -300.0),
+        (-300.0, 300.0),
+        (300.0, 300.0),
+    ] {
         let (u0, _) = project(camera, aspect, Vec3::new(x, y, 0.0));
         let (u1, _) = project(camera, aspect, Vec3::new(x, y, 600.0));
         worst = worst.max((u1 - u0).abs() * w);
@@ -383,5 +388,8 @@ fn the_page_s_camera_with_straight_verticals_keeps_the_verticals_of_a_cube_paral
     assert!(worst <= 0.1, "{worst} px");
     // And the cube's middle, the target, is in the middle of the frame.
     let (u, v) = project(camera, aspect, Vec3::new(0.0, 0.0, 300.0));
-    assert!((u - 0.5).abs() * w < 0.05 && (v - 0.5).abs() * h < 0.05, "{u} {v}");
+    assert!(
+        (u - 0.5).abs() * w < 0.05 && (v - 0.5).abs() * h < 0.05,
+        "{u} {v}"
+    );
 }
