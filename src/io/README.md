@@ -79,6 +79,11 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
   `XResolution`/`YResolution`. U12: `encodeTiff` (uncompressed TIFF 6.0, RGB or RGBA with unassociated alpha, 8, 16 or
   32-bit float) and `encodeDng` (a linear raw DNG 1.4 of 32-bit floats), the same bytes as `rt_core::tiff` and
   `rt_core::dng` (the golden files in `tests/fixtures/tiff/`).
+- N2: `image.ts` also writes `encodePngWords` (a 16-bit grey or RGB PNG with `pHYs` and `tEXt` notes) and
+  `encodeExrPlanes` (the same minimal EXR with the single-float channels you name, sorted); `passes.ts` turns the
+  engine's pass planes (`core/passes.ts`) into one file per pass with them (`core/pass-files.ts` has the numbers and
+  the names); `zip.ts` is our own ZIP writer (store method, CRC-32, UTF-8 names, no dependency), read back in
+  `tests/zip.test.ts` by fflate.
 - `project.ts`: the `.repack` envelope (once `.repack.json`), schema 2 (U5), and `migrateProject` / `parseProject` with one step per
   schema (1 → 2: the render block through `core/render.ts` `migrateRender`).
 - `results.ts`: the results history (U5) in IndexedDB (`meta`, `blobs` and `handles` stores), 50 results or 500 MB,

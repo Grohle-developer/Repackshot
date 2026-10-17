@@ -9,12 +9,13 @@
 // that is pure arithmetic, and the pool does it on slices in parallel.
 //
 // A Render that asks for the exact passes (phase X2) gets, with every tile, the
-// albedo of each sample and, in its first job, the tile's exact planes
-// (render/pass-planes.ts); the main thread puts them together.
+// albedo of each sample (N2: and the alpha, the coverage of each sample) and, in
+// its first job, the tile's exact planes (render/pass-planes.ts); the main thread
+// puts them together.
 
 import { exactBytes } from './tiles';
 import { denoiseBand, hasDenoiseExport } from './denoise';
-import { ALBEDO_BIT, EXACT_BITS, hasPassExports, Scratch, tileAlbedo, tileExact, type RtPassExports } from './pass-planes';
+import { ALBEDO_BIT, ALPHA_BIT, EXACT_BITS, hasAlphaExport, hasPassExports, Scratch, tileAlbedo, tileAlpha, tileExact, type RtPassExports } from './pass-planes';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 
 interface RtExports {
@@ -37,6 +38,8 @@ interface RtExports {
   /** X2 (absent in an older rt.wasm). */
   rt_render_tile_passes?: RtPassExports['rt_render_tile_passes'];
   rt_render_tile_albedo?: RtPassExports['rt_render_tile_albedo'];
+  /** N2 (absent in an older rt.wasm). */
+  rt_render_tile_alpha?: RtPassExports['rt_render_tile_alpha'];
 }
 
 /** The parts of a dedicated worker's global scope used here (the DOM lib has no worker types). */
@@ -182,7 +185,13 @@ function step(): void {
     post({ type: 'error', generation: j.generation, reason: 'this rt.wasm renders no passes (npm run engine:build)' });
     return;
   }
+  if (passes && j.passes & ALPHA_BIT && !hasAlphaExport(rt)) {
+    job = null;
+    post({ type: 'error', generation: j.generation, reason: 'this rt.wasm renders no alpha pass (npm run engine:build)' });
+    return;
+  }
   const albedo = passes && j.passes & ALBEDO_BIT ? new Float32Array(w * h * 3 * j.count) : undefined;
+  const alpha = passes && j.passes & ALPHA_BIT ? new Float32Array(w * h * j.count) : undefined;
   let exact: Uint32Array | undefined;
   try {
     passScratch ??= passes ? new Scratch(passes) : null;
@@ -193,6 +202,7 @@ function step(): void {
       // A fresh view every time: rendering may grow the memory and detach the old buffer.
       data.set(new Float32Array(rt.memory.buffer, outPtr, stride), s * stride);
       if (albedo) tileAlbedo(passes!, handle, { x, y, w, h }, j.first + s, passScratch!, albedo, s * w * h * 3);
+      if (alpha) tileAlpha(passes!, handle, { x, y, w, h }, j.first + s, passScratch!, alpha, s * w * h);
     }
   } catch (err) {
     job = null;
@@ -201,8 +211,9 @@ function step(): void {
   }
   const transfer: Transferable[] = [data.buffer];
   if (albedo) transfer.push(albedo.buffer);
+  if (alpha) transfer.push(alpha.buffer);
   if (exact) transfer.push(exact.buffer);
-  post({ type: 'tile', generation: j.generation, index, first: j.first, count: j.count, data, ...(albedo ? { albedo } : {}), ...(exact ? { exact } : {}) }, transfer);
+  post({ type: 'tile', generation: j.generation, index, first: j.first, count: j.count, data, ...(albedo ? { albedo } : {}), ...(alpha ? { alpha } : {}), ...(exact ? { exact } : {}) }, transfer);
   schedule();
 }
 

@@ -301,7 +301,7 @@ pub unsafe extern "C" fn rt_adaptive_decide(
 }
 
 /// Writes the exact passes of `mask` (normal 2, depth 4, part id 8, material id 16, circle of
-/// confusion 32; the albedo bit 1 and unknown bits are ignored) of the pixel rectangle
+/// confusion 32; the albedo bit 1, the alpha bit 64 and unknown bits are ignored) of the pixel rectangle
 /// `(x, y, w, h)` to `out_ptr`: the planes one after another in that order, each
 /// `w * h * channels` little-endian words (3 for the normal, 1 for the others; `f32`, `u32` for
 /// the ids), rows from the top. One ray through the centre of each pixel: the same for every
@@ -367,6 +367,47 @@ pub unsafe extern "C" fn rt_render_tile_albedo(
                     albedo.as_ptr().cast::<u8>(),
                     out_ptr.cast::<u8>(),
                     albedo.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}
+
+/// Writes the coverage (the `alpha` pass, N2) of sample `sample_index` of the pixel rectangle
+/// `(x, y, w, h)`: `w * h` floats, 1 where that sample's camera ray met a surface of an instance
+/// and 0 where it met anything else (0 outside the image; the mean of its sub-samples for an edge
+/// pixel). The host sums the samples in index order and divides like the image. Same status codes
+/// as [`rt_render_tile`].
+///
+/// # Safety
+///
+/// `out_ptr` must be null or point to at least `w * h * 4` writable bytes (alignment is not
+/// required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_render_tile_alpha(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+    out_ptr: *mut f32,
+) -> u32 {
+    if out_ptr.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    match crate::render_tile_alpha_sample(handle, x, y, w, h, sample_index) {
+        Ok(alpha) => {
+            // SAFETY: the caller promises `w * h * 4` writable bytes and `alpha` holds exactly
+            // `w * h` floats; byte-wise copy needs no alignment, and `alpha` is a fresh
+            // allocation so the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    alpha.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    alpha.len() * std::mem::size_of::<f32>(),
                 );
             }
             STATUS_OK

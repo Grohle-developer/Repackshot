@@ -178,6 +178,14 @@ decisiones escritas (datos, contratos, revisión), no código.
   con *muxers* propios y el Doctor `output` conectado; un proyecto de U1
   reproduce lo mismo; 2907 tests web y 1098 del motor (sin tocar) — **Opus**.
 
+- **N2** · Cola, pases y lotes: el pase **alfa** (el séptimo, `RNDR.passes` bit 6,
+  `rt_render_tile_alpha`, con *hash* propios y los seis de X2 sin moverse), los pases
+  *Alfa*, *Profundidad*, *Normales* e *Id de pieza* como archivos junto a la imagen
+  (EXR o PNG de 16 bits), el **lote cámaras × estudios** con la plantilla de nombre, el
+  **ZIP propio** de la cola (método *store*, sin dependencias) y la prueba de que
+  detener el segundo deja el tercero; un fallo antiguo de la cola corregido;
+  3005 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
+
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
 
@@ -6970,7 +6978,7 @@ ignoradas), como antes.
   ← →) desde el árbol; se oculta a las ayudas técnicas. Si se quiere un control
   propio para el cabezal, va fuera del árbol (otra estructura del cajón).
 
-## N2 · Cola, pases y lotes — **Sonnet**
+## N2 · Cola, pases y lotes — **Sonnet** — hecha
 
 **Qué.** Cola de render con progreso y cancelación sobre `render()` del
 motor; pases alfa, profundidad, normales e id de pieza como salidas
@@ -6983,6 +6991,136 @@ dependencia: el formato *store* de ZIP es trivial).
 
 **Criterio.** Tests de nombre de archivo y de cola (orden, cancelar el
 segundo deja el tercero); un lote de 2 × 2 produce 4 imágenes.
+
+**Hecho.** La auditoría de abajo dice qué había (la cola, su cancelación, los seis
+pases del motor y el lote por cámaras venían de U5, U14, X2 y E4) y qué faltaba; N2
+construyó solo lo que faltaba:
+
+- **Motor: el pase alfa** (`rt_core::passes`, el séptimo, bit 6 de `RNDR.passes`, sin
+  cambiar el tamaño de la sección ni mover un *hash*): la cobertura de objetos de cada
+  píxel, de 0 a 1; se muestrea como el albedo (comparte con él el rayo de cámara de cada
+  muestra, así que los bordes salen suavizados igual que la imagen) y se divide por el
+  recíproco del número de muestras, bit a bit como `Film::resolve`. `PASS_EXACT` sigue
+  siendo `0b111110` y `PASS_X2` (los seis de antes) es lo que fijan los *hash* de X2.
+  `rt_render_tile_alpha` en `rt.wasm` (sin bit de `rt_features` nuevo), el pool de la
+  página y el `RPP1` del lanzador lo llevan, y el lector del `RPP1` ya no tiene un brazo
+  que se habría tragado un plano nuevo.
+- **Pases como archivos**: *Alfa*, *Profundidad*, *Normales* e *Id de pieza* junto a la
+  imagen, en EXR de 32 bits (por defecto) o PNG de 16 bits (`encodeExrPlanes`,
+  `encodePngWords`, `core/pass-files.ts`, `io/passes.ts`), con la leyenda de piezas
+  (`<nombre>_partId.json`) y el rango de la profundidad en un trozo `tEXt`.
+- **Lote cámaras × estudios**: *Estudio* en la ventana (la escena como está, uno guardado,
+  o todos); con *Todas las cámaras*, 2 × 2 son cuatro trabajos, cámara por cámara, cada uno
+  con su cámara y su estudio y con el nombre de la plantilla; aviso de nombres repetidos.
+- **ZIP propio** (`io/zip.ts`, método *store*, CRC-32, nombres UTF-8, sin ZIP64) y el grupo de
+  ZIP de la cola: una orden *Render* es un solo archivo al acabar el último trabajo, con
+  alternativa de archivos sueltos si no se puede armar.
+- **Cola**: la prueba que faltaba (*Detener* el segundo deja el tercero) y un fallo antiguo
+  de `ensureLoop` (ver abajo).
+
+Números. Web: `npm run qa` en verde (tipos, interfaz y 177 archivos de prueba con 3005 tests y 6 omitidos, tras fusionar `main`; antes de la fase eran 168 archivos y 2902 tests). Motor: `cargo test --workspace --release` 1112 tests y `npm run engine:test` 1106 (depuración), sin fallos; en WebAssembly (WASI) 588 de `rt-core`, escalar y con simd128; `cargo fmt`, `clippy -D warnings` (también para Windows), `cargo check` para aarch64 y riscv64, y el `rt.wasm` real igual al nativo en cada bloque de paridad de `engine.yml`. Con la máquina muy cargada, `ai_post::retries_lower_the_strength_…` (una espera por muestreo) falló en dos pasadas completas y pasa sola (9 de 9): no toca nada de esta fase. Pruebas nuevas: `tests/batch.test.ts` (28),
+`tests/zip.test.ts` (10), `tests/pass-files.test.ts` (17), 6 en
+`tests/passes-engine.test.ts` y, en el motor, las del alfa en `passes_tests.rs` (cobertura,
+suelo y fondo, igual a la película con fondo transparente bit a bit, con otros pases y con
+otros mosaicos, panel de luz, con muestras de borde, igual en escalar, SSE2 y AVX2), en
+`rt-wasm` (`the_alpha_pass_through_the_c_api_is_the_engines`) y en `rt-app` (`RPP1` con
+máscara 127). **Hashes nuevos** fijados: `PINNED_PASS_ALPHA = 0xd4eaac78` (ejemplo) y
+`PINNED_E5_PASS_ALPHA = 0xef9ead68` (E5), iguales en el `rt.wasm` real
+(`wasm-parity.mjs --expect-alpha`, en `engine.yml`) y en WASI escalar y simd128; **ninguno
+de los anteriores se movió** (albedo `0x43571da9`, normales `0x0aabfd24`, profundidad
+`0x25f8dd11`, ids `0xccd3d6c7`, círculo `0xdf87494c`, ni los de las imágenes). Cada prueba
+nueva se comprobó con una mutación: 46 mutantes (38 en la página, uno en la cola y 7 en
+el motor), todos muertos; dos enseñaron algo: dividir entre el número de muestras en vez de
+multiplicar por su recíproco sobrevivía hasta que se probó con 7 muestras, y un mutante
+colgaba las pruebas (era el fallo de `ensureLoop`). `tools/batch-check.mjs` (Chromium y el `rt.wasm`
+real): un lote 2 × 2 con tres pases en un ZIP de 20 archivos que `unzip` y `fflate` aceptan,
+los EXR leídos por la especificación, los PNG de 16 bits, y *Detener* el segundo deja el
+tercero. Capturas `batch-window.png` y `batch-queue.png`.
+
+**Auditoría al empezar** (sobre `main` en v0.1.16, punto por punto del
+brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
+
+| Punto | Estado al empezar | De qué fase | Qué hizo N2 |
+| --- | --- | --- | --- |
+| Cola de render con orden y progreso, sobre `render()` del motor | Hecho | U5 (cajón, reordenar, editar, duplicar, pausar, terminados), U14 (vista en vivo), E4 (el trazador) | Nada que rehacer |
+| Cancelación | Hecho | U5: *Detener* el trabajo en curso (acaba *Cancelado* y sigue el siguiente), *Quitar* uno en espera, *Pausar* | Nada que rehacer; la prueba |
+| Pases de profundidad, normales e id de pieza como salida del integrador, con máscara en `RNDR` | Hecho en el motor | X2 (`RNDR.passes`, `rt_core::passes`, seis pases con hashes fijados), X4 (los dibuja three.js para la IA) | Nada que rehacer en el motor; solo los leen la guarda de la IA y el *denoise*: ningún pase llega a un archivo |
+| Pase alfa | Falta (solo existía el alfa de la imagen con fondo transparente) | — | El séptimo pase, `alpha`, bit 6 de la máscara: sin cambiar el tamaño de `RNDR` ni mover un *hash* |
+| Los pases como archivos: PNG de 16 bits o EXR | Falta (escritores de la imagen sí: PNG 8/16 bits, EXR, TIFF, DNG) | U5, U12 | `encodePngWords` y `encodeExrPlanes`, los números de cada pase y sus nombres |
+| Pases elegibles en la ventana de render | Falta (una fila *próximamente*) | U5 | Fichas y formato |
+| Lote por cámaras | Hecho | U5 (*Todas las cámaras*, un trabajo por cámara con su proporción) | — |
+| Lote por estudios | Falta (los estudios guardados no eran un eje de la cola) | U4 (los estudios de la biblioteca), L6 | El estudio como eje: `studio` en los ajustes y en el trabajo |
+| Nombre por plantilla con proyecto, cámara y estudio | Hecho en lo que importa | U5 (`{project}`, `{camera}`, `{studio}`, `{date}`, `{n}`: las claves en inglés, las fichas en es y en) | `{studio}` pasa a ser el estudio guardado del trabajo (era el nombre del tipo de producto); aviso de nombres repetidos |
+| Descarga en ZIP propio | Falta (un escritor de ZIP solo en `tests/zip.ts` para los archivos de prueba, y fflate para *leer* el 3MF) | — | `io/zip.ts` y el grupo de ZIP de la cola |
+| Criterio: pruebas de nombre y de cola en orden | Parcial: el orden y detener el primero | U5 (`tests/render-queue.test.ts`) | `tests/batch.test.ts` |
+| Criterio: cancelar el segundo deja el tercero | Falta | — | Dos pruebas (detenerlo y quitarlo) y el mismo caso en Chromium |
+| Criterio: un lote de 2 × 2 produce 4 imágenes | Falta | — | Prueba con la cola, el ZIP leído por fflate y `tools/batch-check.mjs` |
+| E8, lotes nativos (`rt` lee proyectos) | Falta | — | No se construye aquí (se solapa; sigue en su fase) |
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- **Las fichas del nombre** son `{project}`, `{camera}`, `{studio}`, `{date}` y
+  `{n}` (el modelo de U5, con las claves en inglés y las fichas con su etiqueta
+  en cada idioma), no `{proyecto}_{camara}_{estudio}` como dice el encargo: se
+  mantiene lo que hay, que ya hace lo que pide (en español la ficha dice *Proyecto*,
+  *Cámara*, *Estudio*). No hay alias en español dentro de la plantilla.
+- **`{studio}` cambia de significado en los lotes**: era el nombre del tipo de producto
+  (*Joyería*) y ahora, en un trabajo con estudio guardado, es el nombre de ese estudio;
+  sin él (todo lo de antes) sigue siendo el tipo de producto.
+- ◆ **Qué es el alfa.** El encargo pedía un pase «alfa» sin más. Se construyó como
+  **máscara de objetos**: cada muestra cuenta si su rayo de cámara encuentra una
+  superficie de una instancia; el suelo del estudio (visible o atrapasombras), el
+  entorno, el fondo y los paneles de luz visibles valen 0, y los recortes y el vidrio
+  cuentan como superficie, como en todos los pases de X2. No es, por tanto, el alfa de la
+  imagen con *Fondo transparente* cuando hay un atrapasombras (ahí el alfa es la
+  sombra) ni en lo que el camino ve a través del vidrio; donde solo hay objetos opacos y
+  fondo, es el alfa de la película bit a bit (test). Decidir si el suelo entra en la
+  máscara, y si los recortes con textura de alfa deben dar cobertura parcial (hoy no).
+- ◆ **Qué pases se ofrecen**: los cuatro del encargo. El motor renderiza también el albedo, el
+  id de material y el círculo de confusión (los de la IA): se podrían ofrecer con el mismo
+  cauce, y el id de material necesitaría su leyenda.
+- ◆ **Cómo se escriben los números.** Formato por defecto de los pases, **EXR** (la
+  profundidad y las normales son flotantes); en PNG de 16 bits, la profundidad es un mapa de
+  z con **lo cercano blanco**, 0 el fondo y el rango de distancias en un trozo `tEXt`; las
+  normales, `n × ½ + ½` (el fondo, el gris medio); los ids, el número de instancia con el
+  suelo en 65535 y un tope de 65534 piezas. Todo eso es preparado, no decidido: son
+  elecciones fotográficas y de convención.
+- ◆ **El ZIP**: apagado por defecto (hoy cada archivo se descarga aparte, como siempre), un
+  grupo es lo que mete **una** orden *Render* o *+ Añadir a la cola*, y se llama
+  `Proyecto_0001-0004.zip` (con los números de render). Decidir si un lote a *Descargas*
+  debería ir empaquetado por defecto, y el nombre.
+- ◆ **El orden de un lote** es cámara por cámara (cada cámara en todos los estudios), el de
+  las plantillas `{camera}_{studio}`; el otro orden (estudio por estudio) es igual de
+  defendible.
+- **El estudio no mueve la cámara.** `studio/restore` sí pone la cámara del estudio (su
+  vista y su óptica); un lote la conserva (la del trabajo), porque si no, 2 cámaras × 2
+  estudios serían 2 imágenes. Una `restoreStudio` con `{ camera: false }`, pura, hace las dos cosas.
+- **Los estudios del lote son los guardados**: los de la pestaña *Estudios* (biblioteca, del
+  navegador o de la carpeta de datos del escritorio) y los que un proyecto antiguo guardaba
+  dentro. Un trabajo guarda el id y el nombre, no el estudio: abierto en otro equipo sin
+  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto.
+- **Un trabajo con estudio no pasa por la IA** (sus pases se dibujan del proyecto abierto en
+  el modo Rápido); lo dice un aviso y se guarda la imagen del motor. Los plugins de trabajos
+  guardan aparte, fuera del ZIP.
+- **Los pases son para imágenes**: una animación no los escribe (ni lleva estudio), y con
+  *Terminar por ruido* el alfa, como el albedo, lleva las muestras de la primera ronda.
+- **El ZIP se arma en memoria** y se escribe al acabar el último trabajo del grupo: cerrar la
+  página antes lo pierde (los resultados de la imagen están en el historial), no hay ZIP64 y
+  un lote enorme de EXR de 32 bits puede no caber. Un grupo que se pausa espera en memoria.
+- **Cancelar**: ya estaba; faltaba la prueba. *Detener* (el que corre) y *Quitar* (uno en
+  espera) son los dos modos; un trabajo en espera no pasa a *Cancelado*, sale de la lista.
+- **El escritorio**: el lanzador renderiza el alfa y lo guarda en su `RPP1` (probado por la
+  API con 1 y 4 hilos, y el lector de la página con un archivo que escribe el lanzador),
+  pero `tools/batch-check.mjs` solo recorre la web: el lote en la ventana nativa no se
+  grabó. **E8** (lotes nativos de línea de órdenes) no se construye aquí.
+- **Cambios fuera del plan, de un bug que casi entra**: el lector del `RPP1` del lanzador
+  (`kept.rs`) tenía un brazo `_ =>` que habría guardado cualquier plano nuevo en el círculo de
+  confusión; ahora el alfa tiene el suyo y el archivo de prueba
+  `tests/fixtures/passes-3x2.rpp` lo incluye (sus seis primeros planos son los mismos bytes).
+- **Un fallo antiguo de la cola, encontrado al probar**: un *Iniciar* sin nada en espera
+  terminaba el bucle antes de su primer `await` y dejaba la promesa ya acabada como «el
+  bucle en marcha»; ningún *Iniciar* posterior arrancaba otro. Arreglado en `ensureLoop`
+  (la promesa se limpia sola al acabar) y con su prueba, que falla si vuelve el código viejo.
 
 ## D1 · Doctor de motor — **Sonnet** — hecha
 

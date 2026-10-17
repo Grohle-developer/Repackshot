@@ -110,7 +110,7 @@ import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, lightName, materialLabel, materialName, presetLabel, primitiveParamKey, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import type { Ctx } from './reactive';
-import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
+import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob, studioRefs } from './render-queue';
 import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
@@ -2315,7 +2315,8 @@ async function folderAccess(ctx: Ctx, s: RenderSettings): Promise<void> {
 /** Adds jobs made from settings (first or last); returns the new jobs' ids. */
 function enqueueSettings(ctx: Ctx, settings: RenderSettings, position: 'FIRST' | 'LAST'): string[] {
   const before = new Set(ctx.store.get().render.queue.map((j) => j.id));
-  ctx.store.dispatch({ type: 'render/enqueue', at: Date.now(), position, settings, label: L('undo.enqueue') });
+  // N2: "All studios" stands for the saved studios as the window lists them.
+  ctx.store.dispatch({ type: 'render/enqueue', at: Date.now(), position, settings, studios: settings.studio.kind === 'ALL' ? studioRefs(ctx) : [], label: L('undo.enqueue') });
   return ctx.store.get().render.queue.filter((j) => !before.has(j.id)).map((j) => j.id);
 }
 

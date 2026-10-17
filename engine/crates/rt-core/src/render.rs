@@ -20,7 +20,7 @@ use crate::color::Rgb;
 use crate::image::Film;
 use crate::integrator::{first_hit, radiance_weighted, radiance_with, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
-use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
+use crate::passes::{albedo_of, coverage_of, Exact, PassFilm, PASS_EXACT, PASS_SAMPLED};
 use crate::pixel_filter::{self, EdgeMask};
 use crate::sampler::{PixelSampler, DIM_CAMERA};
 use crate::scene::Scene;
@@ -488,10 +488,11 @@ fn render_tile_exact_traced<T: Tracer>(
     rays
 }
 
-/// Adds to `film` the albedo of sample `sample_index` of every pixel of `tile`, clipped to the
-/// image: the base colour of what the sample's camera ray (the same position in the pixel and
-/// point on the lens as the image's sample) meets first ([`albedo_of`]). Returns the rays cast
-/// (one per pixel, none when the film has no albedo pass).
+/// Adds to `film` the albedo and the alpha of sample `sample_index` of every pixel of `tile`,
+/// clipped to the image: the base colour ([`albedo_of`]) and the coverage ([`coverage_of`]) of
+/// what the sample's camera ray (the same position in the pixel and point on the lens as the
+/// image's sample) meets first. One ray serves both. Returns the rays cast (one per pixel, none
+/// when the film has neither pass).
 pub fn render_tile_albedo(
     scene: &Scene,
     prepared: &Prepared,
@@ -533,7 +534,7 @@ fn render_tile_albedo_traced(
     isa: Isa,
     edges: Option<&EdgeMask>,
 ) -> u64 {
-    if film.mask & PASS_ALBEDO == 0 {
+    if film.mask & PASS_SAMPLED == 0 {
         return 0;
     }
     let tracer = BvhTracer {
@@ -550,22 +551,25 @@ fn render_tile_albedo_traced(
                 let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
                 let ray = camera_ray(scene, &sampler, x, y);
                 rays += 1;
-                film.add_albedo(
-                    x,
-                    y,
-                    albedo_of(scene, first_hit(scene, prepared, &tracer, &ray)),
-                );
+                let hit = first_hit(scene, prepared, &tracer, &ray);
+                film.add_albedo(x, y, albedo_of(scene, hit));
+                film.add_alpha(x, y, coverage_of(hit));
                 continue;
             }
             let mut sum = Rgb::BLACK;
+            let mut covered = 0.0f32;
             for j in 0..k {
                 let index = sub_sample(sample_index, k, j);
                 let sampler = PixelSampler::new(scene.render.seed, x, y, index);
                 let ray = camera_ray(scene, &sampler, x, y);
                 rays += 1;
-                sum += albedo_of(scene, first_hit(scene, prepared, &tracer, &ray));
+                let hit = first_hit(scene, prepared, &tracer, &ray);
+                sum += albedo_of(scene, hit);
+                covered += coverage_of(hit);
             }
-            film.add_albedo(x, y, sum * (1.0 / k as f32));
+            let inv = 1.0 / k as f32;
+            film.add_albedo(x, y, sum * inv);
+            film.add_alpha(x, y, covered * inv);
         }
     }
     rays

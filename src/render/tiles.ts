@@ -130,6 +130,8 @@ export interface TileResult {
   data: Float32Array;
   /** With passes (Render, phase X2): the albedo of the same samples, each `w * h * 3` floats. */
   albedo?: Float32Array;
+  /** With the alpha pass (N2): the coverage of the same samples, each `w * h` floats. */
+  alpha?: Float32Array;
   /** With passes, once per tile (the job whose `first` is 0): its exact planes (render/pass-planes.ts). */
   exact?: Uint32Array;
   /** E10: the samples are of a block of an adaptive round (`index` is the block's): its pixels. */

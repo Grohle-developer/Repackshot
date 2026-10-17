@@ -20,6 +20,8 @@ never on ui (the RSB writer of `io/` reaches the path tracer through `SceneSourc
 - `pass-planes.ts`: the engine's exact passes (X2, `core/passes.ts`): the planes of `rt_render_tile_passes` and
   `rt_render_tile_albedo` put together like the image (`PassAccumulator`), and the reader of the launcher's
   `RPP1` file (`parsePasses`). Render hands them back as `RenderPasses` when `RenderOptions.passes` asks.
+  N2: the alpha pass (`rt_render_tile_alpha`, the coverage of every sample) is summed like the albedo
+  (`PassAccumulator.addAlpha`, `ALPHA_BIT`).
 - `frame-scan.ts` (D1): what the Doctor reads of the Full viewport's accumulation, without an engine and without a DOM:
   the fireflies (isolated pixels where one sample carries most of the light, told with the squared luminance when the
   denoise keeps it) and the frame's pixels by the stop of their brightest channel. Both engines hand it out as

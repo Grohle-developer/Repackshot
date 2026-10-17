@@ -5,6 +5,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- Un pase nuevo, **alfa** (el séptimo, bit 6 de `RNDR.passes`): la cobertura de los objetos, de 0 a 1, con los bordes suavizados como la imagen (cada muestra de cámara cuenta si su rayo encuentra una superficie). El suelo del estudio, el entorno, el fondo y los paneles de luz que ve la cámara valen 0 (N2).
+- `rt_render_tile_alpha` en `rt.wasm` y en el pool; el archivo `RPP1` del lanzador lo lleva el último, y el *pool* y el lanzador dan el mismo plano (N2).
+- Los *hash* fijados de los seis pases de X2 y de las imágenes no se mueven; el alfa tiene los suyos (`PINNED_PASS_ALPHA`, `PINNED_E5_PASS_ALPHA`), iguales en escalar, SSE2 y AVX2, en WASI, en el `rt.wasm` real (`tools/wasm-parity.mjs --expect-alpha`, dos bloques nuevos de CI) y por la API del lanzador (N2).
+- Con un fondo transparente y solo objetos opacos, el pase alfa es el alfa de la película bit a bit, también con muestras de borde (N2).
+
 ### Interfaz
 
 - La sección **Luz** agrupa el catálogo en **Sets** (lo que monta fondo, suelo, tarjetas o charco de luz con sus focos: los 16 sets y el rig del tipo de producto) y **Luces** (lo que solo coloca focos: los montajes de siempre y las recetas de *Interior*). Cada grupo tiene sus filtros, que se combinan: *Tipo de producto* y *Sujeto* en *Sets*, *Estilo* (con *Míos*) en *Luces*, con la cuenta de lo que dejan y un aviso corto si no dejan nada. Ninguna clave cambia (L7).
@@ -16,6 +23,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Deslizadores donde convienen**: un valor con un rango natural (un factor de 0 a 1, un porcentaje, un ángulo en un rango fijo) pasa a deslizador con su campo y sus flechas al lado: *Rozamiento* y *Rebote*; *Giro* del bokeh, *Inclinación* y *Eje de la inclinación*; el *Ángulo* de un filtro y de un patrón circular; el *Ángulo de suavizado*; el *Giro* de una textura y de una etiqueta; en un foco propio *Acimut*, *Elevación*, *Giro*, *Dispersión*, *Ángulo de cono*, *Transición* y *Disco del sol*; en la ventana de render la *Calidad* del JPEG, el *Ruido* y la *Intensidad* de la reducción de ruido; en Ajustes *Velocidad de órbita*, *Velocidad de zoom*, *Tamaño del gizmo* e *Intervención por defecto*. Las distancias, tamaños, potencias, cuentas y tiempos siguen siendo campos (U15).
 - El campo **Tiempo** de la ventana de render (`hh:mm:ss`) es ahora un campo numérico como los demás: se arrastra, tiene sus flechas (un minuto por paso) y se escribe como hora, `mm:ss` o segundos (U15).
 - Los mandos de la lente fina que se apagan con una lente trazada (*Intensidad del perfil*, *Ojo de gato*, *Inclinación*, *Eje de la inclinación*) ya no se pueden arrastrar mientras están apagados (U15).
+- **Pases** en la ventana de render, donde decía *próximamente*: *Alfa*, *Profundidad*, *Normales* e *Id de pieza*, cada uno un archivo junto a la imagen (`<nombre>_alpha`, `_depth`, `_normal`, `_partId`), en **EXR** de 32 bits flotantes o **PNG de 16 bits**; el id de pieza lleva una leyenda `.json` de quién es quién (N2).
+- **Estudio** en la ventana de render: la escena como está, un estudio guardado o **todos**; con *Todas las cámaras*, un **lote cámaras × estudios** (2 × 2 son cuatro imágenes, cámara por cámara), con la plantilla `{project}_{camera}_{studio}`. El estudio se pone sobre una copia del proyecto: el proyecto abierto no se toca y la cámara conserva su vista (N2).
+- La ventana dice el tamaño del lote (*Lote de 4 imágenes: cámaras 2 × estudios 2*) y avisa cuando la plantilla daría el mismo nombre a dos archivos (N2).
+- **ZIP**: un interruptor empaqueta los archivos de lo que una orden *Render* o *+ Añadir a la cola* metió en la cola en un solo ZIP (escritor propio, sin comprimir, sin dependencias), que se descarga al acabar el último trabajo del grupo; si el ZIP no se pudiera crear, los archivos se guardan uno a uno (N2).
+- La cola enseña el estudio de cada trabajo junto a su cámara y *+3 pases · ZIP* al final del nombre; *Detener* el segundo de tres trabajos lo deja *Cancelado* y la cola sigue con el tercero (N2).
+- `{studio}` en el nombre es el estudio guardado del trabajo; sin él, el nombre del tipo de producto como antes. Un estudio que ya no está guardado hace fallar su trabajo con el motivo y la cola sigue (N2).
+- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 
 ### Herramientas
 
@@ -23,6 +37,15 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - `tools/number-fields-check.mjs`: las flechas en todos los campos de la pantalla inicial, un clic y una pulsación mantenida sobre *Focal* (un paso, una entrada de deshacer cada uno), los ángulos de un foco propio y las velocidades de *Preferencias* como deslizadores; capturas `docs/ui/u15-light-fields.png`, `u15-part-triplets.png` y `u15-settings-sliders.png` (U15).
 - `tools/doctor-engine-check.mjs` escribe el tiempo del render en el campo numérico nuevo (U15).
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
+
+### Limitaciones conocidas de esta versión
+
+- El pase alfa es una **máscara de objetos**: no es el alfa de un render con fondo transparente cuando el camino atraviesa vidrio (que sí cuenta como superficie) o el suelo es un atrapasombras con su sombra; los recortes de una textura cuentan como superficie. Con *Terminar por ruido* lleva las muestras de la primera ronda (N2).
+- Los pases son para imágenes: una animación no los escribe. De los seis pases del motor solo se ofrecen cuatro (el albedo, el id de material y el círculo de confusión no) (N2).
+- Un trabajo con un estudio de lote no pasa por el post-procesado IA, y los plugins de trabajos guardan sus imágenes aparte, fuera del ZIP (N2).
+- Los estudios de la biblioteca viven en el navegador: un proyecto abierto en otro equipo con trabajos que usan un estudio que allí no existe los falla con el motivo (N2).
+- El ZIP se arma en memoria y se escribe al acabar el último trabajo: cerrar la página antes lo pierde, y un lote muy grande con pases en EXR puede no caber (sin ZIP64, 4 GiB como mucho) (N2).
+- Los lotes nativos de la línea de órdenes (`rt` leyendo proyectos, E8) siguen sin hacerse (N2).
 
 ## v0.1.16 — 2026-10-17
 

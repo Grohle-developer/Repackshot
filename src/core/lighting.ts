@@ -506,7 +506,12 @@ export function snapshotStudio(state: ProjectState, id: string, name: string): S
   };
 }
 
-function restoreStudio(state: ProjectState, saved: SavedStudio): ProjectState {
+/**
+ * The project with a saved studio put on (what `studio/restore` does): its materials, lights, floor, environment and
+ * image, and, unless `camera` is false (N2: a batch renders each camera in each studio, so the studio must not take the
+ * camera's view away), its camera's view and optics. A pure function of the two: it changes nothing in any store.
+ */
+export function restoreStudio(state: ProjectState, saved: SavedStudio, opts: { camera?: boolean } = {}): ProjectState {
   const nodes = { ...state.scene.nodes };
   for (const [id, a] of Object.entries(saved.assignments)) {
     const node = nodes[id];
@@ -539,9 +544,10 @@ function restoreStudio(state: ProjectState, saved: SavedStudio): ProjectState {
     environment: saved.environment,
     image: saved.image,
     // The camera's view and optics come back; the ratio of the image is the project's choice (U13), not the studio's.
-    camera: cam
-      ? { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: { ...saved.camera, id: cam.id, name: cam.name, aspect: cam.aspect } } }
-      : state.camera,
+    camera:
+      cam && opts.camera !== false
+        ? { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: { ...saved.camera, id: cam.id, name: cam.name, aspect: cam.aspect } } }
+        : state.camera,
   };
   return pruneMaterials(restored);
 }

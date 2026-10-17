@@ -245,6 +245,53 @@ export async function encodePng16(px: Pixels16, opts: EncodeOptions = {}): Promi
   return pngFile(chunks);
 }
 
+/** The `tEXt` chunk of a keyword (1 to 79 printable Latin-1 characters) and its text (Latin-1): the file says what it holds. */
+export function textChunk(keyword: string, text: string): [string, Uint8Array] {
+  const latin1 = (v: string) => Uint8Array.from(v, (c) => (c.charCodeAt(0) < 256 ? c.charCodeAt(0) : 63));
+  const key = latin1(keyword.slice(0, 79));
+  const value = latin1(text);
+  const d = new Uint8Array(key.length + 1 + value.length);
+  d.set(key, 0);
+  d.set(value, key.length + 1);
+  return ['tEXt', d];
+}
+
+/** What `encodePngWords` writes besides the words: the density and notes (`tEXt` keyword and text pairs, in order). */
+export interface WordsOptions extends EncodeOptions {
+  text?: readonly (readonly [string, string])[];
+}
+
+/**
+ * A PNG of 16-bit words with no alpha (N2: the files of the passes): one channel (grey, colour type 0) or three
+ * (RGB, type 2), samples big-endian, filter 0 on every row; `pHYs` with the DPI and a `tEXt` chunk for each note.
+ * `words` has `width * height * channels` values, rows from the top.
+ */
+export async function encodePngWords(width: number, height: number, channels: 1 | 3, words: Uint16Array, opts: WordsOptions = {}): Promise<Uint8Array> {
+  if (words.length !== width * height * channels) throw new Error(`a ${width} × ${height} PNG of ${channels} channel(s) needs ${width * height * channels} words, not ${words.length}`);
+  const row = width * channels * 2;
+  const raw = new Uint8Array((row + 1) * height);
+  let o = 0;
+  let i = 0;
+  for (let y = 0; y < height; y++) {
+    raw[o++] = 0;
+    for (let x = 0; x < width * channels; x++, i++) {
+      raw[o++] = words[i] >>> 8;
+      raw[o++] = words[i] & 0xff;
+    }
+  }
+  const head = new Uint8Array(13);
+  const v = new DataView(head.buffer);
+  v.setUint32(0, width);
+  v.setUint32(4, height);
+  head[8] = 16;
+  head[9] = channels === 1 ? 0 : 2;
+  const chunks: [string, Uint8Array][] = [['IHDR', head]];
+  if (opts.dpi !== undefined) chunks.push(['pHYs', physData(opts.dpi)]);
+  for (const [key, text] of opts.text ?? []) chunks.push(textChunk(key, text));
+  chunks.push(['IDAT', await zlib(raw)]);
+  return pngFile(chunks);
+}
+
 // ------------------------------------------------------------------ JPEG density
 
 const JFIF_ID = [0x4a, 0x46, 0x49, 0x46, 0x00];
@@ -365,6 +412,96 @@ export function encodeExr(px: FloatPixels, opts: { alpha: boolean }): Uint8Array
       const c = offsetOf[n];
       for (let x = 0; x < width; x++) {
         dv.setFloat32(o, data[(y * width + x) * 4 + c], true);
+        o += 4;
+      }
+    }
+  }
+  return out;
+}
+
+/** One channel of an EXR of planes: its name and `width * height` floats, rows from the top. */
+export interface ExrPlane {
+  name: string;
+  data: Float32Array;
+}
+
+/**
+ * An OpenEXR file of single-channel planes (N2: the passes): the same minimal file as `encodeExr` (single part, scan
+ * lines, no compression, 32-bit float channels, one line per block, the required attributes, the line offset table),
+ * with the channels you name instead of RGBA. EXR lists its channels in alphabetical order; they are sorted here, and
+ * the names must be unique. Values are written as they are, `Infinity` included (the depth of the background).
+ */
+export function encodeExrPlanes(width: number, height: number, planes: readonly ExrPlane[]): Uint8Array {
+  if (planes.length === 0) throw new Error('an EXR needs at least one channel');
+  const sorted = [...planes].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].data.length !== width * height) throw new Error(`the ${sorted[i].name} channel is not ${width} × ${height}`);
+    if (i > 0 && sorted[i].name === sorted[i - 1].name) throw new Error(`the channel ${sorted[i].name} is twice`);
+  }
+  const enc = new TextEncoder();
+  const parts: number[] = [];
+  const push = (...b: number[]) => {
+    for (const x of b) parts.push(x);
+  };
+  const i32 = (v: number) => push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
+  const f32 = (v: number) => {
+    const b = new Uint8Array(new Float32Array([v]).buffer);
+    push(b[0], b[1], b[2], b[3]);
+  };
+  const cstr = (s: string) => push(...enc.encode(s), 0);
+  const attr = (name: string, type: string, value: number[]) => {
+    cstr(name);
+    cstr(type);
+    i32(value.length);
+    push(...value);
+  };
+  const bytesOf = (fn: () => void): number[] => {
+    const start = parts.length;
+    fn();
+    return parts.splice(start);
+  };
+  push(0x76, 0x2f, 0x31, 0x01); // magic
+  i32(2); // version 2, single-part scan line
+  const chlist = bytesOf(() => {
+    for (const p of sorted) {
+      cstr(p.name);
+      i32(2); // FLOAT
+      push(0, 0, 0, 0); // pLinear, reserved
+      i32(1);
+      i32(1);
+    }
+    push(0);
+  });
+  attr('channels', 'chlist', chlist);
+  attr('compression', 'compression', [0]);
+  const box = bytesOf(() => {
+    i32(0);
+    i32(0);
+    i32(width - 1);
+    i32(height - 1);
+  });
+  attr('dataWindow', 'box2i', box);
+  attr('displayWindow', 'box2i', box);
+  attr('lineOrder', 'lineOrder', [0]);
+  attr('pixelAspectRatio', 'float', bytesOf(() => f32(1)));
+  attr('screenWindowCenter', 'v2f', bytesOf(() => (f32(0), f32(0))));
+  attr('screenWindowWidth', 'float', bytesOf(() => f32(1)));
+  push(0); // end of header
+  const header = Uint8Array.from(parts);
+  const lineBytes = width * sorted.length * 4;
+  const tableBytes = height * 8;
+  const out = new Uint8Array(header.length + tableBytes + height * (8 + lineBytes));
+  out.set(header, 0);
+  const dv = new DataView(out.buffer);
+  let o = header.length + tableBytes;
+  for (let y = 0; y < height; y++) {
+    dv.setBigUint64(header.length + y * 8, BigInt(o), true);
+    dv.setInt32(o, y, true);
+    dv.setInt32(o + 4, lineBytes, true);
+    o += 8;
+    for (const p of sorted) {
+      for (let x = 0; x < width; x++) {
+        dv.setFloat32(o, p.data[y * width + x], true);
         o += 4;
       }
     }
