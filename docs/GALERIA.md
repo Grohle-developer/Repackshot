@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 125 archivos: 123 repartidos por versión y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 128 archivos: 126 repartidos por versión y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,22 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 43 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 44 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Ninguna captura nueva: todas las de `docs/ui/` están ya en una versión publicada (la última es v0.1.16). Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
+Flechas de paso en todos los valores y deslizadores donde convienen. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
+
+#### U15 · Flechas y deslizadores en los valores
+
+<a id="c-u15-light-fields"></a><img src="ui/u15-light-fields.png" width="480" alt="Un foco propio (Área) elegido: en el inspector, Ancho, Distancia, Temperatura y Potencia son campos con sus flechas ▲ ▼ a la derecha; Acimut, Elevación y Dispersión, deslizadores con su campo y sus flechas al lado (Dispersión en 180°, su máximo, con ▲ apagada); las Coordenadas X, Y, Z llevan el par compacto."><br>
+`u15-light-fields.png` · `84f0673` · Un foco propio (Área) elegido: en el inspector, Ancho, Distancia, Temperatura y Potencia son campos con sus flechas ▲ ▼ a la derecha; Acimut, Elevación y Dispersión, deslizadores con su campo y sus flechas al lado (Dispersión en 180°, su máximo, con ▲ apagada); las Coordenadas X, Y, Z llevan el par compacto.
+
+<a id="c-u15-part-triplets"></a><img src="ui/u15-part-triplets.png" width="339" alt="La columna del inspector con la sección Pieza: Posición, Rotación y Escala en tripletes X, Y, Z de 102 px con el par compacto de flechas, el puntero sobre ▲ de la X de Posición; debajo, el Bisel de aristas con el par normal."><br>
+`u15-part-triplets.png` · `84f0673` · La columna del inspector con la sección Pieza: Posición, Rotación y Escala en tripletes X, Y, Z de 102 px con el par compacto de flechas, el puntero sobre ▲ de la X de Posición; debajo, el Bisel de aristas con el par normal.
+
+<a id="c-u15-settings-sliders"></a><img src="ui/u15-settings-sliders.png" width="480" alt="Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %)."><br>
+`u15-settings-sliders.png` · `84f0673` · Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %).
 
 ### v0.1.16 · 2026-10-17
 
@@ -556,6 +567,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) (v0.1.4): la interfaz entera con el visor en Completo: árbol de piezas, pedestal y fondo infinito, y el catálogo de montajes de luz.
 
+- [`u15-light-fields.png`](#c-u15-light-fields) · Sin publicar · U15
+- [`u15-part-triplets.png`](#c-u15-part-triplets) · Sin publicar · U15
 - [`primitives-add-menu.png`](#c-primitives-add-menu) · v0.1.4 · U9
 - [`primitives-base-box.png`](#c-primitives-base-box) · v0.1.4 · U9
 - [`primitives-pedestal.png`](#c-primitives-pedestal) · v0.1.4 · U9
@@ -725,6 +738,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`desktop-linux.png`](#c-desktop-linux) (v0.1.0): la aplicación de escritorio con el motor nativo (4 hilos, AVX2) en el visor Completo.
 
+- [`u15-settings-sliders.png`](#c-u15-settings-sliders) · Sin publicar · U15
 - [`settings-plugins.png`](#c-settings-plugins) · v0.1.6 · P6
 - [`render-plugins-film.png`](#c-render-plugins-film) · v0.1.6 · P6
 - [`update-install.png`](#c-update-install) · v0.1.6 · P5
