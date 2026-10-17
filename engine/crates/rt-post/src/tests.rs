@@ -81,6 +81,21 @@ fn the_constants_are_the_contracts() {
             "DEFAULT_AI_PIPELINE.{key} = {v}"
         );
     }
+    // C1: Intervention 50 and the colour and edge limits doubled (they were 30, and 2, 3 and 1.5).
+    assert_eq!(d.intervention, 50);
+    let t = Tolerances::PROVISIONAL;
+    assert_eq!((t.delta_e_mean, t.delta_e_p95, t.edges_px), (4.0, 6.0, 3.0));
+    // The colour limits are the factory values of Settings ▸ AI post-processing ▸ Advanced.
+    let settings = include_str!("../../../../src/core/settings.ts");
+    for (key, v) in [
+        ("ai.guardDeltaE", t.delta_e_mean),
+        ("ai.guardDeltaE95", t.delta_e_p95),
+    ] {
+        assert!(
+            settings.contains(&format!("    '{key}': {v},")),
+            "{key} = {v} in src/core/settings.ts"
+        );
+    }
 }
 
 #[test]
@@ -108,7 +123,7 @@ fn strengths_follow_intervention_and_the_retry_factor() {
         "{json}"
     );
     assert!(json.contains("\"maxAttempts\":4"), "{json}");
-    assert!(json.contains("\"deltaEMean\":2"), "{json}");
+    assert!(json.contains("\"deltaEMean\":4"), "{json}");
 }
 
 #[test]
@@ -304,7 +319,9 @@ fn a_material_colour_change_is_limited_to_the_tolerance() {
     assert_eq!(report.verdict, Verdict::Accepted, "{:?}", report.reason);
     let cap = report.materials.iter().find(|m| m.name == "Cap").unwrap();
     assert!(
-        cap.ok && cap.delta_e_mean <= 2.0 && cap.delta_e_p95 <= 3.0,
+        cap.ok
+            && cap.delta_e_mean <= job.tolerances.delta_e_mean
+            && cap.delta_e_p95 <= job.tolerances.delta_e_p95,
         "{cap:?}"
     );
     assert!(
@@ -935,7 +952,9 @@ fn the_floor_is_relit_and_colour_checked_never_background() {
         .find(|m| m.material_id == FLOOR_ID)
         .unwrap();
     assert!(
-        check.ok && check.delta_e_mean <= 2.0 && check.delta_e_p95 <= 3.0,
+        check.ok
+            && check.delta_e_mean <= loose.tolerances.delta_e_mean
+            && check.delta_e_p95 <= loose.tolerances.delta_e_p95,
         "{check:?}"
     );
     assert!(

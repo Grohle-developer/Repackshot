@@ -42,7 +42,7 @@ export interface SyntheticLimits {
   focus: number;
 }
 
-export const SYNTHETIC_LIMITS: Readonly<SyntheticLimits> = { deltaEMean: 2, deltaEP95: 3, edgePx: 2, detail: 0.9, focus: 0.25 };
+export const SYNTHETIC_LIMITS: Readonly<SyntheticLimits> = { deltaEMean: 4, deltaEP95: 6, edgePx: 4, detail: 0.9, focus: 0.25 };
 
 export interface SyntheticOptions {
   limits?: Partial<SyntheticLimits>;

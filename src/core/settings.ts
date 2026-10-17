@@ -283,15 +283,17 @@ export function defaultSettings(): Settings {
     'ai.gpu': 0,
     'ai.resolution': 1024,
     // Provisional until X1 part B measures them (AI-POST.md §2.1, §3.2): the distilled model's step count and
-    // the starting points of the guard.
+    // the starting points of the guard. C1 raised the intervention from 30 and doubled the guard's tolerances (2, 3
+    // and 2 px before): the AI pass changed next to nothing. A stored document keeps what it holds (a value equal
+    // to an old default cannot be told from a choice): only new installations take these.
     'ai.steps': 8,
-    'ai.intervention': 30,
+    'ai.intervention': 50,
     'ai.seed': 'FIXED',
     'ai.offloadTextEncoder': false,
     'ai.systemPrompt': DEFAULT_SYSTEM_PROMPT,
-    'ai.guardDeltaE': 2,
-    'ai.guardDeltaE95': 3,
-    'ai.guardEdgePx': 2,
+    'ai.guardDeltaE': 4,
+    'ai.guardDeltaE95': 6,
+    'ai.guardEdgePx': 4,
     'ai.backend': 'AUTO',
 
     'storage.historyCount': 50,

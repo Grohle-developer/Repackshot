@@ -154,7 +154,8 @@ describe.skipIf(!WASM)('post.wasm against the native guard', { timeout: 300_000 
     expect(plan.tiles).toHaveLength(2);
     for (const t of plan.tiles) expect([t.paddedWidth % 16, t.paddedHeight % 16]).toEqual([0, 0]);
     expect(plan.tolerances.edgesPx).toBe(fx.LIMITED_EDGES_PX);
-    expect(plan.tolerances.deltaEMean).toBe(2);
+    // The provisional default, doubled in C1 (it was 2).
+    expect(plan.tolerances.deltaEMean).toBe(4);
     // Two attempts, two tiles each, at the plan's strengths.
     expect(calls.map((c) => [c.tile, c.attempt])).toEqual([
       [0, 0],

@@ -253,11 +253,13 @@ desgaste), luces y entorno, para el *prompt*.
      media y solo dentro de las regiones de materiales que admiten
      desgaste, con un tope.
    - **Regiones por id**: intervención por región, y límite de cambio de
-     color por material (ΔE₀₀ medio y percentil 95; punto de partida ≤ 2–3
-     en materiales críticos, a calibrar en X1).
+     color por material (ΔE₀₀ medio y percentil 95; punto de partida 4 y 6,
+     el doble del ≤ 2–3 del principio por la decisión 2.1 de C1, a calibrar
+     en X1).
 5. **Comprobación y retroceso**: medidas sobre el resultado —tamaño
    exacto; píxeles idénticos fuera de las regiones permitidas; coincidencia
-   de bordes en discontinuidades de id y normal (±1–2 px); SSIM sobre la
+   de bordes en discontinuidades de id y normal (3 px en la guarda del
+   motor y 4 en *Ajustes*, el doble de 1,5 y 2 desde C1); SSIM sobre la
    banda alta; ΔE₀₀ por región; nitidez por mosaico frente al mapa de
    desenfoque (ni se emborrona lo enfocado ni se enfoca lo desenfocado)—.
    Si alguna falla, la intervención baja sola y se repite hasta que pasen
@@ -286,7 +288,7 @@ A 0, el aspecto correspondiente no cambia:
 
 | Control | Qué hace | Por defecto |
 | --- | --- | --- |
-| **Intervención** | Cuánto puede cambiar la IA la imagen, en total | 30 |
+| **Intervención** | Cuánto puede cambiar la IA la imagen, en total | 50 (30 hasta C1) |
 | **Luz** | Luz más natural: penumbras, brillos suaves, rodillo de altas luces | 50 |
 | **Rebotes** | Luz rebotada y color de ambiente entre superficies | 40 |
 | **Desgaste y microdetalle** | Micro-variación y huellas creíbles, solo en materiales que admiten desgaste | 20 |

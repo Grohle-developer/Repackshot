@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { AI_STYLES, DEFAULT_AI_PIPELINE } from '../src/core/ai';
 import { nextSeed } from '../src/core/ai-post';
 import { AI_PERCENT_KEYS, DEFAULT_AI, defaultRenderSettings, migrateRender, normaliseAi, patchSettings, type AiSettings } from '../src/core/render';
-import { defaultSettings, withProjectDefaults, withSetting } from '../src/core/settings';
+import { defaultSettings, migrateDoc, SETTINGS_SCHEMA, withProjectDefaults, withSetting } from '../src/core/settings';
+import { SYNTHETIC_LIMITS } from '../src/ai/synthetic';
 import { createInitialState, createStore } from '../src/core/store';
 import { migrateProject, parseProject, serializeProject } from '../src/io/project';
 import * as cmd from '../src/ui/commands';
@@ -25,7 +26,28 @@ describe('the AI settings of a project', () => {
   it('start off, with the configurator’s defaults and the preview from Fast mode', () => {
     const ai = defaultRenderSettings().ai;
     expect(ai).toEqual({ enabled: false, previewFullEngine: false, ...DEFAULT_AI_PIPELINE });
-    expect(ai).toMatchObject({ intervention: 30, light: 50, bounce: 40, wear: 20, style: 'NATURAL', styleStrength: 30, seed: 0 });
+    expect(ai).toMatchObject({ intervention: 50, light: 50, bounce: 40, wear: 20, style: 'NATURAL', styleStrength: 30, seed: 0 });
+  });
+
+  it('C1: the factory values are Intervention 50 and the guard’s tolerances doubled (ΔE₀₀ 4 and 6, edges 4 px)', () => {
+    // Decided in docs/ROADMAP.md (Decisiones de criterio, 2.1): the AI pass changed next to nothing at 30 and 2/3/2.
+    expect(DEFAULT_AI_PIPELINE.intervention).toBe(50);
+    const d = defaultSettings();
+    expect(d['ai.intervention']).toBe(50);
+    expect([d['ai.guardDeltaE'], d['ai.guardDeltaE95'], d['ai.guardEdgePx']]).toEqual([4, 6, 4]);
+    // The synthetic guard checks against those same factory values.
+    expect(SYNTHETIC_LIMITS).toMatchObject({ deltaEMean: d['ai.guardDeltaE'], deltaEP95: d['ai.guardDeltaE95'], edgePx: d['ai.guardEdgePx'] });
+    // A new project starts at the new default.
+    expect(withProjectDefaults(createInitialState(), d).render.ai.intervention).toBe(50);
+  });
+
+  it('C1: a stored settings document keeps what it holds; only a value it does not have takes the new default', () => {
+    // The document stores every setting, so an old default cannot be told from a choice: it stays as stored.
+    const stored = migrateDoc({ schema: SETTINGS_SCHEMA, settings: { 'ai.intervention': 30, 'ai.guardDeltaE': 2, 'ai.guardDeltaE95': 3, 'ai.guardEdgePx': 2 }, layout: {} });
+    expect([stored.settings['ai.intervention'], stored.settings['ai.guardDeltaE'], stored.settings['ai.guardDeltaE95'], stored.settings['ai.guardEdgePx']]).toEqual([30, 2, 3, 2]);
+    const partial = migrateDoc({ schema: SETTINGS_SCHEMA, settings: { 'ai.intervention': 70 }, layout: {} });
+    expect(partial.settings['ai.intervention']).toBe(70);
+    expect(partial.settings['ai.guardDeltaE']).toBe(4);
   });
 
   it('are integers 0..100, and an unknown style is Natural', () => {
@@ -167,7 +189,7 @@ describe('jobs and new projects', () => {
     expect(fresh.render.ai).toEqual({ ...DEFAULT_AI, intervention: 55 });
     const ctx = makeCtx();
     cmd.setSetting(ctx, 'ai.intervention', 10);
-    expect(ctx.store.get().render.ai.intervention).toBe(30);
+    expect(ctx.store.get().render.ai.intervention).toBe(50);
     cmd.newProject(ctx);
     expect(ctx.store.get().render.ai.intervention).toBe(10);
   });

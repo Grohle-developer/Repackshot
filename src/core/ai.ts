@@ -43,7 +43,7 @@ export interface AiPipelineSettings {
 
 /** The configurator's defaults (AI-POST.md §4). */
 export const DEFAULT_AI_PIPELINE: Readonly<Required<AiPipelineSettings>> = {
-  intervention: 30,
+  intervention: 50,
   light: 50,
   bounce: 40,
   wear: 20,
