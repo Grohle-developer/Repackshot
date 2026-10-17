@@ -605,6 +605,28 @@ const TABLE = {
   'camera.lensCustom': ['Custom', 'A medida'],
   'camera.focal': ['Focal length', 'Focal'],
   'camera.fstop': ['Aperture', 'Diafragma'],
+  // C2: the focal length's switch (core/focal.ts)
+  'camera.keepFocusSize': ['Keep the size of what is in focus', 'Mantener el tamaño de lo enfocado'],
+  'camera.keepFocusSizeOff': [
+    'Off: changing the focal length leaves the camera where it is and the framing changes, as on a camera. On, the camera moves along its axis so what is in focus keeps its size',
+    'Apagado: al cambiar la focal la cámara se queda donde está y cambia el encuadre, como en una cámara. Encendido, la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño',
+  ],
+  'camera.keepFocusSizeOn': [
+    'On: changing the focal length moves the camera along its axis so what is in focus keeps its size, and the perspective changes. Off, the camera stays and the framing changes',
+    'Encendido: al cambiar la focal la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño, y cambia la perspectiva. Apagado, la cámara se queda y cambia el encuadre',
+  ],
+  'camera.keepFocusSizeLocked': [
+    'The camera is locked: it stays where it is and the framing changes. Unlock it to keep the size of what is in focus',
+    'La cámara está bloqueada: se queda donde está y cambia el encuadre. Desbloquéala para mantener el tamaño de lo enfocado',
+  ],
+  'camera.keepFocusSizeOrtho': [
+    'An orthographic camera frames by its width: the focal length does not change the framing, so there is nothing to keep',
+    'Una cámara ortográfica encuadra por su ancho: la focal no cambia el encuadre y no hay nada que mantener',
+  ],
+  'camera.keepFocusSizePano': [
+    'A panorama frames by its field of view: the focal length does not change the framing, so there is nothing to keep',
+    'Una panorámica encuadra por su campo de visión: la focal no cambia el encuadre y no hay nada que mantener',
+  ],
   'camera.focus': ['Focus distance', 'Distancia de enfoque'],
   'camera.focusClick': ['Focus with a click', 'Enfocar con clic'],
   'camera.focusMode': ['Focus', 'Enfoque'],
@@ -3171,6 +3193,7 @@ const TABLE = {
   'action.focusObject': ['Focus on an object (click on it)', 'Enfocar en un objeto (haz clic en él)'],
   'action.focusSelection': ['Keep the selection in focus', 'Mantener enfocada la selección'],
   'action.focusDistance': ['Focus by distance', 'Enfocar por distancia'],
+  'action.keepFocusSize': ['Focal length: keep the size of what is in focus (on or off)', 'Focal: mantener el tamaño de lo enfocado (activar o desactivar)'],
   'action.materialEditor': ['Open the material editor', 'Abrir el editor de material'],
   'action.saveStudio': ['Save as studio', 'Guardar como estudio'],
   'action.exportImage': ['Export viewport image', 'Exportar imagen del visor'],
@@ -3372,6 +3395,8 @@ const TABLE = {
   // Toasts
   'toast.saved': ['Saved {name}', 'Guardado {name}'],
   'toast.locked': ['{target} is locked', '{target} está bloqueado'],
+  'toast.keepFocusSizeOn': ['{camera}: changing the focal length keeps the size of what is in focus', '{camera}: al cambiar la focal se mantiene el tamaño de lo enfocado'],
+  'toast.keepFocusSizeOff': ['{camera}: changing the focal length changes the framing', '{camera}: al cambiar la focal cambia el encuadre'],
   'toast.copied': ['Copied {material}', 'Copiado {material}'],
   'toast.nothingToPaste': ['Copy a material first', 'Copia antes un material'],
   'toast.oneMaterial': ['The selection carries more than one material', 'La selección lleva más de un material'],
