@@ -12,7 +12,8 @@ import { dropNodes, viewportDropTarget, type DropTarget } from '../../core/mater
 import { allParts, effectiveVisible, partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import { gizmoTransforms, movableTargets, selectionFrame, type GizmoFrame, type GizmoHandle } from '../../core/transform';
-import { focusPickAction, objectFrame, objectGizmoAction, sameObject, selectedObject, type ViewObject } from '../../core/view-objects';
+import { focusObjectAction, focusPickAction, objectFrame, objectGizmoAction, sameObject, selectedObject, type ViewObject } from '../../core/view-objects';
+import { playheadPose } from '../../core/animation';
 import * as cmd from '../commands';
 import { newGesture } from '../components/controls';
 import { materialDragActive, registerDropZone } from '../components/material-drag';
@@ -375,6 +376,7 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       const s = store.get();
       pickBanner.style.display = pm ? '' : 'none';
       if (pm?.kind === 'focus') pickBanner.textContent = t('viewport.pickFocus');
+      else if (pm?.kind === 'focusObject') pickBanner.textContent = t('viewport.pickFocusObject');
       else if (pm?.kind === 'reflect') pickBanner.textContent = t('viewport.pickReflect', { light: lightName(s, pm.light, getLang()) });
       else if (pm?.kind === 'pivot') pickBanner.textContent = t('viewport.pickPivot');
       else if (pm?.kind === 'link') pickBanner.textContent = t('viewport.pickLink');
@@ -619,20 +621,36 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
   window.addEventListener('pointerup', endDrag, listen);
   window.addEventListener('pointercancel', endDrag, listen);
 
+  // F1, focus with a click: the point the pixel shows as the engine renders it (its own chief ray of that pixel, cast at
+  // the viewport's geometry through both faces), for the camera that is seen; a click on nothing keeps the pick on.
+  const focusClick = async (x: number, y: number, kind: 'focus' | 'focusObject', camera: string | undefined) => {
+    const hit = port.pickFocus ? await port.pickFocus(x, y, { settle: kind === 'focus', ...(camera ? { camera } : {}) }) : port.pick(x, y);
+    const s = store.get();
+    if (!hit || !s.scene.nodes[hit.node] || ui.get().pickMode?.kind !== kind) return;
+    const pose = playheadPose(s);
+    const look = ui.get().lookThrough;
+    let action;
+    if (kind === 'focus') action = focusPickAction(s, look, { node: hit.node, point: hit.point }, { label: L('undo.focusClick') }, pose, camera);
+    else {
+      const id = resolvePick(s, hit.node, s.selection.level);
+      action = focusObjectAction(s, look, id, { label: L('undo.focusObject', { name: s.scene.nodes[id]?.name ?? '' }) }, pose, camera);
+    }
+    if (action) store.dispatch(action);
+    ui.set({ pickMode: null });
+  };
   // Click (a press without a drag): pick modes, then selection by level.
   const clickAt = (e: { clientX: number; clientY: number }, mods: Mods) => {
     const p = local(e);
     const s = store.get();
     const pm = ui.get().pickMode;
+    if (pm?.kind === 'focus' || pm?.kind === 'focusObject') {
+      void focusClick(p.x, p.y, pm.kind, pm.camera);
+      return;
+    }
     const tg = targetAt(p.x, p.y);
     if (pm) {
       if (!tg) return;
-      if (pm.kind === 'focus') {
-        // From the camera that is seen (Look through), along its view axis: the engine focuses a plane, not a sphere
-        // around the camera.
-        const action = focusPickAction(s, ui.get().lookThrough, tg.hit.point, { label: L('undo.focusClick') });
-        if (action) store.dispatch(action);
-      } else if (pm.kind === 'pivot') {
+      if (pm.kind === 'pivot') {
         cmd.setPivot(ctx, 'CUSTOM', pm.ids, tg.hit.point);
       } else if (pm.kind === 'link') {
         cmd.linkMaterial(ctx, pm.parts, tg.part);

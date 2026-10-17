@@ -33,6 +33,7 @@ import { cameraName, dyn, lightName, setupLabel, setupTip, studioLabel } from '.
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { L, formatNumber, getLang, lbl, t, type StringKey } from '../strings';
 import { aspectRows } from './insp-aspect';
+import { focusRows } from './insp-focus';
 
 /** URL of a light-setup thumbnail in public/thumbs/setups. */
 export function setupThumb(key: string, small = false): string {
@@ -577,7 +578,7 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
 
 /** Camera fields for one camera (the active one in the scene context). */
 export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
-  const { store, ui } = ctx;
+  const { store } = ctx;
   const cam0 = store.get().camera.cameras[camId()] ?? activeCamera(store.get());
   const set = (patch: Partial<CameraState>, what: StringKey, gesture?: string) =>
     store.dispatch({ type: 'camera/set', id: camId(), patch, gesture, label: cmd.editLabel('camera', what) });
@@ -594,9 +595,8 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   );
   const focal = numberField({ value: cam0.focalMm, min: 8, max: 600, step: 1, unit: 'mm', ariaLabel: t('camera.focal'), onChange: (v, g) => set({ focalMm: v }, 'camera.focal', g) });
   const fstop = numberField({ value: cam0.fstop, min: 0.95, max: 32, step: 0.1, digits: 1, prefix: 'f/', ariaLabel: t('camera.fstop'), onChange: (v, g) => set({ fstop: v }, 'camera.fstop', g) });
-  const focus = lengthField({ value: cam0.focusDistance, min: 1, max: 1e6, step: 1, ariaLabel: t('camera.focus'), onChange: (v, g) => set({ focusDistance: v }, 'camera.focus', g) });
-  const focusBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('camera.focusClick'), 'data-tip': t('camera.focusClick'), onclick: () => ui.set({ pickMode: ui.get().pickMode?.kind === 'focus' ? null : { kind: 'focus' } }) }, icon('focus'));
-  scope.watch((_s, u) => u.pickMode?.kind === 'focus', (on) => focusBtn.setAttribute('aria-pressed', String(on)));
+  // F1: Focus, Distance · Point · Object, and the distance as a slider (insp-focus.ts).
+  const focus = focusRows(ctx, scope, camId);
   // K3: the four projections; the equirectangular panorama takes the 2:1 frame with it (one undo step).
   const proj = select(
     CAMERA_PROJECTIONS.map((p) => ({ value: p, label: t(dyn(`camera.projection.${p}`)) })),
@@ -614,7 +614,6 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
       lens.set(c.lens ?? '');
       focal.set(c.focalMm);
       fstop.set(c.fstop);
-      focus.set(Math.round(c.focusDistance));
       proj.set(c.projection);
     },
   );
@@ -625,7 +624,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     field(t('camera.lens'), lens.el),
     field(t('camera.focal'), focal.el),
     field(t('camera.fstop'), fstop.el),
-    field(t('camera.focus'), focus.el, focusBtn),
+    focus,
     h('div', { class: 'note' }, t('camera.dofNote')),
     field(t('camera.projection'), proj.el),
     interior,

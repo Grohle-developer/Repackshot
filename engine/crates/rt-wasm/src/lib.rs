@@ -281,6 +281,37 @@ pub fn scene_lens_info(handle: u32) -> Option<String> {
     Some(loaded.scene.camera.lens_info_json())
 }
 
+/// F1, focus with a click: the chief ray of image point `(u, v)` of scene `handle` (0 to 1 over the
+/// image, `v` down) and the front-most part it meets, as the [`rt_core::focus::PICK_FLOATS`]
+/// floats of [`rt_core::focus::Pick::to_floats`]; `None` for a bad handle. A scene of only a
+/// camera (what the page sends for the ray) meets nothing.
+pub fn scene_pick(handle: u32, u: f32, v: f32) -> Option<[f32; rt_core::focus::PICK_FLOATS]> {
+    let reg = registry();
+    let loaded = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get(i as usize))
+        .and_then(Option::as_ref)?;
+    Some(rt_core::focus::pick(&loaded.scene, u, v).to_floats())
+}
+
+/// F1: the focus distance that brings the world point `(x, y, z)` into focus through the camera of
+/// scene `handle` ([`rt_core::scene::Camera::focus_distance_to`]); NaN for a bad handle or when no
+/// focus distance does.
+pub fn scene_focus_at(handle: u32, x: f32, y: f32, z: f32) -> f32 {
+    let reg = registry();
+    handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get(i as usize))
+        .and_then(Option::as_ref)
+        .and_then(|loaded| {
+            loaded
+                .scene
+                .camera
+                .focus_distance_to(rt_core::math::Vec3::new(x, y, z))
+        })
+        .unwrap_or(f32::NAN)
+}
+
 /// Words per pixel of the input of [`denoise`]: the planes `sums` (4), `lum2` (1), `albedo` (3),
 /// `normal` (3), `depth` (1), `part_id` (1) and `material_id` (1), one after another.
 pub const DENOISE_WORDS: usize = 14;

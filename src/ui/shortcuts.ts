@@ -120,6 +120,11 @@ export const ACTIONS: readonly AppAction[] = [
   // L5: an IES profile asks for its file first.
   { id: 'addLight.IES', label: 'lights.addAction.IES', run: (ctx) => void cmd.addIesLight(ctx) },
   { id: 'glyphs', label: 'action.glyphs', run: (ctx) => cmd.toggleGlyphs(ctx) },
+  // F1: the camera's focus by point, by object and by distance (the camera that is seen).
+  { id: 'focusPoint', label: 'action.focusPoint', run: (ctx) => cmd.pickFocusPoint(ctx) },
+  { id: 'focusObject', label: 'action.focusObject', run: (ctx) => cmd.pickFocusObject(ctx) },
+  { id: 'focusSelection', label: 'action.focusSelection', run: (ctx) => cmd.focusOnNodes(ctx) },
+  { id: 'focusDistance', label: 'action.focusDistance', run: (ctx) => cmd.setFocusMode(ctx, 'DISTANCE') },
   // Q1: the section view.
   { id: 'section', label: 'action.section', run: (ctx) => toggleSection(ctx) },
   { id: 'sectionFlip', label: 'action.sectionFlip', run: (ctx) => flipSection(ctx) },

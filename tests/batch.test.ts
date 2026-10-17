@@ -20,6 +20,13 @@ import { flushIdleZips, jobFileNames, jobProject, pendingZipFiles, queueSettled,
 import { setLang } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { apply, exampleState } from './helpers';
+import { cameraBasis, cameraPosition } from '../src/core/camera';
+import { focusDistanceAt } from '../src/core/focus';
+import { evaluate } from '../src/core/animation';
+import { add, scale } from '../src/core/math';
+import { allParts } from '../src/core/scene';
+import { focusObjectAction, focusPickAction } from '../src/core/view-objects';
+import { projectScene } from '../src/io/rsb';
 
 const NOW = 1_700_000_000_000;
 
@@ -285,6 +292,48 @@ describe('a batch at work', () => {
     expect(ctx.store.history().undo.filter((x) => /studio/i.test(x))).toEqual([]);
     // Every image is in the history, with its own name.
     expect(ctx.ui.get().results.map((r) => r.name).sort()).toEqual([...names(f)].sort());
+  });
+
+  it('F1: a batch over cameras renders each camera at the focus it follows (its point, its object), in each studio', async () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    const s0 = ctx.store.get();
+    const parts = allParts(s0);
+    // Camera 1 focuses on a point of the first part; Top follows the second part as an object; then the camera moves.
+    const cam1 = s0.camera.cameras.cam1;
+    const b = cameraBasis(cam1.azimuth, cam1.elevation);
+    const point = add(cameraPosition(cam1), scale(b.forward, cam1.distance - 15));
+    ctx.store.dispatch(focusPickAction(s0, null, { node: parts[0], point }, { label: 'Focus with a click' }, null, 'cam1')!);
+    ctx.store.dispatch(focusObjectAction(ctx.store.get(), null, parts[parts.length - 1], { label: 'Focus on' }, null, 'cam2')!);
+    ctx.store.dispatch({ type: 'camera/set', id: 'cam2', patch: { azimuth: cam1.azimuth + 40, elevation: 30 } });
+    const st = ctx.store.get();
+    ctx.store.dispatch({ type: 'render/set', patch: { camera: { kind: 'ALL' }, studio: { kind: 'ALL' } } });
+    await cmd.renderNow(ctx);
+    await queueSettled(ctx);
+    expect(f.requests).toHaveLength(4);
+    for (const r of f.requests) {
+      const followed = focusDistanceAt(st, r.camera!, null)!;
+      const written = projectScene(r.state ?? st, { width: r.width, height: r.height, maxSamples: 1, maxSeconds: 0, camera: r.camera! }).scene.camera.focusDist;
+      expect(written, `${r.camera} in ${r.state?.studio.preset}`).toBeCloseTo(followed, 6);
+    }
+    // Each camera its own: the point's depth from Camera 1, the object's from Top.
+    expect(focusDistanceAt(st, 'cam1', null)).toBeCloseTo(cam1.distance - 15, 6);
+    expect(Math.abs(focusDistanceAt(st, 'cam2', null)! - focusDistanceAt(st, 'cam1', null)!)).toBeGreaterThan(1);
+    // An animation job: every frame at the focus the point has at its instant (the camera orbits, the part moves).
+    ctx.store.dispatch({ type: 'anim/addClip', clip: { target: { kind: 'CAMERA' }, move: 'ORBIT', shot: null, start: 0, duration: 2, amount: 30, easing: 'LINEAR' } });
+    ctx.store.dispatch({ type: 'anim/addClip', clip: { target: { kind: 'NODE', id: s0.scene.roots[0] }, move: 'MOVE', shot: null, start: 0, duration: 2, amount: 1, vector: [0.3, 0.4, 0], easing: 'LINEAR' } });
+    ctx.store.dispatch({ type: 'render/set', patch: { mode: 'ANIMATION', camera: { kind: 'ACTIVE' }, studio: { kind: 'CURRENT' }, animation: { ...ctx.store.get().render.animation, range: 'RANGE', from: 1, to: 3, fps: 1 } } });
+    const anim = ctx.store.get();
+    f.requests.length = 0;
+    await cmd.renderNow(ctx);
+    await queueSettled(ctx);
+    const frames = f.requests.map((r) => {
+      const written = projectScene(r.state ?? anim, { width: r.width, height: r.height, maxSamples: 1, maxSeconds: 0, pose: evaluate(anim, r.time ?? 0) }).scene.camera.focusDist;
+      expect(written, `t = ${r.time}`).toBeCloseTo(focusDistanceAt(anim, anim.camera.active, r.time ?? 0)!, 6);
+      return written;
+    });
+    expect(frames).toHaveLength(3);
+    expect(Math.max(...frames) - Math.min(...frames)).toBeGreaterThan(1);
   });
 
   it('the order of the queue is the order of the renders, and cancelling the second leaves the third (it is rendered after the first)', async () => {

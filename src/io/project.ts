@@ -102,6 +102,7 @@ import type { MaterialInstance } from '../core/materials';
 import { CAMERA_PROJECTIONS, withCameraAspects, type CameraState } from '../core/camera';
 import { exteriorOf } from '../core/interior-camera';
 import { fisheyeFov } from '../core/panorama';
+import { withNormalFocus } from '../core/focus';
 import { migrateRender, syncOutputSize } from '../core/render';
 import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
@@ -382,6 +383,17 @@ function checkState(raw: RawState): ProjectState {
       if (raw === undefined) continue;
       const { optics: _drop, ...rest } = c;
       cameras[id] = raw === null ? rest : { ...rest, optics: normalizeOptics(raw) };
+    }
+    s.camera = { ...s.camera, cameras };
+  }
+  // F1: a camera's focus mode (absent on cameras saved before F1, which focus by distance as they did): a point or an
+  // object that cannot be read, or whose part is not in the scene, opens as the distance the camera kept.
+  if (Object.values(s.camera.cameras).some((c) => 'focusMode' in c || 'focusPoint' in c || 'focusObject' in c)) {
+    const cameras = { ...s.camera.cameras };
+    for (const [id, c] of Object.entries(cameras)) {
+      const read = withNormalFocus(c);
+      const node = read.focusMode === 'POINT' ? read.focusPoint?.node : read.focusMode === 'OBJECT' ? read.focusObject : null;
+      cameras[id] = node && !isObject(s.scene.nodes[node]) ? (({ focusMode: _m, focusPoint: _p, focusObject: _o, ...rest }) => rest)(read) : read;
     }
     s.camera = { ...s.camera, cameras };
   }

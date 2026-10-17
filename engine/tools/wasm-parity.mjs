@@ -11,6 +11,7 @@
 //        [--denoise] [--expect-denoised 0x12345678]
 //        [--particles] [--expect-particles 0x12345678]
 //        [--adaptive] [--expect-adaptive 0x12345678]
+//        [--pick] [--expect-pick 0x12345678]
 //
 // The render mirrors the native test exactly: 32-pixel tiles row by row, samples 0..n of each
 // tile from `rt_render_tile`, accumulated per pixel in sample order in f32 (Math.fround), then
@@ -50,6 +51,11 @@
 // f32; each pixel divided by its own count. The hash must equal `--expect-adaptive` (`PINNED_E10_ADAPTIVE` of
 // crates/rt-core/src/adaptive/tests.rs), and the pixels' fewest and most samples are printed.
 //
+// `--pick` (F1) only picks: the chief ray and the part met of a 5 × 4 grid of image points through `rt_scene_pick`
+// (and each hit's focus distance again through `rt_scene_focus_at`), hashed like the native test; it must equal
+// `--expect-pick` (`PINNED_FOCUS_PICK_O1` and `PINNED_FOCUS_PICK_O2` of crates/rt-core/src/focus/tests.rs, for
+// `rt --write-o1-example` and `rt --write-o2-example`).
+//
 // `--denoise` (E5b-1) also denoises the image as the page's pool does: RGBA tiles
 // (`rt_render_tile_rgba`), the squared luminance of every sample summed in f32 next to them (the
 // page's rule, src/render/tiles.ts), the guide passes, then `rt_denoise` over three bands of rows,
@@ -72,6 +78,8 @@ let particles = false;
 let expectParticles = null;
 let adaptive = false;
 let expectAdaptive = null;
+let pick = false;
+let expectPick = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--samples') samples = Number(args[++i]);
   else if (args[i] === '--expect') expect = Number.parseInt(args[++i], 16) >>> 0;
@@ -94,6 +102,10 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--expect-adaptive') {
     adaptive = true;
     expectAdaptive = Number.parseInt(args[++i], 16) >>> 0;
+  } else if (args[i] === '--pick') pick = true;
+  else if (args[i] === '--expect-pick') {
+    pick = true;
+    expectPick = Number.parseInt(args[++i], 16) >>> 0;
   } else if (args[i] === '--expect-denoised') {
     denoise = true;
     expectDenoised = Number.parseInt(args[++i], 16) >>> 0;
@@ -176,6 +188,50 @@ if (particles) {
     console.error(`wasm-parity: the particles' hash ${hp} differs from the native one 0x${expectParticles.toString(16).padStart(8, '0')}`);
     process.exit(1);
   }
+}
+
+// F1: the picks of focus with a click (rt_scene_pick) at a 5 × 4 grid of image points, row by row, hashed as the
+// native test does (the floats one after another, FNV-1a over their little-endian bytes); the scene's camera alone
+// decides them (and its focus solve for a traced lens), so the image is not rendered.
+if (pick) {
+  if (typeof rt.rt_scene_pick !== 'function' || typeof rt.rt_scene_focus_at !== 'function') {
+    console.error('wasm-parity: this rt_wasm.wasm has no focus pick (rt_scene_pick, rt_scene_focus_at)');
+    process.exit(1);
+  }
+  const FLOATS = 14;
+  const outPtr = rt.rt_alloc(FLOATS * 4);
+  let h = 0x811c9dc5;
+  let hits = 0;
+  for (let j = 0; j < 4; j++) {
+    for (let i = 0; i < 5; i++) {
+      const status = rt.rt_scene_pick(handle, Math.fround((i + 0.5) / 5), Math.fround((j + 0.5) / 4), outPtr);
+      if (status !== 0) {
+        console.error(`wasm-parity: rt_scene_pick returned ${status}`);
+        process.exit(1);
+      }
+      const bytes = new Uint8Array(rt.memory.buffer, outPtr, FLOATS * 4);
+      for (let k = 0; k < bytes.length; k++) h = Math.imul(h ^ bytes[k], 0x01000193) >>> 0;
+      const f = new Float32Array(rt.memory.buffer.slice(outPtr, outPtr + FLOATS * 4));
+      if (f[6] === 1) {
+        hits++;
+        // The focus distance of the hit point asked on its own is the pick's.
+        const again = rt.rt_scene_focus_at(handle, f[8], f[9], f[10]);
+        if (Math.fround(again) !== f[13] && !(Number.isNaN(again) && Number.isNaN(f[13]))) {
+          console.error(`wasm-parity: rt_scene_focus_at gives ${again}, the pick ${f[13]}`);
+          process.exit(1);
+        }
+      }
+    }
+  }
+  rt.rt_free(outPtr, FLOATS * 4);
+  const hp = `0x${h.toString(16).padStart(8, '0')}`;
+  console.log(`picks: 20, ${hits} on a part, hash ${hp}`);
+  if (expectPick !== null && h !== expectPick) {
+    console.error(`wasm-parity: the picks' hash ${hp} differs from the native one 0x${expectPick.toString(16).padStart(8, '0')}`);
+    process.exit(1);
+  }
+  rt.rt_scene_free(handle);
+  process.exit(0);
 }
 
 const TILE = 32;

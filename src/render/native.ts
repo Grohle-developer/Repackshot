@@ -623,6 +623,8 @@ export class NativeEngine {
         maxSeconds: timed ? this.limit.seconds : 0,
         viewport: { viewW: this.viewW, viewH: this.viewH },
         ...(this.cameraPatch(state, patch) ? { cameraPatch: this.cameraPatch(state, patch)! } : {}),
+        // F1: a gesture's frames do not solve a traced lens's focus again (the store's view at rest does).
+        ...(scale > 1 ? { focusFast: true } : {}),
         // E5b-1: the launcher renders its caustics; U11: a full-resolution view can always be denoised (its live
         // switch is a query of the job, so the scene is the same either way).
         ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),

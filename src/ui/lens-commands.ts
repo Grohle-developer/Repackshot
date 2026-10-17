@@ -4,10 +4,11 @@
 // focus distance). Everything goes through the store (camera/set); the pick mode and the plane's overlay are interface
 // state.
 
-import type { CameraId } from '../core/camera';
+import type { CameraId, CameraState } from '../core/camera';
+import { exactFocusDistance } from '../core/focus';
 import { isTiltSolution, solveTilt, type TiltRefusal } from '../core/focus-plane';
 import type { Vec3 } from '../core/math';
-import { bokehApplies, OPTICS_LIMITS, opticsForBokeh, opticsOf, opticsWithLensModel, withTilt, type LensModel } from '../core/optics';
+import { bokehApplies, OPTICS_LIMITS, opticsForBokeh, opticsOf, opticsWithLensModel, tracedOf, withTilt, type LensModel } from '../core/optics';
 import { editLabel } from './commands';
 import type { Ctx } from './reactive';
 import { formatNumber, L, t } from './strings';
@@ -80,7 +81,16 @@ export function finishTiltPick(ctx: Ctx, point: readonly number[]): void {
     return;
   }
   const optics = withTilt(opticsOf(cam), r.tiltDeg, r.axisDeg);
-  ctx.store.dispatch({ type: 'camera/set', id: pm.camera, patch: { optics, focusDistance: r.focusDistance }, label: L('undo.tiltPlane') });
+  // F1: a traced lens refocuses with its real rays (the engine's solve), the tilt the simple lens's plane (O4): the
+  // distance that puts each point in focus with that tilt, their mean. The camera is focused by distance from now on
+  // (it may have followed a point or an object), in the same undo entry.
+  let focusDistance = r.focusDistance;
+  if (tracedOf(optics)) {
+    const tilted: CameraState = { ...cam, optics, focusDistance };
+    const [d1, d2] = [pm.first, p].map((q) => exactFocusDistance(tilted, q));
+    if (d1 !== null && d2 !== null) focusDistance = 0.5 * (d1 + d2);
+  }
+  ctx.store.dispatch({ type: 'camera/set', id: pm.camera, patch: { optics, focusDistance, focusMode: 'DISTANCE' }, label: L('undo.tiltPlane') });
   ctx.ui.set({ pickMode: null });
 }
 

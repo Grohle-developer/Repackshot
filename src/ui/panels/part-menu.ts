@@ -94,6 +94,8 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
     { label: t('ops.pivot'), disabled: none, submenu: pivot },
     { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },
+    // F1: the camera that is seen keeps it in focus (Focus ▸ Object), wherever either goes.
+    { label: t('ops.focusOn'), icon: 'focus', disabled: none, run: () => cmd.focusOnNodes(ctx, nodes) },
     // N6: animate it (the timeline's wizard, with it as the target), and keep it still in the explodes that hold it.
     { label: t('anim.animateThis', { name: none ? '' : first.name }), icon: 'film', disabled: none || !anim.nodeTarget(s, nodes[0]), run: () => anim.openWizard(ctx, anim.nodeTarget(s, nodes[0])) },
     pin ? { label: pin.pinned ? t('ops.unpinExplode') : t('ops.pinExplode'), run: () => anim.togglePin(ctx, nodes) } : { label: t('ops.pinExplode'), disabled: true },

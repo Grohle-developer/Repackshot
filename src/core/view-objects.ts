@@ -7,11 +7,13 @@
 // measures the drags (render/preview.ts, render/gizmo.ts); the interface turns the drags and the navigation into the
 // actions written here, one gesture token per drag, so a whole drag is one undo entry.
 
-import { activeCamera, aspectRatio, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, focusDistanceTo, focusFollowsOrbit, orbitFromPosition, orbitPatch, outputAspect, outputFrameRect, sameView, type CameraState, type OrbitView } from './camera';
+import type { Pose } from './animation';
+import { activeCamera, aspectRatio, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, focusFollowsOrbit, orbitFromPosition, orbitPatch, outputAspect, outputFrameRect, sameView, type CameraState, type FocusMode, type OrbitView } from './camera';
+import { anchorOf, focusModeOf, focusTarget, resolvedFocusDistance } from './focus';
 import { polar } from './light-math';
 import { aimOffset, isSphereLike, levelUp, lightConeDeg, lightFrame, polarAboutPivot, SPOT_DEFAULTS, wrapDeg, type LightInstance } from './lighting';
 import { add, boxRadius, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
-import { productBounds } from './scene';
+import { productBounds, type NodeId } from './scene';
 import type { Action, ActionLabel, ProjectState } from './store';
 import { snapDelta, type GizmoDelta, type GizmoFrame, type Space } from './transform';
 
@@ -204,15 +206,53 @@ export function viewedCamera(state: ProjectState, lookThrough: ViewObject | null
 }
 
 /**
- * Focus with a click: the focus plane of the camera that is seen goes through `point`, measured from that camera (the
- * one looked through, else the active one; the view of a light has no focus, so the active camera takes it). Null
- * when that camera is not in the project.
+ * The camera a focus picked in the viewport goes to (F1): `camId` when one is named (a camera's own inspector), else
+ * the one looked through, else the camera of the shot the playhead is in (the viewport shows it), else the active one;
+ * the view of a light has no focus, so the active camera takes it. Null when that camera is not in the project.
  */
-export function focusPickAction(state: ProjectState, lookThrough: ViewObject | null | undefined, point: Vec3, meta: { label?: ActionLabel } = {}): Action | null {
-  const seen = viewedCamera(state, lookThrough);
-  const cam = state.camera.cameras[seen.id] ?? activeCamera(state);
+export function focusCameraOf(state: ProjectState, lookThrough: ViewObject | null | undefined, pose?: Pose | null, camId?: string | null): CameraState | null {
+  if (camId) return state.camera.cameras[camId] ?? null;
+  if (lookThrough?.kind === 'CAMERA') return state.camera.cameras[lookThrough.id] ?? null;
+  const shot = pose?.camera?.camera;
+  return (shot ? state.camera.cameras[shot] : undefined) ?? activeCamera(state) ?? null;
+}
+
+/**
+ * Focus with a click (F1, focus on a point): the camera that is seen (`focusCameraOf`) focuses on the point the click
+ * hit, kept in the coordinates of the part it hit as that part stands at `pose` (the playhead's, which the viewport
+ * shows), so it stays in focus wherever the camera, the part or the animation takes them. The store works out the
+ * distance (core/focus.ts `syncFocus`). Null when the camera or the part is gone.
+ */
+export function focusPickAction(state: ProjectState, lookThrough: ViewObject | null | undefined, hit: { node: NodeId; point: Vec3 }, meta: { label?: ActionLabel } = {}, pose?: Pose | null, camId?: string | null): Action | null {
+  const cam = focusCameraOf(state, lookThrough, pose, camId);
   if (!cam) return null;
-  return { type: 'camera/set', id: cam.id, patch: { focusDistance: focusDistanceTo(cam, point) }, ...meta };
+  const anchor = anchorOf(state, hit.node, hit.point, pose);
+  if (!anchor) return null;
+  return { type: 'camera/set', id: cam.id, patch: { focusMode: 'POINT', focusPoint: anchor }, ...meta };
+}
+
+/** Focus on an object (F1): the camera that is seen follows a part, a group or the model. Null when either is gone. */
+export function focusObjectAction(state: ProjectState, lookThrough: ViewObject | null | undefined, node: NodeId, meta: { label?: ActionLabel } = {}, pose?: Pose | null, camId?: string | null): Action | null {
+  const cam = focusCameraOf(state, lookThrough, pose, camId);
+  if (!cam || !state.scene.nodes[node]) return null;
+  return { type: 'camera/set', id: cam.id, patch: { focusMode: 'OBJECT', focusObject: node }, ...meta };
+}
+
+/**
+ * The segmented control of the camera's Focus (F1): DISTANCE takes the distance the camera is focused at now (what the
+ * viewport shows at `pose`, so the image does not change), and keeps the point and the object for a way back; POINT
+ * and OBJECT go back to the point or the object the camera kept. Null when there is nothing to go back to (the
+ * interface then starts the pick) or nothing changes.
+ */
+export function focusModeAction(state: ProjectState, camId: string, mode: FocusMode, meta: { label?: ActionLabel } = {}, pose?: Pose | null): Action | null {
+  const cam = state.camera.cameras[camId];
+  if (!cam || focusModeOf(cam) === mode) return null;
+  if (mode === 'DISTANCE') {
+    const posed = pose?.camera?.camera === camId ? { ...cam, ...pose.camera, id: cam.id } : cam;
+    return { type: 'camera/set', id: camId, patch: { focusMode: 'DISTANCE', focusDistance: resolvedFocusDistance(state, posed, pose) }, ...meta };
+  }
+  if (mode === 'POINT') return cam.focusPoint && state.scene.nodes[cam.focusPoint.node] ? { type: 'camera/set', id: camId, patch: { focusMode: 'POINT' }, ...meta } : null;
+  return cam.focusObject && state.scene.nodes[cam.focusObject] ? { type: 'camera/set', id: camId, patch: { focusMode: 'OBJECT' }, ...meta } : null;
 }
 
 /** A view of the viewport's navigation: where it orbits, how far and from where (preview.ts ViewChange). */
@@ -270,6 +310,8 @@ export const GLYPH = {
   frustum: 0.6,
   /** Segments of a circle. */
   segments: 32,
+  /** F1: the radius of the mark of a camera's focus point. */
+  focus: 0.04,
 } as const;
 
 function circle(out: Vec3[], centre: Vec3, a: Vec3, b: Vec3, ra: number, rb: number, n: number = GLYPH.segments): void {
@@ -388,7 +430,7 @@ function cameraGlyph(state: ProjectState, cam: CameraState): Glyph {
  * saved camera but the active one (it is the view). `all` false draws only the selected object's (the Lights and
  * cameras button is off); the object being looked through has none (the view is from inside it).
  */
-export function glyphsOf(state: ProjectState, opts: { all: boolean; selected?: ViewObject | null; lookThrough?: ViewObject | null }): Glyph[] {
+export function glyphsOf(state: ProjectState, opts: { all: boolean; selected?: ViewObject | null; lookThrough?: ViewObject | null; pose?: Pose | null }): Glyph[] {
   const out: Glyph[] = [];
   const want = (o: ViewObject) => !sameObject(o, opts.lookThrough) && (opts.all || sameObject(o, opts.selected));
   for (const l of state.studio.lights) if (want({ kind: 'LIGHT', id: l.id })) out.push(lightGlyph(state, l));
@@ -396,7 +438,39 @@ export function glyphsOf(state: ProjectState, opts: { all: boolean; selected?: V
     if (cam.id === state.camera.active) continue;
     if (want({ kind: 'CAMERA', id: cam.id })) out.push(cameraGlyph(state, cam));
   }
+  // F1: the point the selected camera focuses on (the active one's too: it can be selected from its inspector).
+  if (opts.selected?.kind === 'CAMERA') {
+    const g = focusGlyph(state, opts.selected.id, opts.lookThrough ?? null, opts.pose ?? null);
+    if (g) out.push(g);
+  }
   return out;
+}
+
+/**
+ * F1: the mark of a camera's focus point, where it is at `pose`, facing the view: a ring with four ticks for a point
+ * (POINT), four corner brackets for an object's point (OBJECT), and a dot at the point. Null in DISTANCE or when the
+ * point's part or the object is gone.
+ */
+export function focusGlyph(state: ProjectState, camId: string, lookThrough: ViewObject | null, pose: Pose | null): Glyph | null {
+  const base = state.camera.cameras[camId];
+  if (!base) return null;
+  const cam = pose?.camera?.camera === camId ? { ...base, ...pose.camera, id: base.id } : base;
+  const at = focusTarget(state, cam, pose);
+  if (!at) return null;
+  const view = viewedCamera(state, lookThrough);
+  const { right, up } = cameraBasis(view.azimuth, view.elevation);
+  const r = GLYPH.focus * (state.scene.partSizeMm || 1);
+  const lines: Vec3[] = [];
+  const p = (x: number, y: number) => add(add(at, scale(right, x * r)), scale(up, y * r));
+  if (focusModeOf(cam) === 'POINT') {
+    circle(lines, at, right, up, r, r, 24);
+    for (const [x, y] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) lines.push(p(x * 0.45, y * 0.45), p(x * 1.6, y * 1.6));
+  } else {
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) lines.push(p(sx, sy), p(sx * 0.45, sy), p(sx, sy), p(sx, sy * 0.45));
+    }
+  }
+  return { obj: { kind: 'CAMERA', id: camId }, lines, dots: [at] };
 }
 
 /** A point of the model on the screen, CSS pixels; null behind the viewer. */
