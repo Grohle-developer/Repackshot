@@ -11982,6 +11982,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el campo del ojo de pez, medido en la diagonal.
 
 - **F1** (enfoque por punto y por objeto): el *Objeto* sigue el centro de su caja; el rango y la escala logarítmica del deslizador, como están; en *Punto* y *Objeto* **mover el deslizador pasa a *Distancia***; el mejor foco de la lente trazada por el contraste de detalle fino, como está (la esquina con distorsión +1 queda abierta); un clip de foco gana; el clic en un vidrio enfoca su cara delantera. **Hecho en F1.**
+- **C2** (interruptor de la focal). Se aceptan las seis tal como están: el interruptor va en cada cámara (viaja con ella al proyecto y a los estudios); una cámara bloqueada cambia la focal sin moverse; el objetivo de la órbita avanza por el eje cuando la cámara quedaría a menos de 0,1 × distancia × f′/f; las ópticas de interior pasan por el interruptor, los presets de lente siguen encuadrando el producto y los clips *ZOOM* no se mueven; la fila va debajo de *Focal*; con ortográfica o panorámica el interruptor sigue usable, no hace nada y lo dice. **Hecho en C2.**
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
@@ -12130,7 +12131,7 @@ es una entrada de deshacer.
 **Captura**: `docs/ui/c2-focal-switch.png` (el bloque *Cámara* con el
 interruptor encendido y su línea; en `GALERIA.md`, *Sin publicar*).
 
-**No encajó con el plan** (regla 12; ◆ para quien decide):
+**No encajó con el plan** (regla 12; lo marcado ◆ está decidido en *Decisiones de criterio*: se acepta tal como está):
 
 1. **La focal no tiene deslizador**: es un campo con flechas que se arrastra
    (U15). El «gesto de deslizador» es ese arrastre (una entrada); no se

@@ -7,16 +7,33 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Cámara
 
+- **Interruptor de la focal, *Mantener el tamaño de lo enfocado***, junto a la focal en el inspector de la cámara y en la paleta. Apagado (por defecto, como en una cámara), al cambiar la focal la cámara se queda y cambia el encuadre; encendido, la cámara se acerca o se aleja por su eje para que el plano enfocado (la distancia, el punto o el objeto de F1) conserve su tamaño en la imagen: cambia la perspectiva, no el tamaño. Una línea debajo dice cuál está activo, y que con una cámara bloqueada, ortográfica o panorámica no hay nada que mover. Cada paso de las flechas, cada arrastre y cada valor tecleado es una entrada de deshacer; las ópticas de interior también lo siguen. Se guarda con cada cámara, en el proyecto y en los estudios de la biblioteca; los de antes lo abren apagado (C2).
+
+## v0.1.18 — 2026-10-17
+
+### Cámara y lente
+
+- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
+- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada (cometa de coma, respiración de foco, aberración esférica variable) salen de la rejilla, que queda con los 17 de la lente simple: son de sus lentes en *Lente ▸ Lente trazada* (O4).
+- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
+- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
+
+### Cámara
+
 - **Enfocar con clic cae en el píxel exacto** de la vista exacta: el clic toma el rayo principal que el motor traza por ese píxel (con la pose del cabezal, la cámara mirada a través con su propio cuadro, la distorsión de una lente trazada) y lo que toca, por las dos caras; la distancia que lo pone nítido es la del motor (la profundidad; con inclinación, el plano de la bisagra que pasa por el punto; con una lente trazada, donde el detalle fino tiene más contraste, que abierta cae a milímetros del plano paraxial). Medido en un damero inclinado con 135 mm a f/1,4: la banda nítida pasa por el clic (F1).
 - **Tres modos de enfoque por cámara**: *Distancia* (como antes), *Punto* (un punto de una pieza que el enfoque sigue al orbitar, al acercarse, al mover la pieza, en la línea de tiempo, en la cola y en los lotes) y *Objeto* (una pieza, un grupo o el modelo, por su centro). En el inspector de la cámara, con la distancia como un deslizador logarítmico junto a su valor (en *Punto* u *Objeto*, moverlo pasa a *Distancia* desde la distancia que seguía, en una sola entrada de deshacer); en el menú de una pieza, *Mantener enfocado*; en la paleta, cuatro órdenes. El visor marca el punto de la cámara seleccionada. Si la pieza del punto o el objeto se borran, la cámara vuelve a su última distancia y lo avisa. Los proyectos y las cámaras de antes se abren por distancia (F1).
 - Con las cámaras de interiores: el clic enfoca también con la ortográfica, la panorámica 360° y el ojo de pez (sin profundidad de campo: la distancia es la del punto), y con *Verticales rectas*, donde cuenta la cámara nivelada que se renderiza (F1).
 - *Por dos puntos* (O4) deja la cámara enfocada por distancia, en la misma entrada de deshacer, y con una lente trazada enfoca con sus rayos reales: la media de lo que el motor resuelve para los dos puntos (F1).
-- **Interruptor de la focal, *Mantener el tamaño de lo enfocado***, junto a la focal en el inspector de la cámara y en la paleta. Apagado (por defecto, como en una cámara), al cambiar la focal la cámara se queda y cambia el encuadre; encendido, la cámara se acerca o se aleja por su eje para que el plano enfocado (la distancia, el punto o el objeto de F1) conserve su tamaño en la imagen: cambia la perspectiva, no el tamaño. Una línea debajo dice cuál está activo, y que con una cámara bloqueada, ortográfica o panorámica no hay nada que mover. Cada paso de las flechas, cada arrastre y cada valor tecleado es una entrada de deshacer; las ópticas de interior también lo siguen. Se guarda con cada cámara, en el proyecto y en los estudios de la biblioteca; los de antes lo abren apagado (C2).
 - Arreglado: el visor *Completo* de una cámara mirada a través usaba el cuadro de la cámara activa (una de 9:16 enfocaba hasta 35 mm fuera en la esquina); una lente trazada en el visor *Completo* se trazaba para el sensor del visor y no era la del render; el enfoque elegido con clic no seguía a la cámara al orbitar ni al acercarse; y el clic no veía la cara trasera de una superficie de una sola cara que el motor sí renderiza (F1).
 
 ### Motor
 
 - `rt.wasm` exporta `rt_scene_pick` (el rayo principal de un punto de la imagen y lo que toca) y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS` admite al final `frame_sensor_mm`. Ningún *hash* de render fijado cambia; los picos de las escenas de O1 y O2 quedan fijados y comprobados en `rt.wasm` en CI (F1).
+- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
+- El nodo **Mapa de normales** en espacio tangente ya no deja que una normal apunte hacia dentro de la superficie: un azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en el motor y en *Rápido* (C1).
+- La guarda del post-procesado IA tolera el doble por defecto: ΔE₀₀ medio 4 y percentil 95 6 por material, y 4 px de bordes, los mismos números que *Ajustes*. Mide un borde movido hasta dos píxeles más allá del límite (antes no veía más de unos 3 px) (C1).
+- El nodo **Mapa de normales** en el espacio de la pieza tampoco deja una normal hacia dentro: con una intensidad por encima de 0,5 y un mapa contra la superficie, la refleja en su plano (C1).
+- Se mueven dos fijados, y solo por los copos de la tarjeta del ejemplo de M3b (un ruido en un mapa de normales): `PINNED_M3B_PROGRAMS_4SPP` y el quinto de `PINNED_M3B_PROGRAM_VALUES` (C1).
 
 ### Interfaz
 
@@ -27,21 +44,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Elegir un set o un montaje sobre los focos del tipo de producto sin tocar los sustituye sin preguntar; con focos propios o editados, la pregunta *Sustituir · Ocultar · Añadir* sigue como estaba (C1).
 - Doctor: recortar con *Estándar* es un aviso (un fondo blanco liso lo busca) y el arreglo propone **AgX** en vez de *Fílmica* (C1).
 - El ejemplo de grafo *Pintura metalizada con copos* inclina la normal con el rojo y el verde del ruido y deja el azul en 1: todos los copos miran hacia fuera (C1).
-
-### Cámara y lente
-
-- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
-- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada (cometa de coma, respiración de foco, aberración esférica variable) salen de la rejilla, que queda con los 17 de la lente simple: son de sus lentes en *Lente ▸ Lente trazada* (O4).
-- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
-- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
-
-### Motor
-
-- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
-- El nodo **Mapa de normales** en espacio tangente ya no deja que una normal apunte hacia dentro de la superficie: un azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en el motor y en *Rápido* (C1).
-- La guarda del post-procesado IA tolera el doble por defecto: ΔE₀₀ medio 4 y percentil 95 6 por material, y 4 px de bordes, los mismos números que *Ajustes*. Mide un borde movido hasta dos píxeles más allá del límite (antes no veía más de unos 3 px) (C1).
-- El nodo **Mapa de normales** en el espacio de la pieza tampoco deja una normal hacia dentro: con una intensidad por encima de 0,5 y un mapa contra la superficie, la refleja en su plano (C1).
-- Se mueven dos fijados, y solo por los copos de la tarjeta del ejemplo de M3b (un ruido en un mapa de normales): `PINNED_M3B_PROGRAMS_4SPP` y el quinto de `PINNED_M3B_PROGRAM_VALUES` (C1).
 
 ### Accesibilidad
 

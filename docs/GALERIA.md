@@ -22,16 +22,20 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 49 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 19 versiones, 16 con capturas nuevas; las capturas se reparten en 50 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4). Y el interruptor de la focal de C2, *Mantener el tamaño de lo enfocado*.
+El interruptor de la focal, *Mantener el tamaño de lo enfocado* (C2).
 
 #### C2 · Interruptor de la focal
 
 <a id="c-c2-focal-switch"></a><img src="ui/c2-focal-switch.png" width="339" alt="El bloque Cámara del inspector con el interruptor nuevo debajo de la focal (85 mm): Mantener el tamaño de lo enfocado, encendido, y su línea auxiliar: encendido, al cambiar la focal la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño y cambia la perspectiva; apagado, la cámara se queda y cambia el encuadre."><br>
 `c2-focal-switch.png` · `bbf3c6b` · El bloque *Cámara* del inspector con el interruptor nuevo debajo de la focal (85 mm): *Mantener el tamaño de lo enfocado*, encendido, y su línea auxiliar, que dice lo que hace encendido (la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño; cambia la perspectiva) y lo que hace apagado (la cámara se queda y cambia el encuadre). `tools/focal-check.mjs --shots docs/ui`.
+
+### v0.1.18 · 2026-10-17
+
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
 
 #### F1 · Enfoque por punto y por objeto
 
@@ -140,7 +144,7 @@ Tipo de escena (Producto, Interior, Catálogo), el estilo de luz Interior con si
 #### K1 · Tipo de escena, luz de interior y Doctor de interiores
 
 <a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm."><br>
-`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en v0.1.17: Interior es un estilo del grupo Luces de L7)* *(regrabada en Sin publicar: C1, *Interior* empieza con la receta *Ventana de mediodía*; la decoración del set del tipo de producto se queda)*
+`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en v0.1.17: Interior es un estilo del grupo Luces de L7)* *(regrabada en v0.1.18: C1, *Interior* empieza con la receta *Ventana de mediodía*; la decoración del set del tipo de producto se queda)*
 
 #### D1 · Doctor de motor
 
@@ -186,7 +190,7 @@ Los materiales de nodos funcionan en Completo y en los renders.
 #### M3b · El motor evalúa grafos
 
 <a id="c-m3b-graphs"></a><img src="ui/m3b-graphs.png" width="480" alt="Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha)."><br>
-`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en Sin publicar: C1, los copos de la pintura metalizada miran hacia fuera; la hace `tests/m3b-graphs-sheet.test.ts`)*
+`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en v0.1.18: C1, los copos de la pintura metalizada miran hacia fuera; la hace `tests/m3b-graphs-sheet.test.ts`)*
 
 <a id="c-m3b-wood"></a><img src="ui/m3b-wood.png" width="480" alt="Dos maderas en el motor: la familia Madera del catálogo (roble, anillos finos y rectos) a la izquierda y el ejemplo de nodos «Madera con dos ruidos» a la derecha; todavía no se parecen."><br>
 `m3b-wood.png` · `fbb054e` · Dos maderas en el motor: la familia Madera del catálogo (roble, anillos finos y rectos) a la izquierda y el ejemplo de nodos «Madera con dos ruidos» a la derecha; todavía no se parecen.
@@ -236,10 +240,10 @@ Madera, tela y bisel de aristas en Completo, materiales con más realismo, lente
 #### O2 · Lente trazada
 
 <a id="c-lens-editor"></a><img src="ui/lens-editor.png" width="331" alt="Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas."><br>
-`lens-editor.png` · `99df141` · Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas. *(regrabada en Sin publicar: Lente simple · Lente trazada, O4)*
+`lens-editor.png` · `99df141` · Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas. *(regrabada en v0.1.18: Lente simple · Lente trazada, O4)*
 
 <a id="c-lens-section"></a><img src="ui/lens-section.png" width="331" alt="Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina."><br>
-`lens-section.png` · `99df141` · Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina. *(regrabada en Sin publicar, O4)*
+`lens-section.png` · `99df141` · Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina. *(regrabada en v0.1.18, O4)*
 
 ### v0.1.6 · 2026-10-14
 
@@ -301,10 +305,10 @@ Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector 
 #### O1 · Lente fina mejorada y selector de bokeh
 
 <a id="c-camera-bokeh"></a><img src="ui/camera-bokeh.png" width="300" alt="El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente»."><br>
-`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7, y en Sin publicar: diecisiete tipos, sin los tres de la lente trazada, O4)*
+`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7, y en v0.1.18: diecisiete tipos, sin los tres de la lente trazada, O4)*
 
 <a id="c-camera-optics"></a><img src="ui/camera-optics.png" width="300" alt="Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico»."><br>
-`camera-optics.png` · `0830f93` · Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico». *(regrabada en v0.1.7, y en Sin publicar con el bloque de inclinación de O4)*
+`camera-optics.png` · `0830f93` · Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico». *(regrabada en v0.1.7, y en v0.1.18 con el bloque de inclinación de O4)*
 
 #### U13 · Proporción de la imagen en la cámara
 
@@ -507,10 +511,10 @@ Arreglos de escritorio (ventana propia, datos que sobreviven a un reinicio), arr
 #### X4 · Interfaz del post-procesado
 
 <a id="c-ai-section-dark"></a><img src="ui/ai-section-dark.png" width="440" alt="La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro."> <a id="c-ai-section-light"></a><img src="ui/ai-section-light.png" width="440" alt="La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro."><br>
-`ai-section-dark.png` y `ai-section-light.png` · `693762d` · La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro. *(regrabada en v0.1.5)* *(`ai-section-light.png` regrabada en Sin publicar: C1, la intervención de fábrica en 50 y el texto secundario del tema claro a 4,5:1)*
+`ai-section-dark.png` y `ai-section-light.png` · `693762d` · La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro. *(regrabada en v0.1.5)* *(`ai-section-light.png` regrabada en v0.1.18: C1, la intervención de fábrica en 50 y el texto secundario del tema claro a 4,5:1)*
 
 <a id="c-ai-results-viewer"></a><img src="ui/ai-results-viewer.png" width="440" alt="El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro."> <a id="c-ai-results-light"></a><img src="ui/ai-results-light.png" width="440" alt="El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro."><br>
-`ai-results-viewer.png` y `ai-results-light.png` · `693762d` · El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro. *(regrabada en v0.1.5)* *(`ai-results-light.png` regrabada en Sin publicar: C1, el texto secundario del tema claro a 4,5:1)*
+`ai-results-viewer.png` y `ai-results-light.png` · `693762d` · El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro. *(regrabada en v0.1.5)* *(`ai-results-light.png` regrabada en v0.1.18: C1, el texto secundario del tema claro a 4,5:1)*
 
 <a id="c-ai-queue"></a><img src="ui/ai-queue.png" width="480" alt="La cola con un trabajo terminado con IA (columna «IA»): dos miniaturas, la del render y la de la IA, en la fila y en el historial."><br>
 `ai-queue.png` · `693762d` · La cola con un trabajo terminado con IA (columna «IA»): dos miniaturas, la del render y la de la IA, en la fila y en el historial. *(regrabada en v0.1.5)*
@@ -708,10 +712,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
-- [`o4-simple-optics.png`](#c-o4-simple-optics) · Sin publicar · O4
-- [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · Sin publicar · O4
-- [`o4-traced-more.png`](#c-o4-traced-more) · Sin publicar · O4
-- [`o4-traced-tilt.png`](#c-o4-traced-tilt) · Sin publicar · O4
+- [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
+- [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · v0.1.18 · O4
+- [`o4-traced-more.png`](#c-o4-traced-more) · v0.1.18 · O4
+- [`o4-traced-tilt.png`](#c-o4-traced-tilt) · v0.1.18 · O4
 - [`k3-verticals.png`](#c-k3-verticals) · v0.1.17 · K3
 - [`k3-panorama.png`](#c-k3-panorama) · v0.1.17 · K3
 - [`lens-hover.png`](#c-lens-hover) · v0.1.8 · O2b
@@ -726,7 +730,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`camera-edit.png`](#c-camera-edit) · v0.1.6 · sin fase
 - [`camera-section.png`](#c-camera-section) · v0.1.6 · sin fase
 - [`camera-aspect.png`](#c-camera-aspect) · v0.1.6 · U13
-- [`c2-focal-switch.png`](#c-c2-focal-switch) · sin publicar · C2
+- [`c2-focal-switch.png`](#c-c2-focal-switch) · Sin publicar · C2
 - [`f1-focus-inspector.png`](#c-f1-focus-inspector) · sin publicar · F1
 - [`f1-focus-marker.png`](#c-f1-focus-marker) · sin publicar · F1
 - [`f1-focus-sheet.png`](#c-f1-focus-sheet) · sin publicar · F1
