@@ -14,3 +14,4 @@ export * from './camera-moves';
 export * from './animation';
 export * from './doctor';
 export * from './environment';
+export * from './scene-types';

@@ -25,6 +25,8 @@ export const STYLE_HERO: Readonly<Record<Exclude<LightStyle, 'SETS'>, SetHero>> 
   EXPERIMENTAL: 'CHROME',
   SIGNATURE: 'RING',
   SPICY: 'BOTTLE',
+  // K1: the lights are the point, and three spheres (matte, glossy, metal) show how a light falls and what it reflects.
+  INTERIOR: 'SPHERES',
 };
 
 /** The object of a setup's thumbnail. */

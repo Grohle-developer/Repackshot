@@ -14,7 +14,7 @@
 
 import { lightSetup } from '../data/light-setups';
 import { materialPreset } from '../data/materials';
-import type { Label, LightSetup, RGB, SetCard, StudioPreset } from '../data/types';
+import type { Label, LightSetup, RGB, RGBA, SetCard, StudioPreset } from '../data/types';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
 import { kelvinToRgb, polar, toWorldAzimuth } from './light-math';
 import { buildStudio, levelUp, lightsFromRig, polarAboutPivot, presetRefOf, reduceStudio, rigPivot, setupRefOf, worldFor, type LightInstance, type StudioAction } from './lighting';
@@ -58,6 +58,15 @@ export function isSet(setup: LightSetup | undefined): setup is LightSetup {
     setup !== undefined &&
     (setup.backdrop !== undefined || setup.floor !== undefined || setup.pool !== undefined || (setup.cards?.length ?? 0) > 0 || setup.exposureEv !== undefined || setup.envStrength !== undefined)
   );
+}
+
+/**
+ * The set brings something to put in the scene or on the frame (a backdrop, a floor, a pool, cards). The Interior recipes
+ * (K1) are sets that bring only a look (a world, an exposure, the strength of the environment): they dress nothing, and
+ * so they leave the floor, the contact shadow and the background as the scene had them.
+ */
+export function hasDecoration(set: LightSetup): boolean {
+  return set.backdrop !== undefined || set.floor !== undefined || set.pool !== undefined || (set.cards?.length ?? 0) > 0;
 }
 
 /** The set of a key, or undefined when the key is not a set. */
@@ -326,21 +335,30 @@ export function withoutSetDecoration(state: ProjectState): ProjectState {
   return next;
 }
 
-/** The product type's environment, background and exposure (what Create studio sets), after leaving a set. */
-function presetLook(state: ProjectState, preset: StudioPreset | undefined): ProjectState {
+/**
+ * The product type's environment, background and exposure (what Create studio sets), after leaving a set. The background
+ * only when the set that is left had one on the frame (`background`): a set that brought a look alone (the Interior
+ * recipes, K1) never touched it, so it is the person's.
+ */
+function presetLook(state: ProjectState, preset: StudioPreset | undefined, background = true): ProjectState {
   if (!preset) return state;
   const exposureEv = setupExposure(preset, setupRefOf(state.studio));
-  const background: EnvironmentState['background'] = preset.background === 'FLAT' ? 'COLOR' : 'ENVIRONMENT';
+  const backdrop: EnvironmentState['background'] = preset.background === 'FLAT' ? 'COLOR' : 'ENVIRONMENT';
   return {
     ...state,
     environment: {
       ...state.environment,
       strength: preset.envStrength,
-      background,
-      color: [preset.backgroundColor[0], preset.backgroundColor[1], preset.backgroundColor[2], preset.backgroundColor[3]],
+      ...(background ? { background: backdrop, color: [preset.backgroundColor[0], preset.backgroundColor[1], preset.backgroundColor[2], preset.backgroundColor[3]] as RGBA } : {}),
     },
     image: { ...state.image, exposureEv },
   };
+}
+
+/** The set in force brought a background with it: a backdrop on the frame, or a piece of the scene (a sweep). */
+function broughtBackground(state: ProjectState): boolean {
+  const set = activeSet(state);
+  return (set !== undefined && set.backdrop !== undefined) || setPieceIds(state).length > 0;
 }
 
 /** A catalogue material for a piece: the scene's unedited instance of it, or a new one; `color` makes an own one. */
@@ -548,10 +566,13 @@ export function applySet(state: ProjectState, set: LightSetup, names: SetPieceNa
   const lit: ProjectState = {
     ...clean,
     // A chosen set puts the studio's floor and contact shadow on; the type's own keeps the type's.
-    studio: { ...clean.studio, lightSetup: key, customSetup: null, lights: lightsFromRig(presetRefOf(clean.studio), key), modified: false, ...(asType ? {} : { floor: true, shadow: true }) },
+    studio: { ...clean.studio, lightSetup: key, customSetup: null, lights: lightsFromRig(presetRefOf(clean.studio), key), modified: false, ...(asType || !hasDecoration(set) ? {} : { floor: true, shadow: true }) },
     environment: { ...clean.environment, kind: worldFor(clean, key) },
   };
-  const looked = setLook(lit, set, preset);
+  // A set with no backdrop of its own (the Interior recipes, K1) does not paint over the one the set before it left on the
+  // frame: that background goes back to the product type's.
+  const base = set.backdrop === undefined && broughtBackground(state) ? presetLook(lit, preset) : lit;
+  const looked = setLook(base, set, preset);
   return hasOwnParts(looked) ? addSetDecoration(looked, set, names) : looked;
 }
 
@@ -639,13 +660,15 @@ export function reduceSet(state: ProjectState, action: StudioAction): ProjectSta
         if (typeSet) return applySet(state, typeSet, action.names, true);
       }
       if (!decorated()) return null;
+      const background = broughtBackground(state);
       const next = reduceStudio(withoutSetDecoration(state), action);
-      return next.studio.lightSetup === action.key ? presetLook(next, resolvePreset(presetRefOf(next.studio))) : null;
+      return next.studio.lightSetup === action.key ? presetLook(next, resolvePreset(presetRefOf(next.studio)), background) : null;
     }
     case 'studio/applySetup': {
       if (!decorated()) return null;
+      const background = broughtBackground(state);
       const next = reduceStudio(withoutSetDecoration(state), action);
-      return next.studio.lightSetup === action.setup.key ? presetLook(next, resolvePreset(presetRefOf(next.studio))) : null;
+      return next.studio.lightSetup === action.setup.key ? presetLook(next, resolvePreset(presetRefOf(next.studio)), background) : null;
     }
     case 'studio/build': {
       const built = buildStudio(withoutSetDecoration(state));

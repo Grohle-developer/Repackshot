@@ -18,6 +18,7 @@ import { presetRefOf } from './lighting';
 import { resolvePreset } from './rig';
 import { boundsOf, isSetPiece, measuredSizeMm, ownParts, reduceScene, translateWorld, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
 import { dynamicBelowFloor } from './physics';
+import { fixInterior, runInteriorDoctor } from './doctor-interior';
 
 export type DoctorStatus = 'OK' | 'WARN' | 'UNAVAILABLE';
 
@@ -94,7 +95,8 @@ function checkScale(state: ProjectState): DoctorResult {
     return warn('scale', { reason: 'declared', actual: roundSize(actual), expected: roundSize(declared) });
   }
   const preset = resolvePreset(presetRefOf(state.studio));
-  if (preset) {
+  // K1: in an interior the size to expect is a room's or a piece of furniture's, not the product type's (the interior Doctor's scale check asks that).
+  if (preset && state.scene.type !== 'INTERIOR') {
     const r2 = actual / preset.sizeMm;
     if (r2 > SCALE_RATIO || r2 < 1 / SCALE_RATIO) {
       // The importer saw a size that looks like metres or micrometres. That is evidence of a unit mix-up,
@@ -220,8 +222,12 @@ function checkParticles(state: ProjectState): DoctorResult {
   return warn('particles', { count: over.length, effect: first.effect.id, name: first.effect.name, preset: first.effect.preset, requested: first.requested, cap: first.cap });
 }
 
-/** Runs the checks, in catalogue order. */
+/** Runs the checks, in catalogue order; while the scene is an interior, the interior Doctor's follow (K1, core/doctor-interior.ts). */
 export function runDoctor(state: ProjectState): DoctorResult[] {
+  return [...runBaseChecks(state), ...runInteriorDoctor(state)];
+}
+
+function runBaseChecks(state: ProjectState): DoctorResult[] {
   return DOCTOR_CHECKS.map((c) => {
     switch (c.key) {
       case 'scale':
@@ -351,7 +357,8 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
       return { ...state, studio: { ...state.studio, lights } };
     }
     default:
-      return state;
+      // K1: the checks of the interior Doctor.
+      return fixInterior(state, key);
   }
 }
 

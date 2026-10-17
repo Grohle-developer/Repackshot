@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildExample } from '../src/core/example';
 import { getMesh } from '../src/core/meshes';
-import { analyse, isClosedSolid } from '../src/core/solid';
+import type { MeshData } from '../src/core/meshes';
+import { analyse, isClosedSolid, solidOrientation } from '../src/core/solid';
 
 /** A box from `lo` to `hi` in 24 vertices (split per face), outward and counter-clockwise: the engine's `faceted_box`. */
 function box(lo: number | number[], hi: number | number[]): { positions: number[]; indices: number[] } {
@@ -70,5 +71,42 @@ describe('closed solids', () => {
     // The answer is cached with the mesh.
     const body = getMesh(payload.nodes.body.mesh!.id)!;
     expect(isClosedSolid(body)).toBe(isClosedSolid(body));
+  });
+});
+
+describe('which way a closed surface faces (K1, the interior Doctor)', () => {
+  const mesh = (positions: number[], indices: number[]): MeshData => ({ positions: new Float32Array(positions), normals: new Float32Array(positions.length), indices: new Uint32Array(indices) });
+  const turned = (indices: number[]): number[] => indices.flatMap((_, i) => (i % 3 === 0 ? [indices[i], indices[i + 2], indices[i + 1]] : []));
+
+  it('a box wound counter-clockwise from outside faces OUTWARD, the same box wound the other way INWARD (a room)', () => {
+    const { positions, indices } = box(-1, 1);
+    expect(solidOrientation(mesh(positions, indices))).toBe('OUTWARD');
+    expect(solidOrientation(mesh(positions, turned(indices)))).toBe('INWARD');
+  });
+
+  it('anything that is not a closed manifold, or has no volume, is OPEN: a sheet, a box with a face missing, one triangle flipped, nothing', () => {
+    const { positions, indices } = box(-1, 1);
+    expect(solidOrientation(mesh(positions, indices.slice(0, -3)))).toBe('OPEN');
+    const flipped = [...indices];
+    [flipped[1], flipped[2]] = [flipped[2], flipped[1]];
+    expect(solidOrientation(mesh(positions, flipped))).toBe('OPEN');
+    expect(solidOrientation(mesh([0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 1, 2]))).toBe('OPEN');
+    expect(solidOrientation(mesh([], []))).toBe('OPEN');
+    // A closed surface that encloses nothing: a box squashed flat.
+    const flat = box([-1, -1, 0], [1, 1, 0]);
+    expect(solidOrientation(mesh(flat.positions, flat.indices))).toBe('OPEN');
+  });
+
+  it('agrees with the rule of the section view: OUTWARD is exactly what a section caps, and it is cached per mesh', () => {
+    const { positions, indices } = box(-3, 5);
+    const out = mesh(positions, indices);
+    const inn = mesh(positions, turned(indices));
+    expect(isClosedSolid(out)).toBe(solidOrientation(out) === 'OUTWARD');
+    expect(isClosedSolid(inn)).toBe(solidOrientation(inn) === 'OUTWARD');
+    expect(isClosedSolid(inn)).toBe(false);
+    expect(solidOrientation(out)).toBe(solidOrientation(out));
+    // The example bottle's body is a solid that faces out.
+    const body = getMesh('example:body') ?? Object.values(buildExample().nodes).map((n) => (n.mesh ? getMesh(n.mesh.id) : undefined)).find((m) => m && isClosedSolid(m));
+    expect(solidOrientation(body!)).toBe('OUTWARD');
   });
 });

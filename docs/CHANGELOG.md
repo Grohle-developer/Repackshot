@@ -3,6 +3,27 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Interfaz
+
+- **Tipo de escena** en la sección *Producto* del inspector, encima del tipo de producto: *Producto · Interior · Catálogo*. Cambiarlo reescribe los valores de partida y no quita ningún control: **Interior** pone sol y cielo, 16 rebotes, sin cáusticas, sin sombra de contacto propia, transformada AgX, 512 muestras que terminan por ruido con *denoise* y 28 mm; **Catálogo**, la cúpula de estudio con fondo blanco, sombra de contacto suave, 8 rebotes, sin cáusticas, transformada Estándar, 256 muestras y 50 mm. Es una sola entrada de deshacer; cambiar de tipo y volver deja el proyecto como estaba salvo lo que se tocó entre medias; un HDRI cargado y una cámara bloqueada no se tocan. Se guarda en el proyecto, y los proyectos anteriores abren como *Producto* (K1).
+- Estilo **Interior** en el catálogo de montajes de luz (el último de los diez), con siete recetas: *Ventana de mañana*, *Ventana de mediodía*, *Ventana de tarde*, *Nublado*, *Lámparas de noche*, *Hora azul* y *Sala blanca de estudio*. Cada una elige su mundo (sol y cielo, o la cúpula de estudio) y trae su exposición y la intensidad del entorno: la hora del día es el brillo de la imagen. No traen decoración, y los 88 montajes anteriores no cambian. Sus cifras son una propuesta pendiente de decisión (K1).
+- **Doctor de interiores**: con el tipo *Interior*, siete chequeos más en el Doctor, cada uno con su *Arreglar*: *Escala y unidades* (un archivo en metros leído como milímetros), *Abertura para el sol y el cielo*, *Vidrio de ventana* (grueso o refractivo: lo hace fino), *Óptica demasiado angular* (menos de 18 mm), *Altura de ojo*, *Recorte cercano* contra la pared y *Normales de las paredes*. En *Interior* la comprobación de escala del Doctor ya no compara con el tamaño del tipo de producto (K1).
+- Elegir una receta (o cualquier set sin decoración) ya no enciende el suelo y la sombra de contacto, y deja de dejar en el marco el fondo del set anterior o de pisar el fondo que se había puesto (K1).
+
+### Herramientas
+
+- `tools/scene-type-check.mjs`: comprueba en el navegador el control, que el inspector tiene los mismos controles con cada tipo, las siete recetas con sus miniaturas, las siete filas del Doctor y la ida y vuelta; deja `docs/ui/scene-type-interior.png` (K1).
+
+### Limitaciones conocidas de esta versión
+
+- El tipo *Interior* pone 28 mm sin mover la cámara: la pieza se ve más pequeña hasta que llegue la cámara de interiores (altura de ojo, verticales rectas, exposición automática; K3). Tampoco están aún el ciclorama de *Catálogo* ni la habitación (K2).
+- Los chequeos de interior leen la habitación de lo que hay: el espacio cerrado es la caja de las piezas con la cámara dentro, la abertura es un vidrio o un material transparente. El arreglo de *Abertura* pone la receta *Sala blanca de estudio*, cuyos focos quedan alrededor de la pieza y no dentro de una habitación cerrada importada; el arreglo bueno es de K2.
+- *Normales de las paredes* mira superficies cerradas y paredes planas con la cámara dentro; no ve una pared sin grosor, y solo mira los primeros 500 000 triángulos de la escena por pasada.
+- *Rodillo largo* y *Low contrast* de la tabla de *Interior* no se aplican: el mapeo de tonos no tiene el parámetro y *Contraste* aún no lo aplica el motor. Las unidades mostradas son una preferencia de la aplicación y no cambian con el tipo.
+- Las recetas de día usan la bruma del cielo que haya (la de *Entorno*), y *Nublado* es la cúpula de estudio con una ventana difusa, no un cielo cubierto.
+
 ## v0.1.14 — 2026-10-17
 
 ### Motor

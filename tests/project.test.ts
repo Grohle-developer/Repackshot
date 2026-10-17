@@ -120,7 +120,7 @@ function onePart(id: string, data: MeshData, source?: Uint32Array): ProjectState
     material: null,
     smooth: true,
   };
-  return { ...createInitialState(), scene: { nodes: { n1: part }, roots: ['n1'], partSizeMm: 100 } };
+  return { ...createInitialState(), scene: { nodes: { n1: part }, roots: ['n1'], partSizeMm: 100, type: 'PRODUCT' } };
 }
 
 /** Two triangles of a quad, with the optional extras. */

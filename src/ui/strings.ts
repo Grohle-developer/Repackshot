@@ -429,6 +429,11 @@ const TABLE = {
   'section.part': ['Part', 'Pieza'],
   'section.pattern': ['Pattern', 'Patrón'],
   'section.lightEdit': ['Light', 'Foco'],
+  'product.sceneType': ['Scene type', 'Tipo de escena'],
+  'product.sceneTypeAux': [
+    'Sets the starting values (environment, bounces, view transform, samples, lens). Every control stays; going back keeps what you changed.',
+    'Fija los valores de partida (entorno, rebotes, transformada, muestras, óptica). Todos los controles siguen ahí; al volver se queda lo que cambiaste.',
+  ],
   'product.type': ['Product type', 'Tipo de producto'],
   'product.standard': ['Standard', 'Estándar'],
   'product.typeAux': ['{focal} mm · f/{fstop} · about {size} mm', '{focal} mm · f/{fstop} · unos {size} mm'],
@@ -2655,6 +2660,39 @@ const TABLE = {
   ],
   'doctor.particles': ['{name} asks for {requested} particles; its cap is {cap}.', '{name} pide {requested} partículas; su tope es {cap}.'],
   'doctor.physics': ['{name} is dynamic and starts below the floor ({count} in all).', '{name} es dinámica y empieza por debajo del suelo ({count} en total).'],
+  // K1: the interior Doctor's sentences (core/doctor-interior.ts).
+  'doctor.interior.scaleSmall': [
+    'The scene measures {actual} mm across; a piece of furniture or a room is at least {min} mm. The fix scales it ×{factor}.',
+    'La escena mide {actual} mm de lado a lado; un mueble o una habitación mide al menos {min} mm. El arreglo la escala ×{factor}.',
+  ],
+  'doctor.interior.scaleLarge': [
+    'The scene measures {actual} mm across; a room is at most {max} mm. The fix scales it ×{factor}.',
+    'La escena mide {actual} mm de lado a lado; una habitación mide como mucho {max} mm. El arreglo la escala ×{factor}.',
+  ],
+  'doctor.interior.opening': [
+    'The camera is inside a closed space lit by the sun or the sky and nothing in it is glass or transparent: the light from outside cannot get in. The fix lights it with lamps.',
+    'La cámara está dentro de un espacio cerrado que ilumina el sol o el cielo y nada en él es vidrio ni transparente: la luz de fuera no entra. El arreglo lo ilumina con lámparas.',
+  ],
+  'doctor.interior.glass': [
+    '{name} is thick or refractive glass ({count} in all): a window pane like that fills the image with specks. The fix makes it thin.',
+    '{name} es un vidrio grueso o refractivo ({count} en total): un cristal de ventana así llena la imagen de puntos. El arreglo lo hace fino.',
+  ],
+  'doctor.interior.lens': [
+    '{camera} has a {focal} mm lens ({count} in all): below {wide} mm the edges of the picture stretch. The fix sets {fixed} mm.',
+    '{camera} tiene una óptica de {focal} mm ({count} en total): por debajo de {wide} mm los bordes de la imagen se estiran. El arreglo pone {fixed} mm.',
+  ],
+  'doctor.interior.eye': [
+    '{camera} is {height} above the floor ({count} in all); a person’s eyes are between {min} and {max}. The fix puts it at {fixed}.',
+    '{camera} está a {height} del suelo ({count} en total); los ojos de una persona están entre {min} y {max}. El arreglo la pone a {fixed}.',
+  ],
+  'doctor.interior.clip': [
+    '{camera} starts drawing {clip} mm from the camera and the nearest wall is {wall} mm away ({count} in all): the wall is cut. The fix moves the near clip to {fixed} mm.',
+    '{camera} empieza a dibujar a {clip} mm de la cámara y la pared más próxima está a {wall} mm ({count} en total): la pared se corta. El arreglo lleva el recorte cercano a {fixed} mm.',
+  ],
+  'doctor.interior.normals': [
+    '{name} faces the wrong way ({count} in all): its normals are inverted. The fix flips them.',
+    '{name} mira hacia el lado equivocado ({count} en total): sus normales están invertidas. El arreglo las invierte.',
+  ],
 
   // Section view (Q1)
   'section.section': ['Section', 'Sección'],
@@ -2900,6 +2938,7 @@ const TABLE = {
   'undo.assignCopy': ['Assign a copy of {material} to {target}', 'Asignar una copia de {material} a {target}'],
   'undo.libraryRemoved': ['Remove {name} from the library', 'Quitar {name} de la biblioteca'],
   'undo.productType': ['Product type: {name}', 'Tipo de producto: {name}'],
+  'undo.sceneType': ['Scene type: {name}', 'Tipo de escena: {name}'],
   'undo.createStudio': ['Create studio', 'Crear estudio'],
   'undo.setup': ['Light setup: {name}', 'Montaje de luz: {name}'],
   'undo.editLight': ['Edit light {name}', 'Editar foco {name}'],
