@@ -83,6 +83,9 @@ const TABLE = {
   'common.panelLeft': ['Scene panel', 'Panel de escena'],
   'common.panelRight': ['Inspector panel', 'Panel del inspector'],
   'common.resize': ['Drag to resize', 'Arrastra para cambiar el ancho'],
+  // U15: the step buttons of every number field (▲ ▼).
+  'common.increase': ['Increase', 'Aumentar'],
+  'common.decrease': ['Decrease', 'Disminuir'],
 
   // Scene panel
   'scene.title': ['Scene', 'Escena'],

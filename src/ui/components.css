@@ -336,7 +336,8 @@ kbd,
   height: 26px;
   min-width: 0;
   width: 100%;
-  padding: 0 7px;
+  /* The right side is the step buttons' column (.num-steps). */
+  padding: 0 0 0 7px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-0);
@@ -371,15 +372,82 @@ kbd,
 }
 .num input {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  inset: 0 var(--num-steps-w) 0 0;
+  width: auto;
   border: 0;
-  padding: 0 7px;
+  padding: 0 0 0 7px;
   text-align: right;
   background: var(--bg-0);
-  border-radius: var(--radius);
+  border-radius: var(--radius) 0 0 var(--radius);
   outline: none;
   font-variant-numeric: tabular-nums;
+}
+/* The step buttons (UI.md §4.4): ▲ ▼ stacked at the right end, inside the frame; together they are the field's
+   height, so the field stays one line high. Not tab stops: the spinbutton keeps the keyboard. */
+.num {
+  --num-steps-w: 18px;
+}
+.num .num-steps {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  align-self: stretch;
+  width: 14px;
+  margin-left: 4px;
+}
+.num .num-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: default;
+  touch-action: none;
+  transition: color var(--ease), background var(--ease);
+}
+.num .num-step .icon {
+  pointer-events: none;
+}
+.num .num-up {
+  border-top-right-radius: calc(var(--radius) - 1px);
+}
+.num .num-down {
+  border-bottom-right-radius: calc(var(--radius) - 1px);
+}
+.num .num-step:not(:disabled):hover {
+  color: var(--ink-0);
+  background: var(--soft);
+}
+.num .num-step:not(:disabled):active {
+  background: var(--line);
+}
+.num .num-step:disabled {
+  color: var(--ink-3);
+  opacity: 0.45;
+}
+/* Compact (a field with an inline label, a slider's field): a thinner pair and tighter spacing, so the value keeps
+   the room it had before the step buttons (◆ Fable: the look of this variant). */
+.num.is-compact {
+  --num-steps-w: 12px;
+  padding-left: 5px;
+}
+.num.is-compact .num-label {
+  margin-right: 3px;
+}
+.num.is-compact .num-unit {
+  margin-left: 2px;
+}
+.num.is-compact .num-steps {
+  width: 10px;
+  margin-left: 2px;
+}
+.num.is-compact input {
+  padding-left: 5px;
 }
 .num.is-disabled {
   color: var(--ink-3);

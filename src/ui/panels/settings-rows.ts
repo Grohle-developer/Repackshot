@@ -14,7 +14,7 @@
 
 import { defaultSettings, isFactory, type ControlSpec, type SettingKey, type SettingMeta, type Settings } from '../../core/settings';
 import * as cmd from '../commands';
-import { numberField, segmented, select, textField, toggle } from '../components/controls';
+import { numberField, segmented, select, slider, textField, toggle } from '../components/controls';
 import { h } from '../dom';
 import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
@@ -27,6 +27,12 @@ const UNIT_TEXT: Record<string, () => string> = { DPI: () => t('rw.dpiUnit'), mi
 export const unitText = (u: string | undefined): string | undefined => (u === undefined ? undefined : (UNIT_TEXT[u]?.() ?? u));
 
 let rowSeq = 0;
+
+/**
+ * U15 (UI.md §4.4): the number settings drawn as a slider with its field, the percentages with a natural range. Not
+ * the interface and text sizes: they rescale the window under the thumb while it is dragged (◆ Fable: the list).
+ */
+export const SLIDER_SETTINGS: ReadonlySet<SettingKey> = new Set<SettingKey>(['viewport.orbitSpeed', 'viewport.zoomSpeed', 'viewport.gizmoSize', 'ai.intervention']);
 
 export interface RowParts {
   el: HTMLElement;
@@ -102,6 +108,11 @@ export function controlFor(meta: SettingMeta, value: unknown, onChange: (v: unkn
       return { el: tg.el, set: (v) => tg.set(v === true) };
     }
     case 'number': {
+      if (SLIDER_SETTINGS.has(meta.id)) {
+        const sl = slider({ value: Number(value), min: c.min, max: c.max, step: c.step, unit: unitText(c.unit), ariaLabel: label, onChange: (v) => onChange(v) });
+        sl.el.classList.add('sw-slider');
+        return { el: sl.el, set: (v) => sl.set(Number(v)) };
+      }
       const zero = c.zero ? t('set.auto') : null;
       const nf = numberField({
         value: Number(value),

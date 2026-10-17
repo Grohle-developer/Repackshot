@@ -122,7 +122,7 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     },
   });
   const roundness = slider({ value: o0.roundness, min: 0, max: 1, step: 0.01, ariaLabel: t('camera.roundness'), onChange: (v, g) => set({ roundness: v }, 'camera.roundness', g) });
-  const rotation = numberField({ value: o0.rotationDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.rotation'), onChange: (v, g) => set({ rotationDeg: v }, 'camera.rotation', g) });
+  const rotation = slider({ value: o0.rotationDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.rotation'), onChange: (v, g) => set({ rotationDeg: v }, 'camera.rotation', g) });
   const profile = select(
     PUPIL_PROFILES.map((p) => ({ value: p.key, label: lbl(p.label) })),
     o0.profile,
@@ -138,8 +138,8 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     (v) => set({ squeeze: Number(v) }, 'camera.anamorphic'),
     { full: true, ariaLabel: t('camera.anamorphic') },
   );
-  const tilt = numberField({ value: o0.tiltDeg, min: OPTICS_LIMITS.tiltDeg.min, max: OPTICS_LIMITS.tiltDeg.max, step: 0.1, digits: 1, unit: '°', ariaLabel: t('camera.tilt'), onChange: (v, g) => set({ tiltDeg: v }, 'camera.tilt', g, false) });
-  const tiltAxis = numberField({ value: o0.tiltAxisDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.tiltAxis'), onChange: (v, g) => set({ tiltAxisDeg: v }, 'camera.tiltAxis', g, false) });
+  const tilt = slider({ value: o0.tiltDeg, min: OPTICS_LIMITS.tiltDeg.min, max: OPTICS_LIMITS.tiltDeg.max, step: 0.1, digits: 1, unit: '°', ariaLabel: t('camera.tilt'), onChange: (v, g) => set({ tiltDeg: v }, 'camera.tilt', g, false) });
+  const tiltAxis = slider({ value: o0.tiltAxisDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('camera.tiltAxis'), onChange: (v, g) => set({ tiltAxisDeg: v }, 'camera.tiltAxis', g, false) });
   const shiftX = numberField({ value: o0.shiftXMm, min: OPTICS_LIMITS.shiftMm.min, max: OPTICS_LIMITS.shiftMm.max, step: 0.1, digits: 1, unit: 'mm', label: 'H', ariaLabel: t('camera.shiftX'), onChange: (v, g) => set({ shiftXMm: v }, 'camera.shiftX', g, false) });
   const shiftY = numberField({ value: o0.shiftYMm, min: OPTICS_LIMITS.shiftMm.min, max: OPTICS_LIMITS.shiftMm.max, step: 0.1, digits: 1, unit: 'mm', label: 'V', ariaLabel: t('camera.shiftY'), onChange: (v, g) => set({ shiftYMm: v }, 'camera.shiftY', g, false) });
   const ca = slider({ value: o0.caAmount, min: 0, max: 1, step: 0.01, ariaLabel: t('camera.ca'), onChange: (v, g) => set({ caAmount: v }, 'camera.ca', g) });
@@ -206,6 +206,8 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
         el.toggleAttribute('data-disabled', traced);
         el.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input, button, select').forEach((x) => (x.disabled = traced));
       }
+      // The number fields too (their drag, their keys and their step buttons, which also mind their limits).
+      for (const c of [strength, catsEye, tilt, tiltAxis]) c.setDisabled(traced);
       thinOnlyNote.style.display = traced ? '' : 'none';
       for (const [key, el] of tiles) {
         const on = o.bokeh === key;
