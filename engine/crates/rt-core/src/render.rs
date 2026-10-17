@@ -1319,8 +1319,10 @@ mod tests {
         );
     }
 
-    /// Pinned hash of the M3b example (material programs) at 4 samples per pixel.
-    pub(crate) const PINNED_M3B_PROGRAMS_4SPP: u32 = 0x0d6e_20ba;
+    /// Pinned hash of the M3b example (material programs) at 4 samples per pixel. C1 moved it
+    /// from `0x0d6e_20ba`: the card's flakes (program 4, a noise colour into `NMAP`) have about
+    /// half their blues below 0.5, and those normals are now mirrored out of the surface.
+    pub(crate) const PINNED_M3B_PROGRAMS_4SPP: u32 = 0x90b4_2b6b;
 
     #[test]
     fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {

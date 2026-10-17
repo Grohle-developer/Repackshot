@@ -16,12 +16,13 @@
 // Lighting and shading differ between the two (Fast's lights are three.js's, the engine's are traced): that is not
 // compared. By tone only, their pattern measures reported: the brushed metal (its pattern is in its roughness and its
 // bump, under the studio's lights), the dusty glass (Fast has no transmission map: its transmission is the graph's
-// mean, and the dust is mostly a change of transmission). The metallic paint is compared by the place of its pattern
-// and not by its tone: M3a's NORMAL_MAP takes the blue channel's 2b − 1 as it is, so the flakes' noise colour turns
-// half of its normals into the surface; the engine bends those to the edge of the viewer's side, as M2b's normal
-// maps (they go dark), three.js lights them from the world (they go light): the same pattern, its tone inverted
-// (docs/ROADMAP.md, M3b, for the decision). Skipped without Chromium (REPACKSHOT_CHROMIUM, /opt/pw-browsers) or
-// without rt.wasm.
+// mean, and the dust is mostly a change of transmission). The metallic paint is compared by the correlation of its
+// pattern and by its tone, not by the agreement of settled pixels (its flakes are too fine to leave many). Until C1
+// its tone came out inverted (correlation −0.91, a gap of 106): M3a's NORMAL_MAP took a blue below 0.5 as it was, the
+// flakes' noise colour put half of the normals into the surface, the engine bent them to the edge of the viewer's side
+// (dark) and three.js lit them from the world (light). Since C1 the node keeps every normal outside and the example
+// holds the blue at 1: the same pattern in the same tone. Skipped without Chromium (REPACKSHOT_CHROMIUM,
+// /opt/pw-browsers) or without rt.wasm.
 
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -56,7 +57,7 @@ const SAMPLES = 32;
 
 /** The graphs compared by the place of their pattern and by their tone. */
 const PATTERNED = ['PLASTIC_LABEL', 'MARBLE', 'LEATHER', 'WOOD_TWO_NOISES', 'CHECKS', 'GLAZED_CERAMIC', 'STRIPES'];
-/** Compared by the place of their pattern only (its tone inverted: see above). */
+/** Compared by the correlation of their pattern and by their tone (too fine for the settled pixels: see above). */
 const PLACED = ['METALLIC_FLAKES'];
 
 interface Picture {
@@ -258,14 +259,14 @@ run('a node material renders in Full where and as Fast draws it (M3b, regions)',
       results[key] = r;
       console.log(key, JSON.stringify(r));
       expect(r.pixels, `${key}: the part fills the frame`).toBeGreaterThan(3000);
+      // The tone: the mean colour of the part within 40 of 255 on every channel (lights and tone curves differ).
+      expect(r.gap, `${key}: tone`).toBeLessThan(40);
       if (PLACED.includes(key)) {
-        // The pattern in place, its tone inverted (see above): the correlation's size, and none with the control.
-        expect(Math.abs(r.corr), `${key}: correlation`).toBeGreaterThan(0.75);
+        // The pattern in place and in the same tone (C1: not inverted), and none with the control.
+        expect(r.corr, `${key}: correlation`).toBeGreaterThan(0.75);
         expect(Math.abs(r.corrControl), `${key}: the control`).toBeLessThan(0.3);
         return;
       }
-      // The tone: the mean colour of the part within 40 of 255 on every channel (lights and tone curves differ).
-      expect(r.gap, `${key}: tone`).toBeLessThan(40);
       if (PATTERNED.includes(key)) {
         expect(r.count, `${key}: settled pixels`).toBeGreaterThan(500);
         expect(r.share, `${key}: agreement`).toBeGreaterThan(0.85);

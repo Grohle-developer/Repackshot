@@ -9,7 +9,7 @@ import { MATERIAL_GRAPHS } from '../src/data/material-graphs';
 import { nodeSpec } from '../src/data/material-nodes';
 import { graphOfExample, labelPixels, LABEL_HEIGHT, LABEL_WIDTH, registerLabelImage } from '../src/core/material-examples';
 import { newNode, normalizeGraph, type GraphNode, type MaterialGraph } from '../src/core/material-graph';
-import { compileGraph, CTX, decodeProgram, disassemble, encodeProgram, instructionCount, MAX_IMAGES, MAX_INSTRUCTIONS, OP, PROGRAM_MAGIC, WORDS, type Program } from '../src/core/material-program';
+import { compileGraph, CTX, decodeProgram, disassemble, encodeProgram, instructionCount, MAX_IMAGES, MAX_INSTRUCTIONS, OP, OUTPUT_KEYS, PROGRAM_MAGIC, WORDS, type Program } from '../src/core/material-program';
 import { contractPoints, fresnel, outputsHash, ProgramRunner, smoothstep, SRGB_TO_LINEAR, type ShadingPoint } from '../src/core/material-interp';
 import { fbm, hash3, perlin3, simplex3 } from '../src/core/noise';
 import { projectPoint, type TextureMapping } from '../src/core/textures';
@@ -366,6 +366,14 @@ describe('the instructions', () => {
     expect(nmap([0.5, 0.5, 1])).toEqual([0, -1, 0]);
     const tilted = nmap([1, 0.5, 0.5]);
     expect(tilted[0]).toBeCloseTo(1, 6);
+    // C1: a blue below 0.5 never points the normal into the surface; it bends it as the blue mirrored about 0.5 does.
+    expect(nmap([0.5, 0.5, 0])).toEqual([0, -1, 0]);
+    for (const color of [[1, 0.5, 0.2], [0.1, 0.9, 0.45], [0.73, 0.21, 0]]) {
+      const n = nmap(color);
+      expect(-n[1], `${color}`).toBeGreaterThanOrEqual(0);
+      const up = nmap([color[0], color[1], 1 - color[2]]);
+      for (let i = 0; i < 3; i++) expect(n[i]).toBeCloseTo(up[i], 6);
+    }
     // A height rising along x bends the normal against x.
     const bumped = probe(
       graph(
@@ -426,7 +434,7 @@ const EXAMPLE_PINS: Record<string, string> = {
   WOOD_TWO_NOISES: '043e3493',
   GLASS_DIRT: 'ec1261b4',
   CHECKS: '27d9baac',
-  METALLIC_FLAKES: 'eb24ca6b',
+  METALLIC_FLAKES: '3795f601',
   GLAZED_CERAMIC: 'e17b0ee2',
   STRIPES: '9dd8d317',
 };
@@ -442,6 +450,26 @@ describe('the cross test with the engine (its TS side)', () => {
       got[def.key] = outputsHash(new ProgramRunner(p, images), pts);
     }
     expect(got).toEqual(EXAMPLE_PINS);
+  });
+
+  it('C1: the metallic flakes face out of the surface at every point (a noise’s own blue put half of them into it)', () => {
+    const def = MATERIAL_GRAPHS.find((g) => g.key === 'METALLIC_FLAKES')!;
+    const p = compileGraph(graphOfExample(def, registerLabelImage())).program!;
+    const run = new ProgramRunner(p);
+    const at = OUTPUT_KEYS.indexOf('normal');
+    const n = [0, 0, 0];
+    let tilted = 0;
+    const pts = contractPoints(1000);
+    for (const pt of pts) {
+      run.setPoint(pt);
+      run.run();
+      run.read(p.outputs[at], n);
+      const cos = n[0] * pt.N[0] + n[1] * pt.N[1] + n[2] * pt.N[2];
+      expect(cos).toBeGreaterThan(0);
+      if (cos < 0.999) tilted++;
+    }
+    // And they do tilt: the flakes are there.
+    expect(tilted).toBeGreaterThan(pts.length / 2);
   });
 
   it('makes the points the contract says', () => {

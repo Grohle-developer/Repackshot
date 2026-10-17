@@ -823,10 +823,12 @@ fn frame_around(n: [f32; 3], t: [f32; 3]) -> ([f32; 3], [f32; 3]) {
 }
 
 /// `NMAP`: a normal map's colour `color` at strength `s` around `n0`, in tangent space (0, the
-/// frame of `t`) or in the part's space (1).
+/// frame of `t`) or in the part's space (1). In tangent space a blue below 0.5 would point the
+/// normal into the surface: its `2b - 1` is taken as it is mirrored (C1), so the normal stays on
+/// the outer side.
 #[inline]
 fn normal_map(space: u32, color: [f32; 3], s: f32, n0: [f32; 3], t: [f32; 3]) -> [f32; 3] {
-    let m = color.map(|x| (2.0 * x) - 1.0);
+    let mut m = color.map(|x| (2.0 * x) - 1.0);
     if space == 1 {
         let tt = normalize_or(m, n0);
         normalize_or(
@@ -838,6 +840,7 @@ fn normal_map(space: u32, color: [f32; 3], s: f32, n0: [f32; 3], t: [f32; 3]) ->
             n0,
         )
     } else {
+        m[2] = m[2].abs();
         let (ft, fb) = frame_around(n0, t);
         let (sx, sy) = (m[0] * s, m[1] * s);
         normalize_or(
@@ -848,5 +851,38 @@ fn normal_map(space: u32, color: [f32; 3], s: f32, n0: [f32; 3], t: [f32; 3]) ->
             ],
             n0,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tangent_space_normal_map_never_points_into_the_surface() {
+        // C1: a blue below 0.5 is mirrored to the outer side; the same map with the blue mirrored
+        // about 0.5 bends the normal the same way.
+        let n0 = [0.0, 0.0, 1.0];
+        let t = [1.0, 0.0, 0.0];
+        for (r, g, b) in [
+            (0.5, 0.5, 0.0),
+            (1.0, 0.5, 0.2),
+            (0.1, 0.9, 0.45),
+            (0.73, 0.21, 0.0),
+        ] {
+            for s in [0.35, 1.0, 4.0] {
+                let n = normal_map(0, [r, g, b], s, n0, t);
+                assert!(dot(n, n0) >= 0.0, "{r} {g} {b} at {s}: {n:?}");
+                let up = normal_map(0, [r, g, 1.0 - b], s, n0, t);
+                for i in 0..3 {
+                    assert!((n[i] - up[i]).abs() < 1.0e-6, "{n:?} {up:?}");
+                }
+            }
+        }
+        // Blue 0 with no tilt is the surface's own normal, not its opposite.
+        assert_eq!(normal_map(0, [0.5, 0.5, 0.0], 1.0, n0, t), n0);
+        // A blue above 0.5 is as before.
+        let n = normal_map(0, [1.0, 0.5, 0.5], 1.0, n0, t);
+        assert!((n[0] - 1.0).abs() < 1.0e-6, "{n:?}");
     }
 }

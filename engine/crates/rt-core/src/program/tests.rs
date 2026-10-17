@@ -276,7 +276,7 @@ fn the_ten_examples_are_the_m3a_pins() {
         ("WOOD_TWO_NOISES", 0x043e_3493),
         ("GLASS_DIRT", 0xec12_61b4),
         ("CHECKS", 0x27d9_baac),
-        ("METALLIC_FLAKES", 0xeb24_ca6b),
+        ("METALLIC_FLAKES", 0x3795_f601),
         ("GLAZED_CERAMIC", 0xe17b_0ee2),
         ("STRIPES", 0x9dd8_d317),
     ];
@@ -468,12 +468,14 @@ fn the_m3b_example_programs_have_pinned_values() {
 }
 
 /// The FNV-1a of every output of each program of the M3b example at 200 points of the contract.
+/// C1 moved the fifth (the card's flakes into `NMAP`, `0x587e_907c` before): its blues below 0.5
+/// are mirrored out of the surface.
 const PINNED_M3B_PROGRAM_VALUES: [u32; 7] = [
     0x6a76_96a8,
     0x870f_56ba,
     0xb6ca_5408,
     0xcf11_f98a,
-    0x587e_907c,
+    0x6d55_bcef,
     0x064b_830e,
     0x214b_bc47,
 ];
