@@ -106,7 +106,11 @@ today.
 - **Command palette** (`Ctrl K`) over every action, material, setup and
   camera; undo for everything; keyboard shortcuts in every tooltip; a guide
   with arrows that never hides the panel; English and Spanish; dark and
-  light themes, both achromatic.
+  light themes, both achromatic. Keyboard-first: Tab follows the layout,
+  menus, dialogs and the palette keep the focus while open, every icon
+  button has its name in both languages, and Settings ▸ Accessibility offers
+  larger text, high contrast and reduced motion (which also stops smooth
+  scrolling).
 - **A render engine in Rust, from scratch**, with no external crates: BVH
   with SIMD traversal, physically based BSDFs, area lights with explicit
   sampling, Sobol sampling, deterministic across platforms (the same scene
@@ -151,7 +155,10 @@ and write.
 `tools/screenshot.mjs` drives the local Chromium for the screenshots in
 this README. `tests/ui-achromatic.test.ts` fails if any colour in the
 interface's CSS has saturation. `tests/strings.test.ts` fails if a string
-exists in only one language.
+exists in only one language. `tests/ui-contrast.test.ts` measures the text
+greys against their surfaces (WCAG ratio, 7:1), and `tests/a11y-browser.test.ts`
+audits the button names, the focus and the reduced motion of the running
+interface in Chromium.
 
 ## Status
 

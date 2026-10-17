@@ -86,6 +86,13 @@ export function confirmBox(spec: ConfirmSpec, onDone: () => void): HTMLElement {
     if (e.key === 'Escape') {
       e.stopPropagation();
       onDone();
+    } else if (e.key === 'Tab') {
+      // The question keeps the focus until it is answered: Tab goes round its answers.
+      const answers: HTMLElement[] = [...buttons, cancel];
+      const at = answers.indexOf(document.activeElement as HTMLElement);
+      e.preventDefault();
+      const next = e.shiftKey ? (at <= 0 ? answers.length - 1 : at - 1) : at < 0 || at === answers.length - 1 ? 0 : at + 1;
+      answers[next].focus();
     }
   });
   queueMicrotask(() => (buttons[0] as HTMLButtonElement | undefined)?.focus());
@@ -94,7 +101,14 @@ export function confirmBox(spec: ConfirmSpec, onDone: () => void): HTMLElement {
 
 /** Shows a confirmation in a host element, replacing what it shows until done. */
 export function showConfirmIn(host: HTMLElement, spec: ConfirmSpec): void {
-  host.replaceChildren(confirmBox(spec, () => host.replaceChildren()));
+  // The control that asked the question gets the focus back when it is answered (the answer took the focus with it).
+  const opener = document.activeElement as HTMLElement | null;
+  host.replaceChildren(
+    confirmBox(spec, () => {
+      host.replaceChildren();
+      if (opener?.isConnected && (!document.activeElement || document.activeElement === document.body)) opener.focus({ preventScroll: true });
+    }),
+  );
 }
 
 // --- Tabs -------------------------------------------------------------------
@@ -130,6 +144,13 @@ export function tabs<T extends string>(items: readonly TabItem<T>[], current: T,
 
 let openFloatingClose: (() => void) | null = null;
 
+/** The controls a person can Tab to inside an element, in document order (hidden ones are left out). */
+export function focusableIn(root: ParentNode): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex="0"]')].filter(
+    (el) => el.offsetParent !== null || el === document.activeElement,
+  );
+}
+
 /** Opens a floating element next to an anchor. Closes on outside click or Esc. */
 export function openFloating(
   anchor: HTMLElement,
@@ -157,11 +178,15 @@ export function openFloating(
   const close = () => {
     if (closed) return;
     closed = true;
+    // A popover that had the focus gives it back to the control that opened it, so the focus does not fall to the body
+    // (a command run from a menu item then sees the menu's button, and a window it opens gives the focus back there).
+    const hadFocus = el.contains(document.activeElement);
     el.remove();
     document.removeEventListener('pointerdown', onDown, true);
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('resize', close);
     if (openFloatingClose === close) openFloatingClose = null;
+    if (hadFocus && anchor.isConnected) anchor.focus({ preventScroll: true });
     opts.onClose?.();
   };
   const onDown = (e: PointerEvent) => {
@@ -173,6 +198,15 @@ export function openFloating(
       e.stopPropagation();
       close();
       anchor.focus();
+    } else if (e.key === 'Tab') {
+      // An open popover keeps the focus: Tab goes round its own controls (submenus included), and Escape gives it back.
+      const controls = focusableIn(el);
+      if (controls.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const at = controls.indexOf(document.activeElement as HTMLElement);
+      const next = e.shiftKey ? (at <= 0 ? controls.length - 1 : at - 1) : at < 0 || at === controls.length - 1 ? 0 : at + 1;
+      controls[next].focus();
     }
   };
   setTimeout(() => {

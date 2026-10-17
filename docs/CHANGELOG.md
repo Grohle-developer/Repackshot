@@ -3,6 +3,20 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Accesibilidad
+
+- La paleta de comandos mantiene el foco mientras está abierta (Tab no sale de su campo), se cierra con Escape desde cualquier sitio y devuelve el foco al control que la abrió (H1).
+- Los menús y las confirmaciones en línea dan vueltas con Tab sin dejar el foco fuera, y al cerrarse devuelven el foco al botón que los abrió; una ventana abierta desde el menú principal (*Ajustes*) lo devuelve al botón del menú (H1).
+- *Reducir movimiento* apaga también el desplazamiento suave del tira de plugins de la ventana de render (H1).
+- Un test en el navegador comprueba en 20 estados de la interfaz, en español y en inglés, que cada botón sin texto tiene su nombre de `strings.ts`, el orden de Tab y el foco de paleta, menús y confirmaciones (H1).
+- Un test mide el contraste de cada texto gris sobre sus superficies en los cuatro temas. 36 pares quedan por debajo de 7:1 (grises auxiliares) y están pendientes de una decisión visual; ningún color cambia (H1).
+
+### Interfaz
+
+- Inglés: *Center* pasa a *Centre*, como el resto de las cadenas en ortografía británica; revisadas las cadenas en español (acentos, tono) sin más cambios (H1).
+
 ## v0.1.15 — 2026-10-17
 
 ### Interfaz
