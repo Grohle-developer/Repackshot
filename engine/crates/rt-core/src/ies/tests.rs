@@ -699,13 +699,14 @@ fn conformance_cases() -> Vec<(String, String)> {
     // One distribution under each symmetry, and in full.
     let vertical = angles(0.0, 180.0, 15.0);
     let every = angles(0.0, 360.0, 30.0);
-    let quadrant: fn(f32, f32) -> f32 =
-        |g, p| 800.0 * (1.0 + 0.5 * (2.0 * p.to_radians()).cos()) * (1.0 + g.to_radians().cos());
-    let bilateral: fn(f32, f32) -> f32 =
-        |g, p| 500.0 * (1.0 + 0.3 * p.to_radians().cos()) * (1.0 + 0.5 * g.to_radians().cos());
-    let mirrored: fn(f32, f32) -> f32 =
-        |g, p| 500.0 * (1.0 + 0.3 * p.to_radians().sin()) * (1.0 + 0.5 * g.to_radians().cos());
-    let round: fn(f32, f32) -> f32 = |g, _| 700.0 * (0.2 + g.to_radians().cos().abs());
+    // The text of a case is stored in the conformance file, so it has to be the same bits on every
+    // platform: the trigonometry here is the engine's (`fmath`), not the platform's libm.
+    let cosd = |x: f32| fmath::cos(x * fmath::DEG_TO_RAD);
+    let sind = |x: f32| fmath::sin(x * fmath::DEG_TO_RAD);
+    let quadrant = |g: f32, p: f32| 800.0 * (1.0 + 0.5 * cosd(2.0 * p)) * (1.0 + cosd(g));
+    let bilateral = |g: f32, p: f32| 500.0 * (1.0 + 0.3 * cosd(p)) * (1.0 + 0.5 * cosd(g));
+    let mirrored = |g: f32, p: f32| 500.0 * (1.0 + 0.3 * sind(p)) * (1.0 + 0.5 * cosd(g));
+    let round = |g: f32, _: f32| 700.0 * (0.2 + cosd(g).abs());
     add(
         "quadrant",
         ies_text(&vertical, &angles(0.0, 90.0, 30.0), quadrant),
@@ -964,20 +965,37 @@ fn conformance_json() -> String {
 #[test]
 fn the_conformance_cases_are_what_the_page_s_reader_is_held_to() {
     // The file is what this reader makes of the cases now: when the reader changes, regenerate it
-    // (REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies) and the page's reader must follow.
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../tests/fixtures/ies/conformance.json"
-    );
+    // (REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies) and the page's reader must follow. The
+    // committed copy is compiled in, so the test needs no file system (the WASI run has none).
     let now = conformance_json();
     if std::env::var_os("REPACK_WRITE_FIXTURES").is_some() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/ies/conformance.json"
+        );
         std::fs::write(path, &now).expect("write the fixture");
+        return;
     }
-    let committed = std::fs::read_to_string(path).expect("tests/fixtures/ies/conformance.json");
-    assert!(
-        committed == now,
-        "tests/fixtures/ies/conformance.json is stale: REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies"
-    );
+    let committed = include_str!("../../../../../tests/fixtures/ies/conformance.json");
+    if committed != now {
+        // Where they part, with a little of what comes before: the file is long and one line of it holds a whole case.
+        let at = committed
+            .bytes()
+            .zip(now.bytes())
+            .position(|(a, b)| a != b)
+            .unwrap_or_else(|| committed.len().min(now.len()));
+        let (from, to_a, to_b) = (
+            at.saturating_sub(60),
+            (at + 40).min(committed.len()),
+            (at + 40).min(now.len()),
+        );
+        panic!(
+            "tests/fixtures/ies/conformance.json is stale (REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies); \
+             they part at byte {at}:\n committed: ...{}\n now:       ...{}",
+            committed.get(from..to_a).unwrap_or(""),
+            now.get(from..to_b).unwrap_or("")
+        );
+    }
     // Sanity: the cases cover both outcomes, and every error variant the page's reader has.
     let refused = conformance_cases()
         .iter()

@@ -10,6 +10,15 @@
 import { readFile } from 'node:fs/promises';
 import { WASI } from 'node:wasi';
 import process from 'node:process';
+import v8 from 'node:v8';
+
+// Node 22 hands the WASI calls (fd_write above all) to V8 as fast API calls, and every one of them reports its
+// buffers to the heap as external memory. When that report is what starts a garbage collection, the collector
+// walks a stack with an optimized frame in the middle of a fast call and the whole process dies with SIGSEGV
+// (v8::internal::InnerPointerToCodeCache::GetCacheEntry, seen on Node 22.22 in rt-core's caustics tests, and
+// anywhere else the heap happened to be at its limit at a write). Nothing in a test run needs the fast
+// path: turn it off before the first one runs.
+v8.setFlagsFromString('--no-turbo-fast-api-calls');
 
 const [file, ...args] = process.argv.slice(2);
 if (!file) {

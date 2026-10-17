@@ -85,7 +85,11 @@ RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-core --release --target 
 ```
 
 (Use `--release`: Node 22 itself crashes running the whole debug-build test binary, although
-every test passes on its own.)
+every test passes on its own. The same crash, a SIGSEGV in V8's garbage collector while it walks the
+stack of a WASI `fd_write`, can take the release binary too, wherever the heap happens to reach its
+limit at a write; the runner switches V8's fast API calls off (`--no-turbo-fast-api-calls`) for that
+reason. The module has no preopened directories: a test that reads a file at run time fails here, so
+fixtures are compiled in with `include_str!`.)
 
 The simulator's native/wasm parity (S2): `cargo test -p rt-phys` pins the pose hash of the drop
 scene at four steps (`PINNED_DROP` in `crates/rt-phys/tests/rigid.rs`) and writes the scene's
