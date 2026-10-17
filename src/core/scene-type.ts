@@ -165,11 +165,6 @@ function slotsFor(cameras: Iterable<string>, memory: TypeMemory): Slot[] {
   return [...staticSlots, ...[...ids].map(cameraSlot)];
 }
 
-/** The scene type of a project. */
-export function sceneTypeOf(state: Pick<ProjectState, 'scene'>): SceneType {
-  return state.scene.type;
-}
-
 /**
  * Puts a scene type in force: each slot goes back to what it was before the type in force wrote it (when the person
  * has not touched it since), then the new type writes its defaults. Switching to the type already in force changes nothing.

@@ -54,8 +54,12 @@ const PANE_MIN_MM = 300;
 /** A wall is flat: this thin over its longest side. Anything below this size is a card, not a wall (mm). */
 const WALL_FLAT = 0.02;
 const WALL_MIN_MM = 1000;
-/** A mesh with more triangles than this is not examined for its normals (it would stall every change of the scene). */
-const MAX_TRIANGLES = 300_000;
+/**
+ * The normals of at most this many triangles are examined in one run, parts in tree order, a part that does not fit
+ * skipped: the first look at a mesh welds its vertices, and a whole furnished room would stall the first change of
+ * the scene. Counted in triangles, not in what is cached, so the same scene always gives the same answer.
+ */
+export const INTERIOR_NORMALS_TRIANGLES = 500_000;
 /** The elevation limit of the eye-height fix, degrees: higher than this a camera looks nearly straight down. */
 const MAX_EYE_ELEVATION = 80;
 
@@ -394,7 +398,8 @@ function worldNormal(m: Mat4, n: Vec3): Vec3 {
 /**
  * The parts whose faces look the wrong way for where the camera is. A closed surface faces outwards unless the camera is inside
  * it (a room), when it should face inwards; a flat wall of the scene should face the camera that is inside the room. An open
- * surface that is not a wall, a part whose mesh is missing and a mesh of more than 300 000 triangles are not asked about.
+ * surface that is not a wall, a part whose mesh is missing and the parts past the budget of triangles
+ * (`INTERIOR_NORMALS_TRIANGLES`) are not asked about.
  */
 function invertedParts(state: ProjectState): NodeId[] {
   const cam = activeCam(state);
@@ -403,10 +408,14 @@ function invertedParts(state: ProjectState): NodeId[] {
   const room = !!cam && cameraInRoom(cam, box);
   const cache: MatrixCache = new Map();
   const bad: NodeId[] = [];
+  let budget = INTERIOR_NORMALS_TRIANGLES;
   for (const id of interiorParts(state)) {
     const node = state.scene.nodes[id];
     const data = node.mesh ? getMesh(node.mesh.id) : undefined;
-    if (!data || data.indices.length / 3 > MAX_TRIANGLES) continue;
+    if (!data) continue;
+    const triangles = data.indices.length / 3;
+    if (triangles > budget) continue;
+    budget -= triangles;
     const m = worldMatrix(state, id, cache);
     const orientation = solidOrientation(data);
     if (orientation !== 'OPEN') {

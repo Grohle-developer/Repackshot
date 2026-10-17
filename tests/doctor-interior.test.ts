@@ -17,6 +17,7 @@ import {
   INTERIOR_CHECKS,
   INTERIOR_LENS_MM,
   INTERIOR_MAX_MM,
+  INTERIOR_NORMALS_TRIANGLES,
   INTERIOR_MIN_MM,
   interiorScaleFactor,
   OPENING_FIX_SETUP,
@@ -485,6 +486,23 @@ describe('inverted normals', () => {
     expect(result(card, 'interiorNormals').detail.count).toBe(1);
     const outside = interior(apply(createInitialState(), plane('Wall', [4000, 2600], [0, 2000, 1300], [90, 0, 0]), plane('Floor', [4000, 4000], [0, 0, 0], [0, 0, 0]), { type: 'camera/set', id: 'cam1', patch: { target: [0, 0, 1300], distance: 9000, azimuth: 0, elevation: 10 } }));
     expect(status(outside, 'interiorNormals')).toBe('OK');
+  });
+
+  it('looks at the normals of a budget of triangles per run, parts in tree order, and says nothing of the parts past it', () => {
+    const sphere = (i: number): Action => ({ type: 'scene/addPrimitive', kind: 'SPHERE', params: { radius: 100, segments: 256 }, position: [i * 300, 0, 100], name: `S${i}` });
+    let s = interior(apply(createInitialState(), sphere(0)));
+    const each = s.scene.nodes[partNamed(s, 'S0')].mesh!.triangles;
+    const fit = Math.floor(INTERIOR_NORMALS_TRIANGLES / each);
+    for (let i = 1; i <= fit; i++) s = apply(s, sphere(i));
+    // fit + 1 spheres: the last does not fit in the budget.
+    expect(Object.keys(s.scene.nodes)).toHaveLength(fit + 1);
+    expect(status(s, 'interiorNormals')).toBe('OK');
+    const flip = (name: string) => apply(s, { type: 'scene/flipNormals', ids: [partNamed(s, name)] });
+    expect(result(flip('S0'), 'interiorNormals')).toMatchObject({ status: 'WARN', detail: { count: 1, name: 'S0' } });
+    expect(status(flip(`S${fit}`), 'interiorNormals')).toBe('OK');
+    // The same answer however many times it is asked: the budget counts triangles, not what is cached.
+    expect(status(flip(`S${fit}`), 'interiorNormals')).toBe('OK');
+    expect(status(flip(`S${fit - 1}`), 'interiorNormals')).toBe('WARN');
   });
 
   it('a part without a mesh in the registry, or hidden, is not asked about', () => {

@@ -7724,9 +7724,9 @@ normal del *store* (una entrada de deshacer):
 | Óptica | una cámara en perspectiva con menos de 18 mm | 24 mm y sin preset de óptica, en todas las que lo pasan | «una óptica más ancha de 18 mm» (3) | 7 |
 | Altura de ojo | una cámara en perspectiva, no bloqueada, a menos de 0,3 m o más de 2,2 m sobre el suelo (z = 0) | 1,5 m: cambia la elevación mirando al mismo punto por el mismo lado a la misma distancia; si no llega a ese ángulo razonable (80°), retrocede y arrastra el enfoque | «altura de ojo» (5) | 8 |
 | Recorte cercano | una cámara en perspectiva dentro de la caja de la escena cuyo `clipStart` llega a la cara más cercana de esa caja (la pared) | `clipStart` a la mitad de esa distancia (mínimo 0,01 mm) | «el recorte cercano contra la pared» (4) | 6 |
-| Normales | una superficie cerrada (`solidOrientation`, nueva en `core/solid.ts`) que mira hacia fuera con la cámara dentro de su caja, o hacia dentro con la cámara fuera (un sólido al revés, una habitación con las paredes al exterior; una pieza reflejada se mira como queda en el mundo); y, con la cámara en la habitación, una pared plana (de más de 1 m y delgada como el 2 %) cuyas caras no miran a la cámara | `scene/flipNormals` de esas piezas | «normales invertidas» (6) + 3 de `solid.ts` | 9 |
+| Normales | una superficie cerrada (`solidOrientation`, nueva en `core/solid.ts`) que mira hacia fuera con la cámara dentro de su caja, o hacia dentro con la cámara fuera (un sólido al revés, una habitación con las paredes al exterior; una pieza reflejada se mira como queda en el mundo); y, con la cámara en la habitación, una pared plana (de más de 1 m y delgada como el 2 %) cuyas caras no miran a la cámara; con un presupuesto de 500 000 triángulos por pasada, en el orden del árbol | `scene/flipNormals` de esas piezas | «normales invertidas» (7, una el presupuesto de triángulos) + 3 de `solid.ts` | 11 |
 
-Hay 55 mutaciones del Doctor (2 de ellas, del tipo de escena: que corra o arregle en una escena de producto; la detección
+Hay 57 mutaciones del Doctor (2 de ellas, del tipo de escena: que corra o arregle en una escena de producto; la detección
 de cada chequeo apagada, cada arreglo vacío, cada umbral y cada condición, el resto) y 1 de `solidOrientation`; todas las detecta alguna prueba (dos sobrevivieron a la primera ronda, el giro del
 cristal y el preset de la óptica, y su prueba se arregló). La comprobación de escala del propio Doctor
 (`scale`) no compara una escena *Interior* con el tamaño del tipo de producto (un salón de 5 m frente a los 200 mm de
@@ -7737,7 +7737,7 @@ proyecto nuevo y con todas las casillas tocadas a mano, lo que la persona tocó,
 la suya, el mismo tipo sin cambio, un solo deshacer, el proyecto guardado y abierto, uno anterior, un tipo desconocido, la
 memoria dañada, el comando y sus cadenas), `tests/interior-setups.test.ts` (14: el estilo, los mundos, las recetas como sets
 sin decoración, el sol del cielo donde dice la luz, la normalización con los 16 tipos, elegir y dejar una receta),
-`tests/doctor-interior.test.ts` (40) y 3 en `tests/solid.test.ts`. Actualizadas con sus números nuevos, sin tocar lo que no
+`tests/doctor-interior.test.ts` (41) y 3 en `tests/solid.test.ts`. Actualizadas con sus números nuevos, sin tocar lo que no
 cambia: `data.test.ts` (95 montajes y 10 estilos, 7 mundos `SKY`, 7 soles), `rig.test.ts` (78 montajes normalizados con los
 16 tipos), `sets.test.ts` (los 72 de antes sin campos de L6; 95 escenas en el manifiesto) y `palette.test.ts` (95
 montajes). Mutaciones del tipo de escena: 5 (no restaurar, restaurar todo, no guardar la memoria, no normalizar el tipo,
@@ -7784,8 +7784,10 @@ volver a *Producto*); captura `docs/ui/scene-type-interior.png`.
    los focos de la receta *Sala blanca* están alrededor del producto a distancias en tamaños de pieza, así que en una
    habitación importada de verdad cerrada quedan fuera de sus paredes; el arreglo bueno (*añadir una ventana*) es de K2.
 8. **Normales: solo superficies cerradas y paredes planas con la cámara dentro.** Una malla abierta que no es una pared (más
-   de 1 m, 2 % de grosor) no se mira, ni una de más de 300 000 triángulos (pararía cada cambio de la escena), ni se detecta lo
-   de «una cara» (una pared sin grosor por donde la luz se cuela en las esquinas); un caso borde conocido: una habitación
+   de 1 m, 2 % de grosor) no se mira, ni las piezas que pasan de un presupuesto de 500 000 triángulos por pasada, en el orden
+   del árbol (la primera vez que se mira una malla se sueldan sus vértices y una sala amueblada entera pararía el primer
+   cambio de la escena; se cuentan triángulos y no lo que está en la caché, así que la misma escena da siempre la misma
+   respuesta), ni se detecta lo de «una cara» (una pared sin grosor por donde la luz se cuela en las esquinas); un caso borde conocido: una habitación
    cerrada vista **desde fuera** con las caras hacia dentro (un corte) da aviso.
 9. **Los chequeos de interior no están en `DOCTOR_CHECKS`** (los 17 que ya tenía el Doctor) sino en el suyo,
    `INTERIOR_DOCTOR_CHECKS`, para no mover ese listado (otra fase, D1, añade sus chequeos de motor) ni el orden de los

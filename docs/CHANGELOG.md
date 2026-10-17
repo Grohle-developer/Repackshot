@@ -20,7 +20,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - El tipo *Interior* pone 28 mm sin mover la cámara: la pieza se ve más pequeña hasta que llegue la cámara de interiores (altura de ojo, verticales rectas, exposición automática; K3). Tampoco están aún el ciclorama de *Catálogo* ni la habitación (K2).
 - Los chequeos de interior leen la habitación de lo que hay: el espacio cerrado es la caja de las piezas con la cámara dentro, la abertura es un vidrio o un material transparente. El arreglo de *Abertura* pone la receta *Sala blanca de estudio*, cuyos focos quedan alrededor de la pieza y no dentro de una habitación cerrada importada; el arreglo bueno es de K2.
-- *Normales de las paredes* mira superficies cerradas y paredes planas con la cámara dentro; no ve una pared sin grosor ni mallas de más de 300 000 triángulos.
+- *Normales de las paredes* mira superficies cerradas y paredes planas con la cámara dentro; no ve una pared sin grosor, y solo mira los primeros 500 000 triángulos de la escena por pasada.
 - *Rodillo largo* y *Low contrast* de la tabla de *Interior* no se aplican: el mapeo de tonos no tiene el parámetro y *Contraste* aún no lo aplica el motor. Las unidades mostradas son una preferencia de la aplicación y no cambian con el tipo.
 - Las recetas de día usan la bruma del cielo que haya (la de *Entorno*), y *Nublado* es la cúpula de estudio con una ventana difusa, no un cielo cubierto.
 
