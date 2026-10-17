@@ -240,8 +240,11 @@ try {
   await settle(page);
   const editor = page.locator('[data-curve-editor] svg');
   const handle = editor.locator('[data-handle="1"]');
+  // The properties scroll: the editor into view before the pointer goes to its handle.
+  await editor.scrollIntoViewIfNeeded();
+  await settle(page);
   const hb = (await handle.boundingBox()) ?? fail('no handle');
-  const fields = async () => page.locator('.anim-props .field-row4 .num').evaluateAll((els) => els.map((e) => e.textContent?.trim()));
+  const fields = async () => page.locator('.anim-props [data-curve-handle] .num').evaluateAll((els) => els.map((e) => e.textContent?.trim()));
   const before = await fields();
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
@@ -272,7 +275,8 @@ try {
   const fadeAmount = await page.locator('.vp-fade').evaluate((e) => ({ shown: e.style.display !== 'none', amount: Number(e.dataset.amount ?? 0) }));
   check('e_viewport_fade', fadeAmount.shown && fadeAmount.amount > 0.9, fadeAmount);
 
-  // (d) Render the animation as a WebM VP9: 48 frames (2 s at 24 fps) of the engine.
+  // (d) Render the animation as a WebM VP9: 48 frames (2 s at 24 fps) of the engine (--no-render skips it).
+  if (args.includes('--no-render')) throw new Error('SKIP');
   await page.locator('.anim-head button', { hasText: 'Render animation…' }).click();
   await page.waitForSelector('.rw');
   await page.waitForFunction(() => {
@@ -311,9 +315,11 @@ try {
   await page.keyboard.press('Escape');
   check('no_errors', errors.length === 0, { errors });
 } catch (err) {
-  console.error(err);
-  results.error = String(err?.stack ?? err);
-  process.exitCode = 1;
+  if (err?.message !== 'SKIP') {
+    console.error(err);
+    results.error = String(err?.stack ?? err);
+    process.exitCode = 1;
+  }
 } finally {
   writeFileSync(join(OUT, 'video-check.json'), JSON.stringify(results, null, 2));
   await browser?.close();

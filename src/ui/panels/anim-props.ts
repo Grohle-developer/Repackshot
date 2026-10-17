@@ -352,7 +352,8 @@ function clipView(ctx: Ctx, scope: Scope, id: string): HTMLElement {
       } }),
     );
     curve.push(h('div', { class: 'anim-curve-host', 'data-curve-editor': '' }, editor.el));
-    curve.push(field(t('anim.handles'), h('div', { class: 'field-row4' }, ...handleFields.map((f) => f.el))));
+    curve.push(field(t('anim.handle1'), h('div', { class: 'field-row2', 'data-curve-handle': '1' }, handleFields[0].el, handleFields[1].el)));
+    curve.push(field(t('anim.handle2'), h('div', { class: 'field-row2', 'data-curve-handle': '2' }, handleFields[2].el, handleFields[3].el)));
   } else curve.push(curveHost);
 
   scope.watch(
@@ -484,9 +485,12 @@ function wizardView(ctx: Ctx, scope: Scope): HTMLElement {
   } else if (step === 2 && w.target) {
     parts.push(title(2, 'anim.wizardHow'));
     const offered = new Set(anim.wizardMoves(s, w.target));
-    // The groups of SPEC §3.7, each with the target's kinds in it (a kind in two groups shows in the first).
+    // The groups of SPEC §3.7, each with the target's kinds in it, the target's own group first (a kind in two
+    // groups, a fade, shows in the first of them: a material's fade among the materials).
+    const home = HOME_GROUP[w.target.kind];
+    const groups = [...MOVE_GROUPS.filter((g) => g.key === home), ...MOVE_GROUPS.filter((g) => g.key !== home)];
     const shown = new Set<MoveKind>();
-    for (const g of MOVE_GROUPS) {
+    for (const g of groups) {
       const moves = g.moves.filter((m) => offered.has(m) && !shown.has(m));
       if (moves.length === 0) continue;
       moves.forEach((m) => shown.add(m));
@@ -511,7 +515,7 @@ function wizardView(ctx: Ctx, scope: Scope): HTMLElement {
               },
               h('span', { class: 'anim-card-icon' }, icon(clipIcon(m), 16)),
               h('span', { class: 'anim-card-name' }, lbl(item.label)),
-              h('span', { class: 'anim-card-desc aux' }, lbl(item.description)),
+              h('span', { class: 'anim-card-desc' }, lbl(item.description)),
             );
             return card;
           }),
@@ -545,6 +549,9 @@ function wizardView(ctx: Ctx, scope: Scope): HTMLElement {
   void scope;
   return h('div', { class: 'wizard', 'data-wizard': String(step) }, ...parts);
 }
+
+/** N1: the group of the wizard's grid a kind of target belongs to (its kinds are listed first). */
+const HOME_GROUP: Readonly<Record<ClipTargetKind, (typeof MOVE_GROUPS)[number]['key']>> = { CAMERA: 'CAMERA', SUBJECT: 'PARTS', NODE: 'PARTS', LIGHT: 'LIGHT', SCENE: 'LIGHT', MATERIAL: 'MATERIAL' };
 
 /** A target's name for the wizard's summary line. */
 function clipTargetNameOf(s: ProjectState, target: ClipTarget): string {

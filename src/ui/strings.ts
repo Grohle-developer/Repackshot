@@ -1278,7 +1278,6 @@ const TABLE = {
   'anim.curveEditor': ['The custom curve: drag its two handles (arrow keys move the one in focus)', 'La curva propia: arrastra sus dos asas (las flechas mueven la que tiene el foco)'],
   'anim.handle1': ['First handle', 'Primera asa'],
   'anim.handle2': ['Second handle', 'Segunda asa'],
-  'anim.handles': ['Handles', 'Asas'],
   'anim.color': ['Colour', 'Color'],
   'anim.pivot': ['Pivot', 'Pivote'],
   'anim.pivot.OWN': ['Its own origin', 'Su propio origen'],

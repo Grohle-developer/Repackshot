@@ -144,7 +144,11 @@ try {
     const sel = document.querySelector('.wizard select[aria-label="Target"]');
     return sel ? sel.options[sel.selectedIndex]?.textContent : null;
   });
-  await page.locator('.wizard select[aria-label="How?"]').selectOption('EXPLODE');
+  // N1: the wizard goes in three steps; the kind is a card of its grid (step 2).
+  await page.locator('[data-wizard-next]').click();
+  await settle(page);
+  await page.locator('.wizard .anim-card[data-move="EXPLODE"]').click();
+  await page.locator('[data-wizard-next]').click();
   await settle(page);
   await page.locator('[data-wizard-add]').click();
   await settle(page, 400);
@@ -236,6 +240,10 @@ try {
   await page.locator('[data-anim-animate]').click();
   await settle(page);
   await page.locator('.wizard .seg button', { hasText: 'Camera' }).first().click();
+  await settle(page);
+  await page.locator('[data-wizard-next]').click();
+  await settle(page);
+  await page.locator('[data-wizard-next]').click();
   await settle(page);
   await page.locator('[data-wizard-add]').click();
   await settle(page);

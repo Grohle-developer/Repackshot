@@ -142,7 +142,7 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
       h('span', { class: 'tree-indent', style: `width:${depth * 14}px` }),
       h('span', { class: 'tree-twisty' }),
       h('span', { class: 'tree-kind' }, icon(clipIcon(clip.move), 14)),
-      h('span', { class: 'tree-text' }, h('span', { class: 'tree-name aux' }, clipShort(clip, lang))),
+      h('span', { class: 'tree-text' }, h('span', { class: 'tree-name tree-anim-text' }, clipShort(clip, lang))),
     );
     el.addEventListener('click', (e) => {
       e.stopPropagation();

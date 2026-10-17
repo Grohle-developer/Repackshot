@@ -1028,6 +1028,7 @@
   font-weight: 600;
 }
 .anim-card-desc {
+  color: var(--ink-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1035,10 +1036,15 @@
   font-size: var(--fs-label);
   line-height: 1.25;
 }
-.field-row4 {
+.field-row2 {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
+}
+/* N1: an animation under its target in the scene tree: its short sentence, in the secondary ink. */
+.tree-anim-text {
+  color: var(--ink-2);
+  font-size: var(--fs-label);
 }
 .anim-curve-edit {
   width: 150px;

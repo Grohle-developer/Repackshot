@@ -88,6 +88,16 @@ describe('rotation about a pivot (N1)', () => {
     // Without a pivot, the same clip turns the cap where it is (as before N1).
     const own = add(s0, clip({ target: { kind: 'NODE', id: ids.cap }, move: 'SPIN', amount: 180 }));
     expect(evaluate(own, 4).nodes[ids.cap].position).toEqual(own.scene.nodes[ids.cap].transform.position);
+    // A part whose parent is not at the origin (the body hangs from the model, half its height up) turns about the
+    // point in the world too: the turn is brought back into its parent.
+    const body = add(s0, clip({ target: { kind: 'NODE', id: ids.body }, move: 'SPIN', amount: 120, pivot: { kind: 'POINT', point } }));
+    const bodyOrigin = (t: number) => transformPoint(posedWorld(body, evaluate(body, t), ids.body), [0, 0, 0]);
+    const b0 = d(bodyOrigin(0));
+    expect(b0).toBeGreaterThan(10);
+    for (const t of [1, 2, 3, 4]) {
+      expect(d(bodyOrigin(t)), `body t=${t}`).toBeCloseTo(b0, 5);
+      expect(bodyOrigin(t)[2], `body z t=${t}`).toBeCloseTo(bodyOrigin(0)[2], 5);
+    }
     // A pivot on a part that is gone is the node's own origin too.
     const gone = add(s0, clip({ target: { kind: 'NODE', id: ids.cap }, move: 'SPIN', amount: 180, pivot: { kind: 'NODE', id: 'nope' } }));
     expect(evaluate(gone, 4).nodes[ids.cap].position).toEqual(gone.scene.nodes[ids.cap].transform.position);

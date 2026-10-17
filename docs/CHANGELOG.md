@@ -3,6 +3,33 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Interfaz
+
+- **Vídeo codificado**: en la ventana de render en modo *Animación*, *Vídeo* deja de ser *próximamente* y escribe **un solo archivo** WebM (VP9, o VP8 donde VP9 no está) o MP4 (H.264), codificado en la página con WebCodecs del navegador (también en el escritorio, que es Chromium) y escrito por *muxers* propios. Solo se ofrece lo que este sistema codifica, preguntado al arrancar; lo que no, sale deshabilitado diciendo por qué, y la secuencia de fotogramas sigue siempre ahí. Un vídeo tiene tamaño par (N1).
+- El chequeo **Formato de salida** del Doctor ya lee lo que el sistema codifica: avisa solo de un vídeo con un códec que aquí no se codifica (un proyecto hecho en otro equipo), con *Arreglar* a fotogramas; un vídeo que sí se codifica ya no es un aviso (N1).
+- Tipos de animación nuevos: **Fundido** (la opacidad de una pieza, un grupo, el modelo o un material baja hasta un porcentaje; invertido, aparece), **Panorámica** (la cámara gira sobre sí misma), **Color de material** (el color de un material, y de todas las piezas que lo llevan, pasa a otro) y **Arco solar** (el sol recorre su arco del día alrededor del polo celeste, 15° por hora). *Recorrido* queda reservado en el catálogo (N1).
+- Un **giro** o un **vuelco** de una pieza o grupo puede girar alrededor de un **pivote**: el centro de otra pieza (una tapa sobre su bisagra) o un punto (N1).
+- **Curva personalizada** con **dos asas** que se arrastran (una entrada de deshacer por arrastre), se mueven con las flechas o se teclean (N1).
+- **Cambio de cámara** en la pista de cámara: clic en un plano abre sus propiedades (cámara, duración, y *Corte*, *Fundido a negro* o *Fundido a blanco* con su duración; el fundido cruzado, *próximamente*). El fundido se dibuja sobre el corte, se ve en el visor al reproducir y sale en cada fotograma renderizado (N1).
+- El **asistente** de *+ Animar…* va en **tres pasos** con *Atrás* y *Siguiente*: el objetivo (también *Un material*), una **rejilla de tarjetas** de tipos agrupada en *Piezas*, *Cámara*, *Luz y entorno* y *Materiales*, y los números (N1).
+- Las animaciones aparecen **bajo su objetivo en el árbol de la escena** (las de una pieza o un grupo, y las del modelo bajo el modelo); un clic abre la línea de tiempo con ella elegida (N1).
+- Un proyecto de la primera interfaz se abre en la línea de tiempo con sus planos como tramos de la pista de cámara y sus movimientos como barras, y reproduce lo mismo que reproducía (N1).
+
+### Herramientas
+
+- `tools/video-check.mjs`: los códecs de Chromium, un vídeo de 2 s a 12 fps con el escritor de la aplicación y el codificador real (VP9 y VP8), el asistente en tres pasos, un fundido a negro, la curva con un asa arrastrada y deshecha, el camino entero de un render en WebM leído por ffprobe; capturas `docs/ui/animation-n1-wizard.png`, `animation-n1-cards.png`, `animation-n1-curve.png` y `render-window-video.png` (N1).
+
+### Limitaciones conocidas de esta versión
+
+- El Chromium de código abierto (el de las pruebas) no codifica H.264: ahí MP4 sale deshabilitado; Chrome, Edge y el WebView2 del escritorio sí suelen codificarlo. La calidad del vídeo es automática (unos 0,1 bits por píxel) y el vídeo no lleva alfa ni sonido.
+- Un vídeo se guarda entero al final: si el trabajo se detiene, no queda nada (una secuencia de fotogramas se escribe imagen a imagen). Los plugins de trabajos no pasan todavía por los fotogramas de un vídeo, y el historial guarda su primer fotograma.
+- El fundido cruzado entre cámaras y la previa renderizada siguen *próximamente*; el eje libre de un giro, y el *Recorrido*, también.
+- En *Rápido*, un material de nodos no cambia de color con *Color de material* (sí se funde en el motor); una pieza que se funde se ve con una copia translúcida que no escribe profundidad.
+- El arco solar usa un polo fijo (detrás del producto, a 45°): la latitud y dónde está el norte están pendientes de decisión.
+- No hay cambios en el motor de Rust (`engine/`).
+
 ## v0.1.15 — 2026-10-17
 
 ### Interfaz

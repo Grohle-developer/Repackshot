@@ -1056,7 +1056,8 @@ la versión de U1 con planos y tarjetas queda sustituida.
 - **Izquierda, el árbol de lo animado** (*qué*). Una fila por objetivo,
   en este orden: la **pista de cámara** (siempre, aunque no haya planos),
   el modelo, sus grupos y piezas en el orden del árbol de la escena, los
-  focos y el entorno; cada una con su icono, su nombre, cuántas
+  focos, el entorno y los **materiales** (N1: el color o el fundido de un
+  material; clic en su fila elige las piezas que lo llevan); cada una con su icono, su nombre, cuántas
   animaciones lleva, un triángulo para plegarla y un **+** al pasar por
   encima (*Animar Tapón…*). Debajo, sus animaciones, cada una con el icono
   de su tipo y su **frase corta** (*orbita 90° · 4 s · suave*; *se
@@ -1086,7 +1087,15 @@ la versión de U1 con planos y tarjetas queda sustituida.
   sin planos, uno discontinuo, *Cámara activa*), cuyo borde derecho se
   arrastra para cambiar la duración del plano y cuyo menú contextual
   elige la cámara del plano o lo quita, con **+** al final para añadir
-  otro; la de un objetivo, una franja tenue de su primera a su última
+  otro; **clic en un tramo** abre a la derecha las **propiedades del plano**
+  (N1): cabecera *Plano 2 · Cámara 1 · 4–7 s*, *Cámara del plano*,
+  *Duración*, **Cambio de cámara** (*Corte · Fundido a negro · Fundido a
+  blanco · Fundido cruzado*, este último deshabilitado, *próximamente*: dos
+  cámaras a la vez) con la **Duración del fundido** y una nota de qué hace
+  (en el primer plano: la animación empieza en el color), y *Quitar el
+  plano*; el tramo elegido lleva borde grueso. Un fundido se dibuja sobre el
+  corte, medio en cada plano, como una marca que sube hasta el color en el
+  corte y baja después (negro o blanco puros, con un borde gris); la de un objetivo, una franja tenue de su primera a su última
   animación (plegado, las barras de todas, finas); la de una animación,
   su **barra** con la frase corta (las repeticiones, con marcas
   discontinuas; invertida, con una flecha a la izquierda). Una barra se
@@ -1105,7 +1114,11 @@ la versión de U1 con planos y tarjetas queda sustituida.
   inicio–fin*: «Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»— y la
   frase entera. Después, en secciones plegables:
   - **Movimiento**: los mandos del tipo (la cantidad con su unidad, el
-    plano de una animación de cámara). En un **despiece**: *Qué se
+    plano de una animación de cámara; N1: el **Color** de un tinte o de un
+    color de material; en un giro o un vuelco de una pieza o grupo, el
+    **Pivote** —*Su propio origen · Otra pieza · Un punto*— con la pieza o
+    el punto; en un **fundido**, la *Opacidad final* en % y la nota de que
+    invertido aparece). En un **despiece**: *Qué se
     despieza* (el modelo o un grupo), **Tipo** (*Lineal · Radial ·
     Esférica*), en lineal **Cómo** (*Separar · Apilar*), en lineal y
     radial el **Eje** o la **Dirección** (*X · Y · Z · Propio*, con sus
@@ -1124,15 +1137,31 @@ la versión de U1 con planos y tarjetas queda sustituida.
     montar*).
   - **Curva**: la **curva de tiempo** (`EASING_KINDS`) o, en un despiece,
     la **Suavidad** (0 % lineal, 50 % suave, 100 % muy suave), con una
-    **vista previa** de la curva que sigue a cada cambio.
+    **vista previa** de la curva que sigue a cada cambio. Con
+    **Personalizada** (N1), en lugar de la vista previa, el **editor de la
+    curva**: la curva de (0, 0) a (1, 1), la diagonal discontinua y las
+    **dos asas** con su brazo, que se arrastran (un arrastre es una entrada
+    de deshacer) o se mueven con las flechas con el foco en ellas (← → la x,
+    ↑ ↓ la y, `Mayús` diez veces más), y debajo sus números, *Primera asa*
+    x1 y1 y *Segunda asa* x2 y2, para teclearlos; la x de cada asa se queda
+    entre 0 y 1 y la y entre −0,25 y 1,25.
   - *Duplicar* y *Eliminar*.
 
   Con varias elegidas, cuántas y *Duplicar · Invertir · Eliminar*. Sin
   ninguna, qué hacer y los **presets** en su lista. **+ Animar…** abre
-  aquí el **asistente** (tres pasos en línea: *¿Qué se mueve?* con el
-  objetivo ya puesto; *¿Cómo?*, el tipo —*Despiece* solo para el modelo o
-  un grupo con dos piezas o más—; *¿Cuánto y cuánto tiempo?*), y
-  *Añadir* deja la animación nueva elegida.
+  aquí el **asistente** en **tres pasos** (N1), uno a la vista cada vez, con
+  *Paso 1 de 3* y tres puntos arriba, y *Atrás* · *Siguiente* (en el último,
+  *Añadir*) · *Cancelar* abajo: **1 · ¿Qué se mueve?** con el objetivo ya
+  puesto (*Cámara · Toda la pieza · Una pieza o grupo · Foco · Entorno · Un
+  material*, y la lista de piezas, focos o materiales); **2 · ¿Cómo?**, una
+  **rejilla de tarjetas** (icono, nombre y la frase del tipo) agrupada como
+  `SPEC.md` §3.7 agrupa los tipos —*Piezas*, *Cámara*, *Luz y entorno*,
+  *Materiales*—, solo con los tipos del objetivo y su grupo primero
+  (*Despiece* solo para el modelo o un grupo con dos piezas o más; el
+  *Recorrido*, reservado, nunca); doble clic en una tarjeta pasa al paso
+  siguiente; **3 · ¿Cuánto y cuánto tiempo?** (la cantidad con su unidad o
+  el color, inicio, duración, curva y, en una cámara con planos, el plano),
+  y *Añadir* deja la animación nueva elegida.
 - **Visor**: con una animación elegida se resalta su objetivo y se dibuja
   su pista en la tinta del tema, sobre todo lo demás: el **arco** de una
   órbita (un anillo alrededor del objetivo con el ángulo que barre y un
@@ -1140,12 +1169,21 @@ la versión de U1 con planos y tarjetas queda sustituida.
   desplazamiento, un **vector por pieza** de un despiece (de donde está a
   donde llega, con un punto donde está en el cabezal), el **eje** y el
   giro de un *giro propio* o un *vuelco*; un tipo que no conoce, solo su
-  objetivo resaltado. El cabezal mueve la previa.
+  objetivo resaltado. El cabezal mueve la previa: también los fundidos (una
+  copia translúcida de cada pieza que se funde), los colores de material y
+  el sol del arco solar, y el **fundido a color** de la pista de cámara, que
+  cubre el encuadre con su color en la medida del instante mientras se
+  reproduce o el cabezal no está en 0 (en 0 la escena se enseña como se
+  edita).
 - **Teclado**, con el foco en el cajón (un clic en el árbol o en las
   pistas lo pone ahí): `Espacio` reproduce o pausa, `Inicio` / `Fin`,
   `←` / `→` un fotograma (`Mayús`: diez), `Supr` borra las animaciones
   elegidas y `Ctrl/⌘ D` las duplica. En un campo, el campo se queda sus
   teclas.
+- **En el árbol de la escena** (N1, como en KeyShot): bajo cada pieza o
+  grupo, sus animaciones (las del modelo entero, bajo el modelo), cada una
+  con el icono de su tipo y su frase corta en tinta secundaria, y la frase
+  entera en la ayuda; clic abre el cajón con ella elegida.
 - En el **menú contextual de una pieza** (árbol de la escena y visor):
   **Animar Tapón…** (el asistente con ella de objetivo) y **Fijar en el
   despiece** / **Soltar del despiece** (en los despieces que la
@@ -1438,10 +1476,22 @@ Doctor avisa —*Proporción de la animación*— cuando la cámara de un plano
 tiene otra proporción que ese tamaño, y su arreglo da a esas cámaras la
 proporción de la salida): **rango** (*Todo* o de–a en
 fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
-**salida** *Vídeo* (MP4 H.264 o WebM VP9, con calidad) o *Fotogramas*
+**salida** *Vídeo* (MP4 H.264 o WebM VP9) o *Fotogramas*
 (secuencia PNG o JPEG con numeración `0001`), *Terminar por* aplicado
 **a cada fotograma**, y la estimación del total. La cámara es la pista de
-cámara de la línea de tiempo.
+cámara de la línea de tiempo. **Vídeo** (N1): solo lo que este sistema
+codifica, preguntado al arrancar (*Preguntando a este sistema qué vídeo puede
+codificar…* mientras tanto); sin ningún códec, *Vídeo* queda deshabilitado
+con *Este sistema no puede codificar vídeo: los fotogramas siempre se pueden
+renderizar*. Con *Vídeo*, el segmento del contenedor: **MP4 H.264** y **WebM
+VP9** (*WebM VP8* donde VP9 no está), el que no se codifica aquí
+deshabilitado con *Este sistema no puede codificar MP4 H.264* en su ayuda; y
+una nota: *Un solo archivo: Botella_Cámara 1_0001.webm, WebM VP9, 48
+fotogramas a 24 fps* (o, si el contenedor elegido no se codifica aquí,
+*Este sistema no puede codificar …*), con *Un vídeo tiene un tamaño par:
+1920 × 1080* cuando el tamaño es impar. El formato de *Salida* sigue siendo
+el de los fotogramas; el resumen del pie dice el del vídeo (*WebM VP9 →
+Descargas*). Captura: `docs/ui/render-window-video.png`.
 
 **3 · Post-procesado IA** (X4; `AI-POST.md` §4): plegada y apagada por
 defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
