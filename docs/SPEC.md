@@ -43,7 +43,9 @@ no un requisito.
 2. **Tipo de escena, tipo de producto y estudio.** El **tipo de escena**
    (*Producto · Interior · Catálogo*, K1) solo reescribe valores de partida
    (entorno, rebotes, cáusticas, sombra de suelo, transformada, muestras
-   y focal; `INTERIORS.md` §3.1) y no quita ningún control; cambiar y volver
+   y focal; `INTERIORS.md` §3.1; *Interior*, también la receta de luz
+   *Ventana de mediodía* sobre los focos del tipo de producto sin tocar, C1)
+   y no quita ningún control; cambiar y volver
    deja el proyecto como estaba salvo lo que se tocó. Elegir una de 16 categorías (joyería,
    relojería, perfumería, cosmética, electrónica, electrodoméstico,
    mobiliario interior y exterior, calzado, textil, packaging, automoción,
@@ -507,8 +509,12 @@ imagen; en la cilíndrica es la circunferencia para la que está dibujada,
 que fija su alto). La primera imagen de un material sin ninguna pone
 `sizeMm` al tamaño de la pieza, para que se vea entera de una vez;
 *Ajustar a la pieza* lo vuelve a hacer con el lado mayor de las piezas que
-lo llevan. El procedural (desgaste, veta y trama de E6) sigue en tamaños
-de pieza, porque es una receta y no una foto.
+lo llevan; es una opción, y el tamaño escrito a mano son esos mismos
+milímetros. El procedural tampoco sigue a la pieza (decisión 5.1, C1): la
+veta de la madera y la trama de la tela tienen tamaño físico en mm, el mismo
+en un joyero que en una mesa (§3.1, E6), y el desgaste guarda su escala de
+referencia en metros (`wear.refSize`), que se fija con el tamaño de la
+pieza cuando se crea el material y no cambia si la pieza cambia.
 
 **Etiquetas**: imágenes con alfa puestas sobre la pieza con una
 proyección plana desde la normal del punto donde se colocan: `origin`,
@@ -544,9 +550,9 @@ no las seis primeras; el recorte del alfa recorta también las sombras; el
 papel de una etiqueta es opaco (sobre vidrio no se ve a través de ella); un
 emisor cuya imagen cambia su luz se ve igual pero no se muestrea como luz
 (más ruido en lo que ilumina, ningún sesgo); y los fotones de las cáusticas
-ven el material sin texturas. Si el tamaño de una textura debe seguir al del
-sólido es una decisión pendiente (`TRIAGE.md` 5.1): hasta entonces es en mm,
-como arriba.
+ven el material sin texturas. El tamaño de una textura no sigue al del
+sólido (`TRIAGE.md` 5.1, decidido en C1): es en mm, como arriba, y
+*Ajustar a la pieza* lo ajusta cuando se pide.
 
 **Grafos de material** (fase M3a, `src/core/material-graph.ts`; el
 contrato con el motor en `ARCHITECTURE.md` §5.2 quater). Un material puede
@@ -1593,9 +1599,9 @@ el Doctor no toca los ajustes de la aplicación (no se deshacen).
 | `engine` · *Motor* | `rt.wasm` no está compilado, es anterior a la página, no arrancó, el sistema no da *workers*; o el *pool* es de un solo *worker* (el sistema no da más, o *Hilos* lo dice y *Automático* daría más) | ninguno; con *Hilos* de por medio, abre esa fila |
 | `simd` · *SIMD* | corre la compilación escalar: el sistema no tiene simd128, *SIMD* está en *Desactivado*, falta `rt-simd.wasm`, o el motor de escritorio no tiene camino vectorial | ninguno; con *SIMD* en *Desactivado*, abre esa fila |
 | `denoise` · *Denoise* | está encendido en el visor y apagado en el render (la imagen saldría con ruido), o a fuerza 0, o el motor no sabe hacerlo; apagado en todas partes es una decisión y no avisa | enciende el del render / devuelve la fuerza al 100 % (el motor sin *denoiser* no tiene) |
-| `color` · *Tono* | con *Estándar*, más del 1 % del encuadre está a más de una parada sobre el blanco una vez aplicada la exposición, y se recorta a blanco puro (se lee del histograma de la acumulación; *Fílmica* y *AgX* no recortan y no necesitan imagen) | pasa a *Fílmica* |
+| `color` · *Tono* | con *Estándar*, más del 1 % del encuadre está a más de una parada sobre el blanco una vez aplicada la exposición, y se recorta a blanco puro (se lee del histograma de la acumulación; *Fílmica* y *AgX* no recortan y no necesitan imagen). Es un **aviso**, nunca un fallo: un fondo blanco liso se quiere recortado (C1) | propone *AgX* |
 | `caustics` · *Fireflies* | la acumulación tiene *fireflies*: píxeles más brillantes que el blanco, cuatro veces más que el mejor de sus ocho vecinos y, si la acumulación guarda la luminancia al cuadrado (con el *denoise* del visor encendido), con una sola muestra que aporta la mitad de su luz o más; avisa desde 8 píxeles (o una cienmilésima del encuadre). Con la imagen ya filtrada por el *denoise* del lanzador, no hay nada que contar | devuelve las cáusticas de *Apagado* a *Automático* y recorta la luz indirecta en 10; si ya está así, dice que solo ayudan más muestras |
-| `output` · *Formato de salida* | la animación sale como vídeo: un solo archivo donde un fallo a mitad pierde los fotogramas, o con un códec que aquí no se codifica | pasa a secuencia de fotogramas |
+| `output` · *Formato de salida* | la animación sale como vídeo en un contenedor que este sistema no codifica (lo que el navegador dice que codifica, desde N1; un vídeo que sí se codifica no es un fallo) | pasa a secuencia de fotogramas |
 | `budget` · *Presupuesto de tiempo* | con la velocidad que el motor midió aquí, el tiempo del render no alcanza las muestras: con *lo que llegue antes*, menos de la mitad de las pedidas; con *Tiempo*, menos que un Borrador | sube el tiempo al que esas muestras necesitan más una cuarta parte (la velocidad medida se mueve de una lectura a la siguiente), redondeado a los diez segundos |
 
 `lighttree` (*Light tree*, de K4) y `persist` (*Persistent data*, propio de
@@ -1731,6 +1737,9 @@ web y se cargan bajo demanda; el motor de render no las conoce
   están abiertas y lo devuelven al control que las abrió. *Ajustes ▸
   Accesibilidad* ofrece el tamaño de la interfaz y del texto, el contraste
   alto, *Reducir movimiento* (que apaga también el desplazamiento suave) y
-  el foco siempre visible. Pendiente: los grises auxiliares (`ink-2`,
-  `ink-3`) no llegan a 7:1 sobre todas sus superficies; el cambio de
-  *tokens* es una decisión visual (`ROADMAP.md`, H1).
+  el foco siempre visible. El texto principal (`ink-0`, `ink-1`) llega a
+  7:1 sobre todas sus superficies y el secundario (`ink-2`) a 4,5:1 (WCAG
+  AA; decisión de H1, aplicada en C1), sin aplanar la jerarquía de grises.
+  `ink-3`, el gris de lo apagado (controles deshabilitados, filas ocultas,
+  separadores), queda por debajo de `ink-2`, sin mínimo propio salvo en el
+  contraste alto, donde también llega a 4,5:1.

@@ -5,6 +5,28 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- El nodo **Mapa de normales** en espacio tangente ya no deja que una normal apunte hacia dentro de la superficie: un azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en el motor y en *Rápido* (C1).
+- La guarda del post-procesado IA tolera el doble por defecto: ΔE₀₀ medio 4 y percentil 95 6 por material, y 3 px de bordes (C1).
+- Se mueven dos fijados, y solo por los copos de la tarjeta del ejemplo de M3b (un ruido en un mapa de normales): `PINNED_M3B_PROGRAMS_4SPP` y el quinto de `PINNED_M3B_PROGRAM_VALUES` (C1).
+
+### Interfaz
+
+- La **intervención** de la IA por defecto pasa de 30 a 50, y las tolerancias de fábrica de la guarda en *Ajustes ▸ Post-procesado IA ▸ Avanzado* se doblan (4, 6 y 4 px). Unos ajustes ya guardados conservan lo que tenían (C1).
+- El tipo de escena **Interior** empieza con la receta de luz *Ventana de mediodía* cuando los focos son los del tipo de producto sin tocar; volver al tipo anterior deja los focos como estaban (C1).
+- Elegir un set o un montaje sobre los focos del tipo de producto sin tocar los sustituye sin preguntar; con focos propios o editados, la pregunta *Sustituir · Ocultar · Añadir* sigue como estaba (C1).
+- Doctor: recortar con *Estándar* es un aviso (un fondo blanco liso lo busca) y el arreglo propone **AgX** en vez de *Fílmica* (C1).
+- El ejemplo de grafo *Pintura metalizada con copos* inclina la normal con el rojo y el verde del ruido y deja el azul en 1: todos los copos miran hacia fuera (C1).
+
+### Accesibilidad
+
+- El texto secundario (`ink-2`) llega a 4,5:1 (WCAG AA) sobre todas sus superficies: en el tema claro pasa de `#6b6b6b` a `#5f5f5f`. El texto principal sigue en 7:1 (C1).
+
+### Documentación
+
+- La SPEC dice en un solo sitio que el tamaño de texturas y procedurales es en milímetros, absoluto, con *Ajustar a la pieza* como opción (C1).
+
 ## v0.1.17 — 2026-10-17
 
 ### Motor

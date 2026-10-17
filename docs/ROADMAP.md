@@ -11674,7 +11674,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 **Desde el 17-10 las toma el responsable**, por indicación del usuario («toma tú las decisiones de fable»). Los agentes las siguen preparando y anotando con ◆, y no las toman por su cuenta (regla 11). Esta lista recoge lo decidido. Cada entrada dice si basta lo que hay o qué fase lo construye. Los datos de partida siguen en `TRIAGE.md` y en el párrafo de cada fase.
 
 **Fases que salen de aquí:**
-- **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR.
+- **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
 - **C2** · Interruptor de la focal (1.7).
 - **M3c** · Nodos *Madera* y *Tela* (1.6).
 - **N2b** · El estudio viaja con el proyecto.
@@ -11693,14 +11693,14 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - se **doblan las tolerancias** de la guarda por defecto;
   - la **intervención por defecto pasa de 30 a 50**.
 
-  Las dos siguen en *Ajustes*. **C1.**
+  Las dos siguen en *Ajustes*. **C1.** (hecho en C1)
 - **1.7** (el interruptor de la focal). Es un interruptor junto a la focal, *Mantener el tamaño de lo enfocado*:
   - **apagado** (por defecto, como en una cámara): la cámara se queda y cambia el encuadre;
   - **encendido**: la cámara se acerca o se aleja por su eje para que el plano enfocado conserve su tamaño en la imagen, es decir, cambia la perspectiva y no el tamaño.
 
   El inspector dice cuál está activo. Es deshacible de una vez. **C2.**
 - **6.1–6.3** (los sets dentro de *Estudios*, sus luces desactivables). **Cerrado por L7.** Los sets son su propio grupo, y cada foco se enciende y apaga en la lista *Luces* sin tocar el resto.
-- **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC.
+- **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC. (hecho en C1)
 - **E13** (MNEE). **No se fusiona.** Cuesta 1,8–2× con vidrio curvo y no mejora lo que se ve. Las cáusticas siguen en el mapa de fotones. La rama `wip/ccr-8df3f848/e13` se queda como referencia.
 - **E10** (el muestreo adaptativo). **Se acepta**, con 0,83× a igual tiempo: está solo detrás de *Terminar por ruido* y no empeora nada. La regla de reparto se revisa si un render real lo pide.
 - **1.2** (la gota y la mezcla de geometrías en *Ambiente*). **Sí.** Entra en **S3**, la fase de lluvia y polvo, que es la que ya toca esas geometrías.
@@ -11711,7 +11711,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - la regla de los caminos estrechos, en los que las gotas también refractan.
 - **1.5** (el editor de elementos de una lente). **Sí**: editar, mover, añadir y girar 180°, sobre la lente propia que ya guarda O2. **O2c.**
 - **1.6** (nodos *Madera* y *Tela*). **Sí**, con las recetas de E6. El ejemplo de madera de los grafos tiene que parecerse a la familia *Madera* (`m3b-wood.png`). **M3c.**
-- **M3b** (`NORMAL_MAP` con el azul por debajo de 0,5). El nodo **no deja que una normal apunte hacia dentro**: la lleva al hemisferio de fuera. El ejemplo de los copos se rehace con normales hacia fuera. **C1**, con su test y, si cambia el motor, con los pines que se muevan explicados.
+- **M3b** (`NORMAL_MAP` con el azul por debajo de 0,5). El nodo **no deja que una normal apunte hacia dentro**: la lleva al hemisferio de fuera. El ejemplo de los copos se rehace con normales hacia fuera. **C1**, con su test y, si cambia el motor, con los pines que se muevan explicados. (hecho en C1)
 - **4.2** (el recorte de *fireflies* y el borde del *denoise* solo por luminancia). **Se quedan como están** hasta tener la escena del usuario. Sin ella no hay con qué medir.
 - **Q1** (la sección):
   - el control sigue en el inspector de *Escena*, y en la paleta;
@@ -11722,7 +11722,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - la **de partida del tipo *Interior* es *Ventana de mediodía***;
   - se aceptan los umbrales del Doctor tal como se propusieron: escala de 100 mm a 30 m, óptica por debajo de 18 mm (aviso desde 24 mm), altura de ojo de 0,3 a 2,2 m (a 1,5 m), recorte cercano a la mitad de la distancia a la pared.
 
-  **C1** pone la receta de partida.
+  **C1** pone la receta de partida. (hecho en C1)
 - **D1** (el Doctor de motor):
   - recortar con *Estándar* es un **aviso**, no un fallo, porque los fondos blancos planos lo buscan;
   - el arreglo propone **AgX**;
@@ -11730,20 +11730,20 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el aviso del vídeo se despierta, porque N1 ya está hecho;
   - el del *denoise* sigue como está.
 
-  **C1.**
+  **C1.** (hecho en C1)
 - **N1** (la animación). Se acepta todo lo propuesto:
   - el orden del asistente, primero el objetivo;
   - qué es un *Fundido*;
   - el polo del arco solar;
   - la forma del fundido a color;
   - la calidad automática del vídeo.
-- **L7** (*Sets* y *Luces*). Se acepta la clasificación, el filtro *Tipo de producto* solo en *Sets*, el filtro *Sujeto*, que un set nuevo sustituya la decoración y los tres tamaños de miniatura. Un cambio: **no se pregunta si los focos que hay son los del tipo de producto sin tocar**; se sustituyen sin más. **C1.**
+- **L7** (*Sets* y *Luces*). Se acepta la clasificación, el filtro *Tipo de producto* solo en *Sets*, el filtro *Sujeto*, que un set nuevo sustituya la decoración y los tres tamaños de miniatura. Un cambio: **no se pregunta si los focos que hay son los del tipo de producto sin tocar**; se sustituyen sin más. **C1.** (hecho en C1)
 - **H1** (los grises auxiliares):
   - se acepta **4,5:1** (WCAG AA) para el texto secundario;
   - el texto principal sigue en 7:1;
   - la jerarquía de grises no se aplana.
 
-  Si algún par del informe de H1 queda por debajo de 4,5:1, se sube ese par. **C1.**
+  Si algún par del informe de H1 queda por debajo de 4,5:1, se sube ese par. **C1.** (hecho en C1)
 - **U15** (las flechas):
   - la variante compacta, siempre visible (el usuario pidió flechas en todos los valores);
   - la lista de lo convertido a deslizador, tal cual;
@@ -11768,6 +11768,33 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
 recetas del plugin, sin barra vertical.
+
+
+## C1 · Decisiones de criterio aplicadas — **Opus** — hecha
+
+**Qué.** Los cambios pequeños de *Decisiones de criterio* marcados **C1**, en un solo PR: 2.1, 5.1, M3b, K1, D1, L7 y H1.
+
+**Hecho:**
+
+- **2.1 · La guarda de la IA.** Valores de fábrica: *Intervención* 50 (era 30) en `DEFAULT_AI_PIPELINE`, en `Settings::DEFAULT` de `rt-post` y en *Ajustes* (`ai.intervention`); las tolerancias, el doble: ΔE₀₀ medio 4 y percentil 95 6 por material, y bordes 4 px en *Ajustes* (`ai.guard*`, eran 2, 3 y 2) y en el servicio sintético (`SYNTHETIC_LIMITS`); en la guarda del motor (`Tolerances::PROVISIONAL`) 4, 6 y **3 px** (era 1,5). `AI-POST.md` §3.2 y §4 lo dicen. *Migración*: el documento de *Ajustes* guarda todas las claves y `validateSettings` conserva lo guardado (no hay ningún paso de esquema), así que un valor igual al de fábrica de antes no se distingue de una elección: una instalación existente sigue con lo que tenía; solo una nueva (o *Restablecer*) toma los valores nuevos. Tests: `tests/ai-settings.test.ts` (los valores nuevos, el sintético con los mismos, un documento guardado que conserva 30 y 2/3/2 y uno sin la clave que toma 4) y `the_constants_are_the_contracts` en `rt-post` (50, 4/6/3 y los ΔE iguales a los de `settings.ts`). `tests/fixtures/ai-guard.json` regenerado: el escenario *forbidden* (que usa los valores por defecto) cambia de imagen, y *strong* y *limited* ya no necesitan recortar el color de la tapa ni de la etiqueta.
+- **5.1 · Tamaño en milímetros.** El código ya lo hace: `sizeMm` en mm (`core/textures.ts`), el campo de tamaño es un `lengthField` que muestra en la unidad de *Ajustes* y escribe mm, *Ajustar a la pieza* es un botón (`insp-textures.ts`), la madera y la tela son físicas (anillos por 100 mm, `pattern/wood.rs`) y el desgaste guarda su `refSize` en metros al crearse el material. Solo se corrigió la SPEC (§3.3, los dos párrafos que decían «sigue en tamaños de pieza» y «decisión pendiente»).
+- **M3b · `NORMAL_MAP`.** En espacio tangente el `2b − 1` del azul se toma en valor absoluto: una normal con el azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en `program/interp.rs` y en `core/material-interp.ts` (los mismos bits). El ejemplo *Pintura metalizada con copos* pasa el ruido por *Separar RGB* → *Combinar RGB* con el azul en 1. Tests (cada uno falla sin el arreglo): `a_tangent_space_normal_map_never_points_into_the_surface` (Rust), el mapa de normales de `tests/material-program.test.ts` y «the metallic flakes face out of the surface at every point» (falla si se quitan a la vez el arreglo y el ejemplo nuevo). **Fijados que se mueven, todos por un mapa de normales con el azul por debajo de 0,5:** el ejemplo de grafo `METALLIC_FLAKES` (`eb24ca6b` → `3795f601`, ejemplo nuevo y nodo nuevo), dos casos de la prueba cruzada (`NMAP 0` y `NMAP 4`, la instrucción sola en espacio tangente sobre colores con el azul por debajo de 0,5; `NMAP 1`, en el de la pieza, no se mueve), el quinto de `PINNED_M3B_PROGRAM_VALUES` (`0x587e_907c` → `0x6d55_bcef`: la tarjeta con copos de `NOISEC` en `NMAP`) y `PINNED_M3B_PROGRAMS_4SPP` (`0x0d6e_20ba` → `0x90b4_2b6b`, la misma tarjeta en la imagen; también en `rt-app` y `rt-cli`). Los seis pases de M3b y todo fijado de una escena sin `NMAP` siguen igual. `engine.yml` lee los fijados del código (`sed`), así que sus bloques no cambian. En la comparación por regiones (`tests/programs-full-browser.test.ts`) los copos pasan de correlación −0,91 y una distancia de tono de 106 a **+0,87** y **28**, dentro del margen de los demás: el test ahora les exige tono y correlación positiva.
+- **K1 · Receta de partida de *Interior*.** `SceneTypeDefaults.lightSetup` (`INT_WINDOW_NOON` en *Interior*) y una casilla más del mecanismo de K1, `studio.lighting`: guarda el montaje, sus focos, `modified`, la intensidad de la cúpula y la exposición, y escribe lo mismo que elegir la receta en el catálogo (`applySet` con la decoración conservada). Solo actúa sobre los focos del tipo de producto sin tocar (la definición de L7, abajo); un montaje elegido o unos focos editados se quedan. Volver al tipo anterior devuelve los focos tal cual (el mismo arreglo), y si la persona tocó un foco de la receta, se quedan los suyos. Tests en `tests/scene-type.test.ts` (seis nuevos; los de ida y vuelta de K1 pasan sin cambios, «removes nothing» ya no pide los mismos focos en *Interior*).
+- **D1 · Doctor de motor.** El recorte con *Estándar* era ya un aviso (`WARN`: el Doctor no tiene otro estado de fallo); ahora lo dice el catálogo y la frase («es lo que busca un fondo blanco liso») y el arreglo pone **AgX**. El chequeo de vídeo ya despertó en N1 (dormido quería decir que hasta N1 los ajustes forzaban la secuencia de fotogramas): avisa solo de un contenedor que el sistema no codifica; la SPEC aún decía lo de antes y se corrigió. El del *denoise* no cambia. Tests: tres nuevos en `tests/doctor-engine.test.ts` (aviso y AgX en el arreglo y en la frase en los dos idiomas; el vídeo despierto; el *denoise* igual) y los dos que fijaban *Fílmica*.
+- **L7 · La pregunta por los focos.** «Los focos del tipo de producto sin tocar» es `typeLightsUntouched` (`core/lighting.ts`): el montaje en vigor es el del tipo (`PRESET`), `studio.modified` está apagado (lo enciende cualquier foco añadido, duplicado, editado, colocado, apuntado o borrado, y solo lo apaga poner un montaje) y los focos, sin la decoración de un set, son valor a valor los de `lightsFromRig` del tipo (así no hay focos propios ni conservados, y un tipo elegido sin rehacer el estudio no cuenta). Con ellos, `requestSetup` sustituye sin preguntar, también si *Ajustes* recuerda *Ocultar* o *Añadir*. Tests: dos nuevos en `tests/light-catalogue.test.ts`; `tests/library.test.ts` y `tests/light-panel-browser.test.ts` ya no esperan la pregunta sobre el proyecto recién abierto (el segundo elige primero un montaje sin pregunta y después otro, que sí pregunta).
+- **H1 · Contraste.** `tests/ui-contrast.test.ts` exige 7:1 al texto principal (`ink-0`, `ink-1`, el invertido) y 4,5:1 al secundario (`ink-2`) sobre todas las superficies de los cuatro temas, y que cada gris quede al menos un 10 % por debajo del de encima en cada superficie (la jerarquía no se aplana). El único par por debajo de 4,5:1 era `ink-2` del tema claro: **`#6b6b6b`** (3,78:1 sobre `bg-3`, 4,39 sobre `bg-2`, 4,43 sobre *overlay*) pasa a **`#5f5f5f`** (4,52:1 sobre `bg-3`, 6,4 sobre `bg-0`); el oscuro (`#9a9a9a`, 5,10 a 6,86) y los de alto contraste ya llegaban.
+
+**Qué no encajó con el plan** (regla 12; ◆ para quien decide):
+
+1. ◆ **Los mandos de la guarda de *Ajustes* no llegan a la guarda.** `ai.guardDeltaE`, `ai.guardDeltaE95` y `ai.guardEdgePx` se guardan y se muestran, pero ni el `post.wasm` ni el lanzador los leen (el trabajo solo lleva tolerancias propias desde las herramientas de calibración): la guarda usa siempre `Tolerances::PROVISIONAL`. Y el borde de fábrica ya difería (1,5 px en el motor, 2 en *Ajustes*): doblado, 3 y 4. Se doblaron los dos y no se tocó nada más.
+2. ◆ **Las instalaciones existentes conservan 30 y 2/3/2.** Es la convención de *Ajustes* (lo guardado manda). Si se quiere que también ellas pasen a 50, un paso de esquema 1 → 2 que cambie exactamente 30 por 50 lo haría, a costa de pisar a quien eligió 30.
+3. ◆ **`NORMAL_MAP` en el espacio de la pieza** no se tocó (el encargo era el espacio tangente): con una intensidad por encima de 0,5, un mapa que apunte contra la superficie aún puede doblar la normal hacia dentro.
+4. **K1**: la decoración de un tipo de producto que es un set (el foco del charco, el fondo) se queda bajo la receta, como al añadir una receta conservando los focos; quitarla obligaría a la casilla a guardar piezas de la escena para devolverlas. Con la exposición automática de *Interior*, la exposición que pone la receta (la del tipo más 0,2) es la compensación, igual que al elegirla en el catálogo.
+5. **D1**: el recorte ya era aviso y el vídeo ya estaba despierto desde N1; lo nuevo es el arreglo (AgX), las frases, la SPEC y los tests.
+6. ◆ **H1: `ink-3` no se subió.** Es el gris de lo apagado (controles deshabilitados, filas ocultas, separadores, asas, miniaturas vacías), que WCAG 1.4.3 no mide; subirlo a 4,5:1 lo pondría en `#5f5f5f`, encima de `ink-2`, y aplanaría la jerarquía. Lo usan también como texto la etiqueta *próximamente* de las tarjetas de efectos, el rango de *Suavizado* en *Ajustes* y los nombres de filas ocultas y de focos apagados: si deben llegar a 4,5:1, pasan a `ink-2`.
+7. **Sin capturas nuevas.** Cambia lo que se ve en tres sitios ya capturados: el texto auxiliar del tema claro, un poco más oscuro; los copos de `m3b-graphs.png`; y los focos de *Interior* en `scene-type-interior.png`. Quedan para regrabar en el PR de la versión.
+
+**Puertas.** PUERTAS
 
 ## Orden sugerido
 
