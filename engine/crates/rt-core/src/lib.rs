@@ -35,6 +35,7 @@ pub mod exr;
 pub mod fmath;
 pub mod geometry;
 pub mod hdr;
+pub mod ies;
 pub mod image;
 pub mod inflate;
 pub mod integrator;
