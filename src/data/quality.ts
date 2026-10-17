@@ -1,8 +1,6 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type { QualityKey, QualityPreset, ResolutionPreset } from './types';
 
-// Render quality tiers (upstream QUALITY_PRESETS). Studio presets pick one of
+// Render quality tiers. Studio presets pick one of
 // these by key; the sampler turns `threshold` into its adaptive-noise target.
 export const QUALITY_PRESETS: Readonly<Record<QualityKey, QualityPreset>> = {
   DRAFT: {
@@ -22,7 +20,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityKey, QualityPreset>> = {
 /** Quality keys in ascending order of cost. */
 export const QUALITY_KEYS: readonly QualityKey[] = ['DRAFT', 'PREVIEW', 'FINAL'];
 
-// Output sizes in pixels (upstream RES_PRESETS). PRINT is A4 landscape at
+// Output sizes in pixels. PRINT is A4 landscape at
 // 300 dpi.
 export const RESOLUTION_PRESETS: readonly ResolutionPreset[] = [
   { key: 'HD', label: { es: 'HD 1080p', en: 'HD 1080p' }, width: 1920, height: 1080 },

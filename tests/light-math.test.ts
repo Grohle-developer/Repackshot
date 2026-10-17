@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import { describe, it, expect } from 'vitest';
 import {
   ease,
@@ -30,7 +28,7 @@ describe('kelvinToRgb', () => {
     const [r, g, b] = kelvinToRgb(5600);
     expect(Math.max(r, g, b)).toBe(1);
     expect(Math.min(r, g, b)).toBeGreaterThanOrEqual(0.85);
-    // Pinned against the upstream approximation.
+    // Pinned against the blackbody approximation.
     expectRgbClose([r, g, b], [1, 0.9383740988338822, 0.8834899105012184]);
   });
 
@@ -48,7 +46,7 @@ describe('kelvinToRgb', () => {
     expectRgbClose([r, g, b], [0.8218972160571649, 0.8739607064832815, 1]);
   });
 
-  it('keeps the other pinned values of the upstream approximation', () => {
+  it('keeps the other pinned values of the approximation', () => {
     expectRgbClose(kelvinToRgb(1000), [1, 0.2663545845364998, 0]);
     expectRgbClose(kelvinToRgb(3000), [1, 0.6949030005552019, 0.4310480202110507]);
     expectRgbClose(kelvinToRgb(5200), [1, 0.9094659440567877, 0.8340734229624407]);

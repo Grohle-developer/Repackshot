@@ -1,8 +1,6 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 // Shared contracts for the data catalogues in src/data and the pure helpers
 // in src/core. Catalogue keys (STUDIO_PRESETS, LIGHT_SETUPS, MATERIAL_PRESETS,
-// ...) are the upstream keys, unchanged; keys inside objects are camelCase.
+// ...) are stable: they are added, never renamed; keys inside objects are camelCase.
 
 // ---------------------------------------------------------------------------
 // Basics
@@ -98,7 +96,7 @@ export interface LightSpec {
   dist: number;
   /** Beam spread in degrees: 180 is a fabric diffuser, 60 a honeycomb grid. */
   spread?: number;
-  /** Angular diameter of a SUN, in degrees (0.545 is the real sun; EZ Packshot converted to radians only for Blender). */
+  /** Angular diameter of a SUN, in degrees (0.545 is the real sun). */
   angle?: number;
   /** Colour temperature of a white source. Ignored when `color` is set. */
   kelvin?: number;
@@ -399,7 +397,7 @@ export interface MaterialPreset {
 // Wear (procedural ageing layer)
 // ---------------------------------------------------------------------------
 
-/** The eight wear types. Upstream `rough_var` is `roughVar` here. */
+/** The eight wear types. */
 export type WearType =
   | 'edges'
   | 'scratches'
@@ -418,9 +416,8 @@ export interface WearTypeInfo {
 }
 
 /**
- * Every wear property with its meaning. Upstream names carry a `wear_` prefix
- * that is dropped here (`wear_edge_color` is `edgeColor`); the intensity of a
- * wear type is the property with the type's own name, so `props[type]` works.
+ * Every wear property with its meaning. The intensity of a wear type is the
+ * property with the type's own name, so `props[type]` works.
  * Scales are in part sizes, `refSize` is the reference part size in metres.
  */
 export interface WearProps {
@@ -570,7 +567,7 @@ export type TargetKind = 'OBJECT' | 'SUBJECT' | 'SCENE';
 
 /**
  * How an EXPLODE separates the parts (core/explode.ts). LINEAR, CYLINDRICAL and SPHERICAL are the three geometries
- * of N6; RADIAL is a synonym of SPHERICAL (its meaning since it was ported), AXIS_X/Y/Z are LINEAR (separate) along
+ * of N6; RADIAL is a synonym of SPHERICAL (its meaning from the start), AXIS_X/Y/Z are LINEAR (separate) along
  * that axis, CUSTOM (a direction per part) is not built and reads as SPHERICAL.
  */
 export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM' | 'LINEAR' | 'SPHERICAL';
@@ -636,7 +633,7 @@ export interface SequencePreset {
 
 export type DoctorCheckKey =
   | 'engine'
-  /** D1: the SIMD build of the engine runs (not ported; it follows `engine`). */
+  /** D1: the SIMD build of the engine runs (it follows `engine`). */
   | 'simd'
   | 'lighttree'
   | 'denoise'
@@ -651,10 +648,10 @@ export type DoctorCheckKey =
   | 'caustics'
   | 'persist'
   | 'output'
-  /** D1: the render's time budget against the speed the engine measured (not ported; it follows `output`). */
+  /** D1: the render's time budget against the speed the engine measured (it follows `output`). */
   | 'budget'
   | 'aspect'
-  /** S2: a dynamic part starts below the floor (not ported). */
+  /** S2: a dynamic part starts below the floor. */
   | 'physics'
   /** S4a: an ambient effect asks for more particles than its cap. */
   | 'particles'

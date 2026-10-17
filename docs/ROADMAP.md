@@ -11,18 +11,15 @@ que enlaza (`SPEC.md`, `ARCHITECTURE.md`, `UI.md`) y el repositorio.
 Repackshot es un renderizador de producto al estilo KeyShot, de código
 disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
 escrito desde cero en **sala limpia** (reglas en `../README.md`,
-innegociables) y que corre en el navegador. Reutiliza las ideas y varias
-soluciones de **EZ Packshot**, un addon de Blender del mismo autor
-(GPL-3.0; los catálogos y fórmulas se han portado con su permiso y la
-implementación es nueva): tipos de producto, catálogo de montajes de luz
-por estilos con normalización de exposición, materiales con desgaste
-procedural, Doctor, selección por niveles, lenguaje de fotógrafo, guía
-con flechas que no tapa.
+innegociables) y que corre en el navegador. Sus pilares: tipos de
+producto, catálogo de montajes de luz por estilos con normalización de
+exposición, materiales con desgaste procedural, Doctor, selección por
+niveles, lenguaje de fotógrafo, guía con flechas que no tapa.
 
 **Ficheros clave:**
 
 - `src/core/` — modelo de datos puro y *store* (`ARCHITECTURE.md` §4)
-- `src/data/` — catálogos portados: 16 estudios, 72 montajes, 77
+- `src/data/` — catálogos: 16 estudios, 72 montajes, 77
   materiales, desgaste, ópticas, movimientos, secuencias, Doctor
 - `engine/` — **el motor**: Rust desde cero, sin dependencias, portable
   (`ARCHITECTURE.md` §5.1); `rt-core`, `rt-cli`, `rt-wasm`
@@ -108,7 +105,7 @@ decisiones escritas (datos, contratos, revisión), no código.
   **Fable**.
 - **A1** · Andamiaje Vite + TypeScript + vitest + captura con Chromium
   local (`tools/screenshot.mjs`) — **Sonnet**.
-- **A2** · Catálogos portados a `src/data/` con tipos, y matemáticas de
+- **A2** · Catálogos en `src/data/` con tipos, y matemáticas de
   luz en `src/core/light-math.ts`, `rig.ts`, `wear.ts`, con tests de
   recuento, fórmula y normalización 16 × 71 — **Sonnet**.
 - **A3** · `.github/workflows/qa.yml`, plantilla de PR, `CONTRIBUTING.md`
@@ -202,9 +199,9 @@ Vite 8, TypeScript 7, vitest 5, three 0.186, playwright-core 1.64.
 marcador. La captura usa `--use-gl=swiftshader` y espera a
 `#app[data-ready="1"]`.
 
-## A2 · Catálogos portados — **Sonnet** — hecha
+## A2 · Catálogos — **Sonnet** — hecha
 
-Ver `src/data/README.md`. Las claves son las de EZ Packshot. Los tests
+Ver `src/data/README.md`. Las claves son estables. Los tests
 fijan: 16 estudios; 72 montajes (PRODUCT 12, TRADITIONAL 13, CINEMATIC
 11, CREATIVE 8, EMOTIONAL 8, EXPERIMENTAL 8, SIGNATURE 6, SPICY 6; tres
 con `world: 'SKY'`); 77 materiales en 7 categorías; 8 ópticas; 16
@@ -728,7 +725,7 @@ lienzo en cada fotograma; acción de la paleta *Exportar escena del motor
 no tienen equivalente en el motor todavía; el ACES del motor da NaN por
 encima de ~1e19 de radiancia. Dos correcciones del responsable al
 recibir la fase: el **ángulo del sol** estaba documentado en radianes y
-salía como un disco de 31°, cuando en EZ Packshot está en **grados**
+salía como un disco de 31°, cuando el catálogo lo da en **grados**
 (0,545° es el sol real; ahora se pasa tal cual, con test de regresión); y
 *Render* **ya no cae a la vista previa** cuando falta `rt.wasm`: lo dice
 y no renderiza, como decidió el usuario.
@@ -3263,6 +3260,122 @@ No encajó con el plan:
   salía el otro y el test fallaba sin que el *bundle* cambiara. Ahora lo
   busca por su nombre exacto.
 
+## L7 · Sets y Luces: catálogo reorganizado — **Opus** — hecha
+
+**Petición del usuario** (2026-10-17), literal:
+
+> «Vamos a reorganizar el tema de las luces y studio. Quiero que los agrupemos por Sets / Lights. Dentro de sets, tendremos todos los que crean cosas aparte de las luces, y en lights los que solo aplican luces. Dentro de cada uno de estos habrá filtros, en los cuales podrás elegir si jewellry, dark field... Todos los que eran producto type lo meteremos como un filtro al lado de sets que sea product type. Si ya había unas luces aplicadas dejar elegir si se borran las anteriores luces, si solo se ocultan, o si simplemente se añaden. Todos los thumbnails serán del mismo tamaño que Dark field y el resto, pero quiero a la derecha del inicio de seccion un icono que permita cambiar el tamaño de los thumbnails.»
+
+**Qué.** La sección *Luz* en dos grupos, **Sets** (lo que crea algo además de
+focos) y **Luces** (lo que solo pone focos), clasificados por lo que hace cada
+entrada y no por su estilo, sin cambiar claves ni orden (regla 7); filtros en
+cada grupo, combinados como los de P6b, con el tipo de producto como filtro de
+*Sets*; al elegir con focos en la escena, *Sustituir · Ocultar · Añadir* en una
+entrada de deshacer, con *Recordar mi elección* en *Ajustes*; todas las
+miniaturas del tamaño de las de los montajes y un botón en la cabecera que
+cambia el tamaño.
+
+**Hecho.** *Clasificación* (`core/setup-groups.ts`): una entrada es *Set* si
+trae decoración (`hasDecoration` de `core/sets.ts`: fondo, suelo, charco o
+tarjetas), y *Luces* si no. Leyendo `sets.ts` y `rig.ts` salen **17 Sets y 78
+Luces** con un tipo de producto que es un set, y 16 y 79 con *Mobiliario
+exterior*: los 16 sets de L6, más `PRESET` (*El del tipo de producto*), que con
+15 de los 16 tipos viste la escena con el set del tipo y con *Mobiliario
+exterior* solo pone su sol; en *Luces*, los 71 montajes de antes y las 7 recetas
+de *Interior*. Dos sorpresas: `PRESET` cambia de grupo según el tipo en vigor,
+y las recetas de *Interior* (y `SUN`, `GOLDEN_HOUR`, `DAWN`) cambian el
+entorno (cielo, exposición, intensidad) sin crear nada; se cuentan como *Luces*
+(◆ 1). `tests/light-catalogue.test.ts` fija las cuentas con los 16 tipos y
+aplica cada una de las 95 entradas para comprobar que la que es *Set* deja
+decoración y la de *Luces* no.
+
+*Filtros*: *Sets* por **Tipo de producto** (los 16; deja el set que es el rig
+propio de ese tipo, `StudioPreset.set`, y `PRESET` si es el tipo en vigor) y por
+**Sujeto** (el `hero` del set: *Frasco, Caja, Anillo, Cromado, Zapato,
+Esferas*); *Luces* por **Estilo** (los nueve de siempre salvo *Sets*, y
+*Míos*). Se combinan (Y), con la cuenta (*7 de 17 sets*), un aviso corto si no
+queda nada, y la entrada en vigor que dejan fuera la primera, atenuada y
+marcada *Fuera de los filtros*, como la receta de un plugin. Las filas son el
+componente de P6b, sacado a `ui/components/filter-chips.ts` (el panel de
+plugins lo usa también, con el mismo DOM). Grupo, filtros, estilo y tamaño se
+guardan en el `layout` de los ajustes (por persona, como el estilo de antes);
+un documento de antes abre *Sets* si su estilo era *Sets* o *Todos*, y
+`lightStyle: 'SETS'` (una URL de antes) es el grupo *Sets*.
+
+*Los focos que hay* (`core/previous-lights.ts`): `studio/setSetup` y
+`studio/applySetup` ganan `previous` (`REPLACE`, `HIDE`, `ADD`) y `keptNames`.
+*Sustituir* es lo de siempre; *Ocultar* y *Añadir* conservan los focos que no
+son decoración detrás de los nuevos, con su `id`, `own` y un nombre de origen
+(«Principal · Rembrandt»); *Ocultar* con `enabled: false`. **Los focos ya
+tenían ese interruptor** (`LightInstance.enabled`, el de la lista *Luces*), así
+que el formato del proyecto no cambia y no hace falta migración: los proyectos
+de `tests/fixtures/project-v1.json` y `-v2.json` se abren con sus focos
+idénticos, y uno con focos ocultos va y vuelve igual. Un set que entra
+sustituye la decoración del anterior siempre; un montaje de *Luces* con
+*Ocultar* o *Añadir* deja la decoración, el charco y el aspecto del set (◆ 4).
+Una entrada de deshacer con la respuesta en su nombre. La interfaz pregunta
+(en línea, sobre la rejilla; también desde la paleta, que enseña la pregunta)
+salvo que `light.previous` (*Ajustes ▸ Preferencias ▸ Luces*: *Preguntar ·
+Sustituir · Ocultar · Añadir*) recuerde una respuesta; *Recordar mi elección*
+la escribe. Sin focos, o eligiendo otra vez el montaje en vigor, no pregunta.
+
+*Miniaturas*: un solo tamaño para todas, el de los montajes (*Campo oscuro*:
+tres columnas, 4:3; los sets dejan de ir en dos columnas cuadradas), y el botón
+de la derecha de la cabecera de *Luz* da la vuelta *pequeñas* (cuatro columnas,
+solo la imagen) → *medianas* → *grandes* (dos). Las etiquetas ya no se cortan
+a dos líneas: se parten en las que hagan falta.
+
+*Tests*: `tests/light-catalogue.test.ts` (19: la clasificación y sus cuentas,
+los filtros y su combinación, Sustituir/Ocultar/Añadir con su deshacer y los
+ocultos que se vuelven a encender, set sobre set y luces sobre set, un montaje
+propio, la pregunta y *Recordar*, el ajuste y el `layout`, la persistencia, los
+proyectos de antes) y `tests/light-panel-browser.test.ts` (4: en `en` y `es`, a
+1600 × 1000 y 1280 × 800, nada recortado ni fuera de la columna, una sola
+medida de miniatura por grupo y tamaño, el botón cambia el tamaño y se
+recuerda tras recargar, la pregunta). `data.test.ts`, `sets.test.ts` y
+`rig.test.ts`, sin tocar. Comprobación de navegador y capturas:
+`tools/light-catalogue-check.mjs`.
+
+**No encajó con el plan:**
+- No hizo falta un estado nuevo para *Ocultar*: `enabled` ya estaba, y con él
+  no hay cambio de formato ni migración.
+- Todo proyecto empieza con los focos del tipo de producto, así que con
+  *Preguntar* (el ajuste de partida) la pregunta sale casi siempre que se
+  elige un montaje; *Recordar mi elección* la quita (◆ 5). Por eso
+  `tests/library.test.ts` responde ahora *Sustituir* en dos sitios donde antes
+  el montaje entraba directo; nada más cambia en él.
+- La pregunta sale encima de la rejilla, no junto a la miniatura pulsada, y la
+  sección se desplaza hasta ella.
+- La paleta enseña la pregunta con sus tres respuestas, sin *Recordar*.
+- La fila *Tipo de producto* son 16 *chips*: a 340 px ocupan seis líneas.
+- Las miniaturas de los sets son cuadradas y se recortan a 4:3 como las demás.
+- *En el set* sigue enseñando las piezas de un set tras *Ocultar* o *Añadir*
+  un montaje de *Luces*, sin *Usar la cámara del set* (ya no es el set en
+  vigor).
+- `tools/sets-check.mjs`, `tools/scene-type-check.mjs` y
+  `tools/viewport-stress.mjs` siguen la sección nueva (contestan *Sustituir*);
+  `sets-catalogue.png` y `scene-type-interior.png` se regrabaron;
+  `library-setups.png` no tiene herramienta y queda marcada como superada.
+- La variante `large` de las miniaturas (L6) se quitó: nadie la usa.
+
+**◆ Para Fable** (regla 11; también en *Decisiones para Fable*):
+1. Que los montajes que cambian el entorno sin crear nada (las 7 recetas de
+   *Interior*, los tres de sol) sean *Luces*, y que `PRESET` cambie de grupo con
+   el tipo de producto.
+2. El tipo de producto solo filtra *Sets*: ningún montaje de *Luces* está
+   ligado a un tipo (salvo `PRESET` con *Mobiliario exterior*). Y el filtro
+   usa solo `StudioPreset.set` (casi todos los tipos dejan un set); una tabla
+   de qué sets sirven a qué tipo es una decisión fotográfica, sin hacer.
+3. El segundo filtro de *Sets*, *Sujeto* (el `hero`), que no pidió nadie.
+4. Lo que pasa con la geometría de un set: un set que entra sustituye la del
+   anterior con cualquier respuesta; *Luces* con *Ocultar* o *Añadir* la deja,
+   con su charco encendido y su exposición.
+5. Preguntar por defecto, también con los focos sin tocar del tipo de
+   producto (lo literal de la petición), frente a preguntar solo si están
+   modificados o hay focos propios.
+6. Los tres tamaños (cuatro, tres y dos columnas; el pequeño sin etiqueta) y
+   un solo tamaño para los dos grupos.
+
 ## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus** — hecha
 
 **Qué.** La parte sin motor de M2 (el modelo ya tiene `textures`, los
@@ -5103,8 +5216,8 @@ material (el campo *Bisel de arista* del inspector deja de decir
 diedro > 20° y una rejilla o BVH propio de aristas), mezclando la normal
 de las dos caras según la distancia a la arista con un perfil circular;
 vale para el reflejo (la luz coge la arista) y para la sombra; límite de
-coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, portar a
-`rt-core` las recetas procedurales de EZ Packshot (veta
+coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, llevar a
+`rt-core` las recetas procedurales del catálogo (veta
 de anillos con dos colores, variación, ruido axial y poro; trama de hilos
 con tipo de tejido, hilos por cm y relieve) como funciones de sombreado
 con ruido propio (Perlin o *simplex*, escrito aquí y con la estadística
@@ -5290,7 +5403,7 @@ ARCHITECTURE §5.2 octies).
   40…; antes 14 para el roble, por pieza); el mando nuevo *Escala* los
   multiplica. SPEC §3.3 lo dice. Un proyecto guardado conserva su
   `ringDensity` antiguo, que ahora se lee por 100 mm.
-- **Campos nuevos que el catálogo de EZ Packshot no tiene**: `ringContrast`,
+- **Campos nuevos**: `ringContrast`,
   `poreSize`, `poreBand`, `woodFigure`, `woodScale` y los cuatro de los
   nudos (claves nuevas; ninguna renombrada).
 - **El relieve de los anillos, fuera** (decisión del líder: las esferas
@@ -5393,8 +5506,8 @@ ARCHITECTURE §5.2 octies).
   Un proyecto guardado conserva su `threadCount` antiguo, que
   ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
   cm, invisible).
-- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
-  EZ Packshot es 2/2 y la siguen usando la sarga y el carbono): con 2/2 su
+- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` es
+  2/2 y la siguen usando la sarga y el carbono): con 2/2 su
   color medio era un gris azulado (la mitad de la cara, trama blanca); el
   de verdad es de urdimbre. Cambia su color en la vista *Rápida*. La hoja
   enseña los dos para el veredicto.
@@ -6041,7 +6154,7 @@ navegador, en CI): las 72 miniaturas de montaje (160 × 120 y 64 × 64) con
 la pieza de ejemplo en gris neutro, y las esferas de los 77 materiales,
 con el hash de su receta en un chunk `tEXt` del PNG; `--check` falla si
 alguna está desactualizada y la suite lo ejecuta. Sustituye las PNG
-portadas de EZ Packshot en `public/thumbs/`.
+anteriores de `public/thumbs/`.
 
 **Depende de.** E4, E5 (para que las de color y vidrio salgan bien).
 
@@ -6198,8 +6311,8 @@ No encajó con el plan:
 
 ## M1 · Cara CAD entera — **Sonnet** — hecha
 
-**Qué.** Selección de caras por continuidad de superficie, portando el
-algoritmo E2 de EZ Packshot: adyacencia por **posición** de vértice
+**Qué.** Selección de caras por continuidad de superficie: adyacencia
+por **posición** de vértice
 (soldadura a 1e-5 del tamaño de la malla), cruce de arista si el diedro es
 menor que el ángulo de arista viva (30°) **y** menor que 2.5 veces la
 curvatura propia de la cara clicada; las aristas marcadas por el
@@ -6237,14 +6350,12 @@ marcada, rangos CAD, piezas separadas; las mutaciones se cuentan en
 No encajó con el plan:
 
 - **Límite del borde con curvatura suave (decisión pendiente de
-  Fable).** Se cambió una cosa del algoritmo de EZ Packshot: su
-  estimación de la curvatura contaba también las aristas que son
-  frontera (marcadas o más agudas que 30°), y un triángulo en el borde
-  de una cara plana, junto a una pared, medía la curvatura de la
-  esquina y la cara se escapaba por un chaflán; aquí solo cuentan las
-  aristas que se podrían cruzar (test *a flat face is flat to its
-  rim*). Queda el caso que un clic sobre una malla no puede
-  distinguir: un triángulo en el borde de una cara plana cuya única
+  Fable).** La estimación de la curvatura solo cuenta las aristas que
+  se podrían cruzar (test *a flat face is flat to its rim*): si contara
+  también las que son frontera (marcadas o más agudas que 30°), un
+  triángulo en el borde de una cara plana, junto a una pared, mediría la
+  curvatura de la esquina y la cara se escaparía por un chaflán. Queda
+  el caso que un clic sobre una malla no puede distinguir: un triángulo en el borde de una cara plana cuya única
   arista que gira es un redondeo suave (unos pocos grados por paso)
   parece una faceta de una cara curva, y la cara sigue el redondeo; el
   interior de la misma cara plana no. No afecta a STEP ni IGES (los
@@ -8021,7 +8132,7 @@ filas que nombran algo que no existe aún están en «Qué no encajó»):
 | Cámara | no escribe | 28 mm en cada cámara que no esté bloqueada | 50 mm |
 
 *Estilo Interior.* `LIGHT_STYLES` pasa de 9 a 10 entradas (`INTERIOR` la última) y `LIGHT_SETUPS` de 88 a 95: las siete
-recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes de EZ Packshot y los
+recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes del catálogo base y los
 16 sets, intactos: un test compara los 71 rigs con el fixture de antes de L6). Cada receta es un set sin decoración:
 elige su mundo (`SKY` con un foco de sol que coloca el sol del cielo, o `STUDIO`), y trae su desvío de exposición
 (`exposureEv`) y la intensidad del entorno (`envStrength`), porque la hora del día **es** el brillo de la imagen y aquí,
@@ -8170,8 +8281,8 @@ volver a *Producto*); captura `docs/ui/scene-type-interior.png`.
 **Qué.** Nodo `ROOM` paramétrico de `INTERIORS.md` §3.2 (ancho, fondo,
 alto; aberturas con posición, tamaño y alféizar; material por superficie;
 zócalo; *ocultar pared del lado de la cámara*; variante ciclorama con el
-perfil de EZ Packshot), editable en el inspector y en el visor (asas en
-las aberturas), guardado en el proyecto y exportado al RSB como mallas
+perfil del barrido infinito de las primitivas), editable en el inspector
+y en el visor (asas en las aberturas), guardado en el proyecto y exportado al RSB como mallas
 más una sección `PORT` por abertura; **portales automáticos** también
 para habitaciones importadas (heurística: cuadriláteros de vidrio o
 transparentes en la envolvente), sin jerga en la interfaz; material
@@ -11407,6 +11518,14 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   (centrado en el corte, como mucho medio plano, sin fundido al final); y
   la calidad del vídeo (automática, unos 0,1 bits por píxel, sin alfa ni
   sonido).
+- **L7** (los ◆ de su párrafo): que las recetas de *Interior* y los tres
+  montajes de sol (cambian el entorno, no crean nada) sean *Luces* y que
+  `PRESET` cambie de grupo con el tipo de producto; el tipo de producto solo
+  como filtro de *Sets* y solo por `StudioPreset.set` (falta una tabla de qué
+  sets sirven a cada tipo); el filtro *Sujeto*; que un set que entra sustituya
+  siempre la decoración del anterior y que *Luces* con *Ocultar* o *Añadir* la
+  deje; preguntar por defecto también con los focos sin tocar; los tres
+  tamaños de miniatura (4, 3 y 2 columnas, la pequeña sin etiqueta).
 - **H1** (pasada v0.1.16): los grises auxiliares `ink-2` e `ink-3` quedan
   por debajo de 7:1 en 36 pares. Para llegar a 7:1 en todas las superficies
   tendrían que ser `#434343` o más oscuros en claro y `#b5b5b5` o más

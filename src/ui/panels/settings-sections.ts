@@ -527,7 +527,7 @@ function aboutRows(): SettingsHooks['rows'] {
     },
     'about.credits': () => {
       const parts = rowShell('about.credits', { control: null, wide: true, hideLabel: true });
-      parts.el.append(h('p', { class: 'note' }, t('set.ab.credits'), ' ', link('https://github.com/Grohle/EZPackshot', 'EZ Packshot')));
+      parts.el.append(h('p', { class: 'note' }, t('set.ab.credits')));
       return parts.el;
     },
   };

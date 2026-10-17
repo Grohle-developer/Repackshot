@@ -1,4 +1,4 @@
-// Physics data (phase S2, not ported): the density a part falls with, by the category of its material, and the
+// Physics data (phase S2): the density a part falls with, by the category of its material, and the
 // surface parameters a part has until the inspector's Physics section sets its own. Keys are the material
 // categories of src/data/materials.ts (stable); values are typical densities of what each category holds, kg/m³.
 

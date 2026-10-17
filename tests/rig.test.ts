@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import { describe, it, expect } from 'vitest';
 import { kelvinToRgb, specColor, specIrradiance } from '../src/core/light-math';
 import {
@@ -22,7 +20,7 @@ import {
 } from '../src/data';
 import type { LightSpec } from '../src/data';
 
-// The setups of the catalogue that are not a set of L6 (the 71 of EZ Packshot and the 7 of Interior, K1): the sets also give part of the level to their pool (tests/sets.test.ts).
+// The setups of the catalogue that are not a set of L6 (the 71 of the base catalogue and the 7 of Interior, K1): the sets also give part of the level to their pool (tests/sets.test.ts).
 const SETUP_KEYS_WITHOUT_PRESET = LIGHT_SETUPS.filter((s) => s.key !== 'PRESET' && s.style !== 'SETS').map((s) => s.key);
 
 describe('presetIrradiance', () => {
@@ -96,7 +94,7 @@ describe('studioRig', () => {
 
 describe('setupRig', () => {
   it('keeps the total irradiance of the preset for every setup and every preset', () => {
-    // The 71 setups of EZ Packshot (PRESET apart) and the 7 of Interior (K1); the 16 sets of L6 are normalised by core/sets.ts.
+    // The 71 setups of the base catalogue (PRESET apart) and the 7 of Interior (K1); the 16 sets of L6 are normalised by core/sets.ts.
     expect(SETUP_KEYS_WITHOUT_PRESET).toHaveLength(78);
     expect(STUDIO_PRESETS).toHaveLength(16);
     let checked = 0;
