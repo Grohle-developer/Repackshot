@@ -2,7 +2,7 @@
 // Browser checks of phase M3a (the material editor by nodes and its Fast preview) in the built app, with the local
 // Chromium and swiftshader.
 //
-//   npm run build && node tools/material-nodes-check.mjs [--url http://localhost:4237] [--shots docs/ui] [--only edit,marble,chrome]
+//   npm run build && node tools/material-nodes-check.mjs [--url http://localhost:4237] [--shots docs/ui] [--only edit,marble,wood,chrome]
 //
 // Without --url it serves dist/ with `vite preview` on port 4237 and stops it at the end (by the pids `lsof` reports).
 //
@@ -13,6 +13,10 @@
 //            the link back and the body is as it was; Delete removes the node, Ctrl D duplicates one.
 //   marble   Examples ▸ Marble lays the ten-node graph, the node previews arrive, the bakes finish, and the editor and
 //            the bottle in Fast are captured: docs/ui/material-nodes.png and docs/ui/material-nodes-preview.png.
+//   wood     (M3c) Examples ▸ Oak (Wood node) lays the Wood node into the output (two nodes, four links, a program of
+//            pattern instructions); its node previews arrive, the Wood node's panel shows the family's parameters (rings
+//            per 100 mm), the Fast preview's bake finishes and the body turns to wood; the editor with the Wood node
+//            selected is captured: docs/ui/material-nodes-wood.png.
 //   chrome   the editor's chrome is achromatic in both themes (every computed colour of its elements has r = g = b,
 //            but the previews, the colour swatches and the ramp's bar, which are content).
 //
@@ -295,6 +299,46 @@ async function marbleCheck(browser) {
   console.log(`marble: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
 }
 
+async function woodCheck(browser) {
+  const f = [];
+  const log = {};
+  const { page, context, errors } = await open(browser, 'example=1&theme=dark&lang=en&mode=fast');
+  await settle(page, 800);
+  const box = await bodyBox(page);
+  log.before = await meanColour(page, box);
+  await openEditor(page);
+  await page.locator('[data-ge-examples]').click();
+  await page.locator('.menu-item', { hasText: /^Oak \(Wood node\)/ }).click();
+  await settle(page, 400);
+  const nodes = await nodeIds(page);
+  log.nodes = nodes;
+  ok(nodes.length === 2 && nodes.some((n) => n.endsWith(':WOOD')), `the wood example laid ${JSON.stringify(nodes)}`, f);
+  const status = await page.locator('[data-ge-status]').textContent();
+  log.status = status;
+  ok(/2 nodes · 4 links · program of \d+ instructions/i.test(status ?? ''), `the status line: ${status}`, f);
+  await page.waitForFunction(() => Number(document.querySelector('[data-material-editor]')?.dataset.previews ?? 0) > 0, null, { timeout: 120000 }).catch(() => f.push('no node previews arrived'));
+  await page.locator('.ge-node[data-type="WOOD"] .ge-head').click();
+  await settle(page, 300);
+  const panel = (await page.locator('.me').textContent()) ?? '';
+  ok(/Rings per 100 mm/.test(panel) && /Pore size/.test(panel), 'the Wood node panel does not show the family parameters', f);
+  await bakesDone(page);
+  // Framed, with the pointer off the cards (no tooltip over the node's sphere).
+  await page.keyboard.press('f');
+  const me = await page.locator('.me').boundingBox();
+  await page.mouse.move(me.x + me.width * 0.4, me.y + me.height - 40);
+  await settle(page, 800);
+  await page.locator('.me').screenshot({ path: join(SHOTS, 'material-nodes-wood.png') });
+  await page.locator('.me button[aria-label="Close"]').click();
+  await settle(page, 600);
+  log.after = await meanColour(page, box);
+  // Oak is warmer than the body's paint: its red over its blue rises by 20 or more.
+  ok(log.after[0] - log.after[2] > log.before[0] - log.before[2] + 20, `the bottle did not turn to wood in Fast: ${JSON.stringify(log.before)} → ${JSON.stringify(log.after)}`, f);
+  ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
+  await context.close();
+  results.wood = { ok: f.length === 0, failures: f, ...log };
+  console.log(`wood: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
+}
+
 async function chromeCheck(browser) {
   const f = [];
   const log = {};
@@ -304,7 +348,8 @@ async function chromeCheck(browser) {
     await page.locator('[data-ge-examples]').click();
     await page.locator('.menu-item').nth(4).click();
     await settle(page, 400);
-    await page.locator('.ge-node').nth(3).locator('.ge-head').click();
+    // The wood example (M3c: a Wood node into the output): its node, with its colour swatches.
+    await page.locator('.ge-node').nth(0).locator('.ge-head').click();
     await settle(page, 300);
     const bad = await chromatic(page, '.me');
     log[theme] = bad;
@@ -330,9 +375,10 @@ try {
   await waitFor(BASE_URL);
   const { chromium } = await import('playwright-core');
   browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ['--no-sandbox', '--disable-gpu', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const only = opt('only', 'edit,marble,chrome').split(',');
+  const only = opt('only', 'edit,marble,wood,chrome').split(',');
   if (only.includes('edit')) await editCheck(browser);
   if (only.includes('marble')) await marbleCheck(browser);
+  if (only.includes('wood')) await woodCheck(browser);
   if (only.includes('chrome')) await chromeCheck(browser);
   writeFileSync(join(OUT, 'material-nodes-check.json'), JSON.stringify(results, null, 2));
   const all = Object.values(results).every((r) => r.ok);

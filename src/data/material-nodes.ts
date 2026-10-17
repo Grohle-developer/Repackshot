@@ -13,8 +13,8 @@ import type { Label } from './types';
 export type SocketType = 'float' | 'color' | 'vector' | 'normal';
 export const SOCKET_TYPES: readonly SocketType[] = ['float', 'color', 'vector', 'normal'];
 
-/** What an unconnected input without an inline value reads. */
-export type ImplicitSource = 'NORMAL' | 'UV0' | 'OBJECT';
+/** What an unconnected input without an inline value reads (POSITION, M3c: the point itself, part space in mm). */
+export type ImplicitSource = 'NORMAL' | 'UV0' | 'OBJECT' | 'POSITION';
 
 export interface SocketSpec {
   /** Stable. */
@@ -173,6 +173,61 @@ export const GRADIENT_KINDS: readonly ParamOption[] = [
   opt('DIAGONAL', 'Diagonal', 'Diagonal'),
   opt('SPHERICAL', 'Spherical', 'Esférico'),
   opt('RADIAL', 'Radial', 'Radial'),
+];
+
+/** M3c: the Wood node's parameters, the Wood family's keys in its units (rings per 100 mm, millimetres). */
+const KNOTTED = { param: 'woodFigure', values: ['RINGS'] } as const;
+export const WOOD_PARAMS: readonly ParamSpec[] = [
+  { key: 'woodColor1', kind: 'color', label: L('Spring wood', 'Madera de primavera'), default: [0.56, 0.38, 0.21] },
+  { key: 'woodColor2', kind: 'color', label: L('Summer wood', 'Madera de verano'), default: [0.3, 0.18, 0.09] },
+  {
+    key: 'woodFigure',
+    kind: 'enum',
+    label: L('Figure', 'Figura'),
+    default: 'RINGS',
+    options: [opt('RINGS', 'Rings', 'Anillos'), opt('STRIPS', 'Strips (bamboo)', 'Tiras (bambú)'), opt('SPECKLE', 'Speckle (fibreboard)', 'Moteado (DM)'), opt('STREAKED', 'Streaked (ebony)', 'Vetas (ébano)')],
+  },
+  { key: 'ringDensity', kind: 'number', label: L('Rings per 100 mm', 'Anillos por 100 mm'), default: 33, min: 1, max: 60, step: 1 },
+  { key: 'woodScale', kind: 'number', label: L('Scale', 'Escala'), default: 1, min: 0.1, max: 10, step: 0.05 },
+  { key: 'ringContrast', kind: 'number', label: L('Ring contrast', 'Contraste de anillos'), default: 0.3, min: 0, max: 1, step: 0.01 },
+  { key: 'ringVariation', kind: 'number', label: L('Ring variation', 'Variación de anillos'), default: 0.4, min: 0, max: 1, step: 0.01 },
+  { key: 'ringNoise', kind: 'number', label: L('Ring wander', 'Ondulación de anillos'), default: 0.3, min: 0, max: 1, step: 0.01 },
+  { key: 'axialNoise', kind: 'number', label: L('Axial noise', 'Ruido axial'), default: 0.2, min: 0, max: 1, step: 0.01 },
+  { key: 'colorNoise', kind: 'number', label: L('Colour noise', 'Ruido de color'), default: 0.2, min: 0, max: 1, step: 0.01 },
+  { key: 'poreSize', kind: 'number', label: L('Pore size', 'Tamaño de poro'), default: 0.2, min: 0, max: 2, step: 0.01, unit: 'mm' },
+  { key: 'poreDepth', kind: 'number', label: L('Pore depth', 'Hondo de poro'), default: 0.3, min: 0, max: 1, step: 0.01 },
+  { key: 'poreBand', kind: 'number', label: L('Pores in the spring wood', 'Poros en la madera de primavera'), default: 0, min: 0, max: 1, step: 0.01 },
+  { key: 'knotCount', kind: 'int', label: L('Knots', 'Nudos'), default: 0, min: 0, max: 12, step: 1, when: KNOTTED },
+  { key: 'knotSize', kind: 'number', label: L('Knot size', 'Tamaño de nudo'), default: 15, min: 5, max: 40, step: 0.5, unit: 'mm', when: KNOTTED },
+  { key: 'knotSizeVar', kind: 'number', label: L('Knot variation', 'Variación de nudos'), default: 0.3, min: 0, max: 1, step: 0.01, when: KNOTTED },
+  { key: 'knotDarkness', kind: 'number', label: L('Knot darkness', 'Oscuridad de nudos'), default: 0.6, min: 0, max: 1, step: 0.01, when: KNOTTED },
+  { key: 'seed', kind: 'int', label: L('Seed', 'Semilla'), default: 0, min: 0, max: 9999, step: 1, when: KNOTTED },
+];
+
+/** M3c: the Fabric node's parameters, the Fabric family's keys in its units (threads per cm). */
+export const FABRIC_PARAMS: readonly ParamSpec[] = [
+  { key: 'threadColor1', kind: 'color', label: L('Warp', 'Urdimbre'), default: [0.7, 0.7, 0.68] },
+  { key: 'threadColor2', kind: 'color', label: L('Weft', 'Trama'), default: [0.6, 0.6, 0.58] },
+  {
+    key: 'weave',
+    kind: 'enum',
+    label: L('Weave', 'Tejido'),
+    default: 'PLAIN',
+    options: [
+      opt('PLAIN', 'Plain', 'Tafetán'),
+      opt('TWILL', 'Twill 2/2', 'Sarga 2/2'),
+      opt('TWILL31', 'Twill 3/1 (denim)', 'Sarga 3/1 (vaquero)'),
+      opt('SATIN', 'Satin', 'Raso'),
+      opt('CANVAS', 'Canvas', 'Lona'),
+      opt('KNIT', 'Knit', 'Punto'),
+      opt('FELT', 'Felt', 'Fieltro'),
+    ],
+  },
+  { key: 'threadCount', kind: 'number', label: L('Threads per cm', 'Hilos por cm'), default: 40, min: 2, max: 200, step: 1, unit: '/cm' },
+  { key: 'weaveDepth', kind: 'number', label: L('Weave relief', 'Relieve del tejido'), default: 0.35, min: 0, max: 1, step: 0.01 },
+  { key: 'yarnTwist', kind: 'number', label: L('Yarn twist', 'Torsión del hilo'), default: 1, min: 0, max: 1, step: 0.01 },
+  { key: 'fuzz', kind: 'number', label: L('Fuzz', 'Pelusa'), default: 0.3, min: 0, max: 1, step: 0.01 },
+  { key: 'fuzzRoughness', kind: 'number', label: L('Fuzz roughness', 'Rugosidad de la pelusa'), default: 0.4, min: 0, max: 1, step: 0.01 },
 ];
 
 export const MATERIAL_NODES: readonly NodeSpec[] = [
@@ -412,6 +467,45 @@ export const MATERIAL_NODES: readonly NodeSpec[] = [
     inputs: [f('strength', 'Strength', 'Intensidad', 1, { max: 10 }), f('distance', 'Distance', 'Distancia', 0.1, { max: 100, unit: 'mm' }), f('height', 'Height', 'Altura', 0), nIn()],
     outputs: [out('normal', 'normal', 'Normal', 'Normal')],
     params: [{ key: 'invert', kind: 'bool', label: L('Invert', 'Invertir'), default: false }],
+  },
+  {
+    key: 'WOOD',
+    category: 'TEXTURE',
+    label: L('Wood', 'Madera'),
+    description: L(
+      'The Wood family’s procedural wood (rings, figure, pores, fibres and knots), in millimetres of the part: its colour, roughness, grain and relief.',
+      'La madera procedural de la familia Madera (anillos, figura, poros, fibras y nudos), en milímetros de la pieza: su color, rugosidad, veta y relieve.',
+    ),
+    keywords: 'timber grain rings knots pores oak pine madera veta anillos nudos poros roble pino',
+    inputs: [vIn('POSITION', 'Point', 'Punto'), nIn(), f('roughness', 'Roughness', 'Rugosidad', 0.45)],
+    outputs: [
+      out('color', 'color', 'Colour', 'Color'),
+      out('roughness', 'float', 'Roughness', 'Rugosidad'),
+      out('anisotropy', 'float', 'Anisotropy', 'Anisotropía'),
+      out('normal', 'normal', 'Normal', 'Normal'),
+      out('height', 'float', 'Height (mm)', 'Altura (mm)'),
+    ],
+    params: WOOD_PARAMS,
+  },
+  {
+    key: 'FABRIC',
+    category: 'TEXTURE',
+    label: L('Fabric', 'Tela'),
+    description: L(
+      'The Fabric family’s woven or knitted cloth (weave, threads per cm, relief, twist), in millimetres of the part: its colour, roughness, threads and relief.',
+      'La tela tejida o de punto de la familia Tela (tejido, hilos por cm, relieve, torsión), en milímetros de la pieza: su color, rugosidad, hilos y relieve.',
+    ),
+    keywords: 'cloth textile weave thread twill denim knit felt tela tejido hilo sarga vaquero punto fieltro',
+    inputs: [vIn('POSITION', 'Point', 'Punto'), nIn(), f('roughness', 'Roughness', 'Rugosidad', 0.75)],
+    outputs: [
+      out('color', 'color', 'Colour', 'Color'),
+      out('roughness', 'float', 'Roughness', 'Rugosidad'),
+      out('anisotropy', 'float', 'Anisotropy', 'Anisotropía'),
+      out('normal', 'normal', 'Normal', 'Normal'),
+      out('height', 'float', 'Height (mm)', 'Altura (mm)'),
+      out('sheen', 'float', 'Sheen', 'Pelusa'),
+    ],
+    params: FABRIC_PARAMS,
   },
 ];
 

@@ -19,9 +19,11 @@
 //
 // A material is in Nodes mode when it has a `graph`; its family and parameters stay as they were (Simple), so going
 // back to Simple from a graph nobody changed gives the material back exactly. Simple → Nodes makes the minimal
-// graph: the output node alone, its inline values the material's (`outputSetup`). Nodes → Simple happens without a
-// question only when the graph is minimal: the output node alone, no links, and values a family can hold exactly;
-// otherwise the interface asks, and `force` takes the output's own values.
+// graph: the output node alone, its inline values the material's (`outputSetup`); a wood or a fabric (M3c) also gets
+// its Wood or Fabric node, with the family's parameters, into the output's colour, roughness, anisotropy and normal.
+// Nodes → Simple happens without a question only when the graph is minimal (the output node alone, no links, and
+// values a family can hold exactly) or a pattern node into the output as Simple → Nodes makes it (its parameters go
+// back to the family); otherwise the interface asks, and `force` takes the output's own values.
 //
 // The image maps and labels of M2a (`material.textures`) stay a layer over the material in both modes: in Nodes
 // mode they lie over what the graph gives, as they lie over the parameters in Simple mode.
@@ -359,9 +361,9 @@ const rgbOf = (v: unknown, d: readonly number[]): Vec3 => (Array.isArray(v) && v
 
 /**
  * What the output of a material's minimal graph receives: the values the engine and the preview read from its
- * parameters (io/rsb.ts `materialToRsb`, render/materials.ts), family by family. Wood and fabric become their flat
- * colour (their rings and weave are the engine's, E6): the conversion keeps their parameters, so going back to
- * Simple without changes gives them back.
+ * parameters (io/rsb.ts `materialToRsb`, render/materials.ts), family by family. Wood and fabric get their mean colour
+ * here, which their Wood or Fabric node's colour replaces once it is linked (M3c, `minimalGraph`): the conversion keeps
+ * their parameters, so going back to Simple without changes gives them back.
  */
 export function outputSetup(m: Pick<MaterialInstance, 'family' | 'params'>): OutputSetup {
   const inputs: Record<string, InputValue> = {};
@@ -420,14 +422,49 @@ export function outputSetup(m: Pick<MaterialInstance, 'family' | 'params'>): Out
 
 /** Where a new graph's output node sits on the canvas. */
 export const OUTPUT_POSITION = { x: 560, y: 60 } as const;
+/** Where the Wood or Fabric node of a converted material sits (M3c), left of the output. */
+export const PATTERN_POSITION = { x: 200, y: 60 } as const;
 
-/** The minimal graph of a material of parameters: its output node alone, with the material's values. */
-export function minimalGraph(m: Pick<MaterialInstance, 'family' | 'params'>): MaterialGraph {
+/** The node type that draws a family's pattern (M3c): Wood and Fabric; none for the others. */
+export const PATTERN_NODE_OF: Readonly<Partial<Record<MaterialFamily, string>>> = { WOOD: 'WOOD', FABRIC: 'FABRIC' };
+/** The links from a pattern node to the output (M3c): its colour, roughness, anisotropy and normal. */
+export const PATTERN_LINKS: readonly (readonly [output: string, input: string])[] = [
+  ['color', 'baseColor'],
+  ['roughness', 'roughness'],
+  ['anisotropy', 'anisotropic'],
+  ['normal', 'normal'],
+];
+
+type Convertible = Pick<MaterialInstance, 'family' | 'params'> & { wear?: { seed?: number } };
+
+/** The pattern node of a wood or a fabric (M3c): the family's parameters as its own, its roughness as its input. */
+function patternNode(m: Convertible, type: string, id: string): GraphNode {
+  const node = newNode(type, id, PATTERN_POSITION.x, PATTERN_POSITION.y)!;
+  const spec = nodeSpec(type)!;
+  for (const ps of spec.params) {
+    const v = ps.key === 'seed' ? m.wear?.seed : m.params[ps.key];
+    // The family's colours are RGBA; a node's, RGB.
+    const value = ps.kind === 'color' && Array.isArray(v) ? v.slice(0, 3) : v;
+    if (value !== undefined) node.params[ps.key] = normalizeParam(ps, value);
+  }
+  const rough = spec.inputs.find((i) => i.key === 'roughness')!;
+  node.inputs.roughness = normalizeInput(rough, num(m.params.roughness, rough.default as number));
+  return node;
+}
+
+/**
+ * The graph of a material of parameters: its output node with the material's values and, for a wood or a fabric
+ * (M3c), the Wood or Fabric node with the family's parameters, its colour, roughness, anisotropy and normal into the
+ * output, so that the graph draws what the material draws (`PATN` in the engine, the same recipe as a program).
+ */
+export function minimalGraph(m: Convertible): MaterialGraph {
   const node = newNode(OUTPUT_TYPE, 'n1', OUTPUT_POSITION.x, OUTPUT_POSITION.y)!;
   const s = outputSetup(m);
   node.inputs = s.inputs;
   node.params = { ...node.params, absorptionMm: s.params.absorptionMm, thinWalls: s.params.thinWalls };
-  return { version: GRAPH_VERSION, nodes: [node], links: [] };
+  const type = PATTERN_NODE_OF[m.family];
+  if (!type) return { version: GRAPH_VERSION, nodes: [node], links: [] };
+  return { version: GRAPH_VERSION, nodes: [patternNode(m, type, 'n2'), node], links: PATTERN_LINKS.map(([output, input]) => ({ from: 'n2', output, to: 'n1', input })) };
 }
 
 /** A graph that is its output node alone, with nothing connected. */
@@ -435,11 +472,26 @@ export function isMinimal(g: MaterialGraph): boolean {
   return g.nodes.length === 1 && g.nodes[0].type === OUTPUT_TYPE && g.links.length === 0;
 }
 
+/**
+ * M3c: the output and the pattern node of a graph that is a family's pattern as nodes: an output and one Wood or
+ * Fabric node, nothing into the pattern node, and exactly its colour, roughness, anisotropy and normal into the
+ * output (what Simple → Nodes makes of a wood or a fabric). Null for any other graph.
+ */
+export function patternGraphOf(g: MaterialGraph): { out: GraphNode; node: GraphNode } | null {
+  if (g.nodes.length !== 2 || g.links.length !== PATTERN_LINKS.length) return null;
+  const out = g.nodes.find((n) => n.type === OUTPUT_TYPE);
+  const node = g.nodes.find((n) => n.type === 'WOOD' || n.type === 'FABRIC');
+  if (!out || !node) return null;
+  const ok = PATTERN_LINKS.every(([output, input]) => g.links.some((l) => l.from === node.id && l.output === output && l.to === out.id && l.input === input));
+  return ok ? { out, node } : null;
+}
+
 const close = (a: number, b: number): boolean => a === b || Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 
-function sameSetup(s: OutputSetup, node: GraphNode): boolean {
+function sameSetup(s: OutputSetup, node: GraphNode, skip: readonly string[] = []): boolean {
   if (!close(Number(node.params.absorptionMm), s.params.absorptionMm) || node.params.thinWalls !== s.params.thinWalls) return false;
   for (const [k, v] of Object.entries(s.inputs)) {
+    if (skip.includes(k)) continue;
     const w = node.inputs[k];
     if (Array.isArray(v) !== Array.isArray(w)) return false;
     if (Array.isArray(v)) {
@@ -447,6 +499,26 @@ function sameSetup(s: OutputSetup, node: GraphNode): boolean {
     } else if (!close(v, w as number)) return false;
   }
   return true;
+}
+
+/**
+ * M3c: the family and parameters a pattern graph (`patternGraphOf`) stands for: a wood or a fabric with the pattern
+ * node's parameters (colours as RGBA), its roughness input and the output's clear coat (and, for a fabric, the
+ * coat's roughness); the rest the material's own when it is of that family already. The seed is the material's.
+ */
+function familyOfPattern(m: MaterialInstance, out: GraphNode, node: GraphNode): { family: MaterialFamily; params: MaterialParams } {
+  const family: MaterialFamily = node.type === 'WOOD' ? 'WOOD' : 'FABRIC';
+  const params: MaterialParams = { ...(m.family === family ? m.params : {}) };
+  const set = params as Record<string, unknown>;
+  for (const ps of specOf(node).params) {
+    if (ps.key === 'seed') continue;
+    const v = node.params[ps.key];
+    set[ps.key] = ps.kind === 'color' && Array.isArray(v) ? [v[0], v[1], v[2], 1] : v;
+  }
+  set.roughness = num(node.inputs.roughness, 0.5);
+  set.coat = num(out.inputs.coat, 0);
+  if (family === 'FABRIC') set.coatRoughness = num(out.inputs.coatRoughness, 0.05);
+  return { family, params };
 }
 
 /**
@@ -495,8 +567,10 @@ function withoutGraph(m: MaterialInstance): MaterialInstance {
 
 /**
  * Going back to Simple: `exact` when nothing is lost (the graph is minimal and its values are the material's own,
- * or ones a family holds exactly); `material` is the material without its graph, with the family and parameters
- * of the output's own values unless they are the material's own already.
+ * or ones a family holds exactly; M3c: or it is a wood's or a fabric's pattern node into the output, whose
+ * parameters the family holds, with the material's seed); `material` is the material without its graph, with the
+ * family and parameters of the output's own values (or of the pattern node) unless they are the material's own
+ * already.
  */
 export function backToSimple(m: MaterialInstance): { exact: boolean; material: MaterialInstance } {
   const g = m.graph;
@@ -504,6 +578,19 @@ export function backToSimple(m: MaterialInstance): { exact: boolean; material: M
   const out = outputNode(g);
   if (!out) return { exact: false, material: withoutGraph(m) };
   if (isMinimal(g) && sameSetup(outputSetup(m), out)) return { exact: true, material: withoutGraph(m) };
+  const pattern = patternGraphOf(g);
+  if (pattern) {
+    const linked = PATTERN_LINKS.map(([, input]) => input);
+    // Untouched since Simple → Nodes: the material itself.
+    const own = PATTERN_NODE_OF[m.family] === pattern.node.type ? patternNode(m, pattern.node.type, pattern.node.id) : null;
+    if (own && sameValue(own.params, pattern.node.params) && sameValue(own.inputs, pattern.node.inputs) && sameSetup(outputSetup(m), pattern.out, linked)) {
+      return { exact: true, material: withoutGraph(m) };
+    }
+    const s = familyOfPattern(m, pattern.out, pattern.node);
+    const seed = pattern.node.type !== 'WOOD' || num(pattern.node.params.seed, 0) === num(m.wear?.seed, 0);
+    const exact = seed && sameSetup(outputSetup(s), pattern.out, linked);
+    return { exact, material: { ...withoutGraph(m), family: s.family, params: s.params } };
+  }
   const s = simpleFromOutput(out);
   const exact = isMinimal(g) && sameSetup(outputSetup(s), out);
   return { exact, material: { ...withoutGraph(m), family: s.family, params: s.params } };

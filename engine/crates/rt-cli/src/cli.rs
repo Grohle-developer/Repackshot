@@ -35,6 +35,8 @@ USAGE:
     rt --write-e6-cloth-example <scene.rsb>
     rt --write-m2b-example <scene.rsb>
     rt --write-m3b-example <scene.rsb>
+    rt --write-m3c-wood-example <scene.rsb>
+    rt --write-m3c-cloth-example <scene.rsb>
     rt --write-e9-example <scene.rsb>
     rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --adaptive-noise <dir> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
@@ -152,6 +154,12 @@ OPTIONS:
                             write the M3b scene of material programs (node materials run
                             by the engine: noise, ramps, a bump, an image, cut-outs,
                             curvature, emission, glass) as an RSB file
+        --write-m3c-wood-example <f>
+                            write the M3c wood scene (the E6 pattern scene drawn by WOOD
+                            nodes of material programs) as an RSB file
+        --write-m3c-cloth-example <f>
+                            write the M3c cloth scene (the E6 cloth scene drawn by CLOTH
+                            nodes of material programs) as an RSB file
         --write-e9-example <f>
                             write the E9 parity scene (the E5 scene with a scattering
                             medium in its big sphere and a dispersive crystal sphere) as
@@ -452,6 +460,16 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the M3c wood scene of pattern nodes (`rt_core::example::m3c_wood_scene`).
+    WriteM3cWoodExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the M3c cloth scene of pattern nodes (`rt_core::example::m3c_cloth_scene`).
+    WriteM3cClothExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the E9 parity scene (`rt_core::example::e9_scene`) as an RSB file.
     WriteE9Example {
         /// RSB file to write.
@@ -609,6 +627,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e6cloth = None;
     let mut write_m2b = None;
     let mut write_m3b = None;
+    let mut write_m3c_wood = None;
+    let mut write_m3c_cloth = None;
     let mut write_e9 = None;
     let mut sss_dir = None;
     let mut write_e11 = None;
@@ -740,6 +760,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e6-cloth-example" => write_e6cloth = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-m2b-example" => write_m2b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-m3b-example" => write_m3b = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-m3c-wood-example" => {
+                write_m3c_wood = Some(PathBuf::from(value(&mut it, arg)?));
+            }
+            "--write-m3c-cloth-example" => {
+                write_m3c_cloth = Some(PathBuf::from(value(&mut it, arg)?));
+            }
             "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-q1-example" => write_q1 = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -876,6 +902,18 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-m3b-example takes no other option".into());
         }
         return Ok(Command::WriteM3bExample { path });
+    }
+    if let Some(path) = write_m3c_wood {
+        if args.len() != 2 {
+            return Err("--write-m3c-wood-example takes no other option".into());
+        }
+        return Ok(Command::WriteM3cWoodExample { path });
+    }
+    if let Some(path) = write_m3c_cloth {
+        if args.len() != 2 {
+            return Err("--write-m3c-cloth-example takes no other option".into());
+        }
+        return Ok(Command::WriteM3cClothExample { path });
     }
     if let Some(path) = write_e9 {
         if args.len() != 2 {
@@ -1210,6 +1248,18 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteM3bExample { path } => {
             let bytes = rt_core::example::m3b_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteM3cWoodExample { path } => {
+            let bytes = rt_core::example::m3c_wood_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteM3cClothExample { path } => {
+            let bytes = rt_core::example::m3c_cloth_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -1857,6 +1907,19 @@ mod tests {
             })
         );
         assert!(parse(&["--write-m3b-example", "p.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-m3c-wood-example", "w.rsb"]),
+            Ok(Command::WriteM3cWoodExample {
+                path: "w.rsb".into()
+            })
+        );
+        assert_eq!(
+            parse(&["--write-m3c-cloth-example", "c.rsb"]),
+            Ok(Command::WriteM3cClothExample {
+                path: "c.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-m3c-wood-example", "w.rsb", "--samples", "2"]).is_err());
         assert_eq!(
             parse(&["--write-ambient-example", "s4a.rsb"]),
             Ok(Command::WriteAmbientExample {

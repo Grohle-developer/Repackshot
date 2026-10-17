@@ -47,6 +47,9 @@ function controlOf(key: string): Control {
   if (key === 'STRIPES') return { kind: 'uv', dv: 0.05 };
   if (key === 'PLASTIC_LABEL') return { kind: 'turn', deg: 180 };
   if (key === 'GLAZED_CERAMIC') return { kind: 'flip' };
+  // M3c: the Wood node places its wood in the frame of the part's own box (as the Wood family), so a shift of the
+  // mesh moves the wood with it: the control turns the plate upside down, which turns the rings' arches over.
+  if (key === 'WOOD_TWO_NOISES') return { kind: 'flip' };
   return { kind: 'shift', mm: 23 };
 }
 
@@ -138,6 +141,62 @@ export function cylinder(): MeshData {
     }
   }
   return { positions: Float32Array.from(p), normals: Float32Array.from(n), indices: Uint32Array.from(idx), uvs: Float32Array.from(uv) };
+}
+
+/** M3c: a UV sphere of radius `r` (mm) about (0, 0, r): smooth, 64 × 32 segments. */
+export function sphere(r = 50): MeshData {
+  const seg = 64;
+  const rings = 32;
+  const p: number[] = [];
+  const n: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let j = 0; j <= rings; j++) {
+    const v = j / rings;
+    const phi = v * Math.PI;
+    for (let k = 0; k <= seg; k++) {
+      const u = k / seg;
+      const a = u * 2 * Math.PI;
+      const d = [Math.sin(phi) * Math.cos(a), Math.sin(phi) * Math.sin(a), -Math.cos(phi)];
+      p.push(r * d[0], r * d[1], r + r * d[2]);
+      n.push(d[0], d[1], d[2]);
+      uv.push(u, v);
+    }
+  }
+  for (let j = 0; j < rings; j++) {
+    for (let k = 0; k < seg; k++) {
+      const a = j * (seg + 1) + k;
+      const b = a + seg + 1;
+      idx.push(a, a + 1, b + 1, a, b + 1, b);
+    }
+  }
+  return { positions: Float32Array.from(p), normals: Float32Array.from(n), indices: Uint32Array.from(idx), uvs: Float32Array.from(uv) };
+}
+
+/**
+ * M3c: a 100 mm sphere seen from the front in the flat white world, in the Wood family's oak (`FAMILY`), in the oak
+ * converted to nodes by Simple → Nodes (`CONVERTED`), in the wood example of the graphs (`EXAMPLE`), or in the example
+ * turned a quarter of a turn about its vertical axis (`TURNED`, the control: the same surface, the wood moved).
+ */
+export function woodSphereScene(kind: 'FAMILY' | 'CONVERTED' | 'EXAMPLE' | 'TURNED', width: number, height: number): ProjectState {
+  const mat = instanceFromPreset('mPart', 'OAK', 120)!;
+  const nodes: Record<NodeId, SceneNode> = {
+    model: node('model', null, ['part'], [0, 0, 0]),
+    part: node('part', 'model', [], [0, 0, 0], { mesh: registerMesh('m3c:sphere', sphere()), material: 'mPart', smooth: true }),
+  };
+  if (kind === 'TURNED') nodes.part = { ...nodes.part, transform: { ...nodes.part.transform, rotation: [0, 0, 90] } };
+  let s = reduce(createInitialState(), { type: 'scene/addModel', payload: { nodes, roots: ['model'], materials: { mPart: mat } }, replace: true });
+  const part = Object.values(s.scene.nodes).find((n) => n.kind === 'PART' && n.name === 'part')!;
+  const material = part.material!;
+  if (kind !== 'FAMILY') s = reduce(s, { type: 'graph/enable', material });
+  if (kind === 'EXAMPLE' || kind === 'TURNED') s = reduce(s, { type: 'graph/set', material, graph: exampleGraph('WOOD_TWO_NOISES', null)! });
+  s = reduce(s, { type: 'render/set', patch: { width, height } });
+  s = reduce(s, { type: 'camera/set', id: s.camera.active, patch: { azimuth: 0, elevation: 0, distance: 300, target: [0, 0, 50], focalMm: 50, fstop: 0 } });
+  return {
+    ...s,
+    studio: { ...s.studio, lights: [], floor: false, shadow: false },
+    environment: { ...s.environment, kind: 'FLAT', color: [1, 1, 1, 1], strength: 1, background: 'ENVIRONMENT' },
+  };
 }
 
 const node = (id: string, parent: string | null, children: string[], position: Vec3, extra: Partial<SceneNode> = {}): SceneNode => ({

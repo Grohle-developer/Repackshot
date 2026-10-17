@@ -23,6 +23,10 @@ import { graphOfExample, labelPixels, LABEL_HEIGHT, LABEL_WIDTH, registerLabelIm
 import { compileGraph, encodeProgram, NONE, OP, type OpCode, type Program, type ProgramImage, type ValueRef } from '../src/core/material-program';
 import { contractPoints, ProgramRunner, type ImagePixels } from '../src/core/material-interp';
 import { crossHash } from './program-hash';
+import { fabricRecipe, recipeConsts, woodRecipe, type PatternRecipe } from '../src/core/pattern-recipe';
+import { f32Knot, type Placement } from '../src/core/patterns';
+import { meetsBox, placeKnots } from '../src/core/knots';
+import { MATERIAL_PRESETS } from '../src/data/materials';
 
 const PATH = 'tests/fixtures/material-programs.json';
 const SEED = 0x2545f491;
@@ -42,6 +46,8 @@ interface Case {
   sources: number[];
   points: number;
   seed: number;
+  /** M3c: where the pattern instructions' patterns lie (the fixture's `placement`); absent: the point's own space. */
+  placement?: Placement;
 }
 
 /** A program written by hand: registers are never reused (no destination is ever an operand of its own instruction). */
@@ -392,6 +398,85 @@ function instructionCases(): Case[] {
   return cases;
 }
 
+/** The parameters of a catalogue preset (data/materials.ts) by key. */
+function presetParams(key: string): Record<string, unknown> {
+  const p = MATERIAL_PRESETS.find((m) => m.key === key);
+  if (!p) throw new Error(`no preset ${key}`);
+  return p.params as Record<string, unknown>;
+}
+
+/**
+ * M3c: a placement whose knots cover much of the points of `contractPoints` (P within ±100 mm): a wood frame of the
+ * part's own axes with its pith 150 mm below along y, and twelve knots of 26 mm asked, placed in a box of ±100 mm about the
+ * points by core/knots.ts (as the engine places them, in f64), rounded to f32, the wide ones with their crack.
+ */
+function knottyPlacement(): Placement {
+  const centre: [number, number, number] = [0, 150, 0];
+  const half: [number, number, number] = [100, 100, 100];
+  const spec = { count: 12, diameterMm: 26, variation: 0.3, darkness: 0.7, seed: 5 };
+  const knots = placeKnots(spec, centre, half, meetsBox(centre, half));
+  const list = knots.map((k) => f32Knot(k));
+  expect(list.length).toBeGreaterThanOrEqual(4);
+  expect(list.some((k) => k.crack !== null)).toBe(true);
+  return { origin: [0, -150, 0], axes: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], mm: 1, knots: { list, darkness: Math.fround(spec.darkness) } };
+}
+
+/** M3c: the pattern instructions on the points, each with its four outputs, for woods and cloths of the catalogue. */
+function patternCases(): Case[] {
+  const cases: Case[] = [];
+  let seed = 400;
+  const add = (name: string, b: Builder, placement?: Placement, points = 300) => cases.push({ name, program: b.build(), sources: [], points, seed: seed++, ...(placement ? { placement } : {}) });
+  const four = (b: Builder, r: PatternRecipe, ops: readonly [OpCode, OpCode, OpCode, OpCode], scales: readonly number[]) => {
+    const k = b.const(...recipeConsts(r));
+    const rough = b.comp(UV0, 0, 0.5, 0.25);
+    for (const s of scales) {
+      const at = s === 1 ? P : b.scaled(P, s);
+      for (const n of [N, I]) {
+        b.out('V', b.op1(ops[0], 'V', at, n, NONE, k));
+        b.out('F', b.op1(ops[1], 'F', at, n, rough, k));
+        b.out('F', b.op1(ops[2], 'F', at, n, NONE, k));
+        b.out('V', b.op1(ops[3], 'V', at, n, NONE, k));
+      }
+    }
+  };
+  const WOOD_OPS = [OP.WOOD, OP.WOODR, OP.WOODH, OP.WOODN] as const;
+  const CLOTH_OPS = [OP.CLOTH, OP.CLOTHR, OP.CLOTHH, OP.CLOTHN] as const;
+  // Every wood of the catalogue (rings, ring-porous and diffuse, strips, speckle, streaks), at the points and at a fifth.
+  for (const key of ['OAK', 'PINE', 'WALNUT', 'MAPLE', 'EBONY', 'BAMBOO', 'MDF']) {
+    const b = new Builder();
+    four(b, woodRecipe(presetParams(key), 3), WOOD_OPS, [1, 0.2]);
+    add(`WOOD ${key}`, b);
+  }
+  // A ring-porous oak with twelve big knots placed about the points: their end grain, bark, cracks, dish and flow.
+  {
+    const b = new Builder();
+    four(b, woodRecipe({ ...presetParams('OAK'), knotCount: 12, knotSize: 26 }, 5), WOOD_OPS, [1]);
+    add('WOOD knots', b, knottyPlacement(), 1000);
+  }
+  // Every weave (and the carbon twill without twist), at the points, at a twentieth and at a hundredth.
+  for (const key of ['COTTON', 'TWILL', 'DENIM', 'SATIN', 'CANVAS', 'FELT', 'KNIT', 'CARBON']) {
+    const b = new Builder();
+    four(b, fabricRecipe(presetParams(key), 0), CLOTH_OPS, [1, 0.05, 0.01]);
+    add(`CLOTH ${key}`, b);
+  }
+  // A recipe that draws nothing (its scale is not positive): black, the roughness read, height 0, the normal read.
+  {
+    const b = new Builder();
+    const r = woodRecipe(presetParams('OAK'), 0);
+    four(b, { ...r, scaleMm: 0 }, WOOD_OPS, [1]);
+    four(b, { ...fabricRecipe(presetParams('COTTON'), 0), scaleMm: -1 }, CLOTH_OPS, [1]);
+    add('PATTERN nothing', b, undefined, 50);
+  }
+  return cases;
+}
+
+/** The placement as the fixture holds it: f32 little-endian, base64 (origin, axes, mm, darkness, count, then per knot origin, axis, flow, across, middle, radius, crack or −1). */
+function placementBytes(pl: Placement): Uint8Array {
+  const xs: number[] = [...pl.origin, ...pl.axes.flat(), pl.mm, pl.knots.darkness, pl.knots.list.length];
+  for (const k of pl.knots.list) xs.push(...k.origin, ...k.axis, ...k.flow, ...k.across, k.middle, k.radius, k.crack ?? -1);
+  return new Uint8Array(Float32Array.from(xs).buffer);
+}
+
 /** The numbers every scalar function is tried on (computed: ±∞ and NaN cannot be constants). */
 function specials(b: Builder): number[] {
   const finite = [0, -0, 1, -1, 0.5, -0.5, 2, -3, 7.25, 1e-7, 16777216, 16777217, 1e30, -1e30, 1e-40, 0.999, 0.001, 3.4e38, 1.5];
@@ -466,6 +551,12 @@ const b64 = (bytes: Uint8Array): string => {
 };
 const unb64 = (s: string): Uint8Array => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
+/** The runner of a case: its images, and its placement for the patterns (M3c). */
+function runnerOf(c: Case): ProgramRunner {
+  const pl = c.placement;
+  return new ProgramRunner(c.program, pixelsOf(c), pl ? () => pl : undefined);
+}
+
 /** The pixels of the images a case reads. */
 function pixelsOf(c: Case): (ImagePixels | null)[] {
   return c.sources.map((s) => (s === 0 ? { width: LABEL_WIDTH, height: LABEL_HEIGHT, rgba: labelPixels() } : s === 1 ? TEST_IMAGE : null));
@@ -496,15 +587,16 @@ function allCases(): Case[] {
     const program = compileGraph(graphOfExample(def, label)).program!;
     return { name: def.key, program, sources: program.images.map((im) => (im.image ? 0 : -1)), points: 1000, seed: SEED };
   });
-  return [...examples, ...instructionCases(), ...specialCases()];
+  return [...examples, ...instructionCases(), ...specialCases(), ...patternCases()];
 }
 
 /** The fixture's text for `cases`: one case a line. */
 function fixtureText(cases: Case[]): string {
   const lines = cases.map((c) => {
     const bytes = encodeProgram(c.program, (_ref, i) => (c.sources[i] >= 0 ? c.sources[i] : 0));
-    const hash = crossHash(new ProgramRunner(c.program, pixelsOf(c)), contractPoints(c.points, c.seed));
-    return `    {"name": ${JSON.stringify(c.name)}, "points": ${c.points}, "seed": ${c.seed}, "hash": "${hash}", "program": "${b64(deflateSync(bytes))}"}`;
+    const hash = crossHash(runnerOf(c), contractPoints(c.points, c.seed));
+    const placement = c.placement ? `, "placement": "${b64(placementBytes(c.placement))}"` : '';
+    return `    {"name": ${JSON.stringify(c.name)}, "points": ${c.points}, "seed": ${c.seed}, "hash": "${hash}", "program": "${b64(deflateSync(bytes))}"${placement}}`;
   });
   const label = b64(deflateSync(labelPixels()));
   const test = Array.from(TEST_IMAGE.rgba).join(', ');
@@ -530,6 +622,8 @@ interface FixtureCase {
   program: string;
 }
 
+// M3c: the pattern cases evaluate E6's recipes in f32 at a few thousand points; on a loaded machine that passes the
+// default 5 s.
 describe('the cross test of the material programs (M3b)', () => {
   const cases = allCases();
 
@@ -549,21 +643,21 @@ describe('the cross test of the material programs (M3b)', () => {
       expect(new Uint8Array(inflateSync(unb64(fx.program))), c.name).toEqual(bytes);
       expect([fx.points, fx.seed], c.name).toEqual([c.points, c.seed]);
     }
-  });
+  }, 120_000);
 
   it('pins the reference interpreter’s values of every case (the engine must give the same)', () => {
     const fixture = JSON.parse(readFileSync(PATH, 'utf8')) as { cases: FixtureCase[] };
     const got: Record<string, string> = {};
     const want: Record<string, string> = {};
     for (const [i, c] of cases.entries()) {
-      got[c.name] = crossHash(new ProgramRunner(c.program, pixelsOf(c)), contractPoints(c.points, c.seed));
+      got[c.name] = crossHash(runnerOf(c), contractPoints(c.points, c.seed));
       want[c.name] = fixture.cases[i].hash;
     }
     expect(got).toEqual(want);
     // The examples' values are M3a's pins (tests/material-program.test.ts).
     expect(got.PLASTIC_LABEL).toBe('ca47a410');
     expect(got.STRIPES).toBe('9dd8d317');
-  });
+  }, 120_000);
 
   it('covers every opcode of the contract', () => {
     const used = new Set<number>();

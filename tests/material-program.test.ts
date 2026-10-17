@@ -441,7 +441,7 @@ const EXAMPLE_PINS: Record<string, string> = {
   BRUSHED_SCRATCHED: 'd7ac667e',
   MARBLE: '9068993f',
   LEATHER: '4ffd820c',
-  WOOD_TWO_NOISES: '043e3493',
+  WOOD_TWO_NOISES: '6600a83f',
   GLASS_DIRT: 'ec1261b4',
   CHECKS: '27d9baac',
   METALLIC_FLAKES: '3795f601',

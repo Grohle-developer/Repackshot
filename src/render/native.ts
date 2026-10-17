@@ -59,7 +59,7 @@ import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
-import { readsCameras, readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
+import { programsView, readsCameras, readsIes, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
 import { adaptiveKey, QUIET_MS, viewAdaptive, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
@@ -636,7 +636,7 @@ export class NativeEngine {
         ...(scale === 1 ? viewAdaptive(state, this.limit) : {}),
         // M2b: the textures, when the launcher's engine reads them; M3b: the material programs, when it runs them.
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
-        ...(readsPrograms(this.info.features) ? { programs: true } : {}),
+        ...programsView(this.info.features),
         // L5: the IES lights, when this engine renders them.
         ...(readsIes(this.info.features) ? { ies: true } : {}),
         // K3: the interior cameras, when this engine reads them.
@@ -1069,7 +1069,7 @@ export class NativeEngine {
         ...this.filter,
         ...(opts.adaptive ? { adaptive: opts.adaptive } : {}),
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
-        ...(readsPrograms(this.info.features) ? { programs: true } : {}),
+        ...programsView(this.info.features),
         // L5: the IES lights, when this engine renders them.
         ...(readsIes(this.info.features) ? { ies: true } : {}),
         // K3: the interior cameras, when this engine reads them.

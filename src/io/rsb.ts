@@ -11,6 +11,7 @@
 // (S4a: one FXAM section of parameters per effect, with a material of its own
 // after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
+import { fabricRecipe, PATN_PARAMS, seedOf, woodRecipe } from '../core/pattern-recipe';
 import { playheadPose, posedMaterial, type Pose } from '../core/animation';
 import { partIsExempt, resolveSection } from '../core/section';
 import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
@@ -507,17 +508,9 @@ export interface RsbRender {
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
-/** `PATN.kind` 1: wood (rt_core::pattern::wood). */
-export const PATTERN_WOOD = 1;
-
-/** `PATN.variant` of a wood: its figure (`woodFigure`; unknown: rings). */
-export const WOOD_FIGURES: Readonly<Record<string, number>> = { RINGS: 0, STRIPS: 1, SPECKLE: 2, STREAKED: 3 };
-
-/** `PATN.kind` 2: cloth (rt_core::pattern::cloth). */
-export const PATTERN_CLOTH = 2;
-
-/** `PATN.variant` of a cloth: its `weave` (unknown: plain). */
-export const WEAVES: Readonly<Record<string, number>> = { PLAIN: 0, TWILL: 1, SATIN: 2, CANVAS: 3, KNIT: 4, FELT: 5, TWILL31: 6 };
+// `PATN.kind` and `variant` codes of the patterns (E6), and their recipes: core/pattern-recipe.ts (M3c: the Wood and
+// Fabric nodes of a graph compile from the same).
+export { PATTERN_CLOTH, PATTERN_WOOD, WEAVES, WOOD_FIGURES } from '../core/pattern-recipe';
 
 /** E6: the procedural pattern of a material (`PATN`, 108 B, written right after the MATL sections). */
 export interface RsbPattern {
@@ -543,8 +536,7 @@ export interface RsbPattern {
   seed: number;
 }
 
-/** Number of `PATN.params`. */
-export const PATN_PARAMS = 16;
+export { PATN_PARAMS } from '../core/pattern-recipe';
 
 export interface RsbScene {
   camera: RsbCamera;
@@ -1191,6 +1183,11 @@ export interface SceneView {
    */
   programs?: boolean;
   /**
+   * M3c: with `programs`, false for an engine that runs programs but not their pattern instructions (the Wood and
+   * Fabric nodes, render/engine.ts `readsPatternNodes`): a node material with them is then the mean of its outputs.
+   */
+  patternNodes?: boolean;
+  /**
    * L5: write the IES lights as such (LGHT kind 5 and the IESP sections) for an engine that renders them (render/engine.ts
    * `readsIes`). Off by default: an IES light is the spot light that stands for it in Fast, which any engine reads.
    */
@@ -1479,14 +1476,7 @@ export function lightToRsb(state: ProjectState, l: LightInstance, opts: { ies?: 
   };
 }
 
-/** Rings per 100 mm of wood: `ringDensity` counts them over this length (E6, physical). */
-export const WOOD_RING_SPAN_MM = 100;
-/** Anisotropy of a wood's roughness along its grain (none for the grainless figures). */
-export const WOOD_ANISOTROPY = 0.3;
-/** Most knots of a piece of wood (rt_core::pattern::knots::MAX_KNOTS). */
-export const MAX_KNOTS = 12;
-/** Millimetres per cm: a fabric's `threadCount` counts threads per cm (E6, physical). */
-export const CLOTH_SPAN_MM = 10;
+export { CLOTH_SPAN_MM, MAX_KNOTS, WOOD_ANISOTROPY, WOOD_RING_SPAN_MM } from '../core/pattern-recipe';
 
 /**
  * The procedural pattern of a material instance (E6, `PATN`; null for the families without one), as
@@ -1501,56 +1491,9 @@ export const CLOTH_SPAN_MM = 10;
 export function patternToRsb(inst: MaterialInstance | null | undefined, _partSizeMm: number, material: number): RsbPattern | null {
   // M3a: a material of nodes has no pattern (its graph is its program, M3b, or the means of its outputs).
   if (!inst || inst.graph) return null;
-  const p = inst.params;
-  switch (inst.family) {
-    case 'WOOD': {
-      const figure = WOOD_FIGURES[String(p.woodFigure ?? 'RINGS')] ?? 0;
-      const scale = Math.min(10, Math.max(0.1, num(p.woodScale, 1)));
-      return {
-        material,
-        kind: PATTERN_WOOD,
-        colorA: rgbOf(p.woodColor1, [0.56, 0.38, 0.21]),
-        colorB: rgbOf(p.woodColor2, [0.3, 0.18, 0.09]),
-        scaleMm: (WOOD_RING_SPAN_MM / Math.max(1, num(p.ringDensity, 33))) * scale,
-        params: [
-          clamp01(num(p.ringVariation, 0.4)),
-          clamp01(num(p.ringNoise, 0.3)),
-          clamp01(num(p.axialNoise, 0.2)),
-          clamp01(num(p.colorNoise, 0.2)),
-          clamp01(num(p.ringContrast, 0.3)),
-          Math.max(0, num(p.poreSize, 0.2)),
-          clamp01(num(p.poreDepth, 0.3)),
-          clamp01(num(p.poreBand, 0)),
-          1,
-          figure === WOOD_FIGURES.SPECKLE ? 0 : WOOD_ANISOTROPY,
-          figure === WOOD_FIGURES.RINGS ? Math.min(MAX_KNOTS, Math.max(0, Math.round(num(p.knotCount, 0)))) : 0,
-          Math.max(0, num(p.knotSize, 15)),
-          clamp01(num(p.knotSizeVar, 0.3)),
-          clamp01(num(p.knotDarkness, 0.6)),
-          0,
-          0,
-        ],
-        variant: figure,
-        seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
-      };
-    }
-    case 'FABRIC': {
-      const params = new Array<number>(PATN_PARAMS).fill(0);
-      params[0] = clamp01(num(p.weaveDepth, 0.35));
-      params[1] = clamp01(num(p.yarnTwist, 1));
-      return {
-        material,
-        kind: PATTERN_CLOTH,
-        colorA: rgbOf(p.threadColor1, [0.7, 0.7, 0.68]),
-        colorB: rgbOf(p.threadColor2, [0.6, 0.6, 0.58]),
-        scaleMm: CLOTH_SPAN_MM / Math.min(200, Math.max(2, num(p.threadCount, 40))),
-        params,
-        variant: WEAVES[String(p.weave ?? 'PLAIN')] ?? 0,
-        seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
-      };
-    }
-  }
-  return null;
+  const seed = inst.wear?.seed;
+  const recipe = inst.family === 'WOOD' ? woodRecipe(inst.params, seedOf(seed)) : inst.family === 'FABRIC' ? fabricRecipe(inst.params, seedOf(seed)) : null;
+  return recipe ? { material, kind: recipe.kind, colorA: recipe.colorA, colorB: recipe.colorB, scaleMm: recipe.scaleMm, params: recipe.params, variant: recipe.variant, seed: recipe.seed } : null;
 }
 
 /**
@@ -1989,7 +1932,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     let i = materialIndex.get(key);
     if (i === undefined) {
       const inst = key ? posedMaterial(state.materials[key], mp) : null;
-      const program = view.programs && view.textures && inst?.graph ? graphProgram(inst.graph) : null;
+      const compiled = view.programs && view.textures && inst?.graph ? graphProgram(inst.graph) : null;
+      const program = compiled && (view.patternNodes !== false || !compiled.uses.patterns) ? compiled : null;
       const m = materialToRsb(inst, { program });
       if (view.textures && key) m.textures = texturesToRsb(state.materials[key].textures, imageFor);
       i = materials.push(m) - 1;

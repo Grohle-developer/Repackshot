@@ -20,6 +20,7 @@
 import { MATH_TERNARY, MATH_UNARY, nodeSpec, OUTPUT_INPUTS, type SocketType } from '../data/material-nodes';
 import { DEG_TO_RAD, f, sinCos } from './f32math';
 import type { ImageRef } from './images';
+import { fabricRecipe, recipeAnisotropy, recipeConsts, recipeHasRelief, woodRecipe } from './pattern-recipe';
 import { inputSpecOf, linkInto, nodeById, outputNode, outputSpecOf, shownFor, type GraphNode, type GraphRampStop, type MaterialGraph, type Vec3 } from './material-graph';
 
 // --- The contract ---------------------------------------------------------------------------------
@@ -91,6 +92,15 @@ export const OP = {
   CAVITY: 123,
   NMAP: 124,
   BUMP: 125,
+  // M3c: E6's patterns as nodes: a point (a, part space, mm), a normal (b) and the 25 constants of the recipe at k.
+  WOOD: 130,
+  WOODR: 131,
+  WOODH: 132,
+  WOODN: 133,
+  CLOTH: 140,
+  CLOTHR: 141,
+  CLOTHH: 142,
+  CLOTHN: 143,
 } as const;
 export type OpCode = (typeof OP)[keyof typeof OP];
 
@@ -169,6 +179,14 @@ export const OP_SHAPES: Readonly<Record<number, OpShape>> = {
   [OP.CAVITY]: shape('CAVITY', 'F', '-', '-', '-', 'const'),
   [OP.NMAP]: shape('NMAP', 'V', 'V', 'F', 'V', 'imm'),
   [OP.BUMP]: shape('BUMP', 'V', 'V', 'F', 'F'),
+  [OP.WOOD]: shape('WOOD', 'V', 'V', 'V', '-', 'const'),
+  [OP.WOODR]: shape('WOODR', 'F', 'V', 'V', 'F', 'const'),
+  [OP.WOODH]: shape('WOODH', 'F', 'V', 'V', '-', 'const'),
+  [OP.WOODN]: shape('WOODN', 'V', 'V', 'V', '-', 'const'),
+  [OP.CLOTH]: shape('CLOTH', 'V', 'V', 'V', '-', 'const'),
+  [OP.CLOTHR]: shape('CLOTHR', 'F', 'V', 'V', 'F', 'const'),
+  [OP.CLOTHH]: shape('CLOTHH', 'F', 'V', 'V', '-', 'const'),
+  [OP.CLOTHN]: shape('CLOTHN', 'V', 'V', 'V', '-', 'const'),
 };
 
 /** The vec3 registers the engine fills before running a program (the shading point, part space). */
@@ -264,8 +282,8 @@ export interface Program {
   absorptionMm: number;
   thinWalls: boolean;
   probes: Probe[];
-  /** What the graph reads, for the Fast preview (core/material-preview.ts). */
-  uses: { coords: CoordSource[]; fresnel: boolean; curvature: boolean; bump: boolean };
+  /** What the graph reads, for the Fast preview (core/material-preview.ts); `patterns`: it has Wood or Fabric nodes (M3c). */
+  uses: { coords: CoordSource[]; fresnel: boolean; curvature: boolean; bump: boolean; patterns?: boolean };
 }
 
 export type CompileErrorCode = 'NO_OUTPUT' | 'TOO_MANY_INSTRUCTIONS' | 'TOO_MANY_REGISTERS' | 'TOO_MANY_CONSTANTS' | 'TOO_MANY_IMAGES';
@@ -326,6 +344,7 @@ class Compiler {
   fresnel = false;
   curvature = false;
   bump = false;
+  patterns = false;
 
   constructor(readonly g: MaterialGraph) {}
 
@@ -431,6 +450,11 @@ class Compiler {
     if (spec.implicit === 'UV0') {
       this.addCoord({ kind: 'UV', set: 0 });
       return this.convert(env.UV0, 'vector', want);
+    }
+    if (spec.implicit === 'POSITION') {
+      // M3c: the point itself (part space, mm), where a pattern node places its wood or its cloth.
+      this.addCoord({ kind: 'OBJECT' });
+      return this.convert(env.P, 'vector', want);
     }
     if (spec.implicit === 'OBJECT') {
       this.addCoord({ kind: 'OBJECT' });
@@ -587,6 +611,24 @@ class Compiler {
           : this.op1(OP.FMUL, 'F', this.op1(OP.FMUL, 'F', F('strength'), F('distance')), this.fconst(sign / BUMP_STEP_MM));
         return this.bumped(base, (e) => this.input(n, 'height', 'float', e), env, scale);
       }
+      case 'WOOD':
+      case 'FABRIC': {
+        // M3c: E6's recipe from the node's parameters (the family's keys and units), as io/rsb.ts writes a PATN.
+        this.patterns = true;
+        const wood = n.type === 'WOOD';
+        const recipe = wood ? woodRecipe(p, Number(p.seed)) : fabricRecipe(p, 0);
+        if (socket === 'anisotropy') return this.fconst(recipeAnisotropy(recipe));
+        if (socket === 'sheen') return this.fconst(Number(p.fuzz) || 0);
+        const k = this.constIndex(recipeConsts(recipe));
+        const at = V('vector');
+        const normal = this.input(n, 'normal', 'normal', env);
+        if (socket === 'color') return this.op1(wood ? OP.WOOD : OP.CLOTH, 'V', at, normal, null, k);
+        if (socket === 'roughness') return this.op1(wood ? OP.WOODR : OP.CLOTHR, 'F', at, normal, F('roughness'), k);
+        if (socket === 'height') return this.op1(wood ? OP.WOODH : OP.CLOTHH, 'F', at, normal, null, k);
+        // The normal: the input's own where the recipe has no relief (nothing to bend it by).
+        if (!recipeHasRelief(recipe)) return normal;
+        return this.op1(wood ? OP.WOODN : OP.CLOTHN, 'V', at, normal, null, k);
+      }
       default:
         return socket === 'color' || socket === 'normal' || socket === 'vector' ? this.vconst([0, 0, 0]) : this.fconst(0);
     }
@@ -733,7 +775,7 @@ export function compileGraph(g: MaterialGraph, opts: CompileOptions = {}): Compi
       absorptionMm: Number(out.params.absorptionMm) || 0,
       thinWalls: out.params.thinWalls === true,
       probes: probeVals.map((p) => ({ node: p.node, socket: p.socket, type: p.type, ref: toRef(p.v) })),
-      uses: { coords: cc.coords, fresnel: cc.fresnel, curvature: cc.curvature, bump: cc.bump },
+      uses: { coords: cc.coords, fresnel: cc.fresnel, curvature: cc.curvature, bump: cc.bump, patterns: cc.patterns },
     };
     return { program, error: null };
   } catch (err) {

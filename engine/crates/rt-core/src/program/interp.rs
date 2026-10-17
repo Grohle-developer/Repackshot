@@ -21,6 +21,8 @@
 use super::noise;
 use super::{op, Instr, Program, ValueRef, CTX_COUNT, MAX_F, MAX_V, NONE, OUTPUTS};
 use crate::fmath;
+use crate::math::Vec3;
+use crate::pattern::{sample_at, Placement, Recipe, Sampled};
 use crate::texture::TextureImage;
 use std::sync::Arc;
 
@@ -69,7 +71,19 @@ pub trait Host {
     fn edge(&mut self, radius: f32) -> f32;
     /// The concavity, 0 to 1.
     fn cavity(&mut self, radius: f32) -> f32;
+    /// M3c: where the pattern of the instructions with recipe constants `k` and `PATN` kind `kind`
+    /// lies in the part (its frame and its knots); `None`: [`Placement::IDENTITY`], the frame of
+    /// the point's own space (a host without a part).
+    fn placement(&mut self, _k: u32, _kind: u32) -> Option<&Placement> {
+        None
+    }
+    /// M3c: the direction (part space) a pattern stretches the roughness along at the point,
+    /// told for every pattern sampled that has one, in program order.
+    fn grain(&mut self, _tangent: Vec3) {}
 }
+
+/// The placement of a pattern without a part ([`Placement::IDENTITY`]).
+static IDENTITY: Placement = Placement::IDENTITY;
 
 /// A host without geometry and without footprint (the cross test's, the reference's): curvature
 /// 0, every image on level 0.
@@ -143,6 +157,9 @@ pub struct Runner {
     tex: Vec<TexLod>,
     /// Per instruction: what a `MAP` measures (`None`: nothing).
     maps: Vec<Option<MapLod>>,
+    /// Per instruction: a pattern instruction's recipe (`None`: another opcode, or a recipe that
+    /// draws nothing).
+    recipes: Vec<Option<Recipe>>,
 }
 
 impl Runner {
@@ -220,12 +237,32 @@ impl Runner {
                 };
             }
         }
+        let recipes = program
+            .code
+            .iter()
+            .map(|ins| program.pattern_of(ins).and_then(|p| p.recipe()))
+            .collect();
         Runner {
             program,
             images,
             tex,
             maps,
+            recipes,
         }
+    }
+
+    /// M3c: the pattern instructions' recipes, each once: `(k, kind, recipe)`, in program order.
+    pub(crate) fn patterns(&self) -> Vec<(u32, u32, Recipe)> {
+        let mut out: Vec<(u32, u32, Recipe)> = Vec::new();
+        for (ins, recipe) in self.program.code.iter().zip(&self.recipes) {
+            let (Some(r), Some(kind)) = (recipe, super::pattern_kind(ins.op)) else {
+                continue;
+            };
+            if !out.iter().any(|&(k, kd, _)| k == ins.k && kd == kind) {
+                out.push((ins.k, kind, *r));
+            }
+        }
+        out
     }
 
     /// The program.
@@ -259,6 +296,9 @@ impl Runner {
         v[7] = ctx.duv_t;
         v[8] = ctx.duv_b;
         let mut lods = [f32::NAN; LOD_SLOTS];
+        // M3c: the last pattern sampled (its constants, kind, point and normal), which the other
+        // outputs of the same node read again.
+        let mut last: Option<(u32, u32, [u32; 6], Sampled)> = None;
         let foot = host.footprint().copied();
         let c = &self.program.consts;
         for (at, ins) in self.program.code.iter().enumerate() {
@@ -437,6 +477,66 @@ impl Runner {
                         ],
                         n0,
                     );
+                }
+                op::WOOD
+                | op::WOODR
+                | op::WOODH
+                | op::WOODN
+                | op::CLOTH
+                | op::CLOTHR
+                | op::CLOTHH
+                | op::CLOTHN => {
+                    let (p, n) = (v[a], v[b]);
+                    let sampled = match &self.recipes[at] {
+                        Some(recipe) => {
+                            let kind = super::pattern_kind(code).unwrap_or(0);
+                            let key = [p[0], p[1], p[2], n[0], n[1], n[2]].map(f32::to_bits);
+                            match last {
+                                Some((lk, lkind, lkey, s))
+                                    if lk == k && lkind == kind && lkey == key =>
+                                {
+                                    Some(s)
+                                }
+                                _ => {
+                                    let at = host.placement(k, kind).unwrap_or(&IDENTITY);
+                                    let (pp, nn) =
+                                        (Vec3::new(p[0], p[1], p[2]), Vec3::new(n[0], n[1], n[2]));
+                                    let s = sample_at(recipe, at, pp, nn, nn);
+                                    if let Some(t) = s.tint.tangent {
+                                        host.grain(t);
+                                    }
+                                    last = Some((k, kind, key, s));
+                                    Some(s)
+                                }
+                            }
+                        }
+                        None => None,
+                    };
+                    match code {
+                        op::WOOD | op::CLOTH => {
+                            v[d] = sampled.map_or([0.0; 3], |s| {
+                                let c = s.tint.base_color;
+                                [c.r, c.g, c.b]
+                            });
+                        }
+                        op::WOODR | op::CLOTHR => {
+                            // The material's roughness times the pattern's, plus its own (a
+                            // knot's end grain): `Tint::apply` before its clamp.
+                            f[d] = sampled.map_or(f[cr], |s| {
+                                (f[cr] * s.tint.roughness) + s.tint.roughness_add
+                            });
+                        }
+                        op::WOODH | op::CLOTHH => f[d] = sampled.map_or(0.0, |s| s.height),
+                        _ => {
+                            v[d] = match sampled.and_then(|s| s.slope) {
+                                Some(g) => {
+                                    let bent = crate::pattern::bump(Vec3::new(n[0], n[1], n[2]), g);
+                                    [bent.x, bent.y, bent.z]
+                                }
+                                None => n,
+                            };
+                        }
+                    }
                 }
                 _ => unreachable!("a checked program has only known opcodes"),
             }

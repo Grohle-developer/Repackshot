@@ -90,7 +90,7 @@ impl Default for Pattern {
 
 /// The recipe of a pattern, decoded.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Recipe {
+pub(crate) enum Recipe {
     /// A wood, the anisotropy of its roughness along the grain, and its knots.
     Wood(Wood, f32, KnotSpec),
     /// A cloth.
@@ -98,7 +98,8 @@ enum Recipe {
 }
 
 impl Pattern {
-    fn recipe(&self) -> Option<Recipe> {
+    /// The recipe, `None` when it draws nothing (a scale that is not positive, an unknown kind).
+    pub(crate) fn recipe(&self) -> Option<Recipe> {
         if !(self.scale_mm > 0.0 && self.scale_mm.is_finite()) {
             return None;
         }
@@ -196,18 +197,41 @@ impl Tint {
     }
 }
 
+/// Where a pattern lies in a part (M3c: also where a pattern node of a material program lies):
+/// the origin and axes of its frame in the mesh's space, the millimetres per unit of mesh space,
+/// and, for a wood, its knots in that frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Placement {
+    /// Origin of the pattern's frame, mesh space.
+    pub origin: Vec3,
+    /// Wood: across, across, along the pith. Cloth: the mesh's axes.
+    pub axes: [Vec3; 3],
+    /// Millimetres per unit of mesh space.
+    pub mm: f32,
+    /// Wood: its knots, in its frame.
+    pub knots: Knots,
+}
+
+impl Placement {
+    /// The placement without a part (the cross test's and the reference's, `NoHost`): the frame
+    /// is the space of the point itself, in millimetres, without knots (a wood's pith is its `z`
+    /// axis).
+    pub const IDENTITY: Placement = Placement {
+        origin: Vec3::ZERO,
+        axes: AXES,
+        mm: 1.0,
+        knots: Knots {
+            list: Vec::new(),
+            darkness: 0.0,
+        },
+    };
+}
+
 /// The pattern of one instance, placed in its mesh's space.
 #[derive(Clone, Debug, PartialEq)]
 struct Placed {
     recipe: Recipe,
-    /// Origin of the pattern's frame, mesh space.
-    origin: Vec3,
-    /// Wood: across, across, along the pith. Cloth: the mesh's axes.
-    axes: [Vec3; 3],
-    /// Millimetres per unit of mesh space.
-    mm: f32,
-    /// Wood: its knots, in its frame.
-    knots: Knots,
+    at: Placement,
 }
 
 /// The patterns of every instance of a scene, prepared once per scene
@@ -245,43 +269,8 @@ impl PatternSetup {
                     .iter()
                     .find(|p| p.material == inst.material_id)?;
                 let recipe = pattern.recipe()?;
-                let (mesh, _) = geometry.instance_mesh(i as u32)?;
-                let bounds = mesh.bounds();
-                let mm = crate::bevel::instance_scale(geometry, i as u32);
-                let size = bounds.max - bounds.min;
-                let (origin, axes) = match recipe {
-                    Recipe::Wood(..) => wood_frame(bounds.min, size, mm),
-                    Recipe::Cloth(_) => (bounds.min, AXES),
-                };
-                let knots = match &recipe {
-                    Recipe::Wood(_, _, spec) if spec.count > 0 => {
-                        let centre = bounds.min + size * 0.5 - origin;
-                        let frame =
-                            |v: Vec3| Vec3::new(v.dot(axes[0]), v.dot(axes[1]), v.dot(axes[2]));
-                        let half = frame(size * 0.5);
-                        let half = Vec3::new(half.x.abs(), half.y.abs(), half.z.abs());
-                        // Back from the frame (mm) to the mesh, then to the world.
-                        let to_mesh = |q: Vec3| {
-                            origin + (axes[0] * q.x + axes[1] * q.y + axes[2] * q.z) * (1.0 / mm)
-                        };
-                        Knots::place(spec, frame(centre) * mm, half * mm, |k, t0, t1| {
-                            meets_surface(
-                                geometry,
-                                i as u32,
-                                to_mesh(k.origin + k.axis * t0),
-                                to_mesh(k.origin + k.axis * t1),
-                            )
-                        })
-                    }
-                    _ => Knots::none(),
-                };
-                Some(Placed {
-                    recipe,
-                    origin,
-                    axes,
-                    mm,
-                    knots,
-                })
+                let at = place(geometry, i as u32, &recipe)?;
+                Some(Placed { recipe, at })
             })
             .collect();
         PatternSetup { instances }
@@ -296,7 +285,7 @@ impl PatternSetup {
     pub fn knot_counts(&self) -> Vec<usize> {
         self.instances
             .iter()
-            .map(|p| p.as_ref().map_or(0, |p| p.knots.list.len()))
+            .map(|p| p.as_ref().map_or(0, |p| p.at.knots.list.len()))
             .collect()
     }
 
@@ -318,13 +307,14 @@ impl PatternSetup {
         if !ns.is_finite() || ns == Vec3::ZERO {
             ns = smooth;
         }
-        let (mut tint, slope) = placed.sample(p, ns, smooth);
+        let Sampled {
+            mut tint, slope, ..
+        } = placed.sample(p, ns, smooth);
         tint.tangent = tint
             .tangent
             .map(|t| geometry.vector_to_world(details.instance, t).normalize());
         if let Some(g) = slope {
-            let tangent = g - ns * ns.dot(g);
-            let bumped = (ns - tangent).normalize();
+            let bumped = bump(ns, g);
             let n = geometry
                 .normal_to_world(details.instance, bumped)
                 .normalize();
@@ -348,6 +338,47 @@ impl PatternSetup {
         let (p, smooth) = local_point(&scene.geometry, details)?;
         Some(placed.color_only(p, smooth))
     }
+}
+
+/// Where the pattern of `recipe` lies on instance `instance`: a wood in the frame of its mesh's
+/// box ([`wood_frame`]) with its knots placed in the piece (each one's axis meeting the surface
+/// squarely, [`meets_surface`]); a cloth on the mesh's axes from the box's corner. `None` for an
+/// instance without a mesh.
+pub(crate) fn place(geometry: &Geometry, instance: u32, recipe: &Recipe) -> Option<Placement> {
+    let (mesh, _) = geometry.instance_mesh(instance)?;
+    let bounds = mesh.bounds();
+    let mm = crate::bevel::instance_scale(geometry, instance);
+    let size = bounds.max - bounds.min;
+    let (origin, axes) = match recipe {
+        Recipe::Wood(..) => wood_frame(bounds.min, size, mm),
+        Recipe::Cloth(_) => (bounds.min, AXES),
+    };
+    let knots = match recipe {
+        Recipe::Wood(_, _, spec) if spec.count > 0 => {
+            let centre = bounds.min + size * 0.5 - origin;
+            let frame = |v: Vec3| Vec3::new(v.dot(axes[0]), v.dot(axes[1]), v.dot(axes[2]));
+            let half = frame(size * 0.5);
+            let half = Vec3::new(half.x.abs(), half.y.abs(), half.z.abs());
+            // Back from the frame (mm) to the mesh, then to the world.
+            let to_mesh =
+                |q: Vec3| origin + (axes[0] * q.x + axes[1] * q.y + axes[2] * q.z) * (1.0 / mm);
+            Knots::place(spec, frame(centre) * mm, half * mm, |k, t0, t1| {
+                meets_surface(
+                    geometry,
+                    instance,
+                    to_mesh(k.origin + k.axis * t0),
+                    to_mesh(k.origin + k.axis * t1),
+                )
+            })
+        }
+        _ => Knots::none(),
+    };
+    Some(Placement {
+        origin,
+        axes,
+        mm,
+        knots,
+    })
 }
 
 /// True when the segment `a b` (mesh space of instance `instance`, through its box) crosses
@@ -473,104 +504,147 @@ const WOOD_STEP_MM: f32 = 0.02;
 /// Step of the finite differences of a cloth's height, in pitches.
 const CLOTH_STEP: f32 = 0.05;
 /// Anisotropy of a cloth's roughness, wider across the thread on top (Burley's `a`).
-const CLOTH_ANISOTROPY: f32 = 0.5;
+pub(crate) const CLOTH_ANISOTROPY: f32 = 0.5;
 /// Projections weighing less than this are skipped.
 const MIN_WEIGHT: f32 = 0.02;
 
-impl Placed {
-    /// The point in the pattern's frame, millimetres.
-    fn frame_point(&self, p: Vec3) -> Vec3 {
-        let d = p - self.origin;
-        Vec3::new(
-            d.dot(self.axes[0]),
-            d.dot(self.axes[1]),
-            d.dot(self.axes[2]),
-        ) * self.mm
-    }
+/// What a pattern is at a point (`sample_at`): the tint of the material, the gradient of the
+/// relief (mesh space, `None` without relief) and the height there (millimetres).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Sampled {
+    /// Colour, roughness and anisotropy (the tangent in mesh space).
+    pub tint: Tint,
+    /// The slope of the relief along the tangent plane, mesh space.
+    pub slope: Option<Vec3>,
+    /// The height of the surface, millimetres (wood: below 0 in pores and knots; cloth: the
+    /// threads' crowns above 0, the projections' blend).
+    pub height: f32,
+}
 
-    /// The tint at `p` (mesh space; `ns` the shading normal, `smooth` the interpolated one,
-    /// which places a cloth's projection) and the gradient of the relief there, in mesh space, if
-    /// it has one.
-    fn sample(&self, p: Vec3, ns: Vec3, smooth: Vec3) -> (Tint, Option<Vec3>) {
-        match &self.recipe {
-            Recipe::Wood(w, anisotropy, _) => {
-                let q = self.frame_point(p);
-                let s = w.sample(q, &self.knots);
-                // Roughness: the pores are rougher, the summer wood a touch smoother (a few per
-                // cent: more draws the rings as ridges in the highlights).
-                let rough = (1.0 + 0.08 * (wood::MEAN_DARK - s.dark)) * (1.0 - s.height * 4.0);
-                let tint = Tint {
-                    base_color: s.color,
-                    roughness: rough,
-                    roughness_add: s.rough_add,
-                    anisotropy: *anisotropy,
-                    tangent: (*anisotropy > 0.0).then_some(self.axes[2]),
+/// The shading normal `ns` tilted by the slope `g` of a relief (its part across `ns`).
+#[inline]
+pub(crate) fn bump(ns: Vec3, g: Vec3) -> Vec3 {
+    let tangent = g - ns * ns.dot(g);
+    (ns - tangent).normalize()
+}
+
+/// The point `p` (mesh space) in the frame of `at`, millimetres.
+#[inline]
+fn frame_point(at: &Placement, p: Vec3) -> Vec3 {
+    let d = p - at.origin;
+    Vec3::new(d.dot(at.axes[0]), d.dot(at.axes[1]), d.dot(at.axes[2])) * at.mm
+}
+
+/// The pattern of `recipe` placed by `at`, at `p` (mesh space; `ns` the shading normal, `smooth`
+/// the interpolated one, which places a cloth's projection): its tint, the gradient of its relief
+/// and its height. The family's materials (`PATN`) and the pattern nodes of a material program
+/// (M3c, `program::interp`) both draw through here.
+pub(crate) fn sample_at(
+    recipe: &Recipe,
+    at: &Placement,
+    p: Vec3,
+    ns: Vec3,
+    smooth: Vec3,
+) -> Sampled {
+    match recipe {
+        Recipe::Wood(w, anisotropy, _) => {
+            let q = frame_point(at, p);
+            let s = w.sample(q, &at.knots);
+            // Roughness: the pores are rougher, the summer wood a touch smoother (a few per
+            // cent: more draws the rings as ridges in the highlights).
+            let rough = (1.0 + 0.08 * (wood::MEAN_DARK - s.dark)) * (1.0 - s.height * 4.0);
+            let tint = Tint {
+                base_color: s.color,
+                roughness: rough,
+                roughness_add: s.rough_add,
+                anisotropy: *anisotropy,
+                tangent: (*anisotropy > 0.0).then_some(at.axes[2]),
+            };
+            if !w.has_relief(&at.knots) {
+                return Sampled {
+                    tint,
+                    slope: None,
+                    height: s.height,
                 };
-                if !w.has_relief(&self.knots) {
-                    return (tint, None);
-                }
-                let frame = Frame::from_normal(ns);
-                let step = WOOD_STEP_MM / self.mm;
-                let ring = s.ring;
-                let h0 = s.height;
-                let h1 = w.height(self.frame_point(p + frame.x * step), ring, &self.knots);
-                let h2 = w.height(self.frame_point(p + frame.y * step), ring, &self.knots);
-                let k = 1.0 / WOOD_STEP_MM;
-                let g = frame.x * ((h1 - h0) * k) + frame.y * ((h2 - h0) * k);
-                (tint, Some(g))
             }
-            Recipe::Cloth(c) => {
-                let weights = projection_weights(smooth);
-                let (mut color, mut rough, mut grad, mut total) =
-                    (Rgb::BLACK, 0.0f32, Vec3::ZERO, 0.0f32);
-                let d = (p - self.origin) * self.mm;
-                let at = [d.x, d.y, d.z];
-                let step = CLOTH_STEP * c.pitch_mm;
-                // The highlight is stretched across the thread on top (where its fibres' normals
-                // spread), in the projection that weighs most.
-                let (mut tangent, mut heaviest) = (None, 0.0f32);
-                for (k, &w) in weights.iter().enumerate() {
-                    if w < MIN_WEIGHT {
-                        continue;
-                    }
-                    let (a, b) = plane_axes(k);
-                    let (u, v) = (at[a], at[b]);
-                    let s = c.sample(u, v);
-                    if w > heaviest {
-                        heaviest = w;
-                        tangent = Some(if s.along_v { AXES[a] } else { AXES[b] });
-                    }
-                    color += s.color * w;
-                    rough += s.roughness * w;
-                    total += w;
-                    if c.relief > 0.0 {
-                        let du = (c.height(u + step, v) - s.height) / step;
-                        let dv = (c.height(u, v + step) - s.height) / step;
-                        grad += (AXES[a] * du + AXES[b] * dv) * w;
-                    }
-                }
-                let k = if total > 0.0 { 1.0 / total } else { 1.0 };
-                let tint = Tint {
-                    base_color: color * k,
-                    roughness: rough * k,
-                    roughness_add: 0.0,
-                    anisotropy: if c.has_threads() {
-                        CLOTH_ANISOTROPY
-                    } else {
-                        0.0
-                    },
-                    tangent: tangent.filter(|_| c.has_threads()),
-                };
-                // The slope of a millimetre relief over millimetres: dimensionless, along the
-                // mesh's axes (the bump keeps its part across the normal).
-                (tint, (c.relief > 0.0).then_some(grad * k))
+            let frame = Frame::from_normal(ns);
+            let step = WOOD_STEP_MM / at.mm;
+            let ring = s.ring;
+            let h0 = s.height;
+            let h1 = w.height(frame_point(at, p + frame.x * step), ring, &at.knots);
+            let h2 = w.height(frame_point(at, p + frame.y * step), ring, &at.knots);
+            let k = 1.0 / WOOD_STEP_MM;
+            let g = frame.x * ((h1 - h0) * k) + frame.y * ((h2 - h0) * k);
+            Sampled {
+                tint,
+                slope: Some(g),
+                height: h0,
             }
         }
+        Recipe::Cloth(c) => {
+            let weights = projection_weights(smooth);
+            let (mut color, mut rough, mut grad, mut total) =
+                (Rgb::BLACK, 0.0f32, Vec3::ZERO, 0.0f32);
+            let mut height = 0.0f32;
+            let d = (p - at.origin) * at.mm;
+            let coords = [d.x, d.y, d.z];
+            let step = CLOTH_STEP * c.pitch_mm;
+            // The highlight is stretched across the thread on top (where its fibres' normals
+            // spread), in the projection that weighs most.
+            let (mut tangent, mut heaviest) = (None, 0.0f32);
+            for (k, &w) in weights.iter().enumerate() {
+                if w < MIN_WEIGHT {
+                    continue;
+                }
+                let (a, b) = plane_axes(k);
+                let (u, v) = (coords[a], coords[b]);
+                let s = c.sample(u, v);
+                if w > heaviest {
+                    heaviest = w;
+                    tangent = Some(if s.along_v { AXES[a] } else { AXES[b] });
+                }
+                color += s.color * w;
+                rough += s.roughness * w;
+                height += s.height * w;
+                total += w;
+                if c.relief > 0.0 {
+                    let du = (c.height(u + step, v) - s.height) / step;
+                    let dv = (c.height(u, v + step) - s.height) / step;
+                    grad += (AXES[a] * du + AXES[b] * dv) * w;
+                }
+            }
+            let k = if total > 0.0 { 1.0 / total } else { 1.0 };
+            let tint = Tint {
+                base_color: color * k,
+                roughness: rough * k,
+                roughness_add: 0.0,
+                anisotropy: if c.has_threads() {
+                    CLOTH_ANISOTROPY
+                } else {
+                    0.0
+                },
+                tangent: tangent.filter(|_| c.has_threads()),
+            };
+            // The slope of a millimetre relief over millimetres: dimensionless, along the
+            // mesh's axes (the bump keeps its part across the normal).
+            Sampled {
+                tint,
+                slope: (c.relief > 0.0).then_some(grad * k),
+                height: height * k,
+            }
+        }
+    }
+}
+
+impl Placed {
+    /// The pattern at `p` (mesh space; `ns` the shading normal, `smooth` the interpolated one).
+    fn sample(&self, p: Vec3, ns: Vec3, smooth: Vec3) -> Sampled {
+        sample_at(&self.recipe, &self.at, p, ns, smooth)
     }
 
     /// The colour alone at `p` (the albedo pass).
     fn color_only(&self, p: Vec3, smooth: Vec3) -> Rgb {
-        self.sample(p, smooth, smooth).0.base_color
+        self.sample(p, smooth, smooth).tint.base_color
     }
 }
 

@@ -993,6 +993,7 @@ const TABLE = {
   'ge.implicit.NORMAL': ['The surface’s normal', 'La normal de la superficie'],
   'ge.implicit.UV0': ['The mesh’s UVs', 'Las UV de la malla'],
   'ge.implicit.OBJECT': ['The part’s coordinates (per 100 mm)', 'Las coordenadas de la pieza (por 100 mm)'],
+  'ge.implicit.POSITION': ['The point on the part (mm)', 'El punto de la pieza (mm)'],
   'ge.image.load': ['Load…', 'Cargar…'],
   'ge.image.remove': ['Remove', 'Quitar'],
   'ge.image.none': ['No image', 'Sin imagen'],

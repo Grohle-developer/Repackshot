@@ -62,6 +62,24 @@ export function readsCameras(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_CAMERAS) !== 0;
 }
 
+/**
+ * M3c: bit 5 of the engine's features (rt_core::FEATURE_PATTERN_NODES): it runs the pattern instructions of a program
+ * (the Wood and Fabric nodes, WOOD* and CLOTH*). An engine with programs but without the bit refuses a program with
+ * them, so the page writes such a node material as the mean of its outputs for it (io/rsb.ts `SceneView.patternNodes`).
+ */
+export const ENGINE_FEATURE_PATTERN_NODES = 32;
+
+/** True when an engine of `features` runs the Wood and Fabric nodes of a program (M3c). */
+export function readsPatternNodes(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_PATTERN_NODES) !== 0;
+}
+
+/** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
+export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
+  if (!readsPrograms(features)) return {};
+  return readsPatternNodes(features) ? { programs: true } : { programs: true, patternNodes: false };
+}
+
 export interface EngineStatus {
   samples: number;
   seconds: number;

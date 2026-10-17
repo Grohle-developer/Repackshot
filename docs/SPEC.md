@@ -582,7 +582,23 @@ escalón suavizado, valor absoluto, menor y mayor que, parte entera y
 fraccionaria, seno), *Fresnel / peso de capa* (el Fresnel dieléctrico de
 un IOR y una rampa *de cara*), *Curvatura* (aristas y cavidades, que mide
 el motor), *Valor*, *Color*, *Separar* y *Combinar RGB*, *Invertir*,
-*Mapa de normales* (tangente o de la pieza) y *Relieve*.
+*Mapa de normales* (tangente o de la pieza) y *Relieve*. Y (M3c) los
+dibujos de las familias como nodos: *Madera* (la madera procedural de la
+familia *Madera*, E6: anillos con sus colores de primavera y verano,
+anillos por 100 mm y escala, contraste, variación, ondulación y ruido
+axial, ruido de color, poros en mm con su hondo y su banda, figura
+—anillos, tiras de bambú, moteado de DM, vetas de ébano— y nudos con su
+número, tamaño en mm, variación, oscuridad y semilla) y *Tela* (la tela de
+la familia *Tela*: urdimbre y trama, tejido, hilos por cm, relieve del
+tejido, torsión del hilo y pelusa). Los mismos parámetros, con las mismas
+claves y en las mismas unidades que la familia, dan el mismo dibujo; leen
+el punto de la pieza en mm (o lo que se les conecte) y la normal, y dan
+color, rugosidad (la de su entrada por la del dibujo), anisotropía (a lo
+largo de la veta; a través del hilo de encima), la normal doblada por su
+relieve y su altura en mm; la *Tela*, además, su *pelusa* (un número, que
+ni el motor ni la salida de material leen todavía). La madera se coloca en
+cada pieza como la de la familia: la médula a lo largo del lado más largo
+de la caja de la pieza, y los nudos en ella sin rozar su superficie.
 
 Las **tomas** tienen tipo: número, color, vector o normal (se dibujan con
 una forma por tipo: círculo, rombo, cuadrado, triángulo). Una conexión
@@ -594,16 +610,22 @@ normales*), y se rechaza la conexión que cerraría un ciclo o que va de un
 nodo a sí mismo, diciendo por qué. Una entrada sin conexión lee su valor
 propio; las que no tienen leen una fuente del punto: la normal, las UV de
 la malla (la imagen) o las coordenadas de la pieza por cada 100 mm (los
-procedurales). Lo que no llega a la salida no cuenta.
+procedurales; el punto de la pieza en mm, los nodos *Madera* y *Tela*). Lo
+que no llega a la salida no cuenta.
 
 **Simple ↔ Nodos**: pasar a *Nodos* da el **grafo mínimo**, la salida sola
 con los valores del material (lo que el motor y la vista previa leen de
-sus parámetros; madera y tela, su color plano, porque anillos y trama son
-del motor, E6), y deja los parámetros como estaban. Volver a *Simple* es
-inmediato cuando el grafo es mínimo: la salida sola, sin conexiones, con
-valores que una familia guarda exactamente (los del material, que vuelve
-tal cual, o los de un material simple, de vidrio o emisor); si no,
-pregunta, y al aceptar se queda con los valores propios de la salida. Las
+sus parámetros), y deja los parámetros como estaban; una madera o una tela
+(M3c) da además su nodo *Madera* o *Tela* con los parámetros de la familia,
+conectado al color, la rugosidad, la anisotropía y la normal de la salida,
+así que el grafo pinta lo mismo que el material. Volver a *Simple* es
+inmediato cuando el grafo es mínimo (la salida sola, sin conexiones, con
+valores que una familia guarda exactamente: los del material, que vuelve
+tal cual, o los de un material simple, de vidrio o emisor) o es el nodo
+*Madera* o *Tela* conectado a la salida como lo deja el paso a *Nodos*
+(vuelve la familia con los valores del nodo, si su semilla es la del
+material); si no, pregunta, y al aceptar se queda con los valores propios
+de la salida. Las
 **texturas de M2a y las etiquetas** siguen siendo una capa sobre el
 material en los dos modos: en *Nodos* multiplican lo que da el grafo como
 multiplican los parámetros en *Simple*.

@@ -3439,6 +3439,37 @@ mod tests {
     }
 
     #[test]
+    fn the_pattern_nodes_give_the_pinned_images_with_any_thread_count() {
+        // M3c: the WOOD and CLOTH nodes of the M3c examples are rt-core's pinned images
+        // (PINNED_M3C_WOOD_4SPP, the E6 pattern scene's, and PINNED_M3C_CLOTH_4SPP) for any
+        // thread count, through the launcher's engine.
+        let _serial = serial();
+        for (mut scene, pinned) in [
+            (rt_core::example::m3c_wood_scene(), 0x5ed1_bf32u32),
+            (rt_core::example::m3c_cloth_scene(), 0x1cb5_860d),
+        ] {
+            scene.render.max_samples = 4;
+            for threads in [1usize, 4, 16] {
+                let engine = Engine::new(threads);
+                let job = engine
+                    .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                    .unwrap();
+                let f = wait_done(&job);
+                let inv = 1.0f32 / 4.0;
+                let hash = f
+                    .sums
+                    .chunks_exact(4)
+                    .flat_map(|p| [p[0] * inv, p[1] * inv, p[2] * inv])
+                    .flat_map(|v| v.to_le_bytes())
+                    .fold(0x811c_9dc5u32, |h, b| {
+                        (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+                    });
+                assert_eq!(hash, pinned, "{threads} threads");
+            }
+        }
+    }
+
+    #[test]
     fn the_cloth_gives_the_pinned_image_with_any_thread_count() {
         // E6: the procedural cloth of the E6 cloth example is rt-core's pinned image
         // (PINNED_E6_CLOTH_4SPP) for any thread count.

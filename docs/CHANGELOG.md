@@ -20,9 +20,15 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - **Editor de lente** (*Cámara ▸ Lente ▸ Editar elementos…*): los elementos de una lente trazada, sobre una copia (la del catálogo no cambia nunca): los radios, el grosor, el vidrio (los de las lentes del catálogo) y el diámetro de cada uno, más pequeño o más grande, el aire hasta el siguiente, **añadir** un elemento delante o detrás del elegido, **borrar** uno y **girarlo 180°**. Cada edición es una entrada de deshacer. Tras cada una el motor comprueba la lente y dice la focal del diseño, el tiraje, el f/, el círculo de imagen, la distorsión y la luz hacia la esquina, con el corte al día; una lente que no forma imagen, no deja pasar luz o tiene un hueco negativo dice por qué y no se aplica, pero se sigue editando. *Aplicar a la cámara* la pone como lente propia y *Guardar en la biblioteca…* la guarda en *Míos*; va y vuelve con el proyecto y con el archivo de la biblioteca (O2c).
 
+### Materiales
+
+- **Nodos *Madera* y *Tela*** en el editor de material: la madera procedural de la familia *Madera* (anillos, figura, poros, fibras y nudos) y la tela de la familia *Tela* (tejido, hilos por cm, relieve, torsión), con los mismos parámetros en las mismas unidades; dan color, rugosidad, anisotropía, la normal de su relieve y su altura (la tela, también su pelusa). Pasar una madera o una tela a *Nodos* da su nodo conectado a la salida, y volver a *Simple* la devuelve tal cual; el grafo pinta lo mismo que el material en *Completo* y en los renders, y en *Rápido* ya se ven los anillos (un corte por el frente de la pieza) (M3c).
+- El ejemplo de grafo de madera pasa a ser el roble del catálogo con el nodo *Madera* (*Roble (nodo Madera)*): se ve como la familia *Madera*. Antes eran dos ruidos y una rampa con anillos alrededor del eje de la pieza (M3c).
+
 ### Motor
 
 - La información de una lente trazada dice también la **focal del diseño** (`designEflMm`: la de la prescripción tal como está escrita, antes de escalarla a la de la cámara), que el editor de lente enseña. Nada de render: ningún *hash* fijado cambia (O2c).
+- **Nodos de dibujo en los programas de material**: ocho instrucciones nuevas (`WOOD`, `WOODR`, `WOODH`, `WOODN` y las cuatro `CLOTH*`) corren la madera y la tela de E6 con el mismo código que su familia, colocadas en cada pieza como el material (el marco de la caja de la malla, la escala de la instancia y los nudos con su prueba de la superficie); la rugosidad se estira a lo largo de su veta o a través del hilo. La escena de dibujos de E6 pintada con nodos *Madera* da el mismo *hash* que la de la familia (`0x5ed1bf32`); la de tela con nodos *Tela*, uno nuevo. Bit 5 de las capacidades del motor (`FEATURE_PATTERN_NODES`); `rt --write-m3c-wood-example` y `--write-m3c-cloth-example`. Ningún fijado anterior se mueve (M3c).
 
 ### Herramientas
 
