@@ -45,6 +45,7 @@ USAGE:
     rt --write-o3a-example <scene.rsb>
     rt --write-film-thumb <scene.rsb>
     rt --write-o2-example <scene.rsb>
+    rt --write-l5-example <scene.rsb>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
@@ -164,6 +165,10 @@ OPTIONS:
         --write-o1-example <f>
                             write the O1 parity scene (the example through a lens with every
                             knob of the enhanced thin lens, and bokeh lights) as an RSB file
+        --write-l5-example <f>
+                            write the L5 parity scene (the example lit by two IES lights, a
+                            downlight profile and a wall washer, whose files travel in the
+                            IESP sections) as an RSB file
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -434,6 +439,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the L5 parity scene (`rt_core::example::l5_scene`) as an RSB file.
+    WriteL5Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
     WriteAmbientExample {
         /// RSB file to write.
@@ -543,6 +553,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut sss_dir = None;
     let mut write_e11 = None;
     let mut write_q1 = None;
+    let mut write_l5 = None;
     let mut write_e10 = None;
     let mut adaptive_noise_dir = None;
     let mut write_ambient = None;
@@ -668,6 +679,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-q1-example" => write_q1 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-l5-example" => write_l5 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--rounds" => options.rounds = Some(positive(value(&mut it, arg)?, arg)?),
@@ -814,6 +826,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-q1-example takes no other option".into());
         }
         return Ok(Command::WriteQ1Example { path });
+    }
+    if let Some(path) = write_l5 {
+        if args.len() != 2 {
+            return Err("--write-l5-example takes no other option".into());
+        }
+        return Ok(Command::WriteL5Example { path });
     }
     if let Some(path) = write_e10 {
         if args.len() != 2 {
@@ -1050,6 +1068,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteE11Example { path } => {
             let bytes = rt_core::example::e11_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteL5Example { path } => {
+            let bytes = rt_core::example::l5_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())

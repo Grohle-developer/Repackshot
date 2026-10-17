@@ -57,7 +57,7 @@ no un requisito.
    miniatura e intención; la exposición no cambia al cambiar de montaje.
    Afinar focos si se quiere; colocar un foco por reflejo apuntando a
    dónde se quiere el brillo. **O montar la luz desde cero**: añadir
-   focos propios (área, punto, foco direccional, sol; IES más adelante),
+   focos propios (área, punto, foco direccional, sol, y el perfil IES de una lámpara real),
    moverlos y apuntarlos con el *gizmo*, y guardar el resultado como
    montaje propio en la biblioteca.
 5. **Cámara e imagen.** Óptica, focal, diafragma, enfoque con clic,
@@ -800,9 +800,10 @@ pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
 *Añadir ▸* del menú de la cabecera, desde el clic derecho del visor en vacío y
 desde la paleta: **Área** (rectángulo, disco o esfera, con tamaño), **Punto**
 (radio), **Foco direccional** (ángulo de cono y transición), **Sol** (ángulo
-del disco) e **IES** (perfil de archivo; *próximamente*, fase L5). Claves
-estables: `RECTANGLE`, `DISK`, `SPHERE`, `POINT`, `SPOT`, `SUN`
-(`NEW_LIGHT_KINDS`). Un foco nuevo nace **delante y arriba de la pieza** tal
+del disco) e **IES…** (un archivo de perfil fotométrico, fase L5: ver *Luces
+IES*, abajo). Claves estables: `RECTANGLE`, `DISK`, `SPHERE`, `POINT`,
+`SPOT`, `SUN` (`NEW_LIGHT_KINDS`) e `IES` (tipo de luz, que necesita su
+archivo: nace de `studio/addIesLight`). Un foco nuevo nace **delante y arriba de la pieza** tal
 como la ve la cámara activa (25° a su derecha, 40° de elevación, 50° el sol,
 a dos tamaños de pieza del pivote), encendido, **seleccionado** y con la
 **irradiancia media** de los focos encendidos (un sol, π veces esa media: ver
@@ -858,6 +859,52 @@ a dos tamaños de pieza del pivote), encendido, **seleccionado** y con la
   quita los focos propios y devuelve los del montaje como eran.
 
 Cualquier pieza con material emisor también ilumina.
+
+**Luces IES** (fase L5). *+ Añadir luz ▸ IES…* abre un archivo `.ies` (el
+formato de texto público de IES LM-63: lo que publican los fabricantes de
+luminarias con la intensidad en cada dirección; también se puede soltar un
+`.ies` sobre la ventana) y crea un foco de tipo `IES` delante y arriba de la
+pieza, encendido, seleccionado y con la irradiancia media de los focos
+encendidos, como el punto nuevo: una entrada de deshacer. **No se entrega
+ningún perfil de fabricante**: cada persona trae los suyos (los dos de las
+pruebas, `tests/fixtures/ies/`, están escritos a mano y no son la medida de
+ninguna luminaria). Un archivo que el lector no acepta no añade nada y dice
+por qué en un aviso: se lee la fotometría **tipo C** con `TILT=NONE`; el tipo
+B o A y `TILT=INCLUDE` se rechazan con su mensaje («exporta el perfil como
+tipo C», «con TILT=NONE»), y también lo cortado, las cuentas que no casan,
+los ángulos que no crecen y las candelas negativas.
+
+- **Qué da el archivo y qué da la luz.** El perfil da la **forma** (la
+  intensidad relativa en cada dirección, interpolada bilinealmente entre sus
+  ángulos y con las simetrías del archivo: redondo, cuatro cuadrantes,
+  bilateral o completo) y la luz da el **nivel**: es tan brillante en la
+  dirección más brillante del perfil como un punto de la misma potencia. Los
+  lúmenes y el multiplicador que dice el archivo no cuentan (un perfil
+  escrito para 500 lm y otro para 5000 dan la misma luz), así que cambiar un
+  punto por una luz IES no mueve la exposición. Los **lúmenes** que enseña el
+  inspector son el flujo de su punto por la parte de la esfera que el perfil
+  llena (un haz estrecho da pocos lúmenes).
+- **Se orienta** como un foco: su eje (ángulo vertical 0° del perfil) va a su
+  objetivo, y el **giro** (ángulo horizontal 0°) gira el patrón alrededor del
+  eje; se mueve, se apunta, se duplica y se elimina como cualquier foco, y
+  puede ser una esfera de radio pequeño (se ve a cámara y en reflejos, con el
+  patrón del perfil) o un punto.
+- **El inspector** enseña el **nombre del perfil** (la descripción de la
+  luminaria del archivo, o el nombre del archivo), un **gráfico polar** de
+  su intensidad dibujado desde el archivo (los planos C0–C180, continuo, y
+  C90–C270, discontinuo, con el eje hacia abajo; uno solo si el perfil es
+  redondo), el pico, el ángulo del haz y la simetría, **Cambiar…** (otro
+  archivo para la misma luz, que conserva su sitio y su nivel) y un
+  **multiplicador** (× 1 es el nivel con que entró la luz; en lugar de los
+  vatios, que cambian con el tipo de producto al aplicar un montaje). El tipo
+  se puede pasar a *Punto* o *Foco* y volver: el perfil se queda en la luz.
+- **Rápido lo aproxima** (y la nota del inspector lo dice): un foco con la
+  intensidad del eje y un cono sacado del ángulo en que el perfil cae a la
+  mitad; *Completo* y el render usan el archivo entero.
+- **El perfil viaja** en el proyecto (`.repack`: el texto del archivo va en la
+  luz, y el proyecto se abre en otro equipo sin él), en los estudios, en un
+  montaje guardado con *Guardar montaje como…* y en la biblioteca. Un perfil
+  dañado, o que el lector rechaza, se quita al abrir y la luz es un punto.
 
 **Luces y cámaras en el visor** (ampliación de L4). Las luces y las
 **cámaras guardadas** (no la activa, que es la vista) se dibujan como

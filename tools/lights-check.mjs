@@ -7,8 +7,8 @@
 // Without --url it serves dist/ with `vite preview` on port 4277 and stops it at the end. Full mode needs
 // dist/engine/rt.wasm (`npm run engine:build` before the build); without it that part is skipped and says so.
 //
-//   adding     the Lights tab's Add light lists area (rectangle, disc, sphere), point, spot, sun and IES (coming
-//              soon); a spot is added in front of and above the part, selected, and one undo takes it away; Aim at ▸
+//   adding     the Lights tab's Add light lists area (rectangle, disc, sphere), point, spot, sun and IES… (L5, a
+//              profile file: tools/ies-check.mjs); a spot is added in front of and above the part, selected, and one undo takes it away; Aim at ▸
 //              A part… aims it at the part clicked; the header's Add ▸ has the lights too;
 //   glyphs     Lights and cameras (left of Pan) draws the glyphs while the Lights or Cameras tab is open or one is
 //              selected; a click on the spot's glyph selects it; a saved camera is selected by its glyph; off, or on
@@ -268,8 +268,8 @@ async function fast(browser) {
 
   // Add light ▸ with its seven entries; a spot in front of and above the part; aimed at the cap.
   const entries = await aimedSpot(page, f, join(SHOTS, 'lights-add-menu.png'), true);
-  const KINDS = ['Area · rectangle', 'Area · disc', 'Area · sphere', 'Point', 'Spot', 'Sun', 'IES profile'];
-  ok(KINDS.every((k, i) => entries[i]?.startsWith(k)) && /coming soon/.test(entries[6] ?? ''), `Add light ▸ lists: ${entries.join(' | ')}`, f);
+  const KINDS = ['Area · rectangle', 'Area · disc', 'Area · sphere', 'Point', 'Spot', 'Sun', 'IES…'];
+  ok(KINDS.every((k, i) => entries[i]?.startsWith(k)) && !/coming soon/.test(entries[6] ?? ''), `Add light ▸ lists: ${entries.join(' | ')}`, f);
   let s = await state(page);
   log.added = s;
   ok(s.lights.at(-1)?.startsWith('Spot'), `the Lights tab lists the spot: ${s.lights}`, f);

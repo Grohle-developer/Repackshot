@@ -362,6 +362,88 @@ fn a_spot_leaves_dark_what_is_outside_its_cone() {
     assert!(mean_where(&render(&wide(LightKind::Point), 4), 1, |_, _| true) > 0.01);
 }
 
+/// An IES light (L5) of `power` W `h` above the white floor, its axis straight down and its horizontal
+/// angle 0 along +y, seen by a window of 0.05 mm of the floor at (`x`, `y`) (a table with a kink at its
+/// axis, as a file rounded from a cosine has, would show a wider one: 2 mm is 0.14° at 400 mm and 3 cd
+/// per degree of the downlight is 4e-4 of its peak).
+fn ies_scene(profile: &str, h: f32, power: f32, x: f32, y: f32, diameter: f32) -> Scene {
+    let mut scene = point_scene(LightKind::Ies, diameter, h, power, LIGHT_FLAG_GLOSSY);
+    scene.lights[0].up = Vec3::new(0.0, 1.0, 0.0);
+    scene.lights[0].ies = Some(std::sync::Arc::new(
+        crate::ies::IesProfile::parse(profile.as_bytes()).expect("a profile"),
+    ));
+    scene.camera = ortho_down(x, y, 0.05);
+    scene
+}
+
+#[test]
+fn an_ies_light_lights_a_floor_with_the_candela_of_its_file_at_0_30_and_60_degrees() {
+    // The criterion of L5, end to end. 12 W at the peak, 400 mm above a white Lambertian floor:
+    // under the light the floor's radiance is E / π with E = I(θ) cos θ / d² = I(θ) cos³θ / h²,
+    // the file's candela over its peak (1000 cd: 750 at 30°, 250 at 60°) times the peak intensity
+    // 12 / 4π W/sr. Direct light only, from a delta point: the film holds the expression itself, to
+    // 8.2e-6 (measured; a plain point light is 6e-6 off the same formula): the test allows 5e-5.
+    let (h, power) = (400.0f32, 12.0f32);
+    let peak = power as f64 / (4.0 * std::f64::consts::PI);
+    for (theta, candela) in [(0.0f64, 1000.0f64), (30.0, 750.0), (60.0, 250.0)] {
+        let t = theta.to_radians();
+        let r = h as f64 * t.tan();
+        let want = peak * candela / 1000.0 * t.cos().powi(3)
+            / (h as f64 * 1.0e-3).powi(2)
+            / std::f64::consts::PI;
+        for azimuth in [0.0f64, 140.0] {
+            let a = azimuth.to_radians();
+            let scene = ies_scene(
+                crate::ies::tests::DOWNLIGHT,
+                h,
+                power,
+                (r * a.cos()) as f32,
+                (r * a.sin()) as f32,
+                0.0,
+            );
+            let got = mean_where(&render(&scene, 4), 1, |_, _| true);
+            assert!(
+                (got / want - 1.0).abs() < 5.0e-5,
+                "{theta}° at {azimuth}°: {got} vs {want}"
+            );
+        }
+    }
+    // The same light as a sphere of 60 mm (sampled over its cone, MIS with BSDF rays): the same
+    // floor to the usual noise of a sphere light.
+    let r = h as f64 * 30.0f64.to_radians().tan();
+    let want = peak * 0.75 * 30.0f64.to_radians().cos().powi(3)
+        / (h as f64 * 1.0e-3).powi(2)
+        / std::f64::consts::PI;
+    let sphere = ies_scene(crate::ies::tests::DOWNLIGHT, h, power, r as f32, 0.0, 60.0);
+    let got = mean_where(&render(&sphere, 1024), 1, |_, _| true);
+    assert!((got / want - 1.0).abs() < 0.02, "sphere: {got} vs {want}");
+}
+
+#[test]
+fn an_ies_light_follows_the_horizontal_angles_of_its_file_on_the_floor() {
+    // The wall washer, axis down and horizontal angle 0 along +y: C90 lies towards -x (counter-
+    // clockwise seen from above). At 60° off the axis the file says 560, 430, 330 and 380 cd of
+    // 900 at C0, C90, C180 and C270.
+    let (h, power) = (400.0f32, 9.0f32 * 4.0 * std::f32::consts::PI);
+    let r = h * 60.0f32.to_radians().tan();
+    let cos3 = 60.0f64.to_radians().cos().powi(3);
+    for (x, y, candela) in [
+        (0.0, r, 560.0f64),
+        (-r, 0.0, 430.0),
+        (0.0, -r, 330.0),
+        (r, 0.0, 380.0),
+    ] {
+        let scene = ies_scene(crate::ies::tests::WALL_WASHER, h, power, x, y, 0.0);
+        let got = mean_where(&render(&scene, 4), 1, |_, _| true);
+        // 9 W/sr at the peak, 900 cd: 1 W/sr per 100 cd.
+        let want = candela / 100.0 * cos3 / (h as f64 * 1.0e-3).powi(2) / std::f64::consts::PI;
+        assert!(
+            (got / want - 1.0).abs() < 5.0e-5,
+            "({x}, {y}): {got} vs {want}"
+        );
+    }
+}
+
 #[test]
 fn a_light_without_shadow_lights_through_what_is_in_its_way() {
     // A slab between a point light and the floor: dark under it, unless the light casts no
@@ -1843,6 +1925,7 @@ fn medium_slab(medium: Material) -> Scene {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_GLOSSY,
+        ies: None,
     }];
     scene
 }
@@ -1949,6 +2032,7 @@ fn milk_scene(size: u32) -> Scene {
             spread_deg: 180.0,
             angle_deg: 0.0,
             flags: LIGHT_FLAG_GLOSSY,
+            ies: None,
         }],
         environment: black_world(),
         render: RenderSettings {
@@ -2057,6 +2141,7 @@ fn milk_under_glass(size: u32) -> Scene {
             spread_deg: 180.0,
             angle_deg: 0.0,
             flags: LIGHT_FLAG_GLOSSY,
+            ies: None,
         }],
         environment: black_world(),
         render: RenderSettings {

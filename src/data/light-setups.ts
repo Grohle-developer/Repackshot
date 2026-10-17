@@ -60,7 +60,7 @@ export const SPEC_DEFAULTS: Readonly<SpecDefaults> = {
 // Light types and shapes the renderer understands. No recipe of the catalogue
 // uses POINT, SPOT or SPHERE: they are the own lights of phase L4 (Add light),
 // which a saved setup of the library can carry.
-export const LIGHT_TYPES: readonly LightType[] = ['AREA', 'POINT', 'SPOT', 'SUN'];
+export const LIGHT_TYPES: readonly LightType[] = ['AREA', 'POINT', 'SPOT', 'SUN', 'IES'];
 export const LIGHT_SHAPES: readonly LightShape[] = ['SQUARE', 'RECTANGLE', 'DISK', 'ELLIPSE', 'SPHERE'];
 
 // Generic fallback per role, used when the active rig does not cover a role.

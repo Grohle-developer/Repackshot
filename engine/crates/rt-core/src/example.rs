@@ -168,6 +168,7 @@ pub fn scene() -> Scene {
             spread_deg: 180.0,
             angle_deg: 0.0,
             flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+            ies: None,
         }],
         environment: Environment {
             kind: EnvKind::Studio,
@@ -1399,6 +1400,65 @@ pub fn e11_scene() -> Scene {
     scene
 }
 
+/// The first hand-written IES test profile (L5): a downlight of 1000 cd on its axis that falls as
+/// `cos²`, the same around its axis (`tests/fixtures/ies/downlight-symmetric.ies`; the page's tests
+/// read the file too). Typed by hand, not a measurement of any luminaire.
+pub const IES_DOWNLIGHT: &str =
+    include_str!("../../../../tests/fixtures/ies/downlight-symmetric.ies");
+
+/// The second hand-written IES test profile (L5): a wall washer of 900 cd on its axis, different on
+/// each of the four sides, with all 360 degrees of its horizontal angle given
+/// (`tests/fixtures/ies/wall-washer.ies`).
+pub const IES_WALL_WASHER: &str = include_str!("../../../../tests/fixtures/ies/wall-washer.ies");
+
+/// The L5 parity scene: the example at 160 x 120 lit by its rectangular panel at a fifth of its
+/// power and two IES lights: the downlight profile, a sphere of 24 mm above and in front of the big
+/// sphere (sampled over its cone, MIS with the BSDF rays), and the wall-washer profile as a warm
+/// point on the left, turned about its axis so that its horizontal angles do not line up with the
+/// world. `render.rs` pins its hash; `rt --write-l5-example` writes it for `tools/wasm-parity.mjs`.
+pub fn l5_scene() -> Scene {
+    use crate::ies::IesProfile;
+    use std::sync::Arc;
+    let profile = |text: &str| {
+        Arc::new(IesProfile::parse(text.as_bytes()).expect("the test profiles are valid"))
+    };
+    let mut scene = scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    scene.lights[0].power = 1.0;
+    let above = Vec3::new(0.0, -250.0, 760.0);
+    let washer = Vec3::new(-620.0, -180.0, 380.0);
+    scene.lights.push(Light {
+        kind: LightKind::Ies,
+        position: above,
+        direction: (Vec3::new(0.0, 0.0, 100.0) - above).normalize(),
+        up: Vec3::new(0.0, 1.0, 0.0),
+        size_x: 24.0,
+        size_y: 24.0,
+        color: Rgb::WHITE,
+        power: 18.0,
+        spread_deg: 180.0,
+        angle_deg: 0.0,
+        flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+        ies: Some(profile(IES_DOWNLIGHT)),
+    });
+    scene.lights.push(Light {
+        kind: LightKind::Ies,
+        position: washer,
+        direction: (Vec3::new(-330.0, 120.0, 60.0) - washer).normalize(),
+        up: Vec3::new(0.35, -0.2, 0.9),
+        size_x: 0.0,
+        size_y: 0.0,
+        color: Rgb::new(1.0, 0.82, 0.62),
+        power: 7.0,
+        spread_deg: 180.0,
+        angle_deg: 0.0,
+        flags: LIGHT_FLAG_GLOSSY,
+        ies: Some(profile(IES_WALL_WASHER)),
+    });
+    scene
+}
+
 /// The S4a parity scene: the example at 160 x 120 with three ambient effects, one of each shape:
 /// 20 000 motes of dust (spheres, fine enough to be widened to the minimum size on screen, with
 /// turbulence, tint variation and, since S4b, the forward lobe of the dust preset), 3 000
@@ -1594,6 +1654,7 @@ fn add_far_lights(scene: &mut Scene) {
             spread_deg: 180.0,
             angle_deg: 0.0,
             flags: LIGHT_FLAG_CAMERA,
+            ies: None,
         });
     }
 }

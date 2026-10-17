@@ -1340,6 +1340,30 @@ mod tests {
     pub(crate) const PINNED_O2_TRACED_4SPP: u32 = 0x8f7d_0ef8;
 
     #[test]
+    fn the_l5_ies_scene_has_a_pinned_hash_on_every_platform() {
+        // L5: the example lit by its panel at a fifth of its power and by two IES lights, a sphere
+        // of the symmetric downlight profile (next-event estimation and MIS) and a warm point of
+        // the wall washer turned about its axis; the profiles travel as text in the `IESP`
+        // sections and are read again when the scene is. Through an RSB round trip;
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-l5-example`).
+        // Every hash above stayed: no scene before L5 has an IES light.
+        let scene = crate::example::l5_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("L5 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_L5_IES_4SPP, "IES lights on {}", isa.name());
+        }
+        // Without its profiles the same scene is another image (the lights vanish).
+        let mut plain = scene.clone();
+        plain.lights.truncate(1);
+        assert_ne!(scene_4spp_hash(&plain, Isa::detect()), PINNED_L5_IES_4SPP);
+    }
+
+    /// Pinned hash of the L5 example (two IES lights) at 4 samples per pixel.
+    pub(crate) const PINNED_L5_IES_4SPP: u32 = 0x920f_0be1;
+
+    #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {
         // The whole path (camera, shadow and bounce rays) through brute force and through the
         // BVH gives the same film.

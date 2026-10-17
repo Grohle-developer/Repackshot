@@ -179,6 +179,7 @@ pub fn scene_for(recipe: &Recipe, size: (u32, u32)) -> Scene {
                 spread_deg: l.spread,
                 angle_deg: 0.53,
                 flags: l.flags,
+                ies: None,
             }
         })
         .collect();

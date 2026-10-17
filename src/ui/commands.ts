@@ -5,7 +5,7 @@
 
 import { materialPreset } from '../data/materials';
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
-import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
+import type { DoctorCheckKey, IesRef, Label, Lang, StudioPreset } from '../data/types';
 import { aiFileName } from '../core/ai-post';
 import { aiImagesOf, aiVariantsOf } from '../core/results';
 import { activeCamera, type CameraId } from '../core/camera';
@@ -57,6 +57,7 @@ import {
   type LibraryKind,
   type LensItem,
 } from '../core/library';
+import { IES_MAX_BYTES, iesTextOf, parseIes, type IesError } from '../core/ies';
 import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
 import { resolvePreset } from '../core/rig';
 import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
@@ -790,10 +791,12 @@ export function dropFiles(ctx: Ctx, files: readonly File[], handles: readonly Pr
     void openProjectFile(ctx, files[i], handles[i]);
     return;
   }
-  // An HDRI lights the scene; the other files are models.
+  // An HDRI lights the scene; an IES profile (L5) is a new light; the other files are models.
   const hdri = files.find(isHdriFile);
   if (hdri) void loadEnvironmentHdri(ctx, hdri);
-  const models = files.filter((f) => !isHdriFile(f));
+  const ies = files.find(isIesFile);
+  if (ies) void addIesLight(ctx, ies);
+  const models = files.filter((f) => !isHdriFile(f) && !isIesFile(f));
   if (models.length > 0) void importFiles(ctx, models);
 }
 
@@ -1161,6 +1164,70 @@ export function lightLabel(state: ProjectState, id: string): Label {
 export function addLight(ctx: Ctx, kind: NewLightKind): void {
   ctx.store.dispatch({ type: 'studio/addLight', kind, label: L('undo.addLight', { name: L(dyn(`lightName.${kind === 'RECTANGLE' || kind === 'DISK' ? 'AREA' : kind}`)) }) });
   ctx.ui.set({ sceneTab: 'lights' });
+}
+
+// --- IES lights (phase L5) ---------------------------------------------------------------------
+
+const IES_EXTENSIONS = ['ies'];
+
+/** An IES file by its name (dropped on the window it becomes a light). */
+export function isIesFile(file: File): boolean {
+  return /\.ies$/i.test(file.name);
+}
+
+/** The sentence for a file that is not a profile the engine reads (the refusal's code and numbers: core/ies.ts). */
+export function iesErrorText(name: string, err: IesError): string {
+  return t(dyn(`ies.error.${err.code}`), { name, ...err.params });
+}
+
+/**
+ * A file read as the profile a light keeps (its text, and its name: the luminaire's description, else the file's name);
+ * null, with a toast that says why, when it is not a profile the engine reads (a refusal of core/ies.ts).
+ */
+export async function readIesFile(ctx: Ctx, file: File): Promise<IesRef | null> {
+  if (file.size > IES_MAX_BYTES) {
+    ctx.ui.toast(t('ies.error.TooLarge', { name: file.name }));
+    return null;
+  }
+  let text: string;
+  try {
+    text = iesTextOf(new Uint8Array(await file.arrayBuffer()));
+  } catch {
+    ctx.ui.toast(t('ies.error.read', { name: file.name }));
+    return null;
+  }
+  const read = parseIes(text);
+  if (!read.ok) {
+    ctx.ui.toast(iesErrorText(file.name, read.error));
+    return null;
+  }
+  return { name: read.profile.name || file.name.replace(/\.ies$/i, ''), text };
+}
+
+/** Add light ▸ IES…: a file of the photometric profile of a lamp becomes a new light, in front of and above the part, selected. */
+export async function addIesLight(ctx: Ctx, file?: File): Promise<boolean> {
+  const f = file ?? (await pickImage(ctx, 'dialog.loadIes', 'dialog.iesFiles', IES_EXTENSIONS));
+  if (!f) return false;
+  const ies = await readIesFile(ctx, f);
+  if (!ies) return false;
+  ctx.store.dispatch({ type: 'studio/addIesLight', ies, label: L('undo.addIesLight', { name: ies.name }) });
+  ctx.ui.set({ sceneTab: 'lights' });
+  return true;
+}
+
+/** Change… (the light's profile): another file for the same light, which keeps its place and its level. */
+export async function replaceIesProfile(ctx: Ctx, id: string, file?: File): Promise<boolean> {
+  const light = ctx.store.get().studio.lights.find((l) => l.id === id);
+  if (!light) return false;
+  const f = file ?? (await pickImage(ctx, 'dialog.loadIes', 'dialog.iesFiles', IES_EXTENSIONS));
+  if (!f) return false;
+  const ies = await readIesFile(ctx, f);
+  if (!ies) return false;
+  const now = ctx.store.get().studio.lights.find((l) => l.id === id);
+  if (!now) return false;
+  const base = now.ies?.base ?? Math.max(now.power, 1e-6);
+  ctx.store.dispatch({ type: 'studio/setLight', id, patch: { type: 'IES', ies: { ...ies, base } }, label: L('undo.replaceIes', { name: lightLabel(ctx.store.get(), id) }) });
+  return true;
 }
 
 export function duplicateLight(ctx: Ctx, id: string): void {

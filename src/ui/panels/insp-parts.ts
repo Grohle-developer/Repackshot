@@ -12,10 +12,12 @@ import { SMOOTH_ANGLE_DEG } from '../../core/meshes';
 import { partsUnder, type NodeId } from '../../core/scene';
 import { isLocked, PATTERN_MAX, pivotModeOf, pivotPoint, PIVOT_MODES, type PatternSpec } from '../../core/transform';
 import type { ProjectState } from '../../core/store';
+import { iesHalfAngle, iesProfileOf, iesSpot } from '../../core/ies';
 import { lightAimPoint, lightFrame, lightLumens, NEW_LIGHT, polarAboutPivot, SPOT_DEFAULTS, type LightInstance } from '../../core/lighting';
 import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, namePrompt, type MineSpec } from '../components/library';
+import { iesPlot } from '../components/ies-plot';
 import { dragSource } from '../components/material-drag';
 import { section } from '../components/section';
 import { openMenu, setThumbImage, showConfirmIn, thumb } from '../components/widgets';
@@ -718,8 +720,9 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
   const role = select((['KEY', 'FILL', 'RIM', 'TOP'] as const).map((r) => ({ value: r, label: t(dyn(`role.${r}`)) })), l0.role, (v) => set({ role: v as LightRole }), t('lightEdit.role'));
   const roleRow = field(t('lightEdit.role'), role.el);
   // Area, point, spot, sun (L4). A spot starts with its default cone; a point and a spot with a small bulb.
+  // An IES light (L5) can be made a point or a spot and back (its profile stays); the others have no profile to go back to.
   const type = segmented(
-    LIGHT_TYPES.map((x) => ({ value: x, label: t(dyn(`lightType.${x}`)) })),
+    LIGHT_TYPES.filter((x) => x !== 'IES' || l0.ies !== undefined).map((x) => ({ value: x, label: t(dyn(`lightType.${x}`)) })),
     l0.type,
     (v) => {
       const l = cur();
@@ -727,10 +730,10 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
       const patch: Partial<LightInstance> = { type: v };
       if (v === 'SPOT' && (l.type !== 'SPOT' || l.spread >= 180)) patch.spread = SPOT_DEFAULTS.cone;
       if (v !== 'SPOT' && l.type === 'SPOT') patch.spread = 180;
-      if ((v === 'POINT' || v === 'SPOT') && l.type === 'AREA' && l.shape !== 'SPHERE') patch.size = NEW_LIGHT.bulb;
+      if ((v === 'POINT' || v === 'SPOT' || v === 'IES') && l.type === 'AREA' && l.shape !== 'SPHERE') patch.size = NEW_LIGHT.bulb;
       set(patch);
     },
-    { full: true, ariaLabel: t('lightEdit.type') },
+    { full: true, compact: l0.ies !== undefined, ariaLabel: t('lightEdit.type') },
   );
   const shape = select(LIGHT_SHAPES.map((x) => ({ value: x, label: t(dyn(`shape.${x}`)) })), l0.shape, (v) => set({ shape: v as LightInstance['shape'] }), t('lightEdit.shape'));
   const shapeRow = field(t('lightEdit.shape'), shape.el);
@@ -789,7 +792,32 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
   const kelvinRow = field(t('lightEdit.kelvin'), kelvin.el);
   const colorRow = field(t('lightEdit.color'), color.el);
   const power = num('power', 0, 100000, 1, 'W', 1, t('lightEdit.power'));
+  const powerRow = field(t('lightEdit.power'), power.el);
   const powerAux = h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px', 'data-field': 'lumens' });
+  // IES (L5): the profile gives the shape and the level is a multiplier of the power the light came in with.
+  const iesBase = (l: LightInstance): number => (l.ies && l.ies.base > 0 ? l.ies.base : 1);
+  const multiplier = numberField({
+    value: l0.ies ? l0.power / iesBase(l0) : 1,
+    min: 0,
+    max: 1000,
+    step: 0.05,
+    unit: '×',
+    digits: 2,
+    ariaLabel: t('lightEdit.iesMultiplier'),
+    onChange: (v, g) => {
+      const l = cur();
+      if (l?.ies) set({ power: iesBase(l) * v }, g);
+    },
+  });
+  const multiplierRow = field(t('lightEdit.iesMultiplier'), multiplier.el);
+  const iesName = h('div', { class: 'ies-profile-name', 'data-field': 'ies-name' });
+  const iesChange = h('button', { type: 'button', class: 'btn', 'data-action': 'light.iesChange', onclick: () => void cmd.replaceIesProfile(ctx, id) }, icon('lightIes', 14), t('lightEdit.iesReplace'));
+  const iesChangeRow = h('div', { style: 'padding-left:116px' }, iesChange);
+  const iesPlotHost = h('div');
+  const iesInfo = h('div', { class: 'note', style: 'padding-left:116px;margin-top:-4px', 'data-field': 'ies-info' });
+  const iesNote = h('p', { class: 'note', style: 'margin:0', 'data-field': 'ies-approx' });
+  const iesBlock = h('div', { class: 'stack', 'data-field': 'ies' }, field(t('lightEdit.iesProfile'), iesName), iesPlotHost, iesInfo, iesNote, iesChangeRow);
+  let iesShown = '';
   const glossy = toggle(l0.glossy, (v) => set({ glossy: v }), t('lightEdit.glossy'));
   const camera = toggle(l0.camera, (v) => set({ camera: v }), t('lightEdit.camera'));
   const shadow = toggle(l0.shadow !== false, (v) => set({ shadow: v ? undefined : false }), t('lightEdit.shadow'));
@@ -806,7 +834,7 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
       const s = store.get();
       const area = l.type === 'AREA';
       const sphere = area && l.shape === 'SPHERE';
-      const bulb = l.type === 'POINT' || l.type === 'SPOT';
+      const bulb = l.type === 'POINT' || l.type === 'SPOT' || l.type === 'IES';
       nameField.set(l.name ?? '');
       (nameField.el as HTMLInputElement).placeholder = lightName(s, id, getLang());
       ownNote.style.display = l.own ? '' : 'none';
@@ -833,7 +861,7 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
       blend.set(Math.round((l.blend ?? SPOT_DEFAULTS.blend) * 100));
       sunRow.style.display = l.type === 'SUN' ? '' : 'none';
       sunAngle.set(l.angle);
-      rollRow.style.display = area && !sphere && l.shape !== 'DISK' ? '' : 'none';
+      rollRow.style.display = (area && !sphere && l.shape !== 'DISK') || l.type === 'IES' ? '' : 'none';
       roll.set(l.roll ?? 0);
       const f = lightFrame(s, l);
       xyz.forEach((c, k) => c.set(Math.round(f.position[k] * 100) / 100));
@@ -846,7 +874,29 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
       // Lumens (or lux for a sun) from the flux the engine is given: not a lamp's efficacy (core/photometry.ts).
       const lm = lightLumens(s, l);
       const aux = t(lm.unit === 'lx' ? 'lightEdit.lux' : 'lightEdit.lumens', { n: formatNumber(lm.value, getLang(), lm.value < 10 ? 1 : 0) });
-      powerAux.textContent = l.type === 'SUN' ? t('lightEdit.sunPowerAux', { aux }) : t('lightEdit.powerAux', { aux });
+      const ies = l.type === 'IES' && l.ies !== undefined;
+      powerRow.style.display = ies ? 'none' : '';
+      multiplierRow.style.display = ies ? '' : 'none';
+      if (l.ies) multiplier.set(l.power / iesBase(l));
+      powerAux.textContent = l.type === 'SUN' ? t('lightEdit.sunPowerAux', { aux }) : ies ? t('lightEdit.iesPowerAux', { aux }) : t('lightEdit.powerAux', { aux });
+      // IES (L5): the profile's name, its plot, what the file says of it, and that Fast only approximates it.
+      iesBlock.style.display = ies ? '' : 'none';
+      if (ies && l.ies) {
+        iesName.textContent = l.ies.name;
+        iesName.title = l.ies.name;
+        const profile = iesProfileOf(l.ies.text);
+        if (iesShown !== l.ies.text) {
+          iesShown = l.ies.text;
+          iesPlotHost.replaceChildren(...(profile ? [iesPlot(profile)] : []));
+        }
+        if (profile) {
+          iesInfo.textContent = t('lightEdit.iesInfo', { peak: formatNumber(profile.peak, getLang(), profile.peak < 10 ? 1 : 0), beam: formatNumber(2 * iesHalfAngle(profile), getLang(), 0), sym: t(dyn(`ies.sym.${profile.symmetry}`)) });
+          iesNote.textContent = t('lightEdit.iesApprox', { cone: formatNumber(iesSpot(profile).cone, getLang(), 0) });
+        } else {
+          iesInfo.textContent = '';
+          iesNote.textContent = t('lightEdit.iesBroken');
+        }
+      }
       const at = l.aim ? lightAimPoint(s, l) : null;
       const r = (v: number) => formatNumber(v, getLang(), 0);
       aimNow.textContent = t('lightEdit.aimNow', { what: at ? t('lightEdit.aimHere', { x: r(at[0]), y: r(at[1]), z: r(at[2]) }) : t('lightEdit.aimCentre').toLowerCase() });
@@ -883,6 +933,7 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
     ownNote,
     roleRow,
     field(t('lightEdit.type'), type.el),
+    iesBlock,
     shapeRow,
     sizeRow,
     sizeYRow,
@@ -905,7 +956,8 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
     field(t('lightEdit.colorMode'), mode.el),
     kelvinRow,
     colorRow,
-    field(t('lightEdit.power'), power.el),
+    powerRow,
+    multiplierRow,
     powerAux,
     field(t('lightEdit.glossy'), glossy.el),
     field(t('lightEdit.camera'), camera.el),

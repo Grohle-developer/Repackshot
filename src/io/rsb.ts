@@ -21,6 +21,7 @@ import { compileGraph, encodeProgram, OUTPUT_KEYS, type Program } from '../core/
 import type { MaterialGraph } from '../core/material-graph';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
+import { iesBytesOf, iesProfileOf, iesSpot } from '../core/ies';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import { fabricMeanColor, type MaterialInstance } from '../core/materials';
 import { mat4Compose, mat4Multiply, type Mat4 } from '../core/math';
@@ -75,6 +76,11 @@ export const INSTANCE_NO_SECTION = 2;
 export const SECTION_CAP = 1;
 /** Bytes of a `SECT` payload: `u32 flags; f32 normal[3] distance`. */
 export const SECT_BYTES = 20;
+/**
+ * L5: an IES photometric profile, the file's text (`u32 byte_len`, the bytes, zero padding to 4), once for each distinct profile
+ * the IES lights use, after the LGHT sections; an LGHT of kind 5 names its profile by position among them.
+ */
+export const TAG_IESP = 'IESP';
 
 /** `MATL.kind`. */
 export const MATERIAL_PRINCIPLED = 0;
@@ -91,6 +97,11 @@ export const LIGHT_SUN = 2;
 /** L4: a point light (a sphere of diameter `size_x`; 0 is a point) and a spot (the same, inside a cone). */
 export const LIGHT_POINT = 3;
 export const LIGHT_SPOT = 4;
+/**
+ * L5: an IES light: the point light of `power` watts and diameter `size_x` whose intensity follows the profile of the IESP
+ * section named by the 80th byte of its LGHT (the light's `direction` is the profile's axis, `up` its horizontal angle 0).
+ */
+export const LIGHT_IES = 5;
 /** `LGHT.flags`. */
 export const LIGHT_FLAG_GLOSSY = 1;
 export const LIGHT_FLAG_CAMERA = 2;
@@ -397,6 +408,11 @@ export interface RsbLight {
   spreadDeg: number;
   angleDeg: number;
   flags: number;
+  /**
+   * L5, kind LIGHT_IES: the profile's file (one character per byte, core/ies.ts). `writeRsb` writes each distinct text once
+   * as an IESP section and the light with the position of its profile; the LGHT is 80 bytes then, 76 for every other kind.
+   */
+  ies?: string;
 }
 
 export interface RsbEnvironment {
@@ -689,6 +705,10 @@ function imagesBytes(images: readonly RsbImage[]): number {
   return n;
 }
 const LGHT_BYTES = 76;
+/** L5: an IES light's LGHT carries the position of its profile after the flags. */
+const LGHT_IES_BYTES = 80;
+/** IESP: the length of the file, the file, zero padding to 4. */
+const iespBytes = (profile: Uint8Array): number => 4 + profile.length + ((4 - (profile.length % 4)) % 4);
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
 const RNDR_BYTES = 64;
@@ -831,7 +851,14 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   const effects = scene.effects ?? [];
   const programs = scene.programs ?? [];
   const section = scene.section ?? null;
-  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
+  // L5: the IES lights' profiles, once each, in the order of first use.
+  const profileTexts: string[] = [];
+  for (const l of scene.lights) if (l.kind === LIGHT_IES && l.ies !== undefined && !profileTexts.includes(l.ies)) profileTexts.push(l.ies);
+  const profiles = profileTexts.map(iesBytesOf);
+  const written = scene.lights.filter((l) => l.kind !== LIGHT_IES || l.ies !== undefined);
+  let size = 8 + 8 + CAMR_BYTES + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
+  for (const l of written) size += 8 + (l.kind === LIGHT_IES ? LGHT_IES_BYTES : LGHT_BYTES);
+  for (const p of profiles) size += 8 + iespBytes(p);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
@@ -948,8 +975,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       });
     }
   }
-  for (const l of scene.lights) {
-    w.section(TAG_LGHT, LGHT_BYTES, () => {
+  // An IES light without its profile is no light for the engine, and is not written (rt_core `Scene::to_rsb`).
+  for (const l of written) {
+    w.section(TAG_LGHT, l.kind === LIGHT_IES ? LGHT_IES_BYTES : LGHT_BYTES, () => {
       w.u32(l.kind);
       w.vec(l.position);
       w.vec(l.direction);
@@ -961,6 +989,14 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(l.spreadDeg);
       w.f32(l.angleDeg);
       w.u32(l.flags);
+      if (l.kind === LIGHT_IES) w.u32(profileTexts.indexOf(l.ies!));
+    });
+  }
+  for (const p of profiles) {
+    w.section(TAG_IESP, iespBytes(p), () => {
+      w.u32(p.length);
+      w.raw(p);
+      w.pad((4 - (p.length % 4)) % 4);
     });
   }
   for (const e of effects) w.section(TAG_FXAM, FXAM_BYTES, () => w.raw(fxamPayload(e)));
@@ -1109,6 +1145,11 @@ export interface SceneView {
    * outputs, as before.
    */
   programs?: boolean;
+  /**
+   * L5: write the IES lights as such (LGHT kind 5 and the IESP sections) for an engine that renders them (render/engine.ts
+   * `readsIes`). Off by default: an IES light is the spot light that stands for it in Fast, which any engine reads.
+   */
+  ies?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -1326,7 +1367,7 @@ export function effectMaterial(state: ProjectState, e: AmbientEffect): RsbMateri
  * `LightInstance.angle` and `angle_deg` of a sun are both degrees (0.545 is the real sun's angular diameter, as
  * in EZ Packshot's recipes). A light that casts no shadow has LIGHT_FLAG_NO_SHADOW.
  */
-export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
+export function lightToRsb(state: ProjectState, l: LightInstance, opts: { ies?: boolean } = {}): RsbLight {
   const size = state.scene.partSizeMm || 1;
   const frame = lightFrame(state, l);
   const pos = frame.position;
@@ -1341,8 +1382,17 @@ export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
   }
   if (isSphereLike(l)) {
     const diameter = Math.max(0, l.size) * size;
-    const spot = l.type === 'SPOT';
-    const cone = Math.min(179, Math.max(1, l.spread));
+    const power = pointLightFlux(Math.max(0, l.power), state.scene.partSizeMm);
+    // L5: an IES light whose profile reads is that profile for an engine that has IES lights (`opts.ies`), and for one that
+    // has not, the spot light that stands for it in Fast (core/ies.ts `iesSpot`); one whose file does not read is a point.
+    const profile = l.type === 'IES' && l.ies ? iesProfileOf(l.ies.text) : null;
+    if (profile && opts.ies) {
+      return { kind: LIGHT_IES, position: pos, direction: dir, up, sizeX: diameter, sizeY: diameter, color, power, spreadDeg: 180, angleDeg: 0, flags, ies: l.ies!.text };
+    }
+    const approx = profile ? iesSpot(profile) : null;
+    const spot = l.type === 'SPOT' || approx !== null;
+    const cone = approx ? Math.min(179, approx.cone) : Math.min(179, Math.max(1, l.spread));
+    const blend = approx ? approx.blend : Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend));
     return {
       kind: spot ? LIGHT_SPOT : LIGHT_POINT,
       position: pos,
@@ -1351,10 +1401,10 @@ export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
       sizeX: diameter,
       sizeY: diameter,
       color,
-      power: pointLightFlux(Math.max(0, l.power), state.scene.partSizeMm),
+      power,
       spreadDeg: spot ? cone : 180,
       // A spot's soft edge in degrees, inward from the edge of its cone.
-      angleDeg: spot ? (Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)) * cone) / 2 : 0,
+      angleDeg: spot ? (blend * cone) / 2 : 0,
       flags,
     };
   }
@@ -1876,7 +1926,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     const lp = pose?.lights[l0.id];
     const l = lp ? { ...l0, power: lp.power, color: lp.color, az: lp.az, el: lp.el, enabled: lp.enabled } : l0;
     if (!l.enabled || !(l.power > 0)) continue;
-    const light = lightToRsb(state, l);
+    const light = lightToRsb(state, l, { ies: view.ies === true });
     if (l.type === 'SUN' && !toSun) toSun = [-light.direction[0], -light.direction[1], -light.direction[2]];
     lights.push(light);
   }

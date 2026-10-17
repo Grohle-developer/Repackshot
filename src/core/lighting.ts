@@ -5,7 +5,8 @@
 import { CAMERA_AZIMUTH_DEG, CAMERA_ELEVATION_DEG, SPEC_DEFAULTS, lightSetup } from '../data/light-setups';
 import { QUALITY_PRESETS } from '../data/quality';
 import { studioPreset } from '../data/studios';
-import type { LightRole, LightShape, LightSpec, LightType, RGB, StudioPreset, WorldKind } from '../data/types';
+import type { IesRef, LightRole, LightShape, LightSpec, LightType, RGB, StudioPreset, WorldKind } from '../data/types';
+import { iesEfficiency, iesHalfAngle, iesProfileOf } from './ies';
 import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math';
 import { areaLightFlux, luminance, LUMENS_PER_WATT, pointLightFlux, spotFraction } from './photometry';
 import { activeRig, presetIrradiance, resolvePreset, setupExposure, type PresetRef, type SetupRef } from './rig';
@@ -16,6 +17,15 @@ import { nextId } from './ids';
 import { add, boxCenter, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
 import { partMaterials, pruneMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { productBounds, type FaceRange, type NodeId } from './scene';
+
+/**
+ * The profile of an IES light (L5): the file as `IesRef` has it and `base`, the power the light was given with it (what
+ * it had when the profile came in): the multiplier the inspector shows is `power / base`, 1 for the level the picture
+ * was at, so the light is brightened or dimmed in steps of the picture, not of a file's candela.
+ */
+export interface IesLight extends IesRef {
+  base: number;
+}
 
 /** One light of the active rig (SPEC §3.4). Sizes and distance in part sizes. */
 export interface LightInstance {
@@ -63,6 +73,12 @@ export interface LightInstance {
   roll?: number;
   /** L6: the pool of light of a set (a spot aimed at its backdrop): set decoration, like its cards (core/sets.ts). */
   setPiece?: 'POOL';
+  /**
+   * L5: the photometric profile of an IES light (type IES). It stays when the light's type is changed to another, so
+   * changing back finds it. `power` is the level (a profile is the shape: as bright at its peak as a point light of
+   * `power`); `ies.base` is what the multiplier is measured from.
+   */
+  ies?: IesLight;
 }
 
 /** What Add light ▸ adds (UI.md §2.2): three area shapes, a point, a spot and a sun. Stable keys. */
@@ -188,6 +204,8 @@ export function lightsFromRig(preset: PresetRef, setupRef: SetupRef): LightInsta
       ...(spec?.shadow === false ? { shadow: false } : {}),
       ...(spec?.aim ? { aim: [spec.aim[0], spec.aim[1], spec.aim[2]] as Vec3 } : {}),
       ...(spec?.roll ? { roll: spec.roll } : {}),
+      // An own IES light of the setup keeps its profile (L5); its multiplier starts again from the power it has here.
+      ...(spec?.ies ? { ies: { name: spec.ies.name, text: spec.ies.text, base: r.energy } } : {}),
     };
   });
 }
@@ -242,6 +260,17 @@ export function newLight(state: ProjectState, kind: NewLightKind, id: string): L
   };
 }
 
+/**
+ * Add light ▸ IES… (L5): a point light that follows the profile of `ies`, placed and calibrated like a new point light
+ * (in front of and above the part, as bright on its axis as the mean of the lights that are on, so the picture does not
+ * jump). Its peak is where the profile is brightest, and the light is aimed at the centre of the product, so a profile
+ * that is brightest on its axis lights the product as the point light would, and a batwing a little less.
+ */
+export function newIesLight(state: ProjectState, ies: IesRef, id: string): LightInstance {
+  const point = newLight(state, 'POINT', id);
+  return { ...point, type: 'IES', ies: { name: ies.name, text: ies.text, base: point.power } };
+}
+
 /** A fresh light id: never one of a light, a camera or a scene node. */
 export function nextLightId(state: ProjectState): string {
   return nextId('l', [...state.studio.lights.map((l) => l.id), ...Object.keys(state.camera.cameras), ...Object.keys(state.scene.nodes)]);
@@ -271,6 +300,12 @@ export function lightLumens(state: ProjectState, l: LightInstance): { value: num
   if (l.type === 'SUN') return { value: p * y, unit: 'lx' };
   const size = state.scene.partSizeMm;
   if (l.type === 'SPOT') return { value: pointLightFlux(p, size) * spotFraction(l.spread, l.blend ?? SPOT_DEFAULTS.blend) * y, unit: 'lm' };
+  // An IES light sends the share of its peak's point that its profile has over the sphere (the file's flux over 4 pi times
+  // its peak: its efficiency), whatever the lumens the file was written for.
+  if (l.type === 'IES') {
+    const profile = l.ies ? iesProfileOf(l.ies.text) : null;
+    return { value: pointLightFlux(p, size) * (profile ? iesEfficiency(profile) : 1) * y, unit: 'lm' };
+  }
   if (isSphereLike(l)) return { value: pointLightFlux(p, size) * y, unit: 'lm' };
   const n = spreadExponent(l.spread);
   return { value: areaLightFlux(p, size) * (2 / (n + 2)) * y, unit: 'lm' };
@@ -385,9 +420,24 @@ export function placementOf(state: ProjectState, position: Vec3, target: Vec3, u
   return patch;
 }
 
-/** A light the engine draws as a glowing sphere (or a point): a point, a spot, or an area light of shape SPHERE. */
+/** A light the engine draws as a glowing sphere (or a point): a point, a spot, an IES light, or an area light of shape SPHERE. */
 export function isSphereLike(l: Pick<LightInstance, 'type' | 'shape'>): boolean {
-  return l.type === 'POINT' || l.type === 'SPOT' || (l.type === 'AREA' && l.shape === 'SPHERE');
+  return l.type === 'POINT' || l.type === 'SPOT' || l.type === 'IES' || (l.type === 'AREA' && l.shape === 'SPHERE');
+}
+
+/**
+ * The full angle of the cone of a light that has one, degrees: a spot's, and for an IES light (L5) its beam angle, twice
+ * the angle at which the profile falls to half of its peak (`iesHalfAngle`: what the glyph draws, what looking through the
+ * light frames; the Fast preview's spot light has its soft edge around it, `iesSpot`). Null for the others, and for an IES
+ * light whose file cannot be read (it is drawn as a point).
+ */
+export function lightConeDeg(l: Pick<LightInstance, 'type' | 'spread' | 'ies'>): number | null {
+  if (l.type === 'SPOT') return Math.min(179, Math.max(1, l.spread));
+  if (l.type === 'IES') {
+    const profile = l.ies ? iesProfileOf(l.ies.text) : null;
+    return profile ? Math.min(179, Math.max(2, 2 * iesHalfAngle(profile))) : null;
+  }
+  return null;
 }
 
 /**
@@ -563,6 +613,8 @@ export type StudioAction =
   | ({ type: 'studio/placeLight'; id: string; point: Vec3; normal: Vec3 } & ActionBase)
   /** L4: Add light ▸ — a new own light, selected. */
   | ({ type: 'studio/addLight'; kind: NewLightKind } & ActionBase)
+  /** L5: Add light ▸ IES… — a new own light with the photometric profile `ies` (a file that cannot be read adds nothing), selected. */
+  | ({ type: 'studio/addIesLight'; ies: IesRef } & ActionBase)
   /** L4: a copy of a light (an own light, a little to the side), selected. */
   | ({ type: 'studio/duplicateLight'; id: string } & ActionBase)
   /** L4: a light of the setup or an own one goes. */
@@ -648,6 +700,12 @@ export function reduceStudio(state: ProjectState, action: StudioAction): Project
       if (!NEW_LIGHT_KINDS.includes(action.kind)) return state;
       const id = nextLightId(state);
       const light = newLight(state, action.kind, id);
+      return { ...state, studio: { ...state.studio, lights: [...state.studio.lights, light], modified: true }, selection: { level: state.selection.level, ids: [id] } };
+    }
+    case 'studio/addIesLight': {
+      if (!iesProfileOf(action.ies.text)) return state;
+      const id = nextLightId(state);
+      const light = newIesLight(state, action.ies, id);
       return { ...state, studio: { ...state.studio, lights: [...state.studio.lights, light], modified: true }, selection: { level: state.selection.level, ids: [id] } };
     }
     case 'studio/duplicateLight': {

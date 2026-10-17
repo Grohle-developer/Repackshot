@@ -56,7 +56,7 @@ import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset }
 import { fitFactor } from '../core/live-frame';
 import { LivePicture } from './live-frame';
 import type { ProjectState } from '../core/store';
-import { readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
+import { readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
 import { abortError, adaptiveProgress, budgetLimits, budgetOf, budgetProgress, runAdaptive, runPasses, type PassBudget } from './schedule';
@@ -97,6 +97,8 @@ export interface TracerView {
   textures?: boolean;
   /** M3b: the engine runs the material programs (render/engine.ts `readsPrograms`): node materials go as programs. */
   programs?: boolean;
+  /** L5: the engine renders the IES lights (render/engine.ts `readsIes`): they go as such, not as the spot light that stands for them. */
+  ies?: boolean;
 }
 
 export interface BuiltScene {
@@ -944,6 +946,8 @@ export class PathTracerEngine implements RenderEngine {
       // M2b: the textures, when this engine reads them; M3b: the material programs, when it runs them.
       ...(readsTextures(this.pool.features) ? { textures: true } : {}),
       ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
+      // L5: the IES lights, when this engine renders them.
+      ...(readsIes(this.pool.features) ? { ies: true } : {}),
     };
   }
 
@@ -1365,6 +1369,8 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.adaptive ? { adaptive: opts.adaptive } : {}),
         ...(readsTextures(this.pool.features) ? { textures: true } : {}),
         ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
+        // L5: the IES lights, when this engine renders them.
+        ...(readsIes(this.pool.features) ? { ies: true } : {}),
       };
       // E5b-1: a denoised render also renders the guide passes and sums the squared luminance. U11b: at a strength
       // of 0 it is not denoised at all (the image is the noisy one).

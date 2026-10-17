@@ -179,9 +179,20 @@ export function readInstance(p: DataView): RsbInstance {
   return { mesh, transform, materialId: c.u32(), flags: c.u32() };
 }
 
-export function readLight(p: DataView): RsbLight {
+/** A light; an IES light (L5, 80 bytes) also says the position of its profile among the IESP sections (`profile`, read by `readRsb`). */
+export function readLight(p: DataView): RsbLight & { profile?: number } {
   const c = new Cursor(p);
-  return { kind: c.u32(), position: c.vec(), direction: c.vec(), up: c.vec(), sizeX: c.f32(), sizeY: c.f32(), color: c.vec(), power: c.f32(), spreadDeg: c.f32(), angleDeg: c.f32(), flags: c.u32() };
+  const light: RsbLight & { profile?: number } = { kind: c.u32(), position: c.vec(), direction: c.vec(), up: c.vec(), sizeX: c.f32(), sizeY: c.f32(), color: c.vec(), power: c.f32(), spreadDeg: c.f32(), angleDeg: c.f32(), flags: c.u32() };
+  if (light.kind === 5 && p.byteLength >= 80) light.profile = c.u32();
+  return light;
+}
+
+/** An IESP payload: the file as text, one character per byte (the length, the bytes, zero padding to 4). */
+export function readProfile(p: DataView): string {
+  const n = p.getUint32(0, true);
+  let text = '';
+  for (let i = 0; i < n; i++) text += String.fromCharCode(p.getUint8(4 + i));
+  return text;
 }
 
 export function readEnvironment(p: DataView): RsbEnvironment {
@@ -378,6 +389,7 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
     bitmaps: [],
     tags: [],
   };
+  const profiles: string[] = [];
   for (const s of sections(bytes)) {
     out.tags.push(s.tag);
     switch (s.tag) {
@@ -401,6 +413,9 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         break;
       case 'LGHT':
         out.lights.push(readLight(s.payload));
+        break;
+      case 'IESP':
+        profiles.push(readProfile(s.payload));
         break;
       case 'ENVR':
         out.environment = readEnvironment(s.payload);
@@ -431,6 +446,11 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
     }
     if ((s.tag === 'MESH' && meshHasUvWord(s.payload)) || (s.tag === 'MATL' && s.payload.byteLength > 100)) out.textures = true;
   }
+  // L5: each IES light with the text of the profile it names.
+  out.lights = out.lights.map((l) => {
+    const { profile, ...rest } = l as RsbLight & { profile?: number };
+    return profile === undefined ? rest : { ...rest, ies: profiles[profile] };
+  });
   return out;
 }
 

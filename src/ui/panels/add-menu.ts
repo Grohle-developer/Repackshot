@@ -43,11 +43,11 @@ const LIGHT_ICONS: Readonly<Record<NewLightKind, IconName>> = {
   SUN: 'lightSun',
 };
 
-/** Add light ▸ (UI.md §2.2): area (rectangle, disc, sphere), point, spot, sun, and IES (coming soon, phase L5). */
+/** Add light ▸ (UI.md §2.2): area (rectangle, disc, sphere), point, spot, sun, and IES… (L5: a profile file, which makes the light). */
 export function lightMenuItems(ctx: Ctx, opts: { heading?: boolean } = {}): MenuItems {
   return [
     ...(opts.heading === false ? [] : [{ heading: t('lights.heading') }]),
     ...NEW_LIGHT_KINDS.map((k) => ({ label: t(dyn(`lights.addKind.${k}`)), icon: LIGHT_ICONS[k], note: t(dyn(`lights.addTip.${k}`)), run: () => cmd.addLight(ctx, k) })),
-    { label: t('lights.addKind.IES'), icon: 'lightIes' as IconName, note: t('lights.addTip.IES'), disabled: true },
+    { label: t('lights.addKind.IES'), icon: 'lightIes' as IconName, note: t('lights.addTip.IES'), run: () => void cmd.addIesLight(ctx) },
   ];
 }
