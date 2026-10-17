@@ -44,7 +44,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
   };
   const info: NativeInfo = {
     app: 'repackshot',
-    version: '0.1.13',
+    version: '0.1.14',
     engineVersion: '0.3.0',
     threads: 4,
     isa: 'avx2',

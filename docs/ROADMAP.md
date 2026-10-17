@@ -10668,6 +10668,11 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   el nodo, el ejemplo o el motor (el párrafo de M3b, «no encajó» 8).
 - **4.2**: si el triaje se confirma con la escena del usuario, el recorte de
   *fireflies* y el borde solo por luminancia del *denoise*.
+- **Q1** (los ◆ de su «no encajó»): dónde vive el control de la sección
+  (hoy en el inspector de Escena, no en la barra del visor); si la tapa de
+  un vidrio cortado refracta, como ahora en el motor, o es opaca del color
+  del vidrio, como opción para el fotógrafo; y si el estudio puede cortarse
+  alguna vez (hoy nunca, sin interruptor por pieza).
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
