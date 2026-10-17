@@ -514,7 +514,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   row('about.version', 'about', 'version', kw('version, about', 'versión, acerca de')),
   row('about.licence', 'about', 'licence', kw('licence, license, polyform, noncommercial', 'licencia, polyform, no comercial')),
   row('about.thirdParty', 'about', 'thirdParty', kw('third party, licences, three.js, rhino3dm, occt, opencascade, lgpl, mit, apache', 'terceros, licencias, three.js, rhino3dm, occt, opencascade, lgpl, mit, apache')),
-  row('about.credits', 'about', 'credits', kw('credits, ez packshot, thanks', 'créditos, ez packshot, agradecimientos')),
+  row('about.credits', 'about', 'credits', kw('credits, thanks', 'créditos, agradecimientos')),
 ];
 
 const SETTING_META = new Map<SettingKey, SettingMeta>();

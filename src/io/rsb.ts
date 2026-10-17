@@ -1365,7 +1365,7 @@ export function effectMaterial(state: ProjectState, e: AmbientEffect): RsbMateri
  * a point, and an area light of shape SPHERE, are kind 3 (a glowing sphere of diameter `size_x`) and a spot kind 4
  * (the same inside a cone of `spread_deg` with a soft edge of `angle_deg`), both with `pointLightFlux` (L4).
  * `LightInstance.angle` and `angle_deg` of a sun are both degrees (0.545 is the real sun's angular diameter, as
- * in EZ Packshot's recipes). A light that casts no shadow has LIGHT_FLAG_NO_SHADOW.
+ * in the recipes). A light that casts no shadow has LIGHT_FLAG_NO_SHADOW.
  */
 export function lightToRsb(state: ProjectState, l: LightInstance, opts: { ies?: boolean } = {}): RsbLight {
   const size = state.scene.partSizeMm || 1;

@@ -1,4 +1,4 @@
-// K1, not ported from EZ Packshot: the scene types of INTERIORS.md §3.1. A scene type is not a mode: it rewrites default
+// K1: the scene types of INTERIORS.md §3.1. A scene type is not a mode: it rewrites default
 // values and leaves every control where it is. This file is the table of those values; what applies them, and remembers
 // what they replaced so that switching back leaves the project as it was, is src/core/scene-type.ts.
 

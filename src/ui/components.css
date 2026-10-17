@@ -160,6 +160,18 @@ kbd,
 .seg button:last-child {
   border-right: 0;
 }
+/* An icon is a block: beside it, its label stays on the same line (else it drops under the icon and the 26 px clip it). */
+.seg button:has(> .icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.seg button:has(> .icon) > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .seg button:hover:not([aria-pressed='true']):not(:disabled) {
   background: var(--hover);
 }

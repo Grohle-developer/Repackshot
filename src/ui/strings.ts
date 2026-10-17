@@ -2542,8 +2542,8 @@ const TABLE = {
   'set.ab.models': ['AI models on this computer', 'Modelos de IA de este equipo'],
   'set.ab.modelsNone': ['No AI model downloaded', 'Ningún modelo de IA descargado'],
   'set.ab.credits': [
-    'The product types, light setups, materials and wear tables come from EZ Packshot, a Blender add-on by the same author, relicensed for this project. The engine follows public rendering literature (PCG, Sobol, GGX, ACES, sky models) and copies no code.',
-    'Los tipos de producto, los montajes de luz, los materiales y las tablas de desgaste vienen de EZ Packshot, un add-on de Blender del mismo autor, relicenciado para este proyecto. El motor sigue literatura pública de render (PCG, Sobol, GGX, ACES, modelos de cielo) y no copia código.',
+    'The engine follows public rendering literature (PCG, Sobol, GGX, ACES, sky models) and copies no code.',
+    'El motor sigue literatura pública de render (PCG, Sobol, GGX, ACES, modelos de cielo) y no copia código.',
   ],
   'set.sc.filter': ['Filter shortcuts', 'Filtrar atajos'],
   'set.sc.none': ['No shortcut matches', 'Ningún atajo coincide'],

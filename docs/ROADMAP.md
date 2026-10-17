@@ -11,18 +11,15 @@ que enlaza (`SPEC.md`, `ARCHITECTURE.md`, `UI.md`) y el repositorio.
 Repackshot es un renderizador de producto al estilo KeyShot, de código
 disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
 escrito desde cero en **sala limpia** (reglas en `../README.md`,
-innegociables) y que corre en el navegador. Reutiliza las ideas y varias
-soluciones de **EZ Packshot**, un addon de Blender del mismo autor
-(GPL-3.0; los catálogos y fórmulas se han portado con su permiso y la
-implementación es nueva): tipos de producto, catálogo de montajes de luz
-por estilos con normalización de exposición, materiales con desgaste
-procedural, Doctor, selección por niveles, lenguaje de fotógrafo, guía
-con flechas que no tapa.
+innegociables) y que corre en el navegador. Sus pilares: tipos de
+producto, catálogo de montajes de luz por estilos con normalización de
+exposición, materiales con desgaste procedural, Doctor, selección por
+niveles, lenguaje de fotógrafo, guía con flechas que no tapa.
 
 **Ficheros clave:**
 
 - `src/core/` — modelo de datos puro y *store* (`ARCHITECTURE.md` §4)
-- `src/data/` — catálogos portados: 16 estudios, 72 montajes, 77
+- `src/data/` — catálogos: 16 estudios, 72 montajes, 77
   materiales, desgaste, ópticas, movimientos, secuencias, Doctor
 - `engine/` — **el motor**: Rust desde cero, sin dependencias, portable
   (`ARCHITECTURE.md` §5.1); `rt-core`, `rt-cli`, `rt-wasm`
@@ -108,7 +105,7 @@ decisiones escritas (datos, contratos, revisión), no código.
   **Fable**.
 - **A1** · Andamiaje Vite + TypeScript + vitest + captura con Chromium
   local (`tools/screenshot.mjs`) — **Sonnet**.
-- **A2** · Catálogos portados a `src/data/` con tipos, y matemáticas de
+- **A2** · Catálogos en `src/data/` con tipos, y matemáticas de
   luz en `src/core/light-math.ts`, `rig.ts`, `wear.ts`, con tests de
   recuento, fórmula y normalización 16 × 71 — **Sonnet**.
 - **A3** · `.github/workflows/qa.yml`, plantilla de PR, `CONTRIBUTING.md`
@@ -202,9 +199,9 @@ Vite 8, TypeScript 7, vitest 5, three 0.186, playwright-core 1.64.
 marcador. La captura usa `--use-gl=swiftshader` y espera a
 `#app[data-ready="1"]`.
 
-## A2 · Catálogos portados — **Sonnet** — hecha
+## A2 · Catálogos — **Sonnet** — hecha
 
-Ver `src/data/README.md`. Las claves son las de EZ Packshot. Los tests
+Ver `src/data/README.md`. Las claves son estables. Los tests
 fijan: 16 estudios; 72 montajes (PRODUCT 12, TRADITIONAL 13, CINEMATIC
 11, CREATIVE 8, EMOTIONAL 8, EXPERIMENTAL 8, SIGNATURE 6, SPICY 6; tres
 con `world: 'SKY'`); 77 materiales en 7 categorías; 8 ópticas; 16
@@ -728,7 +725,7 @@ lienzo en cada fotograma; acción de la paleta *Exportar escena del motor
 no tienen equivalente en el motor todavía; el ACES del motor da NaN por
 encima de ~1e19 de radiancia. Dos correcciones del responsable al
 recibir la fase: el **ángulo del sol** estaba documentado en radianes y
-salía como un disco de 31°, cuando en EZ Packshot está en **grados**
+salía como un disco de 31°, cuando el catálogo lo da en **grados**
 (0,545° es el sol real; ahora se pasa tal cual, con test de regresión); y
 *Render* **ya no cae a la vista previa** cuando falta `rt.wasm`: lo dice
 y no renderiza, como decidió el usuario.
@@ -5219,8 +5216,8 @@ material (el campo *Bisel de arista* del inspector deja de decir
 diedro > 20° y una rejilla o BVH propio de aristas), mezclando la normal
 de las dos caras según la distancia a la arista con un perfil circular;
 vale para el reflejo (la luz coge la arista) y para la sombra; límite de
-coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, portar a
-`rt-core` las recetas procedurales de EZ Packshot (veta
+coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, llevar a
+`rt-core` las recetas procedurales del catálogo (veta
 de anillos con dos colores, variación, ruido axial y poro; trama de hilos
 con tipo de tejido, hilos por cm y relieve) como funciones de sombreado
 con ruido propio (Perlin o *simplex*, escrito aquí y con la estadística
@@ -5406,7 +5403,7 @@ ARCHITECTURE §5.2 octies).
   40…; antes 14 para el roble, por pieza); el mando nuevo *Escala* los
   multiplica. SPEC §3.3 lo dice. Un proyecto guardado conserva su
   `ringDensity` antiguo, que ahora se lee por 100 mm.
-- **Campos nuevos que el catálogo de EZ Packshot no tiene**: `ringContrast`,
+- **Campos nuevos**: `ringContrast`,
   `poreSize`, `poreBand`, `woodFigure`, `woodScale` y los cuatro de los
   nudos (claves nuevas; ninguna renombrada).
 - **El relieve de los anillos, fuera** (decisión del líder: las esferas
@@ -5509,8 +5506,8 @@ ARCHITECTURE §5.2 octies).
   Un proyecto guardado conserva su `threadCount` antiguo, que
   ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
   cm, invisible).
-- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
-  EZ Packshot es 2/2 y la siguen usando la sarga y el carbono): con 2/2 su
+- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` es
+  2/2 y la siguen usando la sarga y el carbono): con 2/2 su
   color medio era un gris azulado (la mitad de la cara, trama blanca); el
   de verdad es de urdimbre. Cambia su color en la vista *Rápida*. La hoja
   enseña los dos para el veredicto.
@@ -6157,7 +6154,7 @@ navegador, en CI): las 72 miniaturas de montaje (160 × 120 y 64 × 64) con
 la pieza de ejemplo en gris neutro, y las esferas de los 77 materiales,
 con el hash de su receta en un chunk `tEXt` del PNG; `--check` falla si
 alguna está desactualizada y la suite lo ejecuta. Sustituye las PNG
-portadas de EZ Packshot en `public/thumbs/`.
+anteriores de `public/thumbs/`.
 
 **Depende de.** E4, E5 (para que las de color y vidrio salgan bien).
 
@@ -6314,8 +6311,8 @@ No encajó con el plan:
 
 ## M1 · Cara CAD entera — **Sonnet** — hecha
 
-**Qué.** Selección de caras por continuidad de superficie, portando el
-algoritmo E2 de EZ Packshot: adyacencia por **posición** de vértice
+**Qué.** Selección de caras por continuidad de superficie: adyacencia
+por **posición** de vértice
 (soldadura a 1e-5 del tamaño de la malla), cruce de arista si el diedro es
 menor que el ángulo de arista viva (30°) **y** menor que 2.5 veces la
 curvatura propia de la cara clicada; las aristas marcadas por el
@@ -6353,14 +6350,12 @@ marcada, rangos CAD, piezas separadas; las mutaciones se cuentan en
 No encajó con el plan:
 
 - **Límite del borde con curvatura suave (decisión pendiente de
-  Fable).** Se cambió una cosa del algoritmo de EZ Packshot: su
-  estimación de la curvatura contaba también las aristas que son
-  frontera (marcadas o más agudas que 30°), y un triángulo en el borde
-  de una cara plana, junto a una pared, medía la curvatura de la
-  esquina y la cara se escapaba por un chaflán; aquí solo cuentan las
-  aristas que se podrían cruzar (test *a flat face is flat to its
-  rim*). Queda el caso que un clic sobre una malla no puede
-  distinguir: un triángulo en el borde de una cara plana cuya única
+  Fable).** La estimación de la curvatura solo cuenta las aristas que
+  se podrían cruzar (test *a flat face is flat to its rim*): si contara
+  también las que son frontera (marcadas o más agudas que 30°), un
+  triángulo en el borde de una cara plana, junto a una pared, mediría la
+  curvatura de la esquina y la cara se escaparía por un chaflán. Queda
+  el caso que un clic sobre una malla no puede distinguir: un triángulo en el borde de una cara plana cuya única
   arista que gira es un redondeo suave (unos pocos grados por paso)
   parece una faceta de una cara curva, y la cara sigue el redondeo; el
   interior de la misma cara plana no. No afecta a STEP ni IGES (los
@@ -8137,7 +8132,7 @@ filas que nombran algo que no existe aún están en «Qué no encajó»):
 | Cámara | no escribe | 28 mm en cada cámara que no esté bloqueada | 50 mm |
 
 *Estilo Interior.* `LIGHT_STYLES` pasa de 9 a 10 entradas (`INTERIOR` la última) y `LIGHT_SETUPS` de 88 a 95: las siete
-recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes de EZ Packshot y los
+recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes del catálogo base y los
 16 sets, intactos: un test compara los 71 rigs con el fixture de antes de L6). Cada receta es un set sin decoración:
 elige su mundo (`SKY` con un foco de sol que coloca el sol del cielo, o `STUDIO`), y trae su desvío de exposición
 (`exposureEv`) y la intensidad del entorno (`envStrength`), porque la hora del día **es** el brillo de la imagen y aquí,
@@ -8286,8 +8281,8 @@ volver a *Producto*); captura `docs/ui/scene-type-interior.png`.
 **Qué.** Nodo `ROOM` paramétrico de `INTERIORS.md` §3.2 (ancho, fondo,
 alto; aberturas con posición, tamaño y alféizar; material por superficie;
 zócalo; *ocultar pared del lado de la cámara*; variante ciclorama con el
-perfil de EZ Packshot), editable en el inspector y en el visor (asas en
-las aberturas), guardado en el proyecto y exportado al RSB como mallas
+perfil del barrido infinito de las primitivas), editable en el inspector
+y en el visor (asas en las aberturas), guardado en el proyecto y exportado al RSB como mallas
 más una sección `PORT` por abertura; **portales automáticos** también
 para habitaciones importadas (heurística: cuadriláteros de vidrio o
 transparentes en la envolvente), sin jerga en la interfaz; material
