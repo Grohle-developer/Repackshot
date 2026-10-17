@@ -120,6 +120,32 @@ fn the_result_does_not_depend_on_the_thread_count() {
 }
 
 #[test]
+fn ies_lights_render_the_same_pixels_on_one_four_and_sixteen_threads() {
+    // L5: the profile's lookup, the selection weights that read it and the sphere's cone are the
+    // same arithmetic whoever runs them. 160 x 120 is twenty tiles, so sixteen threads all work.
+    let mut scene = rt_core::example::l5_scene();
+    assert!(scene.lights.iter().filter(|l| l.ies.is_some()).count() >= 2);
+    scene.render.max_samples = 3;
+    let one = rt_cli::render(&scene, 3, 1);
+    for threads in [4, 16] {
+        let many = rt_cli::render(&scene, 3, threads);
+        assert_eq!(one.film, many.film, "{threads} threads");
+        assert_eq!(one.rays, many.rays, "{threads} threads");
+    }
+    // And through the file the page would send: the scene read back renders the same film.
+    let read = Scene::from_rsb(&scene.to_rsb()).expect("the scene reads back");
+    assert_eq!(rt_cli::render(&read, 3, 4).film, one.film);
+}
+
+#[test]
+fn write_l5_example_produces_a_readable_rsb_file() {
+    let path = scratch("l5.rsb");
+    run(Command::WriteL5Example { path: path.clone() }).expect("write succeeds");
+    let bytes = std::fs::read(&path).expect("RSB written");
+    assert_eq!(Scene::from_rsb(&bytes), Ok(rt_core::example::l5_scene()));
+}
+
+#[test]
 fn progressive_passes_give_the_film_of_one_tile_at_a_time() {
     // 7 samples are rendered in passes of 1, 2 and 4 sample indices over every tile; rendering
     // each tile's seven samples in one go (as E1 and E2 did) gives the same bits.

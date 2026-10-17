@@ -64,10 +64,17 @@
 // file from before S2 has neither and opens as it always did; on open the section keeps only what this version
 // knows, a clip whose track does not decode is left out and so is a damaged anchor. The schema stays at 2.
 //
+// IES lights (L5): an own light of type IES keeps its photometric profile in `studio.lights[].ies` (`{ name, text, base }`: the
+// file's text, one character per byte, and the power the light came in with), so the project opens elsewhere without the
+// file; it is plain JSON in the state, a file from before L5 has none and opens as it always did, and on open a profile
+// that does not read (a file edited by hand) is taken away and its light is a point. The schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
 import { runDoctor } from '../core/doctor';
+import { parseIes } from '../core/ies';
+import type { LightInstance } from '../core/lighting';
 import { normalizeEffects } from '../core/effects';
 import { normalizeSection } from '../core/section';
 import { buildExample } from '../core/example';
@@ -371,6 +378,8 @@ function checkState(raw: RawState): ProjectState {
     s.camera = { ...s.camera, cameras };
   }
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
+  // L5: an IES light whose profile is damaged, or is not a file the engine reads, opens as the point light it stands on.
+  s.studio = { ...s.studio, lights: s.studio.lights.map(withReadableProfile) };
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
   const env = s.environment;
   for (const slot of ['hdri', 'backplate'] as const) {
@@ -393,6 +402,19 @@ function checkState(raw: RawState): ProjectState {
   // Q1: the section view's plane (a project saved before it has none; a plane that cannot be one is none).
   s.section = normalizeSection(s.section);
   return s;
+}
+
+/**
+ * A light of a project as this version reads its IES profile (L5): a profile that is not `{ name, text, base }` or whose
+ * text the reader refuses is taken away, and an IES light without one is the point light it stands on. Everything else of
+ * the light stays, so a project edited by hand, or written by a version whose reader accepted more, still opens.
+ */
+function withReadableProfile(l: LightInstance): LightInstance {
+  const raw = (l as { ies?: unknown }).ies;
+  const valid = isObject(raw) && typeof raw.name === 'string' && typeof raw.text === 'string' && typeof raw.base === 'number' && Number.isFinite(raw.base) && parseIes(raw.text).ok;
+  if (valid || (raw === undefined && l.type !== 'IES')) return l;
+  const { ies: _dropped, ...rest } = l;
+  return l.type === 'IES' ? { ...rest, type: 'POINT' } : rest;
 }
 
 /** The envelope of a parsed file and the state it holds, migrated to the current schema and checked. */

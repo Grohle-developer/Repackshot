@@ -5,7 +5,8 @@
 // kept. Depends on core, never the other way.
 
 import { LIGHT_ROLES, LIGHT_SHAPES, LIGHT_TYPES } from '../data/light-setups';
-import type { LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
+import { IES_MAX_BYTES, parseIes } from '../core/ies';
+import type { IesRef, LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
 import { normaliseAspect } from '../core/aspect';
 import type { CameraState } from '../core/camera';
@@ -123,6 +124,16 @@ const opt = <T>(v: unknown, read: (x: unknown) => T): T | undefined => (v === un
 /** Keys that would reach the prototype of a plain object. */
 const isUnsafeKey = (k: string): boolean => k === '__proto__';
 
+/** An IES profile (L5): a name and the file's text, which must be a profile the engine reads (a library of one that is not is damaged). */
+function iesRef(v: unknown, path: string): IesRef {
+  const o = obj(v, path);
+  const name = str(o.name, `${path}.name`, 120);
+  const text = str(o.text, `${path}.text`, IES_MAX_BYTES);
+  const read = parseIes(text);
+  if (!read.ok) fail(`${path}.text`, `is not an IES profile (${read.error.message})`);
+  return { name, text };
+}
+
 function lightSpec(v: unknown, path: string): LightSpec {
   const o = obj(v, path);
   const spec: LightSpec = {
@@ -165,6 +176,10 @@ function lightSpec(v: unknown, path: string): LightSpec {
   if (aim) spec.aim = aim;
   const roll = opt(o.roll, (x) => num(x, `${path}.roll`, -720, 720));
   if (roll !== undefined) spec.roll = roll;
+  // L5: an IES light's profile.
+  const ies = opt(o.ies, (x) => iesRef(x, `${path}.ies`));
+  if (ies) spec.ies = ies;
+  if (spec.type === 'IES' && !spec.ies) fail(`${path}.ies`, 'is missing: an IES light needs its profile');
   return spec;
 }
 
@@ -256,6 +271,7 @@ function productTypePayload(v: unknown, path: string): ProductTypePayload {
 
 function lightInstance(v: unknown, path: string): LightInstance {
   const o = obj(v, path);
+  if (o.type === 'IES' && o.ies === undefined) fail(`${path}.ies`, 'is missing: an IES light needs its profile');
   return {
     id: str(o.id, `${path}.id`, 64),
     role: oneOf(o.role, `${path}.role`, Object.keys(LIGHT_ROLES) as (keyof typeof LIGHT_ROLES)[]),
@@ -285,6 +301,8 @@ function lightInstance(v: unknown, path: string): LightInstance {
     ...(o.roll === undefined ? {} : { roll: num(o.roll, `${path}.roll`, -720, 720) }),
     // L6: the pool of a set.
     ...(o.setPiece === undefined ? {} : { setPiece: oneOf(o.setPiece, `${path}.setPiece`, ['POOL'] as const) }),
+    // L5: an IES light's profile, with the power it was given (the multiplier's base).
+    ...(o.ies === undefined ? {} : { ies: { ...iesRef(o.ies, `${path}.ies`), base: num(obj(o.ies, `${path}.ies`).base, `${path}.ies.base`, 0, 1e7) } }),
   };
 }
 

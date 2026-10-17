@@ -1,0 +1,15 @@
+IESNA:LM-63-2002
+[TEST] RS-TEST-0001
+[TESTLAB] Hand-written for the Repackshot tests, not a measurement
+[ISSUEDATE] 17-OCT-2026
+[MANUFAC] Repackshot test fixtures
+[LUMCAT] RS-DOWN-COS2
+[LUMINAIRE] Test downlight, 1000 cd cos^2, rotationally symmetric
+[LAMP] Test source
+[MORE] Candela values are 1000 cos(angle)^2 rounded to the whole candela.
+TILT=NONE
+1 2094 1 10 1 1 2 0 0 0
+1 1 10
+0 10 20 30 40 50 60 70 80 90
+0
+1000 970 883 750 587 413 250 117 30 0

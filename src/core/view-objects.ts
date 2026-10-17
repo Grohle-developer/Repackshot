@@ -9,7 +9,7 @@
 
 import { activeCamera, aspectRatio, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, focusDistanceTo, focusFollowsOrbit, orbitFromPosition, orbitPatch, outputAspect, outputFrameRect, sameView, type CameraState, type OrbitView } from './camera';
 import { polar } from './light-math';
-import { aimOffset, isSphereLike, levelUp, lightFrame, polarAboutPivot, SPOT_DEFAULTS, wrapDeg, type LightInstance } from './lighting';
+import { aimOffset, isSphereLike, levelUp, lightConeDeg, lightFrame, polarAboutPivot, SPOT_DEFAULTS, wrapDeg, type LightInstance } from './lighting';
 import { add, boxRadius, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
 import { productBounds } from './scene';
 import type { Action, ActionLabel, ProjectState } from './store';
@@ -169,10 +169,12 @@ export function lookThroughCamera(state: ProjectState, obj: ViewObject): CameraS
   const b = productBounds(state, true);
   const radius = isEmptyBox(b) ? state.scene.partSizeMm || 200 : boxRadius(b);
   let focalMm = base.focalMm;
-  if (l.type === 'SPOT') {
+  // A spot's cone fits the frame's shorter side; an IES light's is the cone that stands for it (its half-intensity angle, L5).
+  const cone = lightConeDeg(l);
+  if (cone !== null) {
     const aspect = outputAspect(state);
     const shortHalf = aspect >= 1 ? 18 / aspect : 18;
-    const half = (Math.min(170, Math.max(1, l.spread)) * Math.PI) / 360;
+    const half = (Math.min(170, Math.max(1, cone)) * Math.PI) / 360;
     focalMm = Math.min(SPOT_FOCAL.max, Math.max(SPOT_FOCAL.min, shortHalf / Math.tan(half)));
   }
   return {
@@ -306,15 +308,17 @@ function lightGlyph(state: ProjectState, l: LightInstance): Glyph {
     }
     return { obj: { kind: 'LIGHT', id: l.id }, lines, dots };
   }
-  if (l.type === 'SPOT') {
+  // A spot's cone, and for an IES light (L5) the cone of its half-intensity angle, which is how far its light reaches.
+  const cone = lightConeDeg(l);
+  if (cone !== null) {
     const len = Math.max(1e-6, Math.min(GLYPH.cone * size, throwTo));
-    const half = (Math.min(170, Math.max(1, l.spread)) * Math.PI) / 360;
+    const half = (Math.min(170, Math.max(1, cone)) * Math.PI) / 360;
     const r = len * Math.tan(half);
     const base = add(c, scale(f.forward, len));
     circle(lines, base, f.right, f.up, r, r);
     for (const d of [f.right, scale(f.right, -1), f.up, scale(f.up, -1)]) lines.push(c, add(base, scale(d, r)));
     // The inner cone, where the soft edge starts.
-    const inner = half * (1 - Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)));
+    const inner = l.type === 'IES' ? 0 : half * (1 - Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)));
     if (inner > 0 && inner < half - 1e-3) circle(lines, base, f.right, f.up, len * Math.tan(inner), len * Math.tan(inner), 24);
     dots.push(c);
     return { obj: { kind: 'LIGHT', id: l.id }, lines, dots };

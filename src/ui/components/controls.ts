@@ -298,10 +298,11 @@ export function segmented<T extends string>(
   options: readonly SegOption<T>[],
   current: T | null,
   onChange: (v: T) => void,
-  opts: { full?: boolean; ariaLabel?: string } = {},
+  opts: { full?: boolean; compact?: boolean; ariaLabel?: string } = {},
 ): Control<T | null> {
   const buttons = new Map<T, HTMLButtonElement>();
-  const el = h('div', { class: `seg${opts.full ? ' full' : ''}`, role: 'group', 'aria-label': opts.ariaLabel ?? '' });
+  // `compact`: narrower buttons, for a control of five options in the width of a field.
+  const el = h('div', { class: `seg${opts.full ? ' full' : ''}${opts.compact ? ' compact' : ''}`, role: 'group', 'aria-label': opts.ariaLabel ?? '' });
   for (const o of options) {
     const b = h(
       'button',

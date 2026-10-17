@@ -157,6 +157,7 @@ fn disc(position: Vec3, diameter: f32, radiance: f32) -> Light {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_CAMERA,
+        ies: None,
     }
 }
 

@@ -5799,7 +5799,7 @@ No encajó con el plan:
   en el lienzo y lo que se mira a través en `data-object`, `data-object-at`
   y `data-look-through`, como el medidor sus números.
 
-## L5 · Luces IES — **Sonnet**
+## L5 · Luces IES — **Sonnet** — hecha
 
 **Qué.** Lector propio del formato IES LM-63 (texto público) en
 `rt-core`, foco de tipo IES en el motor y en la vista previa (aproximado
@@ -5810,6 +5810,204 @@ y el tipo en *+ Añadir luz*.
 
 **Criterio.** Dos perfiles IES de prueba escritos a mano; la intensidad
 muestreada a 0°, 30° y 60° coincide con el archivo.
+
+**Hecho.**
+
+*Lector* (`rt_core::ies`, `IesProfile::parse`). Texto de IES LM-63 (1995 y
+2002; también el de 1991, sin línea de versión): cabecera `[CLAVE]` con
+`[MORE]`, `TILT=NONE`, los trece números, los ángulos y las candelas,
+separados por espacios, tabuladores, comas o saltos de cualquier estilo.
+**Fotometría tipo C**; **el tipo B y el A se rechazan** con su mensaje (no
+se convierten: es un remuestreo de la esfera que nada necesita, porque toda
+luminaria se puede publicar en tipo C), y también `TILT=INCLUDE` y
+`TILT=<archivo>`. Estricto, con el motivo y los números del archivo: cuentas
+que no casan (de menos, «cortado»; de más, «cuentas mal»), ángulos que no
+crecen o fuera de los rangos del estándar (verticales 0–90, 0–180 o 90–180;
+horizontales uno, 0–90, 0–180, 90–270 o 0–360), valores que no son números o
+no son finitos, candelas negativas, multiplicador no positivo, tabla toda a
+cero, más de 2 MiB; antes de reservar nada se comprueba que los números que
+hay cubren los que las cuentas piden. Lo que el archivo dice de lúmenes,
+lámparas, balasto, vatios y tamaño de la abertura se lee y no se usa: el
+archivo es la **forma** (se divide por su pico) y la luz da el nivel.
+
+*Distribución.* `intensity(γ, φ)` interpola **bilinealmente** en el ángulo
+vertical y el horizontal sobre los ángulos del archivo (no hace falta que
+estén igualmente espaciados), después de reducir φ por la simetría: redonda,
+cuadrante, bilateral 0–180, bilateral 90–270 y completa; fuera del rango
+vertical es 0. Su marco es el de la luz: eje = `direction` (γ = 0), φ = 0 a
+lo largo de `up`, φ crece de `up` hacia `up × direction`, contra el reloj
+mirando a lo largo del eje desde detrás. El **flujo** se integra de la misma
+función que se evalúa, en forma cerrada por celda (el trapecio es exacto en
+φ y `∫ sin γ · lineal(γ)` tiene primitiva): `4π c` para un perfil isótropo
+(con cualquier simetría y mallas irregulares, a 4·10⁻⁶), y para el 1000 cos²
+escrito a mano `2π · 1000 / 3` con la precisión de la tabla (0,5 % con pasos
+de 10°, 5·10⁻⁵ con pasos de 1°: crece con h²), y contra una cuadratura
+numérica de `intensity` sobre la esfera, a 1,5·10⁻³.
+
+*Luz* (`LightKind::Ies`, `Light::ies`, `LGHT` de tipo 5). La luz de punto o
+esfera pequeña de `power` W con una máscara por dirección, por el mismo
+camino que el foco (cono que llena la esfera, posición delta, MIS con los
+rayos BSDF, también a cámara y en reflejos): `máscara = intensidad(hacia x) /
+pico`. **El perfil da la forma y `power` el nivel**: tan brillante en su
+dirección más brillante como el punto de `power` W (como un foco en su eje),
+así que un perfil escrito para 500 lm y otro para 5000 dan la misma luz y
+cambiar un punto por una luz IES no mueve la exposición; el multiplicador de
+la interfaz es `power / base`, con `base` la potencia con que entró (la
+media de los focos encendidos, como un punto nuevo). Selección de luz (E12):
+por punto, el peso `lum(I) · máscara(x) / max(d², r²)` es exacto; en la
+estática (más de 64 entradas, atrapasombras) una luz **dentro de la esfera
+que envuelve la escena** pesa por su flujo (el del punto del pico por la
+eficiencia del perfil, `flux / (4π · pico)`) y una fuera de ella, como un
+foco, por la intensidad hacia el centro de la escena. No lanza fotones. Coste
+medido: la escena de paridad (el panel y dos luces IES) tarda un 16 % más que
+el ejemplo con su panel (7,2 s frente a 8,3 s, 128 muestras a 480 × 360 con 4
+hilos, 61 millones de rayos las dos): el peso y el sombreado de dos entradas
+más en la elección por punto y la búsqueda del perfil.
+
+*RSB.* `LGHT` kind 5 con una palabra más (la posición de su perfil: 80 B) y
+la sección `IESP` (el texto del archivo, `u32` de largo, bytes y relleno a 4)
+una vez por perfil distinto, tras las luces. Los ficheros y las escenas sin
+luces IES son los de antes, byte a byte (un test), y **ningún hash fijado se
+movió**. `rt_core::FEATURE_IES` (bit 3 de `rt_features`, valor 8, tras el
+bit 2 de la sección de Q1; `features` del lanzador pasa de 7 a 15): la página escribe la luz como IES solo cuando el
+motor lo dice (`readsIes`, `SceneView.ies`, en el *pool*, `NativeEngine` y
+*Exportar escena del motor*) y, si no, como el foco que la aproxima.
+`rt --write-l5-example` (`example::l5_scene`: el ejemplo con su panel a una
+quinta parte, una esfera de 24 mm con el perfil del *downlight* y un punto
+cálido con el *wall washer* girado sobre su eje, 160 × 120),
+`PINNED_L5_IES_4SPP` = `0x920f0be1` en las tres rutas SIMD, con 1, 4 y 16
+hilos, en WASI y con el `rt.wasm` real, y su bloque de paridad en
+`.github/workflows/engine.yml`, que el `tests/ies-engine.test.ts` repite por
+el código de la página.
+
+*Página.* `core/ies.ts` es el puerto del lector (el motor escribe, en
+`tests/fixtures/ies/conformance.json`, 68 archivos con lo que hace con cada
+uno, sanos y mal formados; el lector de la página repite cada rechazo, con el
+mismo mensaje, y cada nombre, simetría, pico, flujo e intensidad). `LightInstance`
+gana `type: 'IES'` e `ies: { name, text, base }`; viaja en el proyecto, los
+estudios, `Guardar montaje como…` (`LightSpec.ies`) y la biblioteca (el
+validador exige un perfil que el lector acepte; un perfil dañado al abrir un
+proyecto se quita y la luz es un punto). *+ Añadir luz ▸ IES…* abre el
+archivo (también soltarlo en la ventana y la paleta), una entrada de deshacer
+(`studio/addIesLight`); un archivo que no sirve no añade nada y dice por qué,
+en los dos idiomas. Inspector: nombre del perfil, **gráfico polar** dibujado
+desde el archivo (C0–C180 continuo, C90–C270 discontinuo, en grises),
+pico, haz y simetría, *Cambiar…*, **multiplicador** (en lugar de los vatios) y
+los lúmenes (el flujo del punto del pico por la eficiencia del perfil). Rápido
+lo **aproxima**, y el inspector lo dice (regla 10), con un `SpotLight` de la
+intensidad del eje y un cono cuya transición vale exactamente la mitad del
+pico en el semiángulo de la mitad de intensidad (`iesSpot`); los glifos del
+visor y *Mirar a través* usan el cono de ese semiángulo. **No se entrega
+ningún perfil de fabricante**: los dos de prueba están escritos a mano
+(`tests/fixtures/ies/`, sin nada de ninguna luminaria) y cada persona trae los
+suyos; así consta en SPEC, UI y en el README de los *fixtures*.
+
+*El criterio, con números.* El *downlight* escrito a mano (1000 cd de pico,
+1000 cos², una tabla de 10° en 10°) con el motor a 12 W, muestreado en tres
+direcciones (los valores son las candelas que da el motor, de la intensidad
+`P/4π · c/c_pico`, con su error contra la del archivo medido en `f32`):
+
+| γ | archivo (cd) | motor (cd) | error / pico |
+| --- | --- | --- | --- |
+| 0° | 1000 | 1000,0000 | 0 |
+| 30° | 750 | 750,0000 | 0 |
+| 60° | 250 | 250,0000 | 0 |
+| 35° (entre nodos) | 668,5 (lineal; el 1000 cos² daría 671,1) | 668,5001 | 6·10⁻⁸ |
+| 45° | 500 | 500,0001 | 3·10⁻⁸ |
+| 75° | 73,5 | 73,5001 | 6·10⁻⁸ |
+
+El *wall washer* (900 cd, cada lado distinto) da 560, 430, 330 y 380 cd a 60°
+en C0, C90, C180 y C270, y 800 y 765 cd en los puntos entre nodos (30° en C0 y
+a 45° de azimut), con el mismo error. La tolerancia del test es **10⁻⁶ del
+pico**: el error medido es de redondeo de `f32` (6,3·10⁻⁸; el ángulo vuelve de
+un vector por `atan2` bueno a unos 10⁻⁷ rad y la pendiente más fuerte de la
+tabla es de 14 cd/°), dieciséis veces eso y 2 600 veces menos que el 0,26 %
+en que la curva suave difiere del archivo a 35°, así que un motor que
+tomara el nodo más cercano o la curva de la que salen los números fallaría.
+Y la misma prueba por la imagen: un suelo blanco lambertiano bajo la luz, con
+radiancia `I(θ) cos³θ / h² / π`, a 8·10⁻⁶ (un punto normal da 6·10⁻⁶ con la
+misma fórmula), y el multiplicador de 2 que duplica la luz en la interfaz.
+
+*Pruebas.* En `rt-core`: 20 de `ies` (el lector y sus rechazos, el flujo,
+las simetrías y la conformidad con la página), 7 de `light` (el criterio, la orientación,
+potencia y color, la esfera con perfil, sin perfil ni eje, la elección por
+punto y la estática; la prueba de MIS de «todas las clases» gana una luz
+IES), 2 del integrador (el suelo a 0°, 30° y 60° y las cuatro caras del
+*wall washer*), 4 de `scene::rsb` (el perfil una vez por cada distinto, 80 B,
+los bytes de antes, los inválidos y la actualización), el fijado de `render`
+y, en `rt-cli`, 1, 4 y 16 hilos y `--write-l5-example`. En la página:
+`ies.test.ts` (85: la conformidad y los dos perfiles), `ies-lights.test.ts`
+(17: añadir, deshacer, multiplicador, lúmenes, montaje, biblioteca,
+estudio, proyecto, RSB, `l5.rsb` byte a byte, glifo y mirar a través),
+`ies-ui.test.ts` (11), `ies-switch.test.ts` (6: el bit del *pool* y del
+lanzador) y `ies-engine.test.ts` (con el `rt.wasm` real: el hash fijado y una
+escena escrita por la página); `tools/ies-check.mjs` (Playwright, *Rápido* y
+*Completo*: el menú, el archivo, el gráfico, el multiplicador, *Cambiar…*, el
+archivo rechazado; capturas `docs/ui/ies-light.png` e `ies-light-full.png`).
+Mutaciones: 9 en el motor (el pliegue de φ, su sentido, la máscara, el radio
+de la escena en el peso estático, el término de pendiente del flujo, la
+deduplicación de perfiles, la interpolación en φ, el rango de γ y la
+normalización por el pico) y 1 en la página (el bit de `FEATURE_IES` que
+nunca llega a la vista), todas detectadas.
+
+No encajó con el plan:
+
+- **«Elección de luz por su flujo, que se integra del archivo»**: por punto, la
+  intensidad del perfil hacia el punto que se sombrea **es** el peso exacto
+  (como el foco: la máscara por dirección), y el flujo no pinta nada ahí; en
+  la elección estática el flujo del archivo solo es la medida correcta para
+  una luz **dentro** de la esfera que envuelve la escena. Fuera de ella manda
+  la intensidad hacia la escena, como se decidió para el foco estrecho en L4
+  (un haz de 10° con poco flujo, dirigido a la pieza, es la luz que más
+  cuenta; pesarlo por su flujo lo dejaba otra vez lleno de ruido). El flujo
+  se integra, se prueba contra los casos cerrados y se usa en la estática
+  interior y en los lúmenes del inspector. Si el líder prefiere el flujo
+  total también fuera, es una línea de `Lights::new`.
+- **Tipo B y A rechazados, no convertidos** (el encargo decía «rechazados o
+  convertidos si es sencillo»; no lo es: es otro sistema de ángulos y otro
+  remuestreo, y todo lo que la gente exporta para renderizar es tipo C).
+- **Nivel con que entra la luz**: el perfil se normaliza por su pico y la luz
+  entra con la irradiancia media de los focos encendidos, como un punto nuevo
+  (el pico del perfil apuntado al pivote da lo mismo que el punto). Los
+  candelas absolutas del archivo no cuentan: las escenas de aquí tienen
+  vatios de Cycles, no físicos (a 683 lm/W un perfil real daría una imagen
+  negra). Es una convención de exposición (el plan no la marca como decisión
+  del líder, pero es fotográfica): el líder puede preferir normalizar por flujo
+  (un haz estrecho entraría mucho más brillante en su eje).
+- **«Un multiplicador» es `power / base`**, no las candelas por un factor: el
+  nivel sigue siendo `power` (lo que leen el Doctor, la animación, los
+  estudios, las barras de reparto y la normalización al aplicar un montaje a
+  otro tipo de producto) y el inspector enseña ese nivel como múltiplo del
+  de entrada. Al aplicar un montaje que lleva una luz IES, el multiplicador
+  vuelve a × 1 (la potencia se renormaliza).
+- **`NEW_LIGHT_KINDS` no gana `IES`**: una luz IES necesita su archivo, así
+  que nace de otra acción (`studio/addIesLight`) y el menú, la paleta y el
+  soltar archivos la llaman; el tipo `IES` sí entra en `LightType` y en
+  `LIGHT_TYPES` (se añade, no se renombra). El segmentado del tipo solo
+  ofrece *IES* a una luz que tiene perfil.
+- **Rápido es una aproximación y no puede ser más**: un `SpotLight` de three.js
+  no pasa de 90° de semicono, así que un perfil ancho (el *wall washer* tiene
+  un haz de 139°) o una lámpara que no baja a la mitad (una bombilla) se
+  dibuja como un hemisferio de borde duro: sin luz hacia atrás y sin la caída
+  suave del archivo. El inspector lo dice y *Completo* da el archivo entero.
+- **El archivo no pone el tamaño de la luz**: las dimensiones de la abertura
+  luminosa del archivo se ignoran (la luz es un punto o una esfera de radio
+  propio, el de un punto: 0,01 tamaños de pieza al nacer).
+- Sin fotones de cáusticas, como el punto y el foco; **el lector es estricto
+  también con los números de más** (más valores que las cuentas es un error,
+  no se ignoran): un archivo con basura al final se rechaza con su cuenta.
+- **`features` de `/api/info` suma el bit 3** (`FEATURE_IES` = 8; con la
+  sección de Q1 pasa de 7 a 15): la afirmación de `rt-app/tests/server.rs` que
+  lo fijaba cambia con la fase; es la única prueba anterior que se movió, y no
+  es de píxeles. Q1 tomó el bit 2 (valor 4) antes de integrar L5: el de las
+  luces IES es el siguiente.
+- `tools/lights-check.mjs` (L4) **falla en el entorno en un paso que no es de
+  L5**: *activar la Cámara 1 desde el menú* (tras *Nueva desde la vista
+  actual*); falla igual en el cabeza de sesión `2505ed6`, así que no sirve de
+  puerta para esta fase más allá de ese punto. Se actualizó su comprobación
+  del menú (la entrada *IES…* viva) y se regeneró `lights-add-menu.png`.
+- **`engine/README.md` está en inglés** (como cada fase lo ha dejado); lo de L5
+  va en inglés ahí y en español en los demás documentos.
 
 ## L1 · Colocación por reflejo, campo claro, luces editables — **Sonnet**
 

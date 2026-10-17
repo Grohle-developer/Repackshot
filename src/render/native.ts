@@ -59,7 +59,7 @@ import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
-import { readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
+import { readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
 import { adaptiveKey, QUIET_MS, viewAdaptive, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
@@ -627,6 +627,8 @@ export class NativeEngine {
         // M2b: the textures, when the launcher's engine reads them; M3b: the material programs, when it runs them.
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
         ...(readsPrograms(this.info.features) ? { programs: true } : {}),
+        // L5: the IES lights, when this engine renders them.
+        ...(readsIes(this.info.features) ? { ies: true } : {}),
       },
     };
   }
@@ -1038,6 +1040,8 @@ export class NativeEngine {
         ...(opts.adaptive ? { adaptive: opts.adaptive } : {}),
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
         ...(readsPrograms(this.info.features) ? { programs: true } : {}),
+        // L5: the IES lights, when this engine renders them.
+        ...(readsIes(this.info.features) ? { ies: true } : {}),
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.

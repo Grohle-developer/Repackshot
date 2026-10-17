@@ -208,6 +208,7 @@ fn panel(position: Vec3, target: Vec3, size: f32, power: f32) -> Light {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_GLOSSY,
+        ies: None,
     }
 }
 

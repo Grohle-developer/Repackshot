@@ -172,6 +172,9 @@ kbd,
   color: var(--ink-3);
   cursor: not-allowed;
 }
+.seg.compact button {
+  padding: 0 4px;
+}
 .seg.full {
   display: flex;
 }

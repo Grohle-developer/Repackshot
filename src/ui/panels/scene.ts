@@ -323,7 +323,12 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
             h(
               'div',
               { class: 'list-main' },
-              h('div', null, lightName(s, l.id, getLang()), l.own ? h('span', { class: 'aux', style: 'margin-left:6px' }, t('lights.own')) : null),
+              h(
+                'div',
+                l.type === 'IES' && l.ies ? { 'data-tip': t('lights.iesTip', { name: l.ies.name }) } : null,
+                lightName(s, l.id, getLang()),
+                l.own ? h('span', { class: 'aux', style: 'margin-left:6px' }, t('lights.own')) : null,
+              ),
               h('div', { class: 'bar-meter', 'data-tip': t('lights.share', { pct: formatNumber(shares[i] * 100, getLang(), 0) }) }, h('div', { style: `width:${Math.round(shares[i] * 100)}%` })),
             ),
             actions,
@@ -349,7 +354,7 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
     t('lights.saveSetup'),
   ) as HTMLButtonElement;
   scope.watch((s) => s.studio.lights.some((l) => l.enabled), (on) => (saveSetup.disabled = !on));
-  // + Add light ▸ (L4): area (rectangle, disc, sphere), point, spot, sun; IES is phase L5.
+  // + Add light ▸ (L4): area (rectangle, disc, sphere), point, spot, sun; IES… (L5) asks for a profile file.
   const add = h('button', { type: 'button', class: 'btn btn-block', 'aria-haspopup': 'menu', 'data-tip': t('lights.addAux'), 'data-add': 'light' }, icon('plus', 14), t('lights.add')) as HTMLButtonElement;
   add.addEventListener('click', () => openMenu(add, lightMenuItems(ctx, { heading: false })));
   return h(

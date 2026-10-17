@@ -239,6 +239,7 @@ fn panel(position: Vec3, target: Vec3, size: (f32, f32), power: f32, flags: u32)
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags,
+        ies: None,
     }
 }
 
@@ -667,6 +668,7 @@ pub fn sky_setup_with(
         spread_deg: 180.0,
         angle_deg: 0.545,
         flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+        ies: None,
     }];
     scene.environment = Environment {
         kind: EnvKind::Sky,
@@ -742,6 +744,7 @@ fn disc(position: Vec3, target: Vec3, diameter: f32, power: f32) -> Light {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_GLOSSY,
+        ies: None,
     }
 }
 

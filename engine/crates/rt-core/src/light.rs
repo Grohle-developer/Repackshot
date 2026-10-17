@@ -21,6 +21,18 @@
 //!   0 at the edge of its cone of `spread_deg` (the soft edge is `angle_deg` wide), as the
 //!   preview's spot light draws it. Its sphere shows to the camera and in reflections like a
 //!   panel does (flags `camera`, `glossy`).
+//! * **IES lights** (kind 5, phase L5): the point light or small sphere above, with the intensity
+//!   of a photometric profile ([`crate::ies`]) in each direction instead of a cone: the mask is
+//!   the profile's candela towards the receiver, seen from the light's centre in its own frame
+//!   (`direction` its axis, `up` its horizontal angle 0), over the profile's peak, so it is 1 in
+//!   the brightest direction and the light is as bright there as the point light of `power`. The
+//!   shape of the file is all that is used of it: its lumens and candela multiplier cancel. The
+//!   selection weights need no flux of the file where the light is: the mask at the shading point
+//!   is the exact intensity towards it. The static selection (see below) uses it only where it
+//!   must: for a light inside the sphere that bounds the scene, whose light goes everywhere the
+//!   scene is, its flux, which is the peak flux times the profile's efficiency
+//!   ([`crate::ies::IesProfile::efficiency`]); outside it, as for a spot, the intensity towards the
+//!   centre of the scene.
 //! * **Emissive meshes**: instances whose material is emissive and carries
 //!   [`crate::scene::MATERIAL_FLAG_LIGHT`]; triangles are chosen in proportion to their area,
 //!   points uniformly on them. Two-sided unless the instance is one-sided. Not an emitter whose
@@ -77,12 +89,14 @@
 use crate::color::Rgb;
 use crate::environment::EnvLight;
 use crate::fmath;
+use crate::ies::IesProfile;
 use crate::math::{Frame, Ray, Vec3};
 use crate::scene::{
     LightKind, Scene, INSTANCE_ONE_SIDED, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
     LIGHT_FLAG_NO_SHADOW, MATERIAL_FLAG_LIGHT,
 };
 use crate::warp;
+use std::sync::Arc;
 
 /// Square millimetres to square metres.
 const MM2_TO_M2: f32 = 1.0e-6;
@@ -326,6 +340,9 @@ struct SphereLight {
     axis: Vec3,
     cos_outer: f32,
     cos_inner: f32,
+    /// An IES light's profile and frame (L5): its mask is the profile's share of its peak towards
+    /// the receiver.
+    ies: Option<IesShape>,
     glossy: bool,
     camera: bool,
     shadow: bool,
@@ -336,10 +353,27 @@ struct SphereLight {
     near2: f32,
 }
 
+/// The direction-dependent part of an IES light (L5).
+#[derive(Clone, Debug, PartialEq)]
+struct IesShape {
+    profile: Arc<IesProfile>,
+    /// `z` the light's axis (vertical angle 0), `y` its horizontal angle 0: [`crate::ies`].
+    frame: Frame,
+}
+
 impl SphereLight {
     /// How much of its light reaches `x`: 1 for a point light; for a spot a smoothstep from 0 at
-    /// the edge of its cone to 1 at its inner cone, by the direction from its centre to `x`.
+    /// the edge of its cone to 1 at its inner cone, by the direction from its centre to `x`; for an
+    /// IES light the share of its peak intensity the profile gives in that direction.
     fn mask(&self, x: Vec3) -> f32 {
+        if let Some(ies) = &self.ies {
+            let d = x - self.centre;
+            let len2 = d.length_squared();
+            if !positive(len2) {
+                return 0.0;
+            }
+            return ies.profile.shape(ies.frame.to_local(d / len2.sqrt()));
+        }
         if self.cos_outer < -1.0 {
             return 1.0;
         }
@@ -647,6 +681,8 @@ impl Lights {
             )
         };
         let radius_m = radius * MM_TO_M;
+        // The arms below name the radius of a light `radius` too.
+        let scene_radius = radius;
         // The static selection: share of an emitter's flux that reaches the bounding sphere,
         // over R².
         let reach = |p: Vec3, normal: Option<Vec3>| -> f32 {
@@ -753,11 +789,26 @@ impl Lights {
                         base: irradiance.luminance(),
                     });
                 }
-                LightKind::Point | LightKind::Spot => {
+                LightKind::Point | LightKind::Spot | LightKind::Ies => {
                     let color = light.color.map(|v| v.max(0.0));
                     let intensity = color * (power / (4.0 * fmath::PI));
                     let radius = 0.5 * light.size_x.abs();
                     let radius = if radius.is_finite() { radius } else { 0.0 };
+                    // L5: an IES light is a point light masked by its profile, in the frame of its
+                    // axis and its `up`; one without a profile, or without an axis, is no light.
+                    let ies = if light.kind == LightKind::Ies {
+                        let Some(profile) = &light.ies else { continue };
+                        let frame = light_frame(light.direction, light.up);
+                        if frame.z.length_squared() < 0.5 {
+                            continue;
+                        }
+                        Some(IesShape {
+                            profile: Arc::clone(profile),
+                            frame,
+                        })
+                    } else {
+                        None
+                    };
                     let (axis, cos_outer, cos_inner) = if light.kind == LightKind::Spot {
                         let axis = light.direction.normalize();
                         if axis.length_squared() < 0.5 {
@@ -788,6 +839,7 @@ impl Lights {
                         axis,
                         cos_outer,
                         cos_inner,
+                        ies,
                         glossy,
                         camera,
                         shadow,
@@ -797,7 +849,14 @@ impl Lights {
                     };
                     // What matters is how bright it is where the scene is, not the little flux of a narrow cone: a
                     // spot aimed at the scene weighs as its point light would, one aimed away a twentieth of it.
-                    let toward = 0.05 + 0.95 * sphere.mask(centre);
+                    // An IES light inside the sphere that bounds the scene sends its whole flux into it, in
+                    // whatever directions the profile has it.
+                    let toward = match &sphere.ies {
+                        Some(ies) if (light.position - centre).length() <= scene_radius => {
+                            ies.profile.efficiency()
+                        }
+                        _ => 0.05 + 0.95 * sphere.mask(centre),
+                    };
                     weights.push(flux * toward * reach(light.position, None));
                     entries.push(LightRef::Sphere(spheres.len() as u32));
                     spheres.push(sphere);
@@ -2314,6 +2373,15 @@ mod tests {
                     angle_deg: 8.0,
                     ..Light::default()
                 },
+                // L5: a sphere of 90 mm that glows as the wall washer's candela say, aimed at the
+                // middle of the floor.
+                Light {
+                    kind: LightKind::Ies,
+                    up: Vec3::new(0.0, 0.0, 1.0),
+                    direction: Vec3::new(-0.6, 0.5, -0.6).normalize(),
+                    ies: Some(ies_profile(crate::ies::tests::WALL_WASHER)),
+                    ..point(Vec3::new(300.0, -250.0, 300.0), 90.0, 6.0)
+                },
             ],
             materials: vec![Material {
                 kind: MATERIAL_EMISSIVE,
@@ -2335,10 +2403,10 @@ mod tests {
         // density on the BSDF side (`crossed`, `escaped`, `emitter_weight`) is the sample's,
         // selection included.
         let lights = Lights::new(&every_kind());
-        assert_eq!(lights.len(), 6);
+        assert_eq!(lights.len(), 7);
         assert!(lights.per_point);
         let mut rng = crate::rng::Pcg32::seeded(5, 6);
-        let mut checked = [0usize; 6];
+        let mut checked = [0usize; 7];
         for _ in 0..4000 {
             let x = Vec3::new(
                 600.0 * (rng.next_f32() - 0.5),
@@ -2475,5 +2543,377 @@ mod tests {
                 assert_eq!(lights.pmf(0, &at), 1.0);
             }
         }
+    }
+
+    // --- IES lights (L5) -------------------------------------------------------------------
+
+    fn ies_profile(text: &str) -> Arc<IesProfile> {
+        Arc::new(IesProfile::parse(text.as_bytes()).expect("a valid profile"))
+    }
+
+    /// An IES light of `power` watts and `diameter` mm at `position`, its axis `direction`, its
+    /// horizontal angle 0 along `up`.
+    fn ies_light(
+        profile: &str,
+        position: Vec3,
+        direction: Vec3,
+        up: Vec3,
+        diameter: f32,
+        power: f32,
+    ) -> Light {
+        Light {
+            kind: LightKind::Ies,
+            direction,
+            up,
+            ies: Some(ies_profile(profile)),
+            ..point(position, diameter, power)
+        }
+    }
+
+    /// The intensity in W/sr an IES point light at the origin sends towards `x` (the radiance of
+    /// its sample times the squared distance in metres).
+    fn ies_intensity(lights: &Lights, x: Vec3) -> Option<f32> {
+        let s = lights.sample(x, 0.5, (0.5, 0.5))?;
+        assert!(s.delta && s.pdf == 1.0 && s.shadow && !s.photon);
+        Some(s.radiance.g * x.length_squared() * MM2_TO_M2)
+    }
+
+    fn only(light: Light) -> Lights {
+        Lights::new(&Scene {
+            lights: vec![light],
+            environment: black_env(),
+            ..Scene::default()
+        })
+    }
+
+    #[test]
+    fn an_ies_light_sends_the_candela_of_its_file_at_0_30_and_60_degrees() {
+        // The criterion of L5. A downlight of the hand-written file (1000 cd on its axis, 750 at
+        // 30°, 250 at 60°, nodes of its table) with power 12 W: as bright on its axis as the point
+        // light of 12 W, 12 / 4π W/sr, and the file's share of that elsewhere. It points down.
+        let power = 12.0f32;
+        let peak = power / (4.0 * fmath::PI);
+        let lights = only(ies_light(
+            crate::ies::tests::DOWNLIGHT,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            0.0,
+            power,
+        ));
+        assert_eq!(lights.len(), 1);
+        // 0°, 30° and 60° are table nodes; 35°, 45° and 75° lie between them, where the file is
+        // linear: 668.5, 500 and 73.5 cd (the smooth 1000 cos² would say 671.1, 500 and 67.0, so
+        // a lookup that took the nearest node or the curve it was rounded from would fail).
+        // Tolerance: the angle comes back from a unit vector through `atan2` in f32 (good to a few
+        // 1e-7 rad) and the table's steepest slope is 14 cd per degree (800 cd/rad): the lookup is
+        // within 6.3e-8 of the peak of the file's values at every direction below (measured), f32
+        // round-off. The test allows 1e-6 of the peak, sixteen times that and 2 600 times under the
+        // 0.26 % by which the smooth curve differs from the file at 35°, so a lookup that took the
+        // nearest node or the curve it was rounded from would fail.
+        for (theta, candela) in [
+            (0.0f32, 1000.0f32),
+            (30.0, 750.0),
+            (60.0, 250.0),
+            (35.0, 668.5),
+            (45.0, 500.0),
+            (75.0, 73.5),
+        ] {
+            for azimuth in [0.0f32, 90.0, 217.0] {
+                let (t, a) = (theta.to_radians(), azimuth.to_radians());
+                let x = Vec3::new(t.sin() * a.cos(), t.sin() * a.sin(), -t.cos()) * 500.0;
+                let got = ies_intensity(&lights, x).expect("lit");
+                let want = peak * candela / 1000.0;
+                assert!(
+                    (got - want).abs() <= 1.0e-6 * peak,
+                    "{theta}° at {azimuth}°: {got} against {want}"
+                );
+            }
+        }
+        // The file sends nothing above the horizon: 90° is its last node (0 cd), and past it,
+        // upwards, there is no light to sample.
+        for x in [
+            Vec3::new(500.0, 0.0, 0.0),
+            Vec3::new(300.0, 0.0, 400.0),
+            Vec3::new(0.0, 0.0, 500.0),
+        ] {
+            assert_eq!(lights.sample(x, 0.5, (0.5, 0.5)), None, "{x:?}");
+        }
+    }
+
+    #[test]
+    fn an_ies_light_is_turned_by_its_axis_and_its_up() {
+        // The wall washer at 60° off its axis, 560 / 430 / 330 / 380 cd in C0, C90, C180, C270 of
+        // 900 at its peak. Its axis is +y and its up +z: C0 lies towards +z, and C90 (up × axis)
+        // towards -x, counter-clockwise looking along the axis from behind.
+        let power = 4.0 * fmath::PI * 9.0; // 9 W/sr at the peak: 1 W/sr per 100 cd
+        let lights = only(ies_light(
+            crate::ies::tests::WALL_WASHER,
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            0.0,
+            power,
+        ));
+        let at = |side: Vec3| {
+            let t = 60.0f32.to_radians();
+            ies_intensity(
+                &lights,
+                (Vec3::new(0.0, 1.0, 0.0) * t.cos() + side * t.sin()) * 400.0,
+            )
+            .expect("lit")
+        };
+        for (side, candela) in [
+            (Vec3::new(0.0, 0.0, 1.0), 5.60),
+            (Vec3::new(-1.0, 0.0, 0.0), 4.30),
+            (Vec3::new(0.0, 0.0, -1.0), 3.30),
+            (Vec3::new(1.0, 0.0, 0.0), 3.80),
+        ] {
+            let got = at(side);
+            assert!(
+                (got - candela).abs() < 2.0e-3,
+                "{side:?}: {got} against {candela}"
+            );
+        }
+        // Turning the light about its axis turns the pattern with it: up = -x puts C0 on -x
+        // (and C90, up × axis = (-1,0,0) × (0,1,0) = (0,0,-1), on -z).
+        let turned = only(ies_light(
+            crate::ies::tests::WALL_WASHER,
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(-1.0, 0.0, 0.0),
+            0.0,
+            power,
+        ));
+        let t = 60.0f32.to_radians();
+        let toward = |side: Vec3| {
+            ies_intensity(
+                &turned,
+                (Vec3::new(0.0, 1.0, 0.0) * t.cos() + side * t.sin()) * 400.0,
+            )
+            .expect("lit")
+        };
+        assert!((toward(Vec3::new(-1.0, 0.0, 0.0)) - 5.60).abs() < 2.0e-3);
+        assert!((toward(Vec3::new(0.0, 0.0, -1.0)) - 4.30).abs() < 2.0e-3);
+        // An up that is not square to the axis is squared to it, as an area light's is.
+        let slanted = only(ies_light(
+            crate::ies::tests::WALL_WASHER,
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 1.0),
+            0.0,
+            power,
+        ));
+        let again = ies_intensity(
+            &slanted,
+            (Vec3::new(0.0, 1.0, 0.0) * t.cos() + Vec3::new(0.0, 0.0, 1.0) * t.sin()) * 400.0,
+        )
+        .expect("lit");
+        assert!((again - 5.60).abs() < 2.0e-3, "{again}");
+    }
+
+    #[test]
+    fn an_ies_light_scales_with_its_power_and_not_with_the_file_s_lumens() {
+        // The file gives the shape: doubling its candela multiplier changes nothing, doubling the
+        // power doubles the light.
+        let at = |profile: &str, power: f32| {
+            let lights = only(ies_light(
+                profile,
+                Vec3::ZERO,
+                Vec3::new(0.0, 0.0, -1.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                0.0,
+                power,
+            ));
+            ies_intensity(&lights, Vec3::new(300.0, 0.0, -400.0)).expect("lit")
+        };
+        let base = at(crate::ies::tests::DOWNLIGHT, 5.0);
+        let doubled_file = crate::ies::tests::DOWNLIGHT.replacen("1 2094 1 10", "1 2094 2 10", 1);
+        assert!((at(&doubled_file, 5.0) / base - 1.0).abs() < 1.0e-6);
+        assert!((at(crate::ies::tests::DOWNLIGHT, 10.0) / base - 2.0).abs() < 1.0e-6);
+        // And the colour tints it.
+        let mut tinted = ies_light(
+            crate::ies::tests::DOWNLIGHT,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            0.0,
+            5.0,
+        );
+        tinted.color = Rgb::new(1.0, 0.5, 0.25);
+        let s = only(tinted)
+            .sample(Vec3::new(300.0, 0.0, -400.0), 0.5, (0.5, 0.5))
+            .expect("lit");
+        assert!((s.radiance.g / s.radiance.r - 0.5).abs() < 1.0e-6);
+        assert!((s.radiance.b / s.radiance.r - 0.25).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn an_ies_light_of_some_size_glows_as_its_profile_says() {
+        // A sphere of 60 mm with a profile is sampled in the cone it fills, as a spot is, and
+        // carries the profile's share of its peak radiance; the camera sees it with that share.
+        let power = 8.0f32;
+        let lights = only(Light {
+            flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+            ..ies_light(
+                crate::ies::tests::DOWNLIGHT,
+                Vec3::ZERO,
+                Vec3::new(0.0, 0.0, -1.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                60.0,
+                power,
+            )
+        });
+        assert!(lights.any_camera_visible());
+        let peak_radiance = power / (4.0 * fmath::PI) / (fmath::PI * 0.03 * 0.03);
+        let on_axis = lights
+            .sample(Vec3::new(0.0, 0.0, -500.0), 0.5, (0.3, 0.6))
+            .expect("lit");
+        assert!(!on_axis.delta && !on_axis.photon);
+        assert!((on_axis.radiance.g / peak_radiance - 1.0).abs() < 1.0e-5);
+        let x = Vec3::new(
+            500.0 * 30.0f32.to_radians().sin(),
+            0.0,
+            -500.0 * 30.0f32.to_radians().cos(),
+        );
+        let off_axis = lights.sample(x, 0.5, (0.3, 0.6)).expect("lit");
+        assert!((off_axis.radiance.g / peak_radiance - 0.75).abs() < 1.0e-4);
+        // The camera, 600 mm below, sees the sphere's face at the same share.
+        let ray = Ray::new(Vec3::new(0.0, 0.0, -600.0), Vec3::new(0.0, 0.0, 1.0));
+        let seen = lights.crossed(&ray, f32::INFINITY, None);
+        assert!((seen.g / peak_radiance - 1.0).abs() < 1.0e-5);
+        // From beyond the horizon of the profile it is dark.
+        let side = Ray::new(Vec3::new(-600.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+        assert_eq!(lights.crossed(&side, f32::INFINITY, None), Rgb::BLACK);
+        // A sphere of 60 mm at 1 m subtends 3.4° and the profile changes slowly: next-event
+        // estimation and BSDF sampling together count it once, as for any sphere light.
+        let again = lights.crossed(&ray, f32::INFINITY, None);
+        assert_eq!(seen, again);
+    }
+
+    #[test]
+    fn an_ies_light_without_a_profile_or_an_axis_is_no_light() {
+        let mut bare = ies_light(
+            crate::ies::tests::DOWNLIGHT,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            0.0,
+            5.0,
+        );
+        bare.ies = None;
+        assert!(only(bare).is_empty());
+        let mut no_axis = ies_light(
+            crate::ies::tests::DOWNLIGHT,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+            0.0,
+            5.0,
+        );
+        no_axis.direction = Vec3::ZERO;
+        assert!(only(no_axis).is_empty());
+    }
+
+    #[test]
+    fn an_ies_light_is_chosen_where_its_profile_reaches() {
+        // A downlight and a wall washer of the same power. Per point the weight of each is its
+        // intensity towards the point over the distance squared, the profile's own value there.
+        // The washer points up: below it, straight down, is its 180° (0 cd); the downlight is the
+        // only light to be chosen there, whatever else is far away.
+        let down = Vec3::new(0.0, 0.0, -1.0);
+        let lights = Lights::new(&Scene {
+            lights: vec![
+                ies_light(
+                    crate::ies::tests::DOWNLIGHT,
+                    Vec3::new(-500.0, 0.0, 600.0),
+                    down,
+                    Vec3::new(0.0, 1.0, 0.0),
+                    0.0,
+                    10.0,
+                ),
+                ies_light(
+                    crate::ies::tests::WALL_WASHER,
+                    Vec3::new(500.0, 0.0, 600.0),
+                    Vec3::new(0.0, 0.0, 1.0),
+                    Vec3::new(0.0, 1.0, 0.0),
+                    0.0,
+                    10.0,
+                ),
+            ],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        assert!(lights.per_point);
+        // Under the downlight: 1000 cd at 0° and 0.6 m away against the washer at 121° off its
+        // axis (60 cd on its table), 1.17 m away.
+        let under_downlight = lights.select(Vec3::new(-500.0, 0.0, 0.0));
+        assert!(
+            lights.pmf(0, &under_downlight) > 0.99,
+            "{}",
+            lights.pmf(0, &under_downlight)
+        );
+        // Under the washer's back: 180° off its axis, 0 cd, so it cannot be chosen there.
+        let under_washer = lights.select(Vec3::new(500.0, 0.0, 0.0));
+        assert_eq!(lights.pmf(1, &under_washer), 0.0);
+        assert_eq!(lights.pmf(0, &under_washer).to_bits(), 1.0f32.to_bits());
+    }
+
+    #[test]
+    fn the_static_selection_weighs_an_ies_light_by_where_it_sends_its_flux() {
+        // Inside the sphere that bounds the scene (empty geometry: 1 m around the origin) a light
+        // sends its whole flux into the scene: its weight is its flux, the profile's efficiency
+        // over the peak's point light. A downlight (efficiency 1/6) against an isotropic profile
+        // (1) of the same power at the same distance: 1 to 6.
+        let isotropic = "IESNA:LM-63-2002\n[LUMINAIRE] sphere\nTILT=NONE\n1 1000 1 3 1 1 2 0 0 0\n1 1 10\n0 90 180\n0\n100 100 100\n";
+        let place = |profile: &str, side: f32| {
+            ies_light(
+                profile,
+                Vec3::new(side * 400.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, -1.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                0.0,
+                10.0,
+            )
+        };
+        let lights = Lights::new(&Scene {
+            lights: vec![
+                place(crate::ies::tests::DOWNLIGHT, 1.0),
+                place(isotropic, -1.0),
+            ],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        let efficiency = ies_profile(crate::ies::tests::DOWNLIGHT).efficiency();
+        let ratio = lights.flux_pmf[0] / lights.flux_pmf[1];
+        assert!(
+            (ratio / efficiency - 1.0).abs() < 1.0e-5,
+            "{ratio} against {efficiency}"
+        );
+        assert!((efficiency - 1.0 / 6.0).abs() < 2.0e-3);
+        // Outside it (a scene 1 m across seen from 20 m), as for a spot: the intensity towards the
+        // centre of the scene. Aimed at it, a downlight weighs as the point light of its power;
+        // turned away it weighs a twentieth of that (the floor of the heuristic).
+        let far = |direction: Vec3| {
+            Lights::new(&Scene {
+                lights: vec![
+                    ies_light(
+                        crate::ies::tests::DOWNLIGHT,
+                        Vec3::new(0.0, 0.0, 20_000.0),
+                        direction,
+                        Vec3::new(0.0, 1.0, 0.0),
+                        0.0,
+                        10.0,
+                    ),
+                    point(Vec3::new(0.0, 0.0, -20_000.0), 0.0, 10.0),
+                ],
+                environment: black_env(),
+                ..Scene::default()
+            })
+        };
+        let aimed = far(Vec3::new(0.0, 0.0, -1.0));
+        assert!((aimed.flux_pmf[0] / aimed.flux_pmf[1] - 1.0).abs() < 1.0e-5);
+        let away = far(Vec3::new(0.0, 0.0, 1.0));
+        assert!((away.flux_pmf[0] / away.flux_pmf[1] - 0.05).abs() < 1.0e-5);
     }
 }
