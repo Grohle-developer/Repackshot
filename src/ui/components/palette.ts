@@ -116,13 +116,32 @@ export function openPalette(ctx: Ctx): void {
   let shown: { label: string; aux?: string; kbd?: string; run(): void }[] = [];
   let confirm: ConfirmSpec | null = null;
 
+  // The control that had the focus when the palette opened gets it back when the palette closes, unless a command has
+  // moved the focus somewhere else meanwhile.
+  const opener = document.activeElement as HTMLElement | null;
   const close = () => {
+    const keepsFocus = !document.activeElement || document.activeElement === document.body || box.contains(document.activeElement);
+    document.removeEventListener('keydown', onKey, true);
     backdrop.remove();
     box.remove();
     open = null;
     ctx.ui.set({ paletteOpen: false });
+    if (keepsFocus && opener?.isConnected) opener.focus({ preventScroll: true });
   };
   open = close;
+  // The palette is modal: Tab keeps the focus in its field, and Escape closes it wherever the focus is.
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      input.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  };
+  document.addEventListener('keydown', onKey, true);
 
   const execute = (fn: () => void | ConfirmSpec | null | Promise<void>) => {
     const r = fn();
@@ -199,9 +218,6 @@ export function openPalette(ctx: Ctx): void {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       shown[active]?.run();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      close();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       close();

@@ -5,8 +5,18 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Accesibilidad
+
+- La paleta de comandos mantiene el foco mientras está abierta (Tab no sale de su campo), se cierra con Escape desde cualquier sitio y devuelve el foco al control que la abrió (H1).
+- Los menús y las confirmaciones en línea dan vueltas con Tab sin dejar el foco fuera, y al cerrarse devuelven el foco al botón que los abrió; una ventana abierta desde el menú principal (*Ajustes*) lo devuelve al botón del menú (H1).
+- *Reducir movimiento* apaga también el desplazamiento suave del tira de plugins de la ventana de render (H1).
+- Un test en el navegador comprueba en 20 estados de la interfaz, en español y en inglés, que cada botón sin texto tiene su nombre de `strings.ts`, el orden de Tab y el foco de paleta, menús y confirmaciones (H1).
+- Un test mide el contraste de cada texto gris sobre sus superficies en los cuatro temas. 36 pares quedan por debajo de 7:1 (grises auxiliares) y están pendientes de una decisión visual; ningún color cambia (H1).
+- En el cajón de animación, los presets se anuncian otra vez como botones (dentro de una lista), el árbol de lo animado dice a las ayudas técnicas qué fila está activa y **↑ ↓** van a la animación de arriba o de abajo; la regla, que es para el puntero, deja de tener una etiqueta sin papel (N1).
+
 ### Interfaz
 
+- Inglés: *Center* pasa a *Centre*, como el resto de las cadenas en ortografía británica; revisadas las cadenas en español (acentos, tono) sin más cambios (H1).
 - **Vídeo codificado**: en la ventana de render en modo *Animación*, *Vídeo* deja de ser *próximamente* y escribe **un solo archivo** WebM (VP9, o VP8 donde VP9 no está) o MP4 (H.264), codificado en la página con WebCodecs del navegador (también en el escritorio, que es Chromium) y escrito por *muxers* propios. Solo se ofrece lo que este sistema codifica, preguntado al arrancar; lo que no, sale deshabilitado diciendo por qué, y la secuencia de fotogramas sigue siempre ahí. Un vídeo tiene tamaño par (N1).
 - El chequeo **Formato de salida** del Doctor ya lee lo que el sistema codifica: avisa solo de un vídeo con un códec que aquí no se codifica (un proyecto hecho en otro equipo), con *Arreglar* a fotogramas; un vídeo que sí se codifica ya no es un aviso (N1).
 - Tipos de animación nuevos: **Fundido** (la opacidad de una pieza, un grupo, el modelo o un material baja hasta un porcentaje; invertido, aparece), **Panorámica** (la cámara gira sobre sí misma), **Color de material** (el color de un material, y de todas las piezas que lo llevan, pasa a otro) y **Arco solar** (el sol recorre su arco del día alrededor del polo celeste, 15° por hora). *Recorrido* queda reservado en el catálogo (N1).
@@ -16,7 +26,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El **asistente** de *+ Animar…* va en **tres pasos** con *Atrás* y *Siguiente*: el objetivo (también *Un material*), una **rejilla de tarjetas** de tipos agrupada en *Piezas*, *Cámara*, *Luz y entorno* y *Materiales*, y los números (N1).
 - Las animaciones aparecen **bajo su objetivo en el árbol de la escena** (las de una pieza o un grupo, y las del modelo bajo el modelo); un clic abre la línea de tiempo con ella elegida (N1).
 - Un proyecto de la primera interfaz se abre en la línea de tiempo con sus planos como tramos de la pista de cámara y sus movimientos como barras, y reproduce lo mismo que reproducía (N1).
-- En el cajón de animación, los presets se anuncian otra vez como botones (dentro de una lista), el árbol de lo animado dice a las ayudas técnicas qué fila está activa y **↑ ↓** van a la animación de arriba o de abajo; la regla, que es para el puntero, deja de tener una etiqueta sin papel (N1).
 
 ### Herramientas
 

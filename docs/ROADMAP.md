@@ -8572,6 +8572,23 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 
 **Depende de.** U1; se repite al cierre de cada versión.
 
+**Pasada v0.1.16** (2026-10-17). **Hecho:**
+
+- **Contraste** (`tests/ui-contrast.test.ts`): cada texto (`ink-0` a `ink-3`, y `inv-ink`) medido sobre sus superficies en los cuatro temas, con la razón WCAG de los tokens. `ink-0`, `ink-1` y el invertido pasan 7:1 en todas. **36 pares** quedan por debajo y están listados como pendientes: `ink-2` (claro 3,8–5,3:1; oscuro 5,1–6,9:1) e `ink-3` (claro 2,0–2,8:1; oscuro 2,7–3,6:1) sobre todas las superficies, y `ink-3` en alto contraste (claro 5,1–6,6:1; oscuro 5,5–6,3:1). Ningún token cambia; el test falla ante un par nuevo por debajo de 7:1 y ante un par pendiente que ya llega.
+- **Nombres** (`tests/a11y-browser.test.ts`): en Chromium, 20 estados de la interfaz (paneles, cajones, ventanas, Ajustes, guía, recorrido, Doctor, editor de materiales, menús y paleta) en español y en inglés. Cada botón sin texto tiene su nombre de `strings.ts`. No faltaba ninguno; el test quita el nombre de *Deshacer* y falla con 16 botones.
+- **Foco.** La paleta sacaba el foco con Tab y Escape no funcionaba fuera del campo: ahora Tab se queda en ella, Escape la cierra desde cualquier sitio y el foco vuelve al control que la abrió. Menús y confirmaciones dan vueltas con Tab y devuelven el foco al botón que los abrió; una ventana abierta desde el menú principal (*Ajustes*) lo devuelve al botón del menú. Sin `tabindex` positivo; el orden de Tab no vuelve atrás en ninguna columna (`tests/a11y-static.test.ts`).
+- **Movimiento.** *Reducir movimiento* no apagaba el desplazamiento suave del tira de plugins de la ventana de render: ahora sí (`theme.css`). Con la preferencia emulada, ningún elemento transiciona ni se anima. La interfaz no tiene animación en JavaScript: el guía y el recorrido solo siguen posiciones.
+- **Cadenas.** Revisadas las 2.997 cadenas en los dos idiomas: sin acentos que falten, sin signos de apertura que falten, sin erratas detectables, y el español usa tú en todo. Un cambio: *Center* pasa a *Centre*. Dos guardas en `tests/strings.test.ts`.
+- **Documentación.** SPEC §6 (accesibilidad), README (una línea y los dos tests nuevos), CHANGELOG (*Sin publicar*).
+
+**Qué no encajó:**
+
+- **Decisión Fable: grises auxiliares.** Para 7:1 sobre todas sus superficies, `ink-2` e `ink-3` tendrían que ser `#434343` o más oscuros en claro y `#b5b5b5` o más claros en oscuro; eso iguala los tres grises y la jerarquía pasa a depender del peso y del tamaño. Alternativa: 7:1 solo sobre `bg-0`, `bg-1` y el *hover*, con `ink-2` de `#4e4e4e` o más oscuro en claro y `#afafaf` o más claro en oscuro, y sin texto sobre `bg-2`, `bg-3`, *soft* ni *overlay*. En alto contraste, `ink-3` de `#434343` o más oscuro (claro) y `#c1c1c1` o más claro (oscuro). Al cambiar un token, se quitan sus pares de `PENDING` en el test.
+- Las cadenas en inglés con espacio antes del % (`10 %`) siguen la convención SI que usa también el español: se dejan.
+- El README está en inglés en su conjunto; el párrafo nuevo también, para no mezclar idiomas en el archivo.
+- **Sin auditar en el navegador, pendiente para una pasada posterior.** Los nombres de los botones se comprueban en la ventana de render (*imagen* y *animación*), el editor de materiales y Ajustes (*General* y *Motor*); el foco no se comprueba en ninguna de estas. Quedan fuera por completo: la hoja de importación; el visor de resultados (necesita un render terminado); las subsecciones de Ajustes distintas de *General* y *Motor*; y las confirmaciones de *Liberar* en el almacenamiento (necesitan modelos instalados). La ventana de render y el editor de materiales no son modales a propósito: no atrapan el foco, y su Escape no se ha verificado.
+- **Para N1** (animación, no tocado): `src/ui/panels/anim-props.ts:327` da `role="listitem"` a los botones de los presets, con lo que dejan de anunciarse como botones; `src/ui/panels/animation.ts:115` pone `role="tree"` en el contenedor de filas enfocable (las filas sí son `treeitem`). Arreglo pequeño: un botón con su propio rol dentro de la lista.
+
 ---
 
 ## Decisiones pendientes de Fable (no adelantar)

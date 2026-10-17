@@ -299,7 +299,7 @@ const TABLE = {
   'import.unit.m': ['m', 'm'],
   'import.unit.in': ['inch', 'pulgada'],
   'import.upAxis': ['Up axis', 'Eje arriba'],
-  'import.center': ['Center', 'Centrar'],
+  'import.center': ['Centre', 'Centrar'],
   'import.rest': ['Rest on floor', 'Apoyar en el suelo'],
   'import.frame': ['Frame camera', 'Encuadrar la cámara'],
   'import.scene': ['Scene', 'Escena'],
@@ -3646,7 +3646,6 @@ export function framesText(n: number): string {
   return n === 1 ? t('queue.frame1') : t('queue.frames', { n: formatNumber(n, current, 0) });
 }
 
-/** Seconds as M:SS (or H:MM:SS). */
 /** A SIMD path of the native engine as the status bar shows it (`avx2` -> `AVX2`, scalar translated). */
 export function isaLabel(isa: string | undefined): string {
   return !isa || isa === 'scalar' ? t('status.isaScalar') : isa.toUpperCase();
@@ -3665,6 +3664,7 @@ export function formatDateTime(ms: number, lang: Lang = current): string {
   return new Intl.DateTimeFormat(lang === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(ms);
 }
 
+/** Seconds as M:SS (or H:MM:SS). */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);

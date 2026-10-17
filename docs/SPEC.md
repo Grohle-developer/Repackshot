@@ -1610,3 +1610,13 @@ web y se cargan bajo demanda; el motor de render no las conoce
 - **Motor propio, en Rust y sin dependencias**, que corre en cualquier
   máquina: en el navegador por WebAssembly, en la línea de comandos y en
   el escritorio en nativo, con el mismo resultado píxel a píxel.
+- **Accesible por teclado y por ajustes.** El orden de Tab sigue el diseño
+  de cada panel y no hay tabulación positiva. Cada botón sin texto tiene su
+  nombre, de `strings.ts`, en español y en inglés. La paleta de comandos,
+  los menús, las confirmaciones y las ventanas mantienen el foco mientras
+  están abiertas y lo devuelven al control que las abrió. *Ajustes ▸
+  Accesibilidad* ofrece el tamaño de la interfaz y del texto, el contraste
+  alto, *Reducir movimiento* (que apaga también el desplazamiento suave) y
+  el foco siempre visible. Pendiente: los grises auxiliares (`ink-2`,
+  `ink-3`) no llegan a 7:1 sobre todas sus superficies; el cambio de
+  *tokens* es una decisión visual (`ROADMAP.md`, H1).
