@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 147 archivos: 145 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 148 archivos: 146 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,16 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 48 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 49 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4). Y los nodos *Madera* y *Tela* de M3c: el editor con el nodo *Madera*; M3c regraba, sin cambiar de sitio, `m3b-wood.png` (las dos maderas son ya la misma) y `m3b-graphs.png` (el ejemplo de madera es el roble con el nodo *Madera*), las dos de M3b.
+
+#### M3c · Nodos Madera y Tela
+
+<a id="c-material-nodes-wood"></a><img src="ui/material-nodes-wood.png" width="480" alt="El editor de material con el ejemplo Roble (nodo Madera): el nodo Madera, con su esfera de anillos, conectado al color base, la rugosidad, la anisotropía y la normal de la salida de material; en el panel, la esfera del material, lo que hace Rápido (un corte por el frente de la pieza) y los parámetros del nodo Madera."><br>
+`material-nodes-wood.png` · `f21ae73` · El editor de material con el ejemplo *Roble (nodo Madera)*: el nodo *Madera*, con su esfera de anillos, conectado al color base, la rugosidad, la anisotropía y la normal de la salida de material; en el panel, la esfera del material, lo que hace *Rápido* (un corte por el frente de la pieza) y los parámetros del nodo *Madera*. `tools/material-nodes-check.mjs --only wood`.
 
 #### F1 · Enfoque por punto y por objeto
 
@@ -181,10 +186,10 @@ Los materiales de nodos funcionan en Completo y en los renders.
 #### M3b · El motor evalúa grafos
 
 <a id="c-m3b-graphs"></a><img src="ui/m3b-graphs.png" width="480" alt="Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha)."><br>
-`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en Sin publicar: C1, los copos de la pintura metalizada miran hacia fuera; la hace `tests/m3b-graphs-sheet.test.ts`)*
+`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en Sin publicar: C1, los copos de la pintura metalizada miran hacia fuera; M3c, el ejemplo de madera es el roble con el nodo Madera; la hace `tests/m3b-graphs-sheet.test.ts`)*
 
-<a id="c-m3b-wood"></a><img src="ui/m3b-wood.png" width="480" alt="Dos maderas en el motor: la familia Madera del catálogo (roble, anillos finos y rectos) a la izquierda y el ejemplo de nodos «Madera con dos ruidos» a la derecha; todavía no se parecen."><br>
-`m3b-wood.png` · `fbb054e` · Dos maderas en el motor: la familia Madera del catálogo (roble, anillos finos y rectos) a la izquierda y el ejemplo de nodos «Madera con dos ruidos» a la derecha; todavía no se parecen.
+<a id="c-m3b-wood"></a><img src="ui/m3b-wood.png" width="480" alt="Dos cajas de roble en el motor: la familia Madera del catálogo a la izquierda y el ejemplo de nodos con el nodo Madera a la derecha, la misma madera (anillos finos y rectos, poros)."><br>
+`m3b-wood.png` · `fbb054e` · Dos cajas de roble en el motor: la familia *Madera* del catálogo a la izquierda y el ejemplo de nodos con el nodo *Madera* a la derecha, la misma madera (anillos finos y rectos, poros). *(regrabada en Sin publicar: M3c; en M3b el ejemplo, «Madera con dos ruidos», aún no se parecía a la familia; la hace `tests/m3c-wood-sheet.test.ts`)*
 
 ### v0.1.11 · 2026-10-16
 
@@ -673,6 +678,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`label-placed.png`](#c-label-placed) · v0.1.6 · M2a
 - [`material-nodes.png`](#c-material-nodes) · v0.1.6 · M3a **← propuesta**
 - [`material-nodes-preview.png`](#c-material-nodes-preview) · v0.1.6 · M3a
+- [`material-nodes-wood.png`](#c-material-nodes-wood) · Sin publicar · M3c
 - [`material-drag.png`](#c-material-drag) · v0.1.2 · U7
 - [`material-drag-tree.png`](#c-material-drag-tree) · v0.1.2 · U7
 - [`material-drag-faces.png`](#c-material-drag-faces) · v0.1.2 · M1
@@ -864,7 +870,7 @@ Funciones del `CHANGELOG.md` que no tienen captura en `docs/ui/`, o la tienen so
 | v0.1.13 | E10 | **Muestreo adaptativo**: hay el campo «Ruido» de la ventana de render y el medidor («Adaptativo · mín–máx muestras»), pero ninguna imagen del reparto de muestras por bloques de 8 × 8 ni de la comparación, a igual tiempo, con el muestreo uniforme. |
 | v0.1.11 | S4b | **Polvo que brilla a contraluz**, **lluvia sin puntitos** y partículas más baratas. Las capturas de ambiente son de S4a (el selector y la nieve en *Rápido*); la hoja de presets en dos luces (`tools/ambient-sheet.mjs`) escribe en `out/`. |
 | v0.1.10 | M2b | **Texturas de imagen, mapeado y etiquetas en *Completo* y en los renders**: `textures-fast.png` es el visor *Rápido*; falta la misma escena en *Completo* (con los *mipmaps*, el relieve del mapa de normales y la etiqueta con su papel). |
-| v0.1.7 | E6 | **Madera** con anillos, poros y nudos (salvo la de `m3b-wood.png`), **tela** hilo a hilo y **bisel de aristas** en *Completo*. |
+| v0.1.7 | E6 | **Madera** con anillos, poros y nudos (salvo la de `m3b-wood.png`), **tela** hilo a hilo y **bisel de aristas** en *Completo*. La **tela con el nodo *Tela*** (M3c) tampoco tiene captura. |
 | v0.1.7 | E9 | Materiales rugosos que ya no pierden luz (E9a), **medios dispersores** (leche, cera, jabón, zumos; E9b) y **dispersión cromática** del vidrio con el número de Abbe (E9c). Tampoco están los campos nuevos del inspector del vidrio (*Dispersión interna*, *Número de Abbe*) ni los nueve materiales nuevos. |
 | v0.1.7 | O2 | **Lente trazada**: hay el inspector y el corte de la lente, pero no lo que la lente hace a la imagen (bokeh, distorsión, viñeteo, remolino) renderizado por el motor con cada carácter; esa hoja (`tools/lens-sheet.mjs`) escribe en `out/`. |
 | v0.1.7 | O3a | **Filtros de efecto en el motor** (difusión, brillo, red, estrella, rayas): `lens-filters.png` es el inspector; falta el efecto sobre una imagen (`tools/lens-filters-sheet.mjs` escribe en `out/`). |
