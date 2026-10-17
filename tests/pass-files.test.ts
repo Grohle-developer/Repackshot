@@ -165,7 +165,7 @@ describe('encodePngWords', () => {
 function readExr(bytes: Uint8Array) {
   const loader = new EXRLoader();
   loader.type = 1015; // FloatType
-  const out = loader.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const out = loader.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   return { width: out.width as number, height: out.height as number, rgba: out.data as Float32Array };
 }
 

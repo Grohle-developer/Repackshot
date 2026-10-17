@@ -13,11 +13,14 @@
 import { totalDuration } from '../../core/animation';
 import { aspectText, type CameraAspect } from '../../core/aspect';
 import { activeCamera } from '../../core/camera';
-import { outputFileName } from '../../core/name-template';
+import { outputFileName, repeatedNames } from '../../core/name-template';
+import { PASS_FORMATS, PASS_OUTPUT_KEYS, passFileNames, type PassFormat, type PassOutputKey } from '../../core/pass-files';
 import { QUALITY_KEYS, QUALITY_PRESETS, RESOLUTION_PRESETS } from '../../data/quality';
 import {
+  batchSize,
   bitDepthsOf,
   effectiveBounces,
+  expandJobs,
   estimateSamples,
   estimateSeconds,
   formatExtension,
@@ -36,6 +39,7 @@ import {
   type CameraChoice,
   type OutputFormat,
   type RenderSettings,
+  type StudioChoice,
 } from '../../core/render';
 import { matchPrintPreset, pixelsFor, printLength, printPresetPixels, PRINT_PRESETS, PRINT_UNITS, type PrintUnit } from '../../core/print-size';
 import { NAME_TOKENS, type NameToken } from '../../core/name-template';
@@ -50,7 +54,7 @@ import { pluginsBody, renderPlugins } from './plugins';
 import { runtimeBadge } from './ai-runtime-notice';
 import type { Ctx, Scope } from '../reactive';
 import type { VideoSupportUi } from '../ui-state';
-import { nameValues } from '../render-queue';
+import { jobFileNames, nameValues, studioRefs } from '../render-queue';
 import { kbdText } from '../shortcuts';
 import { formatClock, formatNumber, framesText, getLang, lbl, t } from '../strings';
 
@@ -83,8 +87,8 @@ function finishText(s: RenderSettings): string {
   return s.finishBy === 'SAMPLES' ? samples : s.finishBy === 'TIME' ? time : t('rw.summaryOr', { a: samples, b: time });
 }
 
-/** The footer's one line: "1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · AI off". */
-export function summaryLine(s: RenderSettings, frames: number, video: VideoSupportUi | null = null): string {
+/** The footer's one line: "1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · AI off" (N2: and "4 images · 2 passes · ZIP"). */
+export function summaryLine(s: RenderSettings, frames: number, video: VideoSupportUi | null = null, images = 1): string {
   const dest = s.destination.kind === 'FOLDER' ? s.destination.name : t('rw.downloads');
   // N1: a video is its container and codec, not the frames' format.
   const out = `${s.mode === 'ANIMATION' && s.animation.output === 'VIDEO' ? videoLabel(s.animation.video, video?.WEBM) : formatText(s)} → ${dest}`;
@@ -93,7 +97,13 @@ export function summaryLine(s: RenderSettings, frames: number, video: VideoSuppo
   if (s.mode === 'ANIMATION') {
     return [t('rw.summaryFrames', { frames: framesText(frames), fps: s.animation.fps }), `${s.width} × ${s.height}`, t('rw.perFrameShort', { x: finishText(s) }), out, ai].join(' · ');
   }
-  return [`${s.width} × ${s.height}`, `${s.dpi} ${t('rw.dpiUnit')}`, finishText(s), out, ai].join(' · ');
+  // N2: a batch says how many images it makes, passes how many files go beside each, and a ZIP that they are packed.
+  const extra = [
+    ...(images > 1 ? [t('rw.summaryBatch', { n: images })] : []),
+    ...(s.passes.keys.length > 0 ? [t('rw.summaryPasses', { n: s.passes.keys.length })] : []),
+    ...(s.zip ? [t('rw.summaryZip')] : []),
+  ];
+  return [`${s.width} × ${s.height}`, `${s.dpi} ${t('rw.dpiUnit')}`, finishText(s), out, ai, ...extra].join(' · ');
 }
 
 /** Pixel-samples per second the engine measured on this machine (never assumed). */
@@ -124,6 +134,7 @@ export function estimateLine(s: RenderSettings, tp: number | null, frames: numbe
 }
 
 const cameraValue = (c: CameraChoice) => (c.kind === 'ONE' ? `ONE:${c.id}` : c.kind);
+const studioValue = (c: StudioChoice) => (c.kind === 'ONE' ? `ONE:${c.id}` : c.kind);
 
 /** A row: label on the left, controls on the right, an optional note under the controls. */
 function row(label: string, ...controls: (Node | null)[]): HTMLElement {
@@ -244,13 +255,47 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const jpegBox = h('span', { class: 'rw-inline' }, h('span', { class: 'aux' }, t('rw.jpegQuality')), jpegQ.el);
   const transparent = toggle(s0.transparent, (v) => set({ transparent: v }), t('rw.transparent'));
   const transparentNote = h('span', { class: 'note' });
-  const passes = toggle(false, () => {}, t('rw.passes'), true);
+  // N2: the passes written beside the image: a chip for each, and the format of their files.
+  const passChips = PASS_OUTPUT_KEYS.map((k: PassOutputKey) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'chip',
+        'data-pass': k,
+        'data-tip': t(dyn(`rw.pass.${k}Tip`)),
+        onclick: () => {
+          const cur = get().passes;
+          const keys = cur.keys.includes(k) ? cur.keys.filter((x) => x !== k) : [...cur.keys, k];
+          set({ passes: { ...cur, keys } });
+        },
+      },
+      t(dyn(`rw.pass.${k}`)),
+    ),
+  );
+  const passFormat = segmented<PassFormat>(
+    PASS_FORMATS.map((f) => ({ value: f, label: t(dyn(`rw.passFormat.${f}`)) })),
+    s0.passes.format,
+    (f) => set({ passes: { ...get().passes, format: f } }),
+    { ariaLabel: t('rw.passFormat') },
+  );
+  const passesNote = h('div', { class: 'note', 'data-passes-note': '' });
 
   const cameraSel = select([], cameraValue(s0.camera), (v) => {
     const c: CameraChoice = v === 'ALL' ? { kind: 'ALL' } : v === 'ACTIVE' ? { kind: 'ACTIVE' } : { kind: 'ONE', id: v.slice(4) };
     set({ camera: c });
   }, t('rw.camera'));
   const cameraNote = h('div', { class: 'note' });
+  // N2: the studio of each image, cameras × studios; the list is the library's studios (and an older project's own).
+  const studioSel = select([], studioValue(s0.studio), (v) => {
+    const c: StudioChoice = v === 'ALL' ? { kind: 'ALL' } : v === 'CURRENT' ? { kind: 'CURRENT' } : { kind: 'ONE', id: v.slice(4), name: studioRefs(ctx).find((x) => x.id === v.slice(4))?.name ?? v.slice(4) };
+    set({ studio: c });
+  }, t('rw.studio'));
+  const studioNote = h('div', { class: 'note', 'data-studio-note': '' });
+  const batchNote = h('div', { class: 'note tabular', 'data-batch-note': '' });
+  const namesNote = h('div', { class: 'note warn-text', 'data-names-note': '', role: 'status' });
+  const zipToggle = toggle(s0.zip, (v) => set({ zip: v }), t('rw.zipToggle'));
+  const zipNote = h('span', { class: 'note' });
 
   const outputBody = h(
     'div',
@@ -260,8 +305,10 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     row(t('rw.showWhenDone'), showDone.el),
     row(t('rw.format'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, format.el, bitsPng.el, bitsTiff.el, bitsFixed, jpegBox), formatNote)),
     row(t('rw.transparent'), h('div', { class: 'rw-inline' }, transparent.el, transparentNote)),
-    row(t('rw.passes'), h('div', { class: 'rw-inline' }, passes.el, h('span', { class: 'aux' }, t('common.comingSoon')), h('span', { class: 'note' }, t('rw.passesSoon')))),
+    row(t('rw.passes'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, h('div', { class: 'chips', role: 'group', 'aria-label': t('rw.passes') }, ...passChips), passFormat.el), passesNote)),
     row(t('rw.camera'), h('div', { class: 'rw-stack' }, cameraSel.el, cameraNote)),
+    row(t('rw.studio'), h('div', { class: 'rw-stack' }, studioSel.el, studioNote, batchNote, namesNote)),
+    row(t('rw.zip'), h('div', { class: 'rw-inline' }, zipToggle.el, zipNote)),
   );
 
   // ------------------------------------------------------------------ size
@@ -615,6 +662,53 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     if (sel.value === '') sel.value = 'ACTIVE';
     sel.disabled = anim;
     cameraNote.textContent = anim ? t('rw.cameraTrack') : s.camera.kind === 'ALL' ? t('rw.cameraAllNote', { n: cams.length }) : '';
+    // Studio (N2): rebuilt only when the saved studios change, like the cameras'.
+    const refs = studioRefs(ctx);
+    const gone = s.studio.kind === 'ONE' && !refs.some((x) => x.id === (s.studio as { id: string }).id) ? s.studio : null;
+    const studioOpts = [
+      { value: 'CURRENT', label: t('rw.studioCurrent'), disabled: false },
+      ...refs.map((x) => ({ value: `ONE:${x.id}`, label: x.name, disabled: false })),
+      ...(gone ? [{ value: `ONE:${gone.id}`, label: t('rw.studioGone', { name: gone.name }), disabled: false }] : []),
+      { value: 'ALL', label: t('rw.studioAll', { n: refs.length }), disabled: editing || refs.length === 0 },
+    ];
+    const ssel = studioSel.el as HTMLSelectElement;
+    const studioKey = studioOpts.map((o) => `${o.value}=${o.label}=${o.disabled}`).join('|');
+    if (ssel.dataset.options !== studioKey) {
+      ssel.dataset.options = studioKey;
+      ssel.replaceChildren(...studioOpts.map((o) => h('option', { value: o.value, disabled: o.disabled }, o.label)));
+    }
+    ssel.value = studioValue(s.studio);
+    if (ssel.value === '') ssel.value = 'CURRENT';
+    ssel.disabled = anim;
+    studioNote.textContent = anim ? t('rw.studioAnimation') : refs.length === 0 ? t('rw.studioNone') : s.studio.kind === 'ALL' ? t('rw.studioAllNote') : '';
+    // The batch: cameras × studios, and any names it would give twice.
+    const cameraCount = anim ? 1 : s.camera.kind === 'ALL' ? cams.length : 1;
+    const studioCount = anim ? 1 : s.studio.kind === 'ALL' ? Math.max(1, refs.length) : 1;
+    const images = batchSize(st, s, refs);
+    batchNote.style.display = images > 1 ? '' : 'none';
+    batchNote.textContent = images > 1 ? t('rw.batchNote', { n: images, c: cameraCount, s: studioCount }) : '';
+    let again = '';
+    if (images > 1 && !editing) {
+      const names = expandJobs(st, s, 0, refs).flatMap((j) => jobFileNames(st, j));
+      const dup = repeatedNames(names)[0];
+      if (dup !== undefined) again = t('rw.namesRepeat', { count: names.filter((n) => n.toLowerCase() === dup.toLowerCase()).length, name: dup });
+    }
+    namesNote.textContent = again;
+    namesNote.style.display = again ? '' : 'none';
+    // Passes (N2): images only; the format shows once a pass is on, and the note names the files beside the image.
+    passChips.forEach((chip, i) => {
+      chip.setAttribute('aria-pressed', String(s.passes.keys.includes(PASS_OUTPUT_KEYS[i])));
+      (chip as HTMLButtonElement).disabled = anim;
+    });
+    passFormat.set(s.passes.format);
+    passFormat.el.style.display = s.passes.keys.length > 0 && !anim ? '' : 'none';
+    const imageName = outputFileName(s.name, nameValues(st, { seq: st.render.seq + 1, settings: s }, s.camera.kind === 'ONE' ? s.camera.id : st.camera.active), formatExtension(s.format));
+    const stem = imageName.lastIndexOf('.') > 0 ? imageName.slice(0, imageName.lastIndexOf('.')) : imageName;
+    passesNote.textContent = anim ? t('rw.passesAnimation') : s.passes.keys.length > 0 ? t('rw.passesNote', { names: passFileNames(imageName, s.passes).map((n) => n.slice(stem.length)).join(', ') }) : '';
+    // ZIP (N2): needs the archive service.
+    zipToggle.set(s.zip);
+    (zipToggle.el as HTMLButtonElement).disabled = !services.archive;
+    zipNote.textContent = !services.archive ? t('rw.zipNoArchive') : s.zip ? t('rw.zipNote') : '';
     // Size.
     for (const z of [size, animSize]) {
       z.preset.set(presetValue(s));
@@ -687,7 +781,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     saveNoisyRow.style.display = denoiseIn(s.advanced.denoise, 'RENDER') ? '' : 'none';
     perFrame.style.display = anim ? '' : 'none';
     estimate.textContent = estimateLine(s, throughputOf(ctx), anim ? fr.count : 1, ctx.ui.get().noiseEstimate);
-    summary.textContent = summaryLine(s, fr.count, ui.get().video);
+    summary.textContent = summaryLine(s, fr.count, ui.get().video, images);
     // Edit mode.
     const w = ui.get().renderWindow;
     const job = w?.kind === 'EDIT' ? st.render.queue.find((j) => j.id === w.jobId) : undefined;
@@ -695,7 +789,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   };
   // Settings, not progress: a running job's ticks change `s.render` but none of these.
   scope.watch(
-    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, u.throughput, u.noiseEstimate, u.video] as unknown[],
+    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, s.studio.saved, u.library.studios, u.throughput, u.noiseEstimate, u.video] as unknown[],
     sync,
     (x, y) => x.length === y.length && x.every((v, i) => v === y[i]),
   );

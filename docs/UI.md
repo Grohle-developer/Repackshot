@@ -1246,8 +1246,11 @@ primitivas antes y después de *Dejar caer*) y
 
 **Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
 tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
-reordenar; por trabajo: *Editar* (reabre la ventana de render con sus
-ajustes), *Duplicar*, *Quitar*; arriba *Vaciar terminados* y un botón
+reordenar; con un estudio de lote, su nombre sigue al de la cámara (*Cámara 1 · Estudio A*),
+y el nombre lleva al final lo que el trabajo añade (*+3 pases · ZIP*, con los pases en
+el texto emergente); por trabajo: *Editar* (reabre la ventana de render con sus
+ajustes), *Duplicar*, *Quitar* (*Detener* el que se renderiza: acaba *Cancelado* y la
+cola sigue con el siguiente); arriba *Vaciar terminados* y un botón
 que sigue el estado de la cola: **Pausar** mientras corre (para el trabajo
 en curso y libera el motor al momento; el trabajo vuelve a *En espera*),
 **Reanudar** tras una pausa (sigue con lo pausado, y el trabajo pausado
@@ -1380,8 +1383,7 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
 - **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR, **TIFF** (8, 16
   o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
   el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
-  dice por qué); *Pases* (alfa, profundidad, normales, id de pieza)
-  cuando existan (N2), con *próximamente* hasta entonces. Cada formato
+  dice por qué). Cada formato
   que necesita explicación lleva **una línea de ayuda** bajo el
   selector, la misma que el texto emergente del botón: *EXR: lineal en
   coma flotante de 32 bits, para composición*; *TIFF: sin compresión, 8/16
@@ -1400,8 +1402,28 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   flotante → Descargas*. Captura: `docs/ui/render-format-tiff.png`
   (`tools/render-format-check.mjs`). Una configuración antigua o ajena con un formato
   que esta versión no escribe se abre como PNG.
+- **Pases** (N2): cuatro fichas que se encienden y se apagan, *Alfa*, *Profundidad*,
+  *Normales* y *Id de pieza* (cada una con su frase en el texto emergente), y, con alguna
+  encendida, el segmento del formato de los archivos: *EXR de 32 bits flotantes* (por
+  defecto) o *PNG de 16 bits*. Una nota dice qué archivos salen junto a la imagen
+  (*Un archivo por pase junto a la imagen: _alpha.exr, _depth.exr, _partId.exr,
+  _partId.json*). En *Animación* las fichas están deshabilitadas (*Los pases son para
+  imágenes: una animación escribe solo sus fotogramas*).
 - **Cámara**: desplegable con *La activa*, cada cámara guardada y
   **Todas las cámaras** (un trabajo por cámara).
+- **Estudio** (N2): desplegable con *La escena como está*, cada estudio guardado (los de
+  la pestaña *Estudios* y los de un proyecto antiguo) y **Todos los estudios (N)**
+  (deshabilitado sin estudios guardados, que lo dice: *Guarda un estudio en la pestaña
+  Estudios para renderizar con él*, y al editar un trabajo de la cola, que es de un
+  estudio). Con *Todas las cámaras* y *Todos los estudios* la ventana dice que es un
+  **lote** (*Lote de 4 imágenes: cámaras 2 × estudios 2*) y, si la plantilla daría el mismo
+  nombre a dos archivos, lo avisa (*4 archivos tendrían el mismo nombre (Botella.png):
+  añade {camera}, {studio} o {n} al nombre*). En *Animación* está deshabilitado. El estudio
+  se pone sobre una copia del proyecto al renderizar: la escena abierta no cambia.
+- **ZIP** (N2): interruptor *Empaquetar los archivos en un ZIP* con una nota (*Cuando
+  termina el último trabajo de este Render: una sola descarga, sin comprimir*); sin él,
+  cada archivo se guarda como antes. El resumen del pie añade lo que hay (*4 imágenes ·
+  3 pases · ZIP*).
 - **Tamaño**: desplegable de presets (`RESOLUTION_PRESETS` y
   *Personalizado*), **ancho × alto en píxeles** con candado de
   proporción, y **tamaño de impresión** en mm, cm o pulgadas con su

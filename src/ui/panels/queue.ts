@@ -8,7 +8,7 @@
 // Clear history; when the browser keeps no storage, it says so.
 
 import { MAX_ATTEMPTS } from '../../core/ai';
-import type { RenderJob, RenderProgress, RenderSettings } from '../../core/render';
+import { jobStudio, type RenderJob, type RenderProgress, type RenderSettings } from '../../core/render';
 import { aiImagesOf, aiVariantsOf, type ResultMeta } from '../../core/results';
 import * as cmd from '../commands';
 import { h, icon } from '../dom';
@@ -99,6 +99,10 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     const name = `${jobFileNames(s, j)[0] ?? ''}${anim ? '…' : ''}`;
     const frameCount = j.frames || jobFrames(s, j.settings).length;
     const cam = j.settings.camera.kind === 'ONE' ? s.camera.cameras[j.settings.camera.id] : undefined;
+    // N2: the saved studio of a batch job, the passes beside its image and the ZIP it goes into.
+    const look = jobStudio(j);
+    const passKeys = anim ? [] : j.settings.passes.keys;
+    const tags = [...(passKeys.length > 0 ? [t('queue.tagPasses', { n: passKeys.length })] : []), ...(j.zip ? [t('queue.tagZip')] : [])];
     // A result that went through the AI shows both pictures: the engine's and the AI's (its first image), side by side,
     // and how many AI images it has when there are several (X4b).
     const aiThumb = result ? aiImagesOf(result)[0]?.info.thumb : undefined;
@@ -135,8 +139,13 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       },
       h('span', { class: 'queue-grip', 'data-tip': t('queue.dragTip') }, icon('grip', 14)),
       pic,
-      h('span', { class: 'queue-name', title: name }, name),
-      h('span', { class: 'aux' }, anim ? t('queue.timeline') : cam ? cameraName(s, cam) : '—'),
+      h(
+        'span',
+        { class: 'queue-name', title: passKeys.length > 0 ? `${name}\n${t('queue.tagsTip', { passes: passKeys.map((k) => t(dyn(`rw.pass.${k}`))).join(', ') })}` : name },
+        name,
+        tags.length > 0 ? h('span', { class: 'aux queue-tags', 'data-tags': '' }, ` ${tags.join(' · ')}`) : null,
+      ),
+      h('span', { class: 'aux', title: look ? look.name : undefined }, anim ? t('queue.timeline') : `${cam ? cameraName(s, cam) : '—'}${look ? ` · ${look.name}` : ''}`),
       h('span', { class: 'tabular' }, anim ? `${j.settings.width} × ${j.settings.height} · ${framesText(frameCount)}` : `${j.settings.width} × ${j.settings.height}`),
       h('span', { class: 'tabular' }, finishByText(j.settings)),
       h('span', { class: 'aux' }, !j.settings.ai.enabled ? t('queue.aiNo') : j.settings.ai.variants > 1 && !anim ? t('queue.aiVariants', { n: j.settings.ai.variants }) : t('queue.aiYes')),
@@ -202,7 +211,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
 
   // Progress ticks only move the bars; anything else rebuilds the rows (a drag in progress survives the ticks).
   let shape: unknown[] = [];
-  const shapeOf = (queue: readonly RenderJob[], results: readonly ResultMeta[], run: string): unknown[] => [run, results, store.get().camera, ...queue.flatMap((j) => [j.id, j.settings, j.status, j.resultIds, j.error, j.frames])];
+  const shapeOf = (queue: readonly RenderJob[], results: readonly ResultMeta[], run: string): unknown[] => [run, results, store.get().camera, ...queue.flatMap((j) => [j.id, j.settings, j.status, j.resultIds, j.error, j.frames, j.zip])];
   scope.watch(
     (s, u) => [s.render.queue, u.results, u.queueRun] as const,
     ([queue, results, run]) => {

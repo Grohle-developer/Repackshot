@@ -115,6 +115,7 @@ src/
     animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6); N1: los tipos FADE, PAN, MATERIAL_COLOR, SUN_ARC (y PATH reservado), el pivote de un giro, el objetivo material, el cambio de plano con fundido (`shotFadeAt`)
     curve.ts                la curva de tiempo personalizada de dos asas (N1): Bézier cúbica de (0, 0) a (1, 1), Newton con bisección
     fade.ts                 el fundido a color de la pista de cámara sobre los píxeles de un fotograma (N1): en los valores de la imagen o en luz lineal
+    pass-files.ts           los archivos de los pases de un render (N2): las cuatro salidas (alfa, profundidad, normales, id de pieza), `PassesOutput` (qué y en qué formato: PNG de 16 bits o EXR), las palabras de 16 bits de cada pase, los nombres de los archivos y la leyenda de los ids; `normalisePasses`
     explode.ts              el despiece configurable (N6): geometrías, niveles, orden, excepciones; lo que se mueve y cuándo
     timeline.ts             la aritmética de la línea de tiempo (N6): filas del árbol, regla, tramos de cámara, imán
     motion-hint.ts          lo que el visor dibuja de la animación elegida (N6): su objetivo y su pista
@@ -185,6 +186,8 @@ src/
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
+    zip.ts                  el escritor de ZIP propio (N2): método *store*, CRC-32, nombres UTF-8, sin dependencias; `zipStore` y `uniqueNames` (§5.4 quater)
+    passes.ts               los archivos de los pases (N2): de los planos del motor a PNG de 16 bits (`encodePngWords`) o EXR (`encodeExrPlanes`), uno por pase, y la leyenda de los ids (§5.4 quater)
     video.ts                el vídeo codificado (N1): WebCodecs preguntado en tiempo de ejecución, el escritor de un vídeo fotograma a fotograma (§5.4 ter); webm.ts y mp4.ts, los *muxers* propios; video-track.ts, sus tipos
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c); los programas de los materiales de nodos (`PROG`, M3b)
     phys.ts                 escritor de PHY1, la escena del simulador (S2, §5.6)
@@ -524,7 +527,7 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), programas de material (M3b, `program`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -676,7 +679,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   de pases** exactos que se escriben junto a la imagen, bit *i* =
   `PASS_KEYS[i]` de `src/core/passes.ts` (1 albedo, 2 normal, 4
   profundidad, 8 id de pieza, 16 id de material, 32 círculo de
-  confusión). 0, o un RSB anterior a X2, no pide ninguno; los bits que el
+  confusión y, desde N2, 64 alfa). 0, o un RSB anterior a X2, no pide ninguno; los bits que el
   motor no conoce se conservan y se ignoran. `tonemap`: 0 lineal, 1 ACES,
   2 fílmica, 3 AgX, 4 estándar; desconocido = ACES. Exposición 2^ev antes
   de la curva. Desde E5b-1, al final: `denoise` (u32; bit 0, el anfitrión
@@ -1003,6 +1006,26 @@ lanzador con 1 y 4 hilos. El círculo de confusión es el de
 `src/core/lens-coc.ts` (los dos lados leen `tests/fixtures/lens-coc.json`)
 y coincide, dentro de 1 %, con el desenfoque medido de la propia lente
 de `Camera::generate_ray`.
+
+**El pase alfa** (N2): el séptimo, añadido al final como manda el contrato
+(`PASS_KEYS`, bit 6; `PASS_X2` es `PASS_ALL` sin él y los *hash* de X2 son sobre
+esos seis). Es la **cobertura de los objetos**: la parte de las muestras del píxel
+cuyo rayo de cámara encuentra una superficie de una instancia (`coverage_of` sobre
+el mismo `first_hit`: una sola traza sirve al albedo y al alfa, en
+`render_tile_albedo`), sumada en orden de muestra y dividida como el albedo, cada
+uno por su propia cuenta, de modo que los bordes quedan suavizados como la imagen
+(con muestras de borde, E11, la media de sus submuestras). El suelo del estudio, el
+entorno, el fondo, la transparencia y los paneles de luz que ve la cámara valen 0,
+y los recortes y el vidrio cuentan como superficie, como en todos los pases (X2).
+Por eso no es el alfa de un render con fondo transparente cuando el camino atraviesa
+vidrio o el suelo es un atrapasombras con su sombra; donde solo hay objetos opacos y
+fondo, **son iguales bit a bit** (lo prueba `rt-core`). Salida nueva de `rt-wasm`,
+`rt_render_tile_alpha` (`w × h` coberturas por muestra), y el `RPP1` del lanzador lo
+lleva el último. *Hash* fijados: `PINNED_PASS_ALPHA` (el ejemplo) y
+`PINNED_E5_PASS_ALPHA`, iguales en escalar, SSE2 y AVX2, en WASI, en el
+`rt_wasm.wasm` real (`tools/wasm-parity.mjs --expect-alpha`, en CI) y por la API del
+lanzador. Con muestreo adaptativo (E10), como el albedo, lleva las muestras de la
+primera ronda.
 
 ### 5.2 ter · La óptica de la cámara (O1, `rt_core::optics`)
 
@@ -2516,7 +2539,9 @@ mueve; al pararse, el trazador arranca desde la muestra 0 y la imagen
 converge en el propio visor. *Render* usa el mismo pool a la resolución
 de salida y con el presupuesto de la barra de render. Con `passes`
 (`RenderOptions`, X2) cada trabajo lleva la máscara; el worker devuelve,
-con cada baldosa, el albedo de cada muestra (`rt_render_tile_albedo`) y,
+con cada baldosa, el albedo de cada muestra (`rt_render_tile_albedo`), N2: la
+cobertura de cada muestra (`rt_render_tile_alpha`, que `PassAccumulator.addAlpha`
+suma igual) y,
 en el trabajo que empieza en la muestra 0, sus planos exactos
 (`rt_render_tile_passes`), y el hilo principal los junta con
 `PassAccumulator` (`src/render/pass-planes.ts`) igual que la imagen: el
@@ -2700,6 +2725,79 @@ lo comprime y nuestros *muxers* escriben el archivo. Sin dependencias.
   que ffprobe los lea. `tools/video-check.mjs` hace lo mismo en Chromium con
   el WebCodecs de verdad, y el camino entero de la aplicación (el motor, el
   codificador, la descarga), leído por ffprobe.
+
+### 5.4 quater · Cola, pases y lotes (N2)
+
+La cola (U5, U14) ya tenía orden, progreso, pausa y cancelación; N2 le
+añade los pases como archivos, el estudio como eje del lote y el ZIP.
+
+- **El modelo** (`core/render.ts`). `RenderSettings` gana `studio`
+  (`StudioChoice`: `CURRENT`, `ONE {id, name}` o `ALL`), `passes`
+  (`PassesOutput` de `core/pass-files.ts`: las claves `alpha`, `depth`,
+  `normal`, `partId` en ese orden y el formato `EXR` o `PNG16`) y `zip`;
+  `RenderJob` gana `zip` (el id del grupo de ZIP, o null). Un proyecto
+  anterior no tiene nada de eso y abre con los valores de siempre
+  (`migrateRender`, `settingsOf`, `patchSettings`; sin subir
+  `PROJECT_SCHEMA`: todo tiene su valor por defecto). `expandJobs` hace un
+  trabajo por cámara y por estudio (primero por cámara, así los archivos
+  salen en el orden de la plantilla); el trabajo guarda su estudio ya
+  resuelto en `settings.studio` (`ONE`, como la cámara), `studiosOf` dice
+  qué estudios es una elección y `batchSize` cuántos trabajos son. Una
+  animación hace un solo trabajo, sin estudio y sin pases. Los estudios que
+  *Todos* significa los lista la interfaz (la biblioteca, luego los del
+  proyecto: `studioRefs`) y viajan en la acción `render/enqueue`, que sigue
+  siendo una sola entrada de deshacer; los trabajos de una orden comparten
+  `zip: 'z<n>'` (n, el número de render del primero) si los ajustes lo piden.
+- **El estudio de un trabajo.** `restoreStudio(state, saved, { camera: false })`
+  (`core/lighting.ts`, la función pura que ya usaba `studio/restore`) pone
+  materiales, focos, suelo, entorno e imagen del estudio guardado sobre una
+  **copia** del proyecto, sin quitarle su vista a la cámara del trabajo;
+  `FrameRequest.state` se la da al motor (`RenderOptions.state` ya existía) y
+  el proyecto abierto ni se entera. El estudio se busca por su id en la
+  biblioteca y, si no, en los del proyecto; si no está, el trabajo falla con el
+  motivo. Un trabajo con estudio no pasa por la IA.
+- **Los pases** (`FrameRequest.passes` + `imageName`). `main.ts` pide al motor
+  las claves (`RenderOptions.passes`), codifica los planos que vuelven con
+  `io/passes.ts` y los devuelve como `FrameResult.extras`; la cola los guarda
+  bajo el nombre de la imagen (`passFileName`: `<imagen>_depth.exr`). Con el
+  paso de IA en el escritorio, el lanzador renderiza los dos conjuntos y la
+  página los lee de vuelta. Qué es cada número (`core/pass-files.ts`): el alfa
+  en PNG, `α × 65535`; la profundidad en PNG, 0 el fondo, 1 lo más lejano y
+  65535 lo más cercano, lineal entre el rango de las superficies de la imagen,
+  que va en un trozo `tEXt` (*Depth range*); las normales en PNG, `n × ½ + ½`
+  (el fondo, el gris medio); el id en PNG, el número de instancia más 1 hasta
+  65534 y 65535 el suelo del estudio; en EXR, los valores tal cual (`A`, `Z` con
+  `+Infinity` en el fondo, `R G B`, `Y`). La leyenda `<imagen>_partId.json` lista
+  cada id con su pieza y su material (el orden de instancias de
+  `projectScene(...).ids`). Los escritores son propios y sin dependencias:
+  `encodePngWords` (PNG de 16 bits, gris o RGB, filtro 0, `pHYs` y `tEXt`) y
+  `encodeExrPlanes` (el EXR mínimo de `encodeExr`, con los canales que se le
+  dan, ordenados).
+- **El ZIP** (`io/zip.ts`). Método *store* de PKWARE APPNOTE 6.3: por archivo
+  una cabecera local y los datos, luego el directorio central y el registro
+  final; nombres UTF-8 (bit 11) con `/`, sin raíz ni `..`; el CRC-32 es el de
+  `io/image.ts` (el mismo polinomio que el de PNG); la hora es la DOS local;
+  los repetidos se distinguen antes de la extensión (`a.png`, `a_2.png`); sin
+  ZIP64 (4 GiB o 65 534 archivos: error claro). El resultado es un `Blob` de
+  las cabeceras y los `Blob` de los archivos, sin copiarlos. `ui` no importa
+  `io`: el puerto `AppServices.archive.zip` se lo da `main.ts`.
+- **El grupo de ZIP en la cola** (`ui/render-queue.ts`). Un trabajo con `zip`
+  no guarda sus archivos (imagen, ruido, pases, leyenda, imágenes de la IA,
+  el vídeo): los pasa a la cesta de su grupo (`saveOutput`); `flushIdleZips`
+  escribe el ZIP de todo grupo que ya no tiene un trabajo `QUEUED` ni
+  `RUNNING` en la cola (`Proyecto_0001-0004.zip`, `zipFileName`), al acabar cada
+  trabajo y en cada cambio de la cola mientras haya archivos esperando (así que
+  quitar el último trabajo en espera, o deshacer su *Añadir*, también lo
+  escribe). Si el ZIP falla se guardan los archivos uno a uno. Los plugins de
+  trabajos guardan aparte, fuera del ZIP.
+- **Pruebas.** `tests/batch.test.ts` (los trabajos y nombres de un lote de 2 × 2,
+  la cola con el segundo trabajo detenido o quitado, el estudio puesto en una
+  copia, los pases, el ZIP en todos sus casos leído por fflate),
+  `tests/zip.test.ts` (los bytes de un paquete conocido, fflate, `unzip` y
+  `zipfile` de Python una vez a mano), `tests/pass-files.test.ts` (los números, los
+  nombres, los PNG releídos con `zlib` de node y los EXR con el `EXRLoader` de
+  three.js), `tests/passes-engine.test.ts` (el alfa del `rt.wasm` real contra
+  los *hash* fijados) y `tools/batch-check.mjs` en Chromium.
 
 ### 5.5 · Escritorio: el lanzador `repackshot`
 
