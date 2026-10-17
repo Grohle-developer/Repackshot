@@ -1,6 +1,4 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
-// Procedural world environment (upstream DOME_* and FIELD_* constants).
+// Procedural world environment.
 //
 // With no HDRI file the world used to light the scene with a flat colour: a
 // light preset washed the shadows out, and a dark one left chrome reflecting

@@ -1,4 +1,4 @@
-// The Doctor (SPEC §4): fourteen checks of upstream, the animation's aspect ratio (U13), S2's physics check (a
+// The Doctor (SPEC §4): the fourteen base checks, the animation's aspect ratio (U13), S2's physics check (a
 // dynamic part that starts below the floor) and the particle cap of the ambient effects (S4a), each with a
 // detection and a fix.
 // Scene checks run on the model. The engine checks (D1: workers, SIMD, denoise, view transform, fireflies, video

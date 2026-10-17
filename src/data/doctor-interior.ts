@@ -1,4 +1,4 @@
-// K1, not ported from EZ Packshot: the checks of the interior Doctor (INTERIORS.md §3.6), descriptors only, like data/doctor.ts:
+// K1: the checks of the interior Doctor (INTERIORS.md §3.6), descriptors only, like data/doctor.ts:
 // what each check looks at and what its one-click fix does. They run while the scene type is Interior; the logic that runs them
 // is core/doctor-interior.ts. Their keys are stable and come after those of data/doctor.ts.
 

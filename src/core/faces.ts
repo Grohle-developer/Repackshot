@@ -1,7 +1,7 @@
 // Whole CAD faces (phase M1): what one click at the Faces level selects, and the pieces "Separate by CAD faces"
 // makes. A part read from STEP or IGES keeps its CAD faces as runs of triangles (`SceneNode.faceRanges`, phase
 // I2) and those win. Every other mesh has no faces in it, only triangles, so a face is grown from the triangle
-// that was hit across the edges where the surface continues (the algorithm of EZ Packshot's phase E2):
+// that was hit across the edges where the surface continues:
 //
 //   - Adjacency is by the position of the vertices (welded within 1e-5 of the size of the mesh), not by index:
 //     the tessellators of STEP, OBJ and STL duplicate vertices along seams, and the triangles on both sides of
@@ -14,10 +14,10 @@
 //     curved face is followed facet by facet.
 //   - An edge the mesh marks as hard (`MeshData.sharpEdges`) is never crossed.
 //
-// One change to EZ Packshot's version: its estimate of the curvature also counted the edges that are boundaries
-// (marked, or sharper than the live-edge angle), so a triangle at the rim of a flat face, next to a wall,
-// measured the curvature of the corner and the face leaked across a chamfer; here only edges that could be
-// crossed count, and a flat face is flat all the way to its rim.
+// Only edges that could be crossed count towards the curvature: counting the boundaries too (marked, or sharper
+// than the live-edge angle) would make a triangle at the rim of a flat face, next to a wall, measure the
+// curvature of the corner, and the face would leak across a chamfer. So a flat face is flat all the way to its
+// rim.
 //
 // What a click on a mesh cannot tell (it only sees the triangles around it): a triangle at the rim of a flat face
 // whose only turning edge is a gentle blend (a fillet of a few degrees a step) looks like a facet of a curved

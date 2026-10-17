@@ -1,4 +1,4 @@
-// Image aspect ratios of a camera (U13). Not ported from EZPackshot: the camera carries its own output ratio
+// Image aspect ratios of a camera (U13). The camera carries its own output ratio
 // (`CameraState.aspect`), and these are the presets it is offered. Keys are stable: they are added, never
 // renamed, because projects and library studios save them. A ratio is `w : h`, width over height, so 4:5 is
 // a portrait. CUSTOM keeps its own `w : h` on the camera.

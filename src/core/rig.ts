@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 // Lighting normalisation. A light setup defines the SHAPE and TONE of the
 // light; the product preset keeps defining the LEVEL. Changing setup changes
 // the way the part is lit, not its exposure, because the total irradiance of
@@ -118,7 +116,7 @@ export function poolWeight(pool: { share: number } | undefined): number {
  * Resolves a recipe against a product preset: energy is `share` scaled so the
  * total irradiance of the recipe equals the preset's. A recipe light marked
  * `colorFromPreset` takes the colour of the FIRST light of the preset's rig
- * (the same light upstream inherits from, which is the key in most presets).
+ * (the key in most presets).
  */
 export function rigFromRecipe(preset: PresetRef, recipe: readonly LightSpec[], extra = 0): ResolvedLight[] {
   const k = recipeScale(preset, recipe, extra);

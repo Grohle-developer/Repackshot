@@ -3,10 +3,8 @@
 Qué hace Repackshot, visto desde fuera, y el modelo de datos que lo
 sostiene. Es la **especificación de caja negra** que exigen las reglas de
 sala limpia del `README.md`: describe comportamientos y flujos de trabajo,
-nunca cómo los implementa ningún otro producto. Las ideas vienen de dos
-sitios: el uso normal de renderizadores de producto comerciales (lo que
-hacen, no cómo), y EZ Packshot, cuyas soluciones se reutilizan con permiso
-de su autor.
+nunca cómo los implementa ningún otro producto. Las ideas vienen del uso
+normal de renderizadores de producto comerciales (lo que hacen, no cómo).
 
 ---
 
@@ -16,7 +14,7 @@ Diseñadores de producto, fotógrafos de producto y estudios pequeños que
 necesitan **una imagen de catálogo o una animación corta de un objeto**
 con la menor fricción posible. Vienen de un CAD (STEP, glTF exportado),
 saben de fotografía y no tienen por qué saber de rendering. El criterio de
-éxito es el de EZ Packshot: *abrir, importar, elegir tipo de producto,
+éxito: *abrir, importar, elegir tipo de producto,
 pintar materiales, elegir luz, render*, en diez minutos y sin manual.
 
 El producto es una **aplicación web** (y más adelante de escritorio) que
@@ -408,7 +406,7 @@ no un triángulo (`src/core/faces.ts`):
   triángulo (`SceneNode.faceRanges`, rangos de triángulos): los rangos
   ganan siempre.
 - En cualquier otra malla, la superficie que **continúa** desde el
-  triángulo picado (el algoritmo de EZ Packshot, fase E2): adyacencia por
+  triángulo picado: adyacencia por
   **posición** de vértice (soldadura a `1e-5` de la diagonal de la malla,
   no por índice, porque los teseladores duplican vértices en las
   costuras); se cruza una arista si el diedro entre el triángulo que se

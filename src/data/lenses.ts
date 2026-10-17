@@ -1,9 +1,7 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type { Label, LensPreset } from './types';
 import raw from './lenses.json';
 
-// Camera lens presets (upstream LENS_PRESETS): focal length in millimetres and
+// Camera lens presets: focal length in millimetres and
 // a typical aperture for the look of each lens.
 export const LENS_PRESETS: readonly LensPreset[] = [
   { key: 'ULTRA', label: { es: '14 mm ultra gran angular', en: '14 mm ultra wide' }, focalMm: 14, fstop: 5.6 },
@@ -23,7 +21,7 @@ export function lensPreset(key: string): LensPreset | undefined {
 // ---------------------------------------------------------------------------
 // Lens prescriptions (STUDIO-TOOLS §1 and §6, docs/research/optics.md §2.3 and §5)
 //
-// Not from EZPackshot: the 16 starting lenses of the traced-lens mode, in
+// The 16 starting lenses of the traced-lens mode, in
 // lenses.json. Clean room: generic names only, the provenance (expired patent
 // number, book) lives in `source`; glass is `nd` / `vd` and never a catalogue
 // name. Keys are stable: they are added, never renamed.
