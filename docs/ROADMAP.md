@@ -179,7 +179,7 @@ decisiones escritas (datos, contratos, revisión), no código.
   cámara con fundido a negro o blanco, asistente en tres pasos con rejilla de
   tipos, animaciones bajo su objetivo en el árbol, vídeo WebM/MP4 por WebCodecs
   con *muxers* propios y el Doctor `output` conectado; un proyecto de U1
-  reproduce lo mismo; 2871 tests web y 1098 del motor (sin tocar) — **Opus**.
+  reproduce lo mismo; 2907 tests web y 1098 del motor (sin tocar) — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -6748,26 +6748,36 @@ brief y del criterio; N6 y U5 ya habían construido una parte):
   `aria-selected`) y **↑ ↓** van a la animación de arriba o de abajo; la regla,
   que está dentro del árbol, queda para el puntero (`aria-hidden`, sin etiqueta;
   su ayuda sigue) porque el cabezal ya se mueve con el teclado desde el árbol.
-  `tests/a11y-timeline.test.ts` (3, en Chromium como el de H1) y una prueba de las
+  `tests/a11y-timeline.test.ts` (4, en Chromium como el de H1) y una prueba de las
   teclas.
+- **La marca del fundido** en la pista de cámara tapaba el principio del nombre del
+  plano siguiente y usaba la duración pedida aunque los fotogramas la recorten a la
+  mitad de un plano: `shotFadeSpan` (core) es ahora el tramo que usan los
+  fotogramas (`shotFadeAt`) y la pista, y el nombre del plano empieza pasada la
+  marca (una prueba del tramo y otra en Chromium, que fallan sin el arreglo).
+- **Galería**: las cuatro capturas, con su entrada en `docs/GALERIA.md` bajo
+  *Sin publicar* (por versión y por función) y una fila en «Sin captura» con lo de
+  N1 que no tiene imagen (el fundido en el visor y en un fotograma, una pieza que
+  se funde, el pivote, el arco solar, un fotograma del vídeo y el MP4).
 - **Migración de U1**: `tests/fixtures/u1-hero-poses.json`, tomadas con el
   `evaluate` de U1 (commit `67b9154`) sobre `project-v1.json` en 0, 2, 5,5 y 9 s;
   el proyecto abierto hoy reproduce lo mismo a 1e-9, con sus planos como tramos y
   sus movimientos como barras.
 
-Pruebas: `tests/animation-n1.test.ts` (20: pivote en otra pieza y en un punto,
+Pruebas: `tests/animation-n1.test.ts` (21: pivote en otra pieza y en un punto,
 también con un padre fuera del origen; `FADE` invertida y repetida en cinco
 instantes, sus multiplicaciones y su partición; `PAN`; `MATERIAL_COLOR`;
 `SUN_ARC` y su ángulo al polo; la curva frente a una bisección propia, también
 con asas en los extremos, y su arrastre como una entrada de deshacer; los fundidos
-de la pista y sus píxeles; los 16 presets en cada fotograma; el asistente, los
+de la pista, su tramo y sus píxeles; los 16 presets en cada fotograma; el asistente, los
 planos y los materiales), `tests/animation-migration.test.ts` (2) y
 `tests/video.test.ts` (12: los dos contenedores releídos por lectores aparte, un
 vídeo de 2 s a 12 fps de 24 fotogramas, el escritor con un codificador falso, un
 trabajo de la cola hasta el archivo, y fotogramas reales de libx264 y libvpx en
 nuestros MP4 y WebM leídos por ffprobe donde la máquina tiene ffmpeg). Mutaciones:
-**42**, todas muertas (en `evaluate` de los tipos nuevos y del pivote, en la curva,
-en los dos *muxers* y el escritor, en la cola de vídeo y en el Doctor); una sobrevivió
+**48**, todas muertas (en `evaluate` de los tipos nuevos y del pivote, en la curva,
+en los dos *muxers* y el escritor, en la cola de vídeo, en el Doctor, en la
+accesibilidad del cajón y en la marca del fundido); una sobrevivió
 al principio (quitar la vuelta al padre del giro con pivote: el padre de la tapa está
 en el origen) y se mató con una prueba sobre el cuerpo, que cuelga del modelo.
 En el navegador, `tools/video-check.mjs` (Chromium con WebCodecs de verdad): los
@@ -6778,9 +6788,10 @@ deshecha, el fundido en el visor, y un render de la aplicación en WebM VP9 de 4
 fotogramas (2 s a 24 fps, 160 × 90) leído por ffprobe; capturas
 `docs/ui/animation-n1-wizard.png` (la línea de tiempo con tres pistas y el
 asistente en el paso 1), `animation-n1-cards.png`, `animation-n1-curve.png` y
-`render-window-video.png`. El motor de Rust no se tocó. Compuertas: `npm run qa`
-en verde (164 archivos y 2871 pruebas pasan, 5 archivos y 11 pruebas omitidas; al
-empezar pasaban 161 y 2836) y `npm run engine:test` en verde (1098 pasan, 11
+`render-window-video.png`. El motor de Rust no se tocó. Compuertas, con `main`
+mezclado (H1 y la galería) y `rt.wasm` compilado: `npm run qa` en verde (169
+archivos y 2907 pruebas pasan, 4 archivos y 6 pruebas omitidas; al empezar pasaban
+161 y 2836, y H1 trae las suyas) y `npm run engine:test` en verde (1098 pasan, 11
 ignoradas), como antes.
 
 **Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
@@ -6829,6 +6840,12 @@ ignoradas), como antes.
   órbita; la variante con `PAN` queda pendiente.
 - `ease()` de `light-math` trata `CUSTOM` como lineal: la curva de un clip vive en
   `clipCurve`, que es la que la usa.
+- `tools/render-window-check.mjs` se para en su paso (g) (tras elegir *Copper* en la
+  paleta, Ctrl+Mayús+Intro no arranca el render y espera hasta agotar el tiempo); pasa
+  igual en una compilación de `main` sin N1 (`3096821`), así que no es de esta fase y
+  no se toca aquí. Por eso `render-window-animation.png` (U5) no se ha regrabado y
+  sigue enseñando el vídeo como *próximamente*; lo de ahora está en
+  `render-window-video.png`.
 - **La regla de la línea de tiempo** no es un `slider`: está dentro del árbol, que
   solo puede contener sus filas, y el cabezal ya tiene el teclado (Inicio, Fin,
   ← →) desde el árbol; se oculta a las ayudas técnicas. Si se quiere un control
