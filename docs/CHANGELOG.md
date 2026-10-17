@@ -22,6 +22,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El perfil **viaja en el proyecto** (`.repack`), en los estudios, en un montaje guardado y en la biblioteca, así que se abre en otro equipo sin el archivo. No se entrega ningún perfil de fabricante: cada persona trae los suyos (L5).
 - En *Rápido* la luz IES es un foco con la intensidad del eje y un cono sacado del ángulo en que el perfil cae a la mitad: una aproximación, y el inspector lo dice; *Completo* y el render usan el archivo entero (L5).
 
+### Herramientas
+
+- `tools/lights-check.mjs` vuelve a pasar de punta a punta, en *Rápido* y en *Completo*: activaba la cámara desde el menú de arriba a la derecha buscando una fila de texto exactamente `Camera 1`, y desde que cada fila lleva además la óptica y la proporción (y el lápiz) ese texto ya no coincidía. Ahora abre el menú por el único botón de esa esquina con `aria-haspopup="menu"` y elige la fila por su etiqueta (L4).
+
 ### Limitaciones conocidas de esta versión
 
 - *Rápido* dibuja la tapa de un vidrio como vidrio transparente; *Completo* y *Render* refractan a su través.

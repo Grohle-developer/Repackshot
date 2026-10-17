@@ -112,9 +112,12 @@ const state = (page) =>
       aim: document.querySelector('[data-field="aim"]')?.textContent ?? '',
       tool: document.querySelector('.ov-tl [data-tool][aria-pressed="true"]')?.getAttribute('data-tool') ?? null,
       glyphs: document.querySelector('.ov-tl [data-glyphs]')?.getAttribute('aria-pressed') ?? null,
-      camera: document.querySelector('.ov-tr .ov-text-btn span')?.textContent ?? '',
+      camera: document.querySelector('.ov-tr button[aria-haspopup="menu"] span')?.textContent ?? '',
     };
   });
+
+/** The camera chip at the top right of the viewport: the only button there with a menu (the size button is not). */
+const CAMERA_CHIP = '.ov-tr button[aria-haspopup="menu"]';
 
 const canvas = (page) => page.locator('canvas[aria-label="viewport"]');
 
@@ -186,11 +189,16 @@ async function addLight(page, name, shot = null) {
   return entries;
 }
 
-/** Activates a camera from the top right menu (the selection stays). */
+/**
+ * Activates a camera from the top right menu (the selection stays). The chip is the one button there that opens a
+ * menu (the output size beside it opens a window); a row is found by its label span, because the row's own text
+ * also carries the lens and the ratio (`Camera 1` + `85 mm · f/5.6 · 4:3`) and the pencil.
+ */
 async function activateFromMenu(page, name) {
-  await page.locator('.ov-tr .ov-text-btn').first().click();
+  await page.locator(CAMERA_CHIP).click();
   await settle(page);
-  await page.locator('.floating .menu-item', { hasText: new RegExp(`^${name}$`) }).click();
+  const label = page.locator('span:not(.check, .menu-right, .aux)', { hasText: new RegExp(`^${name}$`) });
+  await page.locator('.floating .menu-item', { has: label }).click();
   await settle(page, 200);
 }
 
