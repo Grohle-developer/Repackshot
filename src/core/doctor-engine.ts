@@ -1,4 +1,4 @@
-// The Doctor's checks that read the engine (D1, ROADMAP D1): rt.wasm loaded and how many workers it got, SIMD,
+// The Doctor's checks that read the engine (phase D1): rt.wasm loaded and how many workers it got, SIMD,
 // the denoise, the view transform, the fireflies of the accumulation, the video output and the time budget
 // against the speed the engine measured. The scene checks (core/doctor.ts) run on the model alone; these also
 // read what the engine reports, and that is never part of the project: the page hands it in as `EngineFacts`
@@ -100,12 +100,21 @@ export const FIREFLY_MIN_PIXELS = 8;
 export const FIREFLY_PER_PIXEL = 1e-5;
 /** The indirect clamp the fireflies fix sets (Advanced ▸ Indirect clamp: the most a channel of indirect light can carry). */
 export const FIREFLY_CLAMP = 10;
-/** Standard clips what is brighter than this once the exposure is applied: one stop over white. */
+/**
+ * Standard clips everything over 1 (display white) once the exposure is applied. The check counts what is over this
+ * (linear: one stop over white), so a flat white background, which sits at 1, is not counted as clipped.
+ */
 export const CLIP_OVER_WHITE = 2;
 /** The Standard view transform warns when this fraction of the frame is over `CLIP_OVER_WHITE`. */
 export const CLIP_FRACTION = 0.01;
-/** A budget "in the form of time" is short when it reaches less than this fraction of the samples asked (finish by whichever first). */
+/** Finishing by whichever comes first, the time budget is short when it reaches less than this fraction of the samples asked. */
 export const BUDGET_REACH = 0.5;
+/**
+ * The budget the fix sets reaches this many times the samples it was short of: the speed the engine measures moves from
+ * one reading to the next (the meter takes a new one when it differs by a tenth), and a budget set to exactly what
+ * the last reading needed would be short again by the next.
+ */
+export const BUDGET_HEADROOM = 1.25;
 
 /** The checks that read the engine: UNAVAILABLE while the page has not handed in its facts. */
 export const ENGINE_CHECKS: ReadonlySet<DoctorCheckKey> = new Set<DoctorCheckKey>(['engine', 'simd', 'lighttree', 'denoise', 'color', 'caustics', 'persist', 'output', 'budget']);
@@ -295,10 +304,11 @@ function reachOf(seconds: number, pixels: number, throughput: number): number {
 
 interface BudgetProblem {
   reason: 'cut' | 'few';
-  /** Samples the budget reaches, samples it falls short of, and the seconds that would reach them. */
+  /** Samples the budget reaches, samples it falls short of, the seconds that would reach them, and what the fix sets (with headroom). */
   reach: number;
   wanted: number;
   need: number;
+  to: number;
 }
 
 function budgetProblem(state: ProjectState, throughput: number): BudgetProblem | null {
@@ -308,13 +318,13 @@ function budgetProblem(state: ProjectState, throughput: number): BudgetProblem |
   if (s.finishBy === 'FIRST') {
     // Whichever comes first: the time cuts the render at about half the samples or less.
     if (reach >= s.maxSamples * BUDGET_REACH) return null;
-    return { reason: 'cut', reach, wanted: s.maxSamples, need: secondsFor(s.maxSamples, pixels, throughput) };
+    return { reason: 'cut', reach, wanted: s.maxSamples, need: secondsFor(s.maxSamples, pixels, throughput), to: secondsFor(s.maxSamples * BUDGET_HEADROOM, pixels, throughput) };
   }
   if (s.finishBy === 'TIME') {
     // By time alone there is no samples to ask: the Draft tier's are the fewest that make a usable image.
     const wanted = QUALITY_PRESETS.DRAFT.samples;
     if (reach >= wanted) return null;
-    return { reason: 'few', reach, wanted, need: secondsFor(wanted, pixels, throughput) };
+    return { reason: 'few', reach, wanted, need: secondsFor(wanted, pixels, throughput), to: secondsFor(wanted * BUDGET_HEADROOM, pixels, throughput) };
   }
   return null;
 }
@@ -326,8 +336,8 @@ function checkBudget(state: ProjectState, f: EngineFacts): DoctorResult {
   if (!(f.throughput !== null && f.throughput > 0)) return unavailable('budget', 'unmeasured');
   const p = budgetProblem(state, f.throughput);
   if (!p) return ok('budget');
-  const fixable = p.need > s.maxSeconds && p.need <= MAX_SECONDS;
-  return warn('budget', { reason: p.reason, reach: p.reach, wanted: p.wanted, budget: s.maxSeconds, need: p.need }, fixable);
+  const fixable = p.to > s.maxSeconds;
+  return warn('budget', { reason: p.reason, reach: p.reach, wanted: p.wanted, budget: s.maxSeconds, need: p.need, to: p.to }, fixable);
 }
 
 // ------------------------------------------------------------------ the checks and their fixes
@@ -361,7 +371,12 @@ export function engineCheck(key: DoctorCheckKey, state: ProjectState): DoctorRes
   }
 }
 
-/** The one-click fix of an engine check; a check without one leaves the project alone. */
+/**
+ * The one-click fix of an engine check; a check without one leaves the project alone. A fix acts only while its
+ * warning is real in the project it is given, so `fixAll`, which applies them one after another in catalogue order,
+ * relies on a fix not making the next one's evidence stale: the view transform (it leaves the image as it is) comes
+ * before the fireflies' (its clamp starts the view over, and the scan it read no longer describes the project).
+ */
 export function engineFix(state: ProjectState, key: DoctorCheckKey): ProjectState {
   const f = facts;
   if (!f) return state;
@@ -389,7 +404,7 @@ export function engineFix(state: ProjectState, key: DoctorCheckKey): ProjectStat
     case 'budget': {
       if (checkBudget(state, f).status !== 'WARN' || f.throughput === null) return state;
       const p = budgetProblem(state, f.throughput);
-      return p && p.need > state.render.maxSeconds ? reduceRender(state, { type: 'render/set', patch: { maxSeconds: p.need } }) : state;
+      return p && p.to > state.render.maxSeconds ? reduceRender(state, { type: 'render/set', patch: { maxSeconds: p.to } }) : state;
     }
     default:
       return state;

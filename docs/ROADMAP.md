@@ -6721,7 +6721,10 @@ sus claves intactas. Detección, arreglo y prueba de cada uno:
 - **`budget`**: con la velocidad que el motor midió (`ui.throughput`, nunca
   inventada), el tiempo de *Tiempo* no llega a un Borrador (64), o el de *Lo que
   llegue antes* a la mitad de las muestras. Arreglo: subir el tiempo al
-  necesario, a la decena de segundos.
+  necesario más una cuarta parte de holgura (`BUDGET_HEADROOM`), a la decena de
+  segundos: la prueba en el navegador mostró que la velocidad que mide el visor se
+  mueve de una lectura a la siguiente y un presupuesto justo volvía a quedarse corto
+  nada más arreglarlo.
 
 Un escaneo es de **una imagen**: lleva el proyecto del que sale (`basis`) y
 `sameImage` (que repite `touchesImage` de los dos motores, con una prueba que las
@@ -6730,7 +6733,7 @@ compara) dice cuándo deja de valer; el Doctor no usa una lectura de otra imagen
 chequeos leen (`engineInputsChanged`). Los arreglos pasan por el *store* y son
 una entrada de deshacer; *Arreglar todo* los junta en una, y lo que el proyecto
 no puede cambiar es un aviso con su explicación y sin arreglo falso.
-`tests/doctor-engine.test.ts` (71 pruebas) lleva un motor falso que escribe
+`tests/doctor-engine.test.ts` (72 pruebas) lleva un motor falso que escribe
 donde escribe el real y usa el `installDoctorFacts` de verdad: cada uno de los
 catorce fallos de la tabla se dispara y se limpia, más *Arreglar todo*, los
 umbrales en sus fronteras, `doctorSentence` en los dos idiomas, y que deshacer
@@ -6738,12 +6741,20 @@ refresca; `tests/frame-scan.test.ts` (17) lee acumulaciones sintéticas, el
 `status().scan` del *pool* con *workers* falsos y el del lanzador con su simulador;
 `tests/frame-scan-engine.test.ts` (3), el `rt.wasm` de verdad. Cada chequeo
 nuevo se probó **desactivando su detección** (y cada arreglo, y cada umbral):
-casi cien mutaciones, todas muertas salvo dos equivalentes (recortar la fila
-superior e inferior de los vecinos, que fuera del marco lee `undefined`) y el
-recorte de `full` en el estado del *pool*, que la caché de 16 muestras ya
-cubre. `tools/doctor-engine-check.mjs` lo recorre en Chromium con el `rt.wasm`
-real y deja `docs/ui/doctor-engine.png`. El motor de Rust no se tocó: ni
-`rt_features` ni ningún *hash* fijado se mueve.
+cerca de cien mutaciones, todas muertas salvo tres equivalentes: no recortar la
+fila superior ni la inferior de los vecinos (fuera del marco se lee `undefined` y
+no gana a nadie) y el `full` del `status()` del *pool* (la caché, que pide 16
+muestras, ya lo cubre). `tools/doctor-engine-check.mjs` lo recorre en Chromium con el `rt.wasm`
+real (27 comprobaciones: el motor y el visor sanos, *SIMD* en *Desactivado* con
+su botón a *Ajustes*, *denoise* solo en el visor y un presupuesto de 5 s con la
+velocidad que el motor midió, *Arreglar todo* y un deshacer) y deja
+`docs/ui/doctor-engine.png`. El motor de Rust no se tocó: ni `rt_features` ni
+ningún *hash* fijado se mueve. Compuertas: `npm run qa` en verde (159 archivos y
+2746 pruebas pasan, 4 archivos y 6 pruebas omitidas; al empezar pasaban 2635) y
+`npm run engine:test` en verde (1098 pasan, 11 ignoradas). Coste: la lectura de
+la acumulación corre en el hilo principal cada vez que las muestras se doblan
+(de 16 en adelante: cinco o seis veces por vista) y tarda, medida en Node con el
+código caliente, 40 ms a 1280 × 720, 160 ms a 2560 × 1440 y 330 ms a 4K.
 
 Un fallo que apareció al probarlo y se corrigió con su prueba
 (`tests/store.test.ts`): una acción que un oyente del *store* envía mientras se le
@@ -6779,7 +6790,8 @@ deja anotado para quien decide, la regla 11):
   de tiempo si se termina por muestras o por ruido (no avisa); con *Tiempo*, el
   de un Borrador (64 muestras) es el mínimo para una imagen utilizable; con *Lo
   que llegue antes*, la mitad de las muestras pedidas (`BUDGET_REACH`). El arreglo
-  sube el tiempo y no baja las muestras (la otra salida honesta); una animación se
+  sube el tiempo (con un 25 % de holgura) y no baja las muestras (la otra salida
+  honesta); una animación se
   juzga por el presupuesto de cada fotograma, y su total no se compara con nada.
 - ◆ **`output` dormido**: hasta N1 los ajustes fuerzan la secuencia de
   fotogramas, así que solo un proyecto de un futuro con vídeo lo dispara. Se decide

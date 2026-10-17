@@ -1248,7 +1248,7 @@ un solo núcleo.*; *SIMD está desactivado en Ajustes ▸ Motor de renderizado: 
 usa la compilación escalar.*; *El denoise está en el visor pero apagado en el
 render: la imagen saldrá con ruido.*; *7 fireflies tras 64 muestras…*; *Un
 presupuesto de 5 s llega solo a 1 de las 64 muestras de un Borrador a la velocidad
-medida aquí. Unos 7 min llegarían.*). La acción de cada fila es una de
+medida aquí. Unos 5 min llegarían.*). La acción de cada fila es una de
 cuatro: **Arreglar** cuando el proyecto puede cambiar (una entrada de
 deshacer, *Doctor: Denoise*); **Ajustes** cuando lo que lo limita es una fila
 de *Ajustes* (*Hilos*, *SIMD*): abre la ventana en esa fila, resaltada, y cierra

@@ -679,9 +679,10 @@ describe('budget', () => {
     const r = rig((e) => (e.throughput = 1e6));
     r.do(finish({ finishBy: 'TIME', maxSeconds: 120 }));
     // 120 s at 1e6 pixel-samples a second: 57 samples of 2 073 600 pixels, under the 64 of a Draft, which take 133 s.
-    expect(r.result('budget')).toEqual({ key: 'budget', status: 'WARN', fixable: true, detail: { reason: 'few', reach: 57, wanted: 64, budget: 120, need: 140 } });
+    expect(r.result('budget')).toEqual({ key: 'budget', status: 'WARN', fixable: true, detail: { reason: 'few', reach: 57, wanted: 64, budget: 120, need: 140, to: 170 } });
     cmd.doctorFix(r.ctx, 'budget');
-    expect(r.store.get().render.maxSeconds).toBe(140);
+    // 170 s, not 140: the fix leaves a quarter of headroom for the speed to move (it reaches 81 samples).
+    expect(r.store.get().render.maxSeconds).toBe(170);
     expect(r.result('budget').status).toBe('OK');
     expect(r.store.history().undo[0]).toBe('Doctor: Time budget');
     r.store.undo();
@@ -704,9 +705,9 @@ describe('budget', () => {
     const r = rig((e) => (e.throughput = 1e6));
     expect(BUDGET_REACH).toBe(0.5);
     r.do(finish({ finishBy: 'FIRST', maxSamples: 256, maxSeconds: 120 }));
-    expect(r.result('budget')).toEqual({ key: 'budget', status: 'WARN', fixable: true, detail: { reason: 'cut', reach: 57, wanted: 256, budget: 120, need: 540 } });
+    expect(r.result('budget')).toEqual({ key: 'budget', status: 'WARN', fixable: true, detail: { reason: 'cut', reach: 57, wanted: 256, budget: 120, need: 540, to: 670 } });
     r.do({ type: 'doctor/fix', key: 'budget' });
-    expect(r.store.get().render.maxSeconds).toBe(540);
+    expect(r.store.get().render.maxSeconds).toBe(670);
     expect(r.result('budget').status).toBe('OK');
     // Half the samples is enough to leave it be: 266 s reach 128, exactly half of 256.
     r.do(finish({ maxSeconds: 266 }));
@@ -725,6 +726,19 @@ describe('budget', () => {
     r.do(finish({ maxSamples: 100 }));
     expect(r.result('budget').status).toBe('OK');
     r.do(finish({ maxSeconds: 10 }));
+    expect(r.result('budget').status).toBe('WARN');
+  });
+
+  it('holds after the fix when the speed measured moves down a fifth, which a budget set to exactly what was needed would not', () => {
+    const r = rig((e) => (e.throughput = 1e6));
+    r.do(finish({ finishBy: 'TIME', maxSeconds: 30 }));
+    r.do({ type: 'doctor/fix', key: 'budget' });
+    expect(r.result('budget').status).toBe('OK');
+    // The meter takes a new reading, a fifth slower (it takes one when it differs by a tenth).
+    r.ui.set({ throughput: 0.8e6 });
+    expect(r.result('budget').status).toBe('OK');
+    // A third slower is a different machine: the Doctor says so again.
+    r.ui.set({ throughput: 0.6e6 });
     expect(r.result('budget').status).toBe('WARN');
   });
 
@@ -856,7 +870,7 @@ describe('every engine check fires and its fix clears it', () => {
     const after = r.store.get();
     expect(after.render.advanced).toMatchObject({ denoise: 'BOTH', clampIndirect: FIREFLY_CLAMP });
     expect(after.image.viewTransform).toBe('FILMIC');
-    expect(after.render.maxSeconds).toBe(140);
+    expect(after.render.maxSeconds).toBe(170);
     // The image is another one now (the clamp), so the fireflies are waited for; what the system limits stays, with its words.
     r.engine.measure(r.store.get());
     r.sync();

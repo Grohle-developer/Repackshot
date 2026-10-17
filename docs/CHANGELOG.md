@@ -27,6 +27,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Los umbrales de *Tono*, *Fireflies* y *Presupuesto de tiempo* son una propuesta, pendiente de decisión (ROADMAP D1, «Qué no encajó»).
 - Con el motor del lanzador y su *denoise* del visor encendido, las sumas que llegan a la página son la imagen filtrada: los *fireflies* salen como «no hay nada que contar» (el encuadre por paradas sí se lee).
 - Dos *fireflies* pegados se ven uno al otro como vecino brillante y no cuentan; en *Rápido* no hay acumulación que leer.
+- La lectura de la acumulación corre en el hilo principal cada vez que las muestras se doblan (de 16 en adelante): unos 40 ms en un visor de 1280 × 720, 160 ms a 2560 × 1440 y 330 ms a 4K.
 - El chequeo de vídeo no se dispara todavía con ajustes de esta versión: el vídeo codificado llega con N1 y hasta entonces la salida es una secuencia de fotogramas.
 - No hay cambios en el motor de Rust (`engine/`): no se ha movido ningún hash fijado.
 

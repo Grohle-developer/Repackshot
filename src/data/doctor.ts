@@ -201,8 +201,8 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       en: "The render's time budget (finish by time, or whichever comes first) is too short for the samples it asks for, at the speed the engine has measured on this computer.",
     },
     fix: {
-      es: 'Sube el presupuesto de tiempo hasta el que esas muestras necesitan a esa velocidad.',
-      en: 'Raises the time budget to what those samples need at that speed.',
+      es: 'Sube el presupuesto de tiempo hasta el que esas muestras necesitan a esa velocidad, y una cuarta parte más, porque la velocidad se mueve de una medida a la siguiente.',
+      en: 'Raises the time budget to what those samples need at that speed, and a quarter more, because the speed moves from one reading to the next.',
     },
   },
   // Not from upstream (U13): appended, so the upstream order above is intact.
