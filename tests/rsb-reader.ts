@@ -51,7 +51,15 @@ class Cursor {
 
 export function readCamera(p: DataView): RsbCamera {
   const c = new Cursor(p);
-  return { position: c.vec(), target: c.vec(), up: c.vec(), focalMm: c.f32(), sensorMm: c.f32(), fstop: c.f32(), focusDist: c.f32(), ortho: c.u32() !== 0, orthoWidth: c.f32() };
+  const cam: RsbCamera = { position: c.vec(), target: c.vec(), up: c.vec(), focalMm: c.f32(), sensorMm: c.f32(), fstop: c.f32(), focusDist: c.f32(), ortho: c.u32() !== 0, orthoWidth: c.f32() };
+  // K3: the projection, the fields of view and the exterior factor, when the section goes on.
+  if (c.remaining >= 16) {
+    cam.projection = c.u32();
+    cam.fovXDeg = c.f32();
+    cam.fovYDeg = c.f32();
+    cam.exterior = c.f32();
+  }
+  return cam;
 }
 
 export function readMaterial(p: DataView): RsbMaterial {

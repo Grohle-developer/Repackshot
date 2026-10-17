@@ -1127,6 +1127,14 @@ export function hideSelection(ctx: Ctx, ids?: NodeId[], visible = false): void {
   ctx.store.dispatch({ type: 'scene/setVisible', ids: target, visible, label: L(visible ? 'undo.show' : 'undo.hide', { target: targetLabel(s, target) }) });
 }
 
+/** K3: Visible to camera, on or off for some nodes (the selection by default); one undo step. */
+export function setCameraHidden(ctx: Ctx, ids: NodeId[] | undefined, hidden: boolean): void {
+  const s = ctx.store.get();
+  const target = ids ?? selectedNodes(s);
+  if (!target.length) return;
+  ctx.store.dispatch({ type: 'scene/setCameraHidden', ids: target, hidden, label: L(hidden ? 'undo.cameraHidden' : 'undo.cameraShown', { target: targetLabel(s, target) }) });
+}
+
 export function isolateSelection(ctx: Ctx, ids?: NodeId[]): void {
   const s = ctx.store.get();
   const target = ids ?? selectedNodes(s);

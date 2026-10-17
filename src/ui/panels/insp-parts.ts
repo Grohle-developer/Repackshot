@@ -566,6 +566,9 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
   const name = textField(node.name, (v) => cmd.renameNode(ctx, id, v), t('part.name'));
   name.el.setAttribute('data-field', 'name');
   const visible = toggle(node.visible, (v) => cmd.hideSelection(ctx, [id], v), t('part.visible'));
+  // K3: seen by the camera or not, and still in the light (the ceiling of a plan view).
+  const cameraVisible = toggle(!node.cameraHidden, (v) => cmd.setCameraHidden(ctx, [id], !v), t('part.cameraVisible'));
+  cameraVisible.el.setAttribute('data-tip', t('part.cameraVisibleAux'));
   const locked = toggle(node.locked, (v) => cmd.setLocked(ctx, [id], v), t('part.locked'));
   const tris = h('div', { class: 'aux' });
   scope.watch(
@@ -574,6 +577,7 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
       if (!n) return;
       name.set(n.name);
       visible.set(n.visible);
+      cameraVisible.set(!n.cameraHidden);
       locked.set(n.locked);
       tris.textContent = n.mesh ? t('part.triangles', { n: n.mesh.triangles }) : '';
     },
@@ -585,6 +589,7 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
     { class: 'stack' },
     field(t('part.name'), name.el),
     field(t('part.visible'), visible.el),
+    field(t('part.cameraVisible'), cameraVisible.el),
     field(t('part.locked'), locked.el),
     fields,
     pivotControls(ctx, scope, target),

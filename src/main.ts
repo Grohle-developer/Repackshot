@@ -38,6 +38,7 @@ import { activeCamera, orbitPatch, type CameraState } from './core/camera';
 import { lookThroughAction, lookThroughCamera, sameObject, viewedCamera, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
 import { createInitialState, createStore } from './core/store';
+import { autoExposure } from './core/image-passes';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
 import { buildExample } from './core/example';
@@ -213,6 +214,8 @@ const graphWorkers = typeof Worker === 'function' ? new GraphWorkers(() => new W
 try {
   preview = new PreviewEngine();
   if (graphWorkers) preview.setGraphWorkers(graphWorkers);
+  // K3: the Fast mode's automatic exposure is the path tracer's last reading of its image.
+  preview.setExposureMeter(() => tracer?.meteredExposure() ?? null);
   preview.mount(canvas);
 } catch (err) {
   console.error(err);
@@ -231,7 +234,8 @@ const sceneSource: SceneSource = {
     });
     return { meshKey, bytes: (meshes) => writeRsb(scene, { meshes }) };
   },
-  tone: (state) => ({ exposureEv: state.image.exposureEv, tonemap: tonemapFor(state.image.viewTransform) }),
+  // K3: the exposure pass of the image state: by hand, or (auto) the compensation over what the engine's image meters.
+  tone: (state) => ({ exposureEv: state.image.exposureEv, tonemap: tonemapFor(state.image.viewTransform), ...(autoExposure(state.image) ? { auto: true } : {}) }),
 };
 
 let tracer: PathTracerEngine | NativeEngine | null = null;

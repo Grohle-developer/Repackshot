@@ -360,3 +360,28 @@ fn a_level_camera_with_its_lens_shifted_keeps_the_verticals_of_a_cube_parallel()
     assert!(section(&bytes, TAG_LENS).is_some());
     assert_eq!(Scene::from_rsb(&bytes).map(|s| s.camera), Ok(level));
 }
+
+#[test]
+fn the_page_s_camera_with_straight_verticals_keeps_the_verticals_of_a_cube_parallel() {
+    // The same criterion through the camera the page writes (tests/interior-camera.test.ts writes the file: a 28 mm
+    // orbit camera 3 m from a 600 mm cube, tilted 10°, with straight verticals, at 1920 × 1080): the engine's own rays
+    // put the bottom and the top of each vertical edge in the same column, to a tenth of a pixel.
+    let bytes = include_bytes!("../../../../../tests/fixtures/k3-verticals.rsb");
+    let scene = Scene::from_rsb(bytes).expect("the page's file reads");
+    let (w, h) = (scene.render.width as f32, scene.render.height as f32);
+    assert_eq!((w, h), (1920.0, 1080.0));
+    let camera = &scene.camera;
+    assert!(camera.lens.is_some(), "the shift travels in LENS");
+    let aspect = w / h;
+    let mut worst = 0.0f32;
+    for (x, y) in [(-300.0, -300.0), (300.0, -300.0), (-300.0, 300.0), (300.0, 300.0)] {
+        let (u0, _) = project(camera, aspect, Vec3::new(x, y, 0.0));
+        let (u1, _) = project(camera, aspect, Vec3::new(x, y, 600.0));
+        worst = worst.max((u1 - u0).abs() * w);
+    }
+    eprintln!("the page's 10° camera: verticals within {worst:.4} px");
+    assert!(worst <= 0.1, "{worst} px");
+    // And the cube's middle, the target, is in the middle of the frame.
+    let (u, v) = project(camera, aspect, Vec3::new(0.0, 0.0, 300.0));
+    assert!((u - 0.5).abs() * w < 0.05 && (v - 0.5).abs() * h < 0.05, "{u} {v}");
+}
