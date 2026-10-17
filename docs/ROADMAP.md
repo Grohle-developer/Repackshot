@@ -8137,6 +8137,14 @@ versión) se sube a mano a la release una vez publicada, con la API REST
 los `bytes` del registro; la clave de activación no se sube a ningún sitio
 (`docs/release-notes/plugins.md`).
 
+**Con las capturas de la versión.** Las notas de cada release
+(`docs/release-notes/vX.Y.Z.md`) llevan las capturas nuevas de esa versión:
+las que `docs/GALERIA.md` guarda bajo *Sin publicar*, que el PR de versión
+mueve bajo la versión nueva. El cuerpo de una release se lee fuera del
+repositorio y no resuelve rutas relativas, así que cada imagen va con URL
+absoluta y la etiqueta de esa misma versión (se crea al publicar):
+`https://github.com/Grohle-developer/Repackshot/raw/vX.Y.Z/docs/ui/<archivo>.png`.
+
 ## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 
 **Decisión tomada (Fable), sustituye a la de Tauri.** El escritorio es
