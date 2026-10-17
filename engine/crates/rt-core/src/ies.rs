@@ -626,4 +626,4 @@ fn name_of(keywords: &[(String, String)]) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

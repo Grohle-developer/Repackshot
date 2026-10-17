@@ -341,10 +341,14 @@ pub enum LightKind {
     /// 4: a spot light (L4): the point light it would be, inside a cone of `spread_deg` about
     /// `direction` with a soft edge of `angle_deg` inward from the cone's edge.
     Spot,
+    /// 5: an IES light (L5): the point light it would be, with the intensity of the photometric
+    /// profile [`Light::ies`] in each direction (`direction` is the profile's axis, `up` the
+    /// direction of its horizontal angle 0), as bright at its peak as the point light of `power`.
+    Ies,
 }
 
 impl LightKind {
-    /// Decodes the RSB value (0 rect, 1 disk, 2 sun, 3 point, 4 spot).
+    /// Decodes the RSB value (0 rect, 1 disk, 2 sun, 3 point, 4 spot, 5 IES).
     pub fn from_u32(value: u32) -> Option<LightKind> {
         match value {
             0 => Some(LightKind::Rect),
@@ -352,6 +356,7 @@ impl LightKind {
             2 => Some(LightKind::Sun),
             3 => Some(LightKind::Point),
             4 => Some(LightKind::Spot),
+            5 => Some(LightKind::Ies),
             _ => None,
         }
     }
@@ -364,6 +369,7 @@ impl LightKind {
             LightKind::Sun => 2,
             LightKind::Point => 3,
             LightKind::Spot => 4,
+            LightKind::Ies => 5,
         }
     }
 }
@@ -389,7 +395,7 @@ pub struct Light {
     pub direction: Vec3,
     /// Orientation of the light's local Y axis around `direction`.
     pub up: Vec3,
-    /// Width (rect) or diameter (disk, point, spot), in scene units.
+    /// Width (rect) or diameter (disk, point, spot, IES), in scene units.
     pub size_x: f32,
     /// Height (rect), in scene units.
     pub size_y: f32,
@@ -399,7 +405,9 @@ pub struct Light {
     /// (scene millimetres are read as 1e-3 m, so the radiance is `power / (π · area_m2)`). Sun:
     /// irradiance in W/m^2 on a surface facing it. Point: flux in watts sent the same in every
     /// direction (intensity `power / 4π` W/sr). Spot: the flux of the point light it masks (its
-    /// axis is as bright as that point light, whatever its cone).
+    /// axis is as bright as that point light, whatever its cone). IES: the flux of the point light
+    /// whose intensity is the profile's peak candela (the profile gives the shape, `power` the
+    /// level: a bright direction of the profile is as bright as that point light and no brighter).
     pub power: f32,
     /// Rect and disk: beam spread in degrees: 180 is a bare diffuser (Lambertian); smaller values
     /// add a `cos^n` falloff whose intensity halves at `spread_deg / 2` from the normal. Spot: the
@@ -410,6 +418,10 @@ pub struct Light {
     pub angle_deg: f32,
     /// Bit set of `LIGHT_FLAG_*` values.
     pub flags: u32,
+    /// IES: the photometric profile whose candela give the light's intensity in each direction
+    /// (L5, the `IESP` section the light refers to). `None` for every other kind; an IES light
+    /// without one is ignored.
+    pub ies: Option<Arc<crate::ies::IesProfile>>,
 }
 
 impl Default for Light {
@@ -426,6 +438,7 @@ impl Default for Light {
             spread_deg: 180.0,
             angle_deg: 0.5,
             flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+            ies: None,
         }
     }
 }
@@ -1023,6 +1036,7 @@ mod tests {
             LightKind::Sun,
             LightKind::Point,
             LightKind::Spot,
+            LightKind::Ies,
         ] {
             assert_eq!(LightKind::from_u32(k.to_u32()), Some(k));
         }
@@ -1036,7 +1050,7 @@ mod tests {
         ] {
             assert_eq!(FloorMode::from_u32(m.to_u32()), Some(m));
         }
-        assert_eq!(LightKind::from_u32(5), None);
+        assert_eq!(LightKind::from_u32(6), None);
         assert_eq!(EnvKind::from_u32(4), None);
         assert_eq!(FloorMode::from_u32(3), None);
     }

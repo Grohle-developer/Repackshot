@@ -275,6 +275,7 @@ fn gold_diffusion_warms_its_halation_and_leaves_its_core_neutral() {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_CAMERA,
+        ies: None,
     });
     let mut film = Film::new(48, 48);
     for s in 0..256 {
@@ -473,6 +474,7 @@ fn light_on_black(filter: FilterParams, size: f32) -> Scene {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_CAMERA,
+        ies: None,
     });
     scene
 }

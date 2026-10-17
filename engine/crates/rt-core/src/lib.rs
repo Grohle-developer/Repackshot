@@ -4,8 +4,8 @@
 //! everything that is independent of the host: vector maths and deterministic elementary
 //! functions (`fmath`), the random number generator and the Owen-scrambled Sobol sampler,
 //! colour handling and tone curves, the film, the PNG, TIFF and DNG writers, the RSB scene format, SIMD,
-//! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights and environment (the studio
-//! dome, the daylight sky, HDRI images), the image readers (`inflate`, `hdr`, `exr`, `bitmap`),
+//! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights (with the IES photometric
+//! profiles of `ies`) and environment (the studio dome, the daylight sky, HDRI images), the image readers (`inflate`, `hdr`, `exr`, `bitmap`),
 //! the camera optics beyond the thin lens (`optics`), the edge bevel (`bevel`) and the procedural
 //! patterns (`pattern`) of the shading, the material programs of node materials (`program`), the
 //! path tracer (`integrator`), the photon map of the
@@ -81,10 +81,15 @@ pub const FEATURE_TEXTURES: u32 = 1;
 /// bit has [`FEATURE_TEXTURES`] too.
 pub const FEATURE_PROGRAMS: u32 = 2;
 
+/// [`FEATURES`] bit 2 (L5): the engine renders the IES lights of the RSB (`LGHT` kind 5 and the
+/// `IESP` sections, [`ies`]); an engine without it refuses a file that has one, so the page writes
+/// an IES light as the spot light that approximates it (the Fast preview's) for such an engine.
+pub const FEATURE_IES: u32 = 4;
+
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
 /// page writes only what the engine says it reads.
-pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS;
+pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_IES;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

@@ -67,6 +67,7 @@ pub fn filter_bottle(size: (u32, u32), filters: [FilterParams; 3]) -> Scene {
         spread_deg: 180.0,
         angle_deg: 0.0,
         flags: LIGHT_FLAG_CAMERA | LIGHT_FLAG_GLOSSY,
+        ies: None,
     };
     // In the frame, behind the bottle and to its right (about 4° right and 2° up); just above the
     // frame (13° up, the frame reaching 9°), out of it.

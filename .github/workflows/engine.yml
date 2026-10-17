@@ -11,7 +11,7 @@
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E5b-1
 # caustics, the O1 lens, the S4a ambient particles, the E11 edges, the O3a lens filters, the E9
 # scattering media and dispersion, the E6 bevel, the E6 wood and cloth patterns, the M2b image
-# textures and labels, the M3b material programs and the E10 adaptive sampling; with every
+# textures and labels, the M3b material programs, the E10 adaptive sampling and the L5 IES lights; with every
 # exact pass of X2 rendered next to the image, the image keeps its hash and each pass gives the hash
 # the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
 # tests/fixtures/ai-guard.json, which the native rt-post tests
@@ -242,6 +242,15 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected" --passes
+
+          # L5: IES lights (the profiles travel as text in the IESP sections and are read by the module:
+          # the reader of the LM-63 format, the bilinear lookup, the symmetries, the sphere light
+          # masked by the profile with its selection weights), alone and with the passes.
+          cargo run --release -p rt-cli -- --write-l5-example "$RUNNER_TEMP/l5.rsb"
+          expected=$(sed -n 's/.*PINNED_L5_IES_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/l5.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/l5.rsb" --expect "$expected" --passes
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .

@@ -36,6 +36,7 @@
 //!             width_mm height_mm depth_mm roughness coat relief)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
+//!             | u32 profile (none: 0xffffffff)      (L5, 80 B, written only for kind 5, IES)
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
 //!             u32 background_mode
 //!             || u32 hdri_map (none) backplate_map (none) backplate_fit (0);
@@ -72,6 +73,8 @@
 //!             v_registers output_count; f32 absorption_mm; u32 flags; instructions[6 words];
 //!             f32 consts; (u32 image srgb wrap)[image_count]; (u32 kind index)[output_count])
 //!                                                                    (M3b, new; written last)
+//! IESP   4 B  u32 byte_len; u8 file[byte_len]; zero padding to 4: an IES LM-63 file, as text
+//!             (L5, new; `crate::ies`)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -82,7 +85,7 @@
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS` and `IMGS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
-//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM` and `PROG` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP` and `PROG` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -177,7 +180,7 @@
 //!   dispersion.
 //! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
 //!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
-//!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect
+//!   direction), **3 point** and **4 spot** (L4), **5 IES** (L5, see below). Rect
 //!   and disk emit from the face `direction` points to, `power` watts of flux without falloff
 //!   (radiance `color * power / (π · area in m²)`), with a `cos^n` falloff from the normal whose
 //!   intensity halves at `spread_deg / 2` (180: none; on-axis radiance does not change with
@@ -187,6 +190,16 @@
 //!   lights every lobe (multiple importance sampling with next-event estimation); without it,
 //!   it lights only the diffuse lobe, by next-event estimation alone, and is invisible in
 //!   reflections. Bit 1 (`2`) **camera**: visible to camera rays.
+//!   **IES** (kind 5, L5): the point light of `power` watts and diameter `size_x` (0: a point)
+//!   whose intensity follows the photometric profile of the `IESP` section number `profile` (the
+//!   `u32` after `flags`, by position among the `IESP` sections; none, or one past them, makes the
+//!   file invalid) in each direction: `direction` is the profile's axis (vertical angle 0),
+//!   `up` the direction of its horizontal angle 0, and the angle grows counter-clockwise
+//!   looking along the axis from behind the light, from `up` towards its left (`crate::ies`). The profile gives the
+//!   shape and `power` the level: the light is as bright in the profile's brightest direction as
+//!   the point light of `power` watts, so a profile with 500 lumens and one with 5000 look the
+//!   same. `spread_deg` and `angle_deg` are not read. A file whose profile cannot be read (a
+//!   truncated table, a negative candela, a TILT table, photometric type A or B...) is invalid.
 //! * `ENVR.kind`: **0 studio dome** (radiance ramps linearly with the z of the direction from
 //!   `floor` at z = -1 through `horizon` at 0 to `zenith` at +1), **1 flat** (`horizon`
 //!   everywhere), **2 sky** (daylight for `sky_turbidity` and the sun at `sun_azimuth_deg`
@@ -286,6 +299,7 @@ use super::{
     RenderSettings, Scene, SkyModel, TextureImage, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
+use crate::ies::IesProfile;
 use crate::math::Vec3;
 use crate::optics::filters::FilterParams;
 use crate::optics::traced::{MovingGap, Prescription, SurfaceSpec};
@@ -323,6 +337,8 @@ pub const TAG_FXAM: [u8; 4] = *b"FXAM";
 pub const TAG_IMGS: [u8; 4] = *b"IMGS";
 /// Section tag of a material's program (M3b).
 pub const TAG_PROG: [u8; 4] = *b"PROG";
+/// Section tag of an IES photometric profile (L5).
+pub const TAG_IESP: [u8; 4] = *b"IESP";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -802,9 +818,10 @@ fn parse_pattern(r: &mut Reader) -> Result<crate::pattern::Pattern, RsbError> {
     Ok(pattern)
 }
 
-fn parse_light(r: &mut Reader) -> Result<Light, RsbError> {
+/// A light, and for an IES light the position of its profile among the `IESP` sections.
+fn parse_light(r: &mut Reader) -> Result<(Light, Option<u32>), RsbError> {
     let kind = LightKind::from_u32(r.u32()?).ok_or_else(|| r.invalid("unknown light kind"))?;
-    Ok(Light {
+    let light = Light {
         kind,
         position: r.vec3()?,
         direction: r.vec3()?,
@@ -816,7 +833,30 @@ fn parse_light(r: &mut Reader) -> Result<Light, RsbError> {
         spread_deg: r.f32()?,
         angle_deg: r.f32()?,
         flags: r.u32()?,
-    })
+        ies: None,
+    };
+    let profile = if kind == LightKind::Ies {
+        Some(r.opt_u32(NO_PROFILE)?)
+    } else {
+        None
+    };
+    Ok((light, profile))
+}
+
+/// `LGHT.profile` of an IES light that has none.
+const NO_PROFILE: u32 = u32::MAX;
+
+/// An `IESP` section: the length of the file, the file and its padding.
+fn parse_profile(r: &mut Reader) -> Result<Arc<IesProfile>, RsbError> {
+    let len = r.u32()? as usize;
+    if len > r.remaining() {
+        return Err(RsbError::SectionTooShort { tag: r.tag });
+    }
+    let file = &r.data[r.pos..r.pos + len];
+    r.pos += len;
+    IesProfile::parse(file)
+        .map(Arc::new)
+        .map_err(|e| r.invalid(e.reason()))
 }
 
 fn parse_environment(r: &mut Reader) -> Result<Environment, RsbError> {
@@ -1000,6 +1040,9 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut effects = Vec::new();
     let mut images: Option<Vec<Arc<TextureImage>>> = None;
     let mut programs: Vec<(u32, crate::program::Program)> = Vec::new();
+    let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
+    // The profile each IES light names, by the light's position in `scene.lights`.
+    let mut light_profiles: Vec<(usize, u32)> = Vec::new();
     let mut textured = false;
     let mut scene = Scene::default();
 
@@ -1040,7 +1083,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                 set_once(&mut images, tag, parse_images(&mut r)?)?;
                 textured = true;
             }
-            TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
+            TAG_LGHT => {
+                let (light, profile) = parse_light(&mut r)?;
+                if let Some(p) = profile {
+                    light_profiles.push((scene.lights.len(), p));
+                }
+                scene.lights.push(light);
+            }
+            TAG_IESP => profiles.push(parse_profile(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
             TAG_PATN => scene.patterns.push(parse_pattern(&mut r)?),
             TAG_PROG => {
@@ -1062,6 +1112,16 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         }
     }
 
+    // L5: each IES light, with the profile it names.
+    for (light, profile) in light_profiles {
+        let Some(found) = profiles.get(profile as usize) else {
+            return Err(RsbError::Invalid {
+                tag: TAG_LGHT,
+                reason: "an IES light needs a profile that is an IESP section",
+            });
+        };
+        scene.lights[light].ies = Some(Arc::clone(found));
+    }
     // The meshes the instances refer to: the file's own, or the kept ones when it has none; the
     // same for the bitmaps.
     let (kept_geometry, kept_bitmaps, kept_lens, kept_images) = match kept {
@@ -1445,7 +1505,21 @@ impl Scene {
                 });
             }
         }
+        // L5: the profiles the IES lights use, once each, in the order of first use. An IES light
+        // without one is ignored by the engine and so is not written.
+        let mut profiles: Vec<&Arc<IesProfile>> = Vec::new();
         for l in &self.lights {
+            if l.kind == LightKind::Ies {
+                let Some(p) = &l.ies else { continue };
+                if !profiles.iter().any(|q| q.source() == p.source()) {
+                    profiles.push(p);
+                }
+            }
+        }
+        for l in &self.lights {
+            if l.kind == LightKind::Ies && l.ies.is_none() {
+                continue;
+            }
             w.section(TAG_LGHT, |w| {
                 w.u32(l.kind.to_u32());
                 w.vec3(l.position);
@@ -1458,6 +1532,18 @@ impl Scene {
                 w.f32(l.spread_deg);
                 w.f32(l.angle_deg);
                 w.u32(l.flags);
+                if let Some(p) = &l.ies {
+                    let at = profiles.iter().position(|q| q.source() == p.source());
+                    w.u32(at.map_or(NO_PROFILE, |i| i as u32));
+                }
+            });
+        }
+        for p in &profiles {
+            w.section(TAG_IESP, |w| {
+                w.u32(p.source().len() as u32);
+                w.buf.extend_from_slice(p.source());
+                let pad = (4 - p.source().len() % 4) % 4;
+                w.buf.extend(std::iter::repeat_n(0u8, pad));
             });
         }
         for e in &self.effects {
@@ -1636,6 +1722,7 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ies::IesError;
     use crate::scene::{LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY};
 
     /// A scene that exercises every section with non-default values.
@@ -1712,6 +1799,7 @@ mod tests {
                     spread_deg: 45.0,
                     angle_deg: 0.53,
                     flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+                    ies: None,
                 },
                 Light {
                     kind: LightKind::Disk,
@@ -2943,5 +3031,209 @@ mod tests {
                 .unwrap()
                 .1
         }
+    }
+
+    // --- IES lights (L5) ---------------------------------------------------------------------
+
+    fn ies_profile(text: &str) -> Arc<IesProfile> {
+        Arc::new(IesProfile::parse(text.as_bytes()).expect("a profile"))
+    }
+
+    fn ies_light(profile: &Arc<IesProfile>, x: f32) -> Light {
+        Light {
+            kind: LightKind::Ies,
+            position: Vec3::new(x, -300.0, 500.0),
+            direction: Vec3::new(0.0, 0.5, -1.0).normalize(),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            size_x: 12.0,
+            size_y: 12.0,
+            color: Rgb::new(1.0, 0.8, 0.6),
+            power: 7.5,
+            spread_deg: 180.0,
+            angle_deg: 0.0,
+            flags: LIGHT_FLAG_GLOSSY,
+            ies: Some(Arc::clone(profile)),
+        }
+    }
+
+    /// `full_scene` with three IES lights: two on one profile, one on another.
+    fn ies_scene() -> Scene {
+        let mut scene = full_scene();
+        let down = ies_profile(crate::ies::tests::DOWNLIGHT);
+        let washer = ies_profile(crate::ies::tests::WALL_WASHER);
+        scene.lights.push(ies_light(&down, -200.0));
+        scene.lights.push(ies_light(&washer, 0.0));
+        scene.lights.push(ies_light(&down, 200.0));
+        scene
+    }
+
+    #[test]
+    fn ies_lights_travel_with_their_profiles_once_each() {
+        let scene = ies_scene();
+        let bytes = scene.to_rsb();
+        let parts = sections(&bytes);
+        let profiles: Vec<&Vec<u8>> = parts
+            .iter()
+            .filter(|(t, _)| *t == TAG_IESP)
+            .map(|(_, p)| p)
+            .collect();
+        // Two profiles for three lights, in the order of first use, after the lights.
+        assert_eq!(profiles.len(), 2);
+        let len = |p: &Vec<u8>| u32::from_le_bytes(p[..4].try_into().unwrap()) as usize;
+        assert_eq!(
+            &profiles[0][4..4 + len(profiles[0])],
+            crate::ies::tests::DOWNLIGHT.as_bytes()
+        );
+        assert_eq!(profiles[0].len() % 4, 0);
+        assert_eq!(
+            &profiles[1][4..4 + len(profiles[1])],
+            crate::ies::tests::WALL_WASHER.as_bytes()
+        );
+        let tags: Vec<[u8; 4]> = parts.iter().map(|(t, _)| *t).collect();
+        let first_iesp = tags.iter().position(|t| *t == TAG_IESP).unwrap();
+        assert_eq!(tags[first_iesp - 1], TAG_LGHT);
+        // 76 bytes for the lights of before, 80 for an IES light (the profile's position).
+        let lghts: Vec<usize> = parts
+            .iter()
+            .filter(|(t, _)| *t == TAG_LGHT)
+            .map(|(_, p)| p.len())
+            .collect();
+        assert_eq!(lghts, [76, 76, 76, 76, 80, 80, 80]);
+        let index = |light: usize| {
+            let p = &parts
+                .iter()
+                .filter(|(t, _)| *t == TAG_LGHT)
+                .nth(light)
+                .unwrap()
+                .1;
+            u32::from_le_bytes(p[76..80].try_into().unwrap())
+        };
+        assert_eq!([index(4), index(5), index(6)], [0, 1, 0]);
+        // Read back: the same scene, profile for profile.
+        let read = Scene::from_rsb(&bytes).expect("reads back");
+        assert_eq!(read, scene);
+        assert!(Arc::ptr_eq(
+            read.lights[4].ies.as_ref().unwrap(),
+            read.lights[6].ies.as_ref().unwrap()
+        ));
+        assert_eq!(read.lights[5].ies.as_ref().unwrap().peak(), 900.0);
+        // And written again: the very bytes.
+        assert_eq!(read.to_rsb(), bytes);
+    }
+
+    #[test]
+    fn a_scene_without_ies_lights_writes_the_bytes_it_always_did() {
+        let bytes = full_scene().to_rsb();
+        let parts = sections(&bytes);
+        assert!(parts.iter().all(|(t, _)| *t != TAG_IESP));
+        assert!(parts
+            .iter()
+            .filter(|(t, _)| *t == TAG_LGHT)
+            .all(|(_, p)| p.len() == 76));
+        // An IES light without a profile is no light for the engine and is not written.
+        let mut scene = full_scene();
+        scene.lights.push(Light {
+            kind: LightKind::Ies,
+            ..Light::default()
+        });
+        assert_eq!(scene.to_rsb(), bytes);
+    }
+
+    #[test]
+    fn a_profile_that_cannot_be_used_makes_the_file_invalid() {
+        let good = ies_scene().to_rsb();
+        // Rebuild the file with `edit` applied to the payloads of the sections `tag`.
+        let rebuild = |tag: [u8; 4], edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (t, mut payload) in sections(&good) {
+                if t == tag {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&t, &payload));
+            }
+            out
+        };
+        // A light that names a profile past the ones there are.
+        assert_eq!(
+            Scene::from_rsb(&rebuild(TAG_LGHT, &|p| {
+                if p.len() == 80 {
+                    p[76..80].copy_from_slice(&2u32.to_le_bytes());
+                }
+            })),
+            Err(RsbError::Invalid {
+                tag: TAG_LGHT,
+                reason: "an IES light needs a profile that is an IESP section"
+            })
+        );
+        // An IES light of 76 bytes (no profile word) and one that says none.
+        assert!(matches!(
+            Scene::from_rsb(&rebuild(TAG_LGHT, &|p| p.truncate(76))),
+            Err(RsbError::Invalid { tag: TAG_LGHT, .. })
+        ));
+        assert!(matches!(
+            Scene::from_rsb(&rebuild(TAG_LGHT, &|p| {
+                if p.len() == 80 {
+                    p[76..80].copy_from_slice(&u32::MAX.to_le_bytes());
+                }
+            })),
+            Err(RsbError::Invalid { tag: TAG_LGHT, .. })
+        ));
+        // Profiles that are cut short, or are files the reader refuses, with the reason.
+        assert_eq!(
+            Scene::from_rsb(&rebuild(TAG_IESP, &|p| p.truncate(40))),
+            Err(RsbError::SectionTooShort { tag: TAG_IESP })
+        );
+        let bad = |from: &str, to: &str| {
+            let text = crate::ies::tests::DOWNLIGHT.replacen(from, to, 1);
+            let mut payload = (text.len() as u32).to_le_bytes().to_vec();
+            payload.extend_from_slice(text.as_bytes());
+            payload.resize(payload.len().div_ceil(4) * 4, 0);
+            Scene::from_rsb(&rebuild(TAG_IESP, &|p| *p = payload.clone()))
+        };
+        for (from, to, reason) in [
+            ("TILT=NONE", "TILT=INCLUDE", IesError::TiltIncluded),
+            ("1000 970", "1000 -970", IesError::NegativeCandela),
+            (
+                "1 2094 1 10 1 1 2",
+                "1 2094 1 10 1 2 2",
+                IesError::UnsupportedType(2),
+            ),
+            ("0 10 20", "0 20 10", IesError::BadVerticalAngles),
+        ] {
+            assert_eq!(
+                bad(from, to),
+                Err(RsbError::Invalid {
+                    tag: TAG_IESP,
+                    reason: reason.reason()
+                }),
+                "{from}"
+            );
+        }
+        // The engine of before L5 skips the section and refuses the light kind: that one is the
+        // reader's `unknown light kind`, tested above. This one reads a file with a profile no
+        // light uses without complaint.
+        let mut spare = full_scene().to_rsb();
+        let text = crate::ies::tests::DOWNLIGHT;
+        let mut payload = (text.len() as u32).to_le_bytes().to_vec();
+        payload.extend_from_slice(text.as_bytes());
+        payload.resize(payload.len().div_ceil(4) * 4, 0);
+        spare.extend(unknown_section(&TAG_IESP, &payload));
+        assert_eq!(Scene::from_rsb(&spare), Ok(full_scene()));
+    }
+
+    #[test]
+    fn an_update_replaces_the_profiles_with_the_lights() {
+        // The lights and their profiles are always sent whole: an update that has none of either
+        // leaves a scene without IES lights, and one that has them brings them.
+        let mut scene = full_scene();
+        scene
+            .update_from_rsb(&ies_scene().to_rsb())
+            .expect("update");
+        assert_eq!(scene.lights.iter().filter(|l| l.ies.is_some()).count(), 3);
+        scene
+            .update_from_rsb(&full_scene().to_rsb())
+            .expect("update");
+        assert!(scene.lights.iter().all(|l| l.ies.is_none()));
+        assert_eq!(scene.lights.len(), 4);
     }
 }

@@ -629,3 +629,359 @@ fn reading_is_the_same_every_time() {
         .collect();
     let _ = IesProfile::parse(&noise);
 }
+
+// --- The page's reader agrees with this one ----------------------------------------------------
+
+/// Files and what this reader makes of them, as `tests/fixtures/ies/conformance.json`, which the page's
+/// reader (`src/core/ies.ts`, `tests/ies.test.ts`) must agree with: the same refusals with the same
+/// messages, the same peak, symmetry and name, and the same intensity and flux to a few parts in a
+/// million (the page computes in doubles).
+fn conformance_cases() -> Vec<(String, String)> {
+    let mut cases: Vec<(String, String)> = Vec::new();
+    let mut add = |name: &str, text: String| cases.push((name.to_string(), text));
+    add("downlight", DOWNLIGHT.to_string());
+    add("wall washer", WALL_WASHER.to_string());
+    add("crlf", DOWNLIGHT.replace('\n', "\r\n"));
+    add("old mac line breaks", DOWNLIGHT.replace('\n', "\r"));
+    add(
+        "lower-case tilt",
+        downlight_with("TILT=NONE", "tilt=none  "),
+    );
+    add(
+        "commas and tabs",
+        downlight_with(
+            "0 10 20 30 40 50 60 70 80 90",
+            "0,\t10,20 ,30,40,50,60,70,80,90",
+        ),
+    );
+    add(
+        "blank lines",
+        DOWNLIGHT.replace("1 1 10\n", "\n\n1 1 10\n\n"),
+    );
+    add(
+        "scientific notation",
+        downlight_with("1000 970", "1.0E+03 +9.7e2"),
+    );
+    add(
+        "no version line",
+        DOWNLIGHT.replacen("IESNA:LM-63-2002\n", "", 1),
+    );
+    add(
+        "no keywords",
+        "TILT=NONE\n1 1000 1 2 1 1 2 0 0 0\n1 1 10\n0 90\n0\n100 100\n".to_string(),
+    );
+    add(
+        "multiplier two",
+        downlight_with("1 2094 1 10", "1 2094 2 10"),
+    );
+    add(
+        "name from the catalogue number",
+        downlight_with(
+            "[LUMINAIRE] Test downlight, 1000 cd cos^2, rotationally symmetric\n",
+            "",
+        ),
+    );
+    add(
+        "name from the test report",
+        downlight_with(
+            "[LUMINAIRE] Test downlight, 1000 cd cos^2, rotationally symmetric\n",
+            "",
+        )
+        .replacen("[LUMCAT] RS-DOWN-COS2\n", "", 1),
+    );
+    add(
+        "more lines",
+        downlight_with(
+            "[LUMINAIRE] Test downlight,",
+            "[LUMINAIRE] A\n[MORE] B\n[MORE] C\n[LUMCAT] x Test downlight,",
+        ),
+    );
+    // One distribution under each symmetry, and in full.
+    let vertical = angles(0.0, 180.0, 15.0);
+    let every = angles(0.0, 360.0, 30.0);
+    let quadrant: fn(f32, f32) -> f32 =
+        |g, p| 800.0 * (1.0 + 0.5 * (2.0 * p.to_radians()).cos()) * (1.0 + g.to_radians().cos());
+    let bilateral: fn(f32, f32) -> f32 =
+        |g, p| 500.0 * (1.0 + 0.3 * p.to_radians().cos()) * (1.0 + 0.5 * g.to_radians().cos());
+    let mirrored: fn(f32, f32) -> f32 =
+        |g, p| 500.0 * (1.0 + 0.3 * p.to_radians().sin()) * (1.0 + 0.5 * g.to_radians().cos());
+    let round: fn(f32, f32) -> f32 = |g, _| 700.0 * (0.2 + g.to_radians().cos().abs());
+    add(
+        "quadrant",
+        ies_text(&vertical, &angles(0.0, 90.0, 30.0), quadrant),
+    );
+    add("quadrant, in full", ies_text(&vertical, &every, quadrant));
+    add(
+        "bilateral 0-180",
+        ies_text(&vertical, &angles(0.0, 180.0, 30.0), bilateral),
+    );
+    add(
+        "bilateral 90-270",
+        ies_text(&vertical, &angles(90.0, 270.0, 30.0), mirrored),
+    );
+    add(
+        "rotational, all the sphere",
+        ies_text(&vertical, &[0.0], round),
+    );
+    add(
+        "upward only",
+        ies_text(&angles(90.0, 180.0, 15.0), &[0.0], |g, _| 50.0 + g),
+    );
+    add(
+        "irregular grid",
+        ies_text(
+            &[0.0, 3.0, 17.0, 40.0, 41.0, 90.0, 120.0, 179.0, 180.0],
+            &[0.0, 100.0, 250.0, 360.0],
+            |g, p| 10.0 + g + 0.1 * p,
+        ),
+    );
+    // What is refused.
+    add(
+        "cut in the table",
+        downlight_with(
+            "1000 970 883 750 587 413 250 117 30 0",
+            "1000 970 883 750 587",
+        ),
+    );
+    add(
+        "cut in the angles",
+        DOWNLIGHT.split("TILT=NONE").next().unwrap().to_string()
+            + "TILT=NONE\n1 2094 1 10 1 1 2 0 0 0\n1 1 10\n0 10 20",
+    );
+    add(
+        "cut in the header",
+        DOWNLIGHT.split("TILT=NONE").next().unwrap().to_string()
+            + "TILT=NONE\n1 2094 1 10 1 1 2 0 0",
+    );
+    add(
+        "no numbers",
+        DOWNLIGHT.split("TILT=NONE").next().unwrap().to_string() + "TILT=NONE\n",
+    );
+    add(
+        "declares one angle too many",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 11 1 1 2"),
+    );
+    add(
+        "declares one angle too few",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 9 1 1 2"),
+    );
+    add("a value too many", DOWNLIGHT.to_string() + "5\n");
+    add(
+        "huge count",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 10 3000000 1 2"),
+    );
+    for (i, bad) in [
+        "1 2094 1 10 0 1 2",
+        "1 2094 1 0 1 1 2",
+        "1 2094 1 10.5 1 1 2",
+        "1 2094 1 -10 1 1 2",
+        "1 2094 1 10 1.5 1 2",
+    ]
+    .iter()
+    .enumerate()
+    {
+        add(
+            &format!("bad count {i}"),
+            downlight_with("1 2094 1 10 1 1 2", bad),
+        );
+    }
+    add(
+        "negative candela",
+        downlight_with("1000 970 883", "1000 -970 883"),
+    );
+    for bad in [
+        "nan", "inf", "-inf", "1e999", "1e39", "ten", "0x10", "1,,2z", "1e", ".",
+    ] {
+        add(
+            &format!("value {bad}"),
+            downlight_with("1000 970 883", &format!("1000 {bad} 883")),
+        );
+    }
+    add(
+        "multiplier zero",
+        downlight_with("1 2094 1 10", "1 2094 0 10"),
+    );
+    add(
+        "multiplier negative",
+        downlight_with("1 2094 1 10", "1 2094 -1 10"),
+    );
+    add(
+        "all zeros",
+        downlight_with(
+            "1000 970 883 750 587 413 250 117 30 0",
+            "0 0 0 0 0 0 0 0 0 0",
+        ),
+    );
+    for (i, bad) in [
+        "0 10 20 30 40 50 60 70 80 80",
+        "0 10 20 30 40 50 60 70 90 80",
+        "0 10 10 30 40 50 60 70 80 90",
+        "0 10 20 30 40 50 60 70 80 85",
+        "5 10 20 30 40 50 60 70 80 90",
+        "0 10 20 30 40 50 60 70 80 100",
+    ]
+    .iter()
+    .enumerate()
+    {
+        add(
+            &format!("vertical angles {i}"),
+            downlight_with("0 10 20 30 40 50 60 70 80 90", bad),
+        );
+    }
+    add("one vertical angle", ies_text(&[0.0], &[0.0], |_, _| 5.0));
+    let v = [0.0, 90.0];
+    add("horizontal 0-45", ies_text(&v, &[0.0, 45.0], |_, _| 5.0));
+    add(
+        "horizontal decreasing",
+        ies_text(&v, &[0.0, 180.0, 90.0], |_, _| 5.0),
+    );
+    add("horizontal repeated", ies_text(&v, &[0.0, 0.0], |_, _| 5.0));
+    add("horizontal 400", ies_text(&v, &[400.0], |_, _| 5.0));
+    add("tilt include", downlight_with("TILT=NONE", "TILT=INCLUDE"));
+    add("tilt file", downlight_with("TILT=NONE", "TILT=LAMP1.TLT"));
+    add("no tilt line", downlight_with("TILT=NONE\n", ""));
+    add("empty", String::new());
+    add(
+        "only a header",
+        "IESNA:LM-63-2002\n[TEST] only a header\n".to_string(),
+    );
+    add(
+        "type B",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 10 1 2 2"),
+    );
+    add(
+        "type A",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 10 1 3 2"),
+    );
+    add(
+        "type 4",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 10 1 4 2"),
+    );
+    add(
+        "type 0",
+        downlight_with("1 2094 1 10 1 1 2", "1 2094 1 10 1 0 2"),
+    );
+    cases
+}
+
+/// A JSON string literal.
+fn json_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The directions at which the cases are sampled: `(γ, φ)`, degrees.
+const CONFORMANCE_DIRECTIONS: [(f32, f32); 14] = [
+    (0.0, 0.0),
+    (30.0, 0.0),
+    (30.0, 45.0),
+    (60.0, 90.0),
+    (60.0, 180.0),
+    (60.0, 270.0),
+    (89.0, 123.0),
+    (120.0, 300.0),
+    (180.0, 10.0),
+    (45.0, -45.0),
+    (10.0, 400.0),
+    (135.0, 225.0),
+    (7.0, 359.0),
+    (95.0, 181.0),
+];
+
+fn conformance_json() -> String {
+    let mut out = String::from("{\n \"note\": \"Written by the engine's tests (REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies): what rt_core::ies makes of each file. src/core/ies.ts must agree (tests/ies.test.ts).\",\n \"directions\": [");
+    out += &CONFORMANCE_DIRECTIONS
+        .iter()
+        .map(|(g, p)| format!("[{g}, {p}]"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    out += "],\n \"cases\": [\n";
+    let cases = conformance_cases();
+    for (i, (name, text)) in cases.iter().enumerate() {
+        out += &format!(
+            "  {{\"name\": {}, \"text\": {}, ",
+            json_string(name),
+            json_string(text)
+        );
+        match parse(text) {
+            Err(e) => {
+                let debug = format!("{e:?}");
+                let code = debug.split(['(', ' ']).next().unwrap_or("");
+                let params = match &e {
+                    IesError::NotANumber(at) => format!("{{\"at\": {at}}}"),
+                    IesError::UnsupportedType(t) => {
+                        format!("{{\"type\": \"{}\"}}", if *t == 2 { "B" } else { "A" })
+                    }
+                    IesError::Truncated { expected, found }
+                    | IesError::TooManyValues { expected, found } => {
+                        format!("{{\"expected\": {expected}, \"found\": {found}}}")
+                    }
+                    _ => "{}".to_string(),
+                };
+                out += &format!(
+                    "\"error\": \"{code}\", \"params\": {params}, \"message\": {}}}",
+                    json_string(&e.to_string())
+                );
+            }
+            Ok(p) => {
+                let symmetry = format!("{:?}", p.symmetry()).to_uppercase();
+                let symmetry = match symmetry.as_str() {
+                    "BILATERAL0" => "BILATERAL_0",
+                    "BILATERAL90" => "BILATERAL_90",
+                    other => other,
+                };
+                let samples: Vec<String> = CONFORMANCE_DIRECTIONS
+                    .iter()
+                    .map(|&(g, f)| format!("{}", p.intensity(g, f)))
+                    .collect();
+                out += &format!(
+                    "\"error\": null, \"profileName\": {}, \"symmetry\": \"{symmetry}\", \"peak\": {}, \"flux\": {}, \"samples\": [{}]}}",
+                    json_string(p.name()),
+                    p.peak(),
+                    p.flux(),
+                    samples.join(", ")
+                );
+            }
+        }
+        out += if i + 1 < cases.len() { ",\n" } else { "\n" };
+    }
+    out += " ]\n}\n";
+    out
+}
+
+#[test]
+fn the_conformance_cases_are_what_the_page_s_reader_is_held_to() {
+    // The file is what this reader makes of the cases now: when the reader changes, regenerate it
+    // (REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies) and the page's reader must follow.
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../tests/fixtures/ies/conformance.json"
+    );
+    let now = conformance_json();
+    if std::env::var_os("REPACK_WRITE_FIXTURES").is_some() {
+        std::fs::write(path, &now).expect("write the fixture");
+    }
+    let committed = std::fs::read_to_string(path).expect("tests/fixtures/ies/conformance.json");
+    assert!(
+        committed == now,
+        "tests/fixtures/ies/conformance.json is stale: REPACK_WRITE_FIXTURES=1 cargo test -p rt-core ies"
+    );
+    // Sanity: the cases cover both outcomes, and every error variant the page's reader has.
+    let refused = conformance_cases()
+        .iter()
+        .filter(|(_, t)| parse(t).is_err())
+        .count();
+    assert!(refused >= 40 && conformance_cases().len() - refused >= 15);
+}

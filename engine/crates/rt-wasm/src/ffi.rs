@@ -15,8 +15,8 @@ pub extern "C" fn rt_version() -> u32 {
 }
 
 /// What the engine reads beyond the RSB every engine reads (`rt_core::FEATURES`; bit 0, M2b: the
-/// texture data; bit 1, M3b: the material programs). The page writes them only when this says
-/// so.
+/// texture data; bit 1, M3b: the material programs; bit 2, L5: the IES lights). The page writes
+/// them only when this says so.
 #[no_mangle]
 pub extern "C" fn rt_features() -> u32 {
     rt_core::FEATURES
