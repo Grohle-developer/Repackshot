@@ -5,6 +5,26 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Cola y proyecto
+
+- **El estudio de un trabajo viaja con el proyecto.** Un trabajo de la cola con un estudio guardado (uno, o *Todos los estudios* de un lote) guarda en el proyecto una copia de ese estudio, una sola por estudio aunque la usen muchos trabajos, y renderiza en ella. Un proyecto abierto en otro equipo o en otro perfil del navegador, sin esos estudios en la biblioteca, renderiza sus lotes igual; antes fallaban con *El estudio «…» ya no está guardado*. Si la biblioteca tiene un estudio con el mismo id pero guardado encima, los trabajos que ya estaban siguen con su copia y uno nuevo toma el estudio como está ahora (N2b).
+- El HDRI, la imagen de fondo y las texturas de esos estudios van en el proyecto **una vez cada imagen**: un estudio con el HDRI del proyecto solo añade unos kB de JSON (N2b).
+- En la cola, un estudio que vino con el proyecto y no está en tu biblioteca tiene una línea con **Añadir a mi biblioteca** (N2b).
+- Los proyectos de antes se abren igual; un trabajo de un proyecto anterior a N2b busca su estudio en la biblioteca, como antes, y si no está falla con el motivo. Al editarlo con el estudio en la biblioteca, toma su copia (N2b).
+
+### Herramientas
+
+- `tools/batch-check.mjs` comprueba también N2b en Chromium: un lote sobre dos estudios guardado en un perfil y abierto en otro con la biblioteca vacía se renderiza en sus estudios, y la cola ofrece *Añadir a mi biblioteca* (N2b).
+
+## v0.1.18 — 2026-10-17
+
+### Cámara y lente
+
+- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
+- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada (cometa de coma, respiración de foco, aberración esférica variable) salen de la rejilla, que queda con los 17 de la lente simple: son de sus lentes en *Lente ▸ Lente trazada* (O4).
+- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
+- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
+
 ### Cámara
 
 - **Enfocar con clic cae en el píxel exacto** de la vista exacta: el clic toma el rayo principal que el motor traza por ese píxel (con la pose del cabezal, la cámara mirada a través con su propio cuadro, la distorsión de una lente trazada) y lo que toca, por las dos caras; la distancia que lo pone nítido es la del motor (la profundidad; con inclinación, el plano de la bisagra que pasa por el punto; con una lente trazada, donde el detalle fino tiene más contraste, que abierta cae a milímetros del plano paraxial). Medido en un damero inclinado con 135 mm a f/1,4: la banda nítida pasa por el clic (F1).
@@ -16,6 +36,11 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Motor
 
 - `rt.wasm` exporta `rt_scene_pick` (el rayo principal de un punto de la imagen y lo que toca) y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS` admite al final `frame_sensor_mm`. Ningún *hash* de render fijado cambia; los picos de las escenas de O1 y O2 quedan fijados y comprobados en `rt.wasm` en CI (F1).
+- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
+- El nodo **Mapa de normales** en espacio tangente ya no deja que una normal apunte hacia dentro de la superficie: un azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en el motor y en *Rápido* (C1).
+- La guarda del post-procesado IA tolera el doble por defecto: ΔE₀₀ medio 4 y percentil 95 6 por material, y 4 px de bordes, los mismos números que *Ajustes*. Mide un borde movido hasta dos píxeles más allá del límite (antes no veía más de unos 3 px) (C1).
+- El nodo **Mapa de normales** en el espacio de la pieza tampoco deja una normal hacia dentro: con una intensidad por encima de 0,5 y un mapa contra la superficie, la refleja en su plano (C1).
+- Se mueven dos fijados, y solo por los copos de la tarjeta del ejemplo de M3b (un ruido en un mapa de normales): `PINNED_M3B_PROGRAMS_4SPP` y el quinto de `PINNED_M3B_PROGRAM_VALUES` (C1).
 
 ### Interfaz
 
@@ -27,28 +52,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Doctor: recortar con *Estándar* es un aviso (un fondo blanco liso lo busca) y el arreglo propone **AgX** en vez de *Fílmica* (C1).
 - El ejemplo de grafo *Pintura metalizada con copos* inclina la normal con el rojo y el verde del ruido y deja el azul en 1: todos los copos miran hacia fuera (C1).
 
-### Cola y proyecto
-
-- **El estudio de un trabajo viaja con el proyecto.** Un trabajo de la cola con un estudio guardado (uno, o *Todos los estudios* de un lote) guarda en el proyecto una copia de ese estudio, una sola por estudio aunque la usen muchos trabajos, y renderiza en ella. Un proyecto abierto en otro equipo o en otro perfil del navegador, sin esos estudios en la biblioteca, renderiza sus lotes igual; antes fallaban con *El estudio «…» ya no está guardado*. Si la biblioteca tiene un estudio con el mismo id pero guardado encima, los trabajos que ya estaban siguen con su copia y uno nuevo toma el estudio como está ahora (N2b).
-- El HDRI, la imagen de fondo y las texturas de esos estudios van en el proyecto **una vez cada imagen**: un estudio con el HDRI del proyecto solo añade unos kB de JSON (N2b).
-- En la cola, un estudio que vino con el proyecto y no está en tu biblioteca tiene una línea con **Añadir a mi biblioteca** (N2b).
-- Los proyectos de antes se abren igual; un trabajo de un proyecto anterior a N2b busca su estudio en la biblioteca, como antes, y si no está falla con el motivo. Al editarlo con el estudio en la biblioteca, toma su copia (N2b).
-
-### Cámara y lente
-
-- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
-- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada (cometa de coma, respiración de foco, aberración esférica variable) salen de la rejilla, que queda con los 17 de la lente simple: son de sus lentes en *Lente ▸ Lente trazada* (O4).
-- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
-- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
-
-### Motor
-
-- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
-- El nodo **Mapa de normales** en espacio tangente ya no deja que una normal apunte hacia dentro de la superficie: un azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en el motor y en *Rápido* (C1).
-- La guarda del post-procesado IA tolera el doble por defecto: ΔE₀₀ medio 4 y percentil 95 6 por material, y 4 px de bordes, los mismos números que *Ajustes*. Mide un borde movido hasta dos píxeles más allá del límite (antes no veía más de unos 3 px) (C1).
-- El nodo **Mapa de normales** en el espacio de la pieza tampoco deja una normal hacia dentro: con una intensidad por encima de 0,5 y un mapa contra la superficie, la refleja en su plano (C1).
-- Se mueven dos fijados, y solo por los copos de la tarjeta del ejemplo de M3b (un ruido en un mapa de normales): `PINNED_M3B_PROGRAMS_4SPP` y el quinto de `PINNED_M3B_PROGRAM_VALUES` (C1).
-
 ### Accesibilidad
 
 - El texto secundario (`ink-2`) llega a 4,5:1 (WCAG AA) sobre todas sus superficies: en el tema claro pasa de `#6b6b6b` a `#5f5f5f`. El texto principal sigue en 7:1 (C1).
@@ -56,7 +59,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Herramientas
 
-- `tools/batch-check.mjs` comprueba también N2b en Chromium: un lote sobre dos estudios guardado en un perfil y abierto en otro con la biblioteca vacía se renderiza en sus estudios, y la cola ofrece *Añadir a mi biblioteca* (N2b).
 - `tools/o4-check.mjs`: las dos lentes en la aplicación construida (secciones de cada una, el plano por dos puntos como una entrada de deshacer, el plano en el visor, la inclinación de la trazada con el ángulo del motor, la vuelta a la lente simple) y sus capturas; `tools/lens-check.mjs` y `tools/optics-check.mjs` siguen a O4 (O4).
 
 ### Documentación

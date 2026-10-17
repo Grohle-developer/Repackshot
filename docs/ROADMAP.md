@@ -7430,7 +7430,7 @@ fixture of every case», pasó del tiempo límite de 5 s con la máquina cargada
 `rt.wasm` real: las nueve comprobaciones en verde, (a)–(f) de N2 y (g1), (g2) de N2b. El motor
 no se toca.
 
-**Qué no encajó con el plan** (regla 12; lo marcado ◆ es para quien decide):
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ está decidido en *Decisiones de criterio*: se acepta tal como está):
 
 - ◆ **La copia gana** sobre un estudio de la biblioteca con el mismo id y otro contenido
   (guardado encima), para los trabajos que ya la tenían; un trabajo nuevo de ese estudio
@@ -12114,6 +12114,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el campo del ojo de pez, medido en la diagonal.
 
 - **F1** (enfoque por punto y por objeto): el *Objeto* sigue el centro de su caja; el rango y la escala logarítmica del deslizador, como están; en *Punto* y *Objeto* **mover el deslizador pasa a *Distancia***; el mejor foco de la lente trazada por el contraste de detalle fino, como está (la esquina con distorsión +1 queda abierta); un clip de foco gana; el clic en un vidrio enfoca su cara delantera. **Hecho en F1.**
+- **N2b** (el estudio viaja con el proyecto). Se aceptan las cuatro tal como están: la copia gana sobre un estudio de la biblioteca con el mismo id y otro contenido; editar un trabajo sin cambiarle el estudio conserva su copia; *Añadir a mi biblioteca* guarda con su id, no se deshace y vive en el cajón *Cola*; el esquema sigue en 2. **Hecho en N2b.**
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
