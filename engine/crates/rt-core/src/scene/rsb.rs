@@ -306,6 +306,10 @@
 //!   two magnifications), `f_number_min` the fastest stop (0: none given), and the artistic
 //!   overrides (0: off). The engine scales the lens to `CAMR.focal_mm` and focuses it at
 //!   `CAMR.focus_dist`; a file without the fields, or with 0 surfaces, is the O1 thin lens.
+//!   **F1** may append `f32 frame_sensor_mm` after the prescription: the output frame's sensor
+//!   along its longer side when `CAMR.sensor_mm` covers more than the frame (a viewport's image);
+//!   the traced lens derives what belongs to the frame's corner from it (0 or absent: from
+//!   `CAMR.sensor_mm`), so a viewport and the render see the same lens.
 
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
@@ -537,6 +541,7 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
         mask: Vec::new(),
         filters: [FilterParams::default(); 3],
         prescription: None,
+        frame_sensor_mm: 0.0,
     };
     let len = u64::from(p.mask_width) * u64::from(p.mask_height);
     let padded = len.div_ceil(4) * 4;
@@ -615,6 +620,8 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
             moving,
             surfaces,
         });
+        // F1: the frame's sensor after the prescription (absent: the camera's own).
+        p.frame_sensor_mm = r.opt_f32(0.0)?;
     }
     Lens::new(p).map_err(|reason| r.invalid(reason))
 }
@@ -1451,6 +1458,10 @@ impl Scene {
                 }
                 if let Some(t) = &p.prescription {
                     w.buf.extend_from_slice(&prescription_bytes(t));
+                    // F1: the frame's sensor, only when the image covers more than the frame.
+                    if p.frame_sensor_mm != 0.0 {
+                        w.f32(p.frame_sensor_mm);
+                    }
                 }
             });
         }

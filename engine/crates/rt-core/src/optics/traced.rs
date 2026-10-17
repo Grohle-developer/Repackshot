@@ -861,7 +861,13 @@ fn prepare(
     let n_full = if n_min > 0.0 { n_min } else { f_number };
     let stop_radius = efl / (2.0 * f_number) * at_stop;
     // Semi-apertures the source does not give: the beam of the frame's corner at full aperture.
-    let corner = 0.6 * camera.sensor_mm;
+    // F1: the frame's sensor when the image covers more than the frame (a viewport's).
+    let frame_sensor = if lens.frame_sensor_mm > 0.0 {
+        lens.frame_sensor_mm
+    } else {
+        camera.sensor_mm
+    };
+    let corner = 0.6 * frame_sensor;
     let (marginal, chief) = paraxial::marginal_and_chief(&base, &z_base, stop, 1, corner / efl);
     let pupil_full = efl / (2.0 * n_full);
     let mut surfaces = base;
@@ -1064,7 +1070,7 @@ fn prepare(
         .iter()
         .any(|s| matches!(s.kind, SURFACE_CYLINDER_X | SURFACE_CYLINDER_Y))
     {
-        let h = 0.02 * camera.sensor_mm;
+        let h = 0.02 * frame_sensor;
         let tan = |x: f32, y: f32| match lens_out.chief(x, y, (0.0, 0.0)) {
             Traced::Out { dir, .. } if dir.z != 0.0 => {
                 Some(((dir.x / dir.z).abs(), (dir.y / dir.z).abs()))
@@ -1508,6 +1514,21 @@ impl TracedLens {
         if rect[1] < rect[0] || rect[3] < rect[2] {
             return None;
         }
+        Some(self.setup_in(film, h, (c, s), rect, u, swirl))
+    }
+
+    /// [`TracedLens::sample_setup`] in the rectangle `rect` of the rear plane (in the frame of the
+    /// radius through the film point, turned by `(c, s)`, as the bins hold theirs).
+    #[inline(always)]
+    fn setup_in(
+        &self,
+        film: Vec3,
+        h: f32,
+        (c, s): (f32, f32),
+        rect: [f32; 4],
+        u: (f32, f32),
+        swirl: f32,
+    ) -> SampleSetup {
         let (w, hgt) = (rect[1] - rect[0], rect[3] - rect[2]);
         let mut px = rect[0] + u.0 * w;
         let mut py = rect[2] + u.1 * hgt;
@@ -1530,12 +1551,39 @@ impl TracedLens {
         let delta = q - film;
         let len2 = delta.dot(delta);
         let d = delta * (1.0 / len2.sqrt());
-        Some(SampleSetup {
+        SampleSetup {
             film,
             d,
             area: w * hgt * jacobian,
             h,
-        })
+        }
+    }
+
+    /// F1: the rectangle of the rear plane where the light of the film point `film` passes (in the
+    /// frame of its radius, turned by `(c, s)`): a bin's scan ([`PUPIL_GRID`]² points over the rear
+    /// vertex's disc in the three bands, a cell wider) at that point itself, so that what is found
+    /// there does not hang on how the bins happen to fall (a viewport's lens spaces them wider).
+    fn rect_at(&self, film: Vec3, (c, s): (f32, f32)) -> Option<[f32; 4]> {
+        let g = PUPIL_GRID;
+        let r = self.rear_radius;
+        let cell = 2.0 * r / g as f32;
+        let rear_z = self.z[self.z.len() - 1];
+        let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for j in 0..g {
+            for i in 0..g {
+                let (px, py) = (-r + (i as f32 + 0.5) * cell, -r + (j as f32 + 0.5) * cell);
+                let q = Vec3::new(c * px - s * py, s * px + c * py, rear_z);
+                let d = unit(q - film);
+                if (0..3).any(|band| matches!(self.trace(film, d, band, true), Traced::Out { .. }))
+                {
+                    x0 = x0.min(px - cell);
+                    x1 = x1.max(px + cell);
+                    y0 = y0.min(py - cell);
+                    y1 = y1.max(py + cell);
+                }
+            }
+        }
+        (x1 >= x0).then(|| [x0.max(-r), x1.min(r), y0.max(-r), y1.min(r)])
     }
 
     /// The part of [`TracedLens::sample`] after the trace: the weight of a sample that passed
@@ -1576,7 +1624,123 @@ pub(crate) struct SampleSetup {
     pub h: f32,
 }
 
+/// F1: how many pupil samples per side (and per band) [`TracedLens::best_focus`] traces.
+pub const FOCUS_GRID: usize = 32;
+
 impl TracedLens {
+    /// F1: the sensor position (camera frame, from the axis, desqueezed: what
+    /// [`TracedLens::chief`] takes) whose chief ray passes through the object-side point `p` (lens
+    /// frame), by Newton's method from `guess`, with the Jacobian from finite differences: the
+    /// position where the lens images `p`, with its distortion and breathing. `None` when the
+    /// chief rays near it are blocked or the search does not settle.
+    pub fn film_position_through(&self, p: Vec3, guess: (f32, f32)) -> Option<(f32, f32)> {
+        // Where the chief ray of (x, y) crosses the plane of `p` square to the axis, less `p`.
+        let miss = |x: f32, y: f32| -> Option<(f32, f32)> {
+            match self.chief(x, y, (0.0, 0.0)) {
+                Traced::Out { origin, dir } if dir.z != 0.0 => {
+                    let t = (p.z - origin.z) / dir.z;
+                    Some((origin.x + dir.x * t - p.x, origin.y + dir.y * t - p.y))
+                }
+                _ => None,
+            }
+        };
+        let (mut x, mut y) = guess;
+        let step = 1.0e-3 * self.field.max(1.0);
+        for _ in 0..16 {
+            let (rx, ry) = miss(x, y)?;
+            // Converged once the ray passes within a few f32 steps of the point.
+            let scale = 1.0e-6 * (p.x.abs() + p.y.abs() + p.z.abs()).max(1.0);
+            if rx.abs() <= scale && ry.abs() <= scale {
+                return Some((x, y));
+            }
+            let (ax, ay) = miss(x + step, y)?;
+            let (bx, by) = miss(x, y + step)?;
+            let (j00, j10) = ((ax - rx) / step, (ay - ry) / step);
+            let (j01, j11) = ((bx - rx) / step, (by - ry) / step);
+            let det = j00 * j11 - j01 * j10;
+            if det == 0.0 || !det.is_finite() {
+                return None;
+            }
+            x -= (j11 * rx - j01 * ry) / det;
+            y -= (j00 * ry - j10 * rx) / det;
+        }
+        let (rx, ry) = miss(x, y)?;
+        let scale = 1.0e-4 * (p.x.abs() + p.y.abs() + p.z.abs()).max(1.0);
+        (rx.abs() <= scale && ry.abs() <= scale).then_some((x, y))
+    }
+
+    /// F1: where along its chief ray the light of sensor position `(x, y)` is most concentrated:
+    /// the chief ray (lens frame) and the distance `s` along it of the circle of least confusion,
+    /// the plane square to the ray where the camera samples of that position (a
+    /// [`FOCUS_GRID`]² grid over the pupil in each band, weighed by the sample's weight and the
+    /// band's share of the luminance; the artistic `swirl` as the image has it) spread least about
+    /// their centroid (the least squares of their offsets, linear in `s`). `None` when the lens
+    /// passes nothing there.
+    pub fn best_focus(&self, x: f32, y: f32, swirl: f32) -> Option<(Vec3, Vec3, f32)> {
+        let (oc, dc) = match self.chief(x, y, (0.0, 0.0)) {
+            Traced::Out { origin, dir } => (origin, dir),
+            Traced::Blocked => return None,
+        };
+        // The camera samples of the position as the image takes them (its film point, the swirl), over
+        // the rectangle where its light passes, found at the position itself.
+        let (film, h) = self.film_of(x, y);
+        let r = (film.x * film.x + film.y * film.y).sqrt();
+        let turn = if r > 0.0 {
+            (film.x / r, film.y / r)
+        } else {
+            (1.0, 0.0)
+        };
+        let rect = self.rect_at(film, turn)?;
+        // Each ray's offset from the chief ray in the plane square to it at distance s: a + b s.
+        let mut rays: Vec<(Vec3, Vec3, f32)> = Vec::with_capacity(3 * FOCUS_GRID * FOCUS_GRID);
+        for (band, luma) in LUMA.iter().enumerate() {
+            for j in 0..FOCUS_GRID {
+                for i in 0..FOCUS_GRID {
+                    let u = (
+                        (i as f32 + 0.5) / FOCUS_GRID as f32,
+                        (j as f32 + 0.5) / FOCUS_GRID as f32,
+                    );
+                    let setup = self.setup_in(film, h, turn, rect, u, swirl);
+                    let (traced, stopped) = self.trace_with(setup.film, setup.d, band, true, true);
+                    let (traced, weight) = self.sample_finish(&setup, band, traced, stopped);
+                    let Traced::Out { origin, dir } = traced else {
+                        continue;
+                    };
+                    let along = dir.dot(dc);
+                    if weight <= 0.0 || along <= 1.0e-6 {
+                        continue;
+                    }
+                    let alpha = (oc - origin).dot(dc) / along;
+                    let a = origin + dir * alpha - oc;
+                    let b = dir * (1.0 / along) - dc;
+                    rays.push((a, b, weight * luma));
+                }
+            }
+        }
+        let total: f32 = rays.iter().map(|r| r.2).sum();
+        if rays.len() < 3 || total.is_nan() || total <= 0.0 {
+            return None;
+        }
+        let (mut ma, mut mb) = (Vec3::ZERO, Vec3::ZERO);
+        for (a, b, w) in &rays {
+            ma += *a * *w;
+            mb += *b * *w;
+        }
+        ma *= 1.0 / total;
+        mb *= 1.0 / total;
+        let (mut num, mut den) = (0.0f32, 0.0f32);
+        for (a, b, w) in &rays {
+            let (da, db) = (*a - ma, *b - mb);
+            num += *w * da.dot(db);
+            den += *w * db.dot(db);
+        }
+        if den.is_nan() || den <= 0.0 {
+            return None;
+        }
+        let s = -num / den;
+        s.is_finite().then_some((oc, dc, s))
+    }
+
     /// The ray of the sensor position `(x, y)` (camera frame, from the axis) through the centre
     /// of the stop (the chief ray, band G, no rim checked), or for `p` in the unit disc through the
     /// point `p` of the bounds' rectangle around it: what [`crate::scene::Camera::generate_ray`]

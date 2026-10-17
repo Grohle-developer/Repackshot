@@ -452,6 +452,40 @@ pub unsafe extern "C" fn rt_scene_lens_info_copy(handle: u32, ptr: *mut u8) -> u
     crate::STATUS_OK
 }
 
+/// F1, focus with a click: writes the [`rt_core::focus::PICK_FLOATS`] little-endian floats of the
+/// chief ray of image point `(u, v)` of scene `handle` and of the part it meets
+/// ([`crate::scene_pick`]: origin, direction, hit, `t`, point, instance, depth, focus distance) to
+/// `out_ptr`. Returns 0, 1 for a bad handle, 3 for a null `out_ptr`.
+///
+/// # Safety
+///
+/// `out_ptr` must be null or point to at least `PICK_FLOATS * 4` writable bytes (alignment is
+/// not required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_scene_pick(handle: u32, u: f32, v: f32, out_ptr: *mut u8) -> u32 {
+    if out_ptr.is_null() {
+        return crate::STATUS_NULL_POINTER;
+    }
+    let Some(floats) = crate::scene_pick(handle, u, v) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    let mut bytes = [0u8; rt_core::focus::PICK_FLOATS * 4];
+    for (chunk, f) in bytes.chunks_exact_mut(4).zip(floats) {
+        chunk.copy_from_slice(&f.to_le_bytes());
+    }
+    // SAFETY: the caller promises room for `PICK_FLOATS * 4` bytes at `out_ptr`; `bytes` is a
+    // local array, so the regions cannot overlap.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr, bytes.len()) };
+    crate::STATUS_OK
+}
+
+/// F1: the focus distance that brings the world point `(x, y, z)` into focus through the camera
+/// of scene `handle` ([`crate::scene_focus_at`]); NaN for a bad handle or when none does.
+#[no_mangle]
+pub extern "C" fn rt_scene_focus_at(handle: u32, x: f32, y: f32, z: f32) -> f32 {
+    crate::scene_focus_at(handle, x, y, z)
+}
+
 /// The denoiser (E5b-1, the full filter) on a band of `rows` image rows from `origin_y` of an
 /// image `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
 /// little-endian words: the planes `sums` (RGBA), `lum2`, `albedo` (3), `normal` (3), `depth`,

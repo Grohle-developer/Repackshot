@@ -169,6 +169,13 @@ pub struct LensParams {
     /// squeeze desqueezes the image, and `ca_amount` and `swirl` are its artistic overrides; the
     /// thin-lens pupil, cat's eye, tilt and picture are not used.
     pub prescription: Option<Prescription>,
+    /// F1: the sensor of the output frame along its longer side, millimetres, when the camera's
+    /// sensor covers more than the frame (a viewport's image, which shows the frame inset with
+    /// what lies around it); 0 is the camera's own sensor. A traced lens derives what belongs to the
+    /// frame's corner from it (the rims the source does not give, the height its artistic
+    /// distortion and vignetting are measured against, where its squeeze is traced), so the
+    /// viewport sees the lens of the render.
+    pub frame_sensor_mm: f32,
 }
 
 impl Default for LensParams {
@@ -195,6 +202,7 @@ impl Default for LensParams {
             mask: Vec::new(),
             filters: [FilterParams::default(); MAX_FILTERS],
             prescription: None,
+            frame_sensor_mm: 0.0,
         }
     }
 }
@@ -264,6 +272,9 @@ impl Lens {
         }
         if p.field_mm < 0.0 {
             return Err("field_mm must not be negative");
+        }
+        if !(p.frame_sensor_mm >= 0.0 && p.frame_sensor_mm.is_finite()) {
+            return Err("frame_sensor_mm must be 0 or a positive size");
         }
         let iris = Iris::new(p.blades, p.roundness, p.rotation_deg);
         let profile = Profile::new(p.profile, p.profile_param, p.obstruction);
@@ -384,6 +395,91 @@ impl Lens {
         }
         let (_, b) = self.tilt_frame(forward, right, up);
         (forward * camera.focal_mm + b * (camera.focus_dist * self.tilt.0)).normalize()
+    }
+
+    /// F1: the focus distance that brings the world point `point` into sharp focus through this
+    /// lens on `camera` ([`crate::focus`]). The thin lens: its depth along the view axis, or with
+    /// a tilt the distance `u` whose hinge-rule plane passes through it, `u (f − sin α (p · b)) =
+    /// f z`. A traced lens: [`Lens::traced_focus_distance`] (its paraxial focus, the depth, when
+    /// that cannot be found). `None` for a point behind the lens or one the tilted plane never
+    /// reaches (on the far side of the hinge's parallel through the lens).
+    pub fn focus_distance_to(&self, camera: &Camera, point: Vec3) -> Option<f32> {
+        let (forward, right, up) = camera.basis();
+        let d = point - camera.position;
+        let depth = d.dot(forward);
+        if !(depth > 0.0 && depth.is_finite()) {
+            return None;
+        }
+        if let Some(p) = &self.params.prescription {
+            let exact = self.traced_focus_distance(p, camera, (forward, right, up), d, depth);
+            return Some(exact.unwrap_or(depth));
+        }
+        if !self.tilted() {
+            return Some(depth);
+        }
+        let (_, b) = self.tilt_frame(forward, right, up);
+        let below = camera.focal_mm - self.tilt.0 * d.dot(b);
+        let u = camera.focal_mm * depth / below;
+        (below > 0.0 && u > 0.0 && u.is_finite()).then_some(u)
+    }
+
+    /// F1: a traced lens's focus distance for the point `d` from the camera position (`depth`
+    /// along the axis): the one at which the circle of least confusion of the sensor position
+    /// that images the point ([`TracedLens::film_position_through`],
+    /// [`TracedLens::best_focus`]) lies at the point's depth. The lens is focused paraxially (its
+    /// object plane `focus_dist` in front of the entrance pupil), and wide open its spherical
+    /// aberration and its field curvature put the sharpest image of that plane some depths of
+    /// field away from it; this is found by the secant method from the paraxial answer, the lens
+    /// focused again for each try (at most four), to a fifty-thousandth of the depth. `None` when
+    /// the lens passes nothing there.
+    fn traced_focus_distance(
+        &self,
+        p: &Prescription,
+        camera: &Camera,
+        basis: (Vec3, Vec3, Vec3),
+        d: Vec3,
+        depth: f32,
+    ) -> Option<f32> {
+        let (forward, right, up) = basis;
+        // How far (along the axis) the best focus lies beyond the point with the lens focused at
+        // `focus`.
+        let error = |focus: f32| -> Option<f32> {
+            let optics = CameraOptics {
+                focal_mm: camera.focal_mm,
+                fstop: camera.fstop,
+                focus_dist: focus,
+                sensor_mm: camera.sensor_mm,
+            };
+            let lens = TracedLens::new(p, &self.params, optics).ok()?;
+            let q = Vec3::new(d.dot(right), d.dot(up), lens.pupil_z() - d.dot(forward));
+            let guess = (camera.focal_mm * q.x / depth, camera.focal_mm * q.y / depth);
+            let (x, y) = lens.film_position_through(q, guess)?;
+            let (origin, dir, s) = lens.best_focus(x, y, self.params.swirl)?;
+            Some((s - (q - origin).dot(dir)) * -dir.z)
+        };
+        let tol = 2.0e-5 * depth;
+        let (mut f0, mut g0) = (depth, error(depth)?);
+        if g0.abs() <= tol {
+            return Some(f0);
+        }
+        let mut f1 = depth - g0;
+        for _ in 0..3 {
+            if !(f1 > 0.0 && f1.is_finite()) {
+                return None;
+            }
+            let g1 = error(f1)?;
+            if g1.abs() <= tol {
+                return Some(f1);
+            }
+            let slope = (g1 - g0) / (f1 - f0);
+            let next = if slope.is_finite() && slope.abs() > 0.05 {
+                f1 - g1 / slope
+            } else {
+                f1 - g1
+            };
+            (f0, g0, f1) = (f1, g1, next);
+        }
+        (f1 > 0.0 && f1.is_finite()).then_some(f1)
     }
 
     /// The unit normal of the lens plane (where the pupil lies): `forward` turned by the tilt.

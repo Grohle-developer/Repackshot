@@ -243,6 +243,15 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected" --passes
+          # F1: focus with a click (rt_scene_pick, rt_scene_focus_at): the chief rays of a grid of image
+          # points, the parts they meet and the focus distances that bring them into focus, through the O1
+          # lens (shift and tilt: the hinge rule) and the O2 traced lens (its focus solved from its real rays).
+          cargo run --release -p rt-cli -- --write-o1-example "$RUNNER_TEMP/o1.rsb"
+          for scene in O1 O2; do
+            expected=$(sed -n "s/.*PINNED_FOCUS_PICK_${scene}: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-core/src/focus/tests.rs | tr -d _)
+            test -n "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/$(echo "$scene" | tr A-Z a-z).rsb" --expect-pick "$expected"
+          done
           # Q1: the E5 scene cut in two by a section plane that caps its closed solids (the SECT section, its
           # clipped rays and the cap decided by the model alone), alone and with the passes.
           cargo run --release -p rt-cli -- --write-q1-example "$RUNNER_TEMP/q1.rsb"
