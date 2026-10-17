@@ -12,7 +12,8 @@ import type {
 } from './types';
 
 // Light-setup catalogue: the 16 sets of L6 first (style SETS, designed for Repackshot), then upstream LIGHT_SETUPS
-// (72 recipes, in upstream order, PRESET first). Each recipe defines the SHAPE and TONE of the light: how many
+// (72 recipes, in upstream order, PRESET first), then the 7 of the Interior style (K1, designed for Repackshot, at the
+// end so that no earlier key moves). Each recipe defines the SHAPE and TONE of the light: how many
 // sources, where, how big, what colour. The LEVEL still comes from the product
 // preset (see core/rig.ts), so changing setup does not change the exposure.
 //
@@ -37,6 +38,8 @@ export const LIGHT_STYLES: readonly LightStyleEntry[] = [
   { key: 'EXPERIMENTAL', label: { es: 'Experimental', en: 'Experimental' } },
   { key: 'SIGNATURE', label: { es: 'De autor', en: 'Signature' } },
   { key: 'SPICY', label: { es: 'Atrevido', en: 'Spicy' } },
+  // K1: furniture in its context (INTERIORS.md §3.5). After the others, so that the keys before it stay where they were.
+  { key: 'INTERIOR', label: { es: 'Interior', en: 'Interior' } },
 ];
 
 /** Azimuth of the default camera in world space, degrees. */
@@ -1447,6 +1450,133 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
       { role: 'FILL', size: 4, sizeY: 4, az: 0, el: 15, dist: 3.6, share: 0.08, spread: 180,
         glossy: false },
     ],
+  },
+
+  // --- Interior (K1, not ported from EZ Packshot: designed for Repackshot) ---------------------------------------------------
+  // Window light, lamps and white rooms for furniture in its context (INTERIORS.md §3.5). Each recipe picks its world (the
+  // sun and sky of a window, or the studio dome) and brings its own exposure offset and strength of the environment, as a set
+  // does (`exposureEv` over the product type's, `envStrength`; core/sets.ts): the hour of the day is the brightness of the
+  // picture, so unlike the setups of the other styles these do change the look when they are chosen. They bring no
+  // decoration: the room is K2's.
+  //
+  // Sun and panels in one recipe: a sun counts its irradiance in W/m2 and a panel its watts over 4 pi d2 (`specIrradiance`),
+  // so the share of a panel that gives `r` times what the sun gives is 4 d2 r times the sun's (the window panels have shares
+  // between 5 and 14 against the sun's 1, and the lamps of the blue hour between 7 and 20). Recipes of panels alone take
+  // shares that sum to 1, as the others do.
+  //
+  // PROPOSAL, pending Fable (ROADMAP K1): every number below -- the sun's height, azimuth and temperature, the weight of the
+  // window and of the bounce, the strength of the sky, the exposure offset -- is a photographic choice that was not taken
+  // by the author of the phase. They follow the usual orders of magnitude (the sun 2 to 4 times the sky at midday, 1.5 to 2
+  // times at sunset; tungsten lamps at 2400 to 2900 K; a clear sky through glass at 6500 to 10500 K) and are one table in
+  // docs/ROADMAP.md.
+  {
+    key: 'INT_WINDOW_MORNING', style: 'INTERIOR', world: 'SKY',
+    label: { es: 'Ventana de mañana', en: 'Morning window' },
+    intent: {
+      es: 'Sol bajo y cálido por una ventana a la izquierda, con el cielo azul rellenando la sombra',
+      en: 'Low warm sun through a window on the left, the blue sky filling the shadow',
+    },
+    lights: [
+      { role: 'KEY', type: 'SUN', size: 0.4, sizeY: 0.4, az: -65, el: 20, dist: 5, share: 1, angle: 0.545, kelvin: 4300 },
+      { role: 'FILL', size: 5, sizeY: 4, az: -70, el: 30, dist: 2.6, share: 12.2, spread: 180, kelvin: 7200 },
+      { role: 'FILL', size: 4, sizeY: 4, az: 70, el: 12, dist: 3.5, share: 5.9, spread: 180, kelvin: 5200, glossy: false },
+    ],
+    envStrength: 0.12,
+    exposureEv: 0.2,
+  },
+  {
+    key: 'INT_WINDOW_NOON', style: 'INTERIOR', world: 'SKY',
+    label: { es: 'Ventana de mediodía', en: 'Midday window' },
+    intent: {
+      es: 'Sol alto y blanco, cielo claro: luz limpia y de contraste medio',
+      en: 'High white sun and a clear sky: clean light of medium contrast',
+    },
+    lights: [
+      { role: 'KEY', type: 'SUN', size: 0.4, sizeY: 0.4, az: -55, el: 62, dist: 5, share: 1, angle: 0.545, kelvin: 5600 },
+      { role: 'FILL', size: 5, sizeY: 4, az: -75, el: 40, dist: 2.6, share: 8.1, spread: 180, kelvin: 6800 },
+      { role: 'FILL', size: 4, sizeY: 4, az: 70, el: 12, dist: 3.5, share: 4.9, spread: 180, kelvin: 5600, glossy: false },
+    ],
+    envStrength: 0.15,
+    exposureEv: 0.2,
+  },
+  {
+    key: 'INT_WINDOW_AFTERNOON', style: 'INTERIOR', world: 'SKY',
+    label: { es: 'Ventana de tarde', en: 'Afternoon window' },
+    intent: {
+      es: 'Sol bajo y ámbar desde el lado contrario, sombras largas y un cielo que ya se apaga',
+      en: 'Low amber sun from the other side, long shadows and a sky that is already dimming',
+    },
+    lights: [
+      { role: 'KEY', type: 'SUN', size: 0.4, sizeY: 0.4, az: 70, el: 14, dist: 5, share: 1, angle: 0.545, kelvin: 3200 },
+      { role: 'FILL', size: 5, sizeY: 4, az: 75, el: 24, dist: 2.6, share: 10.8, spread: 180, kelvin: 5600 },
+      { role: 'FILL', size: 4, sizeY: 4, az: -70, el: 10, dist: 3.5, share: 7.4, spread: 180, kelvin: 4600, glossy: false },
+    ],
+    envStrength: 0.11,
+    exposureEv: 0,
+  },
+  {
+    key: 'INT_OVERCAST', style: 'INTERIOR', world: 'STUDIO',
+    label: { es: 'Nublado', en: 'Overcast' },
+    intent: {
+      es: 'Cielo cubierto: una ventana enorme y difusa, sin sombras duras',
+      en: 'Overcast sky: one huge diffuse window, no hard shadows',
+    },
+    lights: [
+      { role: 'KEY', size: 7, sizeY: 5, az: -75, el: 38, dist: 3, share: 0.5, spread: 180, kelvin: 7000 },
+      { role: 'TOP', size: 6, sizeY: 6, az: 0, el: 82, dist: 2.8, share: 0.25, spread: 180, kelvin: 6800, glossy: false },
+      { role: 'FILL', size: 5, sizeY: 5, az: 75, el: 14, dist: 3.6, share: 0.25, spread: 180, kelvin: 6800, glossy: false },
+    ],
+    envStrength: 0.8,
+    exposureEv: 0.3,
+  },
+  {
+    key: 'INT_NIGHT_LAMPS', style: 'INTERIOR', world: 'STUDIO',
+    label: { es: 'Lámparas de noche', en: 'Night lamps' },
+    intent: {
+      es: 'Sin ventana: una lámpara de mesa, otra de pie y un foco de techo, cálidas, sobre una sala a oscuras',
+      en: 'No window: a table lamp, a floor lamp and a ceiling spot, warm, in a dark room',
+    },
+    lights: [
+      { role: 'KEY', shape: 'DISK', size: 0.7, sizeY: 0.7, az: -110, el: 28, dist: 2.2, share: 0.45, spread: 180, kelvin: 2600 },
+      { role: 'FILL', shape: 'DISK', size: 0.5, sizeY: 0.5, az: 125, el: 48, dist: 2.8, share: 0.25, spread: 180, kelvin: 2400 },
+      { role: 'TOP', shape: 'SQUARE', size: 1.4, az: 0, el: 80, dist: 2.8, share: 0.2, spread: 120, kelvin: 2900, glossy: false },
+      { role: 'FILL', size: 4, sizeY: 4, az: 60, el: 12, dist: 3.5, share: 0.1, spread: 180, kelvin: 8500, glossy: false },
+    ],
+    envStrength: 0.04,
+    exposureEv: -0.7,
+  },
+  {
+    key: 'INT_BLUE_HOUR', style: 'INTERIOR', world: 'SKY',
+    label: { es: 'Hora azul', en: 'Blue hour' },
+    intent: {
+      es: 'Lámparas encendidas y el último cielo azul por la ventana, en equilibrio',
+      en: 'Lamps on and the last blue sky through the window, in balance',
+    },
+    lights: [
+      { role: 'KEY', type: 'SUN', size: 0.4, sizeY: 0.4, az: 115, el: 3, dist: 5, share: 0.15, angle: 0.545, kelvin: 2300 },
+      { role: 'KEY', shape: 'DISK', size: 0.7, sizeY: 0.7, az: -100, el: 28, dist: 2.2, share: 20, spread: 180, kelvin: 2700 },
+      { role: 'FILL', shape: 'DISK', size: 0.5, sizeY: 0.5, az: 135, el: 45, dist: 2.8, share: 12, spread: 180, kelvin: 2500 },
+      { role: 'FILL', size: 5, sizeY: 4, az: 75, el: 25, dist: 2.6, share: 14, spread: 180, kelvin: 10500 },
+      { role: 'FILL', size: 4, sizeY: 4, az: -35, el: 12, dist: 3.5, share: 7, spread: 180, kelvin: 7500, glossy: false },
+    ],
+    envStrength: 0.45,
+    exposureEv: -0.5,
+  },
+  {
+    key: 'INT_WHITE_ROOM', style: 'INTERIOR', world: 'STUDIO',
+    label: { es: 'Sala blanca de estudio', en: 'White studio room' },
+    intent: {
+      es: 'Una sala blanca y luminosa, con luz de ventana y de techo: el fondo de un catálogo de interiores',
+      en: 'A bright white room lit by a window and the ceiling: the backdrop of an interiors catalogue',
+    },
+    lights: [
+      { role: 'TOP', size: 6, sizeY: 5, az: 0, el: 85, dist: 2.6, share: 0.3, spread: 180, kelvin: 5600 },
+      { role: 'KEY', size: 6, sizeY: 5, az: -80, el: 28, dist: 2.8, share: 0.3, spread: 180, kelvin: 5600 },
+      { role: 'FILL', size: 5, sizeY: 5, az: 80, el: 22, dist: 3.2, share: 0.2, spread: 180, kelvin: 5600, glossy: false },
+      { role: 'FILL', size: 4, sizeY: 4, az: 0, el: 15, dist: 3.5, share: 0.2, spread: 180, kelvin: 5600, glossy: false },
+    ],
+    envStrength: 1,
+    exposureEv: 0.5,
   },
 ];
 

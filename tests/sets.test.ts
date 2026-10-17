@@ -32,7 +32,7 @@ import { thumbRsb } from './set-heroes';
 import type { Box } from '../src/core/math';
 
 const SETS = LIGHT_SETUPS.filter((s) => s.style === 'SETS');
-const OLD = LIGHT_SETUPS.filter((s) => s.style !== 'SETS');
+const OLD = LIGHT_SETUPS.filter((s) => s.style !== 'SETS' && s.style !== 'INTERIOR');
 const L6_FIELDS = ['backdrop', 'pool', 'floor', 'cards', 'exposureEv', 'envStrength', 'camera', 'hero', 'why', 'caustics'] as const;
 
 const set = (key: string): LightSetup => setOf(key)!;
@@ -565,7 +565,7 @@ describe('the thumbnails', () => {
       expect(sha256Hex(thumbRsb(s.key)), `${s.key}: the setup changed, run node tools/setup-thumbs.mjs`).toBe(m.scenes[s.key].rsb);
       expect(sha256Hex(readFileSync(`public/thumbs/setups/thumb_${s.key.toLowerCase()}.png`)), s.key).toBe(m.scenes[s.key].png);
     }
-  }, 60_000); // 88 scenes built and written: seconds on a loaded machine
+  }, 60_000); // 95 scenes built and written: seconds on a loaded machine
 
   it('pins one thumbnail’s bytes', () => {
     // STRIP_EDGE on its bottle as `rt` rendered it (256 x 256, 96 spp, denoised, seed 1), re-encoded without loss by

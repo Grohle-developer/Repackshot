@@ -69,6 +69,11 @@
 // file; it is plain JSON in the state, a file from before L5 has none and opens as it always did, and on open a profile
 // that does not read (a file edited by hand) is taken away and its light is a point. The schema stays at 2.
 //
+// Scene type (K1): `scene.type` (`PRODUCT`, `INTERIOR` or `CATALOGUE`, core/scene-type.ts) and, while it is not Product,
+// `scene.typeBase`: what the type replaced, per setting, so that switching back leaves the project as it was. A file
+// from before K1 has neither and opens as Product; a type this version does not know is Product too, and a setting
+// of the memory it does not know is dropped. The schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
@@ -77,6 +82,7 @@ import { parseIes } from '../core/ies';
 import type { LightInstance } from '../core/lighting';
 import { normalizeEffects } from '../core/effects';
 import { normalizeSection } from '../core/section';
+import { normalizeSceneType, normalizeTypeBase } from '../core/scene-type';
 import { buildExample } from '../core/example';
 import {
   getMesh,
@@ -401,6 +407,12 @@ function checkState(raw: RawState): ProjectState {
   s.effects = normalizeEffects(s.effects, s);
   // Q1: the section view's plane (a project saved before it has none; a plane that cannot be one is none).
   s.section = normalizeSection(s.section);
+  // K1: the scene type (a project saved before it has none and opens as Product; a name this version does not know is
+  // Product too) and what it replaced, the writes of the slots this version knows (core/scene-type.ts).
+  const sceneType = normalizeSceneType((raw.scene as { type?: unknown } | undefined)?.type);
+  const typeBase = normalizeTypeBase((raw.scene as { typeBase?: unknown } | undefined)?.typeBase, s);
+  const { typeBase: _drop, ...sceneRest } = s.scene;
+  s.scene = { ...sceneRest, type: sceneType, ...(typeBase && sceneType !== 'PRODUCT' ? { typeBase } : {}) };
   return s;
 }
 

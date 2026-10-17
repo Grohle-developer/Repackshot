@@ -160,6 +160,9 @@ export interface ResolvedLight {
   angle: number;
 }
 
+/** K1: what the scene is for (INTERIORS.md §3.1). It rewrites defaults; no control depends on it. */
+export type SceneType = 'PRODUCT' | 'INTERIOR' | 'CATALOGUE';
+
 export type WorldKind = 'STUDIO' | 'SKY' | 'FLAT';
 export type BackgroundMode = 'FLAT' | 'HDRI';
 
@@ -197,7 +200,9 @@ export type LightStyle =
   | 'EMOTIONAL'
   | 'EXPERIMENTAL'
   | 'SIGNATURE'
-  | 'SPICY';
+  | 'SPICY'
+  /** K1: window light, lamps and white rooms for furniture in its context (INTERIORS.md §3.5). */
+  | 'INTERIOR';
 
 export interface LightStyleEntry {
   key: LightStyle;
