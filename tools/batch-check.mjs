@@ -20,10 +20,16 @@
 //   (d) one image with the passes as 16-bit PNG, no ZIP: separate downloads (image, alpha, depth, normal) whose PNGs are
 //       16-bit grey/RGB of the image's size, and whose alpha is the EXR's alpha (±1/65535) of the same render;
 //   (e) cancelling: three jobs queued, the second stopped while it renders: it ends Cancelled and the third renders;
-//   (f) the page raised no error.
+//   (f) the page raised no error;
+//   (g) N2b, the studio travels with the project: in a fresh browser profile two studios are saved and a batch over All
+//       studios is added to the queue (not run); Save project downloads a `.repack` whose state holds one copy of each
+//       studio, named by the jobs; another fresh profile (its library empty) opens it, the queue offers *Add to my
+//       library* for both studios, Start queue renders both jobs in their studios (two different pictures, named
+//       {studio}), and adding one studio to the library leaves the line for the other; neither page raised an error.
 //
 // Screenshots (English): batch-window.png (the render window with the passes, the studio and the ZIP) and
-// batch-queue.png (the queue drawer with the batch done). Results: out/batch-check.json.
+// batch-queue.png (the queue drawer with the batch done); N2b, batch-queue-adopt.png (the queue of the project opened in
+// the other profile, its two jobs done, with a line to add each studio to the library). Results: out/batch-check.json.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -231,8 +237,14 @@ async function waitFor(url, ms = 30000) {
   fail(`${url} did not answer`);
 }
 
-async function open(browser, query) {
+async function open(browser, query, opts = {}) {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true, deviceScaleFactor: 1 });
+  // (g): without the File System Access pickers Save project downloads and Open project asks with the input.
+  if (opts.noPickers) {
+    await context.addInitScript(() => {
+      for (const n of ['showSaveFilePicker', 'showOpenFilePicker']) Object.defineProperty(window, n, { value: undefined, configurable: true });
+    });
+  }
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -522,6 +534,87 @@ try {
   // (f) The page raised nothing.
   results.errors = errors;
   check('f_no_page_errors', errors.length === 0, { errors });
+
+  // (g) N2b: the studios of a batch travel with the project to a profile whose library is empty.
+  {
+    const a = await open(browser, START, { noPickers: true });
+    const ca = a.page.locator('canvas[aria-label="viewport"]');
+    await ca.focus();
+    await palette(a.page, 'save as studio');
+    await palette(a.page, 'neon noir');
+    await palette(a.page, 'save as studio');
+    await a.page.keyboard.press('Control+Enter');
+    await a.page.waitForSelector('.rw');
+    await a.page.locator('.rw-name').fill('{studio}');
+    await a.page.locator('.rw-name').press('Enter');
+    await setNumber(a.page, `${sizeSel} .num[aria-label="Width"]`, 160);
+    await setNumber(a.page, '.rw .num[aria-label="Samples"]', 8);
+    await a.page.locator('.rw select[aria-label="Studio"]').selectOption('ALL');
+    await a.page.locator('.rw-foot .btn', { hasText: 'Add to queue' }).click();
+    await a.page.keyboard.press('Escape');
+    const saving = a.page.waitForEvent('download', { timeout: 30000 });
+    await ca.focus();
+    await a.page.keyboard.press('Control+s');
+    const saved = await saving;
+    const projectPath = join(OUT, 'batch-check-n2b.repack');
+    await saved.saveAs(projectPath);
+    const body = JSON.parse(readFileSync(projectPath, 'utf8'));
+    const copies = body.state?.render?.studios ?? [];
+    const jobs = body.state?.render?.queue ?? [];
+    check(
+      'g1_the_file_holds_the_studios',
+      copies.length === 2 &&
+        JSON.stringify(copies.map((e) => e.studio.name)) === JSON.stringify(['Studio 1', 'Studio 2']) &&
+        jobs.length === 2 &&
+        jobs.every((j) => copies.some((e) => e.hash === j.studioCopy && e.studio.id === j.settings.studio.id)),
+      { copies: copies.map((e) => [e.studio.name, e.hash.slice(0, 12)]), jobs: jobs.map((j) => [j.settings.studio?.name, j.studioCopy?.slice(0, 12)]), bytes: readFileSync(projectPath).length },
+    );
+    await a.context.close();
+
+    const b = await open(browser, 'theme=dark&lang=en&mode=fast&tour=0', { noPickers: true });
+    const got = [];
+    b.page.on('download', async (d) => got.push({ name: d.suggestedFilename(), bytes: readFileSync(await d.path()) }));
+    const chooser = b.page.waitForEvent('filechooser', { timeout: 30000 });
+    await b.page.locator('canvas[aria-label="viewport"]').focus();
+    await b.page.keyboard.press('Control+o');
+    const dont = b.page.getByRole('button', { name: /Don.t save/ });
+    if (await dont.isVisible().catch(() => false)) await dont.click();
+    await (await chooser).setFiles(projectPath);
+    await b.page.waitForFunction(() => document.querySelector('.drawer-btn[data-drawer="queue"]'), null, { timeout: 60000 });
+    await b.page.waitForTimeout(1500);
+    if ((await b.page.locator('.queue').count()) === 0) await b.page.locator('.drawer-btn[data-drawer="queue"]').click();
+    await b.page.waitForSelector('.queue-row');
+    const offered = await b.page.locator('.queue [data-adopt]').allTextContents();
+    const library = await b.page.evaluate(() => localStorage.getItem('repackshot.library'));
+    await b.page.locator('.queue-head .btn-primary').click();
+    await b.page.waitForFunction(() => [...document.querySelectorAll('.queue-row')].map((e) => e.dataset.status).join() === 'DONE,DONE', null, { timeout: 600000 });
+    const t2 = Date.now();
+    while (got.length < 2 && Date.now() - t2 < 60000) await b.page.waitForTimeout(300);
+    const pics2 = got.map((d) => decodePng8(d.bytes));
+    const differs = pics2.length === 2 ? pics2[0].data.some((v, i) => v !== pics2[1].data[i]) : false;
+    await b.page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 30000 }).catch(() => undefined);
+    await b.page.mouse.move(10, 600);
+    await b.page.screenshot({ path: join(SHOTS, 'batch-queue-adopt.png') });
+    await b.page.locator('.queue [data-adopt]').first().locator('button').click();
+    await b.page.waitForTimeout(400);
+    const left = await b.page.locator('.queue [data-adopt]').allTextContents();
+    check(
+      'g2_opened_elsewhere_the_jobs_render_in_their_copies',
+      (library === null || !library.includes('Studio 1')) &&
+        offered.length === 2 &&
+        offered[0].includes('Studio 1') &&
+        offered[0].includes('Add to my library') &&
+        offered[1].includes('Studio 2') &&
+        JSON.stringify(got.map((d) => d.name).sort()) === JSON.stringify(['Studio 1.png', 'Studio 2.png']) &&
+        differs &&
+        left.length === 1 &&
+        left[0].includes('Studio 2') &&
+        a.errors.length === 0 &&
+        b.errors.length === 0,
+      { offered, files: got.map((d) => d.name), differs, left, errors: [...a.errors, ...b.errors] },
+    );
+    await b.context.close();
+  }
   writeFileSync(join(OUT, 'batch-check.json'), JSON.stringify(results, null, 2));
 } finally {
   if (browser) await browser.close();

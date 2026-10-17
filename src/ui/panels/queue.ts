@@ -8,6 +8,7 @@
 // Clear history; when the browser keeps no storage, it says so.
 
 import { MAX_ATTEMPTS } from '../../core/ai';
+import { studiosToAdopt } from '../../core/job-studios';
 import { jobStudio, type RenderJob, type RenderProgress, type RenderSettings } from '../../core/render';
 import { aiImagesOf, aiVariantsOf, type ResultMeta } from '../../core/results';
 import * as cmd from '../commands';
@@ -268,6 +269,27 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       }),
   );
 
+  // N2b: a studio that came in the project (a copy its jobs keep) and is not in the library: a line to add it there.
+  const adopt = h('div', { class: 'queue-adopt', 'data-adopt-list': '' });
+  scope.watch(
+    (s, u) => [s.render.studios, s.studio.saved, u.library] as const,
+    () => {
+      const list = studiosToAdopt(store.get(), ctx.ui.get().library);
+      adopt.style.display = list.length > 0 ? '' : 'none';
+      adopt.replaceChildren(
+        ...list.map((st) =>
+          h(
+            'div',
+            { class: 'note', 'data-adopt': st.id, style: 'display:flex;align-items:center;gap:8px;padding:4px var(--pad)' },
+            h('span', { style: 'flex:1;min-width:0' }, t('queue.studioInProject', { name: st.name })),
+            h('button', { type: 'button', class: 'btn btn-sm', onclick: () => cmd.addProjectStudioToLibrary(ctx, st.id) }, icon('save', 14), t('queue.addToLibrary')),
+          ),
+        ),
+      );
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2],
+  );
+
   // The history: every result kept in the browser, newest first.
   const history = h('div', { class: 'history-list' });
   const historyHead = h('div', { class: 'aux tabular' });
@@ -302,6 +324,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       'div',
       { class: 'queue-main' },
       h('div', { class: 'queue-head' }, h('span', { class: 'field-label', style: 'font-weight:600' }, t('render.queue')), memory, h('span', { style: 'flex:1' }), clearBtn, startBtn),
+      adopt,
       list,
     ),
     h(

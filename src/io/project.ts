@@ -74,12 +74,24 @@
 // from before K1 has neither and opens as Product; a type this version does not know is Product too, and a setting
 // of the memory it does not know is dropped. The schema stays at 2.
 //
+// Studios of the jobs (N2b): `render.studios` holds a copy of every saved studio a job of the queue renders in (once per
+// studio id and content hash: `{ hash, studio }`, core/job-studios.ts), and each such job names its copy (`studioCopy`,
+// the hash). A copy is the saved studio as the library and `studio/restore` know it, plain JSON in the state, with its
+// lights' IES profiles inline as the project's own (L5); its HDRI, background image and texture images are refs, and
+// their files travel in the `images` block with the project's, once per image whoever names it, so a studio with the
+// project's own HDRI adds no bytes but its JSON. On open a copy is checked like the project's blocks (its environment
+// and image completed with the defaults, its lights' profiles read, its materials' maps and graphs as the project's),
+// one that is damaged is left out (its jobs then look the studio up in the library, as before N2b), and its images
+// are placed with the project's under the same ids. A file from before N2b has neither and opens as it always did. The
+// schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
 import { runDoctor } from '../core/doctor';
 import { parseIes } from '../core/ies';
-import type { LightInstance } from '../core/lighting';
+import type { LightInstance, SavedStudio } from '../core/lighting';
+import { embeddedImageRefs, type EmbeddedStudio } from '../core/job-studios';
 import { normalizeEffects } from '../core/effects';
 import { normalizeSection } from '../core/section';
 import { normalizeSceneType, normalizeTypeBase } from '../core/scene-type';
@@ -202,9 +214,16 @@ export function serializeProject(state: ProjectState): Blob {
     first = false;
   }
   parts.push(first ? ']' : '\n ]');
-  // The environment's images and the texture images (M2a), as their files.
+  // The environment's images and the texture images (M2a), as their files; N2b, those of the studios the jobs keep a
+  // copy of, with them: each image once, whoever names it.
   const images: ImageRef[] = environmentImages(state).filter(([, ref]) => getImage(ref.id)).map(([, ref]) => ref);
-  for (const ref of textureImages(state).values()) if (getImage(ref.id) && !images.some((r) => r.id === ref.id)) images.push(ref);
+  const copies = embeddedImageRefs(state.render.studios);
+  const add = (ref: ImageRef) => {
+    if (getImage(ref.id) && !images.some((r) => r.id === ref.id)) images.push(ref);
+  };
+  copies.environment.forEach(add);
+  for (const ref of textureImages(state).values()) add(ref);
+  for (const ref of copies.textures.values()) add(ref);
   if (images.length > 0) {
     parts.push(',\n "images": [');
     images.forEach((ref, i) => {
@@ -362,16 +381,7 @@ function checkState(raw: RawState): ProjectState {
   // graph, checked node by node and link by link (core/material-graph.ts); one this version cannot read (a newer
   // schema) is dropped and the material opens as Simple, with its parameters.
   const materials: Record<string, MaterialInstance> = {};
-  for (const [id, m] of Object.entries(s.materials)) {
-    const next: MaterialInstance = { ...m, textures: normalizeTextures(m.textures) };
-    const graph = (m as { graph?: unknown }).graph;
-    if (graph !== undefined) {
-      const g = normalizeGraph(graph);
-      if (g) next.graph = g;
-      else delete next.graph;
-    }
-    materials[id] = next;
-  }
+  for (const [id, m] of Object.entries(s.materials)) materials[id] = readMaterial(m);
   s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
@@ -427,7 +437,86 @@ function checkState(raw: RawState): ProjectState {
   const typeBase = normalizeTypeBase((raw.scene as { typeBase?: unknown } | undefined)?.typeBase, s);
   const { typeBase: _drop, ...sceneRest } = s.scene;
   s.scene = { ...sceneRest, type: sceneType, ...(typeBase && sceneType !== 'PRODUCT' ? { typeBase } : {}) };
+  // N2b: the copies of the studios of the jobs, each checked like the project's own blocks; a damaged one is left out.
+  const studios = s.render.studios.flatMap((e) => {
+    const st = checkEmbeddedStudio(e.studio, fresh as unknown as ProjectState);
+    return st ? [{ hash: e.hash, studio: st }] : [];
+  });
+  s.render = { ...s.render, studios };
   return withInteriorCamera(s);
+}
+
+/**
+ * A blank block (`want`) completed with what `have` says, the kinds checked: what `checkState` does with each block of
+ * the state. Throws a `ProjectError` when a field has the wrong kind of value.
+ */
+function filledBlock(have: unknown, want: RawState, at: string): RawState {
+  if (!isObject(have)) throw damaged(`${at} is not an object`);
+  const block: RawState = { ...have };
+  for (const k of Object.keys(want)) {
+    if (block[k] === undefined) block[k] = want[k];
+    else if (want[k] !== null && kindOf(block[k]) !== kindOf(want[k])) throw damaged(`${at}.${k} has the wrong kind of value (expected ${kindOf(want[k])})`);
+  }
+  return block;
+}
+
+/** A material of a project or of a studio's copy as this version reads it (M2a maps and labels, M3a graph). */
+function readMaterial(m: MaterialInstance): MaterialInstance {
+  const next: MaterialInstance = { ...m, textures: normalizeTextures(m.textures) };
+  const graph = (m as { graph?: unknown }).graph;
+  if (graph !== undefined) {
+    const g = normalizeGraph(graph);
+    if (g) next.graph = g;
+    else delete next.graph;
+  }
+  return next;
+}
+
+/**
+ * N2b: the copy of a studio a job keeps, read like the project's own blocks: its environment, image and camera completed
+ * with the defaults of a new project and their kinds checked, its lights' IES profiles read (L5), its materials read
+ * (M2a, M3a), and every material its parts name present in it. Null when it is damaged: the copy is left out, never the
+ * project (its jobs then look the studio up in the library, as before N2b).
+ */
+function checkEmbeddedStudio(raw: SavedStudio, fresh: ProjectState): SavedStudio | null {
+  try {
+    const st = raw as unknown as RawState;
+    if (typeof st.preset !== 'string' || typeof st.lightSetup !== 'string') throw damaged('preset');
+    for (const k of ['modified', 'floor', 'shadow'] as const) if (typeof st[k] !== 'boolean') throw damaged(k);
+    if (!Array.isArray(st.lights) || st.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('lights');
+    for (const k of ['customPreset', 'customSetup'] as const) if (st[k] !== undefined && st[k] !== null && !isObject(st[k])) throw damaged(k);
+    const environment = filledBlock(st.environment, fresh.environment as unknown as RawState, 'environment');
+    for (const slot of ['hdri', 'backplate'] as const) {
+      const r = environment[slot];
+      if (r !== null && !(isObject(r) && typeof r.id === 'string' && typeof r.name === 'string' && Number.isInteger(r.width) && Number.isInteger(r.height))) throw damaged(slot);
+    }
+    if (environment.skyModel !== 'PHYSICAL' && environment.skyModel !== 'CLASSIC') throw damaged('skyModel');
+    const image = filledBlock(st.image, fresh.image as unknown as RawState, 'image');
+    const camera = filledBlock(st.camera, fresh.camera.cameras[fresh.camera.active] as unknown as RawState, 'camera');
+    if (!isObject(st.instances) || !isObject(st.assignments) || !isObject(st.visibility)) throw damaged('materials');
+    const instances: Record<string, MaterialInstance> = {};
+    for (const [id, m] of Object.entries(st.instances)) {
+      if (!isObject(m) || m.id !== id) throw damaged(`instances.${id}`);
+      instances[id] = readMaterial(m as unknown as MaterialInstance);
+    }
+    const known = (id: unknown) => id === null || (typeof id === 'string' && isObject(instances[id]));
+    for (const a of Object.values(st.assignments)) {
+      if (!isObject(a) || !known(a.material)) throw damaged('assignments');
+      if (a.faceMaterials !== undefined && (!Array.isArray(a.faceMaterials) || a.faceMaterials.some((f) => !isObject(f) || !Number.isInteger(f.start) || !Number.isInteger(f.count) || !known(f.material)))) throw damaged('faceMaterials');
+    }
+    if (Object.values(st.visibility).some((v) => typeof v !== 'boolean')) throw damaged('visibility');
+    return {
+      ...(st as unknown as SavedStudio),
+      lights: (st.lights as LightInstance[]).map(withReadableProfile),
+      environment: environment as unknown as EnvironmentState,
+      image: image as unknown as ImageState,
+      camera: camera as unknown as CameraState,
+      instances,
+    };
+  } catch (err) {
+    if (err instanceof ProjectError) return null;
+    throw err;
+  }
 }
 
 /**
@@ -724,67 +813,84 @@ function savedImages(block: unknown): SavedImage[] {
   return out;
 }
 
+/** N2b: the copies of studios of a state with `fix` applied to each one's studio (the same state when nothing changed). */
+function mapCopies(state: ProjectState, fix: (st: SavedStudio) => SavedStudio): ProjectState {
+  const list = state.render.studios ?? [];
+  let changed = false;
+  const studios: EmbeddedStudio[] = list.map((e) => {
+    const st = fix(e.studio);
+    if (st === e.studio) return e;
+    changed = true;
+    return { ...e, studio: st };
+  });
+  return changed ? { ...state, render: { ...state.render, studios } } : state;
+}
+
 /**
- * Decodes the environment's images of a loaded project into the registry. An image keeps its id unless the id
- * names another image in this session (ids are numbered per session, like the meshes'); one that is missing or
- * does not decode is dropped from the environment. Returns the state with its refs updated and how many were
- * dropped.
+ * Decodes the environment's images of a loaded project into the registry, and those of the studios its jobs keep a copy
+ * of (N2b), each image once whoever names it. An image keeps its id unless the id names another image in this session
+ * (ids are numbered per session, like the meshes'); one that is missing or does not decode is dropped from the
+ * environment (of the project, or of a copy). Returns the state with its refs updated and how many were dropped.
  */
 export async function placeImages(state: ProjectState, saved: readonly SavedImage[], decode?: PixelDecoder): Promise<{ state: ProjectState; missing: number }> {
   const textured = placeTextureImages(state, saved);
   state = textured.state;
-  const env = { ...state.environment };
-  if (!env.hdri && !env.backplate) return { state, missing: textured.missing };
+  type Slot = 'hdri' | 'backplate';
+  const wanted: [Slot, ImageRef][] = [];
+  const want = (slot: Slot, ref: ImageRef | null | undefined) => {
+    if (ref && !wanted.some(([, r]) => r.id === ref.id)) wanted.push([slot, ref]);
+  };
+  want('hdri', state.environment.hdri);
+  want('backplate', state.environment.backplate);
+  for (const e of state.render.studios ?? []) {
+    want('hdri', e.studio.environment?.hdri);
+    want('backplate', e.studio.environment?.backplate);
+  }
+  if (wanted.length === 0) return { state, missing: textured.missing };
   // The readers load with the first project that has images (they stay out of the main chunk).
   const { restoreImage } = await import('./hdri');
+  const placed = new Map<string, ImageRef | null>();
   let missing = 0;
-  for (const slot of ['hdri', 'backplate'] as const) {
-    const ref = env[slot];
-    if (!ref) continue;
+  for (const [slot, ref] of wanted) {
     const entry = saved.find((e) => e.id === ref.id);
     const have = getImage(ref.id);
-    let placed: ImageRef | null = null;
+    let out: ImageRef | null = null;
     if (entry) {
       const id = have && !sameBytes(have.bytes, entry.bytes) ? nextImageId(slot === 'hdri' ? 'hdri' : 'plate') : ref.id;
       try {
         await restoreImage({ ...ref, id }, entry.bytes, decode);
         const data = getImage(id)!;
-        placed = { id, name: ref.name, width: data.width, height: data.height };
+        out = { id, name: ref.name, width: data.width, height: data.height };
       } catch {
-        placed = null;
+        out = null;
       }
     }
-    if (!placed) missing++;
-    env[slot] = placed;
+    if (!out) missing++;
+    placed.set(ref.id, out);
   }
-  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing: missing + textured.missing };
+  const fix = (ref: ImageRef | null): ImageRef | null => {
+    if (!ref || !placed.has(ref.id)) return ref;
+    const p = placed.get(ref.id)!;
+    return p ? { ...p, name: ref.name } : null;
+  };
+  const same = (a: ImageRef | null, b: ImageRef | null) => a === b || (!!a && !!b && a.id === b.id && a.name === b.name && a.width === b.width && a.height === b.height);
+  const env = state.environment;
+  const [hdri, backplate] = [fix(env.hdri), fix(env.backplate)];
+  if (missing > 0 || hdri !== env.hdri || backplate !== env.backplate) state = { ...state, environment: { ...env, hdri, backplate } };
+  state = mapCopies(state, (st) => {
+    const e = st.environment;
+    const [h, b] = [fix(e.hdri), fix(e.backplate)];
+    return same(h, e.hdri) && same(b, e.backplate) ? st : { ...st, environment: { ...e, hdri: h, backplate: b } };
+  });
+  return { state, missing: missing + textured.missing };
 }
 
-/**
- * The texture images of a loaded project into the registry (M2a), under the ids that name their content: one
- * whose file is in `saved` is registered (an id the registry already holds is that content); one whose file is
- * missing, or is not a PNG or JPEG, leaves its slots and labels, counted in `missing` once per image.
- */
-export function placeTextureImages(state: ProjectState, saved: readonly SavedImage[]): { state: ProjectState; missing: number } {
-  const wanted = textureImages(state);
-  if (wanted.size === 0) return { state, missing: 0 };
-  const rename = new Map<string, ImageRef | null>();
-  for (const [id, ref] of wanted) {
-    if (getImage(id)) continue;
-    const entry = saved.find((e) => e.id === id);
-    if (!entry || 'reason' in checkTextureFile(entry.bytes)) {
-      rename.set(id, null);
-      continue;
-    }
-    // A file edited by hand may hold other bytes than its id names: the id follows the bytes.
-    const own = textureImageId(entry.bytes);
-    const placed = registerTextureImage(ref.name, entry.bytes, own);
-    if (own !== id) rename.set(id, placed);
-  }
-  if (rename.size === 0) return { state, missing: 0 };
+/** The materials with the texture images of `rename` swapped (null: the slot or label goes); the same object when none. */
+function renameTextures(list: Record<string, MaterialInstance>, rename: Map<string, ImageRef | null>): Record<string, MaterialInstance> {
   const fix = (r: ImageRef): ImageRef | null => (rename.has(r.id) ? rename.get(r.id)! : r);
   const materials: Record<string, MaterialInstance> = {};
-  for (const [id, m] of Object.entries(state.materials)) {
+  let any = false;
+  for (const [id, m] of Object.entries(list)) {
     const t: MaterialTextures = { ...m.textures, labels: [] };
     let changed = false;
     for (const k of TEXTURE_SLOTS) {
@@ -803,9 +909,42 @@ export function placeTextureImages(state: ProjectState, saved: readonly SavedIma
     const graph = m.graph ? mapGraphImages(m.graph, fix) : undefined;
     const next = changed ? { ...m, textures: t } : m;
     materials[id] = graph && graph !== m.graph ? { ...next, graph } : next;
+    if (materials[id] !== m) any = true;
   }
+  return any ? materials : list;
+}
+
+/**
+ * The texture images of a loaded project into the registry (M2a), under the ids that name their content, with those of
+ * the studios its jobs keep a copy of (N2b): one whose file is in `saved` is registered (an id the registry already holds
+ * is that content); one whose file is missing, or is not a PNG or JPEG, leaves its slots and labels, counted in
+ * `missing` once per image.
+ */
+export function placeTextureImages(state: ProjectState, saved: readonly SavedImage[]): { state: ProjectState; missing: number } {
+  const wanted = textureImages(state);
+  for (const [id, ref] of embeddedImageRefs(state.render.studios).textures) if (!wanted.has(id)) wanted.set(id, ref);
+  if (wanted.size === 0) return { state, missing: 0 };
+  const rename = new Map<string, ImageRef | null>();
+  for (const [id, ref] of wanted) {
+    if (getImage(id)) continue;
+    const entry = saved.find((e) => e.id === id);
+    if (!entry || 'reason' in checkTextureFile(entry.bytes)) {
+      rename.set(id, null);
+      continue;
+    }
+    // A file edited by hand may hold other bytes than its id names: the id follows the bytes.
+    const own = textureImageId(entry.bytes);
+    const placed = registerTextureImage(ref.name, entry.bytes, own);
+    if (own !== id) rename.set(id, placed);
+  }
+  if (rename.size === 0) return { state, missing: 0 };
+  const materials = renameTextures(state.materials, rename);
+  const next = mapCopies(materials === state.materials ? state : { ...state, materials }, (st) => {
+    const instances = renameTextures(st.instances, rename);
+    return instances === st.instances ? st : { ...st, instances };
+  });
   const missing = [...rename.values()].filter((r) => r === null).length;
-  return { state: { ...state, materials }, missing };
+  return { state: next, missing };
 }
 
 /**

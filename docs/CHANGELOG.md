@@ -5,6 +5,17 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Cola y proyecto
+
+- **El estudio de un trabajo viaja con el proyecto.** Un trabajo de la cola con un estudio guardado (uno, o *Todos los estudios* de un lote) guarda en el proyecto una copia de ese estudio, una sola por estudio aunque la usen muchos trabajos, y renderiza en ella. Un proyecto abierto en otro equipo o en otro perfil del navegador, sin esos estudios en la biblioteca, renderiza sus lotes igual; antes fallaban con *El estudio «…» ya no está guardado*. Si la biblioteca tiene un estudio con el mismo id pero guardado encima, los trabajos que ya estaban siguen con su copia y uno nuevo toma el estudio como está ahora (N2b).
+- El HDRI, la imagen de fondo y las texturas de esos estudios van en el proyecto **una vez cada imagen**: un estudio con el HDRI del proyecto solo añade unos kB de JSON (N2b).
+- En la cola, un estudio que vino con el proyecto y no está en tu biblioteca tiene una línea con **Añadir a mi biblioteca** (N2b).
+- Los proyectos de antes se abren igual; un trabajo de un proyecto anterior a N2b busca su estudio en la biblioteca, como antes, y si no está falla con el motivo. Al editarlo con el estudio en la biblioteca, toma su copia (N2b).
+
+### Herramientas
+
+- `tools/batch-check.mjs` comprueba también N2b en Chromium: un lote sobre dos estudios guardado en un perfil y abierto en otro con la biblioteca vacía se renderiza en sus estudios, y la cola ofrece *Añadir a mi biblioteca* (N2b).
+
 ## v0.1.18 — 2026-10-17
 
 ### Cámara y lente
