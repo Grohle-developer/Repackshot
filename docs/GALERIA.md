@@ -22,11 +22,25 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 43 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 44 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Ninguna captura nueva: todas las de `docs/ui/` están ya en una versión publicada (la última es v0.1.16). Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y con O4 las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`).
+
+#### O4 · Lente simple y trazada: opciones de cada una
+
+<a id="c-o4-simple-optics"></a><img src="ui/o4-simple-optics.png" width="331" alt="Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V."><br>
+`o4-simple-optics.png` · `f4f5e12` · Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V.
+
+<a id="c-o4-tilt-overlay"></a><img src="ui/o4-tilt-overlay.png" width="480" alt="El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro."><br>
+`o4-tilt-overlay.png` · `f4f5e12` · El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro.
+
+<a id="c-o4-traced-more"></a><img src="ui/o4-traced-more.png" width="331" alt="Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos."><br>
+`o4-traced-more.png` · `f4f5e12` · Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos.
+
+<a id="c-o4-traced-tilt"></a><img src="ui/o4-traced-tilt.png" width="480" alt="La hoja rt --tilt-sheet: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas."><br>
+`o4-traced-tilt.png` · `f4f5e12` · La hoja `rt --tilt-sheet`: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas.
 
 ### v0.1.16 · 2026-10-17
 
@@ -149,10 +163,10 @@ Madera, tela y bisel de aristas en Completo, materiales con más realismo, lente
 #### O2 · Lente trazada
 
 <a id="c-lens-editor"></a><img src="ui/lens-editor.png" width="331" alt="Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas."><br>
-`lens-editor.png` · `99df141` · Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas.
+`lens-editor.png` · `99df141` · Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas. *(regrabada en Sin publicar: Lente simple · Lente trazada, O4)*
 
 <a id="c-lens-section"></a><img src="ui/lens-section.png" width="331" alt="Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina."><br>
-`lens-section.png` · `99df141` · Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina.
+`lens-section.png` · `99df141` · Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina. *(regrabada en Sin publicar, O4)*
 
 ### v0.1.6 · 2026-10-14
 
@@ -214,10 +228,10 @@ Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector 
 #### O1 · Lente fina mejorada y selector de bokeh
 
 <a id="c-camera-bokeh"></a><img src="ui/camera-bokeh.png" width="300" alt="El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente»."><br>
-`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7)*
+`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7, y en Sin publicar: los tres de la lente trazada con su miniatura, apagados, diciendo dónde está su lente, O4)*
 
 <a id="c-camera-optics"></a><img src="ui/camera-optics.png" width="300" alt="Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico»."><br>
-`camera-optics.png` · `0830f93` · Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico». *(regrabada en v0.1.7)*
+`camera-optics.png` · `0830f93` · Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico». *(regrabada en v0.1.7, y en Sin publicar con el bloque de inclinación de O4)*
 
 #### U13 · Proporción de la imagen en la cámara
 
@@ -615,6 +629,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`o4-simple-optics.png`](#c-o4-simple-optics) · Sin publicar · O4
+- [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · Sin publicar · O4
+- [`o4-traced-more.png`](#c-o4-traced-more) · Sin publicar · O4
+- [`o4-traced-tilt.png`](#c-o4-traced-tilt) · Sin publicar · O4
 - [`lens-hover.png`](#c-lens-hover) · v0.1.8 · O2b
 - [`lens-hover-dark.png`](#c-lens-hover-dark) · v0.1.8 · O2b
 - [`lens-hover-chip.png`](#c-lens-hover-chip) · v0.1.8 · O2b

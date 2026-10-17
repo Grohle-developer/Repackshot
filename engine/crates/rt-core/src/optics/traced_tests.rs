@@ -1210,3 +1210,36 @@ fn a_traced_lens_with_cylinders_refuses_a_tilt() {
         Some("a traced lens with cylinders does not tilt")
     );
 }
+
+#[test]
+fn every_catalogue_lens_without_cylinders_tilts_and_says_by_how_much() {
+    // O4: each lens of the catalogue that forms an image and has no cylinders prepares with a tilt
+    // either way about any axis, turns by a few degrees for the simple lens's 5°, and keeps its
+    // centre sharp at the focus distance; the anamorphic adapter (cylinders) is refused above.
+    let mut checked = 0;
+    for (key, json) in catalogue() {
+        let cylinders = json
+            .get("surfaces")
+            .arr()
+            .iter()
+            .any(|s| s.get("kind").str() == Some("cylinder"));
+        if key == "anamorphic_adapter_2x" || cylinders {
+            continue;
+        }
+        for (tilt, axis) in [(5.0f32, 0.0f32), (-5.0, 60.0)] {
+            let lens = tilted(&key, 50.0, 8.0, 2000.0, tilt, axis);
+            let deg = lens.info().tilt_deg;
+            assert!(
+                deg.signum() == tilt.signum() && deg.abs() > 1.0 && deg.abs() < 20.0,
+                "{key}: {deg}° for {tilt}°"
+            );
+            let centre = sharp_distance(&lens, 0.0, 0.0);
+            assert!(
+                (centre - 2000.0).abs() < 0.03 * 2000.0,
+                "{key}, tilt {tilt}° about {axis}°: the centre is sharp at {centre:.0} mm"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 28, "{checked}");
+}
