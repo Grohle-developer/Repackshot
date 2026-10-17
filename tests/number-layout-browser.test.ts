@@ -179,10 +179,13 @@ describe.skipIf(!executablePath)('number fields and sliders fit, with their step
       for (const state of STATES) {
         const context = await browser.newContext({ viewport: SIZES[0], reducedMotion: 'reduce' });
         const page = await context.newPage();
-        try {
-          await page.goto(`${url}?lang=${lang}&example=1&tour=0${state.query ? `&${state.query}` : ''}`, { waitUntil: 'load', timeout: 90000 });
+        const load = async (query: string) => {
+          await page.goto(`${url}?lang=${lang}&example=1&tour=0${query ? `&${query}` : ''}`, { waitUntil: 'load', timeout: 90000 });
           await page.waitForSelector('#app[data-ready="1"]', { timeout: 180000 });
           await page.waitForTimeout(600);
+        };
+        try {
+          await load(state.query);
           if (state.steps) await state.steps(page);
           await openSections(page);
           await page.waitForTimeout(300);
@@ -193,7 +196,11 @@ describe.skipIf(!executablePath)('number fields and sliders fit, with their step
             await page.waitForTimeout(300);
             for (const section of sections) {
               if (section) {
-                await page.click(`.sw-option[data-section="${section}"]`, { timeout: 30000 });
+                // The section from the list, or (if the window went away under a loaded machine) from its deep link.
+                const option = page.locator(`.sw-option[data-section="${section}"]`);
+                if ((await option.count()) > 0) await option.click({ timeout: 30000 });
+                else await load(`settings=${section}`);
+                await page.waitForSelector(`.sw-option[data-section="${section}"][aria-selected="true"]`, { timeout: 30000 });
                 await page.waitForTimeout(200);
               }
               const found = await page.evaluate(measure);
