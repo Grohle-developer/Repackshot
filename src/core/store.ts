@@ -10,6 +10,7 @@ import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
+import { engineInputsChanged } from './doctor-engine';
 import { reduceEffects, type AmbientEffect, type EffectAction } from './effects';
 import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
@@ -336,7 +337,9 @@ export function reduce(state: ProjectState, action: Action): ProjectState {
     next.animation.shots !== state.animation.shots ||
     next.render.width !== state.render.width ||
     next.render.height !== state.render.height ||
-    next.effects !== state.effects
+    next.effects !== state.effects ||
+    // D1: what the engine checks read of the project (the image settings, the render window's engine, budget and animation output).
+    engineInputsChanged(state, next)
   ) {
     return { ...next, doctor: { results: runDoctor(next), stamp: state.doctor.stamp + 1 } };
   }
@@ -425,6 +428,10 @@ export function createStore(initial: ProjectState = createInitialState()): Store
   const listeners = new Set<Listener>();
   const queue: Action[] = [];
   let notifying = false;
+  /** Applies what listeners dispatched while they were being told (they wait their turn: one notification at a time). */
+  const drain = (): void => {
+    while (queue.length > 0 && !notifying) apply(queue.shift()!);
+  };
 
   const notify = (next: ProjectState, prev: ProjectState, action: Action): void => {
     notifying = true;
@@ -480,7 +487,7 @@ export function createStore(initial: ProjectState = createInitialState()): Store
         return;
       }
       apply(action);
-      while (queue.length > 0 && !notifying) apply(queue.shift()!);
+      drain();
     },
     subscribe(fn) {
       listeners.add(fn);
@@ -495,6 +502,7 @@ export function createStore(initial: ProjectState = createInitialState()): Store
       state = carryVolatile(entry.state, prev, rev !== savedRev);
       lastGesture = null;
       notify(state, prev, { type: 'history/undo', label: entry.label });
+      drain();
     },
     redo() {
       const entry = future.pop();
@@ -505,6 +513,7 @@ export function createStore(initial: ProjectState = createInitialState()): Store
       state = carryVolatile(entry.state, prev, rev !== savedRev);
       lastGesture = null;
       notify(state, prev, { type: 'history/redo', label: entry.label });
+      drain();
     },
     history() {
       const lang = state.meta.lang;
@@ -531,7 +540,10 @@ export function createStore(initial: ProjectState = createInitialState()): Store
           txHistoric = false;
           lastGesture = null;
           // The entry exists only now: tell listeners that show the history (state unchanged).
-          if (committed) notify(state, state, { type: 'history/commit', label });
+          if (committed) {
+            notify(state, state, { type: 'history/commit', label });
+            drain();
+          }
         }
       }
     },
@@ -544,6 +556,7 @@ export function createStore(initial: ProjectState = createInitialState()): Store
       future = [];
       lastGesture = null;
       notify(state, prev, { type: 'history/reset' });
+      drain();
     },
     revision: () => rev,
   };

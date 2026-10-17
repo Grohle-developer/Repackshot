@@ -6,6 +6,7 @@ import type { FastAa, PixelFilterFields, PixelFilterSetting } from '../core/anti
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
 import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
 import type { Projection, Rect } from '../core/box-select';
+import type { FrameScan } from '../core/doctor-engine';
 import type { CameraId, CameraState } from '../core/camera';
 import type { EngineLensInfo } from '../core/traced-lens';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
@@ -89,6 +90,8 @@ export interface EngineStatus {
   caustics?: number;
   /** Path tracer (E11): the pixel filter and edge samples the image on screen was asked to render with, at full resolution. */
   pixelFilter?: PixelFilterFields;
+  /** Path tracer (D1): what the Doctor reads of the view's accumulation (fireflies, brightness by the stop); absent while there is none. */
+  scan?: FrameScan;
   /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
   msaa?: { samples: number; max: number };
   /**

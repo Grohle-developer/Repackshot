@@ -211,6 +211,8 @@ export interface EngineInfo {
   simdSupported: boolean;
   /** Logical cores the system reports. */
   cores: number | null;
+  /** D1: the engine can denoise (rt.wasm exports the denoiser; the native engine always can). Absent: not known. */
+  denoise?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

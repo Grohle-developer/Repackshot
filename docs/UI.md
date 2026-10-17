@@ -1250,15 +1250,42 @@ misma línea que la de las actualizaciones, en el mismo sitio.
 
 **Popover del Doctor**: la lista de `DOCTOR_CHECKS` con estado, una frase
 de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba. Es
-la traducción del panel Doctor de EZ Packshot. En U1 los chequeos que
-dependen del motor pueden estar en estado *no disponible aún*; los de
-escena (escala, origen, suavizado, bisel, clipping) se implementan sobre
-el modelo de datos. Una comprobación nuestra, la última de la lista
-(U13), es **Proporción de la animación**: avisa de los planos cuya cámara
+la traducción del panel Doctor de EZ Packshot. Los chequeos de escena
+(escala, origen, suavizado, bisel, clipping) se implementan sobre el modelo
+de datos. Una comprobación nuestra (U13) es **Proporción de la
+animación**: avisa de los planos cuya cámara
 tiene otra proporción que el tamaño de salida (*Planos con otra
 proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
 (4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
 tamaño de salida.
+
+**Los chequeos de motor** (D1) salen en las mismas filas, con el título del
+catálogo (*Motor*, *SIMD*, *Denoise*, *Tono*, *Fireflies*, *Formato de
+salida*, *Presupuesto de tiempo*) y la frase de lo que el motor dice (*El
+motor corre con un solo worker: el sistema no le da más, así que un render usa
+un solo núcleo.*; *SIMD está desactivado en Ajustes ▸ Motor de renderizado: se
+usa la compilación escalar.*; *El denoise está en el visor pero apagado en el
+render: la imagen saldrá con ruido.*; *7 fireflies tras 64 muestras…*; *Un
+presupuesto de 5 s llega solo a 1 de las 64 muestras de un Borrador a la velocidad
+medida aquí. Unos 5 min llegarían.*). La acción de cada fila es una de
+cuatro: **Arreglar** cuando el proyecto puede cambiar (una entrada de
+deshacer, *Doctor: Denoise*); **Ajustes** cuando lo que lo limita es una fila
+de *Ajustes* (*Hilos*, *SIMD*): abre la ventana en esa fila, resaltada, y cierra
+el popover, porque el Doctor no cambia los ajustes de la aplicación;
+*No se arregla aquí* cuando ni el proyecto ni los ajustes lo arreglan (falta
+`rt.wasm`, el sistema no tiene simd128, el motor sin *denoiser*, *fireflies* que
+solo más muestras quitan); y *Bien* si está sano. Un chequeo que no se puede
+decir ahora sale apagado con su motivo en lugar de *No disponible aún: necesita
+el motor*: *El motor todavía está cargando*, *Necesita el motor, que no está en
+marcha*, *Necesita el visor en Completo: lee la imagen que el motor acumula*,
+*Midiendo: el visor Completo lee la imagen cuando lleva unas muestras*, *Aún sin
+medir: el visor Completo, o Ajustes ▸ Motor de renderizado ▸ Medir rendimiento,
+miden la velocidad*, *Light tree*: *El motor aún no tiene árbol de luces* y
+*Persistent data*: *No se aplica a este motor*. *Arreglar todo* hace en una
+entrada de deshacer (*Doctor: arreglar todo*) lo que el proyecto puede y deja
+los demás con su explicación. Captura (`tools/doctor-engine-check.mjs`):
+`docs/ui/doctor-engine.png`, el popover con *SIMD* en *Desactivado*, el
+*denoise* solo en el visor y un presupuesto de 5 s.
 
 **Doctor de interiores** (K1): con el tipo de escena *Interior*, siete filas
 más al final de la lista, cada una con su *Arreglar* (y entran en *Arreglar
@@ -2267,7 +2294,8 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Doctor: los chequeos de escena implementados sobre el modelo (escala
   plausible según el tipo de producto, origen y apoyo en el suelo,
   suavizado, bisel, clipping de cámara, luces visibles, proporción de la
-  animación); los de motor, en *no disponible aún*.
+  animación); los de motor (D1) leen lo que el motor dice y salen como
+  *no disponibles* con su motivo mientras no lo saben.
 - Paleta de comandos, atajos, deshacer / rehacer, temas, idioma (todas
   las cadenas en `src/ui/strings.ts` en `es` y `en`, inglés por defecto),
   plegado de paneles, estado vacío con arrastre de archivo (el arrastre

@@ -5,19 +5,36 @@ import { INTERIOR_DOCTOR_CHECKS } from './doctor-interior';
 
 // Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the
 // ones of Repackshot's own phases: `aspect`, U13; `physics`, S2; `particles`, S4a).
+// D1 (the checks that read the engine): the upstream texts of `engine`, `denoise`, `color`, `caustics` and
+// `output` spoke of Blender's Cycles, so they are rewritten for Repackshot's engine (their keys, and the
+// order of the upstream ones, stay); `simd` follows `engine` and `budget` follows `output`, both new.
 // These are descriptors only: what each check looks at and what its one-click fix
-// does. The logic that runs them lives with the scene code, not here.
+// does. The logic that runs them lives with the scene code (core/doctor.ts) and, for the checks that read
+// the engine, in core/doctor-engine.ts, not here.
 export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     key: 'engine',
-    label: { es: 'Motor y GPU', en: 'Engine and GPU' },
+    label: { es: 'Motor', en: 'Engine' },
     checks: {
-      es: 'El motor de render es Cycles y su dispositivo (CPU o GPU) coincide con lo que pide el ajuste de dispositivo; quien elige CPU a proposito no ve aviso.',
-      en: 'The render engine is Cycles and its compute device (CPU or GPU) matches what the device setting asks for; someone who picked CPU on purpose sees no warning.',
+      es: 'El motor de render (rt.wasm) no está cargado o no ha arrancado sus workers, o el sistema le da un solo worker y los renders van más lentos.',
+      en: 'The render engine (rt.wasm) is not loaded or did not start its workers, or the system gives it a single worker, so renders are slower.',
     },
     fix: {
-      es: 'Vuelve a aplicar el dispositivo de render a la escena.',
-      en: 'Reapplies the render device setting to the scene.',
+      es: 'Sin arreglo en el proyecto: lo que falta o limita es del sistema o de los Ajustes, y el aviso dice dónde mirar.',
+      en: 'No fix in the project: what is missing or limited belongs to the system or to Settings, and the warning says where to look.',
+    },
+  },
+  // D1, not ported: right after `engine`.
+  {
+    key: 'simd',
+    label: { es: 'SIMD', en: 'SIMD' },
+    checks: {
+      es: 'El motor WebAssembly usa la compilación escalar en vez de la de simd128.',
+      en: 'The WebAssembly engine runs the scalar build instead of the simd128 one.',
+    },
+    fix: {
+      es: 'Sin arreglo en el proyecto: SIMD se activa en Ajustes ▸ Motor de renderizado ▸ SIMD, o depende del sistema.',
+      en: 'No fix in the project: SIMD is switched in Settings ▸ Render engine ▸ SIMD, or it depends on the system.',
     },
   },
   {
@@ -36,24 +53,24 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     key: 'denoise',
     label: { es: 'Denoise', en: 'Denoising' },
     checks: {
-      es: 'El ajuste de denoise esta activo pero el denoise esta apagado en el render o en la vista previa, asi que habra ruido; si el usuario lo apago a proposito no hay aviso.',
-      en: 'The denoise setting is on but denoising is off for the render or for the preview, so expect noise; nothing is reported if the user turned it off on purpose.',
+      es: 'El denoise del motor está apagado para el render aunque lo esté en el visor, o encendido a fuerza cero, o el motor no sabe hacerlo; un denoise apagado en todas partes es una decisión y no avisa.',
+      en: "The engine's denoise is off for the Render while it is on for the viewport, or on at zero strength, or the engine cannot do it; a denoise that is off everywhere is a choice and gets no warning.",
     },
     fix: {
-      es: 'Activa el ajuste de denoise y vuelve a aplicar los ajustes de render.',
-      en: 'Turns the denoise setting on and reapplies the render settings.',
+      es: 'Enciende el denoise del render y, si estaba a fuerza 0, lo devuelve al 100 %.',
+      en: "Turns the Render's denoise on and, if it was at strength 0, back to 100 %.",
     },
   },
   {
     key: 'color',
     label: { es: 'Tono', en: 'View transform' },
     checks: {
-      es: 'La transformacion de vista de la escena no coincide con la elegida en los ajustes.',
-      en: "The scene's view transform does not match the one chosen in the settings.",
+      es: 'La transformada de vista Estándar recorta a blanco las altas luces de lo que el motor ha acumulado (más de una parada sobre el blanco); Fílmica y AgX las comprimen.',
+      en: 'The Standard view transform clips to white the highlights of what the engine has accumulated (over one stop above white); Filmic and AgX roll them off.',
     },
     fix: {
-      es: 'Vuelve a aplicar la transformacion de vista elegida y pone el gamma a 1.0.',
-      en: 'Reapplies the chosen view transform and resets gamma to 1.0.',
+      es: 'Pasa la transformada de vista a Fílmica.',
+      en: 'Switches the view transform to Filmic.',
     },
   },
   {
@@ -144,12 +161,12 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     key: 'caustics',
     label: { es: 'Fireflies', en: 'Fireflies' },
     checks: {
-      es: 'Las caustics estan activas aunque el preset de estudio no las necesita (joyeria, relojeria, perfumeria y optica si), lo que dispara fireflies.',
-      en: 'Caustics are on although the active studio preset does not need them (jewellery, watchmaking, fragrance and eyewear do), which causes fireflies.',
+      es: 'La acumulación del motor tiene fireflies: muestras aisladas muy brillantes, píxeles donde una sola muestra aporta casi toda la luz y que sus vecinos no comparten.',
+      en: "The engine's accumulation holds fireflies: isolated, very bright samples, pixels where one sample carries most of the light and their neighbours do not share it.",
     },
     fix: {
-      es: 'Pone las caustics reflectivas y refractivas como las pide el preset de estudio.',
-      en: 'Sets reflective and refractive caustics to what the studio preset asks for.',
+      es: 'Devuelve las cáusticas a Automático si estaban apagadas y recorta la luz indirecta; si ya está así, solo ayudan más muestras.',
+      en: 'Puts caustics back to Automatic if they were off and clamps the indirect light; if it is already so, only more samples help.',
     },
   },
   {
@@ -168,12 +185,25 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     key: 'output',
     label: { es: 'Formato de salida', en: 'Output format' },
     checks: {
-      es: 'El formato de salida es de video (FFMPEG o AVI JPEG), donde un fallo pierde todo el render.',
-      en: 'The output format is a video format (FFMPEG or AVI JPEG), where one crash wipes the whole render.',
+      es: 'La animación sale como vídeo: un solo archivo donde un fallo a mitad pierde todos los fotogramas, o con un códec que aquí no se puede codificar.',
+      en: 'The animation is output as video: one file where a failure half-way loses every frame, or with a codec that cannot be encoded here.',
     },
     fix: {
-      es: 'Pasa a PNG si el formato no es de imagen, desactiva sobrescribir y activa los marcadores de posicion para poder reanudar.',
-      en: 'Switches to PNG if the format is not an image format, disables overwrite and enables placeholders so a render can resume.',
+      es: 'Pasa la salida de la animación a secuencia de fotogramas, que se escribe imagen a imagen y se puede reanudar.',
+      en: 'Switches the animation output to a frame sequence, which is written image by image and can be resumed.',
+    },
+  },
+  // D1, not ported: right after `output`.
+  {
+    key: 'budget',
+    label: { es: 'Presupuesto de tiempo', en: 'Time budget' },
+    checks: {
+      es: 'El presupuesto de tiempo del render (terminar por tiempo, o lo que llegue antes) se queda corto para las muestras que pide, con la velocidad que el motor ha medido en este equipo.',
+      en: "The render's time budget (finish by time, or whichever comes first) is too short for the samples it asks for, at the speed the engine has measured on this computer.",
+    },
+    fix: {
+      es: 'Sube el presupuesto de tiempo hasta el que esas muestras necesitan a esa velocidad, y una cuarta parte más, porque la velocidad se mueve de una medida a la siguiente.',
+      en: 'Raises the time budget to what those samples need at that speed, and a quarter more, because the speed moves from one reading to the next.',
     },
   },
   // Not from upstream (U13): appended, so the upstream order above is intact.

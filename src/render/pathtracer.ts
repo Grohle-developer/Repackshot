@@ -65,6 +65,7 @@ import { AdaptiveState, BLOCK, rescaledPlane, rescaledSums, type BlockWork } fro
 import type { ViewportLimit } from '../core/settings';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
+import { ScanCache, scanFrame } from './frame-scan';
 
 /** How an image is framed and sampled (io/rsb.ts `SceneView`; main.ts connects the two). */
 export interface TracerView {
@@ -202,6 +203,8 @@ export class Pool {
   version = 0;
   /** M2b: what the engine reads beyond the plain RSB, as its workers report it (`rt_features`; 0 before M2b). */
   features = 0;
+  /** D1: this rt.wasm exports the denoiser (workers that do not say are taken to). */
+  hasDenoiser = true;
   private readonly workers: Worker[];
   private sceneSeq = 0;
   private readonly scenes = new Map<number, { left: number; error: string | null; done: (error: string | null) => void }>();
@@ -233,6 +236,7 @@ export class Pool {
     const workers = Array.from({ length: size }, spawn);
     let version = 0;
     let features = 0;
+    let denoise = true;
     try {
       await Promise.all(
         workers.map(
@@ -242,6 +246,7 @@ export class Pool {
                 if (e.data.type === 'ready') {
                   version = e.data.version;
                   features = e.data.features ?? 0;
+                  denoise = denoise && e.data.denoise !== false;
                   resolve();
                 }
                 else if (e.data.type === 'failed') reject(new Error(e.data.reason));
@@ -258,6 +263,7 @@ export class Pool {
     const pool = new Pool(workers);
     pool.version = version;
     pool.features = features;
+    pool.hasDenoiser = denoise;
     return pool;
   }
 
@@ -560,6 +566,9 @@ export class PathTracerEngine implements RenderEngine {
   /** That generation has all its samples (or its time): it renders nothing more. */
   private viewDone = false;
   private acc: Accumulator | null = null;
+  /** D1: the project the accumulation was started from, and what the Doctor reads of it (made when its samples double). */
+  private accState: ProjectState | null = null;
+  private readonly scans = new ScanCache();
   /** E5b-1, U11: the guide passes of the viewport's image (at full resolution). */
   private accGuides: PassAccumulator | null = null;
   /** U11: the live denoise switch, as the project says (the Viewport part of Advanced ▸ Denoise). */
@@ -640,6 +649,11 @@ export class PathTracerEngine implements RenderEngine {
 
   get workers(): number {
     return this.pool.size;
+  }
+
+  /** D1: the engine can denoise (its rt.wasm exports the denoiser). */
+  get canDenoise(): boolean {
+    return this.pool.hasDenoiser;
   }
 
   /** The engine's version, "major.minor.patch". */
@@ -1018,6 +1032,7 @@ export class PathTracerEngine implements RenderEngine {
     this.cleanImages = 0;
     this.cleanAt = 0;
     this.acc = acc;
+    this.accState = state;
     this.accAdaptive = adaptive;
     this.adaptiveEta = -1;
     this.accFilter = { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 };
@@ -1288,6 +1303,8 @@ export class PathTracerEngine implements RenderEngine {
     const restarted = this.watchdog.recent(now);
     const issue: ViewportIssue | undefined = this.failure !== null ? { kind: 'FAILED', detail: this.failure } : restarted ? { kind: 'RESTARTED', detail: restarted } : undefined;
     const wantKey = this.wantKey();
+    // D1: what the Doctor reads of the accumulation (the raw sums: the denoised image is shown from other ones).
+    const scan = full && acc.complete && this.accState ? this.scans.get(acc, acc.minSamples, () => scanFrame(acc, this.accState!)) : null;
     return {
       samples,
       seconds: full && this.genStart ? (end - this.genStart) / 1000 : 0,
@@ -1312,6 +1329,7 @@ export class PathTracerEngine implements RenderEngine {
       ...(caustics > 0 && acc ? { caustics } : {}),
       ...(full && this.accFilter ? { pixelFilter: { ...this.accFilter } } : {}),
       ...(range ? { adaptive: { min: range.min, max: range.max, noise: this.accAdaptive?.last?.maxError ?? -1, eta: this.adaptiveEta } } : {}),
+      ...(scan ? { scan } : {}),
     };
   }
 

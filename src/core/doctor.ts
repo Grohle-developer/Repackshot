@@ -1,8 +1,9 @@
 // The Doctor (SPEC §4): fourteen checks of upstream, the animation's aspect ratio (U13), S2's physics check (a
 // dynamic part that starts below the floor) and the particle cap of the ambient effects (S4a), each with a
 // detection and a fix.
-// Scene checks run on the model; engine checks report UNAVAILABLE until the
-// engine phases (D1) provide the data. The Doctor never changes anything
+// Scene checks run on the model. The engine checks (D1: workers, SIMD, denoise, view transform, fireflies, video
+// output, time budget) live in core/doctor-engine.ts: they also read what the engine reports, which the page hands
+// in, and they are UNAVAILABLE while it has not. The Doctor never changes anything
 // unless asked: `fixDoctor` is only called from an explicit action.
 
 import { DOCTOR_CHECKS } from '../data/doctor';
@@ -18,7 +19,8 @@ import { presetRefOf } from './lighting';
 import { resolvePreset } from './rig';
 import { boundsOf, isSetPiece, measuredSizeMm, ownParts, reduceScene, translateWorld, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
 import { dynamicBelowFloor } from './physics';
-import { fixInterior, runInteriorDoctor } from './doctor-interior';
+import { engineCheck, engineFix } from './doctor-engine';
+import { fixInterior, isInteriorCheck, runInteriorDoctor } from './doctor-interior';
 
 export type DoctorStatus = 'OK' | 'WARN' | 'UNAVAILABLE';
 
@@ -31,7 +33,7 @@ export interface DoctorResult {
   detail: Record<string, number | string>;
 }
 
-/** Checks evaluated on the model in U1. The rest depend on the engine (phase D1). */
+/** Checks evaluated on the model in U1. The rest read the engine too (D1: core/doctor-engine.ts `ENGINE_CHECKS`). */
 export const SCENE_CHECKS: ReadonlySet<DoctorCheckKey> = new Set<DoctorCheckKey>([
   'scale',
   'transform',
@@ -251,7 +253,8 @@ function runBaseChecks(state: ProjectState): DoctorResult[] {
       case 'particles':
         return checkParticles(state);
       default:
-        return { key: c.key, status: 'UNAVAILABLE', fixable: false, detail: {} };
+        // The checks that read the engine: UNAVAILABLE until the page hands in what it reports (D1).
+        return engineCheck(c.key, state);
     }
   });
 }
@@ -357,8 +360,8 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
       return { ...state, studio: { ...state.studio, lights } };
     }
     default:
-      // K1: the checks of the interior Doctor.
-      return fixInterior(state, key);
+      // K1: the checks of the interior Doctor; D1: the engine checks' fixes. A check without one leaves the state alone.
+      return isInteriorCheck(key) ? fixInterior(state, key) : engineFix(state, key);
   }
 }
 

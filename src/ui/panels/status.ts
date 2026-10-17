@@ -6,6 +6,7 @@
 import { doctorCheck } from '../../data/doctor';
 import { effectPreset } from '../../data/effects';
 import { warningCount, type DoctorResult } from '../../core/doctor';
+import { ENGINE_CHECKS } from '../../core/doctor-engine';
 import { activeCamera } from '../../core/camera';
 import { filterActive, filtersOf, opticsOf } from '../../core/optics';
 import { allParts, triangleCount } from '../../core/scene';
@@ -16,7 +17,8 @@ import { confirmBox, openFloating } from '../components/widgets';
 import { h } from '../dom';
 import { cameraName, dyn } from '../names';
 import { Scope, shallowEq, type Ctx } from '../reactive';
-import { formatClock, formatNumber, getLang, isaLabel, lbl, t } from '../strings';
+import { formatClock, formatNumber, getLang, isaLabel, lbl, t, type StringKey } from '../strings';
+import { formatDuration } from './render-window';
 import { dismissRuntimeNote, fixRuntime } from '../ai-runtime-state';
 import { installActive } from '../../core/updates';
 import { cancelInstall, dismissUpdateNotice, downloadUpdate, installFaultText, installRequestFor, installText, installUpdate, openReleaseNotes, restartNow, retryInstall } from '../updates';
@@ -72,9 +74,60 @@ export function doctorSentence(r: DoctorResult, state: ProjectState): string {
       const name = String(d.name ?? '') || (preset ? lbl(preset.label) : '');
       return t('doctor.particles', { name, requested: formatNumber(Number(d.requested), getLang(), 0), cap: formatNumber(Number(d.cap), getLang(), 0) });
     }
+    // D1: the checks that read the engine.
+    case 'engine':
+      switch (d.reason) {
+        case 'noWasm':
+          return t('doctor.engine.noWasm');
+        case 'noWorkers':
+          return t('doctor.engine.noWorkers');
+        case 'outdated':
+          return t('doctor.engine.outdated');
+        case 'failed':
+          return t('doctor.engine.failed');
+        default:
+          return d.setting ? t('doctor.engine.oneWorkerSetting', { auto: Number(d.auto) }) : d.cores ? t('doctor.engine.oneWorkerCores', { cores: Number(d.cores) }) : t('doctor.engine.oneWorker');
+      }
+    case 'simd':
+      return t(`doctor.simd.${String(d.reason)}` as StringKey);
+    case 'denoise':
+      return t(`doctor.denoise.${String(d.reason)}` as StringKey);
+    case 'color':
+      return t('doctor.color', { percent: formatNumber(Number(d.percent), getLang(), 1) });
+    case 'caustics':
+      return t(d.reason === 'more' ? 'doctor.caustics.more' : 'doctor.caustics', { pixels: formatNumber(Number(d.pixels), getLang(), 0), samples: formatNumber(Number(d.samples), getLang(), 0), clamp: formatNumber(Number(d.clamp), getLang(), 1), to: formatNumber(Number(d.to), getLang(), 0) });
+    case 'output':
+      return t(d.reason === 'codec' ? 'doctor.output.codec' : 'doctor.output.single', { video: d.video === 'WEBM' ? 'WebM VP9' : 'MP4 H.264' });
+    case 'budget':
+      return t(d.reason === 'few' ? 'doctor.budget.few' : 'doctor.budget.cut', {
+        wanted: formatNumber(Number(d.wanted), getLang(), 0),
+        reach: formatNumber(Number(d.reach), getLang(), 0),
+        budget: formatDuration(Number(d.budget)),
+        need: formatDuration(Number(d.need)),
+      });
     default:
       return '';
   }
+}
+
+/** Why a check of the Doctor cannot be told now (D1): the engine is loading, not running, not in Full mode, still measuring… */
+export function doctorUnavailable(r: DoctorResult): string {
+  const reason = r.detail.reason;
+  return typeof reason === 'string' ? t(`doctor.unavailable.${reason}` as StringKey) : t('doctor.unavailable');
+}
+
+/**
+ * What a row of the Doctor offers: a *Fix* when the project can be changed; for what it cannot but a Settings row holds
+ * back (`detail.setting`, D1), the button that opens that row (the Doctor does not change application settings, which are
+ * not undoable); *Not fixable here* for an engine check with nothing to change in the project (D1) and *Fix coming soon*
+ * for a scene check that has no fix yet; *OK* for a healthy one; nothing for what cannot be told.
+ */
+export function doctorRowAction(r: DoctorResult): { kind: 'fix' } | { kind: 'settings'; setting: string } | { kind: 'noFix' } | { kind: 'soon' } | { kind: 'ok' } | null {
+  if (r.status === 'OK') return { kind: 'ok' };
+  if (r.status !== 'WARN') return null;
+  if (r.fixable) return { kind: 'fix' };
+  if (typeof r.detail.setting === 'string') return { kind: 'settings', setting: r.detail.setting };
+  return { kind: ENGINE_CHECKS.has(r.key) ? 'noFix' : 'soon' };
 }
 
 function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
@@ -86,11 +139,14 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
       const rows = results.map((r) => {
         const check = doctorCheck(r.key)!;
         const warn = r.status === 'WARN';
-        const text = warn ? doctorSentence(r, ctx.store.get()) : r.status === 'UNAVAILABLE' ? t('doctor.unavailable') : lbl(check.checks);
+        const text = warn ? doctorSentence(r, ctx.store.get()) : r.status === 'UNAVAILABLE' ? doctorUnavailable(r) : lbl(check.checks);
         let action: HTMLElement | null = null;
-        if (warn && r.fixable) action = h('button', { type: 'button', class: 'btn', 'data-tip': lbl(check.fix), onclick: () => cmd.doctorFix(ctx, r.key) }, t('doctor.fix'));
-        else if (warn) action = h('span', { class: 'aux' }, t('doctor.fixSoon'));
-        else if (r.status === 'OK') action = h('span', { class: 'aux' }, t('doctor.ok'));
+        const what = doctorRowAction(r);
+        if (what?.kind === 'fix') action = h('button', { type: 'button', class: 'btn', 'data-tip': lbl(check.fix), onclick: () => cmd.doctorFix(ctx, r.key) }, t('doctor.fix'));
+        else if (what?.kind === 'settings') {
+          const setting = what.setting;
+          action = h('button', { type: 'button', class: 'btn', 'data-tip': t('doctor.openSettingsTip'), onclick: () => { ctx.ui.set({ doctorOpen: false }); cmd.openSettings(ctx, setting); } }, t('doctor.openSettings'));
+        } else if (what) action = h('span', { class: 'aux' }, t(what.kind === 'noFix' ? 'doctor.noFix' : what.kind === 'soon' ? 'doctor.fixSoon' : 'doctor.ok'));
         return h(
           'div',
           { class: `doctor-row${warn ? ' is-warn' : ''}` },

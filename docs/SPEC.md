@@ -82,7 +82,8 @@ no un requisito.
 
 El **Doctor** vigila todo el rato y arregla con un clic lo que suele
 estropear un render: escala absurda, pieza bajo el suelo, suavizado,
-bisel de aristas, clipping de cámara, luces visibles, cáusticas, formato.
+bisel de aristas, clipping de cámara, luces visibles, y, con el motor delante,
+*fireflies*, *denoise*, transformada de vista, formato de salida y presupuesto de tiempo.
 
 ---
 
@@ -1431,16 +1432,46 @@ cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
 
 ## 4 · El Doctor
 
-Diecisiete chequeos, cada uno con detección y arreglo (`DOCTOR_CHECKS` en
-`src/data/doctor.ts`). Los de escena se evalúan sobre el modelo: escala
+Diecinueve chequeos, cada uno con detección y, cuando el proyecto puede
+cambiar algo, arreglo (`DOCTOR_CHECKS` en `src/data/doctor.ts`), y siete más
+con el tipo de escena *Interior* (más abajo). Los de
+escena se evalúan sobre el modelo: escala
 plausible para el tipo de producto (una joya de 3 m está mal), origen y
 apoyo en el suelo, suavizado de normales, bisel de aristas (sin bisel, las
 aristas de un CAD no reflejan nada y delatan el render), clipping de
 cámara, luces visibles a cámara sin querer, y una pieza dinámica que
-empieza atravesando el suelo (S2: el arreglo la sube hasta apoyarla). Los de motor se evalúan sobre
-el motor activo: dispositivo, denoise, transformada de vista, cáusticas
-(fireflies), datos persistentes, formato de salida de vídeo. El Doctor no
+empieza atravesando el suelo (S2: el arreglo la sube hasta apoyarla). El Doctor no
 cambia nada sin que se le pida y explica cada aviso en una frase.
+
+**Los de motor** (D1, `src/core/doctor-engine.ts`) miran además lo que el
+motor y el sistema dicen, que no es del proyecto: la página se lo entrega
+(workers, SIMD, si el motor sabe hacer *denoise*, la velocidad medida y lo que
+dice la acumulación del visor *Completo*) y, mientras no lo sabe, esos
+chequeos están *no disponibles* con su motivo (el motor carga, no está en
+marcha, hace falta el visor *Completo*, todavía mide). Todo arreglo cambia el
+proyecto y nada más: pasa por el *store* y es una entrada de deshacer. Lo que el
+proyecto no puede cambiar (falta `rt.wasm`, el sistema da un solo worker, no hay
+simd128) es un aviso que dice por qué y **no tiene arreglo falso**; si una fila de
+*Ajustes* lo limita (*Hilos*, *SIMD*), el aviso trae el botón que la abre, porque
+el Doctor no toca los ajustes de la aplicación (no se deshacen).
+
+| Chequeo | Avisa de | Arreglo |
+| --- | --- | --- |
+| `engine` · *Motor* | `rt.wasm` no está compilado, es anterior a la página, no arrancó, el sistema no da *workers*; o el *pool* es de un solo *worker* (el sistema no da más, o *Hilos* lo dice y *Automático* daría más) | ninguno; con *Hilos* de por medio, abre esa fila |
+| `simd` · *SIMD* | corre la compilación escalar: el sistema no tiene simd128, *SIMD* está en *Desactivado*, falta `rt-simd.wasm`, o el motor de escritorio no tiene camino vectorial | ninguno; con *SIMD* en *Desactivado*, abre esa fila |
+| `denoise` · *Denoise* | está encendido en el visor y apagado en el render (la imagen saldría con ruido), o a fuerza 0, o el motor no sabe hacerlo; apagado en todas partes es una decisión y no avisa | enciende el del render / devuelve la fuerza al 100 % (el motor sin *denoiser* no tiene) |
+| `color` · *Tono* | con *Estándar*, más del 1 % del encuadre está a más de una parada sobre el blanco una vez aplicada la exposición, y se recorta a blanco puro (se lee del histograma de la acumulación; *Fílmica* y *AgX* no recortan y no necesitan imagen) | pasa a *Fílmica* |
+| `caustics` · *Fireflies* | la acumulación tiene *fireflies*: píxeles más brillantes que el blanco, cuatro veces más que el mejor de sus ocho vecinos y, si la acumulación guarda la luminancia al cuadrado (con el *denoise* del visor encendido), con una sola muestra que aporta la mitad de su luz o más; avisa desde 8 píxeles (o una cienmilésima del encuadre). Con la imagen ya filtrada por el *denoise* del lanzador, no hay nada que contar | devuelve las cáusticas de *Apagado* a *Automático* y recorta la luz indirecta en 10; si ya está así, dice que solo ayudan más muestras |
+| `output` · *Formato de salida* | la animación sale como vídeo: un solo archivo donde un fallo a mitad pierde los fotogramas, o con un códec que aquí no se codifica | pasa a secuencia de fotogramas |
+| `budget` · *Presupuesto de tiempo* | con la velocidad que el motor midió aquí, el tiempo del render no alcanza las muestras: con *lo que llegue antes*, menos de la mitad de las pedidas; con *Tiempo*, menos que un Borrador | sube el tiempo al que esas muestras necesitan más una cuarta parte (la velocidad medida se mueve de una lectura a la siguiente), redondeado a los diez segundos |
+
+`lighttree` (*Light tree*, de K4) y `persist` (*Persistent data*, propio de
+Blender) siguen en la lista como *no disponibles*: el motor aún no tiene árbol
+de luces, y en este motor no hay nada equivalente a los datos persistentes. Los
+chequeos de motor se vuelven a pasar cuando cambia lo que leen (el estado de la
+interfaz, los ajustes de imagen, de motor, de presupuesto y de salida de
+animación del render, la imagen que acumula el visor) y tras deshacer y
+rehacer.
 
 **Doctor de interiores** (K1, `core/doctor-interior.ts`). Con el tipo de
 escena *Interior*, siete chequeos más que no piden el motor, cada uno con su

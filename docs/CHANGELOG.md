@@ -11,10 +11,21 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Estilo **Interior** en el catálogo de montajes de luz (el último de los diez), con siete recetas: *Ventana de mañana*, *Ventana de mediodía*, *Ventana de tarde*, *Nublado*, *Lámparas de noche*, *Hora azul* y *Sala blanca de estudio*. Cada una elige su mundo (sol y cielo, o la cúpula de estudio) y trae su exposición y la intensidad del entorno: la hora del día es el brillo de la imagen. No traen decoración, y los 88 montajes anteriores no cambian. Sus cifras son una propuesta pendiente de decisión (K1).
 - **Doctor de interiores**: con el tipo *Interior*, siete chequeos más en el Doctor, cada uno con su *Arreglar*: *Escala y unidades* (un archivo en metros leído como milímetros), *Abertura para el sol y el cielo*, *Vidrio de ventana* (grueso o refractivo: lo hace fino), *Óptica demasiado angular* (menos de 18 mm), *Altura de ojo*, *Recorte cercano* contra la pared y *Normales de las paredes*. En *Interior* la comprobación de escala del Doctor ya no compara con el tamaño del tipo de producto (K1).
 - Elegir una receta (o cualquier set sin decoración) ya no enciende el suelo y la sombra de contacto, y deja de dejar en el marco el fondo del set anterior o de pisar el fondo que se había puesto (K1).
+- **Doctor de motor**: el Doctor gana los chequeos que leen el motor, en el mismo popover y con la misma forma que los de escena (cada uno con su frase, su arreglo y *Arreglar todo*). **Motor**: `rt.wasm` cargado y con sus *workers*, con la razón si no (no está compilado, es anterior a la página, no arrancó, el sistema no da *workers*) y aviso si el *pool* es de uno solo. **SIMD**: avisa de que corre la compilación escalar y por qué (el sistema no tiene simd128, *SIMD* está en *Desactivado*, falta `rt-simd.wasm`, el motor de escritorio no tiene camino vectorial). **Denoise**: en el visor pero no en el render, a fuerza 0, o un motor sin *denoiser*; apagado en todas partes es una decisión y no avisa. **Tono**: con *Estándar*, las altas luces recortadas de lo que el motor ha acumulado. **Fireflies**: muestras aisladas muy brillantes en la acumulación del visor *Completo*. **Formato de salida**: vídeo (códec que no se codifica aquí, o un solo archivo que un fallo pierde). **Presupuesto de tiempo**: el tiempo no alcanza las muestras, con la velocidad que el motor midió (D1).
+- Lo que el proyecto puede cambiar tiene *Arreglar* (una entrada de deshacer, *Doctor: Denoise*) y entra en *Arreglar todo*; lo que no (falta `rt.wasm`, un solo *worker*, sin simd128) es un aviso que dice por qué y *No se arregla aquí*, sin arreglo falso; si una fila de *Ajustes* lo limita (*Hilos*, *SIMD*), el botón **Ajustes** la abre resaltada y el Doctor no cambia los ajustes de la aplicación (D1).
+- Los chequeos que no se pueden decir ahora salen apagados con su motivo (*El motor todavía está cargando*, *Necesita el visor en Completo…*, *Midiendo…*, *Aún sin medir…*) en lugar del genérico *No disponible aún: necesita el motor* (D1).
+- El Doctor se vuelve a pasar cuando cambia lo que leen los de motor (ajustes de imagen, de motor, de presupuesto y de salida de animación del render, o la imagen del visor) y también tras **deshacer** y **rehacer**, que antes dejaban los hallazgos con que se guardó el estado (D1).
+- Los textos de *Motor*, *Denoise*, *Tono*, *Fireflies* y *Formato de salida* del catálogo del Doctor, que hablaban de Cycles, ahora hablan del motor de Repackshot; sus claves siguen. Entran dos claves nuevas, `simd` y `budget` (D1).
+- `status().scan` en los dos motores (el *pool* y el lanzador): lo que el Doctor lee de la acumulación (píxeles que son *fireflies*, el encuadre por paradas), leído de nuevo cuando las muestras se doblan; los *workers* dicen en su primer mensaje si su `rt.wasm` exporta el *denoiser* (D1).
+
+### Correcciones
+
+- Una acción que un oyente del *store* enviaba mientras se le avisaba de un deshacer, un rehacer, un reinicio o el cierre de una transacción esperaba al siguiente `dispatch`, que podía tardar mucho; ahora se aplica al acabar el aviso (D1).
 
 ### Herramientas
 
 - `tools/scene-type-check.mjs`: comprueba en el navegador el control, que el inspector tiene los mismos controles con cada tipo, las siete recetas con sus miniaturas, las siete filas del Doctor y la ida y vuelta; deja `docs/ui/scene-type-interior.png` (K1).
+- `tools/doctor-engine-check.mjs`: el Doctor con el motor de verdad en Chromium (*SIMD* en *Desactivado*, *denoise* solo en el visor, un presupuesto de 5 s, *Arreglar todo* y un deshacer) y la captura `docs/ui/doctor-engine.png` (D1).
 
 ### Limitaciones conocidas de esta versión
 
@@ -23,6 +34,12 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - *Normales de las paredes* mira superficies cerradas y paredes planas con la cámara dentro; no ve una pared sin grosor, y solo mira los primeros 500 000 triángulos de la escena por pasada.
 - *Rodillo largo* y *Low contrast* de la tabla de *Interior* no se aplican: el mapeo de tonos no tiene el parámetro y *Contraste* aún no lo aplica el motor. Las unidades mostradas son una preferencia de la aplicación y no cambian con el tipo.
 - Las recetas de día usan la bruma del cielo que haya (la de *Entorno*), y *Nublado* es la cúpula de estudio con una ventana difusa, no un cielo cubierto.
+- Los umbrales de *Tono*, *Fireflies* y *Presupuesto de tiempo* son una propuesta, pendiente de decisión (ROADMAP D1, «Qué no encajó»).
+- Con el motor del lanzador y su *denoise* del visor encendido, las sumas que llegan a la página son la imagen filtrada: los *fireflies* salen como «no hay nada que contar» (el encuadre por paradas sí se lee).
+- Dos *fireflies* pegados se ven uno al otro como vecino brillante y no cuentan; en *Rápido* no hay acumulación que leer.
+- La lectura de la acumulación corre en el hilo principal cada vez que las muestras se doblan (de 16 en adelante): unos 40 ms en un visor de 1280 × 720, 160 ms a 2560 × 1440 y 330 ms a 4K.
+- El chequeo de vídeo no se dispara todavía con ajustes de esta versión: el vídeo codificado llega con N1 y hasta entonces la salida es una secuencia de fotogramas.
+- No hay cambios en el motor de Rust (`engine/`): no se ha movido ningún hash fijado.
 
 ## v0.1.14 — 2026-10-17
 

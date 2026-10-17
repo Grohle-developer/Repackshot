@@ -371,3 +371,42 @@ describe('history notifications', () => {
     expect(seen).toEqual([['Two steps']]);
   });
 });
+
+describe('what a listener dispatches while it is told of a history move', () => {
+  // D1: the Doctor asks for its findings to be run again after an undo, from the store's own listener. The action
+  // waits for the notification to end; it used to wait for the next dispatch, which could be much later.
+  const listening = (which: 'history/undo' | 'history/redo' | 'history/reset' | 'history/commit') => {
+    const { store } = exampleStore();
+    store.dispatch({ type: 'image/set', patch: { exposureEv: 1 } });
+    store.dispatch({ type: 'image/set', patch: { exposureEv: 2 } });
+    store.subscribe((_s, _p, a) => {
+      if (a.type === which) store.dispatch({ type: 'image/set', patch: { bloom: 0.5 } });
+    });
+    return store;
+  };
+
+  it('is applied at once after an undo', () => {
+    const store = listening('history/undo');
+    store.undo();
+    expect(store.get().image).toMatchObject({ exposureEv: 1, bloom: 0.5 });
+  });
+
+  it('is applied at once after a redo', () => {
+    const store = listening('history/redo');
+    store.undo();
+    store.redo();
+    expect(store.get().image).toMatchObject({ exposureEv: 2, bloom: 0.5 });
+  });
+
+  it('is applied at once after a reset and after a closed transaction', () => {
+    const reset = listening('history/reset');
+    reset.reset(exampleState());
+    expect(reset.get().image.bloom).toBe(0.5);
+    const tx = listening('history/commit');
+    tx.transaction('Two steps', () => {
+      tx.dispatch({ type: 'image/set', patch: { exposureEv: 3 } });
+      tx.dispatch({ type: 'image/set', patch: { exposureEv: 4 } });
+    });
+    expect(tx.get().image).toMatchObject({ exposureEv: 4, bloom: 0.5 });
+  });
+});

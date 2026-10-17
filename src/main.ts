@@ -83,6 +83,7 @@ import type { AiPort, AppServices, EngineConfig, PluginsPort, ViewportPort } fro
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
+import { installDoctorFacts } from './ui/doctor-facts';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
 const appEl = document.getElementById('app')!;
@@ -324,6 +325,11 @@ ui.subscribe((u, prev) => {
   if (u.settings['engine.particleCap'] !== prev.settings['engine.particleCap'] || u.engineInfo?.backend !== prev.engineInfo?.backend) applyParticleCap();
 });
 
+// D1: what the Doctor knows of the engine (the pool, SIMD, the denoise, the speed measured, and what its accumulation
+// says), handed in whenever it changes; a tick catches the accumulation, which the engine reads when its samples double.
+const doctorFacts = installDoctorFacts(store, ui, () => (full && tracer ? tracer.status() : null));
+window.setInterval(doctorFacts.sync, 1000);
+
 const cores = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : null;
 
 const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: EngineInfo) => {
@@ -377,6 +383,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
       simd: t.simd,
       simdSupported: simdOk,
       cores,
+      denoise: true,
       native: { threads: i.threads, isa: i.isa, simd: i.simd, os: i.os, arch: i.arch, engineVersion: i.engineVersion },
     });
     return;
@@ -398,7 +405,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
     }
     const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
     poolCfg = { backend: 'wasm', threads: cfg.threads, simd: cfg.simd };
-    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores });
+    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`path tracer: ${reason}`);

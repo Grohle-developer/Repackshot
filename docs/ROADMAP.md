@@ -6662,7 +6662,7 @@ dependencia: el formato *store* de ZIP es trivial).
 **Criterio.** Tests de nombre de archivo y de cola (orden, cancelar el
 segundo deja el tercero); un lote de 2 × 2 produce 4 imágenes.
 
-## D1 · Doctor de motor — **Sonnet**
+## D1 · Doctor de motor — **Sonnet** — hecha
 
 **Qué.** Los chequeos que dependen del motor: `rt.wasm` cargado y
 número de workers (y aviso si el navegador solo da uno), SIMD disponible
@@ -6675,6 +6675,150 @@ clic.
 
 **Criterio.** `tests/doctor-engine.test.ts` con un motor falso que simula
 cada estado; cada chequeo se dispara y se limpia.
+
+**Hecho.** Los chequeos de motor viven en un módulo propio,
+`src/core/doctor-engine.ts`, enchufado a `runDoctor` y a `fixDoctor` por su
+rama por defecto: los diez de escena, sus claves y sus pruebas no se
+tocaron. Lo que el motor y el sistema dicen no es proyecto, así que la página
+se lo entrega al Doctor como `EngineFacts` (`setEngineFacts`, igual que el tope
+de partículas de S4a) a través de `installDoctorFacts` (`src/ui/doctor-facts.ts`),
+que lo construye del estado de la interfaz y del `status()` del visor, pide
+`doctor/refresh` solo cuando cambia algo (volátil, sin entrada de deshacer) y lo
+repite tras deshacer y rehacer; `main.ts` le da un pulso de un segundo para lo que
+solo sabe el motor. Sin hechos, los siete chequeos de motor y los dos que no se
+tocan (`lighttree`, `persist`) siguen en *no disponible* con la misma forma de
+antes. El catálogo pasa a **19** entradas: `simd` detrás de `engine` y `budget`
+detrás de `output` (nuevas), y los textos de `engine`, `denoise`, `color`,
+`caustics` y `output`, que hablaban de Cycles, reescritos para este motor con
+sus claves intactas. Detección, arreglo y prueba de cada uno:
+
+- **`engine`**: la disponibilidad de `ui.engine` (`NO_WASM`, `OUTDATED`,
+  `FAILED`, `NO_WORKERS`, cada una con su frase) y un *pool* de un solo worker
+  con el motor de WebAssembly. Sin arreglo; si es *Hilos* quien lo limita
+  (Automático daría más), el aviso trae el botón **Ajustes** que abre esa fila.
+- **`simd`**: `EngineInfo.simd` frente a lo que el sistema soporta y al ajuste:
+  sin simd128, *SIMD* en *Desactivado* (con botón a esa fila), falta
+  `rt-simd.wasm`, o un motor de escritorio sin camino vectorial.
+- **`denoise`**: en el visor y no en el render, a fuerza 0, o un `rt.wasm` sin
+  `rt_denoise` (los *workers* lo dicen en su primer mensaje, `ready.denoise`; antes
+  nadie fuera del worker lo sabía). Apagado en todas partes no avisa. Arreglo:
+  *Los dos* / 100 %, por `render/set`.
+- **`color`**: con *Estándar*, la fracción del encuadre a más de una parada sobre el
+  blanco (2 lineal, con la exposición aplicada) leída del histograma por
+  paradas de la acumulación; con *Fílmica* y *AgX* no hace falta imagen. Arreglo:
+  *Fílmica*.
+- **`caustics` (Fireflies)**: `render/frame-scan.ts` lee la acumulación que la
+  página ya tiene (sin tocar el motor): un píxel es un *firefly* si su media
+  pasa del blanco, es 4 veces la del mejor de sus ocho vecinos y, con la
+  luminancia al cuadrado, una sola muestra aporta la mitad de su luz o más (el
+  cociente `lum2 / (Σ luminancia)²` es una cota inferior exacta de la parte de la
+  mayor muestra). Avisa desde 8 píxeles o 10⁻⁵ del encuadre; arreglo: cáusticas
+  *Apagado* → *Automático* y recorte de indirecta en 10, o, si ya está, solo
+  «más muestras». Lo hacen `status().scan` del *pool* y del lanzador, leído de nuevo
+  cuando las muestras se doblan (de la 16 en adelante).
+- **`output`**: vídeo con un códec que el sistema no codifica, o vídeo a secas
+  (un archivo que un fallo pierde entero). Arreglo: secuencia de fotogramas.
+- **`budget`**: con la velocidad que el motor midió (`ui.throughput`, nunca
+  inventada), el tiempo de *Tiempo* no llega a un Borrador (64), o el de *Lo que
+  llegue antes* a la mitad de las muestras. Arreglo: subir el tiempo al
+  necesario más una cuarta parte de holgura (`BUDGET_HEADROOM`), a la decena de
+  segundos: la prueba en el navegador mostró que la velocidad que mide el visor se
+  mueve de una lectura a la siguiente y un presupuesto justo volvía a quedarse corto
+  nada más arreglarlo.
+
+Un escaneo es de **una imagen**: lleva el proyecto del que sale (`basis`) y
+`sameImage` (que repite `touchesImage` de los dos motores, con una prueba que las
+compara) dice cuándo deja de valer; el Doctor no usa una lectura de otra imagen
+(`Midiendo…`). El *store* vuelve a pasar el Doctor cuando cambia lo que los
+chequeos leen (`engineInputsChanged`). Los arreglos pasan por el *store* y son
+una entrada de deshacer; *Arreglar todo* los junta en una, y lo que el proyecto
+no puede cambiar es un aviso con su explicación y sin arreglo falso.
+`tests/doctor-engine.test.ts` (72 pruebas) lleva un motor falso que escribe
+donde escribe el real y usa el `installDoctorFacts` de verdad: cada uno de los
+catorce fallos de la tabla se dispara y se limpia, más *Arreglar todo*, los
+umbrales en sus fronteras, `doctorSentence` en los dos idiomas, y que deshacer
+refresca; `tests/frame-scan.test.ts` (17) lee acumulaciones sintéticas, el
+`status().scan` del *pool* con *workers* falsos y el del lanzador con su simulador;
+`tests/frame-scan-engine.test.ts` (3), el `rt.wasm` de verdad. Cada chequeo
+nuevo se probó **desactivando su detección** (y cada arreglo, y cada umbral):
+cerca de cien mutaciones, todas muertas salvo tres equivalentes: no recortar la
+fila superior ni la inferior de los vecinos (fuera del marco se lee `undefined` y
+no gana a nadie) y el `full` del `status()` del *pool* (la caché, que pide 16
+muestras, ya lo cubre). `tools/doctor-engine-check.mjs` lo recorre en Chromium con el `rt.wasm`
+real (27 comprobaciones: el motor y el visor sanos, *SIMD* en *Desactivado* con
+su botón a *Ajustes*, *denoise* solo en el visor y un presupuesto de 5 s con la
+velocidad que el motor midió, *Arreglar todo* y un deshacer) y deja
+`docs/ui/doctor-engine.png`. El motor de Rust no se tocó: ni `rt_features` ni
+ningún *hash* fijado se mueve. Compuertas: `npm run qa` en verde (159 archivos y
+2746 pruebas pasan, 4 archivos y 6 pruebas omitidas; al empezar pasaban 2635) y
+`npm run engine:test` en verde (1098 pasan, 11 ignoradas). Con K1 en la
+misma rama conviven los dos: `runDoctor` da los 19 de `DOCTOR_CHECKS` y, con el tipo
+*Interior*, los siete de `INTERIOR_CHECKS` detrás; `fixDoctor` encamina cada clave a su
+Doctor (`isInteriorCheck`) y *Arreglar todo* limpia las dos clases en una entrada de
+deshacer (cuatro pruebas en `tests/doctor-engine.test.ts`, que también fija que las claves
+de interior no son ni de escena ni de motor). Coste: la lectura de
+la acumulación corre en el hilo principal cada vez que las muestras se doblan
+(de 16 en adelante: cinco o seis veces por vista) y tarda, medida en Node con el
+código caliente, 40 ms a 1280 × 720, 160 ms a 2560 × 1440 y 330 ms a 4K.
+
+Un fallo que apareció al probarlo y se corrigió con su prueba
+(`tests/store.test.ts`): una acción que un oyente del *store* envía mientras se le
+avisa de un deshacer, un rehacer, un reinicio o el cierre de una transacción
+esperaba al siguiente `dispatch` (`apply` se vaciaba solo en `dispatch`); el
+Doctor necesita pedir `doctor/refresh` tras deshacer, y no llegaba.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es de criterio y se
+deja anotado para quien decide, la regla 11):
+- ◆ **`color` no tiene en este motor el chequeo de origen** («la transformada
+  de la escena no coincide con la elegida en los ajustes»): hay una sola fuente
+  (`image.viewTransform`) y la página convierte las sumas ella misma, así que no
+  hay nada que discrepe. La propuesta es otra cosa que el motor sí sabe: con
+  *Estándar* se recortan las altas luces. Pendiente: si eso es un fallo (un fondo
+  blanco liso se quiere recortado), el umbral (**1 %** del encuadre, a más de
+  **una parada** sobre el blanco: `CLIP_FRACTION`, `CLIP_OVER_WHITE`) y si el
+  arreglo es *Fílmica* o *AgX*.
+- ◆ **`caustics` / Fireflies cambia de sentido**: el de origen avisaba de
+  cáusticas *encendidas* sin necesidad; aquí las cáusticas son un mapa de
+  fotones que quita fireflies, y apagadas los dejan. Umbrales propuestos, todos en
+  `render/frame-scan.ts` y `core/doctor-engine.ts`: brillo ≥ 1 (blanco), aislamiento
+  ×4, parte de una muestra ≥ 0,5, 16 muestras como mínimo, 8 píxeles o 10⁻⁵ del
+  encuadre, recorte de indirecta **10** (un recorte quita energía: es un sesgo, no un
+  arreglo gratis). Se miraron datos reales (`tests/frame-scan-engine.test.ts`): dos
+  escenas ordinarias a 16 muestras, 0 *fireflies*; espejos con luces de alfiler a 64,
+  4 con una muestra de hasta ~76 veces el blanco; no se afinó con más escenas.
+- **Lo que no se mide**: dos *fireflies* pegados se ven como vecino brillante uno al
+  otro y no cuentan; con el *denoise* del visor del lanzador encendido, las sumas que
+  llegan a la página son la imagen filtrada (`fireflies: null`, y el chequeo dice que
+  no hay nada que contar; el *pool* lee siempre las sumas sin filtrar); en *Rápido*
+  no hay acumulación.
+- ◆ **`budget`: qué es «demasiado lento para el presupuesto»**. No hay presupuesto
+  de tiempo si se termina por muestras o por ruido (no avisa); con *Tiempo*, el
+  de un Borrador (64 muestras) es el mínimo para una imagen utilizable; con *Lo
+  que llegue antes*, la mitad de las muestras pedidas (`BUDGET_REACH`). El arreglo
+  sube el tiempo (con un 25 % de holgura) y no baja las muestras (la otra salida
+  honesta); una animación se
+  juzga por el presupuesto de cada fotograma, y su total no se compara con nada.
+- ◆ **`output` dormido**: hasta N1 los ajustes fuerzan la secuencia de
+  fotogramas, así que solo un proyecto de un futuro con vídeo lo dispara. Se decide
+  si debe avisar también cuando el códec sí se codifica (hoy sí, por «un archivo
+  que un fallo pierde»); el arreglo es siempre la secuencia, sin cambiar de
+  códec.
+- ◆ **`denoise`**: solo avisa del visor sin el render (no al revés: el visor en
+  bruto es una decisión de cada día) y de fuerza 0; el arreglo es *Los dos* / 100 %.
+- **`lighttree` y `persist`** siguen en la lista como *no disponibles* con su motivo
+  (el árbol de luces es de K4; los datos persistentes son de Blender y no tienen
+  equivalente): las claves son estables y no se quitan. Si se prefiere, `persist`
+  puede retirarse del catálogo en una fase de limpieza.
+- **Ajustes de la aplicación**: lo que limita *Hilos* y *SIMD* no es del proyecto
+  ni se deshace; el Doctor lo señala con un botón que abre la fila y no lo
+  cambia. Si se prefiere un arreglo que lo cambie, es una decisión (la regla 6 dice
+  que toda mutación es deshacible).
+- `sameImage` repite la lista de `touchesImage` del *pool* y la del lanzador (ya
+  eran dos copias): `tests/doctor-engine.test.ts` las compara en dieciséis
+  acciones. Difiere en el cabezal, a propósito (el Doctor no corre en cada fotograma).
+- La burbuja de ayuda de *Arreglar* usa el texto del catálogo; los de motor lo
+  dicen en general («Sin arreglo en el proyecto: …»), y el aviso de cada caso, la
+  razón.
 
 ## U5 · Ventana de render y visor de resultados — **Opus** — hecha
 
