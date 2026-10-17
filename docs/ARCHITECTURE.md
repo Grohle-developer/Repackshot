@@ -142,6 +142,8 @@ src/
     material-preview.ts     las esferas de los nodos, los mapas de Rápido (`planBake`, `bakeRows`, `finishBake`) y la media que hace de parámetros (M3a; el `MATL` de un material de nodos, M3b)
     material-examples.ts    los diez grafos de ejemplo como grafos, y la etiqueta de su plástico dibujada sin archivo (M3a)
     noise.ts                el ruido de gradiente (Perlin 2002 y símplex) y su suma en octavas, en f32: el contrato de M3b (M3a)
+    patterns.ts             la madera y la tela de E6 en f32, paso a paso como `rt_core::pattern` (su ruido con la permutación del PCG32, los nudos, `sample_at`): los nodos Madera y Tela del intérprete (M3c)
+    pattern-recipe.ts       la receta de un dibujo de E6 desde los parámetros de la familia (el `PATN` de `io/rsb.ts` y las constantes de los nodos Madera y Tela, M3c)
     image-header.ts         tamaño y canales de un PNG o un JPEG por su cabecera, sin decodificar (M2a)
     sky.ts                  el cielo del motor portado para la vista previa: el físico de E5c (por defecto) y el de Preetham (E5)
     sky-table.ts            los coeficientes del cielo físico, generados por `rt-sky table` (los mismos f32 y el mismo hash que rt-core)
@@ -1370,7 +1372,14 @@ o vector, las tres componentes iguales (`F2V`); color → número, luminancia
 Rec. 709 (`VLUM`); vector → número, la media (`VAVG`); color ↔ vector y
 normal → vector, las mismas tres cifras; nada → normal salvo una normal.
 Una entrada sin conexión ni valor lee una fuente del punto: `NORMAL` (N),
-`UV0`, u `OBJECT` (P · 0,01, las coordenadas de la pieza por cada 100 mm).
+`UV0`, `OBJECT` (P · 0,01, las coordenadas de la pieza por cada 100 mm) o
+`POSITION` (P, en mm: el punto de los nodos *Madera* y *Tela*, M3c).
+
+**Los nodos** (`data/material-nodes.ts`, claves estables): `OUTPUT`,
+`IMAGE`, `MAPPING`, `NOISE`, `GRADIENT`, `CHECKER`, `STRIPES`, `RAMP`,
+`MIX`, `MATH`, `FRESNEL`, `CURVATURE`, `VALUE`, `COLOR`, `SEPARATE_RGB`,
+`COMBINE_RGB`, `INVERT`, `NORMAL_MAP`, `BUMP` (M3a) y `WOOD` y `FABRIC`
+(M3c: los dibujos de E6 como nodos, abajo).
 
 **El compilador** (`core/material-program.ts`) recorre el grafo desde la
 salida, compila cada (nodo, salida) una vez, convierte entre tipos donde
@@ -1480,11 +1489,47 @@ e0)/(e1 − e0))`, `(t·t)·(3 − 2·t)`.
 | 123 | `CAVITY` | F | | | | # (1) | la concavidad, igual |
 | 124 | `NMAP` | V | V (color) | F (intensidad) | V (n₀) | espacio | `m = 2·color − 1` por componente. Tangente (0): marco en torno a `n₀`: `T' = T − (T·n₀)·n₀` (`T` de `V5`), si su longitud > 1e−6 `T'/\|T'\|`, si no `onb(n₀)`; `B' = n₀ × T'`; `VNORM(T'·(m.x·s) + B'·(m.y·s) + n₀·m.z, n₀)`, sumado como `((T'ᵢ·(m.x·s)) + (B'ᵢ·(m.y·s))) + (n₀ᵢ·m.z)`. Pieza (1): `t = VNORM(m, n₀)`, `VNORM(n₀ + s·(t − n₀), n₀)` |
 | 125 | `BUMP` | V | V (n₀) | F (dT) | F (dB) | | marco `T'`, `B'` en torno a `n₀` como en `NMAP`; `VNORM(n₀ − ((T'·dT) + (B'·dB)), n₀)` por componente |
+| 130 | `WOOD` | V | V (p) | V (n) | | # (25) | M3c: el color de la madera de la receta `k` en `p` (abajo); negro si la receta no pinta |
+| 131 | `WOODR` | F | V (p) | V (n) | F (r) | # (25) | `(c·rug) + suma`: la rugosidad `c` por la de la madera, más la de un nudo (`Tint::apply` antes de su `clamp`); sin receta, `c` |
+| 132 | `WOODH` | F | V (p) | V (n) | | # (25) | la altura de la superficie en mm (poros y nudos por debajo de 0, los nudos del bambú por encima); sin receta, 0 |
+| 133 | `WOODN` | V | V (p) | V (n) | | # (25) | `n` doblada por la pendiente del relieve `g` (diferencias de 0,02 mm a lo largo de `Frame::from_normal(n)`): `t = g − n·(n·g)`, `normalize(n − t)`; sin relieve, `n` |
+| 140–143 | `CLOTH` `CLOTHR` `CLOTHH` `CLOTHN` | como 130–133 | | | | # (25) | lo mismo con la tela de la receta `k` (la proyección de caja por `n`; la altura, mezcla de las proyecciones) |
 
 Un relieve se compila como `h₀`, `h_T` y `h_B` (la altura en el punto y en
 los dos pasos), `dT = (h_T − h₀)·k` y `dB = (h_B − h₀)·k` con `k =
 intensidad·distancia/0,01` (negativo si se invierte; el *relieve* de la
 salida usa `k = 1/0,01`: su altura ya está en mm), y `BUMP(n, dT, dB)`.
+
+**Nodos de dibujo** (M3c: *Madera* y *Tela*). Las 25 constantes de una
+instrucción `WOOD*` o `CLOTH*` son la receta tal cual la guarda `PATN`
+(§5.2 octies): los dos colores (lineales), la escala en mm, los 16
+parámetros, la variante (figura o tejido) y la semilla (las dos, enteros
+leídos como `ToUint32`); el compilador las calcula de los parámetros del
+nodo con la misma función que escribe el `PATN` de un material de esas
+familias (`core/pattern-recipe.ts`: `ringDensity` anillos por 100 mm por
+`woodScale`, `threadCount` hilos por cm, tamaños en mm). Una instrucción
+corre `rt_core::pattern::sample_at` (el mismo código que el `PATN` de la
+familia, `pattern.rs`) en el punto `a` con la normal `b`, que también elige
+la proyección de una tela; las salidas de un mismo nodo (las cuatro de una
+misma receta en el mismo punto y normal) comparten la muestra. **Dónde**:
+el anfitrión da la colocación de cada receta (`Host::placement`, por `k` y
+por tipo): en el motor, la de la familia en esa instancia (el marco de la
+caja de la malla con la médula a lo largo del lado largo, la escala de la
+instancia y los nudos colocados con la prueba de la superficie, al preparar
+la escena); sin pieza (la referencia, la prueba cruzada), el espacio del
+propio punto en mm sin nudos (`Placement::IDENTITY`: la médula es su eje
+`z`); en *Rápido*, la de la caja de las piezas del material con los nudos
+colocados en la caja (`core/material-preview.ts` `patternPlacements`). El
+compilador conecta la normal de salida del nodo solo si la receta tiene
+relieve (poros, nodos del bambú o nudos pedidos; tela con relieve); si no,
+la salida es la normal de su entrada. La anisotropía de un nodo es una
+constante (0,3 a lo largo de la veta, 0 en el moteado; 0,5 a través del
+hilo de encima, 0 en el fieltro) y la dirección la da el anfitrión: el
+motor estira la rugosidad a lo largo de la tangente que da la primera
+muestra de dibujo del programa en ese punto (`Host::grain`), como la de un
+`PATN`. TypeScript las porta paso a paso en `core/patterns.ts` (el ruido de
+E6 con su permutación de PCG32, la madera, el flujo de los nudos, la tela),
+bit a bit con el motor (prueba cruzada).
 
 **`MAP`.** Constantes: proyección (0 UV, 1 plana, 2 caja, 3 cilíndrica, 4
 esférica, 5 objeto), eje (0 X, 1 Y, 2 Z), tamaño (mm), cos y sen del giro
@@ -2214,6 +2259,20 @@ dibujos de los diez ejemplos en *Rápido* y con el `rt.wasm` real.
   de imagen fuera, una rampa de 0 o más de 64 paradas, más de los límites, bytes
   de más o de menos. `is_material` pide las quince salidas con vectores en el
   color base, la emisión y la normal.
+- **Nodos de dibujo** (M3c, `program/shade.rs`, `pattern.rs`). Cada receta
+  de las instrucciones `WOOD*` y `CLOTH*` de un programa se coloca en cada
+  instancia al preparar la escena con `pattern::place` (lo que hace el
+  `PATN` de la familia: el marco de la caja de la malla, la escala de la
+  instancia y los nudos con su prueba de la superficie) y el anfitrión la da
+  por `(k, tipo)` (`Host::placement`); una instrucción corre
+  `pattern::sample_at`, el mismo código que el `PATN`. La primera muestra con
+  tangente del programa en el punto la dice (`Host::grain`) y, si la
+  anisotropía resuelta pasa de 0, `Resolved::tangent` lleva la veta (o el
+  hilo) al mundo y `Resolved::frame` da al integrador el marco de
+  `Tint::frame`. La escena de dibujos de E6 con sus maderas por nodos
+  (`example::m3c_wood_scene`) da los mismos bits que con su `PATN`. Bit 5
+  de las capacidades, `FEATURE_PATTERN_NODES`: un motor sin él no conoce los
+  códigos y la página escribe esos materiales como su media.
 - **Intérprete** (`program/interp.rs`, `Runner`). Archivos de registros en la
   pila, 256 `f32` y 256 `vec3`; ninguna asignación al correr (test); cada
   instrucción en `f32` sin FMA, con `fmath` (las funciones de `core/f32math.ts`)

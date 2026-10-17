@@ -5,9 +5,12 @@
 
 use super::{
     op, Instr, Program, ProgramImage, ValueRef, CTX_COUNT, FLAG_THIN_WALLS, NONE, OUTPUTS,
-    OUT_BASE_COLOR, OUT_BEVEL, OUT_COAT_ROUGHNESS, OUT_EMISSION, OUT_EMISSION_STRENGTH, OUT_IOR,
-    OUT_NORMAL, OUT_OPACITY, OUT_ROUGHNESS,
+    OUT_ANISOTROPY, OUT_BASE_COLOR, OUT_BEVEL, OUT_COAT, OUT_COAT_ROUGHNESS, OUT_EMISSION,
+    OUT_EMISSION_STRENGTH, OUT_IOR, OUT_METALLIC, OUT_NORMAL, OUT_OPACITY, OUT_ROUGHNESS,
+    OUT_TRANSMISSION, PATTERN_CONSTS,
 };
+use crate::pattern::{Pattern, PATTERN_CLOTH, PATTERN_WOOD};
+use crate::scene::Material;
 
 /// The shading point's position register.
 pub const P: u32 = 0;
@@ -155,6 +158,17 @@ impl Builder {
         self.v(op::RAMP, x, NONE, NONE, k)
     }
 
+    /// M3c: the constants of `pattern`'s recipe (as `PATN` holds it), their index.
+    pub fn pattern_consts(&mut self, pattern: &Pattern) -> u32 {
+        let (a, b) = (pattern.color_a, pattern.color_b);
+        let mut c = vec![a.r, a.g, a.b, b.r, b.g, b.b, pattern.scale_mm];
+        c.extend_from_slice(&pattern.params);
+        c.push(pattern.variant as f32);
+        c.push(pattern.seed as f32);
+        debug_assert_eq!(c.len(), PATTERN_CONSTS);
+        self.konst(&c)
+    }
+
     /// An entry of the image table: the scene image `image`, read as colour or data, past its
     /// edges by `wrap`.
     pub fn image(&mut self, image: Option<u32>, srgb: bool, wrap: u32) -> u32 {
@@ -195,6 +209,49 @@ impl Builder {
     pub fn material(&mut self, absorption_mm: f32, thin_walls: bool) {
         self.absorption_mm = absorption_mm;
         self.flags = if thin_walls { FLAG_THIN_WALLS } else { 0 };
+    }
+
+    /// M3c: the program of a material whose pattern is `pattern` (a wood or a cloth of `PATN`)
+    /// as a graph of a pattern node gives it: the node's colour, roughness (the material's times
+    /// the pattern's) and normal into the output, the anisotropy along the grain (a wood's or a
+    /// cloth's, else the material's) and the rest the material's own values. Drawn the same as the
+    /// material with its `PATN`, bit for bit, wherever the part is seen from outside and, for a
+    /// cloth, away from a bevel (`program::scene_tests`).
+    pub fn pattern_material(pattern: &Pattern, m: &Material) -> Program {
+        let mut b = Builder::new();
+        let k = b.pattern_consts(pattern);
+        let ops = if pattern.kind == PATTERN_CLOTH {
+            [op::CLOTH, op::CLOTHR, op::CLOTHN]
+        } else {
+            debug_assert_eq!(pattern.kind, PATTERN_WOOD);
+            [op::WOOD, op::WOODR, op::WOODN]
+        };
+        let colour = b.v(ops[0], P, N, NONE, k);
+        let rough_in = b.fconst(m.roughness);
+        let rough = b.f(ops[1], P, N, rough_in, k);
+        let normal = b.v(ops[2], P, N, NONE, k);
+        b.out(OUT_BASE_COLOR, colour, true);
+        b.out(OUT_ROUGHNESS, rough, false);
+        b.out(OUT_NORMAL, normal, true);
+        let anisotropy = match pattern.recipe() {
+            Some(crate::pattern::Recipe::Wood(_, a, _)) if a > 0.0 => a,
+            Some(crate::pattern::Recipe::Cloth(c)) if c.has_threads() => {
+                crate::pattern::CLOTH_ANISOTROPY
+            }
+            _ => m.anisotropy,
+        };
+        for (o, v) in [
+            (OUT_METALLIC, m.metallic),
+            (OUT_ANISOTROPY, anisotropy),
+            (OUT_COAT, m.coat),
+            (OUT_COAT_ROUGHNESS, m.coat_roughness),
+            (OUT_TRANSMISSION, m.transmission),
+            (OUT_IOR, m.ior),
+            (OUT_OPACITY, m.opacity),
+        ] {
+            b.out_const(o, &[v]);
+        }
+        b.build()
     }
 
     /// The program, checked.

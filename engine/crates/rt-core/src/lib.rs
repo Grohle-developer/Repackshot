@@ -97,12 +97,21 @@ pub const FEATURE_IES: u32 = 8;
 /// [`geometry::INSTANCE_NO_CAMERA`]). An engine without it renders the standard camera of `CAMR` and
 /// shows every instance, so the page writes none of them for such an engine.
 pub const FEATURE_CAMERAS: u32 = 16;
+/// Bit 5 of [`FEATURES`] (M3c): the engine runs the pattern instructions of a material program
+/// (`WOOD*` and `CLOTH*`, [`program::op`]): E6's wood and cloth as nodes of a graph. An engine
+/// without it refuses a program with them (an unknown opcode makes the RSB invalid), so the page
+/// writes such a material as the mean of its outputs for it, as for an engine without programs.
+pub const FEATURE_PATTERN_NODES: u32 = 32;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
 /// page writes only what the engine says it reads.
-pub const FEATURES: u32 =
-    FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_SECTION | FEATURE_IES | FEATURE_CAMERAS;
+pub const FEATURES: u32 = FEATURE_TEXTURES
+    | FEATURE_PROGRAMS
+    | FEATURE_SECTION
+    | FEATURE_IES
+    | FEATURE_CAMERAS
+    | FEATURE_PATTERN_NODES;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

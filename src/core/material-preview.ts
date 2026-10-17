@@ -20,7 +20,9 @@ import type { MaterialFamily, MaterialParams } from '../data/types';
 import { getImage } from './images';
 import type { Box } from './math';
 import { compileGraph, CTX, OUTPUT_KEYS, OUTPUT_TYPES, type CoordSource, type Program, type ValueRef } from './material-program';
-import { ProgramRunner, type ImagePixels, type ShadingPoint } from './material-interp';
+import { ProgramRunner, type ImagePixels, type PlacementOf, type ShadingPoint } from './material-interp';
+import { meetsBox, placeKnots } from './knots';
+import { f32Knot, IDENTITY_PLACEMENT, PATTERN_WOOD, recipeOf, woodPlacementFrame, type Placement, type V } from './patterns';
 import { EMIT_RADIANCE_PER_WATT } from './photometry';
 import type { MaterialGraph } from './material-graph';
 import type { ProjectState } from './store';
@@ -152,7 +154,7 @@ export interface NodePreviews {
 
 /** The previews of a program compiled with probes: its probes and its material on the sphere. */
 export function renderNodePreviews(p: Program, images: readonly (ImagePixels | null)[], size = NODE_PREVIEW_SIZE): NodePreviews {
-  const run = new ProgramRunner(p, images);
+  const run = new ProgramRunner(p, images, patternPlacements(p, SPHERE_BOX));
   const probes = p.probes.map(() => new Uint8ClampedArray(size * size * 4));
   const material = new Uint8ClampedArray(size * size * 4);
   for (let py = 0; py < size; py++) {
@@ -197,7 +199,7 @@ export function renderNodePreviews(p: Program, images: readonly (ImagePixels | n
 
 /** The output node's shaded sphere alone, at `size` (the editor's side panel shows it larger than a node's). */
 export function renderMaterialSphere(p: Program, images: readonly (ImagePixels | null)[], size: number): Uint8ClampedArray {
-  const run = new ProgramRunner(p, images);
+  const run = new ProgramRunner(p, images, patternPlacements(p, SPHERE_BOX));
   const out = new Uint8ClampedArray(size * size * 4);
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
@@ -236,6 +238,8 @@ export interface BakePlan {
   notes: BakeNote[];
   /** Internal: the surface the maps are evaluated on. */
   surface: BakeSurface;
+  /** M3c: the parts' box (part space, mm) the patterns of Wood and Fabric nodes are placed in. */
+  box: Box;
 }
 
 type BakeSurface =
@@ -334,7 +338,7 @@ export function planBake(p: Program, bounds: Box | null, partSizeMm: number): Ba
   if (!object && projections.length === 0) {
     if (uvSets.size > 1) notes.push('UV_SETS');
     const set = uvSets.has(0) || uvSets.size === 0 ? 0 : 1;
-    return { mode: 'UV', mapping: plain({ uvSet: set }), notes, surface: { kind: 'UV', mm: size } };
+    return { mode: 'UV', mapping: plain({ uvSet: set }), notes, surface: { kind: 'UV', mm: size }, box: b };
   }
   // One projection feeds everything: its own surface, drawn back through it.
   if (!object && uvSets.size === 0 && projections.every((x) => sameSource(x, projections[0]))) {
@@ -377,6 +381,7 @@ export function planBake(p: Program, bounds: Box | null, partSizeMm: number): Ba
       },
       notes,
       surface: { kind: 'PROJECTION', source: src, u0: su, v0: sv, d },
+      box: b,
     };
   }
   // 3D coordinates or several projections: a slice through the front plane, drawn as a box projection.
@@ -389,6 +394,52 @@ export function planBake(p: Program, bounds: Box | null, partSizeMm: number): Ba
     mapping: plain({ projection: 'BOX', sizeMm: d, offset: [0, -vc / d] }),
     notes,
     surface: { kind: 'TRIPLANAR', uc: 0, vc, d },
+    box: b,
+  };
+}
+
+// --- Where the patterns lie (M3c) -------------------------------------------------------------------
+
+/** The box of the preview sphere (part space, mm): what a node's sphere places a Wood or Fabric node in. */
+export const SPHERE_BOX: Box = { min: [-PREVIEW_RADIUS_MM, -PREVIEW_RADIUS_MM, -PREVIEW_RADIUS_MM], max: [PREVIEW_RADIUS_MM, PREVIEW_RADIUS_MM, PREVIEW_RADIUS_MM] };
+
+/**
+ * Where the patterns of a program's Wood and Fabric nodes lie on parts within `box` (part space, mm), as the engine
+ * places them on a part (rt_core::pattern::place): a wood in the frame of the box (its pith along the longest side,
+ * below and aside), its knots placed in the box by core/knots.ts with the box's faces as the surface (the engine tests
+ * the mesh's own); a cloth on the part's axes from the box's corner. Null for a program without them.
+ */
+export function patternPlacements(p: Program, box: Box | null): PlacementOf | undefined {
+  if (!p.uses.patterns) return undefined;
+  const b = box && Number.isFinite(box.min[0]) ? box : SPHERE_BOX;
+  const fr = Math.fround;
+  const min: V = [fr(b.min[0]), fr(b.min[1]), fr(b.min[2])];
+  const size: V = [fr(b.max[0] - b.min[0]), fr(b.max[1] - b.min[1]), fr(b.max[2] - b.min[2])];
+  const cache = new Map<string, Placement>();
+  return (k, kind) => {
+    const key = `${k}|${kind}`;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    let out: Placement;
+    if (kind === PATTERN_WOOD) {
+      const frame = woodPlacementFrame(min, size, 1);
+      const recipe = recipeOf(kind, p.consts, k);
+      let list: Placement['knots']['list'] = [];
+      let darkness = 0;
+      if (recipe?.kind === 'WOOD' && recipe.knots.count > 0 && recipe.knots.diameterMm > 0) {
+        const inFrame = (v: readonly number[]): [number, number, number] => frame.axes.map((a) => v[0] * a[0] + v[1] * a[1] + v[2] * a[2]) as [number, number, number];
+        const c = [min[0] + size[0] / 2 - frame.origin[0], min[1] + size[1] / 2 - frame.origin[1], min[2] + size[2] / 2 - frame.origin[2]];
+        const centre = inFrame(c);
+        const half = inFrame([size[0] / 2, size[1] / 2, size[2] / 2]).map(Math.abs) as [number, number, number];
+        list = placeKnots(recipe.knots, centre, half, meetsBox(centre, half)).map(f32Knot);
+        darkness = recipe.knots.darkness;
+      }
+      out = { origin: frame.origin, axes: frame.axes, mm: 1, knots: { list, darkness } };
+    } else {
+      out = { ...IDENTITY_PLACEMENT, origin: min };
+    }
+    cache.set(key, out);
+    return out;
   };
 }
 
@@ -523,7 +574,7 @@ export interface BakeBand {
 
 /** Evaluates rows `r0` to `r1` of a bake of `size` × `size` texels (a worker may take a band each). */
 export function bakeRows(p: Program, images: readonly (ImagePixels | null)[], plan: BakePlan, size: number, r0 = 0, r1 = size): BakeBand {
-  const run = new ProgramRunner(p, images);
+  const run = new ProgramRunner(p, images, patternPlacements(p, plan.box));
   const n = (r1 - r0) * size;
   const floats = new Float32Array(n * BAKE_STRIDE);
   const frames = new Float32Array(n * 9);
@@ -707,7 +758,7 @@ export function registryPixels(p: Program): (ImagePixels | null)[] {
 
 /** The mean of each output over `samplePoints`. */
 export function meanOutputs(p: Program, images: readonly (ImagePixels | null)[]): OutputValues {
-  const run = new ProgramRunner(p, images);
+  const run = new ProgramRunner(p, images, patternPlacements(p, SPHERE_BOX));
   const pts = samplePoints();
   const acc: OutputValues = {};
   for (const pt of pts) {

@@ -416,6 +416,30 @@ fn the_programs_are_the_same_bits_with_1_4_or_16_threads() {
 }
 
 #[test]
+fn the_pattern_nodes_are_the_same_bits_with_1_4_or_16_threads() {
+    // M3c: the pattern nodes sample E6's wood and cloth at each hit, placed per part when the
+    // scene is prepared; the M3c scenes are rt-core's pinned images (PINNED_M3C_WOOD_4SPP, the E6
+    // pattern scene's, and PINNED_M3C_CLOTH_4SPP) on any number of threads.
+    for (scene, pinned) in [
+        (rt_core::example::m3c_wood_scene(), 0x5ed1_bf32u32),
+        (rt_core::example::m3c_cloth_scene(), 0x1cb5_860d),
+    ] {
+        for threads in [1, 4, 16] {
+            let out = rt_cli::render(&scene, 4, threads);
+            let hash = out
+                .film
+                .resolve()
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .fold(0x811c_9dc5u32, |h, b| {
+                    (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+                });
+            assert_eq!(hash, pinned, "{threads} threads");
+        }
+    }
+}
+
+#[test]
 fn a_section_is_the_same_bits_with_1_4_or_16_threads() {
     // Q1: the plane clips every ray to the same interval and the cap is decided by the model alone,
     // so the E5 scene cut in two with a cap (its floor left whole: studio) is rt-core's pinned image (PINNED_Q1_SECTION_4SPP)

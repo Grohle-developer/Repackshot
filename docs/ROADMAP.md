@@ -4038,6 +4038,228 @@ page's own code* con el `rt.wasm` real. (15) La sombra desde la salida de un
 medio por una superficie atravesable corre el programa dos veces (una para el
 material de la pared y otra en el cruce recto de S4b), como las texturas.
 
+## M3c · Nodos Madera y Tela — **Opus** — hecha
+
+**Qué** (decisión 1.6 de *Decisiones de criterio*; el usuario, `TODO.md`
+§1.6: «todos los materiales han de ser funcionales respecto a los nodos»).
+Nodos *Madera* y *Tela* en el editor de material con las recetas de E6
+(la madera: anillos, figura, poros, fibras y nudos; la tela: tejido, hilos
+por cm, relieve, torsión), con los parámetros de las familias en sus
+unidades; el motor los ejecuta en el intérprete de M3b con el código de E6;
+el ejemplo de madera de los grafos se hace con el nodo *Madera* y se ve como
+la familia (`m3b-wood.png`).
+
+**Hecho.**
+
+- **Motor** (`rt_core::program`, ARCHITECTURE §5.2 quater y undecies). Ocho
+  códigos nuevos, estables: `WOOD` 130, `WOODR` 131, `WOODH` 132, `WOODN` 133
+  y `CLOTH`/`CLOTHR`/`CLOTHH`/`CLOTHN` 140–143. Cada uno lee un punto (`a`,
+  espacio de la pieza, mm), una normal (`b`) y las 25 constantes de su receta
+  en `k`, que son el `PATN` tal cual (dos colores, escala, 16 parámetros,
+  variante y semilla); `WOODR`/`CLOTHR` leen además la rugosidad (`c`) y dan
+  `(c·rug) + suma`, lo que `Tint::apply` hace antes de su `clamp`. **No hay
+  otra madera**: `pattern.rs` se partió en `Placement` (dónde está el dibujo
+  en una pieza: el marco, los mm por unidad y los nudos), `place` (lo que
+  `PatternSetup::new` hacía por instancia: el marco de la caja de la malla, la
+  escala de la instancia, los nudos con su prueba de la superficie) y
+  `sample_at` (lo que hacía `Placed::sample`, que ahora la llama), y las
+  instrucciones corren `sample_at` con la colocación que da el anfitrión
+  (`Host::placement`, nueva y con valor por defecto: sin pieza,
+  `Placement::IDENTITY`, el espacio del propio punto en mm sin nudos).
+  `ProgramSetup` coloca cada receta de un programa en cada instancia al
+  preparar la escena (`place`, la de la familia), y las salidas de un nodo
+  comparten una muestra (la última, por receta, punto y normal: sin
+  asignar). La rugosidad se estira por la veta o el hilo: la primera muestra
+  de dibujo del programa en el punto dice su tangente (`Host::grain`) y
+  `Resolved::frame` da el marco del integrador como `Tint::frame` el de un
+  `PATN`. Bit 5 de las capacidades, `FEATURE_PATTERN_NODES` (32), en
+  `rt_features` y `/api/info`.
+- **TypeScript.** `core/patterns.ts` porta paso a paso en `f32` el ruido de
+  E6 (la permutación de Fisher–Yates con el PCG32 del motor, en `BigInt`),
+  la madera, el flujo y la testa de los nudos, la tela y `sample_at`;
+  `core/pattern-recipe.ts` saca la receta de los parámetros (la misma función
+  para el `PATN` de `io/rsb.ts` y para las constantes del compilador:
+  `ringDensity` por 100 mm por `woodScale`, `threadCount` por cm, mm); el
+  compilador (`core/material-program.ts`) y el intérprete
+  (`core/material-interp.ts`, con su colocación por receta `PlacementOf`)
+  tienen los ocho códigos. El catálogo (`data/material-nodes.ts`) tiene
+  `WOOD` y `FABRIC` (categoría *Textura*, claves nuevas): entradas *Punto*
+  (sin conexión, `POSITION`: el punto en mm), *Normal* y *Rugosidad*;
+  salidas *Color*, *Rugosidad*, *Anisotropía*, *Normal*, *Altura (mm)* y, la
+  tela, *Pelusa*; parámetros con las claves y rangos de la familia (más
+  `poreSize`, `poreBand`, `woodFigure`, la semilla y `yarnTwist`, que la
+  familia guarda sin mando). La normal solo se conecta a una instrucción si
+  la receta tiene relieve. Cadenas `es`/`en` en el catálogo y
+  `ge.implicit.POSITION` en `ui/strings.ts`.
+- ***Rápido*.** Los nodos de dibujo leen coordenadas 3D, así que el horneado
+  es el corte por el frente de la pieza de M3a; `patternPlacements`
+  (`core/material-preview.ts`) coloca cada receta en la caja de las piezas del
+  material (el marco de `wood_frame` en `f32`, los nudos de `core/knots.ts`
+  con la caja como superficie) y las esferas de los nodos y la media del
+  grafo, en la de la bola de 100 mm. En *Rápido* un material de nodos de
+  madera enseña sus anillos (la familia sigue con su color medio y los
+  nudos).
+- **Conversión** (`core/material-graph.ts`). *Simple → Nodos* de una madera
+  o una tela da su nodo con los parámetros de la familia (los colores RGBA
+  pasan a RGB, la semilla es la del material, la rugosidad su entrada)
+  conectado al color, la rugosidad, la anisotropía y la normal de la salida
+  (`minimalGraph`, `PATTERN_LINKS`). *Nodos → Simple* es inmediato si el
+  grafo es ese (`patternGraphOf`): sin tocar, vuelve el material tal cual;
+  con el nodo editado, la familia con los valores del nodo (y la rugosidad y
+  el barniz); con otra semilla, otro nodo o una conexión de menos, pregunta.
+- **Página.** `programsView` (`render/engine.ts`) pone `patternNodes: false`
+  en la vista de un motor con programas y sin el bit 5, y `projectScene`
+  escribe entonces un material de nodos con dibujos como la media de sus
+  salidas (un motor así rechazaría el programa: código desconocido); el
+  *pool*, el lanzador, el visor y *Render* lo usan.
+- **Ejemplo.** `WOOD_TWO_NOISES` (la clave se queda) es el roble del
+  catálogo con el nodo *Madera* conectado a la salida, *Roble (nodo Madera)*:
+  el grafo que da *Simple → Nodos* del roble.
+
+**Fijados.** Ninguno anterior se mueve salvo el del ejemplo de madera de
+M3a, que tenía que moverse (era el grafo de dos ruidos que no se parecía a
+la familia: decisión 1.6): `WOOD_TWO_NOISES` `043e3493` → **`6600a83f`** en
+`EXAMPLE_PINS` (`tests/material-program.test.ts`) y en
+`the_ten_examples_are_the_m3a_pins` (`program/tests.rs`); su caso de la
+prueba cruzada, con él. Nuevos: `PINNED_M3C_WOOD_4SPP` = **`0x5ed1bf32`**,
+la escena de dibujos de E6 con el roble y el nogal pintados por nodos
+*Madera* (`example::m3c_wood_scene`, `rt --write-m3c-wood-example`): **el
+mismo *hash* que la de la familia** (`PINNED_E6_PATTERNS_4SPP`; el test lo
+exige), y `PINNED_M3C_CLOTH_4SPP` = **`0x1cb5860d`**, la de tela con nodos
+*Tela* (`rt --write-m3c-cloth-example`), distinta de la de E6
+(`0x53e6a855`) solo por el bisel (abajo). Los dos en escalar, SSE2 y AVX2,
+con 1, 4 y 16 hilos en `rt` y en el lanzador, y en `engine.yml` (solos y con
+los pases) contra el `rt.wasm` real.
+
+**Tests** (cada uno falla sin lo que prueba). En `rt-core`,
+`program/pattern_tests.rs` (6): en 400 rayos desde fuera a cada pieza de las
+escenas de E6, el material de la familia y el del programa dan los mismos
+bits de color, rugosidad, anisotropía, normal de sombreado, tangente del
+marco y albedo, para la madera (con sus tres nudos, biselada) y la tela (sin
+bisel), y para las otras tres figuras y los otros cinco tejidos; los nudos
+del programa son los de la familia; sin pieza, cada salida es `sample_at` en
+el espacio del punto; una receta sin escala no pinta; las constantes son el
+`PATN` y el lector las comprueba. Los dos fijados nuevos y sus hilos en
+`rt-cli` y `rt-app`. La **prueba cruzada** (`tests/material-program-cross.test.ts`,
+`tests/fixtures/material-programs.json`, `program/tests.rs`) suma 18 casos:
+las cuatro instrucciones de cada madera del catálogo (roble, pino, nogal,
+arce, ébano, bambú, DM) en 300 puntos y a un quinto, cada tejido (algodón,
+sarga, vaquero, raso, lona, fieltro, punto y el carbono sin torsión) a
+tres escalas, un roble con nudos de 26 mm colocados en torno a los puntos
+(el caso lleva su colocación en el fichero, `placement`: marco y nudos en
+`f32`) en 1000 puntos y una receta que no pinta: **los mismos bits** en
+todos. `tests/pattern-nodes.test.ts` (10): la permutación, los parámetros y
+salidas de los nodos, las constantes del compilador iguales al `PATN` de
+cada madera y tela del catálogo, la normal solo con relieve, la receta común
+con `patternToRsb`, la ida y vuelta de *Simple ↔ Nodos* (sin tocar, editada,
+otra semilla, una conexión de menos), el interruptor del motor, la
+colocación de *Rápido* (marco y nudos) y el horneado con ella, y el ejemplo
+con anillos en *Rápido* con la media del roble. `material-graph`,
+`material-nodes-ui` y `material-program`, al día. **Navegador**
+(`tests/programs-full-browser.test.ts`, «the wood graph sphere renders as
+the Wood family sphere»): una bola de 100 mm en el mundo blanco, en
+*Completo* con el `rt.wasm` real por el escritor de la página, con el roble
+de la familia y con el ejemplo (y con el roble pasado a nodos): **la misma
+imagen byte a byte** en los dos casos (correlación 1, 100 % de los 928
+píxeles asentados, tono 172 155 132 en las tres, distancia 0); el control
+(el ejemplo girado un cuarto de vuelta) cae a 0,67. El umbral es el de la
+comparación por regiones (correlación > 0,75, acuerdo > 0,85, tono a menos
+de 40, el control 0,2 por debajo). El
+ejemplo de madera de la comparación por regiones de M3b (*Rápido* contra
+*Completo* en la placa) usa ahora de control la placa dada la vuelta (un
+desplazamiento de la malla mueve también su marco) y se compara por la
+correlación, como los copos: los anillos de 3 mm son cinco píxeles en la
+placa y casi no quedan píxeles asentados (el control coincide en ellos un
+98 %). *Rápido* y *Completo*: correlación **0,995** (el control, 0,08), tono
+192 168 137 / 171 153 129 (distancia 21, dentro de la del material plano,
+25). Hasta M3c el ejemplo se comparaba por el acuerdo (100 % de 602 píxeles,
+correlación 0,991).
+**Mutaciones** (cada una puesta y quitada a mano, con su test en rojo): en
+el motor, la colocación del anfitrión ignorada (las instrucciones en el
+espacio del punto), la tangente de la veta sin decir, el integrador sin el
+marco del programa y la rugosidad de los nudos sin sumar: las cuatro en rojo
+(la tercera solo la cogen los fijados, que miran la imagen). En TypeScript,
+nueve: la colocación del intérprete, la suma de rugosidad, la normal sin
+doblar, el flujo de los nudos, la altura de la tela sin mezclar (las cinco,
+la prueba cruzada), el interruptor del motor, la colocación del horneado de
+*Rápido* (sobrevivió la primera vez: de ahí el test del horneado), la
+semilla en la vuelta a *Simple* y la normal conectada sin relieve: las
+nueve en rojo. Y dos fallos de verdad del primer intento, que cogieron los
+tests: un literal `0,225` en `f64` en vez de `f32` en el perfil de los
+anillos (la prueba cruzada puso en rojo las cinco maderas con anillos; al
+repasar los literales salieron también los pesos de la luminancia), y los
+colores RGBA de la familia que el nodo, RGB, no aceptaba (el nodo salía con
+los colores por defecto: lo cogió `material-graph`, la media de cada
+material del catálogo).
+
+**Coste** (`rt` nativo, 1 hilo, 320 × 240, 16 muestras, mediana de tres
+rondas alternadas): la escena de dibujos de E6 con la familia 2,41 s y con
+nodos *Madera* 2,36 s (la misma imagen: el ruido de la máquina); la de tela
+1,99 s y con nodos *Tela* 2,12 s (+6 %: el contexto del programa y la vuelta
+de su normal al mundo).
+
+**Puertas.** `npm run engine:build` y `npm run qa` en verde (3179 tests:
+3153 pasan, 26 se saltan; en una pasada con otra a la vez, `ai-passes` y
+`pathtracer` pasaron del tiempo y pasan con `--maxWorkers=2`, y los dos
+casos de la prueba cruzada llevan ahora 120 s de límite: sus casos de dibujo
+son unos miles de puntos de E6 en `f32`). En `engine/`: `cargo fmt --check`,
+`clippy --workspace --all-targets -D warnings`, `cargo test --workspace
+--release` (1163 pasan, 5 ignorados), la compilación wasm32 de `rt-wasm` y
+`rt-post-wasm`, los bloques de paridad de `engine.yml` contra el
+`rt_wasm.wasm` real (45 imágenes, con las cuatro de M3c: `0x5ed1bf32` y
+`0x1cb5860d`, solas y con los pases) y los tests del código de la página con
+el `rt.wasm` real (131 pasan). `tests/programs-full-browser.test.ts` (12) y
+`tools/material-nodes-check.mjs --only wood,chrome` en Chromium.
+
+**Capturas** (en *Sin publicar* de `GALERIA.md`): `m3b-wood.png` regrabada
+(ahora la hace `tests/m3c-wood-sheet.test.ts` con
+`REPACK_WRITE_CAPTURES=1`): las dos cajas de roble en *Completo*, la de la
+familia y la del ejemplo de nodos, la misma madera; y la nueva
+`material-nodes-wood.png`: el editor con el ejemplo del roble y el nodo
+*Madera* seleccionado (`tools/material-nodes-check.mjs --only wood`, que
+también comprueba que el frasco se vuelve de madera en *Rápido*).
+
+No encajó con el plan (◆ para quien decide):
+
+1. ◆ **La pelusa no llega a ningún sitio.** La *Tela* da su *Pelusa* (el
+   `fuzz` del material, un número) como pide el encargo, pero la salida de
+   material no tiene entrada de brillo de pelusa y el motor no la pinta
+   (S8/M5); *Rápido* sí la pinta en la familia (el *sheen* de three.js) y no
+   en un material de nodos. Añadirla a la salida es una salida nueva del
+   contrato del programa (la 16).
+2. ◆ **La tela bajo un bisel.** El nodo elige su proyección de caja por su
+   entrada *Normal* (la de sombreado, biselada); la familia, por la normal
+   interpolada sin bisel. Dentro del radio de bisel de una arista la
+   proyección puede cambiar antes; fuera, los mismos bits (test). Por eso la
+   escena de tela con nodos tiene su propio fijado. La alternativa es que el
+   anfitrión dé al nodo la normal interpolada cuando su entrada no está
+   conectada.
+3. ◆ **La madera de la familia en *Rápido*** sigue siendo su color medio con
+   los nudos, mientras que la misma madera en nodos enseña sus anillos en
+   *Rápido* (el corte por el frente de la pieza). Que la familia se hornee
+   por el mismo camino respondería a la otra mitad del 1.6 («la madera en
+   escena ha de verse como en las esferas») también en *Rápido*.
+4. **Vista desde dentro**: el programa recibe la normal hacia fuera de la
+   pieza y la familia la del lado del rayo; una pieza abierta vista por
+   detrás dobla su relieve con la otra cara (los tests miran desde fuera).
+5. **Sin relieve a la hora de correr**: el compilador no conecta la normal si
+   la receta no tiene relieve, pero si se piden nudos y no cabe ninguno la
+   normal de salida es una copia de la de entrada y vuelve al mundo con un
+   redondeo (la familia no la toca): una diferencia de un bit en la normal.
+6. **Los nudos de *Rápido*** se colocan en la caja de las piezas con la caja
+   como superficie (el motor prueba la malla) y para la unión de las piezas
+   del material (el motor, por pieza): en una pieza redonda pueden no ser los
+   mismos.
+7. **La media** de un material de nodos de madera (la que ve un motor sin
+   programas y las miniaturas) es la del dibujo en los 64 puntos de la esfera,
+   a 0,01–0,02 de la de la familia (`0,6 claro + 0,4 oscuro`).
+8. **La semilla** del nodo es una copia de la del material al pasar a
+   *Nodos*; cambiar después el desgaste no mueve los nudos del nodo.
+9. **El bit 5** lo toma esta fase; otra fase en paralelo que añada una
+   capacidad tiene que tomar el 6.
+10. El ejemplo cambia de nombre (*Madera con dos ruidos* → *Roble (nodo
+    Madera)*), no de clave.
+
 ## M4 · Capa de realismo en el catálogo de materiales — **Opus**, veredicto **Fable** (tras E9, E6 y M2b)
 
 **Qué.** (1) **Motor**: Fresnel de conductor «*artist-friendly*» de
@@ -11892,7 +12114,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 **Fases que salen de aquí:**
 - **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
 - **C2** · Interruptor de la focal (1.7).
-- **M3c** · Nodos *Madera* y *Tela* (1.6).
+- **M3c** · Nodos *Madera* y *Tela* (1.6). **Hecha**: ver M3c, tras M3b.
 - **N2b** · El estudio viaja con el proyecto.
 - **O2c** · Editor de elementos de la lente (1.5).
 - El 1.2 entra en **S3**.
@@ -11926,7 +12148,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el grano en los rastros bajo luz lateral;
   - la regla de los caminos estrechos, en los que las gotas también refractan.
 - **1.5** (el editor de elementos de una lente). **Sí**: editar, mover, añadir y girar 180°, sobre la lente propia que ya guarda O2. **O2c.**
-- **1.6** (nodos *Madera* y *Tela*). **Sí**, con las recetas de E6. El ejemplo de madera de los grafos tiene que parecerse a la familia *Madera* (`m3b-wood.png`). **M3c.**
+- **1.6** (nodos *Madera* y *Tela*). **Sí**, con las recetas de E6. El ejemplo de madera de los grafos tiene que parecerse a la familia *Madera* (`m3b-wood.png`). **M3c.** (hecho en M3c)
 - **M3b** (`NORMAL_MAP` con el azul por debajo de 0,5). El nodo **no deja que una normal apunte hacia dentro**: la lleva al hemisferio de fuera. El ejemplo de los copos se rehace con normales hacia fuera. **C1**, con su test y, si cambia el motor, con los pines que se muevan explicados. (hecho en C1)
 - **4.2** (el recorte de *fireflies* y el borde del *denoise* solo por luminancia). **Se quedan como están** hasta tener la escena del usuario. Sin ella no hay con qué medir.
 - **Q1** (la sección):

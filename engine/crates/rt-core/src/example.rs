@@ -1348,6 +1348,40 @@ pub fn e6_cloth_scene() -> Scene {
     scene
 }
 
+/// M3c: `scene` with every patterned material drawn by the program a graph of its pattern node
+/// gives instead of its `PATN` ([`crate::program::build::Builder::pattern_material`]: the node's
+/// colour, roughness and normal into the output, the material's own values elsewhere).
+pub(crate) fn as_pattern_nodes(mut scene: Scene) -> Scene {
+    let patterns = std::mem::take(&mut scene.patterns);
+    let mut programs: Vec<Option<std::sync::Arc<crate::program::Program>>> =
+        vec![None; scene.materials.len()];
+    for p in &patterns {
+        let i = p.material as usize;
+        if i < programs.len() && programs[i].is_none() {
+            programs[i] = Some(std::sync::Arc::new(
+                crate::program::build::Builder::pattern_material(p, &scene.materials[i]),
+            ));
+        }
+    }
+    scene.programs = programs;
+    scene
+}
+
+/// The M3c wood scene (`render.rs` pins its hash; `rt --write-m3c-wood-example` writes it for
+/// `tools/wasm-parity.mjs`): the E6 pattern scene ([`e6_patterns_scene`]) with the oak board and
+/// the walnut sphere drawn by `WOOD` nodes. The same picture as the E6 scene, bit for bit.
+pub fn m3c_wood_scene() -> Scene {
+    as_pattern_nodes(e6_patterns_scene())
+}
+
+/// The M3c cloth scene (`render.rs` pins its hash; `rt --write-m3c-cloth-example` writes it):
+/// the E6 cloth scene ([`e6_cloth_scene`]) with the denim cushion and the knit ball drawn by
+/// `CLOTH` nodes. Not the E6 picture bit for bit: inside the cushion's 4 mm bevel the node's box
+/// projection follows the bevelled normal (its `normal` input), the material's the unbevelled one.
+pub fn m3c_cloth_scene() -> Scene {
+    as_pattern_nodes(e6_cloth_scene())
+}
+
 /// The E9 parity scene (`render.rs` pins its hash; `rt --write-e9-example` writes it for
 /// `tools/wasm-parity.mjs`): the E5 scene ([`e5_scene`], HDRI) with its big sphere filled with a
 /// scattering medium (a warm, slightly forward-scattering wax with an absorption distance, so the

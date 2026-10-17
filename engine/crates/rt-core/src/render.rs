@@ -1325,6 +1325,59 @@ mod tests {
     pub(crate) const PINNED_M3B_PROGRAMS_4SPP: u32 = 0x90b4_2b6b;
 
     #[test]
+    fn the_m3c_wood_nodes_draw_the_e6_wood_bit_for_bit_on_every_platform() {
+        // M3c: the E6 pattern scene with its oak board and walnut sphere drawn by WOOD nodes
+        // (crate::program, the pattern instructions) instead of their PATN: the same recipe through
+        // the same code (crate::pattern::sample_at), placed on each part as the material's (its
+        // frame, its knots), the same normal, roughness and grain. Through an RSB round trip;
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-m3c-wood-example`).
+        let scene = crate::example::m3c_wood_scene();
+        assert!(scene.patterns.is_empty());
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("M3c wood nodes at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_M3C_WOOD_4SPP, "wood nodes on {}", isa.name());
+        }
+        // The family's picture, bit for bit.
+        assert_eq!(PINNED_M3C_WOOD_4SPP, PINNED_E6_PATTERNS_4SPP);
+        // Without its programs the same scene is another image.
+        let mut plain = scene.clone();
+        plain.programs.clear();
+        assert_ne!(scene_4spp_hash(&plain, Isa::detect()), PINNED_M3C_WOOD_4SPP);
+    }
+
+    /// Pinned hash of the M3c wood example (WOOD nodes) at 4 samples per pixel: the E6 pattern
+    /// example's.
+    pub(crate) const PINNED_M3C_WOOD_4SPP: u32 = 0x5ed1_bf32;
+
+    #[test]
+    fn the_m3c_cloth_nodes_have_a_pinned_hash_on_every_platform() {
+        // M3c: the E6 cloth scene with its denim cushion and knit ball drawn by CLOTH nodes.
+        // Through an RSB round trip; `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-m3c-cloth-example`). Not the E6 picture: inside the cushion's bevel the
+        // node's projection follows its normal input, the bevelled one (see
+        // `program::scene_tests`, where the two agree bit for bit off the bevel).
+        let scene = crate::example::m3c_cloth_scene();
+        assert!(scene.patterns.is_empty());
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("M3c cloth nodes at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_M3C_CLOTH_4SPP, "cloth nodes on {}", isa.name());
+        }
+        let mut plain = scene.clone();
+        plain.programs.clear();
+        assert_ne!(
+            scene_4spp_hash(&plain, Isa::detect()),
+            PINNED_M3C_CLOTH_4SPP
+        );
+    }
+
+    /// Pinned hash of the M3c cloth example (CLOTH nodes) at 4 samples per pixel.
+    pub(crate) const PINNED_M3C_CLOTH_4SPP: u32 = 0x1cb5_860d;
+
+    #[test]
     fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {
         // O2 traced the camera rays through the double Gauss of the catalogue (f/2.8, seven
         // rounded blades, the bokeh lights of O1): the prescription at the end of LENS, prepared

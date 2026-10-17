@@ -166,7 +166,22 @@ pub mod op {
     pub const CAVITY: u32 = 123;
     pub const NMAP: u32 = 124;
     pub const BUMP: u32 = 125;
+    // M3c: the patterns of E6 as nodes. Each reads a point (`a`, part space, mm) and a normal (`b`)
+    // and the 25 constants of its recipe at `k` ([`super::PATTERN_CONSTS`]).
+    pub const WOOD: u32 = 130;
+    pub const WOODR: u32 = 131;
+    pub const WOODH: u32 = 132;
+    pub const WOODN: u32 = 133;
+    pub const CLOTH: u32 = 140;
+    pub const CLOTHR: u32 = 141;
+    pub const CLOTHH: u32 = 142;
+    pub const CLOTHN: u32 = 143;
 }
+
+/// M3c: the constants of a pattern instruction's recipe, as `PATN` holds it: the two colours
+/// (linear RGB), the scale in millimetres, the sixteen parameters, the variant (figure or weave)
+/// and the seed (both whole numbers, read as `ToUint32`).
+pub const PATTERN_CONSTS: usize = 25;
 
 /// What an operand of an opcode is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -264,6 +279,11 @@ pub(crate) fn shape_of(code: u32) -> Option<Shape> {
         op::EDGE | op::CAVITY => shape(F, No, No, No, K::Consts(1)),
         op::NMAP => shape(V, V, F, V, K::Imm),
         op::BUMP => shape(V, V, F, F, K::No),
+        op::WOOD | op::WOODN | op::CLOTH | op::CLOTHN => {
+            shape(V, V, V, No, K::Consts(PATTERN_CONSTS))
+        }
+        op::WOODH | op::CLOTHH => shape(F, V, V, No, K::Consts(PATTERN_CONSTS)),
+        op::WOODR | op::CLOTHR => shape(F, V, V, F, K::Consts(PATTERN_CONSTS)),
         _ => return None,
     })
 }
@@ -661,8 +681,40 @@ impl Program {
     pub fn uses(&self, opcode: u32) -> bool {
         self.code.iter().any(|i| i.op == opcode)
     }
+
+    /// M3c: the pattern of a pattern instruction (`WOOD*`, `CLOTH*`), decoded from its constants
+    /// as `PATN` would hold them; `None` for another opcode.
+    pub fn pattern_of(&self, ins: &Instr) -> Option<crate::pattern::Pattern> {
+        let kind = pattern_kind(ins.op)?;
+        let c = self
+            .consts
+            .get(ins.k as usize..ins.k as usize + PATTERN_CONSTS)?;
+        let mut params = [0.0f32; crate::pattern::PARAMS];
+        params.copy_from_slice(&c[7..7 + crate::pattern::PARAMS]);
+        Some(crate::pattern::Pattern {
+            material: 0,
+            kind,
+            color_a: crate::color::Rgb::new(c[0], c[1], c[2]),
+            color_b: crate::color::Rgb::new(c[3], c[4], c[5]),
+            scale_mm: c[6],
+            params,
+            variant: noise::seed_of(c[23]),
+            seed: noise::seed_of(c[24]),
+        })
+    }
 }
 
+/// The `PATN` kind a pattern opcode draws (wood or cloth), `None` for any other.
+pub fn pattern_kind(code: u32) -> Option<u32> {
+    match code {
+        op::WOOD | op::WOODR | op::WOODH | op::WOODN => Some(crate::pattern::PATTERN_WOOD),
+        op::CLOTH | op::CLOTHR | op::CLOTHH | op::CLOTHN => Some(crate::pattern::PATTERN_CLOTH),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod pattern_tests;
 #[cfg(test)]
 mod scene_tests;
 #[cfg(test)]

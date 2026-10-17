@@ -11,6 +11,20 @@
 import { asin, atan2, FRAC_PI_2, f, PI, powf, sin, sqrt, TAU } from './f32math';
 import { channelSeed, fbm } from './noise';
 import { CTX, OP, WORDS, type Program, type ValueRef } from './material-program';
+import { bump, IDENTITY_PLACEMENT, PATTERN_CLOTH, PATTERN_WOOD, recipeOf, sampleAt, type Placement, type Recipe, type Sampled, type V as V3f } from './patterns';
+
+/**
+ * M3c: where the patterns of a program lie (rt_core's `Host::placement`): the placement of the pattern instructions
+ * with recipe constants at `k` and `PATN` kind `kind`, or null for the point's own space (`IDENTITY_PLACEMENT`).
+ */
+export type PlacementOf = (k: number, kind: number) => Placement | null;
+
+/** The `PATN` kind a pattern opcode draws, 0 for any other. */
+export function patternKind(op: number): number {
+  if (op === OP.WOOD || op === OP.WOODR || op === OP.WOODH || op === OP.WOODN) return PATTERN_WOOD;
+  if (op === OP.CLOTH || op === OP.CLOTHR || op === OP.CLOTHH || op === OP.CLOTHN) return PATTERN_CLOTH;
+  return 0;
+}
 
 /** An image's pixels: straight 8-bit RGBA, rows from the top. */
 export interface ImagePixels {
@@ -177,11 +191,19 @@ export class ProgramRunner {
   private readonly pixels: (ImagePixels | null)[];
   private readonly srgb: boolean[];
   private readonly wrap: number[];
+  /** M3c: per instruction, a pattern instruction's recipe (null: another opcode, or a recipe that draws nothing). */
+  private readonly recipes: (Recipe | null)[];
+  /** M3c: the last pattern sampled (its constants, kind, point and normal) and what it gave. */
+  private last: { k: number; kind: number; key: number[]; s: Sampled } | null = null;
 
-  /** `images`: the pixels of each entry of the program's image table, in order (null or missing: not there). */
+  /**
+   * `images`: the pixels of each entry of the program's image table, in order (null or missing: not there).
+   * `placement`: where the patterns lie (M3c; by default the point's own space).
+   */
   constructor(
     readonly program: Program,
     images: readonly (ImagePixels | null | undefined)[] = [],
+    private readonly placement: PlacementOf = () => null,
   ) {
     this.F = new Float32Array(Math.max(1, program.nF));
     this.V = new Float32Array(Math.max(9, program.nV) * 3);
@@ -190,6 +212,27 @@ export class ProgramRunner {
     this.pixels = program.images.map((im, i) => (im.image ? (images[i] ?? null) : null));
     this.srgb = program.images.map((im) => im.srgb);
     this.wrap = program.images.map((im) => im.wrap);
+    this.recipes = [];
+    for (let pc = 0; pc < program.code.length; pc += WORDS) {
+      const kind = patternKind(program.code[pc]);
+      this.recipes.push(kind ? recipeOf(kind, program.consts, program.code[pc + 5]) : null);
+    }
+  }
+
+  /** M3c: the pattern of instruction `pc` at the point `a` with the normal `b` (V registers), sampled once per node. */
+  private pattern(pc: number, a3: number, b3: number, k: number): Sampled | null {
+    const recipe = this.recipes[pc / WORDS];
+    if (!recipe) return null;
+    const V = this.V;
+    const kind = patternKind(this.code[pc]);
+    const key = [V[a3], V[a3 + 1], V[a3 + 2], V[b3], V[b3 + 1], V[b3 + 2]];
+    const last = this.last;
+    if (last && last.k === k && last.kind === kind && last.key.every((x, i) => Object.is(x, key[i]))) return last.s;
+    const p: V3f = [key[0], key[1], key[2]];
+    const n: V3f = [key[3], key[4], key[5]];
+    const s = sampleAt(recipe, this.placement(k, kind) ?? IDENTITY_PLACEMENT, p, n, n);
+    this.last = { k, kind, key, s };
+    return s;
   }
 
   /** Puts a shading point in the context registers. */
@@ -360,6 +403,7 @@ export class ProgramRunner {
     const C = this.C;
     const F = this.F;
     const V = this.V;
+    this.last = null;
     for (let pc = 0; pc < code.length; pc += WORDS) {
       const d = code[pc + 1];
       const a = code[pc + 2];
@@ -632,6 +676,37 @@ export class ProgramRunner {
             f(V[a3 + 2] - f(f(FRAME[2] * dT) + f(FRAME[5] * dB))),
             a3,
           );
+          break;
+        }
+        case OP.WOOD:
+        case OP.CLOTH: {
+          const sp = this.pattern(pc, a3, b3, k);
+          V[d3] = sp ? sp.baseColor[0] : 0;
+          V[d3 + 1] = sp ? sp.baseColor[1] : 0;
+          V[d3 + 2] = sp ? sp.baseColor[2] : 0;
+          break;
+        }
+        case OP.WOODR:
+        case OP.CLOTHR: {
+          // The material's roughness times the pattern's, plus its own (a knot's end grain): rt_core's Tint::apply.
+          const sp = this.pattern(pc, a3, b3, k);
+          F[d] = sp ? f(f(F[c] * sp.roughness) + sp.roughnessAdd) : F[c];
+          break;
+        }
+        case OP.WOODH:
+        case OP.CLOTHH: {
+          const sp = this.pattern(pc, a3, b3, k);
+          F[d] = sp ? sp.height : 0;
+          break;
+        }
+        case OP.WOODN:
+        case OP.CLOTHN: {
+          const sp = this.pattern(pc, a3, b3, k);
+          const n: V3f = [V[b3], V[b3 + 1], V[b3 + 2]];
+          const out = sp?.slope ? bump(n, sp.slope) : n;
+          V[d3] = out[0];
+          V[d3 + 1] = out[1];
+          V[d3 + 2] = out[2];
           break;
         }
         default:

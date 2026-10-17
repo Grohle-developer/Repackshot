@@ -56,7 +56,7 @@ import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset }
 import { fitFactor } from '../core/live-frame';
 import { LivePicture } from './live-frame';
 import type { ProjectState } from '../core/store';
-import { readsCameras, readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
+import { programsView, readsCameras, readsIes, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
 import { abortError, adaptiveProgress, budgetLimits, budgetOf, budgetProgress, runAdaptive, runPasses, type PassBudget } from './schedule';
@@ -971,7 +971,7 @@ export class PathTracerEngine implements RenderEngine {
       ...(scale === 1 ? viewAdaptive(state, this.limit) : {}),
       // M2b: the textures, when this engine reads them; M3b: the material programs, when it runs them.
       ...(readsTextures(this.pool.features) ? { textures: true } : {}),
-      ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
+      ...programsView(this.pool.features),
       // L5: the IES lights, when this engine renders them.
       ...(readsIes(this.pool.features) ? { ies: true } : {}),
       // K3: the interior cameras, when this engine reads them.
@@ -1414,7 +1414,7 @@ export class PathTracerEngine implements RenderEngine {
         ...this.filter,
         ...(opts.adaptive ? { adaptive: opts.adaptive } : {}),
         ...(readsTextures(this.pool.features) ? { textures: true } : {}),
-        ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
+        ...programsView(this.pool.features),
         // L5: the IES lights, when this engine renders them.
         ...(readsIes(this.pool.features) ? { ies: true } : {}),
         // K3: the interior cameras, when this engine reads them.

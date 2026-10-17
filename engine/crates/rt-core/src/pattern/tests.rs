@@ -213,7 +213,7 @@ fn where_projections_meet_the_cloth_is_their_blend() {
         panic!("cloth")
     };
     let p = Vec3::new(31.3, -22.7, 17.9);
-    let d = (p - placed.origin) * placed.mm;
+    let d = (p - placed.at.origin) * placed.at.mm;
     let at = [d.x, d.y, d.z];
     let plane = |k: usize| {
         let (a, b) = plane_axes(k);
@@ -607,16 +607,16 @@ fn knots_on_a_ball_never_graze_it() {
     let setup = PatternSetup::new(&scene);
     let placed = setup.instances[0].as_ref().expect("wood");
     assert!(
-        !placed.knots.is_empty() && placed.knots.list.len() < 12,
+        !placed.at.knots.is_empty() && placed.at.knots.list.len() < 12,
         "{}",
-        placed.knots.list.len()
+        placed.at.knots.list.len()
     );
     let to_mesh = |q: Vec3| {
-        placed.origin
-            + (placed.axes[0] * q.x + placed.axes[1] * q.y + placed.axes[2] * q.z)
-                * (1.0 / placed.mm)
+        placed.at.origin
+            + (placed.at.axes[0] * q.x + placed.at.axes[1] * q.y + placed.at.axes[2] * q.z)
+                * (1.0 / placed.at.mm)
     };
-    for k in &placed.knots.list {
+    for k in &placed.at.knots.list {
         let (o, d) = (
             to_mesh(k.origin),
             (to_mesh(k.origin + k.axis) - to_mesh(k.origin)).normalize(),

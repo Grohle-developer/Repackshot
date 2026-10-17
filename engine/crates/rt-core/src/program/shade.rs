@@ -45,6 +45,7 @@ use crate::bevel::{BevelSetup, ShadingPoint, MIN_FACING};
 use crate::color::Rgb;
 use crate::geometry::Hit;
 use crate::math::{Ray, Vec3};
+use crate::pattern::{Placement, Recipe};
 use crate::scene::{Material, Scene};
 use crate::texture::shade::Local;
 use crate::texture::Footprint;
@@ -72,6 +73,8 @@ struct Prepared {
     see_through: bool,
     /// The program reads the part's curvature.
     curvature: bool,
+    /// M3c: its pattern instructions' recipes, each once (`k`, kind, recipe), placed per instance.
+    patterns: Vec<(u32, u32, Recipe)>,
 }
 
 impl Prepared {
@@ -102,12 +105,15 @@ impl Prepared {
                 None => true,
             };
         let curvature = program.uses(super::op::EDGE) || program.uses(super::op::CAVITY);
+        let runner = Runner::new(program, images);
+        let patterns = runner.patterns();
         Prepared {
-            runner: Runner::new(program, images),
+            runner,
             normal,
             bevel,
             see_through,
             curvature,
+            patterns,
         }
     }
 }
@@ -120,6 +126,26 @@ pub struct Resolved {
     /// The radiance the surface sends there: an emitter's whole radiance, or what the program's
     /// emission adds to any other material (black: nothing).
     pub emission: Rgb,
+    /// M3c: the world direction the roughness is stretched along there (the grain of the first
+    /// pattern the program sampled there with one, when its anisotropy is above 0), as a
+    /// pattern's tint gives it.
+    pub tangent: Option<Vec3>,
+}
+
+impl Resolved {
+    /// The shading frame at a point of normal `n` with the grain as its tangent, `None` to keep
+    /// the integrator's own ([`crate::pattern::Tint::frame`]).
+    pub fn frame(&self, n: Vec3) -> Option<crate::math::Frame> {
+        let t = self.tangent?;
+        crate::pattern::Tint {
+            base_color: self.material.base_color,
+            roughness: 1.0,
+            roughness_add: 0.0,
+            anisotropy: self.material.anisotropy,
+            tangent: Some(t),
+        }
+        .frame(n)
+    }
 }
 
 /// The programs of every instance of a scene, prepared once per scene.
@@ -127,7 +153,12 @@ pub struct Resolved {
 pub struct ProgramSetup {
     /// Per instance (particles have none).
     instances: Vec<Option<Arc<Prepared>>>,
+    /// M3c: per instance, where each of its program's patterns lies (`(k, kind)` and placement).
+    placements: Vec<Option<Arc<Placements>>>,
 }
+
+/// Where the patterns of a program lie on one instance.
+type Placements = Vec<((u32, u32), Placement)>;
 
 /// Where a program runs in the engine: the footprint, and the curvature of the part at the hit.
 struct HitHost<'a> {
@@ -137,6 +168,10 @@ struct HitHost<'a> {
     footprint: Option<LodFootprint>,
     /// The last curvature measured: (radius, convexity, concavity).
     curvature: Option<(f32, f32, f32)>,
+    /// M3c: where the program's patterns lie on this instance.
+    placements: &'a [((u32, u32), Placement)],
+    /// M3c: the first grain a pattern of the run told (part space).
+    grain: Option<Vec3>,
 }
 
 impl HitHost<'_> {
@@ -161,6 +196,15 @@ impl Host for HitHost<'_> {
     }
     fn cavity(&mut self, radius: f32) -> f32 {
         self.measure(radius).1
+    }
+    fn placement(&mut self, k: u32, kind: u32) -> Option<&Placement> {
+        self.placements
+            .iter()
+            .find(|(key, _)| *key == (k, kind))
+            .map(|(_, p)| p)
+    }
+    fn grain(&mut self, tangent: Vec3) {
+        self.grain.get_or_insert(tangent);
     }
 }
 
@@ -318,11 +362,13 @@ fn resolve(base: &Material, o: &Outputs) -> Resolved {
         Resolved {
             material: m,
             emission,
+            tangent: None,
         }
     } else {
         Resolved {
             material: m,
             emission: colour * strength,
+            tangent: None,
         }
     }
 }
@@ -369,7 +415,45 @@ impl ProgramSetup {
                 }
             }
         }
-        ProgramSetup { instances }
+        // M3c: each pattern placed on each instance as a material's pattern would be.
+        let placements = instances
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let p = p.as_ref().filter(|p| !p.patterns.is_empty())?;
+                let list: Placements = p
+                    .patterns
+                    .iter()
+                    .filter_map(|&(k, kind, ref recipe)| {
+                        Some((
+                            (k, kind),
+                            crate::pattern::place(&scene.geometry, i as u32, recipe)?,
+                        ))
+                    })
+                    .collect();
+                Some(Arc::new(list))
+            })
+            .collect();
+        ProgramSetup {
+            instances,
+            placements,
+        }
+    }
+
+    /// M3c: where the patterns of instance `i`'s program lie.
+    fn placements_of(&self, i: u32) -> &[((u32, u32), Placement)] {
+        match self.placements.get(i as usize) {
+            Some(Some(list)) => list,
+            _ => &[],
+        }
+    }
+
+    /// M3c: the knots each pattern of instance `i`'s program got (`(k, kind)` and how many).
+    pub fn knot_counts(&self, i: u32) -> Vec<((u32, u32), usize)> {
+        self.placements_of(i)
+            .iter()
+            .map(|(key, p)| (*key, p.knots.list.len()))
+            .collect()
     }
 
     /// True when no instance has a program.
@@ -412,10 +496,13 @@ impl ProgramSetup {
             details,
             footprint: lod_footprint(scene, details, &local, footprint),
             curvature: None,
+            placements: self.placements_of(details.instance),
+            grain: None,
         };
         let mut out = Outputs::default();
         let run = |shade: &ShadingPoint, host: &mut HitHost, out: &mut Outputs| -> f32 {
             let (ctx, side) = context(scene, details, shade.normal, to_viewer, &local);
+            host.grain = None;
             prog.runner.run(&ctx, host, out);
             side
         };
@@ -454,7 +541,17 @@ impl ProgramSetup {
                 shade.normal = n;
             }
         }
-        Some(resolve(base, &out))
+        let mut resolved = resolve(base, &out);
+        // M3c: a pattern's grain, as its tint stretches the roughness along it.
+        if resolved.material.anisotropy > 0.0 {
+            resolved.tangent = host.grain.map(|t| {
+                scene
+                    .geometry
+                    .vector_to_world(details.instance, t)
+                    .normalize()
+            });
+        }
+        Some(resolved)
     }
 
     /// The material of a surface a shadow ray along `dir` crosses (a cut-out, a thin wall) at the
@@ -499,6 +596,8 @@ impl ProgramSetup {
             details,
             footprint: None,
             curvature: None,
+            placements: self.placements_of(details.instance),
+            grain: None,
         };
         // `context` turns the interpolated normal to the outside of the part.
         let (ctx, _) = context(scene, details, details.normal, -dir.normalize(), &local);

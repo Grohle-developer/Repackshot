@@ -5,9 +5,12 @@
 //! special numbers), the points of the contract, the noise's pins, and what the reader accepts and
 //! refuses.
 
-use super::interp::{Context, NoHost, Outputs, Runner};
+use super::interp::{Context, Host, NoHost, Outputs, Runner};
 use super::noise::{fbm, hash3, perlin3, simplex3};
 use super::*;
+use crate::math::Vec3;
+use crate::pattern::knots::{Knot, Knots};
+use crate::pattern::Placement;
 use crate::texture::image::{TextureImage, COLOR_LINEAR, COLOR_SRGB};
 use std::sync::Arc;
 
@@ -72,6 +75,63 @@ struct Case {
     seed: u32,
     hash: u32,
     program: Program,
+    /// M3c: where its pattern instructions' patterns lie (`None`: the point's own space).
+    placement: Option<Placement>,
+}
+
+/// M3c: the fixture's `placement` (f32 little-endian, base64): origin, axes, mm, darkness, the
+/// count of knots, then per knot its origin, axis, flow, across, middle, radius and crack (−1:
+/// none).
+fn placement_of(text: &str) -> Placement {
+    let bytes = unbase64(text);
+    let xs: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    let v = |i: usize| Vec3::new(xs[i], xs[i + 1], xs[i + 2]);
+    let count = xs[14] as usize;
+    let list = (0..count)
+        .map(|k| {
+            let at = 15 + k * 15;
+            Knot {
+                origin: v(at),
+                axis: v(at + 3),
+                flow: v(at + 6),
+                across: v(at + 9),
+                middle: xs[at + 12],
+                radius: xs[at + 13],
+                crack: (xs[at + 14] >= 0.0).then_some(xs[at + 14]),
+            }
+        })
+        .collect();
+    assert_eq!(xs.len(), 15 + count * 15);
+    Placement {
+        origin: v(0),
+        axes: [v(3), v(6), v(9)],
+        mm: xs[12],
+        knots: Knots {
+            list,
+            darkness: xs[13],
+        },
+    }
+}
+
+/// The cross test's host: no geometry, no footprint, a case's placement for its patterns.
+struct FixtureHost<'a>(Option<&'a Placement>);
+
+impl Host for FixtureHost<'_> {
+    fn footprint(&self) -> Option<&interp::Footprint> {
+        None
+    }
+    fn edge(&mut self, _radius: f32) -> f32 {
+        0.0
+    }
+    fn cavity(&mut self, _radius: f32) -> f32 {
+        0.0
+    }
+    fn placement(&mut self, _k: u32, _kind: u32) -> Option<&Placement> {
+        self.0
+    }
 }
 
 fn cases() -> Vec<Case> {
@@ -90,6 +150,9 @@ fn cases() -> Vec<Case> {
                 hash: u32::from_str_radix(string_field(line, "hash"), 16).expect("hex"),
                 program,
                 name,
+                placement: line
+                    .contains("\"placement\"")
+                    .then(|| placement_of(string_field(line, "placement"))),
             }
         })
         .collect()
@@ -210,11 +273,17 @@ fn fnv(h: &mut u32, word: u32) {
 /// of the other sign run among all the tests, and the reference's run alone), and nothing the engine does with
 /// a value reads them.
 fn outputs_hash(runner: &Runner, points: &[Context]) -> u32 {
+    outputs_hash_with(runner, points, None)
+}
+
+/// [`outputs_hash`] with the patterns placed by `placement` (M3c).
+fn outputs_hash_with(runner: &Runner, points: &[Context], placement: Option<&Placement>) -> u32 {
     let mut h = 0x811c_9dc5u32;
     let outputs = &runner.program().outputs;
     let mut values = vec![[0.0f32; 3]; outputs.len()];
+    let mut host = FixtureHost(placement);
     for pt in points {
-        runner.run_into(pt, &mut NoHost, &mut values);
+        runner.run_into(pt, &mut host, &mut values);
         for (o, v) in outputs.iter().zip(&values) {
             let n = if o.is_vec() { 3 } else { 1 };
             for c in &v[..n] {
@@ -258,7 +327,11 @@ fn the_engine_gives_the_reference_bits_in_every_case() {
     let mut wrong = Vec::new();
     for c in &cases {
         let runner = Runner::new(c.program.clone(), images_of(&c.program));
-        let got = outputs_hash(&runner, &contract_points(c.points, c.seed));
+        let got = outputs_hash_with(
+            &runner,
+            &contract_points(c.points, c.seed),
+            c.placement.as_ref(),
+        );
         if got != c.hash {
             wrong.push(format!("{}: {got:08x} (reference {:08x})", c.name, c.hash));
         }
@@ -273,7 +346,7 @@ fn the_ten_examples_are_the_m3a_pins() {
         ("BRUSHED_SCRATCHED", 0xd7ac_667e),
         ("MARBLE", 0x9068_993f),
         ("LEATHER", 0x4ffd_820c),
-        ("WOOD_TWO_NOISES", 0x043e_3493),
+        ("WOOD_TWO_NOISES", 0x6600_a83f),
         ("GLASS_DIRT", 0xec12_61b4),
         ("CHECKS", 0x27d9_baac),
         ("METALLIC_FLAKES", 0x3795_f601),

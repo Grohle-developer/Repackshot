@@ -31,7 +31,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { registerLabelImage } from '../src/core/material-examples';
 import { projectScene, tonemapFor, writeRsb } from '../src/io/rsb';
 import { exactBytes } from '../src/render/tiles';
-import { GRAPH_KEYS, graphScene, PLAIN } from './browser/programs-scene';
+import { GRAPH_KEYS, graphScene, PLAIN, woodSphereScene } from './browser/programs-scene';
 import { loadRt, renderWithPasses, RT_WASM } from './wasm-engine';
 
 function findChromium(): string | null {
@@ -56,9 +56,13 @@ const H = 150;
 const SAMPLES = 32;
 
 /** The graphs compared by the place of their pattern and by their tone. */
-const PATTERNED = ['PLASTIC_LABEL', 'MARBLE', 'LEATHER', 'WOOD_TWO_NOISES', 'CHECKS', 'GLAZED_CERAMIC', 'STRIPES'];
-/** Compared by the correlation of their pattern and by their tone (too fine for the settled pixels: see above). */
-const PLACED = ['METALLIC_FLAKES'];
+const PATTERNED = ['PLASTIC_LABEL', 'MARBLE', 'LEATHER', 'CHECKS', 'GLAZED_CERAMIC', 'STRIPES'];
+/**
+ * Compared by the correlation of their pattern and by their tone (too fine for the settled pixels: see above). M3c: the
+ * wood example is the oak's 3 mm rings through the Wood node, five pixels a ring here: few pixels settle in a class,
+ * and the control (the plate upside down, its rings' arches turned over) agrees on them as well; the correlation tells.
+ */
+const PLACED = ['METALLIC_FLAKES', 'WOOD_TWO_NOISES'];
 
 interface Picture {
   /** Display values, RGBA 8-bit. */
@@ -251,6 +255,47 @@ run('a node material renders in Full where and as Fast draws it (M3b, regions)',
     console.log(PLAIN, JSON.stringify(r));
     expect(r.pixels, 'the part fills the frame').toBeGreaterThan(3000);
     expect(r.gap, 'tone').toBeLessThan(40);
+  }, 600000);
+
+  // M3c (decision 1.6): the wood example of the graphs, and the oak converted to nodes, render in Full as the Wood
+  // family's oak does: the same rings in the same place, in the same tone (the thresholds of the region comparison);
+  // the example turned a quarter of a turn about its axis is the control.
+  it('the wood graph sphere renders as the Wood family sphere (M3c)', async () => {
+    const picture = async (kind: Parameters<typeof woodSphereScene>[0]): Promise<Picture> => {
+      const state = woodSphereScene(kind, W, H);
+      const rsb = writeRsb(projectScene(state, { width: W, height: H, maxSamples: SAMPLES, maxSeconds: 0, textures: true, programs: true }).scene);
+      const rt = await loadRt();
+      const { image, passes } = renderWithPasses(rt, rsb, W, H, SAMPLES, 8);
+      return { rgba: exactBytes(image.sum, SAMPLES, state.image.exposureEv, tonemapFor(state.image.viewTransform)), part: passes.partId! };
+    };
+    const family = await picture('FAMILY');
+    const out: Record<string, unknown> = {};
+    for (const kind of ['EXAMPLE', 'CONVERTED', 'TURNED'] as const) {
+      const graph = await picture(kind);
+      dump(`wood-sphere-${kind.toLowerCase()}`, graph.rgba);
+      const mask = maskOf(family, graph);
+      const pixels = mask.reduce((a, b) => a + b, 0);
+      const tf = meanColour(family, mask);
+      const tg = meanColour(graph, mask);
+      const gap = Math.max(...tf.map((v, c) => Math.abs(v - tg[c])));
+      const bf = blurred(family);
+      const bg = blurred(graph);
+      const { share, count } = agreement(classes(bf, mask), classes(bg, mask));
+      out[kind] = { pixels, family: tf.map(Math.round), graph: tg.map(Math.round), gap: Math.round(gap), share, count, corr: correlation(bf, bg, mask) };
+    }
+    dump('wood-sphere-family', family.rgba);
+    results.WOOD_SPHERE = out;
+    console.log('WOOD_SPHERE', JSON.stringify(out));
+    for (const kind of ['EXAMPLE', 'CONVERTED'] as const) {
+      const r = out[kind] as { pixels: number; gap: number; share: number; count: number; corr: number };
+      expect(r.pixels, `${kind}: the sphere fills the frame`).toBeGreaterThan(3000);
+      expect(r.gap, `${kind}: tone`).toBeLessThan(40);
+      expect(r.count, `${kind}: settled pixels`).toBeGreaterThan(500);
+      expect(r.share, `${kind}: agreement`).toBeGreaterThan(0.85);
+      expect(r.corr, `${kind}: correlation`).toBeGreaterThan(0.75);
+    }
+    const turned = out.TURNED as { share: number; corr: number };
+    expect(turned.corr, 'the control').toBeLessThan((out.EXAMPLE as { corr: number }).corr - 0.2);
   }, 600000);
 
   for (const key of GRAPH_KEYS) {

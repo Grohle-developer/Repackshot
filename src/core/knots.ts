@@ -19,6 +19,8 @@ const REDRAWS = 8;
 export const MIN_INCIDENCE = Math.fround(Math.SQRT1_2);
 const SALT = 0x4b4e4f54; // "KNOT"
 const GAP_MM = 1;
+/** Knots this wide or wider (mm, at the piece's middle) have a crack. */
+const CRACK_FROM_MM = 20;
 /** Farthest the pith runs from a part's centre across its thickness, mm. */
 const MAX_PITH_MM = 250;
 /** The pith's offset aside over its offset below. */
@@ -88,6 +90,8 @@ export interface Knot {
   across: V3;
   middle: number;
   radius: number;
+  /** M3c: the angle of its crack in the plane (across, flow), on knots 20 mm or wider (rt_core `h(6) · TAU`); null without. */
+  crack?: number | null;
 }
 
 /** The knot spec of a material instance, or null when it has none (as io/rsb.ts patternToRsb writes it). */
@@ -197,7 +201,7 @@ export function placeKnots(spec: KnotSpec, centre: V3, half: V3, meets: Meets): 
       const b = add(origin, mul(axis, span[1]));
       const widest = r * (0.5 + (0.5 * Math.max(span[0], span[1])) / middle);
       if (!inside.every(([c, e, w]) => segmentGap(a, b, c, e) >= widest + w + GAP_MM)) continue;
-      const knot = { origin, axis, flow, across, middle, radius: r };
+      const knot = { origin, axis, flow, across, middle, radius: r, crack: d >= CRACK_FROM_MM ? h(6) * 2 * Math.PI : null };
       if (!meets(knot, span[0], span[1])) {
         grazing++;
         if (grazing > REDRAWS) break;

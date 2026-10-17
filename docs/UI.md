@@ -2237,7 +2237,8 @@ Se abre con **Nodos…** del inspector del material, con *Material ▸ Editar
 con nodos…* del menú contextual de una pieza o con la paleta, sobre el
 material de la selección (si la selección no tiene un solo material lo
 dice un aviso). Un material en modo *Simple* pasa antes a *Nodos* (su
-grafo mínimo: la salida sola, una entrada de deshacer). Es una ventana
+grafo mínimo: la salida sola, una entrada de deshacer; una madera o una
+tela, M3c, su nodo *Madera* o *Tela* conectado a la salida). Es una ventana
 flotante como la de render, de unos **1040 × 660 px** y centrada la
 primera vez, pero **sin atenuar** lo de detrás: el visor sigue pintando lo
 que hace el grafo. Se mueve por su barra de título, se agranda por su
@@ -2289,6 +2290,15 @@ la vista previa *Rápido*; mientras llegan, el hueco queda gris.
   flechas y `⏎` eligen. *Clic derecho* en una tarjeta: *Duplicar*,
   *Desconectar las entradas*, *Eliminar* (la salida no se duplica ni se
   elimina).
+- **Madera** y **Tela** (M3c, categoría *Textura*; *roble*, *veta*,
+  *vaquero*, *punto* también los encuentran): los dibujos de las familias
+  *Madera* y *Tela* con sus parámetros, sus claves y sus unidades (anillos
+  por 100 mm, poros y nudos en mm, hilos por cm). Entradas: *Punto* (sin
+  conexión, el punto de la pieza en mm), *Normal* y *Rugosidad*. Salidas:
+  *Color*, *Rugosidad*, *Anisotropía*, *Normal* (doblada por el relieve de
+  poros, nudos o tejido) y *Altura (mm)*; la *Tela*, además, *Pelusa*. Su
+  esfera es la de la familia en una bola de 100 mm (la médula a lo largo
+  de su eje x); los nudos solo se ven con la figura *Anillos*.
 
 **Panel** (derecha, 280 px): el material en una esfera de 128 px; **En
 Rápido**, las líneas que dicen cómo lo dibuja la vista previa (*Dibujado
@@ -2310,10 +2320,12 @@ color y su ×, *Añadir una parada* en el hueco mayor, y una barra que la
 muestra) y sus **entradas**: las libres con su valor editable, las
 conectadas con *Desde Nodo · toma* y una × que desconecta, las que leen
 una fuente del punto con cuál (*La normal de la superficie*, *Las UV de la
-malla*, *Las coordenadas de la pieza (por 100 mm)*); *Duplicar* y
+malla*, *Las coordenadas de la pieza (por 100 mm)*, *El punto de la pieza
+(mm)*); *Duplicar* y
 *Eliminar*. Con varios nodos, *N nodos seleccionados* y los dos botones;
 con ninguno, una nota de cómo se usa.
 ![el frasco con el mármol en Rápido](material-nodes-preview.png)
+![el editor con el nodo Madera del ejemplo de roble](material-nodes-wood.png)
 
 **Pie**: *N nodos · M conexiones · programa de K instrucciones, F + V
 registros* (lo que dice el compilador), o por qué no compila (*El grafo

@@ -1471,9 +1471,16 @@ pub fn radiance_weighted<T: Tracer>(
             Some(offset_origin(far, if n.dot(dir) < 0.0 { -n } else { n }))
         };
         // A pattern that stretches the roughness along its grain gives the frame its tangent.
+        // M3c: so does a program's wood (its grain, where its anisotropy is above 0).
         let frame = surface
             .tint
             .and_then(|t| t.frame(surface.normal))
+            .or_else(|| {
+                surface
+                    .programmed
+                    .as_ref()
+                    .and_then(|p| p.frame(surface.normal))
+            })
             .unwrap_or_else(|| {
                 prepared.frame(
                     surface.instance.map(|(i, _)| i),

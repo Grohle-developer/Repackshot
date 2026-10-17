@@ -20,6 +20,7 @@ import {
   normalizeGraph,
   outputNode,
   outputSetup,
+  patternGraphOf,
   type GraphAction,
   type MaterialGraph,
 } from '../src/core/material-graph';
@@ -47,7 +48,7 @@ describe('the node catalogue', () => {
     const keys = MATERIAL_NODES.map((n) => n.key);
     expect(new Set(keys).size).toBe(keys.length);
     // Keys are added, never renamed (CLAUDE.md rule 7): projects keep them.
-    expect(keys).toEqual(['OUTPUT', 'IMAGE', 'MAPPING', 'NOISE', 'GRADIENT', 'CHECKER', 'STRIPES', 'RAMP', 'MIX', 'MATH', 'FRESNEL', 'CURVATURE', 'VALUE', 'COLOR', 'SEPARATE_RGB', 'COMBINE_RGB', 'INVERT', 'NORMAL_MAP', 'BUMP']);
+    expect(keys).toEqual(['OUTPUT', 'IMAGE', 'MAPPING', 'NOISE', 'GRADIENT', 'CHECKER', 'STRIPES', 'RAMP', 'MIX', 'MATH', 'FRESNEL', 'CURVATURE', 'VALUE', 'COLOR', 'SEPARATE_RGB', 'COMBINE_RGB', 'INVERT', 'NORMAL_MAP', 'BUMP', 'WOOD', 'FABRIC']);
     expect(OUTPUT_INPUTS.map((s) => s.key)).toEqual(['baseColor', 'metallic', 'roughness', 'anisotropic', 'coat', 'coatRoughness', 'transmission', 'ior', 'subsurface', 'emission', 'emissionStrength', 'opacity', 'normal', 'bump', 'bevel']);
   });
 
@@ -241,7 +242,10 @@ describe('Simple and Nodes', () => {
     for (const p of MATERIAL_PRESETS) {
       const m = instanceFromPreset('m1', p.key, 120)!;
       const g = minimalGraph(m);
-      expect(isMinimal(g), p.key).toBe(true);
+      // M3c: a wood or a fabric becomes its Wood or Fabric node into the output; the others, the output alone.
+      const patterned = m.family === 'WOOD' || m.family === 'FABRIC';
+      expect(isMinimal(g), p.key).toBe(!patterned);
+      expect(patternGraphOf(g) !== null, p.key).toBe(patterned);
       const back = backToSimple({ ...m, graph: g });
       expect(back.exact, p.key).toBe(true);
       expect(back.material.family, p.key).toBe(m.family);
@@ -255,7 +259,10 @@ describe('Simple and Nodes', () => {
       const m = instanceFromPreset('m1', p.key, 120)!;
       const engine = materialToRsb(m).baseColor;
       const nodes = materialToRsb({ ...m, graph: minimalGraph(m) }).baseColor;
-      engine.forEach((v, i) => expect(nodes[i], `${p.key} channel ${i}`).toBeCloseTo(v, 6));
+      // M3c: a wood's or a fabric's graph is its pattern, whose mean over the sphere's points is its own mean colour
+      // within a few hundredths (an engine without programs draws that mean; one with them, the pattern).
+      const patterned = m.family === 'WOOD' || m.family === 'FABRIC';
+      engine.forEach((v, i) => (patterned ? expect(Math.abs(nodes[i] - v), `${p.key} channel ${i}`).toBeLessThan(0.04) : expect(nodes[i], `${p.key} channel ${i}`).toBeCloseTo(v, 6)));
     }
     // The weave counts by its warp share: a 3/1 twill is not the plain mean of its two threads.
     const denim = instanceFromPreset('m1', 'DENIM', 120)!;

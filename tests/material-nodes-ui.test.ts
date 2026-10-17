@@ -122,7 +122,12 @@ describe('links from the canvas', () => {
 describe('what the editor says', () => {
   it('finds nodes by their name, their words and in both languages, never the output', () => {
     expect(addNodeMatches('').flatMap((g) => g.types)).not.toContain('OUTPUT');
-    expect(addNodeMatches('').flatMap((g) => g.types)).toHaveLength(18);
+    expect(addNodeMatches('').flatMap((g) => g.types)).toHaveLength(20);
+    // M3c: the Wood and Fabric nodes, by their names and words in both languages.
+    expect(addNodeMatches('madera').flatMap((g) => g.types)).toEqual(['WOOD']);
+    expect(addNodeMatches('oak').flatMap((g) => g.types)).toEqual(['WOOD']);
+    expect(addNodeMatches('denim').flatMap((g) => g.types)).toEqual(['FABRIC']);
+    expect(addNodeMatches('tela').flatMap((g) => g.types)).toEqual(['FABRIC']);
     expect(addNodeMatches('perlin').flatMap((g) => g.types)).toEqual(['NOISE']);
     expect(addNodeMatches('ruido').flatMap((g) => g.types)).toEqual(['NOISE']);
     // A word of the node's keywords only.
