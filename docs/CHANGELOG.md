@@ -3,6 +3,27 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+Las luces IES (L5).
+
+### Motor
+
+- **Luces IES**: un lector propio del formato de texto IES LM-63 (fotometría tipo C, `TILT=NONE`; el tipo B o A y `TILT=INCLUDE` se rechazan con su mensaje, y también lo cortado, las cuentas que no casan, los ángulos que no crecen y las candelas negativas) y una luz de tipo IES: un punto o una esfera pequeña cuya intensidad en cada dirección es la del archivo, interpolada bilinealmente entre sus ángulos con las simetrías del archivo, orientada por el eje y el giro de la luz y escalada por su potencia (el perfil da la forma y la potencia el nivel: tan brillante en su dirección más brillante como un punto de esa potencia). Se muestrea por siguiente evento, con MIS si es *glossy*, y en la elección de luz pesa por la intensidad exacta hacia cada punto (L5).
+- **RSB**: `LGHT` de tipo 5 (80 bytes) y la sección `IESP` con el texto del archivo, una vez por perfil; los ficheros y las escenas sin luces IES siguen igual, byte a byte, y ningún hash fijado se ha movido. El motor lo dice en `rt_features` (bit 2) y la página escribe una luz IES como el foco que la aproxima para un motor que no lo diga (L5).
+- `rt --write-l5-example`, escena de paridad con su hash fijado y su bloque de paridad con `rt.wasm` en CI (L5).
+
+### Interfaz
+
+- ***+ Añadir luz ▸ IES…*** deja de ser *próximamente*: abre un archivo `.ies` (también se puede soltar sobre la ventana) y crea la luz delante y arriba de la pieza, con el brillo medio de los focos encendidos. El inspector enseña el **nombre del perfil**, un **gráfico polar** dibujado desde el archivo (los planos C0–C180 y C90–C270), el pico, el ángulo del haz, **Cambiar…** y un **multiplicador** (× 1 es el nivel con que entró la luz). Un archivo que no se puede leer no añade nada y dice por qué (L5).
+- El perfil **viaja en el proyecto** (`.repack`), en los estudios, en un montaje guardado y en la biblioteca, así que se abre en otro equipo sin el archivo. No se entrega ningún perfil de fabricante: cada persona trae los suyos (L5).
+- En *Rápido* la luz IES es un foco con la intensidad del eje y un cono sacado del ángulo en que el perfil cae a la mitad: una aproximación, y el inspector lo dice; *Completo* y el render usan el archivo entero (L5).
+
+### Limitaciones conocidas
+
+- Solo fotometría tipo C: un archivo de tipo B o A se rechaza («expórtalo como tipo C»).
+- Una luz IES no lanza fotones de cáusticas, como el punto y el foco.
+
 ## v0.1.13 — 2026-10-16
 
 Versión de prueba con el muestreo adaptativo y *Terminar por ruido* en la

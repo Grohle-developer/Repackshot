@@ -381,7 +381,8 @@ fn an_ies_light_lights_a_floor_with_the_candela_of_its_file_at_0_30_and_60_degre
     // The criterion of L5, end to end. 12 W at the peak, 400 mm above a white Lambertian floor:
     // under the light the floor's radiance is E / π with E = I(θ) cos θ / d² = I(θ) cos³θ / h²,
     // the file's candela over its peak (1000 cd: 750 at 30°, 250 at 60°) times the peak intensity
-    // 12 / 4π W/sr. Direct light only, from a delta point: the film holds the expression itself.
+    // 12 / 4π W/sr. Direct light only, from a delta point: the film holds the expression itself, to
+    // 8.2e-6 (measured; a plain point light is 6e-6 off the same formula): the test allows 5e-5.
     let (h, power) = (400.0f32, 12.0f32);
     let peak = power as f64 / (4.0 * std::f64::consts::PI);
     for (theta, candela) in [(0.0f64, 1000.0f64), (30.0, 750.0), (60.0, 250.0)] {
@@ -402,7 +403,7 @@ fn an_ies_light_lights_a_floor_with_the_candela_of_its_file_at_0_30_and_60_degre
             );
             let got = mean_where(&render(&scene, 4), 1, |_, _| true);
             assert!(
-                (got / want - 1.0).abs() < 2.0e-4,
+                (got / want - 1.0).abs() < 5.0e-5,
                 "{theta}° at {azimuth}°: {got} vs {want}"
             );
         }
@@ -437,7 +438,7 @@ fn an_ies_light_follows_the_horizontal_angles_of_its_file_on_the_floor() {
         // 9 W/sr at the peak, 900 cd: 1 W/sr per 100 cd.
         let want = candela / 100.0 * cos3 / (h as f64 * 1.0e-3).powi(2) / std::f64::consts::PI;
         assert!(
-            (got / want - 1.0).abs() < 2.0e-4,
+            (got / want - 1.0).abs() < 5.0e-5,
             "({x}, {y}): {got} vs {want}"
         );
     }

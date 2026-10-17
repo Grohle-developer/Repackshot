@@ -2605,10 +2605,12 @@ mod tests {
         // 0°, 30° and 60° are table nodes; 35°, 45° and 75° lie between them, where the file is
         // linear: 668.5, 500 and 73.5 cd (the smooth 1000 cos² would say 671.1, 500 and 67.0, so
         // a lookup that took the nearest node or the curve it was rounded from would fail).
-        // Tolerance: the angle comes back from a unit vector through `atan2` in f32, good to 2e-6
-        // rad, and the table's steepest slope is 14 cd per degree (800 cd/rad), so 2e-3 cd of 1000
-        // = 2e-6 of the peak; 1e-4 of the peak allows for that and the f32 products, and stays 25
-        // times below the 0.26 % by which the curve differs from the file at 35°.
+        // Tolerance: the angle comes back from a unit vector through `atan2` in f32 (good to a few
+        // 1e-7 rad) and the table's steepest slope is 14 cd per degree (800 cd/rad): the lookup is
+        // within 6.3e-8 of the peak of the file's values at every direction below (measured), f32
+        // round-off. The test allows 1e-6 of the peak, sixteen times that and 2 600 times under the
+        // 0.26 % by which the smooth curve differs from the file at 35°, so a lookup that took the
+        // nearest node or the curve it was rounded from would fail.
         for (theta, candela) in [
             (0.0f32, 1000.0f32),
             (30.0, 750.0),
@@ -2623,7 +2625,7 @@ mod tests {
                 let got = ies_intensity(&lights, x).expect("lit");
                 let want = peak * candela / 1000.0;
                 assert!(
-                    (got - want).abs() <= 1.0e-4 * peak,
+                    (got - want).abs() <= 1.0e-6 * peak,
                     "{theta}° at {azimuth}°: {got} against {want}"
                 );
             }

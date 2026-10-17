@@ -232,8 +232,8 @@ Contra, Cenital…) más los **focos propios** (con la marca *propio*), con su
 potencia relativa en una barra fina y un interruptor cada uno. Clic
 selecciona el foco y el inspector lo edita. Botón **+ Añadir luz** con menú:
 *Área · rectángulo*, *Área · disco*, *Área · esfera*, *Punto*, *Foco
-direccional*, *Sol* e *IES* (*próximamente*, fase L5), cada una con su icono
-y un *tooltip* de lo que da; el mismo menú está en *Añadir ▸* de la cabecera
+direccional*, *Sol* e *IES…* (fase L5: abre un archivo de perfil, ver abajo),
+cada una con su icono y un *tooltip* de lo que da; el mismo menú está en *Añadir ▸* de la cabecera
 (bajo las primitivas) y en el clic derecho del visor en vacío, y cada tipo
 en la paleta (*Añadir luz: foco direccional*…). Un foco nuevo aparece
 delante y arriba de la pieza, encendido y seleccionado (fase L4). Acciones
@@ -245,6 +245,47 @@ pieza tiene **Apuntar un foco aquí ▸** con la lista de focos. Debajo,
 **Guardar montaje como…** (nombre; va a la pestaña *Míos* del catálogo con
 miniatura renderizada) y **Restablecer al montaje** cuando el rig está
 modificado (quita los focos propios).
+
+**Luz IES** (fase L5). *IES…* abre el diálogo de archivos (`.ies`; en el
+navegador, el selector de archivos; en el escritorio, el diálogo del sistema)
+y, con un perfil que el motor sabe leer, crea una luz de tipo *IES* (delante y
+arriba de la pieza, encendida y seleccionada, una entrada de deshacer:
+*Añadir foco IES <nombre del perfil>*); soltar un `.ies` sobre la ventana
+hace lo mismo y la paleta lo tiene (*Añadir luz: perfil IES…*). Con un
+archivo que no sirve (de fotometría tipo B o A, con `TILT=INCLUDE`, cortado,
+con las cuentas mal, con ángulos que no crecen, con candelas negativas…) no
+se añade nada y un aviso dice por qué, con los números del archivo y qué
+hacer («expórtalo como tipo C», «con TILT=NONE»). En el inspector, bajo el
+tipo (*Área · Punto · Foco · Sol · IES*; *IES* solo lo ofrece una luz que
+tiene perfil, y cambiar a *Punto* o *Foco* y volver lo conserva):
+
+- **Perfil**: su nombre (la descripción de la luminaria del archivo o, si no la
+  trae, el nombre del archivo) y, en auxiliar, el pico en cd, el ángulo del haz
+  (el doble del ángulo en que cae a la mitad) y la simetría del archivo.
+- **Gráfico polar**, dibujado desde el archivo que lee el motor: la intensidad
+  sobre el pico contra el ángulo desde el eje (0° abajo, 180° arriba), en los
+  planos C0–C180 (continuo; C0 a la derecha) y C90–C270 (discontinuo), con
+  anillos al 25, 50, 75 y 100 %; un perfil redondo tiene una sola curva. En
+  tintas del tema, sin color.
+- **Cambiar…**: otro archivo para la misma luz, que conserva su sitio, su
+  apunte y su nivel (una entrada de deshacer: *Cambiar el perfil IES de
+  <foco>*).
+- **Multiplicador** (× 1,00 al entrar), en lugar de la potencia en vatios: ×2
+  duplica la luz. Debajo, los lúmenes (el flujo del punto del pico por la parte
+  de la esfera que llena el perfil).
+- Una nota: *Rápido dibuja este perfil como un foco de N° con la misma
+  intensidad en su eje: una aproximación. Completo y Render usan el archivo
+  entero.* (el medidor de cada luz dice lo que el motor no hace en Rápido, regla
+  10). Si el texto del perfil no se pudiera leer, otra nota dice que el foco se
+  dibuja como un punto.
+- Radio de la bombilla, posición, **giro** (el ángulo horizontal 0° del perfil:
+  girar la luz gira el patrón), color, *visible en reflejos*, *visible a
+  cámara*, *proyecta sombra* y encendido, como cualquier foco.
+
+La fila de la luz en la pestaña lleva *IES* (su nombre) y, en el *tooltip*, el
+perfil y que *Rápido* lo aproxima. Los glifos del visor dibujan su haz (el
+cono del ángulo del haz), y *Mirar a través* encuadra ese cono, como un foco.
+**No se entrega ningún perfil**: cada persona trae los suyos.
 
 **Estudios**: combinaciones guardadas de cámara + montaje de luz + entorno
 + set de materiales, como en KeyShot pero sin pantalla aparte: *Guardar

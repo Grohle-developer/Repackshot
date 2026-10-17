@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { IES_MAX_BYTES, parseIes, type IesErrorCode } from '../src/core/ies';
+import { IES_MAX_BYTES, iesTextOf, parseIes, type IesErrorCode } from '../src/core/ies';
 import { createStore, type ProjectState } from '../src/core/store';
 import * as cmd from '../src/ui/commands';
 import { lightMenuItems } from '../src/ui/panels/add-menu';
@@ -17,8 +17,9 @@ import { exampleState } from './helpers';
 
 afterEach(() => setLang('en'));
 
-const DOWNLIGHT = readFileSync('tests/fixtures/ies/downlight-symmetric.ies', 'latin1');
-const WALL_WASHER = readFileSync('tests/fixtures/ies/wall-washer.ies', 'latin1');
+const read = (name: string): string => iesTextOf(new Uint8Array(readFileSync(`tests/fixtures/ies/${name}`)));
+const DOWNLIGHT = read('downlight-symmetric.ies');
+const WALL_WASHER = read('wall-washer.ies');
 const file = (text: string, name: string): File => new File([Uint8Array.from(text, (c) => c.charCodeAt(0) & 255)], name);
 
 function makeCtx(state: ProjectState = exampleState()): { ctx: Ctx; imported: string[] } {
@@ -109,7 +110,7 @@ describe('Add light ▸ IES…', () => {
   it('is in the menu as a live entry (no longer coming soon) and in the palette', () => {
     const { ctx } = makeCtx();
     const items = lightMenuItems(ctx);
-    const entry = items.find((i) => 'label' in i && i.label === t('lights.addKind.IES'));
+    const entry = items.find((i) => i !== null && 'label' in i && i.label === t('lights.addKind.IES'));
     expect(entry && 'disabled' in entry ? entry.disabled : undefined).toBeFalsy();
     expect(entry && 'run' in entry ? typeof entry.run : null).toBe('function');
     expect(t('lights.addKind.IES')).toBe('IES…');

@@ -13,6 +13,7 @@ import { LUMENS_PER_WATT, luminance, pointLightFlux } from '../src/core/photomet
 import { createStore, type ProjectState } from '../src/core/store';
 import { exportLibrary, importLibrary } from '../src/io/library';
 import { loadProject, serializeProject } from '../src/io/project';
+import { glyphsOf, lookThroughCamera } from '../src/core/view-objects';
 import {
   LIGHT_IES,
   LIGHT_POINT,
@@ -257,6 +258,31 @@ describe('the engine and the preview are told the same', () => {
     // The engine's own word, from the source of rt-core: the page and the engine agree on the bit.
     const lib = readFileSync('engine/crates/rt-core/src/lib.rs', 'utf8');
     expect(/pub const FEATURE_IES: u32 = (\d+);/.exec(lib)![1]).toBe(String(ENGINE_FEATURE_IES));
+  });
+});
+
+describe('the viewport shows the beam', () => {
+  it('draws the cone of the half-intensity angle as a spot of that angle does, and looking through frames it', () => {
+    const s0 = apply(exampleState(), { type: 'studio/addIesLight', ies: down }, { type: 'studio/addLight', kind: 'SPOT' });
+    const ies = s0.studio.lights[s0.studio.lights.length - 2];
+    const spot = s0.studio.lights[s0.studio.lights.length - 1];
+    // The downlight is half at 45 degrees: a beam of 90. A spot of 90 degrees at the same place, size and aim is the same cone.
+    const same = apply(s0, { type: 'studio/setLight', id: spot.id, patch: { spread: 90, blend: 0, az: ies.az, el: ies.el, dist: ies.dist } });
+    const glyph = (id: string) => glyphsOf(same, { all: false, selected: { kind: 'LIGHT', id } })[0];
+    const a = glyph(ies.id);
+    const b = glyph(spot.id);
+    expect(a.lines.length).toBeGreaterThan(8);
+    // The cone's rim and its four edges: the lines are the spot's but for the inner cone of a soft edge, which the IES has not.
+    const rim = (g: typeof a) => g.lines.slice(0, 8);
+    rim(a).forEach((p, i) => p.forEach((v, k) => expect(v).toBeCloseTo(rim(b)[i][k], 6)));
+    expect(a.dots).toEqual(b.dots);
+    // Looking through: the focal that fits the cone in the frame is the spot's.
+    const fa = lookThroughCamera(same, { kind: 'LIGHT', id: ies.id })!;
+    const fb = lookThroughCamera(same, { kind: 'LIGHT', id: spot.id })!;
+    expect(fa.focalMm).toBeCloseTo(fb.focalMm, 9);
+    // A light of another kind has no cone in either.
+    const point = apply(exampleState(), { type: 'studio/addLight', kind: 'POINT' });
+    expect(lightConeDeg(point.studio.lights[point.studio.lights.length - 1])).toBeNull();
   });
 });
 

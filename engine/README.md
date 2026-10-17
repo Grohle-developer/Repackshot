@@ -17,7 +17,7 @@ Do not add a dependency. If something is missing, write it.
 
 | Crate | Kind | Role |
 |-------|------|------|
-| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `texture` (M2b: image textures, their mipmaps, the five projections and labels in the shading), `program` (M3b: the material programs of node materials, their interpreter, M3a's noise and what a program makes of a hit), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
+| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `ies` (L5: IES LM-63 photometric profiles, their lookup and flux), `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `texture` (M2b: image textures, their mipmaps, the five projections and labels in the shading), `program` (M3b: the material programs of node materials, their interpreter, M3a's noise and what a program makes of a hit), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
 | `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`): the renderer (`rt_*`) and the rigid body simulator (`phys_*`, `src/phys.rs`). Its `unsafe` is confined to `src/ffi.rs`. |
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
@@ -131,6 +131,7 @@ cargo run --release -p rt-cli -- scene.rsb -o out.dng              # a linear ra
 cargo run --release -p rt-cli -- --sheet ../out/sheet          # the contact sheet (below)
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 1024 --noise 1   # adaptive, until every block is below 1 % noise
 cargo run --release -p rt-cli -- --write-e10-example e10.rsb # the E10 parity scene (the E5b-1 scene sampled adaptively)
+cargo run --release -p rt-cli -- --write-l5-example l5.rsb   # the L5 parity scene (the example lit by two IES lights)
 cargo run --release -p rt-cli -- --adaptive-noise ../out/noise --size 480x360 --max-seconds 20 --samples 4096 --rounds 3
 ```
 
@@ -461,6 +462,64 @@ uniform render for `--max-seconds`, an adaptive one for the same time and an ada
 it has cast as many rays as the uniform one; `noise.json` and a table of relMSE (E5b-1's: values
 clamped at 8, `(x − r)² / (r² + 0.01)`). The numbers measured are in `docs/ROADMAP.md`, E10.
 
+## IES lights (L5)
+
+`rt_core::ies` reads the IES LM-63 text format (the editions of 1995 and 2002, and 1991's without
+a version line): the `[KEYWORD]` header (`[MORE]` continues the line before), `TILT=NONE`, the
+thirteen numbers, the angles and the candela, separated by spaces, tabs, commas or line breaks of
+any style. **Type C photometry only**, with vertical angles 0–90, 0–180 or 90–180 and horizontal
+angles one, 0–90, 0–180, 90–270 or 0–360 (the symmetries: round, four quadrants, bilateral about
+C0–C180 or C90–C270, full); **type B and type A are refused** with their own message (converting
+them is a resampling of the sphere that nothing needs: every luminaire can be published in type
+C), and so are `TILT=INCLUDE` and `TILT=<file>`. The reader is strict, and its refusals say what
+is wrong with the numbers of the file: counts that do not match the values present (fewer: cut
+short; more: wrong counts), angles that do not increase, negative or non-finite candela, a table
+of zeros, more than 2 MiB. Lumens, lamp counts, ballast factors, input watts and the size of the
+luminous opening are read and not used: the file is a *shape*. No profile of any manufacturer is
+shipped; the two of the tests (`tests/fixtures/ies/`) were typed by hand and everybody brings
+their own.
+
+`IesProfile::intensity(γ, φ)` interpolates the candela **bilinearly** in the vertical angle γ
+(0° along the light's axis) and the horizontal angle φ, on the file's own, possibly uneven, angles,
+after reducing φ to the stored range by the symmetry; outside the vertical range it is 0. In the
+light's frame (`intensity_dir`) `+z` is the axis, φ = 0 lies along `+y` (the light's `up`) and φ
+grows from `+y` towards `+x`, counter-clockwise looking along the axis from behind. γ and φ come
+from `atan2` of `fmath` (not `acos`, which loses its precision near the axis). `flux()` is the
+integral of that very function over the sphere in closed form per cell (the trapezoid is exact
+in φ, where the function is linear; the integral of `sin γ` times a linear function of γ has
+a primitive): 4π c for an isotropic profile, a sixth of 4π · 1000 for the hand-written
+1000 cos² (to 0.5 % with its 10° steps, to 5e-5 with 1° steps), and the integral of the
+interpolant to 1.5e-3 against a midpoint quadrature of `intensity`. `efficiency()` is
+`flux / (4π · peak)`.
+
+`LightKind::Ies` (`LGHT` kind 5, `Light::ies`) is the point light or small sphere of `power`
+watts masked by the profile: `mask(x) = intensity(direction from the centre to x, in the light's
+frame) / peak`, in `[0, 1]`, through the same code as a spot's mask (sampling over the cone the
+sphere fills, a delta position for a point, MIS with BSDF rays when glossy, the mask also for
+camera rays and reflections). The profile gives the shape and `power` the level: the light is as
+bright in the profile's brightest direction as the point light of `power` watts (`power / 4π`
+W/sr), so profiles written for 500 and for 5000 lumens give the same image, and a spot can be
+swapped for an IES light without moving the exposure. Light selection (E12, `rt_core::light`):
+per point the weight `lum(I) · mask(x) / max(d², r²)` is exact, the intensity of the profile
+towards the point; the static selection (more than 64 entries, the shadow catcher) weighs an IES
+light **inside the sphere that bounds the scene** by its flux (the peak point's, times the
+profile's efficiency: its light goes wherever the scene is) and one outside it, as a spot, by the
+intensity towards the centre of the scene (a narrow beam with little flux is the light that counts
+there; the flux of the file is not the right measure). It sends no caustic photons.
+
+The page writes IES lights as such when `rt_features` bit 2 is set; for an engine without it, the
+spot light that stands for it (the axis intensity, a cone that is half the peak at the profile's
+half-intensity angle) goes instead, which any engine reads, and that is what the Fast preview
+draws. `PINNED_L5_IES_4SPP` (`0x920f0be1`, `rt --write-l5-example`: the example with its panel at a
+fifth of its power, a sphere of 24 mm with the downlight profile and a warm point with the wall
+washer turned about its axis, 160 x 120) holds on every SIMD path, by `rt` with 1, 4 and 16 threads
+(`rt-cli/tests/example.rs`), in WASI and through the real module (`tools/wasm-parity.mjs`, CI);
+`ies/tests.rs` writes `tests/fixtures/ies/conformance.json` (68 files and what this reader makes of
+each), which the page's port (`src/core/ies.ts`) reproduces, refusals and messages included. Nine
+mutations of the engine (a fold of φ, the handedness of φ, the mask, the radius of the scene in the
+static weight, the slope term of the flux, the deduplication of profiles, the interpolation in φ,
+the range of γ and the normalisation by the peak) were each caught by tests.
+
 ## Exact passes (X2)
 
 `rt_core::passes` writes, next to the image, the per-pixel planes the AI post-processing guard
@@ -615,7 +674,7 @@ A wasm instance is single threaded; the host runs one instance per Web Worker.
 
 RSB (Repackshot Scene Binary, version 1) is little-endian: the magic `RSB1`, a `u32` header
 length, then sections `[tag: 4 ASCII bytes][u32 byte length][payload]`. Tags: `CAMR`, `LENS`,
-`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`, `PATN`, `FXAM`, `IMGS`. Unknown tags are skipped, so old readers keep
+`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`, `PATN`, `FXAM`, `IMGS`, `IESP`. Unknown tags are skipped, so old readers keep
 working with newer writers. `INST` (E2) places a mesh with a 3x4 transform, a material and flags;
 a file without `INST` sections draws every mesh once, untransformed, with its own material,
 exactly as before. E3 appended optional fields (`MATL.flags`; `RNDR.max_depth`,
@@ -644,7 +703,11 @@ engine computes their mipmaps), the texture block of `MATL` from byte 100 (six s
 mapping, the emission tint, the labels) and the UV sets of `MESH` after its material; see
 `rt_core::texture`. M3b added `PROG` (after every other section, one per node material: its
 `MATL` index and the bytes of M3a's `encodeProgram`), which the page writes when the engine says
-it runs them (`rt_features` bit 1, `rt_core::FEATURE_PROGRAMS`); see `rt_core::program`. The exact field layout and the semantics
+it runs them (`rt_features` bit 1, `rt_core::FEATURE_PROGRAMS`); see `rt_core::program`. L5 added
+`LGHT` kind 5 (an IES light: its record is 80 bytes, the extra word naming its profile) and `IESP`
+(the text of an IES file, once per distinct profile, after the lights), which the page writes when the
+engine says it renders them (`rt_features` bit 2, `rt_core::FEATURE_IES`); a scene without IES
+lights is byte for byte what it was; see "IES lights (L5)". The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -717,6 +780,11 @@ byte for byte.
   bevel weight, cut-outs for camera and shadow rays, emission (an emitter whose program varies is
   not sampled as a light); `rt_features` bit 1, the M3b parity scene (`rt --write-m3b-example`).
 
+* **L5**: IES lights: `rt_core::ies` (the LM-63 reader, strict, type C; bilinear lookup with the
+  file's symmetries; the flux of the interpolant in closed form), `LightKind::Ies` and `Light::ies`
+  (a point or sphere masked by the profile's share of its peak, through the spot's code),
+  `LGHT` kind 5 with `IESP` sections, `rt_features` bit 2, the L5 parity scene
+  (`rt --write-l5-example`, `PINNED_L5_IES_4SPP`).
 * **E10**: adaptive sampling by rounds (`rt_core::adaptive`: the relative error of the mean per
   pixel, smoothed, by 8 x 8 blocks, the median of the candidates' errors as the threshold),
   `RNDR.adaptive` and `noise_threshold`, `render::render_block`, `Film::cut`, the denoiser's
