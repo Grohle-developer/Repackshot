@@ -53,7 +53,7 @@
 //!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //!             ||||||| u32 adaptive (0); f32 noise_threshold (0)    (E10, 72 B; only when set)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
-//!             u32 material_id; u32 flags (1 one-sided)
+//!             u32 material_id; u32 flags (1 one-sided, 2 not cut by the section view)
 //! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
 //!             u32 variant seed                                              (E6, new)
 //! LENS  72 B  u32 blades; f32 roundness rotation_deg; u32 profile; f32 profile_param
@@ -81,6 +81,8 @@
 //!             cloud_softness; u32 material_id; f32 tint_var; u32 flags; f32 streak
 //!             | f32 gravity (1) energy (0) spin (0); u32 palette_count (0);
 //!             f32 palette[4][3] (white)                                           (192 B)
+//! SECT  20 B  the section view (Q1, new, at most one, written after the FXAM sections): u32
+//!             flags (bit 0: cap the cut solids); f32 normal[3] distance
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS` and `IMGS` may appear at most once (a missing one means
@@ -134,6 +136,18 @@
 //! BVH ([`crate::geometry::ParticleSet`]); a reader without S4a skips the section. The effect's
 //! `material_id` must refer to a `MATL` section. In the part and material id passes a particle
 //! counts as instance `instances + effect index`.
+//!
+//! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
+//! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
+//! the camera, the reflections, the refractions, the shadows and the photons alike, and with
+//! `flags` bit 0 the cut is capped where it goes through a closed solid, with the material of
+//! that solid ([`crate::geometry::SectionPlane`], the rules in [`crate::geometry`]). The normal
+//! may not be zero (it is normalised, unless it is already unit to rounding), unknown flag bits are
+//! ignored. A file without `SECT` is the whole model, byte for byte as before Q1; the writer adds
+//! the section only when the scene has one. An update replaces it (a file without `SECT` has none).
+//! An instance with `INST.flags` bit 1 (`2`, [`crate::geometry::INSTANCE_NO_SECTION`]) is the
+//! studio around the model (a set's backdrop, floor and cards, which the page marks only while a
+//! section cuts): the plane neither removes nor caps it.
 //!
 //! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
 //! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the
@@ -296,7 +310,7 @@
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
     Instance, Lens, LensParams, Light, LightKind, Material, MaterialTextures, Mesh, PixelFootprint,
-    RenderSettings, Scene, SkyModel, TextureImage, Transform, NO_BITMAP,
+    RenderSettings, Scene, SectionPlane, SkyModel, TextureImage, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::ies::IesProfile;
@@ -337,6 +351,12 @@ pub const TAG_FXAM: [u8; 4] = *b"FXAM";
 pub const TAG_IMGS: [u8; 4] = *b"IMGS";
 /// Section tag of a material's program (M3b).
 pub const TAG_PROG: [u8; 4] = *b"PROG";
+/// Section tag of the section view's plane (Q1).
+pub const TAG_SECT: [u8; 4] = *b"SECT";
+
+/// `SECT.flags` bit 0: the cut solids are capped.
+pub const SECTION_CAP: u32 = 1;
+
 /// Section tag of an IES photometric profile (L5).
 pub const TAG_IESP: [u8; 4] = *b"IESP";
 
@@ -899,6 +919,14 @@ fn parse_bitmap(r: &mut Reader) -> Result<Bitmap, RsbError> {
     Bitmap::decode(format, width, height, data).map_err(|e| r.invalid(e.reason()))
 }
 
+fn parse_section(r: &mut Reader) -> Result<SectionPlane, RsbError> {
+    let flags = r.u32()?;
+    let normal = r.vec3()?;
+    let distance = r.f32()?;
+    SectionPlane::new(normal, distance, flags & SECTION_CAP != 0)
+        .ok_or_else(|| r.invalid("section normal is zero"))
+}
+
 fn parse_floor(r: &mut Reader) -> Result<Floor, RsbError> {
     let mode = FloorMode::from_u32(r.u32()?).ok_or_else(|| r.invalid("unknown floor mode"))?;
     Ok(Floor {
@@ -1040,6 +1068,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut effects = Vec::new();
     let mut images: Option<Vec<Arc<TextureImage>>> = None;
     let mut programs: Vec<(u32, crate::program::Program)> = Vec::new();
+    let mut section = None;
     let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
     // The profile each IES light names, by the light's position in `scene.lights`.
     let mut light_profiles: Vec<(usize, u32)> = Vec::new();
@@ -1108,6 +1137,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                 rt_sim::FxamError::TooShort => RsbError::SectionTooShort { tag },
                 rt_sim::FxamError::Invalid(reason) => RsbError::Invalid { tag, reason },
             })?),
+            TAG_SECT => set_once(&mut section, tag, parse_section(&mut r)?)?,
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
@@ -1321,6 +1351,8 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     scene.floor = floor.unwrap_or_default();
     scene.render = render;
     scene.effects = effects;
+    scene.section = section;
+    scene.apply_section();
     Ok(scene)
 }
 
@@ -1552,6 +1584,13 @@ impl Scene {
         }
         for e in &self.effects {
             w.section(TAG_FXAM, |w| w.buf.extend_from_slice(&e.encode()));
+        }
+        if let Some(plane) = &self.section {
+            w.section(TAG_SECT, |w| {
+                w.u32(u32::from(plane.cap) * SECTION_CAP);
+                w.vec3(plane.normal);
+                w.f32(plane.distance);
+            });
         }
         if !self.images.is_empty() {
             w.section(TAG_IMGS, |w| {

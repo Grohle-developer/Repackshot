@@ -511,6 +511,8 @@ export function touchesImage(s: ProjectState, p: ProjectState): boolean {
     s.environment !== p.environment ||
     // S4a: the ambient effects travel as FXAM sections.
     s.effects !== p.effects ||
+    // Q1: the section view's plane travels as SECT.
+    s.section !== p.section ||
     s.camera !== p.camera ||
     s.render.width !== p.render.width ||
     s.render.height !== p.render.height ||

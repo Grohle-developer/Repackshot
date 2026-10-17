@@ -11,6 +11,7 @@ import type { Ctx } from './reactive';
 import { t, type StringKey } from './strings';
 import { startTour } from './tour';
 import { openMaterialEditor } from './graph-commands';
+import { flipSection, toggleSection } from './section-commands';
 import type { Tool } from './ui-state';
 
 export interface AppAction {
@@ -119,6 +120,9 @@ export const ACTIONS: readonly AppAction[] = [
   // L5: an IES profile asks for its file first.
   { id: 'addLight.IES', label: 'lights.addAction.IES', run: (ctx) => void cmd.addIesLight(ctx) },
   { id: 'glyphs', label: 'action.glyphs', run: (ctx) => cmd.toggleGlyphs(ctx) },
+  // Q1: the section view.
+  { id: 'section', label: 'action.section', run: (ctx) => toggleSection(ctx) },
+  { id: 'sectionFlip', label: 'action.sectionFlip', run: (ctx) => flipSection(ctx) },
   // M3a: the material editor on the selection's material.
   { id: 'materialEditor', label: 'action.materialEditor', run: (ctx) => void openMaterialEditor(ctx) },
 ];

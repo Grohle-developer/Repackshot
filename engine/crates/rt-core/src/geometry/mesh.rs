@@ -2,6 +2,7 @@
 
 use super::bvh::{leaf_ref, BuildParams, Bvh, BvhStats, BvhWidth, MAX_LEAF_FIRST};
 use super::edges::{EdgeCache, MeshEdges};
+use super::solid::{Solid, SolidCache};
 use super::triangle::TriPacket;
 use crate::math::{Aabb, Vec3};
 use std::fmt;
@@ -105,6 +106,8 @@ pub struct Mesh {
     inside_out: bool,
     /// The sharp and boundary edges, extracted on first use (E6, the edge bevel).
     edges: EdgeCache,
+    /// Whether the mesh is a closed solid, worked out on first use (Q1, the section view).
+    solid: SolidCache,
     /// Sets of texture coordinates (M2b): one `(u, v)` pair per vertex each, v up.
     uvs: Vec<Vec<[f32; 2]>>,
 }
@@ -164,6 +167,7 @@ impl Mesh {
             packets: Vec::new(),
             inside_out: false,
             edges: EdgeCache::default(),
+            solid: SolidCache::default(),
             uvs: Vec::new(),
         };
         mesh.inside_out = mesh.normals_oppose_winding();
@@ -337,6 +341,13 @@ impl Mesh {
     /// its clones) as long as it lives, like its BVH.
     pub fn sharp_edges(&self) -> &MeshEdges {
         self.edges.get(self)
+    }
+
+    /// What the mesh is as a solid (Q1): closed with its winding outwards or inwards, or open (no
+    /// inside). Worked out the first time it is asked for, then kept with the mesh (and its
+    /// clones); see [`super::solid`].
+    pub fn solid(&self) -> Solid {
+        self.solid.get(self)
     }
 
     /// The BVH and its leaf packets (for the kernels).

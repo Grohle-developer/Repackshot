@@ -466,6 +466,50 @@ uniform render for `--max-seconds`, an adaptive one for the same time and an ada
 it has cast as many rays as the uniform one; `noise.json` and a table of relMSE (E5b-1's: values
 clamped at 8, `(x − r)² / (r² + 0.01)`). The numbers measured are in `docs/ROADMAP.md`, E10.
 
+## Section view (Q1)
+
+A plane that removes one side of the model and caps the cut (`crates/rt-core/src/geometry/section.rs`
+and `solid.rs`; the format in `rsb.rs`, the page's side in `src/core/section.ts`). The scene's
+`SECT` is `normal · p = distance` (mm, Z up) with the normal pointing to what is **removed**; the
+kept side is `normal · p <= distance`. It lives **inside `Geometry`**
+(`Geometry::set_section`, called by the RSB reader and by `Scene::build_particles`), so every
+query sees the same model (camera, reflection, refraction and shadow rays, photons, picking, the
+passes, the batches) without a change in the SIMD kernels or the integrator:
+
+* A ray is clipped to the interval on the kept side (a half-space meets a ray in one interval; `t`
+  is the same in the world and in a mesh's space), so geometry on the removed side is never hit
+  and never blocks a shadow ray. A scene without a section takes exactly the code it took before:
+  the pinned hashes did not move, and a plane that cuts nothing changes no pixel.
+* The cut is **capped** where it goes through the inside of a **closed solid**. A ray that crosses
+  the plane has been outside every surface it did not hit, so the crossing is inside a solid when
+  the next surface the ray meets is met from behind (`Solid::inside_before`, by the winding of the
+  triangle under the instance's transform). A ray that enters the kept side needs no extra work;
+  one that leaves it without a hit looks past the plane. The hit is flat, on the plane, with the
+  plane's normal facing the ray and `triangle = CAP_TRIANGLE` (`u32::MAX`): the material's plain
+  colour (no texture, pattern, program or bevel), and light interacts with it like with any
+  surface: a cut glass solid refracts through its cap like a glass solid that ended there.
+* A mesh is a **solid** (`geometry::solid`, once per mesh) when, after welding the vertices that
+  share a position (exactly, then within `1e-5` of the extent), every edge of the triangles that
+  have an area is shared by exactly two of them running in opposite directions; the signed volume
+  tells `Outward` from `Inward`. Open meshes show their inside; a material that is a thin wall and
+  a part with a material per face are not capped (the caller says so).
+* An instance with `INSTANCE_NO_SECTION` is the **studio** (the page flags a set's backdrop, floor
+  and cards while a plane cuts): never removed, never capped. A ray finds it on the removed side
+  too by walking that part of its range surface by surface, past the cut model, inside the box of
+  each exempt instance (at most 48 surfaces).
+* Limits: a ray with a finite `t_max` that enters the kept side inside a solid and ends before
+  leaving it finds no cap, and an emissive mesh sampled as a light still lights from its removed
+  part.
+
+`rt --write-q1-example <scene.rsb>` writes the E5 scene (glass sphere, lacquered floor, metal sphere,
+thin glass card, cut-out card) cut by `x = 0` with the cap on and the floor as studio.
+`PINNED_Q1_SECTION_4SPP` (`crates/rt-core/src/render/section_tests.rs`, `0x7a4182ea`) is its image
+at 4 spp on scalar, SSE2 and AVX2, through an RSB round trip; `rt-cli/tests/example.rs` checks it
+with 1, 4 and 16 threads, and CI checks it through the real module (scalar, `--passes` and
+`simd128`) and in WASI like the others. The scene without its plane is the E5 scene bit for bit
+(`PINNED_E5_HDRI_4SPP` has not moved). Measured at 640 x 480, 32 samples, 4 threads: the cut scene
+5.0 Mrays/s against 4.7 for the E5 scene without a plane.
+
 ## IES lights (L5)
 
 `rt_core::ies` reads the IES LM-63 text format (the editions of 1995 and 2002, and 1991's without
@@ -511,7 +555,7 @@ profile's efficiency: its light goes wherever the scene is) and one outside it, 
 intensity towards the centre of the scene (a narrow beam with little flux is the light that counts
 there; the flux of the file is not the right measure). It sends no caustic photons.
 
-The page writes IES lights as such when `rt_features` bit 2 is set; for an engine without it, the
+The page writes IES lights as such when `rt_features` bit 3 is set; for an engine without it, the
 spot light that stands for it (the axis intensity, a cone that is half the peak at the profile's
 half-intensity angle) goes instead, which any engine reads, and that is what the Fast preview
 draws. `PINNED_L5_IES_4SPP` (`0x920f0be1`, `rt --write-l5-example`: the example with its panel at a
@@ -640,6 +684,9 @@ node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /t
 cargo run --release -p rt-cli -- --write-e5-example /tmp/e5.rsb
 node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /tmp/e5.rsb \
      --expect "$(sed -n 's/.*PINNED_E5_HDRI_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)"
+cargo run --release -p rt-cli -- --write-q1-example /tmp/q1.rsb
+node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /tmp/q1.rsb \
+     --expect "$(sed -n 's/.*PINNED_Q1_SECTION_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/section_tests.rs | tr -d _)"
 ```
 
 With `--passes` the tool also renders every exact pass interleaved with the image (per tile
@@ -678,7 +725,7 @@ A wasm instance is single threaded; the host runs one instance per Web Worker.
 
 RSB (Repackshot Scene Binary, version 1) is little-endian: the magic `RSB1`, a `u32` header
 length, then sections `[tag: 4 ASCII bytes][u32 byte length][payload]`. Tags: `CAMR`, `LENS`,
-`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`, `PATN`, `FXAM`, `IMGS`, `IESP`. Unknown tags are skipped, so old readers keep
+`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`, `PATN`, `FXAM`, `SECT`, `IMGS`, `IESP`. Unknown tags are skipped, so old readers keep
 working with newer writers. `INST` (E2) places a mesh with a 3x4 transform, a material and flags;
 a file without `INST` sections draws every mesh once, untransformed, with its own material,
 exactly as before. E3 appended optional fields (`MATL.flags`; `RNDR.max_depth`,
@@ -707,11 +754,13 @@ engine computes their mipmaps), the texture block of `MATL` from byte 100 (six s
 mapping, the emission tint, the labels) and the UV sets of `MESH` after its material; see
 `rt_core::texture`. M3b added `PROG` (after every other section, one per node material: its
 `MATL` index and the bytes of M3a's `encodeProgram`), which the page writes when the engine says
-it runs them (`rt_features` bit 1, `rt_core::FEATURE_PROGRAMS`); see `rt_core::program`. L5 added
-`LGHT` kind 5 (an IES light: its record is 80 bytes, the extra word naming its profile) and `IESP`
-(the text of an IES file, once per distinct profile, after the lights), which the page writes when the
-engine says it renders them (`rt_features` bit 2, `rt_core::FEATURE_IES`); a scene without IES
-lights is byte for byte what it was; see "IES lights (L5)". The exact field layout and the semantics
+it runs them (`rt_features` bit 1, `rt_core::FEATURE_PROGRAMS`); see `rt_core::program`. Q1 added `SECT` (20 bytes, at
+most one: flags with bit 0 = cap, the plane's normal and distance) and the `INST.flags` bit 1 (value 2,
+`INSTANCE_NO_SECTION`), and `rt_features` bit 2 (`rt_core::FEATURE_SECTION`) says the engine cuts;
+see "Section view" above. L5 added `LGHT` kind 5 (an IES light: its record is 80 bytes, the extra word
+naming its profile) and `IESP` (the text of an IES file, once per distinct profile, after the lights),
+which the page writes when the engine says it renders them (`rt_features` bit 3, `rt_core::FEATURE_IES`);
+a scene without IES lights is byte for byte what it was; see "IES lights (L5)". The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -787,7 +836,7 @@ byte for byte.
 * **L5**: IES lights: `rt_core::ies` (the LM-63 reader, strict, type C; bilinear lookup with the
   file's symmetries; the flux of the interpolant in closed form), `LightKind::Ies` and `Light::ies`
   (a point or sphere masked by the profile's share of its peak, through the spot's code),
-  `LGHT` kind 5 with `IESP` sections, `rt_features` bit 2, the L5 parity scene
+  `LGHT` kind 5 with `IESP` sections, `rt_features` bit 3, the L5 parity scene
   (`rt --write-l5-example`, `PINNED_L5_IES_4SPP`).
 * **E10**: adaptive sampling by rounds (`rt_core::adaptive`: the relative error of the mean per
   pixel, smoothed, by 8 x 8 blocks, the median of the candidates' errors as the threshold),

@@ -81,15 +81,19 @@ pub const FEATURE_TEXTURES: u32 = 1;
 /// bit has [`FEATURE_TEXTURES`] too.
 pub const FEATURE_PROGRAMS: u32 = 2;
 
-/// [`FEATURES`] bit 2 (L5): the engine renders the IES lights of the RSB (`LGHT` kind 5 and the
+/// [`FEATURES`] bit 2 (Q1): the engine cuts the model by the `SECT` section of the RSB (the section
+/// view, [`geometry::SectionPlane`]); an engine without it draws the whole model.
+pub const FEATURE_SECTION: u32 = 4;
+
+/// [`FEATURES`] bit 3 (L5): the engine renders the IES lights of the RSB (`LGHT` kind 5 and the
 /// `IESP` sections, [`ies`]); an engine without it refuses a file that has one, so the page writes
 /// an IES light as the spot light that approximates it (the Fast preview's) for such an engine.
-pub const FEATURE_IES: u32 = 4;
+pub const FEATURE_IES: u32 = 8;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
 /// page writes only what the engine says it reads.
-pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_IES;
+pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_SECTION | FEATURE_IES;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

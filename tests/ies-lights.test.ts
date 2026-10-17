@@ -251,7 +251,7 @@ describe('the engine and the preview are told the same', () => {
   });
 
   it('asks for IES lights only of an engine that says it renders them (feature bit 2)', () => {
-    expect(ENGINE_FEATURE_IES).toBe(4);
+    expect(ENGINE_FEATURE_IES).toBe(8);
     expect(readsIes(undefined)).toBe(false);
     expect(readsIes(ENGINE_FEATURE_TEXTURES | ENGINE_FEATURE_PROGRAMS)).toBe(false);
     expect(readsIes(ENGINE_FEATURE_TEXTURES | ENGINE_FEATURE_PROGRAMS | ENGINE_FEATURE_IES)).toBe(true);

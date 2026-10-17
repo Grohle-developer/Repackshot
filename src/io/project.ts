@@ -48,6 +48,9 @@
 // Ambient effects (S4a): `effects`, a list of parameters (core/effects.ts); a file from before S4a has none and
 // opens with an empty list, an entry of a newer version keeps what this version knows of it. The schema stays at 2.
 //
+// Section view (Q1): `section`, the cutting plane (`{ enabled, point, normal, cap }`, core/section.ts) or null; a file
+// from before Q1 has none and opens without one, a plane with no usable normal is left out. The schema stays at 2.
+//
 // Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
 // (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
 // the measures, under the id it had (the id names the content), so a project with primitives saves, opens and
@@ -73,6 +76,7 @@ import { runDoctor } from '../core/doctor';
 import { parseIes } from '../core/ies';
 import type { LightInstance } from '../core/lighting';
 import { normalizeEffects } from '../core/effects';
+import { normalizeSection } from '../core/section';
 import { buildExample } from '../core/example';
 import {
   getMesh,
@@ -256,6 +260,7 @@ function checkState(raw: RawState): ProjectState {
       continue;
     }
     if (key === 'render') continue; // normalised by migrateRender
+    if (key === 'section') continue; // null or a plane: normalised by normalizeSection (Q1)
     if (kindOf(have) !== kindOf(want)) throw damaged(`${key} has the wrong kind of value (expected ${kindOf(want)})`);
     if (isObject(want) && isObject(have)) {
       const block: RawState = { ...have };
@@ -394,6 +399,8 @@ function checkState(raw: RawState): ProjectState {
   }
   // S4a: the ambient effects (a project saved before them has none; filled in above), each checked and completed.
   s.effects = normalizeEffects(s.effects, s);
+  // Q1: the section view's plane (a project saved before it has none; a plane that cannot be one is none).
+  s.section = normalizeSection(s.section);
   return s;
 }
 

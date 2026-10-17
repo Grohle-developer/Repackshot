@@ -11,7 +11,8 @@
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E5b-1
 # caustics, the O1 lens, the S4a ambient particles, the E11 edges, the O3a lens filters, the E9
 # scattering media and dispersion, the E6 bevel, the E6 wood and cloth patterns, the M2b image
-# textures and labels, the M3b material programs, the E10 adaptive sampling and the L5 IES lights; with every
+# textures and labels, the M3b material programs, the E10 adaptive sampling, the Q1 section view (the
+# E5 scene cut in two, its cap and the plane's clipped rays) and the L5 IES lights; with every
 # exact pass of X2 rendered next to the image, the image keeps its hash and each pass gives the hash
 # the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
 # tests/fixtures/ai-guard.json, which the native rt-post tests
@@ -242,7 +243,13 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected" --passes
-
+          # Q1: the E5 scene cut in two by a section plane that caps its closed solids (the SECT section, its
+          # clipped rays and the cap decided by the model alone), alone and with the passes.
+          cargo run --release -p rt-cli -- --write-q1-example "$RUNNER_TEMP/q1.rsb"
+          expected=$(sed -n 's/.*PINNED_Q1_SECTION_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/section_tests.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/q1.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/q1.rsb" --expect "$expected" --passes
           # L5: IES lights (the profiles travel as text in the IESP sections and are read by the module:
           # the reader of the LM-63 format, the bilinear lookup, the symmetries, the sphere light
           # masked by the profile with its selection weights), alone and with the passes.
@@ -257,7 +264,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/ies-engine.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:

@@ -536,9 +536,9 @@ describe('fuzz and lenses', () => {
 });
 
 describe('animation catalogues', () => {
-  it('has 16 move kinds (PHYSICS of S2 last), 5 easings, 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
-    expect(MOVE_KINDS).toHaveLength(16);
-    expect(MOVE_KINDS.at(-1)?.key).toBe('PHYSICS');
+  it('has 17 move kinds (PHYSICS of S2, then SECTION of Q1), 5 easings, 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
+    expect(MOVE_KINDS).toHaveLength(17);
+    expect(MOVE_KINDS.slice(-2).map((m) => m.key)).toEqual(['PHYSICS', 'SECTION']);
     expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG']);
     expect(TARGET_KINDS.map((t) => t.key)).toEqual(['OBJECT', 'SUBJECT', 'SCENE']);
     expect(EXPLODE_MODES.map((m) => m.key)).toEqual([
@@ -552,7 +552,7 @@ describe('animation catalogues', () => {
     expect([...AIMING_MOVES].sort()).toEqual(['DOLLY', 'ORBIT', 'RISE']);
     expect([...CAMERA_MOVES].sort()).toEqual(['FOCUS', 'ZOOM']);
     expect([...LIGHT_MOVES].sort()).toEqual(['INTENSITY', 'TINT']);
-    expect([...SCENE_MOVES]).toEqual(['HDRI']);
+    expect([...SCENE_MOVES]).toEqual(['HDRI', 'SECTION']);
     expect([...VECTOR_MOVES].sort()).toEqual(['MOVE', 'TRACK']);
     expect([...COLOR_MOVES]).toEqual(['TINT']);
     const kinds = new Set<MoveKind>(MOVE_KINDS.map((m) => m.key));

@@ -543,7 +543,9 @@ export type MoveKind =
   | 'EXPLODE'
   | 'VISIBILITY'
   /** A recorded simulation (S2): the clip carries the baked track and plays it. */
-  | 'PHYSICS';
+  | 'PHYSICS'
+  /** The section view's plane (Q1): its offset along its normal over the clip. */
+  | 'SECTION';
 
 export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRONG';
 

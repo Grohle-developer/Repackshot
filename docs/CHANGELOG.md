@@ -5,22 +5,28 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
-Las luces IES (L5).
-
 ### Motor
 
+- **Vista en sección**: un plano que quita un lado de la pieza y tapa el corte con el color de su material (solo los sólidos cerrados; una malla abierta enseña su interior). Lo quitado ni se ve ni sombrea, en la cámara, los reflejos, las refracciones, las sombras y los fotones; un vidrio cortado refracta por su tapa. La misma imagen con cualquier número de hilos, igual en el navegador, en el lanzador y en `rt` (`rt --write-q1-example`). Sin plano, los mismos píxeles que antes. El fondo, el suelo y las tarjetas de un set no se cortan (Q1).
+- Sección nueva `SECT` del formato de escena (20 B) y el bit 1 de `INST.flags` (el estudio no se corta); `rt_features` y `/api/info` publican el bit de la sección (Q1).
 - **Luces IES**: un lector propio del formato de texto IES LM-63 (fotometría tipo C, `TILT=NONE`; el tipo B o A y `TILT=INCLUDE` se rechazan con su mensaje, y también lo cortado, las cuentas que no casan, los ángulos que no crecen y las candelas negativas) y una luz de tipo IES: un punto o una esfera pequeña cuya intensidad en cada dirección es la del archivo, interpolada bilinealmente entre sus ángulos con las simetrías del archivo, orientada por el eje y el giro de la luz y escalada por su potencia (el perfil da la forma y la potencia el nivel: tan brillante en su dirección más brillante como un punto de esa potencia). Se muestrea por siguiente evento, con MIS si es *glossy*, y en la elección de luz pesa por la intensidad exacta hacia cada punto (L5).
-- **RSB**: `LGHT` de tipo 5 (80 bytes) y la sección `IESP` con el texto del archivo, una vez por perfil; los ficheros y las escenas sin luces IES siguen igual, byte a byte, y ningún hash fijado se ha movido. El motor lo dice en `rt_features` (bit 2) y la página escribe una luz IES como el foco que la aproxima para un motor que no lo diga (L5).
+- **RSB**: `LGHT` de tipo 5 (80 bytes) y la sección `IESP` con el texto del archivo, una vez por perfil; los ficheros y las escenas sin luces IES siguen igual, byte a byte, y ningún hash fijado se ha movido. El motor lo dice en `rt_features` (bit 3) y la página escribe una luz IES como el foco que la aproxima para un motor que no lo diga (L5).
 - `rt --write-l5-example`, escena de paridad con su hash fijado y su bloque de paridad con `rt.wasm` en CI (L5).
 
 ### Interfaz
 
+- Sección **Sección** en el inspector de Escena: un plano por clic en la pieza y un eje (*X*, *Y*, *Z* o la normal de la superficie), por dos puntos o en números, con *Cambiar de lado*, *Tapar el corte* y un interruptor; todo deshacible (Q1).
+- El movimiento **Sección** de la línea de tiempo desplaza el plano a lo largo de su normal, en tamaños de pieza, con la curva del clip (Q1).
+- *Rápido* corta y tapa con el plano de recorte de three.js; la selección, la caja de selección y el cardán no ven lo que el corte se ha llevado. Dos acciones en la paleta: *Vista en sección: activar o desactivar* y *cambiar de lado* (Q1).
 - ***+ Añadir luz ▸ IES…*** deja de ser *próximamente*: abre un archivo `.ies` (también se puede soltar sobre la ventana) y crea la luz delante y arriba de la pieza, con el brillo medio de los focos encendidos. El inspector enseña el **nombre del perfil**, un **gráfico polar** dibujado desde el archivo (los planos C0–C180 y C90–C270), el pico, el ángulo del haz, **Cambiar…** y un **multiplicador** (× 1 es el nivel con que entró la luz). Un archivo que no se puede leer no añade nada y dice por qué (L5).
 - El perfil **viaja en el proyecto** (`.repack`), en los estudios, en un montaje guardado y en la biblioteca, así que se abre en otro equipo sin el archivo. No se entrega ningún perfil de fabricante: cada persona trae los suyos (L5).
 - En *Rápido* la luz IES es un foco con la intensidad del eje y un cono sacado del ángulo en que el perfil cae a la mitad: una aproximación, y el inspector lo dice; *Completo* y el render usan el archivo entero (L5).
 
-### Limitaciones conocidas
+### Limitaciones conocidas de esta versión
 
+- *Rápido* dibuja la tapa de un vidrio como vidrio transparente; *Completo* y *Render* refractan a su través.
+- Una pieza con un material por cara, un vidrio de pared fina o una malla abierta no se tapan; un sólido cerrado con las caras al revés lo tapa el motor y *Rápido* no.
+- Los pases de *Rápido* para la IA (profundidad, normales, identificadores) no conocen el plano.
 - Solo fotometría tipo C: un archivo de tipo B o A se rechaza («expórtalo como tipo C»).
 - Una luz IES no lanza fotones de cáusticas, como el punto y el foco.
 

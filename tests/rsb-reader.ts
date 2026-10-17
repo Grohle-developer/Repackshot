@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbImage, RsbInstance, RsbLabel, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbPattern, RsbRender, RsbScene, RsbTextures, RsbTextureSlot, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbImage, RsbInstance, RsbLabel, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbPattern, RsbRender, RsbScene, RsbSection, RsbTextures, RsbTextureSlot, RsbVec } from '../src/io/rsb';
 import { defaultMaterial } from '../src/io/rsb';
 
 export interface Section {
@@ -300,6 +300,13 @@ export function readLens(p: DataView): RsbLens {
   return l;
 }
 
+/** Q1: a SECT payload (`u32 flags; f32 normal[3] distance`); the bits of flags the page does not write are dropped. */
+export function readSection(p: DataView): RsbSection {
+  const c = new Cursor(p);
+  const flags = c.u32();
+  return { cap: (flags & 1) !== 0, normal: c.vec(), distance: c.f32() };
+}
+
 export function readFloor(p: DataView): RsbFloor {
   const c = new Cursor(p);
   return { mode: c.u32(), z: c.f32(), color: c.vec() };
@@ -424,6 +431,9 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         break;
       case 'FXAM':
         (out.effects ??= []).push(readEffect(s.payload));
+        break;
+      case 'SECT':
+        out.section = readSection(s.payload);
         break;
       case 'IMGS':
         out.images = readImages(s.payload);

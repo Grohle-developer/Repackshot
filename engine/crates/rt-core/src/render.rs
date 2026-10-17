@@ -629,6 +629,9 @@ mod passes_tests;
 mod ambient_tests;
 
 #[cfg(test)]
+mod section_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::color::Rgb;

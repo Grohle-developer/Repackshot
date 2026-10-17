@@ -18,7 +18,7 @@ import type {
 // analytically (see `ease` in core/light-math.ts), so there is no Bezier
 // interpolation to surprise anyone.
 
-/** The 16 move kinds (PHYSICS, phase S2, is not ported: Record as animation makes it). `amountLabel` says what the clip's single amount means. */
+/** The 17 move kinds (PHYSICS, phase S2, is not ported: Record as animation makes it; SECTION, phase Q1, is ours). `amountLabel` says what the clip's single amount means. */
 export const MOVE_KINDS: readonly MoveItem[] = [
   {
     key: 'ORBIT',
@@ -134,6 +134,15 @@ export const MOVE_KINDS: readonly MoveItem[] = [
       es: 'Reproduce una simulación grabada con Grabar como animación',
       en: 'Plays a simulation recorded with Record as animation',
     },
+  },
+  {
+    key: 'SECTION',
+    label: { es: 'Sección', en: 'Section' },
+    description: {
+      es: 'Mueve el plano de corte a lo largo de su normal, en tamaños de pieza: negativo corta más, positivo descubre',
+      en: 'Moves the cutting plane along its normal, in part sizes: negative cuts more, positive uncovers',
+    },
+    amountLabel: { es: 'Desplazamiento', en: 'Offset' },
   },
 ];
 
@@ -273,8 +282,8 @@ export const AIMING_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', '
 export const CAMERA_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['ZOOM', 'FOCUS']);
 /** Moves that only make sense for lights. */
 export const LIGHT_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['INTENSITY', 'TINT']);
-/** Moves that act on the environment. */
-export const SCENE_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['HDRI']);
+/** Moves that act on the environment and the scene as a whole (the light sweep, the section plane). */
+export const SCENE_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['HDRI', 'SECTION']);
 /** Moves driven by a displacement vector instead of a single amount. */
 export const VECTOR_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['TRACK', 'MOVE']);
 /** Moves driven by a colour. */

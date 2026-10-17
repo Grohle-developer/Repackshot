@@ -21,6 +21,7 @@ import { reducePhysics, type PhysicsAction } from './physics';
 import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
 import { reduceGraph, type GraphAction } from './material-graph';
+import { reduceSection, type SectionAction, type SectionPlane } from './section';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -101,6 +102,8 @@ export interface ProjectState {
   environment: EnvironmentState;
   /** The ambient effects (S4a, core/effects.ts): particles of the air, as parameters. */
   effects: AmbientEffect[];
+  /** The section view (Q1, core/section.ts): a cutting plane, or null while none was made. */
+  section: SectionPlane | null;
   camera: { active: CameraId; cameras: Record<CameraId, CameraState> };
   image: ImageState;
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
@@ -142,6 +145,7 @@ export type Action =
   | MetaAction
   | EnvironmentAction
   | EffectAction
+  | SectionAction
   | ImageAction
   | HistoryAction;
 
@@ -216,6 +220,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       skySun: { az: -55, el: 55 },
     },
     effects: [],
+    section: null,
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },
     animation: { shots: [], clips: [], fps: 24, playhead: 0, playing: false },
@@ -286,6 +291,9 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       return reduceMeta(state, action as MetaAction);
     case 'effect':
       return reduceEffects(state, action as EffectAction);
+    case 'section':
+      // The cutting plane of the section view (Q1).
+      return reduceSection(state, action as SectionAction);
     case 'env': {
       const env = shallowPatch(state.environment, (action as EnvironmentAction).patch);
       return env === state.environment ? state : { ...state, environment: env };

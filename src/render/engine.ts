@@ -39,10 +39,10 @@ export function readsPrograms(features: number | undefined): boolean {
 }
 
 /**
- * L5: bit 2 of the engine's features (rt_core::FEATURE_IES): it renders the IES lights (LGHT kind 5 and the IESP sections), so
+ * L5: bit 3 of the engine's features (rt_core::FEATURE_IES; bit 2 is the section view, Q1, which the page does not gate): it renders the IES lights (LGHT kind 5 and the IESP sections), so
  * the page writes them as such; for an engine without the bit an IES light goes as the spot light that stands for it in Fast.
  */
-export const ENGINE_FEATURE_IES = 4;
+export const ENGINE_FEATURE_IES = 8;
 
 /** True when an engine of `features` renders the IES lights (L5). */
 export function readsIes(features: number | undefined): boolean {
