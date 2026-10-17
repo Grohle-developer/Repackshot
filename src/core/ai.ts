@@ -186,6 +186,18 @@ export interface AiPostRequest {
    * Regions it does not name are guarded with defaults; the studio floor (FLOOR_ID) is named "Floor".
    */
   materials?: AiGuardMaterial[];
+  /**
+   * The person's guard tolerances (Settings ▸ AI post-processing ▸ Advanced, C1), by the keys rt-post names them
+   * (`Tolerances::KEYS`). Absent: the guard's provisional defaults, which are the factory values of those settings.
+   */
+  tolerances?: AiGuardTolerances;
+}
+
+/** The guard's tolerances the person sets: mean and 95th percentile ΔE₀₀ per material, and the edge match in pixels. */
+export interface AiGuardTolerances {
+  deltaEMean: number;
+  deltaEP95: number;
+  edgesPx: number;
 }
 
 export type AiPostStage = 'LOADING' | 'CONDITIONING' | 'INFERENCE' | 'GUARD' | 'RETRY';

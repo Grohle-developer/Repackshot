@@ -151,6 +151,8 @@ function requestJson(req: AiPostRequest, q: AiRuntimeQuery, inline: { tonemap?: 
     negative: req.negative,
     modelKey: req.modelKey,
     ...(req.materials ? { materials: req.materials } : {}),
+    // C1: the person's tolerances (the launcher's guard takes them in place of its provisional ones).
+    ...(req.tolerances ? { tolerances: { deltaEMean: req.tolerances.deltaEMean, deltaEP95: req.tolerances.deltaEP95, edgesPx: req.tolerances.edgesPx } } : {}),
     ...(q.cpu ? { device: 'cpu' } : {}),
     ...(q.force ? { force: q.force } : {}),
   });

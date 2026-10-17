@@ -9,7 +9,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { MAX_ATTEMPTS, MAX_STRENGTH, RETRY_FACTOR, type GuardCheck, type GuardReport } from '../src/core/ai';
-import { encodeJob, GUARD_TOLERANCE_KEYS, PostError, PostGuard, runGuarded, type PostSession, type TileRequest } from '../src/ai/post-wasm';
+import { encodeJob, GUARD_TOLERANCE_KEYS, jobTolerances, PostError, PostGuard, runGuarded, type PostSession, type TileRequest } from '../src/ai/post-wasm';
+import { defaultSettings, guardTolerances, withSetting } from '../src/core/settings';
 import * as fx from './ai-fixture';
 
 interface FixtureScenario {
@@ -166,6 +167,22 @@ describe.skipIf(!WASM)('post.wasm against the native guard', { timeout: 300_000 
     expect(calls[2].strength).toBeCloseTo(MAX_STRENGTH * RETRY_FACTOR, 6);
     expect(result.report.verdict).toBe('LIMITED');
     expect(result.image.width * result.image.height * 4).toBe(result.image.rgba.length);
+  });
+
+  it('C1: the tolerances of Settings reach the guard: its plan and its report check against them', async () => {
+    const guard = await load();
+    const world = fx.scene();
+    const [, forbidden] = fx.scenarios();
+    const settings = withSetting(withSetting(withSetting(defaultSettings(), 'ai.guardDeltaE', 7.5), 'ai.guardDeltaE95', 9), 'ai.guardEdgePx', 6);
+    const job = { ...forbidden.job, tolerances: jobTolerances(guardTolerances(settings)) };
+    const { plan, result } = await scenario(guard, { ...forbidden, job }, world);
+    expect([plan.tolerances.deltaEMean, plan.tolerances.deltaEP95, plan.tolerances.edgesPx]).toEqual([7.5, 9, 6]);
+    expect(result.report.edges.limit).toBe(6);
+    expect(result.report.materials.every((m) => m.limit === 7.5)).toBe(true);
+    // Without them, the provisional defaults: the factory values of the same settings.
+    const d = defaultSettings();
+    const plain = await scenario(guard, forbidden, world);
+    expect([plain.plan.tolerances.deltaEMean, plain.plan.tolerances.deltaEP95, plain.plan.tolerances.edgesPx]).toEqual([d['ai.guardDeltaE'], d['ai.guardDeltaE95'], d['ai.guardEdgePx']]);
   });
 
   it('reports its attempts 1-based and of four, why the first was sent back, and a bar split by attempts (B1)', async () => {

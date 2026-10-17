@@ -81,15 +81,17 @@ fn the_constants_are_the_contracts() {
             "DEFAULT_AI_PIPELINE.{key} = {v}"
         );
     }
-    // C1: Intervention 50 and the colour and edge limits doubled (they were 30, and 2, 3 and 1.5).
+    // C1: Intervention 50, the colour limits doubled (they were 30, and 2 and 3) and the edge
+    // limit Settings' 4 px (1.5 here before).
     assert_eq!(d.intervention, 50);
     let t = Tolerances::PROVISIONAL;
-    assert_eq!((t.delta_e_mean, t.delta_e_p95, t.edges_px), (4.0, 6.0, 3.0));
-    // The colour limits are the factory values of Settings ▸ AI post-processing ▸ Advanced.
+    assert_eq!((t.delta_e_mean, t.delta_e_p95, t.edges_px), (4.0, 6.0, 4.0));
+    // They are the factory values of Settings ▸ AI post-processing ▸ Advanced.
     let settings = include_str!("../../../../src/core/settings.ts");
     for (key, v) in [
         ("ai.guardDeltaE", t.delta_e_mean),
         ("ai.guardDeltaE95", t.delta_e_p95),
+        ("ai.guardEdgePx", t.edges_px),
     ] {
         assert!(
             settings.contains(&format!("    '{key}': {v},")),
@@ -272,9 +274,13 @@ fn checks_of(job: &Job, scene: &Scene, image: &LinearImage, attempt: u32) -> che
     checks::measure(&prep, &image.rgba, &disp, &caps)
 }
 
+/// How far the hand-made moved edges go: beyond the edge limit (4 px since C1; they were 3 px
+/// when it was 1.5).
+const MOVED_PX: u32 = 6;
+
 fn shifted(r: &TileRequest) -> Rgb8Image {
     let mut e = Edit::of(r);
-    fixture::shift(&mut e, 3);
+    fixture::shift(&mut e, MOVED_PX as i32);
     fixture::ramp(&mut e, 24);
     e.done()
 }
@@ -718,11 +724,12 @@ fn the_checks_catch_each_forbidden_change_on_their_own() {
         }
         img
     };
-    // A moved edge (the whole image three pixels to the right).
+    // A moved edge (the whole image `MOVED_PX` pixels to the right).
     let src = scene.image.rgba.clone();
+    let k = MOVED_PX as usize;
     let moved = edit(&|px, p, x, _| {
-        if x >= 3 {
-            px.copy_from_slice(&src[(p - 3) * 4..(p - 3) * 4 + 4]);
+        if x >= MOVED_PX {
+            px.copy_from_slice(&src[(p - k) * 4..(p - k) * 4 + 4]);
         }
     });
     let m = checks_of(&job, &scene, &moved, 0);

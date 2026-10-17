@@ -6,7 +6,7 @@
 // `setOutput` takes what it returned and `accept` guards, checks and decides (accepted, retry at a lower strength,
 // rejected). The model itself is not here: `runGuarded` is the trivial driver that calls it between the steps.
 
-import { MAX_ATTEMPTS, type AiGuardMaterial, type AiPipelineSettings, type AiPostProgress, type AiPostResult, type GuardReport, type LinearImage } from '../core/ai';
+import { MAX_ATTEMPTS, type AiGuardMaterial, type AiGuardTolerances, type AiPipelineSettings, type AiPostProgress, type AiPostResult, type GuardReport, type LinearImage } from '../core/ai';
 import type { RenderPasses } from '../core/passes';
 
 /** The guard's tolerances as rt-post names them (`Tolerances::KEYS`), in its order. Provisional: X1b calibrates them. */
@@ -41,8 +41,16 @@ export interface PostJob {
   /** Echoed in the report. */
   modelKey: string;
   runtime: string;
-  /** Overrides of the provisional tolerances (calibration tools; the interface never sets them). */
+  /**
+   * Overrides of the provisional tolerances: the person's from Settings (`jobTolerances`, C1), and any other key for
+   * the calibration tools.
+   */
   tolerances?: Partial<GuardTolerances>;
+}
+
+/** The overrides a request's tolerances (Settings ▸ AI post-processing ▸ Advanced) make of a job's (C1). */
+export function jobTolerances(t: AiGuardTolerances | undefined): Partial<GuardTolerances> | undefined {
+  return t ? { deltaEMean: t.deltaEMean, deltaEP95: t.deltaEP95, edgesPx: t.edgesPx } : undefined;
 }
 
 /** One tile of the plan: a rectangle of the image and the padded size the model works at (a multiple of 16). */

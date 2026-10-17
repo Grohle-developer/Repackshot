@@ -12,8 +12,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildPrompt, guardMaterials } from '../src/ai/prompt';
-import type { LinearImage } from '../src/core/ai';
-import { AI_GUARD_PASSES, pipelineOf } from '../src/core/ai-post';
+import type { AiPostService, LinearImage } from '../src/core/ai';
+import { AI_GUARD_PASSES, pipelineOf, withGuardTolerances } from '../src/core/ai-post';
+import { defaultSettings, withSetting } from '../src/core/settings';
 import { FLOOR_ID } from '../src/core/passes';
 import type { ResultMeta } from '../src/core/results';
 import { createStore } from '../src/core/store';
@@ -105,7 +106,7 @@ const sceneSource = {
 };
 
 /** A queue context whose services are main.ts's for the desktop: the native engine, 16-bit PNG files, the launcher's AI. */
-function desktopCtx(l: Launcher, service: DesktopAiService) {
+function desktopCtx(l: Launcher, service: AiPostService) {
   const engine = new NativeEngine(l.native, sceneSource, { threads: 2, isa: 'scalar' });
   const results = memoryResultsStore();
   const files: { name: string; bytes: Uint8Array }[] = [];
@@ -232,6 +233,29 @@ describe.skipIf(!READY)('the desktop AI pipeline against the real launcher and t
     expect([req.width, req.height]).toEqual([W, H]);
     expect(await sidecar(l)).toBe('ready');
   }, 180000);
+
+  it('C1: the guard tolerances of Settings reach the launcher’s guard: its report checks against them', async () => {
+    let settings = withSetting(withSetting(withSetting(defaultSettings(), 'ai.guardDeltaE', 7.5), 'ai.guardDeltaE95', 9), 'ai.guardEdgePx', 6);
+    const service = withGuardTolerances(new DesktopAiService(l.native, query), () => settings);
+    const { ctx } = desktopCtx(l, service);
+    withAi(ctx, { intervention: 60, light: 80, seed: 4 });
+    await cmd.renderNow(ctx);
+    await queueSettled(ctx);
+    const job = ctx.store.get().render.queue[0];
+    expect(job.status, job.error ?? '').toBe('DONE');
+    const [r] = ctx.ui.get().results;
+    expect(r.ai!.report.edges.limit).toBe(6);
+    expect(r.ai!.report.materials.every((m) => m.limit === 7.5)).toBe(true);
+    // Back to the factory values: the launcher's provisional ones, the same numbers.
+    settings = defaultSettings();
+    const again = desktopCtx(l, service);
+    withAi(again.ctx, { intervention: 60, light: 80, seed: 4 });
+    await cmd.renderNow(again.ctx);
+    await queueSettled(again.ctx);
+    const [r2] = again.ctx.ui.get().results;
+    expect(r2.ai!.report.edges.limit).toBe(settings['ai.guardEdgePx']);
+    expect(r2.ai!.report.materials.every((m) => m.limit === settings['ai.guardDeltaE'])).toBe(true);
+  }, 240000);
 
   it('three variants (X4b): one render, three posts of the kept render with consecutive seeds, the runtime started once', async () => {
     const service = new DesktopAiService(l.native, query);

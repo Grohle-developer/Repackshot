@@ -4,9 +4,11 @@
 // measures it reports with.
 
 import { describe, expect, it } from 'vitest';
+import { withGuardTolerances } from '../src/core/ai-post';
+import { defaultSettings, withSetting } from '../src/core/settings';
 import { createSyntheticService, SYNTHETIC_LIMITS, SYNTHETIC_MODEL_KEY, applySynthetic, edgeDisplacement, highBandSsim, pixelsOutside, regionName, sharpnessDeviation, softLuminance, weightsOf, type SyntheticLimits } from '../src/ai/synthetic';
 import { deltaE2000, linearRgbToLab } from '../src/ai/color';
-import { DEFAULT_AI_PIPELINE, MAX_ATTEMPTS, type AiPipelineSettings, type AiPostProgress, type AiPostResult, type LinearImage } from '../src/core/ai';
+import { DEFAULT_AI_PIPELINE, MAX_ATTEMPTS, type AiPipelineSettings, type AiPostProgress, type AiPostRequest, type AiPostResult, type LinearImage } from '../src/core/ai';
 import { byteToLinear, linearToByte, linearToRgba8, luminance, rgba8ToLinear, sameImage, srgbToLinear, linearToSrgb } from '../src/core/ai-image';
 import { FLOOR_ID, type RenderPasses } from '../src/core/passes';
 
@@ -429,5 +431,24 @@ describe('the studio floor in the synthetic service (X3c)', () => {
     expect(res.report.materials.find((m) => m.materialId === 1)?.name).toBe('Bottle glass');
     expect(res.report.materials.find((m) => m.materialId === 2)?.name).toBe('Material 2');
     expect(regionName(FLOOR_ID)).toBe('Floor');
+  });
+});
+
+describe('C1: the guard tolerances of Settings', () => {
+  it('reach every request through the service the app uses, read at each call, and the synthetic guard checks against them', async () => {
+    let settings = defaultSettings();
+    const seen: (AiPostRequest['tolerances'] | undefined)[] = [];
+    const inner = createSyntheticService();
+    const svc = withGuardTolerances({ status: () => inner.status(), post: (r, p, sig) => (seen.push(r.tolerances), inner.post(r, p, sig)) }, () => settings);
+    const { image, passes } = scene();
+    const ask = () => svc.post({ source: { kind: 'INLINE', image, passes }, settings: { ...OFF, light: 60 }, prompt: '', negative: '', modelKey: SYNTHETIC_MODEL_KEY }, () => undefined, never);
+    const factory = await ask();
+    expect(seen[0]).toEqual({ deltaEMean: 4, deltaEP95: 6, edgesPx: 4 });
+    expect(factory.report.edges.limit).toBe(4);
+    settings = withSetting(withSetting(settings, 'ai.guardDeltaE', 1.5), 'ai.guardEdgePx', 0.5);
+    const tight = await ask();
+    expect(seen[1]).toEqual({ deltaEMean: 1.5, deltaEP95: 6, edgesPx: 0.5 });
+    expect(tight.report.edges.limit).toBe(0.5);
+    expect(tight.report.materials.every((m) => m.limit === 1.5)).toBe(true);
   });
 });

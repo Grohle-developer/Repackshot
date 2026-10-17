@@ -26,7 +26,7 @@ import { createSyntheticService } from './ai/synthetic';
 import { notBuiltService } from './ai/not-built';
 import { buildPrompt, guardMaterials, materialName as promptMaterialName } from './ai/prompt';
 import type { AiPostService, LinearImage } from './core/ai';
-import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
+import { AI_GUARD_PASSES, pipelineOf, withGuardTolerances } from './core/ai-post';
 import { enginePasses, type LegendPart } from './core/pass-files';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
@@ -595,10 +595,14 @@ const files = platform.files({
 // the switch can be on is what `status()` says.
 const aiServiceReady: Promise<AiPostService> =
   params.ai === 'synthetic' ? Promise.resolve(createSyntheticService()) : nativeReady.then((native) => (native && (native.info.aiPost ?? 0) >= 1 ? new DesktopAiService(native, () => aiRuntimeQuery(ui.get())) : notBuiltService));
-const aiService: AiPostService = {
-  status: async () => (await aiServiceReady).status(),
-  post: async (request, onProgress, signal) => (await aiServiceReady).post(request, onProgress, signal),
-};
+// C1: every request carries the guard's tolerances of Settings (the queue's and the preview's alike).
+const aiService: AiPostService = withGuardTolerances(
+  {
+    status: async () => (await aiServiceReady).status(),
+    post: async (request, onProgress, signal) => (await aiServiceReady).post(request, onProgress, signal),
+  },
+  () => ui.get().settings,
+);
 
 /** A picture file as linear light (8-bit display values decoded with the sRGB curve). */
 async function decodeLinear(blob: Blob): Promise<LinearImage> {

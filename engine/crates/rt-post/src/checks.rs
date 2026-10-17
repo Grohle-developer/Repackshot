@@ -16,8 +16,22 @@ use crate::image::{ln_eps, luma, Display, LUMA};
 use crate::prepared::{Caps, Histogram, Prepared, Sum, BACKGROUND, SIGMA_HIGH};
 use rt_core::fmath;
 
-/// Half-width of the profile searched across an edge, pixels.
+/// Half-width of the profile searched across an edge, pixels, at the least.
 const EDGE_REACH: usize = 4;
+/// The most the profile reaches, whatever the edge limit.
+const EDGE_REACH_MAX: usize = 16;
+
+/// Half-width of the profile searched across an edge for an edge limit of `limit_px`: two pixels
+/// past the limit, so a step moved further than the limit is seen as moved further (C1: with the
+/// limit at 4 px a reach of 4 could not measure more than about 3).
+pub(crate) fn edge_reach(limit_px: f32) -> usize {
+    let past = if limit_px.is_finite() && limit_px > 0.0 {
+        limit_px.ceil() as usize + 2
+    } else {
+        0
+    };
+    past.clamp(EDGE_REACH, EDGE_REACH_MAX)
+}
 /// Side of the blocks of the high-band SSIM.
 const DETAIL_BLOCK: usize = 8;
 /// Stabiliser of the high-band SSIM (log units squared).
@@ -211,9 +225,10 @@ pub(crate) fn rgb_log(prep: &Prepared, rgba: &[f32]) -> Vec<f32> {
 fn edge_displacement(prep: &Prepared, lo: &[f32], lc: &[f32]) -> f32 {
     let (w, h) = (prep.w, prep.h);
     let contrast = prep.job.tolerances.edge_contrast;
+    let reach = edge_reach(prep.job.tolerances.edges_px);
     let mut worst = 0.0f32;
-    let mut go = [0.0f32; 2 * EDGE_REACH - 1];
-    let mut gc = [0.0f32; 2 * EDGE_REACH - 1];
+    let mut go = vec![0.0f32; 2 * reach - 1];
+    let mut gc = vec![0.0f32; 2 * reach - 1];
     let step = |v: &[f32], a: usize, b: usize| {
         let d = |c: usize| (v[b * 3 + c] - v[a * 3 + c]).abs();
         d(0).max(d(1)).max(d(2))
@@ -223,25 +238,25 @@ fn edge_displacement(prep: &Prepared, lo: &[f32], lc: &[f32]) -> f32 {
         let stride = dx + dy * w;
         let (len, other) = if dx == 1 { (w, h) } else { (h, w) };
         for o in 0..other {
-            for i in EDGE_REACH - 1..len.saturating_sub(EDGE_REACH) {
+            for i in reach - 1..len.saturating_sub(reach) {
                 let p = if dx == 1 { o * w + i } else { i * w + o };
                 if !discontinuity(&prep.passes, p, p + stride, prep.crease_cos) {
                     continue;
                 }
-                let first = p - (EDGE_REACH - 1) * stride;
+                let first = p - (reach - 1) * stride;
                 for k in 0..go.len() {
                     let a = first + k * stride;
                     go[k] = step(lo, a, a + stride);
                     gc[k] = step(lc, a, a + stride);
                 }
-                let centre = go[EDGE_REACH - 1];
+                let centre = go[reach - 1];
                 if centre < contrast {
                     continue;
                 }
                 let rival = go
                     .iter()
                     .enumerate()
-                    .filter(|&(k, _)| k != EDGE_REACH - 1)
+                    .filter(|&(k, _)| k != reach - 1)
                     .fold(0.0f32, |m, (_, &v)| m.max(v));
                 if centre < 2.0 * rival {
                     continue;
@@ -455,6 +470,16 @@ mod tests {
         assert!(d([0.2, 0.45, 0.9], [0.0; 3], 1.0) > 10.0);
         assert_eq!(log_ratio(0.0, 0.0), 0.0);
         assert!((log_ratio(0.5, 1.0) - fmath::LN_2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_edge_profile_reaches_past_the_limit() {
+        assert_eq!(edge_reach(1.5), 4);
+        assert_eq!(edge_reach(4.0), 6);
+        assert_eq!(edge_reach(8.0), 10);
+        assert_eq!(edge_reach(0.0), 4);
+        assert_eq!(edge_reach(f32::NAN), 4);
+        assert_eq!(edge_reach(1.0e9), 16);
     }
 
     #[test]

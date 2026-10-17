@@ -3,10 +3,11 @@
 // guard's report as the lines the results viewer shows. No DOM and no pipeline here: the pipeline is
 // `AiPostService` (core/ai.ts), the settings live in `RenderSettings.ai` (core/render.ts).
 
-import { PREVIEW_MAX_SIDE, type AiPipelineSettings, type AiRuntimeStatus, type AiUnavailableReason, type GuardReport } from './ai';
+import { PREVIEW_MAX_SIDE, type AiPipelineSettings, type AiPostService, type AiRuntimeStatus, type AiUnavailableReason, type GuardReport } from './ai';
 import { OPEN_PROMPT_CAPS, type PromptCaps } from './ai-prompt';
 import type { PassKey } from './passes';
 import type { AiSettings } from './render';
+import { guardTolerances, type Settings } from './settings';
 
 /**
  * The passes a final render keeps for the guard (X3c, engine/crates/rt-post): the ids, the normal, the depth and the
@@ -126,4 +127,15 @@ export function failedItems(r: GuardReport): ReportItem['key'][] {
   return reportItems(r)
     .filter((i) => !i.ok)
     .map((i) => i.key);
+}
+
+/**
+ * The service with the guard's tolerances of Settings on every request (C1): whatever asks (the queue, the preview),
+ * the guard checks against what Settings ▸ AI post-processing ▸ Advanced says, read at each call.
+ */
+export function withGuardTolerances(service: AiPostService, settings: () => Settings): AiPostService {
+  return {
+    status: () => service.status(),
+    post: (request, onProgress, signal) => service.post({ ...request, tolerances: guardTolerances(settings()) }, onProgress, signal),
+  };
 }
