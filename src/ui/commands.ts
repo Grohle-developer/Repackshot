@@ -62,6 +62,9 @@ import { IES_MAX_BYTES, iesTextOf, parseIes, type IesError } from '../core/ies';
 import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
 import { resolvePreset } from '../core/rig';
 import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
+import { PREVIOUS_LIGHTS, previousLights, type PreviousLights } from '../core/previous-lights';
+import { activeSetupFilters, lightsStyleOf, setupGroup, setupMatches } from '../core/setup-groups';
+import { lightSetup } from '../data/light-setups';
 import { isProjectName, PROJECT_EXTENSION } from '../core/project-names';
 import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
@@ -1767,7 +1770,7 @@ export function setSceneType(ctx: Ctx, type: SceneType): void {
   if (ctx.store.get().scene.type === type) return;
   ctx.store.dispatch({ type: 'scene/setType', sceneType: type, label: L('undo.sceneType', { name: sceneTypeEntry(type).label }) });
   const style = ctx.ui.get().lightStyle;
-  if (type === 'INTERIOR') ctx.ui.set({ lightStyle: 'INTERIOR' });
+  if (type === 'INTERIOR') ctx.ui.set({ lightGroup: 'LIGHTS', lightStyle: 'INTERIOR' });
   else if (style === 'INTERIOR') ctx.ui.set({ lightStyle: 'ALL' });
 }
 
@@ -1836,28 +1839,81 @@ function setupName(ctx: Ctx, key: string): Label {
   return { en: name, es: name };
 }
 
-export function chooseSetup(ctx: Ctx, key: string): void {
+/**
+ * Puts a setup in force (a catalogue key or an own one). `previous` (L7) says what happens to the lights there are:
+ * absent, they are replaced and the undo entry is the plain one (what a URL or a fix asks for); Replace, Hide or Add,
+ * the answer is in the undo entry's name. One undo step either way.
+ */
+export function chooseSetup(ctx: Ctx, key: string, previous?: PreviousLights): void {
+  const name = setupName(ctx, key);
+  const label = previous ? L(`undo.setupPrevious.${previous}` as StringKey, { name }) : L('undo.setup', { name });
+  // The lights kept are named after where they came from, in the interface's language ("Key · Rembrandt").
+  const keptNames = previous === 'HIDE' || previous === 'ADD' ? keptLightNames(ctx) : undefined;
+  const extra = previous ? { previous, ...(keptNames ? { keptNames } : {}) } : {};
   if (isLibraryKey(key)) {
     // An own setup is applied like a catalogue one: normalised to the exposure of the product type in force.
     const item = findItem(ctx.ui.get().library, 'lightSetup', key.slice(LIBRARY_PREFIX.length));
-    if (item) ctx.store.dispatch({ type: 'studio/applySetup', setup: customSetupOf(item), label: L('undo.setup', { name: setupName(ctx, key) }) });
+    if (item) ctx.store.dispatch({ type: 'studio/applySetup', setup: customSetupOf(item), ...extra, label });
     return;
   }
-  ctx.store.dispatch({ type: 'studio/setSetup', key, names: setPieceNames(), label: L('undo.setup', { name: setupLabel(key) }) });
+  ctx.store.dispatch({ type: 'studio/setSetup', key, names: setPieceNames(), ...extra, label });
 }
 
-/** Changing setup asks first when the lights were edited by hand. */
+/** The names the lights there are would keep (L7): a setup's light its name and the setup's; an own one its own. */
+function keptLightNames(ctx: Ctx): Record<string, string> {
+  const s = ctx.store.get();
+  const lang = getLang();
+  const from = setupName(ctx, s.studio.lightSetup)[lang];
+  const out: Record<string, string> = {};
+  for (const l of previousLights(s)) if (!l.name) out[l.id] = l.own ? lightName(s, l.id, lang) : `${lightName(s, l.id, lang)} · ${from}`;
+  return out;
+}
+
+/**
+ * Choosing a setup or a set (L7). With lights in the scene, what happens to them: the choice remembered in Settings
+ * (`light.previous`), or a question with Replace, Hide and Add (and Remember my choice). Without lights, or choosing
+ * the setup in force again, it is put in force as it always was.
+ */
 export function requestSetup(ctx: Ctx, key: string): ConfirmSpec | null {
   const s = ctx.store.get();
-  if (!s.studio.modified || s.studio.lightSetup === key) {
+  if (previousLights(s).length === 0 || s.studio.lightSetup === key) {
     chooseSetup(ctx, key);
     return null;
   }
-  return {
-    message: t('light.replaceModified', { setup: setupName(ctx, key)[getLang()] }),
-    options: [{ label: t('common.yes'), primary: true, run: () => chooseSetup(ctx, key) }],
-    cancelLabel: t('common.no'),
+  const remembered = ctx.ui.get().settings['light.previous'];
+  if (remembered !== 'ASK') {
+    chooseSetup(ctx, key, remembered);
+    return null;
+  }
+  const name = setupName(ctx, key)[getLang()];
+  const answer = (mode: PreviousLights) => (remember?: boolean) => {
+    if (remember) setSetting(ctx, 'light.previous', mode);
+    chooseSetup(ctx, key, mode);
   };
+  return {
+    message: t(s.studio.modified ? 'light.previousModified' : 'light.previous', { setup: name }),
+    options: PREVIOUS_LIGHTS.map((mode, i) => ({ label: t(`light.previous.${mode}` as StringKey), title: t(`light.previous.${mode}.aux` as StringKey), primary: i === 0, run: answer(mode) })),
+    remember: t('light.previous.remember'),
+    rememberAux: t('light.previous.rememberAux'),
+  };
+}
+
+/**
+ * Shows a setup in the light catalogue (a URL, the scene type): its group, and for a Lights entry its style; the Sets
+ * filters are left as they are unless they hide it.
+ */
+export function revealSetup(ctx: Ctx, key: string): void {
+  const s = ctx.store.get();
+  const preset = presetRefOf(s.studio);
+  const group = setupGroup(key, preset);
+  if (group === 'LIGHTS') {
+    const style = lightsStyleOf(key, preset);
+    ctx.ui.set({ lightGroup: 'LIGHTS', ...(style && key !== 'PRESET' ? { lightStyle: style } : {}) });
+    return;
+  }
+  const setup = lightSetup(key);
+  const hidden = setup ? !setupMatches(setup, activeSetupFilters('SETS', ctx.ui.get().lightFilters), preset) : false;
+  ctx.ui.set({ lightGroup: 'SETS', ...(hidden ? { lightFilters: {} } : {}) });
 }
 
 /** What a dragged or chosen material is, before it is resolved: a catalogue key, an instance, or a library item. */

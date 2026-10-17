@@ -100,6 +100,10 @@ export const ICONS = {
   lightIes: ['M6 4h12', 'M12 4v4', 'M5 20c2-9 12-9 14 0', 'M8.5 20c1-5 6-5 7 0'],
   glyphs: ['M3 5h7v5H3z', 'M10 6.5l3-1.5v5l-3-1.5', 'c:17,13.5,1.4,f', 'M17 13.5l-4 7h8z'],
   lookThrough: ['M3 8V4h4', 'M21 8V4h-4', 'M3 16v4h4', 'M21 16v4h-4', 'M6 12s2.3-4 6-4 6 4 6 4-2.3 4-6 4-6-4-6-4Z', 'c:12,12,1.6,f'],
+  /** L7: the size of the light catalogue's thumbnails (the section's header): small, medium, large. */
+  thumbsS: ['M3 3h3.375v3.375h-3.375z', 'M7.875 3h3.375v3.375h-3.375z', 'M12.75 3h3.375v3.375h-3.375z', 'M17.62 3h3.375v3.375h-3.375z', 'M3 7.875h3.375v3.375h-3.375z', 'M7.875 7.875h3.375v3.375h-3.375z', 'M12.75 7.875h3.375v3.375h-3.375z', 'M17.62 7.875h3.375v3.375h-3.375z', 'M3 12.75h3.375v3.375h-3.375z', 'M7.875 12.75h3.375v3.375h-3.375z', 'M12.75 12.75h3.375v3.375h-3.375z', 'M17.62 12.75h3.375v3.375h-3.375z', 'M3 17.62h3.375v3.375h-3.375z', 'M7.875 17.62h3.375v3.375h-3.375z', 'M12.75 17.62h3.375v3.375h-3.375z', 'M17.62 17.62h3.375v3.375h-3.375z'],
+  thumbsM: ['M3 3h5v5h-5z', 'M9.5 3h5v5h-5z', 'M16 3h5v5h-5z', 'M3 9.5h5v5h-5z', 'M9.5 9.5h5v5h-5z', 'M16 9.5h5v5h-5z', 'M3 16h5v5h-5z', 'M9.5 16h5v5h-5z', 'M16 16h5v5h-5z'],
+  thumbsL: ['M3 3h8.25v8.25h-8.25z', 'M12.75 3h8.25v8.25h-8.25z', 'M3 12.75h8.25v8.25h-8.25z', 'M12.75 12.75h8.25v8.25h-8.25z'],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

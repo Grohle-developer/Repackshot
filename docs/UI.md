@@ -586,8 +586,8 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    entorno, los rebotes, las cáusticas, la sombra de contacto, la
    transformada, las muestras, el terminar por ruido y el *denoise*, la focal),
    y al volver a *Producto* deja lo que no se tocó como estaba. Con
-   *Interior* la sección *Luz* se abre en su estilo; al dejarlo vuelve a
-   *Todos*. Tipo de producto (desplegable con los 16
+   *Interior* la sección *Luz* se abre en el grupo *Luces* con su estilo;
+   al dejarlo el estilo vuelve a *Todos*. Tipo de producto (desplegable con los 16
    `STUDIO_PRESETS`, *Estándar* el primero y activo por defecto, con su
    etiqueta y, debajo en auxiliar, focal y diafragma que trae; más los
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
@@ -597,21 +597,74 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
    ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
-2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
-   (*Todos* + los 10 `LIGHT_STYLES`, **Sets** el primero, L6, e **Interior**
-   el último, K1), rejilla de
-   miniaturas (`public/thumbs/setups/thumb_<clave>.png`, 256 × 256,
-   renderizadas por el motor: §6) con la etiqueta debajo, la activa con
-   borde de selección. Los **sets** van primero y en grande: dos columnas
-   y cuadradas (el doble de alto que las demás); los demás montajes, en
-   tres columnas y 4:3, como estaban; en *Todos*, la rejilla de los sets y
-   debajo la del resto. La **ayuda** de la miniatura de un set dice su
-   intención y su **razón fotográfica** (`why`, dos frases); la de un
-   montaje, su intención. Debajo, la **intención** del montaje activo en
-   una frase. Flechas *anterior / siguiente* dentro del estilo. Las siete
+2. **Luz** — El **catálogo de montajes**, en **dos grupos** (L7), *Sets ·
+   Luces*, un control segmentado a todo el ancho arriba de la sección:
+   - **Sets**: lo que monta algo además de los focos (fondo, suelo,
+     tarjetas, charco de luz: la decoración de L6). Son los 16 sets y
+     *El del tipo de producto* (`PRESET`) cuando el tipo en vigor es un set
+     (15 de los 16; con *Mobiliario exterior*, que conserva su sol, está en
+     *Luces*): 17 entradas.
+   - **Luces**: lo que solo coloca focos (algunos eligen además un cielo,
+     una exposición y la intensidad del entorno, como las siete recetas de
+     *Interior* y el sol de *Cinematográfico*, pero no ponen nada en la
+     escena): los 71 montajes de antes y las 7 recetas, 78 entradas.
+
+   El grupo se decide por lo que hace la entrada al aplicarla
+   (`core/setup-groups.ts`, con `hasDecoration` de `core/sets.ts`), no por
+   su estilo; ninguna clave ni ningún orden cambia. Cada grupo tiene sus
+   **filtros**, filas de *chips* como las de las recetas de un plugin
+   (P6b, el mismo componente, `ui/components/filter-chips.ts`): el nombre
+   del filtro, *Todos* y sus valores, combinados (Y). **Sets**: *Tipo de
+   producto* (los 16; un tipo deja el set que es su rig propio, y el rig
+   propio del tipo en vigor; *Mobiliario exterior* no deja ninguno) y
+   *Sujeto* (*Frasco, Caja, Anillo, Cromado, Zapato, Esferas*, el héroe de
+   cada set). **Luces**: *Estilo* (los nueve estilos de antes salvo *Sets*,
+   *Interior* el último, y *Míos*, los montajes propios de la biblioteca,
+   con sus tarjetas de siempre). Debajo, la cuenta (*7 de 17 sets*,
+   *78 montajes*) o, si los filtros no dejan nada, *Ningún set cumple estos
+   filtros.* / *Ningún montaje cumple estos filtros.* La entrada en vigor
+   que los filtros dejan fuera sigue en la rejilla, la primera, atenuada y
+   con *Fuera de los filtros* en su ayuda. Grupo, filtros y estilo se
+   recuerdan por persona (el `layout` de los ajustes, como el estilo de
+   antes); un documento de antes de L7 abre *Sets* si su estilo era *Sets*
+   o *Todos*, y *Luces* con su estilo si no.
+
+   La **rejilla de miniaturas** (`public/thumbs/setups/thumb_<clave>.png`,
+   256 × 256, renderizadas por el motor: §6) lleva la etiqueta debajo y la
+   activa con borde de selección; **todas del mismo tamaño**, 4:3, en los
+   dos grupos (L7: los sets dejan de ir en dos columnas cuadradas). A la
+   **derecha de la cabecera** de la sección, un botón de icono cambia el
+   tamaño, en vuelta: *pequeñas* (cuatro columnas, solo la imagen; el
+   nombre va en la ayuda y en la etiqueta accesible), *medianas* (tres, el
+   tamaño que tenían todos los montajes, *Campo oscuro* incluido; el de
+   partida) y *grandes* (dos). La etiqueta se parte en las líneas que haga
+   falta: no se corta nada. El tamaño se recuerda por persona. La **ayuda**
+   de la miniatura de un set dice su intención y su **razón fotográfica**
+   (`why`, dos frases); la de un montaje, su intención. Debajo, la
+   **intención** del montaje activo en una frase. Flechas *anterior /
+   siguiente* dentro de lo que dejan grupo y filtros.
+
+   **Con focos en la escena**, elegir un set o un montaje (también uno
+   propio, y desde la paleta) **pregunta qué pasa con ellos**, en línea
+   sobre la rejilla: «Hay focos en la escena. ¿Qué pasa con ellos al entrar
+   *Rembrandt*?» (o «Los focos se han editado…» si estaban modificados),
+   con **Sustituir** (los borra: lo de siempre), **Ocultar** (los conserva
+   apagados; la lista *Luces* los enciende uno a uno), **Añadir** (los
+   conserva encendidos y añade los nuevos), *Cancelar* y la casilla
+   **Recordar mi elección**, que la guarda en *Ajustes ▸ Preferencias ▸
+   Luces*. Es una entrada de deshacer con la respuesta en su nombre
+   (*Montaje de luz: Rembrandt (ocultar los focos que había)*). Los focos
+   conservados pasan a ser propios, con el nombre de donde venían
+   («Principal · Rembrandt»), y *Restablecer montaje* los quita. Un set que
+   entra sustituye la decoración del set anterior sea cual sea la
+   respuesta; un montaje de *Luces* con *Ocultar* o *Añadir* deja la
+   decoración, el charco y el aspecto del set como estaban (y *En el set*
+   sigue con sus filas, sin *Usar la cámara del set*). Sin focos en la
+   escena, o eligiendo otra vez el montaje en vigor, no pregunta.
+   Las siete
    recetas de **Interior** (*Ventana de mañana*, *de mediodía*, *de tarde*,
    *Nublado*, *Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*)
-   van en tres columnas como los montajes; cada una trae su mundo, su
+   traen cada una su mundo, su
    exposición y la intensidad del entorno (a diferencia de los montajes de
    los demás estilos, elegirla sí cambia el brillo), y ninguna trae
    decoración: no aparece *En el set*.
@@ -1829,7 +1882,7 @@ título del grupo en versalitas auxiliares:
 | Grupo | Sección | Qué hay |
 | --- | --- | --- |
 | **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
-| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
+| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Luces* (L7): *Un montaje sobre focos* (*Preguntar* · *Sustituir* · *Ocultar* · *Añadir*), lo que hace un set o un montaje con los focos que hay; *Recordar mi elección* de la pregunta lo escribe aquí. *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |

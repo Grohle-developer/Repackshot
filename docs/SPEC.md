@@ -56,9 +56,12 @@ no un requisito.
    el objetivo ya tiene materiales distintos, se pregunta con inventario.
    Editar parámetros con nombres de fotógrafo. Añadir desgaste.
 4. **Luz.** Elegir un montaje del catálogo (95 en 10 estilos: los 16 sets de
-   L6 primero y las 7 recetas de interior, K1, al final) por su miniatura e
-   intención; la exposición no cambia al cambiar de montaje (salvo en un set,
-   que trae la suya, y en las recetas de interior).
+   L6 primero y las 7 recetas de interior, K1, al final), en dos grupos (L7):
+   **Sets**, lo que monta algo además de los focos, y **Luces**, lo que solo
+   coloca focos, cada uno con sus filtros; por su miniatura e intención; la
+   exposición no cambia al cambiar de montaje (salvo en un set, que trae la
+   suya, y en las recetas de interior). Si ya hay focos, se elige qué pasa
+   con ellos: se sustituyen, se ocultan o se suman.
    Afinar focos si se quiere; colocar un foco por reflejo apuntando a
    dónde se quiere el brillo. **O montar la luz desde cero**: añadir
    focos propios (área, punto, foco direccional, sol, y el perfil IES de una lámpara real),
@@ -705,8 +708,8 @@ rol, tipo, forma, tamaño, acimut y elevación relativos a cámara,
 distancia, dispersión, color, potencia, visible en reflejos, visible a
 cámara, encendido). Sale de `studioRig(tipo)` o `setupRig(tipo, montaje)`
 y se puede editar foco a foco; editarlo marca `modified`. Cambiar de
-montaje o de tipo de producto lo reconstruye (tras confirmar si estaba
-modificado).
+tipo de producto lo reconstruye; cambiar de montaje, según qué se elija
+para los focos que hay (L7, abajo).
 
 **Normalización**: la irradiancia total de un montaje aplicado se iguala a
 la del rig del tipo de producto. Cambiar de montaje no cambia la
@@ -799,6 +802,39 @@ estilo `SETS`, el primero del catálogo.
   exposición de antes (`baseExposure`, `setupExposure`). El suelo y la
   sombra son los del tipo. *Mobiliario exterior* conserva su sol: no es un
   set.
+
+**Sets y Luces** (fase L7). El catálogo se ve en dos grupos, sin que cambie
+ninguna clave, estilo ni orden (`core/setup-groups.ts`): **Sets**, las entradas
+que al aplicarlas ponen decoración en la escena (`hasDecoration`: fondo, suelo,
+charco o tarjetas), y **Luces**, las demás (solo focos; pueden elegir mundo,
+exposición e intensidad del entorno, como las recetas de interior y los tres
+montajes de sol, pero no visten nada). `PRESET` es del grupo del tipo de
+producto en vigor: *Sets* si el tipo es un set (15 de 16), *Luces* con
+*Mobiliario exterior*. Con un tipo que es set: 17 *Sets* y 78 *Luces*; con
+*Mobiliario exterior*, 16 y 79 (un test lo fija y comprueba, aplicando cada
+entrada, que la que es *Set* deja decoración y la de *Luces* no). Filtros, que
+se combinan (Y) como los de las recetas de un plugin (P6b): *Sets* por **tipo
+de producto** (los tipos cuyo `StudioPreset.set` es ese set, y `PRESET` por el
+tipo en vigor) y por **sujeto** (`hero`); *Luces* por **estilo**. La entrada en
+vigor que los filtros dejan fuera se sigue enseñando, marcada.
+
+**Los focos que hay** (L7). `studio/setSetup` y `studio/applySetup` llevan
+`previous` (`REPLACE`, `HIDE`, `ADD`; `core/previous-lights.ts`) y
+`keptNames`. *Sustituir* (o ninguno) es lo de siempre. *Ocultar* y *Añadir*,
+con focos que no son decoración (`previousLights`), los conservan después de
+los del montaje nuevo: con su `id` (un clip de animación o la selección que los
+apunta sigue valiendo; un foco nuevo con un `id` ocupado toma otro), `own`
+(no son del montaje: *Restablecer montaje* los quita) y un nombre que dice de
+dónde vienen; *Ocultar* los deja con `enabled: false`, el interruptor de la
+lista *Luces*, que ya existía (el formato del proyecto no cambia y los
+proyectos de antes se abren igual), y *Añadir* como estaban. `modified` queda
+puesto. Un **set** que entra sustituye la decoración del anterior sea cual sea
+la elección (una escena tiene un set); un montaje de **Luces** con *Ocultar* o
+*Añadir* deja la decoración, el foco del charco y el aspecto del set como
+estaban, y una receta de interior pone su aspecto encima. Una sola entrada de
+deshacer, con la elección en su nombre. La interfaz pregunta salvo que el
+ajuste `light.previous` (*Preguntar* por defecto) recuerde una respuesta; no
+pregunta sin focos ni al elegir otra vez el montaje en vigor.
 
 **Recetas de interior** (fase K1, estilo `INTERIOR`, el último del catálogo).
 Siete montajes (*Ventana de mañana*, *de mediodía*, *de tarde*, *Nublado*,

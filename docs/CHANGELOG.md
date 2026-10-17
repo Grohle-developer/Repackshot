@@ -7,10 +7,15 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Interfaz
 
+- La sección **Luz** agrupa el catálogo en **Sets** (lo que monta fondo, suelo, tarjetas o charco de luz con sus focos: los 16 sets y el rig del tipo de producto) y **Luces** (lo que solo coloca focos: los montajes de siempre y las recetas de *Interior*). Cada grupo tiene sus filtros, que se combinan: *Tipo de producto* y *Sujeto* en *Sets*, *Estilo* (con *Míos*) en *Luces*, con la cuenta de lo que dejan y un aviso corto si no dejan nada. Ninguna clave cambia (L7).
+- Con focos en la escena, elegir un set o un montaje pregunta qué pasa con ellos: **Sustituir**, **Ocultar** (se quedan apagados y la lista *Luces* los vuelve a encender) o **Añadir**, con *Recordar mi elección*; se cambia en *Ajustes ▸ Preferencias ▸ Luces*. Una entrada de deshacer que dice la respuesta (L7).
+- Todas las miniaturas del catálogo de luz tienen el mismo tamaño (el de los montajes, como *Campo oscuro*), y un botón a la derecha de la cabecera de la sección las pone pequeñas, medianas o grandes; se recuerda (L7).
 - *Ajustes ▸ Preferencias ▸ Render por defecto para proyectos nuevos*: los botones *Descargas* y *Elegir carpeta…* de *Carpeta al terminar* ya no salen cortados. El icono iba en su propia línea y el texto caía debajo, fuera de los 26 px del botón; ahora icono y texto van en la misma línea en cualquier control segmentado con icono. Lo guarda `tests/seg-clip-browser.test.ts`, en el navegador y en los dos idiomas.
 - *Acerca de*: los créditos se quedan en la literatura pública que sigue el motor y en las licencias de terceros.
 
 ### Herramientas
+
+- `tools/light-catalogue-check.mjs` comprueba en el navegador los dos grupos, sus filtros, la pregunta y los tamaños, y hace las capturas de L7; `tools/sets-check.mjs` y `tools/scene-type-check.mjs` siguen la sección nueva (L7).
 
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
 
