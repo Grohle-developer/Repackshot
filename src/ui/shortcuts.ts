@@ -125,6 +125,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'focusObject', label: 'action.focusObject', run: (ctx) => cmd.pickFocusObject(ctx) },
   { id: 'focusSelection', label: 'action.focusSelection', run: (ctx) => cmd.focusOnNodes(ctx) },
   { id: 'focusDistance', label: 'action.focusDistance', run: (ctx) => cmd.setFocusMode(ctx, 'DISTANCE') },
+  // C2: the focal length's switch of the camera that is seen.
+  { id: 'keepFocusSize', label: 'action.keepFocusSize', run: (ctx) => cmd.toggleKeepFocusSize(ctx) },
   // Q1: the section view.
   { id: 'section', label: 'action.section', run: (ctx) => toggleSection(ctx) },
   { id: 'sectionFlip', label: 'action.sectionFlip', run: (ctx) => flipSection(ctx) },

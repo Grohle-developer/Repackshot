@@ -523,7 +523,8 @@ function checkEmbeddedStudio(raw: SavedStudio, fresh: ProjectState): SavedStudio
  * K3: the interior camera's fields as this version reads them (a project saved before K3 has none of them and opens as
  * it was): a projection it does not know is perspective, the fisheye's field a number in its range, the straight
  * verticals and a part hidden to the camera only when true; the exterior factor a number in its range, the exposure
- * mode MANUAL or AUTO (anything else: by hand).
+ * mode MANUAL or AUTO (anything else: by hand). C2's switch of the focal length, like the straight verticals, only when
+ * true.
  */
 function withInteriorCamera(s: ProjectState): ProjectState {
   let cameras: Record<string, CameraState> | null = null;
@@ -537,6 +538,11 @@ function withInteriorCamera(s: ProjectState): ProjectState {
     }
     if (raw.straightVerticals !== undefined && raw.straightVerticals !== true) {
       const { straightVerticals: _v, ...rest } = next;
+      next = rest;
+    }
+    // C2: the focal length's switch, on only when true (absent on every camera of before C2: off).
+    if (raw.keepFocusSize !== undefined && raw.keepFocusSize !== true) {
+      const { keepFocusSize: _k, ...rest } = next;
       next = rest;
     }
     if (next !== c) (cameras ??= { ...s.camera.cameras })[id] = next;
