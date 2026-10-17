@@ -184,7 +184,7 @@ decisiones escritas (datos, contratos, revisión), no código.
   (EXR o PNG de 16 bits), el **lote cámaras × estudios** con la plantilla de nombre, el
   **ZIP propio** de la cola (método *store*, sin dependencias) y la prueba de que
   detener el segundo deja el tercero; un fallo antiguo de la cola corregido;
-  2968 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
+  3005 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -6992,7 +6992,7 @@ dependencia: el formato *store* de ZIP es trivial).
 **Criterio.** Tests de nombre de archivo y de cola (orden, cancelar el
 segundo deja el tercero); un lote de 2 × 2 produce 4 imágenes.
 
-@**Hecho.** La auditoría de abajo dice qué había (la cola, su cancelación, los seis
+**Hecho.** La auditoría de abajo dice qué había (la cola, su cancelación, los seis
 pases del motor y el lote por cámaras venían de U5, U14, X2 y E4) y qué faltaba; N2
 construyó solo lo que faltaba:
 
@@ -7018,7 +7018,7 @@ construyó solo lo que faltaba:
 - **Cola**: la prueba que faltaba (*Detener* el segundo deja el tercero) y un fallo antiguo
   de `ensureLoop` (ver abajo).
 
-Números. Web: `npm run qa` en verde (tipos, interfaz y 172 archivos de prueba con 2968 tests y 6 omitidos, contra 168 archivos y 2902 tests antes de la fase; con la máquina cargada, los tests de 5 s que tardaron más se repitieron solos, como pide `CLAUDE.md`, y pasaron). Motor: `cargo test --workspace --release` 1112 tests y `npm run engine:test` 1106 (depuración), sin fallos; en WebAssembly (WASI) 588 de `rt-core`, escalar y con simd128; `cargo fmt`, `clippy -D warnings` (también para Windows), `cargo check` para aarch64 y riscv64, y el `rt.wasm` real igual al nativo en cada bloque de paridad de `engine.yml`. Con la máquina muy cargada, `ai_post::retries_lower_the_strength_…` (una espera por muestreo) falló en dos pasadas completas y pasa sola (9 de 9): no toca nada de esta fase. Pruebas nuevas: `tests/batch.test.ts` (28),
+Números. Web: `npm run qa` en verde (tipos, interfaz y 177 archivos de prueba con 3005 tests y 6 omitidos, tras fusionar `main`; antes de la fase eran 168 archivos y 2902 tests). Motor: `cargo test --workspace --release` 1112 tests y `npm run engine:test` 1106 (depuración), sin fallos; en WebAssembly (WASI) 588 de `rt-core`, escalar y con simd128; `cargo fmt`, `clippy -D warnings` (también para Windows), `cargo check` para aarch64 y riscv64, y el `rt.wasm` real igual al nativo en cada bloque de paridad de `engine.yml`. Con la máquina muy cargada, `ai_post::retries_lower_the_strength_…` (una espera por muestreo) falló en dos pasadas completas y pasa sola (9 de 9): no toca nada de esta fase. Pruebas nuevas: `tests/batch.test.ts` (28),
 `tests/zip.test.ts` (10), `tests/pass-files.test.ts` (17), 6 en
 `tests/passes-engine.test.ts` y, en el motor, las del alfa en `passes_tests.rs` (cobertura,
 suelo y fondo, igual a la película con fondo transparente bit a bit, con otros pases y con
@@ -7035,7 +7035,7 @@ multiplicar por su recíproco sobrevivía hasta que se probó con 7 muestras, y 
 colgaba las pruebas (era el fallo de `ensureLoop`). `tools/batch-check.mjs` (Chromium y el `rt.wasm`
 real): un lote 2 × 2 con tres pases en un ZIP de 20 archivos que `unzip` y `fflate` aceptan,
 los EXR leídos por la especificación, los PNG de 16 bits, y *Detener* el segundo deja el
-tercero. Capturas `batch-window.png` y `batch-queue.png`.@
+tercero. Capturas `batch-window.png` y `batch-queue.png`.
 
 **Auditoría al empezar** (sobre `main` en v0.1.16, punto por punto del
 brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
