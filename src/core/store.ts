@@ -20,6 +20,7 @@ import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 import { reducePhysics, type PhysicsAction } from './physics';
 import { reduceSceneType, type SceneTypeAction, type TypeMemory } from './scene-type';
+import { reducePrevious } from './previous-lights';
 import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
 import { reduceGraph, type GraphAction } from './material-graph';
@@ -290,8 +291,9 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       // A material as a graph of nodes (M3a).
       return reduceGraph(state, action as GraphAction);
     case 'studio':
-      // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's.
-      return reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
+      // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's. A
+      // setup that keeps the lights there were (Hide, Add: L7) goes through core/previous-lights.ts first.
+      return reducePrevious(state, action as StudioAction) ?? reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
     case 'camera':
       return reduceCamera(state, action as CameraAction);
     case 'anim':

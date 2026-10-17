@@ -559,13 +559,29 @@ kbd,
 .thumbs.cols-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-/* L6: the sets, twice as tall as a setup's thumbnail (two columns, square). */
+/* Two columns: the large thumbnails of the light catalogue (L7; L6 drew the sets so, square). */
 .thumbs.cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.thumb.large img,
-.thumb.large .thumb-ph {
-  aspect-ratio: 1;
+/* L7: the light catalogue's thumbnails, one size for every entry (a setup's, 4:3), chosen in the section's header:
+   small four columns, medium three, large two. A caption wraps to its whole length (nothing is cut); a small one is
+   the picture alone, its name in its label and its tooltip. */
+.thumbs[data-size] .thumb-caption {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.thumbs[data-size='S'] .thumb-caption {
+  display: none;
+}
+/* The entry in force when the filters leave it out: first, dimmed, its tooltip saying so (as a plugin's recipe, P6b). */
+.thumb.is-outside img,
+.thumb.is-outside .thumb-caption {
+  opacity: 0.45;
+}
+.thumb.is-outside .thumb-caption {
+  font-style: italic;
 }
 .thumb {
   display: flex;
@@ -635,6 +651,17 @@ kbd,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+/* L7: Remember my choice, under the answers. */
+.confirm-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.confirm-remember input {
+  margin: 0;
+  accent-color: var(--ink-0);
 }
 
 /* Floating: menus, popovers, palette, tooltip, toasts ------------------- */

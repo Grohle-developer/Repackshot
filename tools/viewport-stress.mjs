@@ -539,6 +539,9 @@ async function session(engine, p, log) {
       if (n === 0) return 'no setup';
       const i = Math.floor(rand() * Math.min(n, 30));
       await clickAt(page, thumbs.nth(i));
+      // L7: over the lights there are it asks; Replace.
+      const replace = page.locator('aside [data-light-question] .btn-primary');
+      if (await replace.count()) await clickAt(page, replace.first());
       return `setup ${i}`;
     },
     orbit: orbitDrag,
