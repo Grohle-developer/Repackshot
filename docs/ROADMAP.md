@@ -7855,6 +7855,9 @@ Fable: queda anotado, no decidido).
    interfaz no lo usa: los dos motores que se publican cortan. Un
    `rt.wasm` viejo en `public/engine/` mostraría la pieza entera en
    *Completo* sin avisar (se arregla con `npm run engine:build`).
+
+---
+
 ## H1 · Accesibilidad e i18n — **Haiku**
 
 **Qué.** Orden de foco de todos los paneles, `aria-label` en cada icono,
