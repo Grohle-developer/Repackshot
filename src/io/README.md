@@ -37,7 +37,9 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
   project onto it: active camera (36 mm on the longer side; in the viewport, the output frame inset as the preview
   draws it), one MESH per distinct geometry and one INST per visible part, the materials with the E3 semantics,
   the resolved rig in the engine's units (`core/photometry.ts`), the studio dome, the floor and the render settings.
-  `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have.
+  `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have. An IES light (L5) is
+  `LGHT` kind 5 (80 bytes: the position of its profile) with its file once, as text, in an `IESP` section after the lights,
+  when `SceneView.ies` says the engine renders them; for any other engine it is the spot light that stands for it.
 - **La costura de plataforma** (P3e): `platform.ts` define `Platform`, todo servicio que guarda algo o pregunta al
   equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de resultados, almacén de modelos, equipo,
   espacio usado, miniaturas), elegida una vez al arrancar con `choosePlatform()`. `platform-web.ts`: el navegador

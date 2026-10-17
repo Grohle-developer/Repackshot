@@ -5858,7 +5858,11 @@ por punto, el peso `lum(I) · máscara(x) / max(d², r²)` es exacto; en la
 estática (más de 64 entradas, atrapasombras) una luz **dentro de la esfera
 que envuelve la escena** pesa por su flujo (el del punto del pico por la
 eficiencia del perfil, `flux / (4π · pico)`) y una fuera de ella, como un
-foco, por la intensidad hacia el centro de la escena. No lanza fotones.
+foco, por la intensidad hacia el centro de la escena. No lanza fotones. Coste
+medido: la escena de paridad (el panel y dos luces IES) tarda un 16 % más que
+el ejemplo con su panel (7,2 s frente a 8,3 s, 128 muestras a 480 × 360 con 4
+hilos, 61 millones de rayos las dos): el peso y el sombreado de dos entradas
+más en la elección por punto y la búsqueda del perfil.
 
 *RSB.* `LGHT` kind 5 con una palabra más (la posición de su perfil: 80 B) y
 la sección `IESP` (el texto del archivo, `u32` de largo, bytes y relleno a 4)
@@ -5967,9 +5971,9 @@ No encajó con el plan:
   (el pico del perfil apuntado al pivote da lo mismo que el punto). Los
   candelas absolutas del archivo no cuentan: las escenas de aquí tienen
   vatios de Cycles, no físicos (a 683 lm/W un perfil real daría una imagen
-  negra). Es una convención de exposición (no marcada Fable en el plan, pero
-  fotográfica): el líder puede preferir normalizar por flujo (un haz estrecho
-  entraría mucho más brillante en su eje).
+  negra). Es una convención de exposición (el plan no la marca como decisión
+  del líder, pero es fotográfica): el líder puede preferir normalizar por flujo
+  (un haz estrecho entraría mucho más brillante en su eje).
 - **«Un multiplicador» es `power / base`**, no las candelas por un factor: el
   nivel sigue siendo `power` (lo que leen el Doctor, la animación, los
   estudios, las barras de reparto y la normalización al aplicar un montaje a

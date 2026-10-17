@@ -1532,8 +1532,12 @@ impl Scene {
                 w.f32(l.spread_deg);
                 w.f32(l.angle_deg);
                 w.u32(l.flags);
-                if let Some(p) = &l.ies {
-                    let at = profiles.iter().position(|q| q.source() == p.source());
+                if l.kind == LightKind::Ies {
+                    // (Such a light has its profile: the others are skipped above.)
+                    let at = l
+                        .ies
+                        .as_ref()
+                        .and_then(|p| profiles.iter().position(|q| q.source() == p.source()));
                     w.u32(at.map_or(NO_PROFILE, |i| i as u32));
                 }
             });
@@ -3137,6 +3141,10 @@ mod tests {
             ..Light::default()
         });
         assert_eq!(scene.to_rsb(), bytes);
+        // A profile on a light of another kind is nobody's: neither written nor counted in its record.
+        let mut stray = full_scene();
+        stray.lights[0].ies = Some(ies_profile(crate::ies::tests::DOWNLIGHT));
+        assert_eq!(stray.to_rsb(), bytes);
     }
 
     #[test]

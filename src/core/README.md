@@ -46,6 +46,12 @@ light or a camera as an object of the viewport: the gizmo on it and what a drag 
 view from it and what navigating that view does to it (`lookThroughCamera`, `lookThroughAction`), and the glyphs and the
 click that picks one (`glyphsOf`, `pickGlyph`, `viewProjector`).
 
+IES lights (L5): `ies.ts` reads the IES LM-63 text format the way the engine does (`rt_core::ies`; the engine's tests write
+the files and answers that `tests/ies.test.ts` holds this reader to), and gives the profile's intensity and flux, the spot
+light that stands for it in Fast (`iesSpot`) and the curves of the polar plot. A light of type `IES` keeps its file in
+`LightInstance.ies` (`{ name, text, base }`: the text one character per byte; `power / base` is the multiplier the inspector
+shows); `studio/addIesLight` adds one, and `lightLumens` takes its lumens from the file's flux.
+
 Textures (M2a): `textures.ts` (the image slots, the mapping and the labels of a material, their `texture/*` actions,
 and the maths of the projections and labels the preview's shader and the engine follow), `texture-images.ts`
 (texture images in the registry under ids that name their content, and their limits), `image-header.ts` (the size
