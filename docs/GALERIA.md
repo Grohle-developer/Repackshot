@@ -22,9 +22,13 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 19 versiones, 16 con capturas nuevas; las capturas se reparten en 53 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas; las capturas se reparten en 53 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
+
+Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.19).
+
+### v0.1.19 · 2026-10-17
 
 El estudio de un lote que viaja con el proyecto (N2b), el interruptor de la focal, *Mantener el tamaño de lo enfocado* (C2), el editor de elementos de la lente trazada (O2c) y los nodos *Madera* y *Tela* del editor de material (M3c), que regraban, sin cambiar de sitio, `m3b-wood.png` y `m3b-graphs.png` (M3b).
 
@@ -208,10 +212,10 @@ Los materiales de nodos funcionan en Completo y en los renders.
 #### M3b · El motor evalúa grafos
 
 <a id="c-m3b-graphs"></a><img src="ui/m3b-graphs.png" width="480" alt="Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha)."><br>
-`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en v0.1.18: C1, los copos de la pintura metalizada miran hacia fuera; y en Sin publicar: M3c, el ejemplo de madera es el roble con el nodo Madera; la hace `tests/m3b-graphs-sheet.test.ts`)*
+`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en v0.1.18: C1, los copos de la pintura metalizada miran hacia fuera; y en v0.1.19: M3c, el ejemplo de madera es el roble con el nodo Madera; la hace `tests/m3b-graphs-sheet.test.ts`)*
 
 <a id="c-m3b-wood"></a><img src="ui/m3b-wood.png" width="480" alt="Dos cajas de roble en el motor: la familia Madera del catálogo a la izquierda y el ejemplo de nodos con el nodo Madera a la derecha, la misma madera (anillos finos y rectos, poros)."><br>
-`m3b-wood.png` · `fbb054e` · Dos cajas de roble en el motor: la familia *Madera* del catálogo a la izquierda y el ejemplo de nodos con el nodo *Madera* a la derecha, la misma madera (anillos finos y rectos, poros). *(regrabada en Sin publicar: M3c; en M3b el ejemplo, «Madera con dos ruidos», aún no se parecía a la familia; la hace `tests/m3c-wood-sheet.test.ts`)*
+`m3b-wood.png` · `fbb054e` · Dos cajas de roble en el motor: la familia *Madera* del catálogo a la izquierda y el ejemplo de nodos con el nodo *Madera* a la derecha, la misma madera (anillos finos y rectos, poros). *(regrabada en v0.1.19: M3c; en M3b el ejemplo, «Madera con dos ruidos», aún no se parecía a la familia; la hace `tests/m3c-wood-sheet.test.ts`)*
 
 ### v0.1.11 · 2026-10-16
 
@@ -700,7 +704,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`label-placed.png`](#c-label-placed) · v0.1.6 · M2a
 - [`material-nodes.png`](#c-material-nodes) · v0.1.6 · M3a **← propuesta**
 - [`material-nodes-preview.png`](#c-material-nodes-preview) · v0.1.6 · M3a
-- [`material-nodes-wood.png`](#c-material-nodes-wood) · Sin publicar · M3c
+- [`material-nodes-wood.png`](#c-material-nodes-wood) · v0.1.19 · M3c
 - [`material-drag.png`](#c-material-drag) · v0.1.2 · U7
 - [`material-drag-tree.png`](#c-material-drag-tree) · v0.1.2 · U7
 - [`material-drag-faces.png`](#c-material-drag-faces) · v0.1.2 · M1
@@ -731,8 +735,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
-- [`o2c-lens-editor.png`](#c-o2c-lens-editor) · Sin publicar · O2c
-- [`o2c-lens-modified.png`](#c-o2c-lens-modified) · Sin publicar · O2c
+- [`o2c-lens-editor.png`](#c-o2c-lens-editor) · v0.1.19 · O2c
+- [`o2c-lens-modified.png`](#c-o2c-lens-modified) · v0.1.19 · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
 - [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · v0.1.18 · O4
 - [`o4-traced-more.png`](#c-o4-traced-more) · v0.1.18 · O4
@@ -751,10 +755,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`camera-edit.png`](#c-camera-edit) · v0.1.6 · sin fase
 - [`camera-section.png`](#c-camera-section) · v0.1.6 · sin fase
 - [`camera-aspect.png`](#c-camera-aspect) · v0.1.6 · U13
-- [`c2-focal-switch.png`](#c-c2-focal-switch) · Sin publicar · C2
-- [`f1-focus-inspector.png`](#c-f1-focus-inspector) · sin publicar · F1
-- [`f1-focus-marker.png`](#c-f1-focus-marker) · sin publicar · F1
-- [`f1-focus-sheet.png`](#c-f1-focus-sheet) · sin publicar · F1
+- [`c2-focal-switch.png`](#c-c2-focal-switch) · v0.1.19 · C2
+- [`f1-focus-inspector.png`](#c-f1-focus-inspector) · v0.1.18 · F1
+- [`f1-focus-marker.png`](#c-f1-focus-marker) · v0.1.18 · F1
+- [`f1-focus-sheet.png`](#c-f1-focus-sheet) · v0.1.18 · F1
 
 ### Render y cola
 
@@ -762,7 +766,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 - [`batch-window.png`](#c-batch-window) · v0.1.17 · N2
 - [`batch-queue.png`](#c-batch-queue) · v0.1.17 · N2
-- [`batch-queue-adopt.png`](#c-batch-queue-adopt) · Sin publicar · N2b
+- [`batch-queue-adopt.png`](#c-batch-queue-adopt) · v0.1.19 · N2b
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
