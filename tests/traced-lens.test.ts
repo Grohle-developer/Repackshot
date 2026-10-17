@@ -35,14 +35,15 @@ describe('the traced lens of a camera', () => {
     expect(isNeutralOptics(traced('triplet'))).toBe(false);
   });
 
-  it('comes from the bokeh types that need it, and a thin-lens type takes the camera back to the thin lens', () => {
+  it('comes from the bokeh types that need it, and no bokeh type takes a traced camera out of its lens (O4)', () => {
     const coma = opticsForBokeh(OPTICS_NEUTRAL, 'coma_comet')!;
     expect(coma.traced?.key).toBe('double_gauss_fast');
     expect(opticsForBokeh(OPTICS_NEUTRAL, 'focus_breathing')!.traced?.key).toBe('telephoto_internal_focus');
     expect(opticsForBokeh(OPTICS_NEUTRAL, 'variable_sa')!.traced?.key).toBe('soft_focus_variable');
     expect(opticsForBokeh(OPTICS_NEUTRAL, 'diffraction_ring')).toBeNull();
-    const back = opticsForBokeh(coma, 'cats_eye')!;
-    expect(back.traced).toBeNull();
+    // Before O4 a simple-lens type took the camera back to the simple lens: the bug the person met. Now nothing applies.
+    expect(opticsForBokeh(coma, 'cats_eye')).toBeNull();
+    expect(opticsForBokeh(coma, 'focus_breathing')).toBeNull();
     expect('traced' in opticsForBokeh(OPTICS_NEUTRAL, 'cats_eye')!).toBe(false);
   });
 

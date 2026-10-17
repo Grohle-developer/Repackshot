@@ -252,6 +252,14 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected" --passes
+          # O4: the traced double Gauss tilted against the sensor and shifted (the angle and the refocus
+          # solved when the module reads the scene, the bounds on a grid of sensor positions), alone
+          # and with the passes.
+          cargo run --release -p rt-cli -- --write-o4-example "$RUNNER_TEMP/o4.rsb"
+          expected=$(sed -n 's/.*PINNED_O4_TRACED_TILT_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o4.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o4.rsb" --expect "$expected" --passes
           # Q1: the E5 scene cut in two by a section plane that caps its closed solids (the SECT section, its
           # clipped rays and the cap decided by the model alone), alone and with the passes.
           cargo run --release -p rt-cli -- --write-q1-example "$RUNNER_TEMP/q1.rsb"
@@ -285,7 +293,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:

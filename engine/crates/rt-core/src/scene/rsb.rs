@@ -305,7 +305,8 @@
 //!   (unknown profiles are uniform); `obstruction` the central obstruction (0 to 0.95 of the
 //!   aperture); `cats_eye` (0 to 1) the cat's eye clip; `squeeze` (1 to 4) the anamorphic squeeze
 //!   of the pupil; `shift_*_mm` the lens shift and `tilt_deg` (−45 to 45) about the axis at
-//!   `tilt_axis_deg` the tilt (Scheimpflug); `ca_amount` and `swirl` (0 to 1) the artistic
+//!   `tilt_axis_deg` the tilt (Scheimpflug; since O4 also of a traced lens, which a lens with
+//!   cylinders refuses); `ca_amount` and `swirl` (0 to 1) the artistic
 //!   chromatic aberration and swirl; `field_mm` the image height of the frame's corner (0: half
 //!   the image's diagonal); `mask_kind` **0** none (size 0), **1** an aperture mask that replaces
 //!   the iris, **2** a transmission texture multiplied with it, `mask_width × mask_height` 8-bit

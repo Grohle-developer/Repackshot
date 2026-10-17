@@ -20,6 +20,7 @@ export function fakeInfo(cam: CameraState): EngineLensInfo {
     imageScaleMm: cam.focalMm,
     fNumber: Math.max(cam.fstop, 1.4),
     fNumberMin: 1.4,
+    tiltDeg: 0,
     tStop: Math.max(cam.fstop, 1.4) * 1.1,
     transmittance: [0.9, 0.9, 0.9],
     lengthMm: 40 + i,
