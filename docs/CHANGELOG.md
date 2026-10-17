@@ -16,6 +16,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El movimiento **Sección** de la línea de tiempo desplaza el plano a lo largo de su normal, en tamaños de pieza, con la curva del clip (Q1).
 - *Rápido* corta y tapa con el plano de recorte de three.js; la selección, la caja de selección y el cardán no ven lo que el corte se ha llevado. Dos acciones en la paleta: *Vista en sección: activar o desactivar* y *cambiar de lado* (Q1).
 
+### Herramientas
+
+- `tools/lights-check.mjs` vuelve a pasar de punta a punta, en *Rápido* y en *Completo*: activaba la cámara desde el menú de arriba a la derecha buscando una fila de texto exactamente `Camera 1`, y desde que cada fila lleva además la óptica y la proporción (y el lápiz) ese texto ya no coincidía. Ahora abre el menú por el único botón de esa esquina con `aria-haspopup="menu"` y elige la fila por su etiqueta (L4).
+
 ### Limitaciones conocidas de esta versión
 
 - *Rápido* dibuja la tapa de un vidrio como vidrio transparente; *Completo* y *Render* refractan a su través.
