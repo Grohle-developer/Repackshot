@@ -63,12 +63,12 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     key: 'color',
     label: { es: 'Tono', en: 'View transform' },
     checks: {
-      es: 'La transformada de vista Estándar recorta a blanco las altas luces de lo que el motor ha acumulado (más de una parada sobre el blanco); Fílmica y AgX las comprimen.',
-      en: 'The Standard view transform clips to white the highlights of what the engine has accumulated (over one stop above white); Filmic and AgX roll them off.',
+      es: 'La transformada de vista Estándar recorta a blanco las altas luces de lo que el motor ha acumulado (más de una parada sobre el blanco); Fílmica y AgX las comprimen. Es un aviso: un fondo blanco liso se quiere recortado.',
+      en: 'The Standard view transform clips to white the highlights of what the engine has accumulated (over one stop above white); Filmic and AgX roll them off. It is a warning: a flat white background is meant to clip.',
     },
     fix: {
-      es: 'Pasa la transformada de vista a Fílmica.',
-      en: 'Switches the view transform to Filmic.',
+      es: 'Pasa la transformada de vista a AgX.',
+      en: 'Switches the view transform to AgX.',
     },
   },
   {
