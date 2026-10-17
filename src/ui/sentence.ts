@@ -6,6 +6,7 @@ import type { Lang } from '../data/types';
 import { amountUnit, clipEnd, clipRepeat, type ClipTarget, type MotionClip } from '../core/animation';
 import { resolveExplode } from '../core/explode';
 import type { ProjectState } from '../core/store';
+import { materialName } from './names';
 import { STRINGS, formatNumber, tIn, type StringKey } from './strings';
 
 /** What an own light (L4) is called before it has a name: its kind (an area light of shape SPHERE is a sphere). */
@@ -44,8 +45,11 @@ function subject(state: ProjectState, clip: MotionClip, lang: Lang): string {
     case 'LIGHT':
       return tIn(lang, 'say.light', { name: lightName(state, clip.target.id, lang).toLowerCase() });
     case 'SCENE':
-      // Q1: the section plane is what moves, not the environment.
-      return tIn(lang, clip.move === 'SECTION' ? 'say.section' : 'say.scene');
+      // Q1: the section plane is what moves, not the environment; N1: the sun goes along its arc.
+      return tIn(lang, clip.move === 'SECTION' ? 'say.section' : clip.move === 'SUN_ARC' ? 'say.sun' : 'say.scene');
+    case 'MATERIAL':
+      // N1: a material and every part that wears it.
+      return tIn(lang, 'say.material', { name: materialName(state.materials[clip.target.id], lang) });
   }
 }
 
@@ -98,6 +102,15 @@ function verb(clip: MotionClip, lang: Lang): string {
     case 'SECTION':
       // Q1: along the normal, towards what is cut away (uncovers) or back into what is kept (cuts deeper).
       return tIn(lang, clip.amount < 0 ? 'say.SECTION.neg' : 'say.SECTION', { amount: tIn(lang, 'say.amount.SIZE', { n: amount(clip.amount) }) });
+    // N1.
+    case 'FADE':
+      return tIn(lang, 'say.FADE', { amount: amount(Math.max(0, Math.min(100, clip.amount))) });
+    case 'PAN':
+      return tIn(lang, clip.amount < 0 ? 'say.PAN.neg' : 'say.PAN', { amount: amount(clip.amount) });
+    case 'MATERIAL_COLOR':
+      return tIn(lang, 'say.MATERIAL_COLOR');
+    case 'SUN_ARC':
+      return tIn(lang, 'say.SUN_ARC', { amount: amount(clip.amount), h: formatNumber(Math.abs(clip.amount) / 15, lang) });
     default: {
       // A kind without its own words (a clip kind added later, like a baked simulation): its catalogue name.
       const k = keyIf(`say.${clip.move}`);
@@ -108,6 +121,7 @@ function verb(clip: MotionClip, lang: Lang): string {
 }
 
 function easingText(clip: MotionClip, lang: Lang): string {
+  if (clip.smoothness === undefined && clip.easing === 'CUSTOM') return tIn(lang, 'say.customCurve');
   return (EASING_KINDS.find((e) => e.key === clip.easing)?.label[lang] ?? clip.easing).toLowerCase();
 }
 
@@ -154,6 +168,8 @@ export function clipTargetName(state: ProjectState, target: ClipTarget, lang: La
       return lightName(state, target.id, lang);
     case 'SCENE':
       return tIn(lang, 'anim.target.SCENE');
+    case 'MATERIAL':
+      return materialName(state.materials[target.id], lang);
     default:
       return String((target as { kind: string }).kind);
   }

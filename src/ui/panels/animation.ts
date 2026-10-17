@@ -152,7 +152,7 @@ function rows(ctx: Ctx, scope: Scope): HTMLElement {
     placePlayhead();
   };
   scope.watch(
-    (s, u) => [s.animation.clips, s.animation.shots, s.animation.fps, s.scene.nodes, s.scene.roots, s.studio.lights, s.selection, s.camera.cameras, u.animFolded, u.selectedClips, u.selectedClip, u.animZoom],
+    (s, u) => [s.animation.clips, s.animation.shots, s.animation.fps, s.scene.nodes, s.scene.roots, s.studio.lights, s.selection, s.camera.cameras, u.animFolded, u.selectedClips, u.selectedClip, u.animZoom, u.selectedShot],
     () => rebuild(),
     shallowEq,
   );

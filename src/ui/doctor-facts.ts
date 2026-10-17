@@ -2,17 +2,19 @@
 // engine settings, the speed measured) and what the viewport's engine says of its accumulation (`status().scan`),
 // as the `EngineFacts` the checks of core/doctor-engine.ts read. Pure; main.ts hands the result in whenever it changes.
 
-import { VIDEO_AVAILABLE } from '../core/render';
 import { setEngineFacts, type EngineFacts } from '../core/doctor-engine';
 import type { Store } from '../core/store';
 import type { EngineStatus } from './ports';
 import { effectiveMode, type UiState, type UiStore } from './ui-state';
 
-/** The video codecs this system can encode: none until N1 builds the encoders. */
-export const ENCODABLE_CODECS: EngineFacts['videoCodecs'] = VIDEO_AVAILABLE ? ['MP4', 'WEBM'] : [];
+/** N1: the video containers this system encodes, as the browser answered (`ui.video`); none before it has. */
+export function encodableCodecs(video: UiState['video']): EngineFacts['videoCodecs'] {
+  if (!video) return [];
+  return (['MP4', 'WEBM'] as const).filter((c) => video[c] !== null);
+}
 
 /** The facts for this interface state; `status` is the viewport engine's, or null when the path tracer is not the one on screen. */
-export function engineFactsFrom(u: Pick<UiState, 'engine' | 'engineInfo' | 'settings' | 'throughput' | 'viewportMode'>, status: Pick<EngineStatus, 'scan'> | null): EngineFacts {
+export function engineFactsFrom(u: Pick<UiState, 'engine' | 'engineInfo' | 'settings' | 'throughput' | 'viewportMode'> & Partial<Pick<UiState, 'video'>>, status: Pick<EngineStatus, 'scan'> | null): EngineFacts {
   const info = u.engineInfo;
   const full = effectiveMode(u) === 'FULL';
   return {
@@ -26,7 +28,7 @@ export function engineFactsFrom(u: Pick<UiState, 'engine' | 'engineInfo' | 'sett
     simdOff: u.settings['engine.simd'] === 'OFF',
     // An engine that does not say can denoise (the native one always can, rt.wasm says in its workers' first message).
     denoise: info?.denoise ?? true,
-    videoCodecs: ENCODABLE_CODECS,
+    videoCodecs: encodableCodecs(u.video ?? null),
     throughput: u.throughput,
     full,
     scan: full ? (status?.scan ?? null) : null,
@@ -73,7 +75,7 @@ export function installDoctorFacts(store: Store, ui: UiStore, status: () => Pick
     store.dispatch({ type: 'doctor/refresh' });
   };
   const offUi = ui.subscribe((u, prev) => {
-    if (u.engine !== prev.engine || u.engineInfo !== prev.engineInfo || u.settings['engine.simd'] !== prev.settings['engine.simd'] || u.throughput !== prev.throughput || u.viewportMode !== prev.viewportMode) sync();
+    if (u.engine !== prev.engine || u.engineInfo !== prev.engineInfo || u.settings['engine.simd'] !== prev.settings['engine.simd'] || u.throughput !== prev.throughput || u.viewportMode !== prev.viewportMode || u.video !== prev.video) sync();
   });
   const offStore = store.subscribe((_s, _prev, action) => {
     if (action.type === 'history/undo' || action.type === 'history/redo') store.dispatch({ type: 'doctor/refresh' });

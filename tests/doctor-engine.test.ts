@@ -34,7 +34,7 @@ import { touchesImage as nativeTouchesImage } from '../src/render/native';
 import { touchesImage } from '../src/render/pathtracer';
 import { poolSize } from '../src/render/tiles';
 import * as cmd from '../src/ui/commands';
-import { ENCODABLE_CODECS, engineFactsFrom, installDoctorFacts, sameEngineFacts } from '../src/ui/doctor-facts';
+import { encodableCodecs, engineFactsFrom, installDoctorFacts, sameEngineFacts } from '../src/ui/doctor-facts';
 import { doctorRowAction, doctorSentence, doctorUnavailable } from '../src/ui/panels/status';
 import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
@@ -169,7 +169,7 @@ afterEach(() => {
 
 const advanced = (patch: Partial<typeof DEFAULT_ADVANCED>): Action => ({ type: 'render/set', patch: { advanced: { ...DEFAULT_ADVANCED, ...patch } } });
 const settingRow = (id: string) => SETTING_ROWS.some((r) => r.id === id);
-/** A project whose animation is output as video, which this version's settings cannot say (they hold frames until N1): a file from the future. */
+/** A project whose animation is output as video (since N1 the window can say it; the Doctor judges the codec). */
 const asVideo = (s: ProjectState, video: 'MP4' | 'WEBM' = 'MP4'): ProjectState => ({ ...s, render: { ...s.render, mode: 'ANIMATION', animation: { ...s.render.animation, output: 'VIDEO', video } } });
 
 // ------------------------------------------------------------------ the checks, without the engine and with it
@@ -617,12 +617,31 @@ describe('output', () => {
     expect(r.result('output').status).toBe('OK');
     r.do({ type: 'render/set', patch: { mode: 'ANIMATION' } });
     expect(r.result('output').status).toBe('OK');
-    // This version’s settings keep the output as frames until the encoders exist (N1): video cannot even be asked.
-    expect(VIDEO_AVAILABLE).toBe(false);
+    // N1: the settings say video now; with nothing known of the system's encoders it cannot be written.
+    expect(VIDEO_AVAILABLE).toBe(true);
     r.do({ type: 'render/set', patch: { animation: { ...r.store.get().render.animation, output: 'VIDEO' } } });
-    expect(r.store.get().render.animation.output).toBe('FRAMES');
+    expect(r.store.get().render.animation.output).toBe('VIDEO');
+    expect(r.result('output')).toMatchObject({ status: 'WARN', detail: { reason: 'codec' } });
+    r.do({ type: 'render/set', patch: { animation: { ...r.store.get().render.animation, output: 'FRAMES' } } });
     expect(r.result('output').status).toBe('OK');
-    expect(ENCODABLE_CODECS).toEqual([]);
+  });
+
+  it('reads what the system encodes from the browser’s answer (ui.video), and none before it answers', () => {
+    expect(encodableCodecs(null)).toEqual([]);
+    expect(encodableCodecs({ MP4: null, WEBM: null })).toEqual([]);
+    expect(encodableCodecs({ MP4: null, WEBM: 'VP9' })).toEqual(['WEBM']);
+    expect(encodableCodecs({ MP4: 'H264', WEBM: 'VP8' })).toEqual(['MP4', 'WEBM']);
+    const r = rig();
+    r.store.reset(asVideo(r.store.get(), 'WEBM'));
+    r.do({ type: 'doctor/refresh' });
+    expect(r.result('output').status).toBe('WARN');
+    // The browser answers: WebM is encoded here. The facts follow the interface state and the warning goes.
+    r.ui.set({ video: { MP4: null, WEBM: 'VP9' } });
+    expect(engineFacts()?.videoCodecs).toEqual(['WEBM']);
+    expect(r.result('output').status).toBe('OK');
+    // The same project asking for MP4, which this system does not encode: the warning is back.
+    r.do({ type: 'render/set', patch: { animation: { ...r.store.get().render.animation, video: 'MP4' } } });
+    expect(r.result('output')).toEqual({ key: 'output', status: 'WARN', fixable: true, detail: { reason: 'codec', video: 'MP4' } });
   });
 
   it('does not look at the animation’s output while the window is set to an image: it only matters in Animation', () => {
@@ -652,18 +671,22 @@ describe('output', () => {
     expect(r.result('output').status).toBe('WARN');
   });
 
-  it('warns that a video is one file even when the codec is there, and the other codec is judged on its own', () => {
+  it('does not warn of a video the system encodes (N1: a video is not a fault), and judges each codec on its own', () => {
     const r = rig();
     r.store.reset(asVideo(r.store.get(), 'WEBM'));
-    // The encoders of N1: WebM can be written, MP4 cannot.
+    // WebM can be written here, MP4 cannot.
     setEngineFacts({ ...engineFacts()!, videoCodecs: ['WEBM'] });
     r.do({ type: 'doctor/refresh' });
-    expect(r.result('output').detail).toEqual({ reason: 'single', video: 'WEBM' });
+    expect(r.result('output')).toEqual({ key: 'output', status: 'OK', fixable: false, detail: {} });
+    // Nothing to fix: the fix leaves a video it can write alone.
+    r.do({ type: 'doctor/fix', key: 'output' });
+    expect(r.store.get().render.animation.output).toBe('VIDEO');
     r.store.reset(asVideo(r.store.get(), 'MP4'));
     r.do({ type: 'doctor/refresh' });
     expect(r.result('output').detail).toEqual({ reason: 'codec', video: 'MP4' });
     r.do({ type: 'doctor/fix', key: 'output' });
     expect(r.result('output').status).toBe('OK');
+    expect(r.store.get().render.animation.output).toBe('FRAMES');
   });
 });
 

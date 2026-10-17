@@ -137,8 +137,9 @@ export interface AnimationOutput {
   from: number;
   to: number;
   fps: number;
-  /** Video is written by N1; until then only frames. */
+  /** One encoded video file (N1: WebCodecs, where the system encodes `video`), or a numbered frame sequence. */
   output: 'VIDEO' | 'FRAMES';
+  /** The container of a video: MP4 (H.264) or WebM (VP9, or VP8 where VP9 is not encoded). */
   video: VideoCodec;
 }
 
@@ -303,8 +304,22 @@ export interface RenderState extends RenderSettings {
 export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>(['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']);
 /** Frame rates offered for animation output. */
 export const FPS_CHOICES: readonly number[] = [24, 25, 30, 60];
-/** Encoded video arrives with N1; until then the output is a frame sequence. */
-export const VIDEO_AVAILABLE = false;
+/**
+ * This version writes encoded video (N1). Whether this system can encode a container is asked at run time (WebCodecs);
+ * the window offers only what it can, and the Doctor warns of a project that asks for one it cannot.
+ */
+export const VIDEO_AVAILABLE = true;
+
+/** The file extension of a video container. */
+export function videoExtension(video: VideoCodec): string {
+  return video === 'WEBM' ? 'webm' : 'mp4';
+}
+
+/** The name of a container with the codec it carries here ("WebM VP9", "MP4 H.264"). */
+export function videoLabel(video: VideoCodec, track?: string | null): string {
+  if (video === 'MP4') return 'MP4 H.264';
+  return `WebM ${track === 'VP8' ? 'VP8' : 'VP9'}`;
+}
 /** Formats that carry an alpha channel (a DNG is a raw: it has none). */
 export function supportsAlpha(format: OutputFormat): boolean {
   return format === 'PNG' || format === 'EXR' || format === 'TIFF';

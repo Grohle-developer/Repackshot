@@ -11,7 +11,7 @@
 // (S4a: one FXAM section of parameters per effect, with a material of its own
 // after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
-import { playheadPose, type Pose } from '../core/animation';
+import { playheadPose, posedMaterial, type Pose } from '../core/animation';
 import { partIsExempt, resolveSection } from '../core/section';
 import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
 import { instanceFromPreset } from '../core/materials';
@@ -1837,6 +1837,12 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     }
     return true;
   };
+  // N1: what the FADE clips leave of a part's opacity: its own and its ancestors', multiplied (1 without fades).
+  const opacityOf = (id: NodeId): number => {
+    let o = 1;
+    for (let n: SceneNode | undefined = nodes[id]; n; n = n.parent ? nodes[n.parent] : undefined) o *= pose?.nodes[n.id]?.opacity ?? 1;
+    return o;
+  };
 
   const materials: RsbMaterial[] = [];
   const patterns: RsbPattern[] = [];
@@ -1861,11 +1867,13 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   };
   // M3b: the programs of the node materials, for an engine that runs them (they read IMGS and the UVs: textures on).
   const programs: RsbProgram[] = [];
-  const materialFor = (id: string | null): number => {
-    const key = id && state.materials[id] ? id : null;
+  // N1: a material the animation changes (its colour, its opacity), and a part's fade on top: a copy of the material
+  // for each opacity a part wears it at. Without fades every key is the material's id, as before.
+  const fadedIndex = new Map<string, number>();
+  const baseFor = (key: string | null, mp: Pose['materials'][string] | undefined): number => {
     let i = materialIndex.get(key);
     if (i === undefined) {
-      const inst = key ? state.materials[key] : null;
+      const inst = key ? posedMaterial(state.materials[key], mp) : null;
       const program = view.programs && view.textures && inst?.graph ? graphProgram(inst.graph) : null;
       const m = materialToRsb(inst, { program });
       if (view.textures && key) m.textures = texturesToRsb(state.materials[key].textures, imageFor);
@@ -1877,6 +1885,30 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       materialIndex.set(key, i);
     }
     return i;
+  };
+  const materialFor = (id: string | null, partOpacity = 1): number => {
+    const key = id && state.materials[id] ? id : null;
+    const mp = key ? pose?.materials[key] : undefined;
+    const i = baseFor(key, mp);
+    const opacity = (mp?.opacity ?? 1) * partOpacity;
+    if (!(opacity < 1)) return i;
+    const fk = `${i}|${opacity}`;
+    let fi = fadedIndex.get(fk);
+    if (fi === undefined) {
+      const m: RsbMaterial = { ...materials[i] };
+      // A cut-out lets the light through with probability 1 - opacity; an emitter, which has no coverage, dims.
+      if (m.kind === MATERIAL_EMISSIVE) m.emissionPower *= opacity;
+      else m.opacity *= opacity;
+      fi = materials.push(m) - 1;
+      // The copy draws like its material: the same pattern (wood, fabric) and program (a graph).
+      const pattern = patterns.find((p) => p.material === i);
+      if (pattern) patterns.push({ ...pattern, material: fi });
+      const program = programs.find((p) => p.material === i);
+      if (program) programs.push({ ...program, material: fi });
+      materialOrder.push(key);
+      fadedIndex.set(fk, fi);
+    }
+    return fi;
   };
 
   // Q1: the cutting plane where the animation has put it, for an engine that cuts (every one this version ships).
@@ -1892,11 +1924,14 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   for (const id of allParts(state)) {
     const node = nodes[id];
     if (!node.mesh || !visible(id)) continue;
+    // N1: a part faded out all the way is not there (nor its shadow), like a hidden one.
+    const partOpacity = opacityOf(id);
+    if (!(partOpacity > 0)) continue;
     const data = getMesh(node.mesh.id);
     if (!data || data.indices.length === 0) continue;
     const rows = matrixRows(worldOf(id));
     for (const part of partMeshes(node, data)) {
-      const materialId = materialFor(part.material);
+      const materialId = materialFor(part.material, partOpacity);
       let mi = meshIndex.get(part.key);
       if (mi === undefined) {
         // The instances carry the materials. A mesh names material 0, valid in any scene that has
@@ -1963,8 +1998,10 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       ? bitmaps.push({ format: BITMAP_RGBA8, width: GRADIENT_COLUMNS, height: GRADIENT_ROWS, data: gradient }) - 1
       : NO_BITMAP;
   if (backplateMap !== NO_BITMAP) imageKeys.push(gradient ? `gradient:${[...env.gradient.top, ...env.gradient.bottom].join(',')}` : env.backplate!.id);
-  // Without a sun light the sky's sun is the environment's own, placed like a light (camera-relative).
-  const sun = toSun ?? polar(toWorldAzimuth(env.skySun.az), env.skySun.el, 1);
+  // Without a sun light the sky's sun is the environment's own, placed like a light (camera-relative); N1: where a
+  // SUN_ARC has put it.
+  const skySun = pose?.skySun ?? env.skySun;
+  const sun = toSun ?? polar(toWorldAzimuth(skySun.az), skySun.el, 1);
   const sunLength = Math.hypot(sun[0], sun[1], sun[2]) || 1;
   // The output frame inside a viewport image: the background image fits it.
   let backplateRect: [number, number, number, number] = [0, 0, 1, 1];

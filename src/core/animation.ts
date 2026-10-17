@@ -3,21 +3,44 @@
 
 import { sequencePreset } from '../data/animation';
 import type { EasingKind, MoveKind, RGB } from '../data/types';
-import { ease } from './light-math';
+import { ease, polar } from './light-math';
 import type { ActionBase, ProjectState } from './store';
 import { activeCamera, cameraBasis, type CameraId } from './camera';
+import { bezierEase, DEFAULT_CURVE, normaliseCurve } from './curve';
 import { explodeMovers, explodeParts, moverPhase, resolveExplode, tiltAxis, EXPLODE_TILT_DEG, type ExplodeParams } from './explode';
 import { nextId, nextIds } from './ids';
-import { add, clamp, lerp, mat4Compose, mat4Identity, mat4Invert, mat4Multiply, scale, type Mat4, type Vec3 } from './math';
-import { partsUnder, worldMatrix, worldToLocalDelta, type NodeId } from './scene';
+import type { MaterialId, MaterialInstance } from './materials';
+import { add, boxCenter, clamp, cross, dot, isEmptyBox, lerp, mat4Compose, mat4Identity, mat4Invert, mat4Multiply, normalize, scale, sub, type Mat4, type Vec3 } from './math';
+import { allParts, boundsOf, partsUnder, worldMatrix, worldToLocalDelta, type NodeId } from './scene';
 import { decomposeMatrix } from './transform';
 import { trackPose, type PhysicsTrack } from './physics';
+
+/**
+ * How the camera track changes into a shot (N1, SPEC §3.7 "Fundidos"): a cut, or a fade to a colour (black or white)
+ * of `duration` seconds centred on the cut: the image goes to the colour over the first half, the camera changes under
+ * it, and the image comes back over the second half. Into the first shot, a fade from the colour at the start. A
+ * cross-fade (two cameras at once) is a later phase.
+ */
+export interface ShotTransition {
+  kind: 'CUT' | 'FADE';
+  color: 'BLACK' | 'WHITE';
+  /** Seconds, the whole fade (down and up). */
+  duration: number;
+}
+
+/** The fade a new FADE change has: half a second to black. */
+export const DEFAULT_FADE: Readonly<ShotTransition> = Object.freeze({ kind: 'FADE', color: 'BLACK', duration: 0.5 });
+/** The shortest and the longest fade of a change of camera, seconds. */
+export const MIN_FADE = 0.04;
+export const MAX_FADE = 10;
 
 /** One shot: how long it lasts and which camera is seen (null = the active camera). */
 export interface Shot {
   id: string;
   duration: number;
   camera: CameraId | null;
+  /** N1: how the camera track changes into this shot; absent, a cut (as every shot before N1). */
+  transition?: ShotTransition;
 }
 
 /** What a clip moves. */
@@ -26,7 +49,15 @@ export type ClipTarget =
   | { kind: 'SUBJECT' }
   | { kind: 'NODE'; id: NodeId }
   | { kind: 'LIGHT'; id: string }
-  | { kind: 'SCENE' };
+  | { kind: 'SCENE' }
+  /** N1: a material, and with it every part that wears it (its colour, its opacity). */
+  | { kind: 'MATERIAL'; id: MaterialId };
+
+/**
+ * N1: what a rotation (SPIN, TUMBLE) of a part or a group turns about: the centre of another part or group (a lid
+ * about its hinge part), or a point of the world, in mm. Absent: the node's own origin, as before N1.
+ */
+export type ClipPivot = { kind: 'NODE'; id: NodeId } | { kind: 'POINT'; point: Vec3 };
 
 export type ClipTargetKind = ClipTarget['kind'];
 
@@ -59,6 +90,10 @@ export interface MotionClip {
   smoothness?: number;
   /** EXPLODE: how the parts come apart (core/explode.ts). Absent: the explode of before N6. */
   explode?: ExplodeParams;
+  /** N1, easing CUSTOM: the two handles of the curve, x1, y1, x2, y2 (core/curve.ts); absent, DEFAULT_CURVE. */
+  curve?: [number, number, number, number];
+  /** N1, SPIN and TUMBLE of a part or a group: what it turns about (absent: its own origin). */
+  pivot?: ClipPivot;
   /**
    * PHYSICS (phase S2): the recorded simulation, the node's local position and rotation per frame (core/physics.ts).
    * The clip plays it over its duration (stretching it slows it down); before its start and after its end the node
@@ -79,14 +114,15 @@ export interface ClipAnchor {
   rotation: Vec3;
 }
 
-/** Moves offered for each kind of target, in wizard order. */
+/** Moves offered for each kind of target, in wizard order (N1 appended PAN, FADE, SUN_ARC and the materials). */
 export const TARGET_MOVES: Readonly<Record<ClipTargetKind, readonly MoveKind[]>> = {
-  CAMERA: ['ORBIT', 'RISE', 'DOLLY', 'TRACK', 'ZOOM', 'FOCUS'],
-  SUBJECT: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY'],
+  CAMERA: ['ORBIT', 'RISE', 'DOLLY', 'TRACK', 'ZOOM', 'FOCUS', 'PAN'],
+  SUBJECT: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY', 'FADE'],
   // EXPLODE on a node: a model or a group (the interface offers it only for those).
-  NODE: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY'],
+  NODE: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY', 'FADE'],
   LIGHT: ['INTENSITY', 'TINT', 'ORBIT', 'RISE', 'VISIBILITY'],
-  SCENE: ['HDRI', 'SECTION'],
+  SCENE: ['HDRI', 'SECTION', 'SUN_ARC'],
+  MATERIAL: ['MATERIAL_COLOR', 'FADE'],
 };
 
 /** What a clip's amount is measured in, for the sentence and the field unit. */
@@ -97,8 +133,11 @@ export function amountUnit(move: MoveKind): 'deg' | 'pct' | 'factor' | 'mm' | 'm
     case 'SPIN':
     case 'TUMBLE':
     case 'HDRI':
+    case 'PAN':
+    case 'SUN_ARC':
       return 'deg';
     case 'DOLLY':
+    case 'FADE':
       return 'pct';
     case 'SCALE':
       return 'factor';
@@ -137,6 +176,11 @@ export function defaultAmount(move: MoveKind): number {
     VISIBILITY: 0,
     // Q1: along the normal, towards the removed side: negative moves the plane into what is kept (cuts more).
     SECTION: -0.5,
+    // N1: a fade ends invisible (reversed, it fades in); a pan turns a little; the sun goes six hours of its arc.
+    FADE: 0,
+    PAN: 30,
+    SUN_ARC: 90,
+    PATH: 0,
   };
   return table[move] ?? 1;
 }
@@ -211,9 +255,11 @@ export function easingForSmoothness(smoothness: number): EasingKind {
   return smoothness < 0.25 ? 'LINEAR' : smoothness < 0.75 ? 'EASE' : 'EASE_STRONG';
 }
 
-/** A clip's curve at phase x: its smoothness when it has one, otherwise its easing. */
-export function clipCurve(clip: Pick<MotionClip, 'easing' | 'smoothness'>, x: number): number {
-  return clip.smoothness === undefined ? ease(x, clip.easing) : smoothEase(x, clip.smoothness);
+/** A clip's curve at phase x: its smoothness when it has one, otherwise its easing (CUSTOM: its two handles, N1). */
+export function clipCurve(clip: Pick<MotionClip, 'easing' | 'smoothness' | 'curve'>, x: number): number {
+  if (clip.smoothness !== undefined) return smoothEase(x, clip.smoothness);
+  if (clip.easing === 'CUSTOM') return bezierEase(x, clip.curve ?? DEFAULT_CURVE);
+  return ease(x, clip.easing);
 }
 
 /** Eased progress of a clip at time t, 0..1. */
@@ -247,6 +293,20 @@ export interface NodePose {
   rotation: Vec3;
   scale: Vec3;
   visible: boolean;
+  /** N1: what the FADE clips on this node leave of its opacity, 0..1 (absent: 1). Its parts multiply their ancestors'. */
+  opacity?: number;
+}
+
+/** N1: a material as the animation leaves it: its colour (MATERIAL_COLOR; absent, its own) and opacity (FADE), 0..1. */
+export interface MaterialPose {
+  color?: RGB;
+  opacity: number;
+}
+
+/** N1: the camera track's fade to a colour at an instant: how much of the image is the colour, 0..1. */
+export interface FadeToColor {
+  color: RGB;
+  amount: number;
 }
 
 export interface LightPose {
@@ -267,10 +327,16 @@ export interface Pose {
   envRotationDeg: number;
   /** Q1: how far the SECTION clips have moved the cutting plane along its normal, mm (0 without clips). */
   sectionOffsetMm: number;
+  /** N1: the materials the clips change (MATERIAL_COLOR, FADE on a material), by id. */
+  materials: Record<MaterialId, MaterialPose>;
+  /** N1: the camera track's fade to a colour at this instant (a change of shot with a fade), or null. */
+  fade: FadeToColor | null;
+  /** N1: where SUN_ARC has put the sky's own sun (when the rig has no sun light), or null: where the environment says. */
+  skySun: { az: number; el: number } | null;
 }
 
 function targetKey(t: ClipTarget): string {
-  return t.kind === 'NODE' || t.kind === 'LIGHT' ? `${t.kind}:${t.id}` : t.kind;
+  return t.kind === 'NODE' || t.kind === 'LIGHT' || t.kind === 'MATERIAL' ? `${t.kind}:${t.id}` : t.kind;
 }
 
 /**
@@ -286,7 +352,104 @@ export function playheadPose(state: ProjectState): Pose | null {
   const held = new Set(anim.clips.filter((c) => c.move === 'PHYSICS' && c.target.kind === 'NODE').map((c) => (c.target.kind === 'NODE' ? c.target.id : '')));
   if (held.size === 0) return null;
   const pose = evaluate(state, anim.playhead);
-  return { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
+  return { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, materials: {}, fade: null, skySun: null, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
+}
+
+/** N1: the colour of a fade of the camera track, linear RGB. */
+export function fadeColor(color: ShotTransition['color']): RGB {
+  return color === 'WHITE' ? [1, 1, 1] : [0, 0, 0];
+}
+
+/** N1: a shot's change as this version reads it (a damaged or absent one is a cut). */
+export function shotTransition(shot: Pick<Shot, 'transition'>): ShotTransition {
+  const tr = shot.transition;
+  if (!tr || tr.kind !== 'FADE') return { kind: 'CUT', color: 'BLACK', duration: 0 };
+  const d = typeof tr.duration === 'number' && Number.isFinite(tr.duration) ? clamp(tr.duration, MIN_FADE, MAX_FADE) : DEFAULT_FADE.duration;
+  return { kind: 'FADE', color: tr.color === 'WHITE' ? 'WHITE' : 'BLACK', duration: d };
+}
+
+/**
+ * N1: the camera track's fade to a colour at time t (SPEC §3.7 "Fundidos"). A FADE change into shot i (i ≥ 1) takes the
+ * image to its colour over the half of its length before the cut and back over the half after (never longer than half
+ * of either shot), with the smooth curve; one into the first shot is a fade from the colour over its length from 0.
+ * Where two overlap the stronger one is seen. Null when no fade is under way.
+ */
+export function shotFadeAt(state: Pick<ProjectState, 'animation'>, t: number): FadeToColor | null {
+  const shots = state.animation.shots;
+  let best: FadeToColor | null = null;
+  let at = 0;
+  for (let i = 0; i < shots.length; i++) {
+    const tr = shotTransition(shots[i]);
+    const start = at;
+    at += Math.max(0, shots[i].duration);
+    if (tr.kind !== 'FADE') continue;
+    let amount = 0;
+    if (i === 0) {
+      const d = Math.min(tr.duration, Math.max(0, shots[0].duration));
+      amount = d > 0 && t < d ? ease(1 - Math.max(0, t) / d, 'EASE') : 0;
+    } else {
+      const half = Math.min(tr.duration / 2, Math.max(0, shots[i - 1].duration) / 2, Math.max(0, shots[i].duration) / 2);
+      const off = Math.abs(t - start);
+      amount = half > 0 && off < half ? ease(1 - off / half, 'EASE') : 0;
+    }
+    if (amount > 0 && (!best || amount > best.amount)) best = { color: fadeColor(tr.color), amount };
+  }
+  return best;
+}
+
+/**
+ * N1, SUN_ARC: where the celestial pole is in the frame lights are placed in (azimuth and elevation relative to the
+ * camera, like a light's): behind the product, 45° up. ◆ A photographic choice (which latitude, where north is) that
+ * is not this phase's to make: one constant each.
+ */
+export const SUN_POLE_AZ = 180;
+export const SUN_LATITUDE = 45;
+
+/** A unit vector turned by `deg` degrees about a unit axis (Rodrigues). */
+function turn(v: Vec3, axis: Vec3, deg: number): Vec3 {
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const k = cross(axis, v);
+  const d = dot(axis, v) * (1 - c);
+  return [v[0] * c + k[0] * s + axis[0] * d, v[1] * c + k[1] * s + axis[1] * d, v[2] * c + k[2] * s + axis[2] * d];
+}
+
+/**
+ * N1: the sun (azimuth and elevation, degrees, in a light's frame) after `deg` degrees of its daily arc: it turns about
+ * the celestial pole the way the sky does (westwards: clockwise seen from the pole), 15° an hour. Its angle to the pole
+ * stays (its declination); 360° is a whole day.
+ */
+export function sunArc(az: number, el: number, deg: number): { az: number; el: number } {
+  if (deg === 0) return { az, el };
+  const d = turn(polar(az, el, 1), normalize(polar(SUN_POLE_AZ, SUN_LATITUDE, 1)), -deg);
+  const z = clamp(d[2], -1, 1);
+  return { az: (Math.atan2(d[0], -d[1]) * 180) / Math.PI, el: (Math.asin(z) * 180) / Math.PI };
+}
+
+/** N1: a material's own colour (the base colour of its Simple parameters), or null when it has none to change. */
+export function materialBaseColor(inst: Pick<MaterialInstance, 'params'> | undefined): RGB | null {
+  const c = inst?.params.baseColor;
+  return Array.isArray(c) && c.length >= 3 && c.slice(0, 3).every((v) => typeof v === 'number' && Number.isFinite(v)) ? [c[0], c[1], c[2]] : null;
+}
+
+/**
+ * N1: a material as the animation leaves it: its base colour where a MATERIAL_COLOR clip has put it (a copy; the same
+ * instance without one). Its opacity is the engine's and the preview's to apply (a cut-out, a transparency).
+ */
+export function posedMaterial(inst: MaterialInstance, mp: MaterialPose | undefined): MaterialInstance {
+  if (!mp?.color) return inst;
+  const a = inst.params.baseColor?.[3] ?? 1;
+  return { ...inst, params: { ...inst.params, baseColor: [mp.color[0], mp.color[1], mp.color[2], a] } };
+}
+
+/** N1: the world point a rotation turns about, or null for the node's own origin (no pivot, or one that is gone). */
+export function pivotPoint(state: ProjectState, pivot: ClipPivot | undefined): Vec3 | null {
+  if (!pivot) return null;
+  if (pivot.kind === 'POINT') return Array.isArray(pivot.point) && pivot.point.length === 3 && pivot.point.every(Number.isFinite) ? [pivot.point[0], pivot.point[1], pivot.point[2]] : null;
+  if (pivot.kind !== 'NODE' || !state.scene.nodes[pivot.id]) return null;
+  const b = boundsOf(state, [pivot.id]);
+  return isEmptyBox(b) ? null : boxCenter(b);
 }
 
 /**
@@ -298,7 +461,7 @@ export function evaluate(state: ProjectState, t: number): Pose {
   const anim = state.animation;
   const size = state.scene.partSizeMm || 1;
   const shot = shotIndexAt(state, t);
-  const pose: Pose = { t, shot, camera: null, nodes: {}, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0 };
+  const pose: Pose = { t, shot, camera: null, nodes: {}, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, materials: {}, fade: shotFadeAt(state, t), skySun: null };
 
   // Camera: the camera of the current shot, moved by the clips of that shot.
   const shotCamId = shot >= 0 ? anim.shots[shot]?.camera : null;
@@ -340,6 +503,13 @@ export function evaluate(state: ProjectState, t: number): Pose {
         case 'FOCUS':
           cp.focusDistance = lerp(base.focusDistance, c.amount * 1000, e);
           break;
+        case 'PAN': {
+          // N1: the camera turns where it stands (positive: to its right): its target goes round its position.
+          const at = add(cp.target, polar(cp.azimuth, cp.elevation, cp.distance));
+          cp.azimuth -= c.amount * e;
+          cp.target = sub(at, polar(cp.azimuth, cp.elevation, cp.distance));
+          break;
+        }
         default:
           break;
       }
@@ -382,15 +552,25 @@ export function evaluate(state: ProjectState, t: number): Pose {
       applyExplode(state, c, t, ensure, cache);
       continue;
     }
+    // N1: a rotation about a pivot (another part's centre, a point) turns the node about it, along its own axis.
+    const pivot = (c.move === 'SPIN' || c.move === 'TUMBLE') && c.target.kind === 'NODE' ? pivotPoint(state, c.pivot) : null;
     for (const id of ids) {
       const np = ensure(id);
       if (!np) continue;
+      if (pivot) {
+        turnAbout(state, id, np, pivot, c.move === 'SPIN' ? 2 : 0, c.amount * e, cache);
+        continue;
+      }
       switch (c.move) {
         case 'SPIN':
           np.rotation = [np.rotation[0], np.rotation[1], np.rotation[2] + c.amount * e];
           break;
         case 'TUMBLE':
           np.rotation = [np.rotation[0] + c.amount * e, np.rotation[1], np.rotation[2]];
+          break;
+        case 'FADE':
+          // N1: the opacity goes from what it was towards `amount` percent; fades on the same node multiply.
+          np.opacity = (np.opacity ?? 1) * lerp(1, clamp(c.amount / 100, 0, 1), e);
           break;
         case 'MOVE': {
           const v = c.vector ?? [0, 0, c.amount];
@@ -444,14 +624,63 @@ export function evaluate(state: ProjectState, t: number): Pose {
     }
   }
 
+  // N1: materials: their colour goes to the clip's (from what the clips before left), their opacity multiplies.
+  for (const c of anim.clips) {
+    if (c.target.kind !== 'MATERIAL') continue;
+    const inst = state.materials[c.target.id];
+    if (!inst) continue;
+    const mp = (pose.materials[c.target.id] ??= { opacity: 1 });
+    const e = clipProgress(c, t);
+    if (c.move === 'FADE') mp.opacity *= lerp(1, clamp(c.amount / 100, 0, 1), e);
+    else if (c.move === 'MATERIAL_COLOR') {
+      const from = mp.color ?? materialBaseColor(inst);
+      if (!from) continue;
+      const to = c.color ?? from;
+      mp.color = [lerp(from[0], to[0], e), lerp(from[1], to[1], e), lerp(from[2], to[2], e)];
+    }
+  }
+
   // Environment, and the scene as a whole: the light sweep, and the section plane (Q1: its offset along its normal,
   // in part sizes like a MOVE, added up with the curve of each clip).
+  let arc = 0;
   for (const c of anim.clips) {
     if (c.target.kind !== 'SCENE') continue;
     if (c.move === 'HDRI') pose.envRotationDeg += c.amount * clipProgress(c, t);
     else if (c.move === 'SECTION') pose.sectionOffsetMm += c.amount * size * clipProgress(c, t);
+    // N1: turns about the same axis add up, so the arcs of every clip are one turn.
+    else if (c.move === 'SUN_ARC') arc += c.amount * clipProgress(c, t);
+  }
+  if (arc !== 0) {
+    // The sun of the sky is the rig's first sun light that shines (SPEC §3.4, core/lighting.ts skySunDirection);
+    // without one, the environment's own.
+    const sun = state.studio.lights.find((l) => l.type === 'SUN' && l.enabled && l.power > 0);
+    if (sun) {
+      const lp = (pose.lights[sun.id] ??= { power: sun.power, color: [...sun.color], az: sun.az, el: sun.el, enabled: sun.enabled });
+      const next = sunArc(lp.az, lp.el, arc);
+      lp.az = next.az;
+      lp.el = next.el;
+    } else pose.skySun = sunArc(state.environment.skySun.az, state.environment.skySun.el, arc);
   }
   return pose;
+}
+
+/**
+ * N1: node `id`, posed as `np`, turned by `deg` degrees about `pivot` (world, mm) along its own axis `axis` (0 X, 2 Z) as
+ * it stands before the clip: the turn is made in the world and brought back to the node's parent.
+ */
+function turnAbout(state: ProjectState, id: NodeId, np: NodePose, pivot: Vec3, axis: 0 | 2, deg: number, cache: Map<NodeId, Mat4>): void {
+  const node = state.scene.nodes[id];
+  if (!node || deg === 0) return;
+  const pw = node.parent ? worldMatrix(state, node.parent, cache) : mat4Identity();
+  const local = mat4Compose(np.position, np.rotation, np.scale);
+  const world = mat4Multiply(pw, local);
+  const dir = normalize([world[axis * 4], world[axis * 4 + 1], world[axis * 4 + 2]]);
+  if (!(Math.hypot(dir[0], dir[1], dir[2]) > 0)) return;
+  const r = rotationAbout(pivot, dir, deg);
+  const next = decomposeMatrix(mat4Multiply(mat4Invert(pw), mat4Multiply(r, world)), { position: np.position, rotation: np.rotation, scale: np.scale });
+  np.position = next.position;
+  np.rotation = next.rotation;
+  np.scale = next.scale;
 }
 
 /** A rotation of `deg` degrees about a unit axis through `c`, world space. */
@@ -537,9 +766,21 @@ export function clipConflicts(state: ProjectState): Set<string> {
   return out;
 }
 
-/** The parts a clip moves (what the viewport highlights): the model's, a node's; none for cameras, lights, the environment. */
+/** N1: the parts that wear a material (as their own or on some of their faces). */
+export function partsWearing(state: ProjectState, material: MaterialId): NodeId[] {
+  return allParts(state).filter((p) => {
+    const n = state.scene.nodes[p];
+    return n.material === material || (n.faceMaterials ?? []).some((f) => f.material === material);
+  });
+}
+
+/**
+ * The parts a clip moves (what the viewport highlights): the model's, a node's, a material's wearers (N1); none for
+ * cameras, lights, the environment.
+ */
 export function clipTargetParts(state: ProjectState, clip: Pick<MotionClip, 'target' | 'move' | 'explode'>): NodeId[] {
   const tg = clip.target;
+  if (tg.kind === 'MATERIAL') return partsWearing(state, tg.id);
   if (tg.kind !== 'SUBJECT' && tg.kind !== 'NODE') return [];
   const parts = explodeParts(state, tg.kind === 'NODE' ? tg.id : null);
   if (clip.move !== 'EXPLODE') return parts;
@@ -579,7 +820,7 @@ export function isPinned(state: ProjectState, clip: MotionClip, parts: readonly 
 }
 
 /** Kinds whose amount adds up over time (a turn, a distance): a split gives each half its share. */
-const ADDITIVE: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'SPIN', 'TUMBLE', 'HDRI', 'TRACK', 'MOVE', 'EXPLODE', 'SECTION']);
+const ADDITIVE: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'SPIN', 'TUMBLE', 'HDRI', 'TRACK', 'MOVE', 'EXPLODE', 'SECTION', 'PAN', 'SUN_ARC']);
 
 /**
  * Whether a clip can be cut in two at time t: strictly inside it, played once and forwards, of a kind whose amount
@@ -591,7 +832,7 @@ export function canSplit(clip: MotionClip, t: number): boolean {
     const e = resolveExplode(clip.explode);
     return e.order === 'AT_ONCE' && e.levels !== 'ALL';
   }
-  return ADDITIVE.has(clip.move) || clip.move === 'SCALE' || clip.move === 'DOLLY';
+  return ADDITIVE.has(clip.move) || clip.move === 'SCALE' || clip.move === 'DOLLY' || clip.move === 'FADE';
 }
 
 /**
@@ -617,6 +858,13 @@ export function splitClip(clip: MotionClip, t: number): [Omit<MotionClip, 'id'>,
     if (Math.abs(k) < 1e-9) return null;
     first.amount = k;
     second.amount = clip.amount / k;
+  } else if (clip.move === 'FADE') {
+    // N1: the opacity multiplies by lerp(1, amount / 100, e): the first half ends at k, the second goes from there.
+    const end = clamp(clip.amount / 100, 0, 1);
+    const k = lerp(1, end, p);
+    if (k < 1e-9) return null;
+    first.amount = 100 * k;
+    second.amount = (100 * end) / k;
   } else {
     // DOLLY multiplies the distance by 1 - amount / 100.
     const d = 1 - (clip.amount / 100) * p;
@@ -686,7 +934,19 @@ export function reduceAnimation(state: ProjectState, action: AnimationAction): P
     case 'anim/addShot':
       return set({ shots: [...anim.shots, { id: nextId('s', anim.shots.map((s) => s.id)), duration: Math.max(0.1, action.duration), camera: null }] });
     case 'anim/setShot':
-      return set({ shots: anim.shots.map((s) => (s.id === action.id ? { ...s, ...action.patch, duration: Math.max(0.1, action.patch.duration ?? s.duration) } : s)) });
+      return set({
+        shots: anim.shots.map((s) => {
+          if (s.id !== action.id) return s;
+          const next: Shot = { ...s, ...action.patch, duration: Math.max(0.1, action.patch.duration ?? s.duration) };
+          // N1: a change of camera is a cut (no field) or a fade within its limits.
+          if ('transition' in action.patch) {
+            const tr = action.patch.transition ? shotTransition(action.patch) : null;
+            if (tr && tr.kind === 'FADE') next.transition = tr;
+            else delete next.transition;
+          }
+          return next;
+        }),
+      });
     case 'anim/removeShot': {
       const i = anim.shots.findIndex((s) => s.id === action.id);
       if (i < 0) return state;
@@ -717,6 +977,8 @@ export function reduceAnimation(state: ProjectState, action: AnimationAction): P
                 duration: Math.max(0.05, action.patch.duration ?? c.duration),
                 ...('repeat' in action.patch && action.patch.repeat !== undefined ? { repeat: clipRepeat(action.patch) } : {}),
                 ...('smoothness' in action.patch && action.patch.smoothness !== undefined ? { smoothness: clamp(action.patch.smoothness, 0, 1) } : {}),
+                // N1: the handles of a custom curve stay where they can be (x within 0..1).
+                ...('curve' in action.patch && action.patch.curve !== undefined ? { curve: [...normaliseCurve(action.patch.curve)] as [number, number, number, number] } : {}),
               }
             : c,
         ),

@@ -25,8 +25,11 @@ import {
   LIGHT_SETUPS,
   LIGHT_STYLES,
   MATERIAL_CATEGORIES,
+  MATERIAL_MOVES,
   MATERIAL_PRESETS,
+  MOVE_GROUPS,
   MOVE_KINDS,
+  RESERVED_MOVES,
   QUALITY_PRESETS,
   RESOLUTION_PRESETS,
   SCENE_MOVES,
@@ -553,10 +556,12 @@ describe('fuzz and lenses', () => {
 });
 
 describe('animation catalogues', () => {
-  it('has 17 move kinds (PHYSICS of S2, then SECTION of Q1), 5 easings, 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
-    expect(MOVE_KINDS).toHaveLength(17);
-    expect(MOVE_KINDS.slice(-2).map((m) => m.key)).toEqual(['PHYSICS', 'SECTION']);
-    expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG']);
+  it('has 22 move kinds (PHYSICS of S2, SECTION of Q1, then the five of N1), 6 easings (N1 appended CUSTOM), 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
+    expect(MOVE_KINDS).toHaveLength(22);
+    // The keys before N1 stay where they were (rule 7: add, never rename).
+    expect(MOVE_KINDS.slice(0, 17).map((m) => m.key)).toEqual(['ORBIT', 'RISE', 'DOLLY', 'TRACK', 'MOVE', 'SPIN', 'TUMBLE', 'SCALE', 'ZOOM', 'FOCUS', 'INTENSITY', 'TINT', 'HDRI', 'EXPLODE', 'VISIBILITY', 'PHYSICS', 'SECTION']);
+    expect(MOVE_KINDS.slice(-5).map((m) => m.key)).toEqual(['FADE', 'PAN', 'MATERIAL_COLOR', 'SUN_ARC', 'PATH']);
+    expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG', 'CUSTOM']);
     expect(TARGET_KINDS.map((t) => t.key)).toEqual(['OBJECT', 'SUBJECT', 'SCENE']);
     expect(EXPLODE_MODES.map((m) => m.key)).toEqual([
       'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM', 'LINEAR', 'SPHERICAL',
@@ -567,15 +572,21 @@ describe('animation catalogues', () => {
 
   it('has the move groups', () => {
     expect([...AIMING_MOVES].sort()).toEqual(['DOLLY', 'ORBIT', 'RISE']);
-    expect([...CAMERA_MOVES].sort()).toEqual(['FOCUS', 'ZOOM']);
+    expect([...CAMERA_MOVES].sort()).toEqual(['FOCUS', 'PAN', 'ZOOM']);
     expect([...LIGHT_MOVES].sort()).toEqual(['INTENSITY', 'TINT']);
-    expect([...SCENE_MOVES]).toEqual(['HDRI', 'SECTION']);
+    expect([...SCENE_MOVES]).toEqual(['HDRI', 'SECTION', 'SUN_ARC']);
     expect([...VECTOR_MOVES].sort()).toEqual(['MOVE', 'TRACK']);
-    expect([...COLOR_MOVES]).toEqual(['TINT']);
+    expect([...COLOR_MOVES]).toEqual(['TINT', 'MATERIAL_COLOR']);
+    expect([...MATERIAL_MOVES]).toEqual(['MATERIAL_COLOR']);
+    expect([...RESERVED_MOVES]).toEqual(['PATH']);
     const kinds = new Set<MoveKind>(MOVE_KINDS.map((m) => m.key));
-    for (const group of [AIMING_MOVES, CAMERA_MOVES, LIGHT_MOVES, SCENE_MOVES, VECTOR_MOVES, COLOR_MOVES]) {
+    for (const group of [AIMING_MOVES, CAMERA_MOVES, LIGHT_MOVES, SCENE_MOVES, VECTOR_MOVES, COLOR_MOVES, MATERIAL_MOVES, RESERVED_MOVES]) {
       for (const m of group) expect(kinds.has(m)).toBe(true);
     }
+    // N1: the wizard's groups (SPEC §3.7) hold every kind but the ones nobody makes by hand.
+    const grouped = new Set(MOVE_GROUPS.flatMap((g) => g.moves));
+    for (const m of MOVE_KINDS) expect(grouped.has(m.key), m.key).toBe(true);
+    expect(MOVE_GROUPS.map((g) => g.key)).toEqual(['PARTS', 'CAMERA', 'LIGHT', 'MATERIAL']);
   });
 
   // Upstream has 16 sequence presets, not 15: CATALOG (four empty shots) is

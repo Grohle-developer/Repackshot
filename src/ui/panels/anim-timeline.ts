@@ -4,7 +4,7 @@
 // bars, the playhead and the whole seconds (Shift: free, on frames). Generic over clip kinds: a bar is its times, its
 // target and its sentence.
 
-import { clipEnd, clipRepeat, type MotionClip } from '../../core/animation';
+import { clipEnd, clipRepeat, shotTransition, type MotionClip } from '../../core/animation';
 import { cameraSegments, dragBars, resizeBar, rulerTicks, snapTargets, snapTime, toFrame, type SnapOptions, type TimelineRow } from '../../core/timeline';
 import * as anim from '../anim-commands';
 import { newGesture } from '../components/controls';
@@ -230,17 +230,34 @@ function shotMenu(ctx: Ctx, shot: number): MenuItems {
 function cameraLane(ctx: Ctx, g: Geometry, drags: TimelineDrags): HTMLElement[] {
   const s = ctx.store.get();
   const segs = cameraSegments(s);
+  const selected = ctx.ui.get().selectedShot;
+  const fades: HTMLElement[] = [];
   const out: HTMLElement[] = segs.map((seg) => {
     const cam = seg.camera ? s.camera.cameras[seg.camera] : undefined;
     const label = seg.shot === null ? t('anim.activeCamera') : t('anim.segment', { n: seg.shot + 1, camera: cam ? cameraName(s, cam) : t('anim.activeCamera') });
+    const shotId = seg.shot === null ? null : s.animation.shots[seg.shot].id;
+    // N1: how the track changes into this shot: a fade straddles the cut (into the first shot, it starts at 0).
+    const tr = seg.shot === null ? null : shotTransition(s.animation.shots[seg.shot]);
+    const fade = tr && tr.kind === 'FADE' ? tr : null;
+    const fadeTip = fade ? `${t(fade.color === 'WHITE' ? 'anim.change.WHITE' : 'anim.change.BLACK')} · ${formatNumber(fade.duration, getLang())} s` : '';
     const el = h(
       'div',
-      { class: `tl-seg${seg.shot === null ? ' is-whole' : ''}`, style: `left:${seg.start * g.pxPerS}px;width:${Math.max(4, (seg.shot === null ? g.span : seg.end - seg.start) * g.pxPerS)}px`, 'data-shot': seg.shot === null ? '' : String(seg.shot), 'data-tip': seg.shot === null ? label : `${label} · ${t('anim.segmentTip')}` },
+      { class: `tl-seg${seg.shot === null ? ' is-whole' : ''}${shotId && shotId === selected ? ' is-selected' : ''}`, style: `left:${seg.start * g.pxPerS}px;width:${Math.max(4, (seg.shot === null ? g.span : seg.end - seg.start) * g.pxPerS)}px`, 'data-shot': seg.shot === null ? '' : String(seg.shot), 'data-tip': seg.shot === null ? label : `${label}${fade ? ` · ${fadeTip}` : ''} · ${t('anim.segmentTip')}` },
       h('span', { class: 'tl-seg-text' }, label),
       seg.shot === null ? null : h('span', { class: 'tl-grip is-end' }),
     );
+    if (fade) {
+      // Drawn over the cut in the lane (half on each shot), not inside the segment, which clips.
+      const start = seg.shot === 0 ? 0 : seg.start - fade.duration / 2;
+      fades.push(h('span', { class: `tl-fade is-${fade.color === 'WHITE' ? 'white' : 'black'}${seg.shot === 0 ? ' is-in' : ''}`, 'data-fade': fade.color, 'aria-hidden': 'true', style: `left:${start * g.pxPerS}px;width:${Math.max(4, fade.duration * g.pxPerS)}px` }));
+    }
     if (seg.shot !== null) {
       const shot = s.animation.shots[seg.shot];
+      // N1: a click shows the shot's properties (its camera, length and change of camera).
+      el.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).classList.contains('tl-grip')) return;
+        anim.selectShot(ctx, shot.id);
+      });
       el.querySelector('.tl-grip')!.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -267,7 +284,7 @@ function cameraLane(ctx: Ctx, g: Geometry, drags: TimelineDrags): HTMLElement[] 
     icon('plus', 12),
   );
   if (end.shot === null) add.style.left = `${Math.max(4, g.width - 26)}px`;
-  out.push(add);
+  out.push(...fades, add);
   return out;
 }
 

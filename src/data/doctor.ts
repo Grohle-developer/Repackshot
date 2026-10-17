@@ -184,9 +184,10 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     key: 'output',
     label: { es: 'Formato de salida', en: 'Output format' },
+    // N1: it warns only of a video in a codec this system cannot encode (a video it encodes is no fault).
     checks: {
-      es: 'La animación sale como vídeo: un solo archivo donde un fallo a mitad pierde todos los fotogramas, o con un códec que aquí no se puede codificar.',
-      en: 'The animation is output as video: one file where a failure half-way loses every frame, or with a codec that cannot be encoded here.',
+      es: 'La animación sale como vídeo con un códec que este sistema no puede codificar.',
+      en: 'The animation is output as video in a codec this system cannot encode.',
     },
     fix: {
       es: 'Pasa la salida de la animación a secuencia de fotogramas, que se escribe imagen a imagen y se puede reanudar.',

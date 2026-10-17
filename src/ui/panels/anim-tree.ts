@@ -30,6 +30,11 @@ const KIND_ICON: Readonly<Record<string, IconName>> = {
   HDRI: 'sphere',
   EXPLODE: 'explode',
   VISIBILITY: 'eye',
+  // N1.
+  FADE: 'eyeOff',
+  PAN: 'pan',
+  MATERIAL_COLOR: 'sphere',
+  SUN_ARC: 'lightSun',
 };
 
 export function clipIcon(move: string): IconName {
@@ -50,6 +55,8 @@ export function targetIcon(ctx: Ctx, target: ClipTarget): IconName {
       return 'light';
     case 'SCENE':
       return 'studio';
+    case 'MATERIAL':
+      return 'sphere';
     default:
       return 'dot';
   }

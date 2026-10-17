@@ -97,7 +97,8 @@ export function doctorSentence(r: DoctorResult, state: ProjectState): string {
     case 'caustics':
       return t(d.reason === 'more' ? 'doctor.caustics.more' : 'doctor.caustics', { pixels: formatNumber(Number(d.pixels), getLang(), 0), samples: formatNumber(Number(d.samples), getLang(), 0), clamp: formatNumber(Number(d.clamp), getLang(), 1), to: formatNumber(Number(d.to), getLang(), 0) });
     case 'output':
-      return t(d.reason === 'codec' ? 'doctor.output.codec' : 'doctor.output.single', { video: d.video === 'WEBM' ? 'WebM VP9' : 'MP4 H.264' });
+      // N1: it warns only of a video this system cannot encode.
+      return t('doctor.output.codec', { video: d.video === 'WEBM' ? 'WebM VP9' : 'MP4 H.264' });
     case 'budget':
       return t(d.reason === 'few' ? 'doctor.budget.few' : 'doctor.budget.cut', {
         wanted: formatNumber(Number(d.wanted), getLang(), 0),

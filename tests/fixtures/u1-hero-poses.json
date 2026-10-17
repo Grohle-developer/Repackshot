@@ -1,0 +1,154 @@
+{
+ "times": [
+  0,
+  2,
+  5.5,
+  9
+ ],
+ "poses": [
+  {
+   "t": 0,
+   "shot": 0,
+   "camera": {
+    "camera": "cam2",
+    "azimuth": 20,
+    "elevation": 10,
+    "distance": 806.6777305470674,
+    "target": [
+     0,
+     0,
+     60.5
+    ],
+    "focalMm": 135,
+    "focusDistance": 806.6777305470674
+   },
+   "nodes": {
+    "n1": {
+     "position": [
+      0,
+      0,
+      60.5
+     ],
+     "rotation": [
+      0,
+      0,
+      0
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ],
+     "visible": true
+    }
+   },
+   "lights": {},
+   "envRotationDeg": 40
+  },
+  {
+   "t": 2,
+   "shot": 0,
+   "camera": {
+    "camera": "cam2",
+    "azimuth": 65,
+    "elevation": 19,
+    "distance": 806.6777305470674,
+    "target": [
+     0,
+     0,
+     60.5
+    ],
+    "focalMm": 135,
+    "focusDistance": 806.6777305470674
+   },
+   "nodes": {
+    "n1": {
+     "position": [
+      0,
+      0,
+      60.5
+     ],
+     "rotation": [
+      0,
+      0,
+      0
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ],
+     "visible": true
+    }
+   },
+   "lights": {},
+   "envRotationDeg": 40
+  },
+  {
+   "t": 5.5,
+   "shot": 1,
+   "camera": {
+    "camera": "cam2",
+    "azimuth": 20,
+    "elevation": 10,
+    "distance": 564.6744113829471,
+    "target": [
+     0,
+     0,
+     60.5
+    ],
+    "focalMm": 135,
+    "focusDistance": 806.6777305470674
+   },
+   "nodes": {
+    "n1": {
+     "position": [
+      0,
+      0,
+      60.5
+     ],
+     "rotation": [
+      0,
+      0,
+      0
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ],
+     "visible": true
+    }
+   },
+   "lights": {},
+   "envRotationDeg": 40
+  },
+  {
+   "t": 9,
+   "shot": 2,
+   "camera": null,
+   "nodes": {
+    "n1": {
+     "position": [
+      0,
+      0,
+      60.5
+     ],
+     "rotation": [
+      0,
+      0,
+      180
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ],
+     "visible": true
+    }
+   },
+   "lights": {},
+   "envRotationDeg": 40
+  }
+ ]
+}

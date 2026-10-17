@@ -46,6 +46,8 @@ export interface ResultMeta {
   /** Animation: the frame this image is, and the frames of the job. */
   frame?: number;
   frames?: number;
+  /** N1: the image is the first frame of a video the job wrote: its file name and the codec it was encoded with. */
+  video?: { name: string; codec: string };
   /** A small JPEG (data URL) for the queue and the history. */
   thumb: string;
   /** Bytes the stored blobs take. */

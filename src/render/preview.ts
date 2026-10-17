@@ -38,6 +38,7 @@ import { setKnots } from './knots';
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 import { SectionPreview } from './section-preview';
+import { FadePreview } from './fade-preview';
 import { resolveSection } from '../core/section';
 import { TexturePreview } from './texture-preview';
 import { filterActive, filtersOf, opticsOf } from '../core/optics';
@@ -348,6 +349,8 @@ export class PreviewEngine implements RenderEngine {
   /** Node poses are applied (the playhead's, or at 0 only those of recorded simulations: `held`). */
   private nodesPosed = false;
   private held: ReadonlySet<NodeId> | null = null;
+  /** N1: the parts and materials the playhead fades and tints. */
+  private readonly fades = new FadePreview();
   private lastFrameMs = 0;
   private device = 'WebGL';
   private readonly frameListeners = new Set<() => void>();
@@ -725,16 +728,19 @@ export class PreviewEngine implements RenderEngine {
     const full = prev === null;
     const nodesChanged = full || state.scene.nodes !== prev.scene.nodes || state.scene.roots !== prev.scene.roots;
     const matsChanged = full || state.materials !== prev.materials || state.scene.partSizeMm !== prev.scene.partSizeMm;
+    // At 0 a recorded simulation still holds its nodes (S2): the frame of its clip, as a still render shows it.
+    const pose = playheadPose(state);
+    // N1: what the playhead fades and tints (the materials as the clips leave them, see-through copies for the parts).
+    const fadesChanged = this.fades.update(state, pose);
     if (matsChanged) this.syncMaterials(state, prev);
+    if (matsChanged || fadesChanged) this.fades.applyMaterials(state, this.materials, pose, (m, inst) => this.textures.apply(m, inst));
     if (nodesChanged) this.syncNodes(state, prev);
-    if (nodesChanged || matsChanged) this.assignMaterials(state);
+    if (nodesChanged || matsChanged || fadesChanged) this.assignMaterials(state);
     const anim = state.animation;
     // A reversed clip holds its end state from the first frame (an explode that assembles starts apart).
     const posed = poseActive(state);
     const poseToggled = posed !== this.poseActive;
     const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
-    // At 0 a recorded simulation still holds its nodes (S2): the frame of its clip, as a still render shows it.
-    const pose = playheadPose(state);
     if (pose || this.nodesPosed) this.applyNodePose(state, pose);
     this.nodesPosed = pose !== null;
     this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
@@ -753,7 +759,8 @@ export class PreviewEngine implements RenderEngine {
     }
     if (full || nodesChanged || matsChanged || this.section.capping !== wasCapping) this.section.syncCaps(state, this.objects);
     // Lights and environment follow the playhead only when a clip moves them.
-    const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT'));
+    // N1: a sun arc moves the rig's sun light.
+    const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT' || c.move === 'SUN_ARC'));
     const poseEnv = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'SCENE'));
     if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
     // The sky follows the sun light; the background image the frame (output size).
@@ -920,21 +927,26 @@ export class PreviewEngine implements RenderEngine {
   private assignMaterials(state: ProjectState): void {
     const used = new Set<string>();
     const studio = new Set<string>();
+    const faded = new Set<string>();
     for (const [id, obj] of this.objects) {
       if (!(obj instanceof THREE.Mesh)) continue;
       const node = state.scene.nodes[id];
       const ids = obj.geometry.userData.materialIds as (string | null)[] | undefined;
       const free = this.section.active && isSetPiece(node);
+      const opacity = this.fades.opacityOf(id);
       const get = (m: string | null | undefined) => {
         const base = m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial;
         const knots = m ? partKnots(state, id, m) : null;
         const own = knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
         // Q1: while a section cuts, the studio draws with a material that carries no clipping plane.
-        return free ? this.section.unclipped(`${id}|${m ?? ''}`, own, studio) : own;
+        const cut = free ? this.section.unclipped(`${id}|${m ?? ''}`, own, studio) : own;
+        // N1: a part that fades draws with a see-through copy.
+        return opacity < 1 ? this.fades.faded(`${id}|${m ?? ''}`, cut, opacity, faded) : cut;
       };
       obj.material = ids ? ids.map((m, i) => get(i === 0 ? node.material : m)) : get(node.material);
     }
     this.section.pruneStudio(studio);
+    this.fades.prune(faded);
     for (const [key, m] of this.knotMaterials) {
       if (used.has(key)) continue;
       m.dispose();
@@ -1087,7 +1099,8 @@ export class PreviewEngine implements RenderEngine {
         const lp = pose?.lights[l0.id];
         return lp ? { ...l0, power: lp.power, az: lp.az, el: lp.el, enabled: lp.enabled } : l0;
       });
-      sun = skySunDirection(state, lights);
+      // N1: a SUN_ARC without a sun light moves the sky's own sun.
+      sun = skySunDirection(pose?.skySun ? { ...state, environment: { ...state.environment, skySun: pose.skySun } } : state, lights);
     }
     const key =
       kind === 'FLAT'

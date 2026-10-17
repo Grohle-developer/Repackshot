@@ -3,8 +3,8 @@
 // the exploded view, the transport and its keys. Every change of the project goes through the store and is undoable;
 // the clip selection is interface state, like the scene's.
 
-import { sequencePreset } from '../data/animation';
-import type { EasingKind } from '../data/types';
+import { RESERVED_MOVES, sequencePreset } from '../data/animation';
+import type { EasingKind, MoveKind } from '../data/types';
 import {
   TARGET_MOVES,
   canSplit,
@@ -12,11 +12,14 @@ import {
   defaultAmount,
   explodeClipsFor,
   isPinned,
+  materialBaseColor,
+  partsWearing,
   totalDuration,
   type ClipTarget,
   type MotionClip,
 } from '../core/animation';
 import { activeCamera } from '../core/camera';
+import { DEFAULT_CURVE } from '../core/curve';
 import { explodeParts, newExplode } from '../core/explode';
 import { motionHint, type MotionHint } from '../core/motion-hint';
 import { partsUnder, selectedNodes, type NodeId } from '../core/scene';
@@ -42,7 +45,7 @@ export function selectedClipIds(ctx: Ctx): string[] {
 export function selectClips(ctx: Ctx, ids: readonly string[], primary: string | null = ids[ids.length - 1] ?? null): void {
   const list = [...new Set(ids)];
   if (primary && !list.includes(primary)) list.push(primary);
-  ctx.ui.set({ selectedClips: list, selectedClip: primary, wizard: null });
+  ctx.ui.set({ selectedClips: list, selectedClip: primary, wizard: null, selectedShot: null });
 }
 
 /** Ctrl / ⌘ click on a clip: in or out of the selection. */
@@ -55,7 +58,12 @@ export function toggleClip(ctx: Ctx, id: string): void {
 }
 
 export function clearClips(ctx: Ctx): void {
-  ctx.ui.set({ selectedClips: [], selectedClip: null });
+  ctx.ui.set({ selectedClips: [], selectedClip: null, selectedShot: null });
+}
+
+/** N1: a shot of the camera track to the properties (its camera, length and change); the clips and the wizard go. */
+export function selectShot(ctx: Ctx, id: string | null): void {
+  ctx.ui.set({ selectedShot: id, selectedClips: [], selectedClip: null, wizard: null });
 }
 
 /**
@@ -73,6 +81,10 @@ export function selectTargetRow(ctx: Ctx, target: ClipTarget): void {
     ctx.store.dispatch({ type: 'scene/select', ids: [...s.scene.roots], mode: 'set', level: 'MODEL' });
   } else if (target.kind === 'LIGHT') {
     ctx.store.dispatch({ type: 'scene/select', ids: [target.id], mode: 'set' });
+  } else if (target.kind === 'MATERIAL') {
+    // N1: a material's row selects the parts that wear it.
+    const parts = partsWearing(s, target.id);
+    if (parts.length > 0) ctx.store.dispatch({ type: 'scene/select', ids: parts, mode: 'set', level: 'PART' });
   }
   selectClips(ctx, clips);
 }
@@ -116,6 +128,12 @@ export function wizardAmount(state: ProjectState, target: ClipTarget | null, mov
   return defaultAmount(move);
 }
 
+/** N1: the colour a new MATERIAL_COLOR goes to without one picked: a warmer version of the material's own. */
+export function wizardColor(state: ProjectState, target: ClipTarget): [number, number, number] {
+  const c = target.kind === 'MATERIAL' ? materialBaseColor(state.materials[target.id]) : null;
+  return c ? [Math.min(1, c[0] * 0.3 + 0.55), Math.min(1, c[1] * 0.3 + 0.1), Math.min(1, c[2] * 0.3 + 0.05)] : [1, 0.62, 0.35];
+}
+
 /** Whether a node can be the target of an explode: a model or a group with two parts or more. */
 export function canExplode(state: ProjectState, target: ClipTarget): boolean {
   if (target.kind === 'SUBJECT') return explodeParts(state, null).length > 1;
@@ -124,11 +142,15 @@ export function canExplode(state: ProjectState, target: ClipTarget): boolean {
   return !!n && n.kind !== 'PART' && explodeParts(state, n.id).length > 1;
 }
 
-/** Opens the wizard in the properties with a target (the scene's selection by default). */
+/** N1: the kinds the wizard offers a target: its own, without the reserved ones; an explode only for two parts or more. */
+export function wizardMoves(s: ProjectState, target: ClipTarget): MoveKind[] {
+  return TARGET_MOVES[target.kind].filter((m) => !RESERVED_MOVES.has(m) && (m !== 'EXPLODE' || canExplode(s, target)));
+}
+
+/** Opens the wizard in the properties with a target (the scene's selection by default), at its first step. */
 export function openWizard(ctx: Ctx, target: ClipTarget | null = animateTarget(ctx.store.get())): void {
   const s = ctx.store.get();
-  const moves = target ? TARGET_MOVES[target.kind] : [];
-  const move = target ? (moves.find((m) => m !== 'EXPLODE' || canExplode(s, target)) ?? null) : null;
+  const move = target ? (wizardMoves(s, target)[0] ?? null) : null;
   const w: WizardState = {
     target,
     move,
@@ -137,8 +159,9 @@ export function openWizard(ctx: Ctx, target: ClipTarget | null = animateTarget(c
     duration: 3,
     easing: 'EASE' as EasingKind,
     shot: null,
+    step: 1,
   };
-  ctx.ui.set({ wizard: w, selectedClip: null, selectedClips: [], drawer: 'animation' });
+  ctx.ui.set({ wizard: w, selectedClip: null, selectedClips: [], selectedShot: null, drawer: 'animation' });
 }
 
 /** The wizard's Add: the new clip, selected. An explode starts with the parameters of `newExplode`. */
@@ -146,7 +169,10 @@ export function finishWizard(ctx: Ctx): string | null {
   const w = ctx.ui.get().wizard;
   if (!w || !w.move || !w.target) return null;
   const clip: Omit<MotionClip, 'id'> = { target: w.target, move: w.move, shot: w.target.kind === 'CAMERA' ? w.shot : null, start: w.start, duration: w.duration, amount: w.amount, easing: w.easing };
-  if (w.move === 'TINT') clip.color = [1, 0.62, 0.35];
+  if (w.move === 'TINT') clip.color = w.color ?? [1, 0.62, 0.35];
+  // N1: a material's colour goes to the one picked (a warmer one of its own when none was).
+  if (w.move === 'MATERIAL_COLOR') clip.color = w.color ?? wizardColor(ctx.store.get(), w.target);
+  if (w.easing === 'CUSTOM') clip.curve = [...DEFAULT_CURVE];
   if (w.move === 'EXPLODE') clip.explode = newExplode();
   const before = new Set(ctx.store.get().animation.clips.map((c) => c.id));
   ctx.store.dispatch({ type: 'anim/addClip', clip, label: L('undo.addClip') });
