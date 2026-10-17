@@ -11235,6 +11235,20 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   (suelo de 64 muestras, la mitad en *lo que llegue antes*, subir el tiempo
   en vez de bajar muestras, 25 % de margen); y cuándo avisar del vídeo
   (dormido hasta N1) y del *denoise*.
+- **N1** (los ◆ de su «no encajó»): el orden del asistente (hoy primero el
+  objetivo, como lo dejó N6); qué es un *Fundido* (la cantidad es la
+  opacidad final, y *aparecer* es el invertido; en el motor, cobertura
+  estocástica, y los emisores bajan); el polo del arco solar (fijo, detrás
+  del producto a 45°: latitud y norte); la forma del fundido a color
+  (centrado en el corte, como mucho medio plano, sin fundido al final); y
+  la calidad del vídeo (automática, unos 0,1 bits por píxel, sin alfa ni
+  sonido).
+- **H1** (pasada v0.1.16): los grises auxiliares `ink-2` e `ink-3` quedan
+  por debajo de 7:1 en 36 pares. Para llegar a 7:1 en todas las superficies
+  tendrían que ser `#434343` o más oscuros en claro y `#b5b5b5` o más
+  claros en oscuro, lo que aplana la jerarquía de grises. Decidir: subirlos,
+  limitar el texto auxiliar a `bg-0`, `bg-1` y *hover* (`#4e4e4e` /
+  `#afafaf`) o aceptar 4,5:1 para el texto secundario.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
