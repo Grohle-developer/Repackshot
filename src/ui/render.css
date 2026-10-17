@@ -655,12 +655,13 @@
   padding: 10px 12px 10px 16px;
   border-top: 1px solid var(--line);
 }
+/* The summary is whole at any width: it wraps onto a second line (N2: a batch adds images, passes and the ZIP, and
+   the end of the line is what an ellipsis used to cut). The buttons keep their place, centred on the footer. */
 .rw-summary {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .rw-foot-actions {
   display: flex;
