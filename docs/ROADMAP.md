@@ -7674,22 +7674,8 @@ a diferencia del resto de montajes, elegir una sí cambia el aspecto. Los focos 
 producto como todos (un test con los 16 tipos: error < 10⁻⁶). Una receta que mezcla un sol con paneles lleva *shares* en
 la escala de `specIrradiance` (un sol cuenta su irradiancia en W/m² y un panel sus vatios sobre 4π d²): el *share* de un
 panel que da `r` veces lo que el sol es 4 d² r veces el del sol (por eso las ventanas llevan 5 a 14 frente al 1 del sol; el
-cálculo está en el comentario de `light-setups.ts`). Las siete, con las cifras que propongo (◆ pendiente de Fable, ver abajo):
-
-| Receta | Etiqueta | Mundo | Intensidad del entorno | Exposición (EV) | Luces: tipo az/el/temperatura, tamaño en tamaños de pieza a su distancia, *share* |
-| --- | --- | --- | --- | --- | --- |
-| `INT_WINDOW_MORNING` | Ventana de mañana | `SKY` | 0,12 | +0,2 | sol −65°/20°/4300 K ×1; panel −70°/30°/7200 K 5×4 a 2,6 ×12,2; panel 70°/12°/5200 K 4×4 a 3,5 ×5,9 |
-| `INT_WINDOW_NOON` | Ventana de mediodía | `SKY` | 0,15 | +0,2 | sol −55°/62°/5600 K ×1; panel −75°/40°/6800 K 5×4 a 2,6 ×8,1; panel 70°/12°/5600 K 4×4 a 3,5 ×4,9 |
-| `INT_WINDOW_AFTERNOON` | Ventana de tarde | `SKY` | 0,11 | 0 | sol 70°/14°/3200 K ×1; panel 75°/24°/5600 K 5×4 a 2,6 ×10,8; panel −70°/10°/4600 K 4×4 a 3,5 ×7,4 |
-| `INT_OVERCAST` | Nublado | `STUDIO` | 0,8 | +0,3 | panel −75°/38°/7000 K 7×5 a 3 ×0,5; panel 0°/82°/6800 K 6×6 a 2,8 ×0,25; panel 75°/14°/6800 K 5×5 a 3,6 ×0,25 |
-| `INT_NIGHT_LAMPS` | Lámparas de noche | `STUDIO` | 0,04 | −0,7 | disco −110°/28°/2600 K 0,7 a 2,2 ×0,45; disco 125°/48°/2400 K 0,5 a 2,8 ×0,25; cuadrado 0°/80°/2900 K 1,4 a 2,8 ×0,2; panel 60°/12°/8500 K 4×4 a 3,5 ×0,1 |
-| `INT_BLUE_HOUR` | Hora azul | `SKY` | 0,45 | −0,5 | sol 115°/3°/2300 K ×0,15; disco −100°/28°/2700 K 0,7 a 2,2 ×20; disco 135°/45°/2500 K 0,5 a 2,8 ×12; panel 75°/25°/10500 K 5×4 a 2,6 ×14; panel −35°/12°/7500 K 4×4 a 3,5 ×7 |
-| `INT_WHITE_ROOM` | Sala blanca de estudio | `STUDIO` | 1 | +0,5 | panel 0°/85°/5600 K 6×5 a 2,6 ×0,3; panel −80°/28°/5600 K 6×5 a 2,8 ×0,3; panel 80°/22°/5600 K 5×5 a 3,2 ×0,2; panel 0°/15°/5600 K 4×4 a 3,5 ×0,2 |
-
-Los azimuts son relativos a la cámara (`LightSpec.az`). Los órdenes de magnitud: el sol de 2 a 4 veces el cielo a mediodía y
-de 1,5 a 2 al atardecer (la intensidad del entorno sale de que el cielo da la irradiancia de la cúpula de estudio, unos 2 por unidad
-de intensidad en las unidades del normalizador, y el sol `sen(altura)` por su energía), lámparas de tungsteno a 2400–2900 K, un cielo claro a través de un
-vidrio a 6500–10 500 K. Mirando las miniaturas (`SPHERES`, 256 × 256, 96 muestras) la mañana tira a cálido, el mediodía es
+cálculo está en el comentario de `light-setups.ts`). Las cifras de las siete recetas son una propuesta (◆ pendiente de Fable: la
+tabla está en «Qué no encajó», 1). Mirando las miniaturas (`SPHERES`, 256 × 256, 96 muestras) la mañana tira a cálido, el mediodía es
 neutro, la tarde es ámbar, *Nublado* y *Sala blanca* son suaves y claras, las lámparas dejan la sala a oscuras y la hora
 azul parte cálido a la izquierda y azul a la derecha. **Miniaturas**: las siete se han renderizado con el motor nativo
 (`node tools/setup-thumbs.mjs --keys INT_WINDOW_MORNING,…`: 21 s de render en total) y están en
@@ -7748,15 +7734,40 @@ volver a *Producto*); captura `docs/ui/scene-type-interior.png`.
 
 **Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de Fable: queda anotado, no decidido).
 
-1. ◆ **Las cifras de las siete recetas** son una propuesta mía (la tabla de arriba): altura, azimut y temperatura del sol,
+1. ◆ **Las cifras de las siete recetas** son una propuesta mía, **pendiente de Fable**: altura, azimut y temperatura del sol,
    peso de la ventana y del rebote, intensidad del cielo y desvío de exposición. Siguen los órdenes de magnitud de la
-   fotografía de interiores y están normalizadas como el resto, pero son decisiones fotográficas y no las he tomado: quedan
-   anotadas para Fable. El comentario de `light-setups.ts` lo dice.
-2. ◆ **Los umbrales del Doctor de interiores** (`INTERIORS.md` §3.6 nombra los chequeos, no las cifras): tamaño de mueble o
-   habitación 100 mm–30 m, óptica ancha por debajo de 18 mm (la cifra es la de §3.4), altura de ojo plausible de 0,3 a 2,2 m,
-   arreglo a 24 mm y a 1,5 m (el de *de pie* de §3.4), habitación de más de 1,5 m por lado, panel de ventana de grosor ≤ 12 %
-   y ≥ 300 mm, pared plana de ≤ 2 % y ≥ 1 m, recorte a la mitad de la distancia a la pared. Están como constantes exportadas de
-   `core/doctor-interior.ts`.
+   fotografía de interiores y están normalizadas como el resto, pero son decisiones fotográficas y no las he tomado. El
+   comentario de `light-setups.ts` lo dice. La propuesta, receta a receta (azimuts relativos a la cámara; tamaños en
+   tamaños de pieza, a la distancia dicha; *share* en la escala de `specIrradiance`, ver arriba):
+
+   | Receta | Etiqueta | Mundo | Intensidad del entorno | Exposición (EV) | Luces: tipo az/el/temperatura, tamaño en tamaños de pieza a su distancia, *share* |
+   | --- | --- | --- | --- | --- | --- |
+   | `INT_WINDOW_MORNING` | Ventana de mañana | `SKY` | 0,12 | +0,2 | sol −65°/20°/4300 K ×1; panel −70°/30°/7200 K 5×4 a 2,6 ×12,2; panel 70°/12°/5200 K 4×4 a 3,5 ×5,9 |
+   | `INT_WINDOW_NOON` | Ventana de mediodía | `SKY` | 0,15 | +0,2 | sol −55°/62°/5600 K ×1; panel −75°/40°/6800 K 5×4 a 2,6 ×8,1; panel 70°/12°/5600 K 4×4 a 3,5 ×4,9 |
+   | `INT_WINDOW_AFTERNOON` | Ventana de tarde | `SKY` | 0,11 | 0 | sol 70°/14°/3200 K ×1; panel 75°/24°/5600 K 5×4 a 2,6 ×10,8; panel −70°/10°/4600 K 4×4 a 3,5 ×7,4 |
+   | `INT_OVERCAST` | Nublado | `STUDIO` | 0,8 | +0,3 | panel −75°/38°/7000 K 7×5 a 3 ×0,5; panel 0°/82°/6800 K 6×6 a 2,8 ×0,25; panel 75°/14°/6800 K 5×5 a 3,6 ×0,25 |
+   | `INT_NIGHT_LAMPS` | Lámparas de noche | `STUDIO` | 0,04 | −0,7 | disco −110°/28°/2600 K 0,7 a 2,2 ×0,45; disco 125°/48°/2400 K 0,5 a 2,8 ×0,25; cuadrado 0°/80°/2900 K 1,4 a 2,8 ×0,2; panel 60°/12°/8500 K 4×4 a 3,5 ×0,1 |
+   | `INT_BLUE_HOUR` | Hora azul | `SKY` | 0,45 | −0,5 | sol 115°/3°/2300 K ×0,15; disco −100°/28°/2700 K 0,7 a 2,2 ×20; disco 135°/45°/2500 K 0,5 a 2,8 ×12; panel 75°/25°/10500 K 5×4 a 2,6 ×14; panel −35°/12°/7500 K 4×4 a 3,5 ×7 |
+   | `INT_WHITE_ROOM` | Sala blanca de estudio | `STUDIO` | 1 | +0,5 | panel 0°/85°/5600 K 6×5 a 2,6 ×0,3; panel −80°/28°/5600 K 6×5 a 2,8 ×0,3; panel 80°/22°/5600 K 5×5 a 3,2 ×0,2; panel 0°/15°/5600 K 4×4 a 3,5 ×0,2 |
+
+   Los azimuts son relativos a la cámara (`LightSpec.az`). Los órdenes de magnitud: el sol de 2 a 4 veces el cielo a mediodía y
+   de 1,5 a 2 al atardecer (la intensidad del entorno sale de que el cielo da la irradiancia de la cúpula de estudio, unos 2 por unidad
+   de intensidad en las unidades del normalizador, y el sol `sen(altura)` por su energía), lámparas de tungsteno a 2400–2900 K, un cielo claro a través de un
+   vidrio a 6500–10 500 K.
+2. ◆ **Los umbrales del Doctor de interiores**, propuesta mía **pendiente de Fable** (`INTERIORS.md` §3.6 nombra los
+   chequeos, no las cifras); son constantes exportadas de `core/doctor-interior.ts`:
+
+   | Constante | Valor | Para qué |
+   | --- | --- | --- |
+   | `INTERIOR_MIN_MM`, `INTERIOR_MAX_MM` | 100 mm y 30 m | tamaño de la escena que es un mueble o una habitación (un jarrón y un loft) |
+   | `WIDE_LENS_MM` | 18 mm | óptica que estira los bordes (la cifra es la de §3.4) |
+   | `INTERIOR_LENS_MM` | 24 mm | lo que pone el arreglo: la más ancha de las ópticas de interior de §3.4 |
+   | `EYE_MIN_MM`, `EYE_MAX_MM` | 0,3 m y 2,2 m | altura de ojo plausible sobre el suelo (z = 0) |
+   | `EYE_STANDING_MM` | 1,5 m | lo que pone el arreglo: una persona de pie (§3.4) |
+   | habitación, panel, pared | 1,5 m por lado; grosor ≤ 12 % y ≥ 300 mm; ≤ 2 % y ≥ 1 m | qué caja es una habitación, qué pieza es un cristal de ventana, qué pieza plana es una pared |
+   | recorte | la mitad de la distancia a la pared (≥ 0,01 mm) | lo que pone el arreglo |
+   | `INTERIOR_NORMALS_TRIANGLES` | 500 000 | presupuesto de triángulos de la comprobación de normales por pasada |
+
 3. ◆ **Valores de la tabla de §3.1 que son un número donde el documento da un intervalo o una palabra**: *Rebotes* «16–24» es
    16 (el límite bajo; el *Final* podría pedir 24); *sombra de contacto suave* es una opacidad de 0,35 en el visor (la sombra
    de contacto del motor no tiene intensidad: es el atrapasombras, y su suavidad la da el tamaño de las luces); *cúpula
