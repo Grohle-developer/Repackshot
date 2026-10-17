@@ -26,6 +26,7 @@ import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
 import { reduceGraph, type GraphAction } from './material-graph';
 import { reduceSection, type SectionAction, type SectionPlane } from './section';
+import { syncFocus } from './focus';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -340,12 +341,14 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
 /**
  * Root reducer: applies the action, then keeps what is derived from the model
  * in step: the size of an image follows the active camera's aspect ratio
- * (U13), and the Doctor results are refreshed when the parts it looks at changed.
+ * (U13), a camera that focuses on a point or an object keeps the distance it
+ * comes to (F1, core/focus.ts), and the Doctor results are refreshed when the
+ * parts it looks at changed.
  */
 export function reduce(state: ProjectState, action: Action): ProjectState {
   const reduced = reduceAny(state, action);
   if (reduced === state) return state;
-  const next = syncOutputSize(reduced);
+  const next = syncFocus(syncOutputSize(reduced), state);
   if (
     next.scene !== state.scene ||
     next.materials !== state.materials ||

@@ -54,7 +54,13 @@ export interface PhysicsUi {
  * some nodes (phase U3), or the part whose material some parts link to.
  */
 export type PickMode =
-  | { kind: 'focus' }
+  /**
+   * F1: focus on a point (the camera's Focus, Point), for `camera` (a camera's own inspector) or, without it, the camera
+   * that is seen.
+   */
+  | { kind: 'focus'; camera?: string }
+  /** F1: focus on an object, a part, group or model at the selection level (the camera's Focus, Object). */
+  | { kind: 'focusObject'; camera?: string }
   | { kind: 'reflect'; light: string }
   /** L4: Place on surface (the light stands over the point along its normal) and Aim at… a point or a part. */
   | { kind: 'surface'; light: string }

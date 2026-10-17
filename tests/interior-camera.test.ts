@@ -9,7 +9,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { cameraPosition, fieldOfView, makeCamera, type CameraState } from '../src/core/camera';
-import { atHeight, eyeHeightOf, exteriorOf, focusDistanceFor, renderedCamera, verticalsOf } from '../src/core/interior-camera';
+import { atHeight, eyeHeightOf, exteriorOf, renderedCamera, verticalsOf } from '../src/core/interior-camera';
+import { focusDistanceFor } from '../src/core/focus';
 import { OPTICS_NEUTRAL } from '../src/core/optics';
 import { fisheyeFov, panoramaDirection, panoramaFov, panoramaPoint } from '../src/core/panorama';
 import { hiddenToCamera } from '../src/core/scene';
@@ -167,7 +168,7 @@ describe('straight verticals (the criterion: tilted 10°, ±0.1 px at 1080p)', (
     expect(renderedCamera(tilted(20))).toEqual(tilted(20));
     // A click on a point focuses the plane through it square to the rendered axis.
     const point: [number, number, number] = [100, 200, 0];
-    const f = focusDistanceFor(cam, point);
+    const f = focusDistanceFor(cam, point)!;
     const focused = renderedCamera({ ...cam, focusDistance: f });
     const pos = cameraPosition(focused);
     const axis = unit(sub3(focused.target, pos));

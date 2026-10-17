@@ -1088,8 +1088,50 @@ la orientación. Las **cámaras guardadas** se ven en el visor como pirámides,
 se mueven con el *gizmo* (la posición sin cambiar su objetivo, el giro, el
 asa de su objetivo) y se **mira a través** de ellas (§3.4, *Luces y cámaras
 en el visor*). **Vistas**: tres cuartos, frontal, lateral, cenital,
-trasera. **Enfocar con clic**: el punto picado fija la distancia de
-enfoque.
+trasera.
+
+**Enfoque** (F1, `core/focus.ts`). Cada cámara elige cómo enfoca,
+`CameraState.focusMode`: `DISTANCE` (la distancia tecleada,
+`focusDistance`, como siempre; una cámara, un proyecto, una cámara guardada
+o un estudio de la biblioteca de antes de F1 no tienen el campo y se leen
+así), `POINT` (un punto picado con un clic, `focusPoint: { node, point }`,
+guardado **en las coordenadas de la pieza que tocó**, de modo que sigue a
+sus transformaciones y a su animación) u `OBJECT` (una pieza, un grupo o el
+modelo, `focusObject`, al nivel de selección con el que se eligió; el punto
+que se sigue es el **centro de su caja** (decidido; las otras dos
+candidatas, el vértice más cercano a lo largo del eje y la superficie que se
+ve en el centro de su silueta, están escritas en `objectFocusPoint` y sin usar). En
+`POINT` y `OBJECT` la distancia de enfoque **se calcula** desde la cámara tal
+como está en cada momento y el punto donde está en ese momento: al navegar,
+al mirar a través, en cada fotograma de una animación, en la ventana de
+render, en la cola y en los lotes (`resolvedFocusDistance`, y
+`focusDistanceAt(estado, cámara, t)` como enganche para quien renderice un
+instante); el RSB sigue llevando una distancia por fotograma. El *store*
+guarda en `focusDistance` la que sale en reposo (`syncFocus`, tras cada
+acción que cambia una cámara o la escena), y es a la que la cámara vuelve
+si se borra la pieza del punto o el objeto: pasa a `DISTANCE` en la misma
+acción (deshacer lo devuelve todo) y la interfaz lo avisa. Un clip
+`FOCUS` (un cambio de foco) tira desde la distancia que sigue. **"En
+foco" es la regla del motor** (`rt-core` `focus`): la lente fina enfoca el
+plano perpendicular al eje de la vista, así que la distancia de un punto es
+su profundidad a lo largo del eje; con inclinación (O1) es la distancia
+cuyo plano de la regla de la bisagra pasa por el punto; una lente trazada
+(O2) se enfoca paraxialmente, pero abierta su aberración esférica y la
+curvatura de campo ponen su imagen más nítida a milímetros de ese plano, y
+el motor resuelve la distancia con sus propios rayos (donde el detalle fino
+que ve el punto del sensor tiene más contraste, `rt_scene_focus_at`:
+10 y 5 pares de líneas por milímetro del cuadro de 36 mm, decidido); sin `rt.wasm`
+se usa la paraxial. Una panorámica (K3) no tiene profundidad de campo: su
+distancia es la del punto; con verticales rectas cuenta la cámara nivelada
+que se renderiza. Una lente trazada respira, así que el clic se asienta:
+se repite con la cámara ya enfocada hasta que el píxel muestra el mismo
+punto. **Enfocar con clic** pica el píxel exacto en
+la vista exacta: el rayo principal del motor para ese píxel (la cámara
+mirada a través con su propio cuadro, la pose del cabezal, la imagen del
+visor alrededor del cuadro, la lente con su distorsión y su respiración),
+lanzado contra la geometría del visor por las dos caras de cada triángulo
+(como las ve el motor) y con la sección; la cámara que lo recibe es la que
+se ve (la mirada a través, la del plano del cabezal, o la activa).
 
 **Óptica (O1, la lente simple; hasta O4 se llamaba *lente fina*, y el
 proyecto la sigue guardando como `thin`).** `CameraState.optics` (opcional;

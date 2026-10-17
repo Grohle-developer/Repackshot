@@ -21,7 +21,10 @@ import type { AppServices } from './ports';
 import { dynamic, Root, Scope, type Ctx } from './reactive';
 import { preventedByGuard } from './guards';
 import { ACTIONS, matches } from './shortcuts';
-import { setLengthUnit } from './components/controls';
+import { lengthText, setLengthUnit } from './components/controls';
+import { focusModeOf } from '../core/focus';
+import { cameraName } from './names';
+import { t } from './strings';
 import { cssZoom } from './dom';
 import { installSettingsEffects } from './settings-effects';
 import { setLang } from './strings';
@@ -212,6 +215,20 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
   } catch {
     // Old browsers: the theme just does not follow live changes of the OS.
   }
+
+  // F1: a camera whose focus point's part, or whose object, went away falls back to its last distance (core/focus.ts
+  // syncFocus); it says so (an undo, a redo or the camera's own change says nothing).
+  store.subscribe((s, prev, action) => {
+    if (action.type === 'history/undo' || action.type === 'history/redo' || action.type === 'history/reset' || action.type === 'camera/set') return;
+    if (s.camera === prev.camera) return;
+    for (const [id, cam] of Object.entries(s.camera.cameras)) {
+      const was = prev.camera.cameras[id];
+      if (!was || focusModeOf(was) === 'DISTANCE' || focusModeOf(cam) !== 'DISTANCE') continue;
+      const node = focusModeOf(was) === 'POINT' ? was.focusPoint?.node : was.focusObject;
+      const name = (node ? prev.scene.nodes[node]?.name : '') || t('camera.focusPart');
+      ui.toast(t('camera.focusLost', { camera: cameraName(s, cam), name, distance: lengthText(cam.focusDistance) }));
+    }
+  });
 
   // Palette.
   ui.subscribe((u, prev) => {

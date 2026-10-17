@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 144 archivos: 142 repartidos por versión y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 147 archivos: 145 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -26,7 +26,18 @@ De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las ca
 
 ### Sin publicar
 
-La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+
+#### F1 · Enfoque por punto y por objeto
+
+<a id="c-f1-focus-inspector"></a><img src="ui/f1-focus-inspector.png" width="340" alt="El bloque Cámara del inspector tras enfocar con un clic: Enfoque en Punto (Distancia · Punto · Objeto), la distancia de enfoque como deslizador con su campo y sus flechas al lado, con la distancia que sale del punto (660 mm; moverla pasa a Distancia), y la fila Punto con el botón de enfocar con clic y «On Body»."><br>
+`f1-focus-inspector.png` · `1cb9f87` · El bloque Cámara del inspector tras enfocar con un clic: *Enfoque* en *Punto* (*Distancia · Punto · Objeto*), la distancia de enfoque como deslizador con su campo y sus flechas al lado, con la distancia que sale del punto (660 mm; moverla pasa a *Distancia*), y la fila *Punto* con el botón de enfocar con clic y la pieza enfocada. `tools/focus-click-check.mjs --shots docs/ui`.
+
+<a id="c-f1-focus-marker"></a><img src="ui/f1-focus-marker.png" width="480" alt="El visor en Rápido alrededor del punto enfocado en la etiqueta de la botella del ejemplo, con la cámara seleccionada: la marca del punto (un anillo con cuatro trazos y un punto en el centro) donde cayó el clic."><br>
+`f1-focus-marker.png` · `1cb9f87` · El visor en *Rápido* alrededor del punto enfocado en la etiqueta de la botella del ejemplo, con la cámara seleccionada: la marca del punto (un anillo con cuatro trazos y un punto en el centro) donde cayó el clic. `tools/focus-click-check.mjs --shots docs/ui`.
+
+<a id="c-f1-focus-sheet"></a><img src="ui/f1-focus-sheet.png" width="480" alt="Tres clics, antes de F1 a la izquierda y después a la derecha, en renders finales de 480 × 270 de un damero de 1,3 mm inclinado 45° visto con 135 mm a f/1,4 a 600 mm; un anillo marca el píxel del clic. Arriba y en medio, la lente con 6° de inclinación y el clic en las esquinas: antes la banda nítida pasaba a unos 35 píxeles del anillo, después pasa por él. Abajo, la doble Gauss trazada abierta y el clic en el centro: antes la banda quedaba arriba a la izquierda del anillo, después lo cruza."><br>
+`f1-focus-sheet.png` · `ed0e937` · Tres clics, antes de F1 a la izquierda y después a la derecha (*antes*: `319614b`), en renders finales de 480 × 270 de un damero de 1,3 mm inclinado 45° visto con 135 mm a f/1,4 a 600 mm; un anillo marca el píxel del clic. Arriba y en medio, la lente con 6° de inclinación y el clic en las esquinas: antes la banda nítida pasaba a unos 35 píxeles del anillo, después pasa por él. Abajo, la doble Gauss trazada abierta y el clic en el centro: antes la banda quedaba arriba a la izquierda del anillo, después lo cruza. Hecha con `tools/focus-sheet.mjs` de los renders de `tests/focus-measure.test.ts` (`REPACK_FOCUS_MEASURE=1`, con `rt`).
 
 #### O4 · Lente simple y trazada: opciones de cada una
 
@@ -710,6 +721,9 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`camera-edit.png`](#c-camera-edit) · v0.1.6 · sin fase
 - [`camera-section.png`](#c-camera-section) · v0.1.6 · sin fase
 - [`camera-aspect.png`](#c-camera-aspect) · v0.1.6 · U13
+- [`f1-focus-inspector.png`](#c-f1-focus-inspector) · sin publicar · F1
+- [`f1-focus-marker.png`](#c-f1-focus-marker) · sin publicar · F1
+- [`f1-focus-sheet.png`](#c-f1-focus-sheet) · sin publicar · F1
 
 ### Render y cola
 

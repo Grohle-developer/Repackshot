@@ -205,7 +205,9 @@ El **menú contextual** completo de una fila (fase U3, con las acciones de
 suelo · Centrar · Centrar y apoyar · **Dejar caer** (fase S2) ·
 Restablecer transformación ·
 Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
-objetivo de cámara · separador · Ocultar · Aislar · Mostrar todo ·
+objetivo de cámara · **Mantener enfocado** (F1: la cámara que se ve pasa a
+*Enfoque ▸ Objeto* sobre la fila o la pieza, al nivel de la selección) ·
+separador · Ocultar · Aislar · Mostrar todo ·
 Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
 circular) · Agrupar · Desagrupar · Mover a grupo ▸ · separador ·
 Material ▸ (Desenlazar, Enlazar con…, Copiar, Pegar, Seleccionar por
@@ -782,9 +784,43 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
    cámara tiene su óptica y su posición. Preset de óptica (8
    `LENS_PRESETS`), focal en mm (campo arrastrable), diafragma (f/),
-   distancia de enfoque + botón *Enfocar con clic*, interruptor
+   **Enfoque** (F1, `src/ui/panels/insp-focus.ts`), interruptor
    Perspectiva / Ortográfica, **Proporción** (U13), *Encuadrar*, y
-   *Guardar como cámara*. **Proporción** es una lista (*3:2 · Foto 35 mm*,
+   *Guardar como cámara*. **Enfoque** es un control segmentado *Distancia ·
+   Punto · Objeto* (cada segmento con su ayuda) y, debajo, la **distancia de
+   enfoque** como un deslizador con su campo al lado (el `slider` de
+   siempre, en las unidades de la interfaz; el campo tendrá las flechas
+   arriba y abajo de U15). El deslizador es **logarítmico** y abarca la
+   profundidad de la escena desde la cámara: de la mitad de la esquina más
+   cercana de la caja del producto a lo largo del eje de la vista al doble
+   de la más lejana, al menos una década, y siempre con la distancia dentro
+   (decidido). Con *Distancia* se edita (una entrada
+   de deshacer por gesto, *Cámara: Distancia de enfoque*). Con *Punto* y
+   *Objeto* enseña la distancia que la cámara calcula para el punto o el
+   objeto donde están ahora (el cabezal incluido), y **moverlo pasa la cámara a
+   *Distancia*** desde ahí, en la misma entrada de deshacer (decidido); debajo, en *Punto*, el botón ***Enfocar
+   con clic*** (icono de enfoque, pulsado mientras se pica; deshacer
+   *Enfocar con clic*) y *En «pieza»* (o *Nada elegido todavía*); en
+   *Objeto*, ***Elegir qué enfocar*** (icono de diana) y *En «nombre»*; y
+   una nota: la distancia sigue al punto (o al objeto) vaya donde vaya la
+   cámara. Pulsar *Punto* u *Objeto* vuelve al punto o al objeto que la
+   cámara guardaba; si no hay ninguno, empieza a picarlo (el segmento se
+   ve pulsado mientras tanto, con el aviso del visor *Haz clic en la pieza
+   para enfocar ahí* o *Haz clic en lo que se queda enfocado…*; `Esc`
+   cancela). Pulsar *Distancia* deja la distancia a la que estaba enfocada
+   (deshacer *Enfoque: Distancia*) y guarda el punto o el objeto para
+   volver. El clic de *Enfocar con clic* sale del píxel exacto: el rayo
+   principal del motor para ese píxel en la vista que hay (`rt_scene_pick`:
+   la cámara mirada a través, el cuadro, la pose del cabezal, la lente
+   trazada con su distorsión), lanzado contra la geometría del visor por las
+   dos caras; sin `rt.wasm`, el pico de la vista previa. Si se borra la
+   pieza del punto o el objeto, la cámara vuelve a *Distancia* con la última
+   distancia y un aviso lo dice (*El enfoque de Cámara 1 estaba en Tapón,
+   que ya no está: se queda a 612 mm*). Con la cámara **seleccionada** (su
+   pirámide, o el lápiz de esta cabecera), el visor marca su punto de
+   enfoque con un glifo pequeño del mismo estilo que los de luces y cámaras:
+   un anillo con cuatro marcas en *Punto* y cuatro esquinas en *Objeto*,
+   con un punto en el centro, donde el punto está en el cabezal. **Proporción** es una lista (*3:2 · Foto 35 mm*,
    *4:3*, *16:9 · Vídeo*, *1:1 · Cuadrado*, *5:4*, *4:5 · Retrato*,
    *9:16 · Vertical*, *21:9 · Ultra ancho*, *2:1*, *65:24 · Panorámica* y
    *Propia*) y, debajo, los campos `w : h`, que se pueden editar con
@@ -2302,6 +2338,12 @@ estudios guardados, y tipos de producto. Cada resultado dice su categoría
 en auxiliar y, si tiene atajo, lo muestra a la derecha. Enter ejecuta;
 flechas navegan; `Esc` cierra. Es la forma más rápida de hacer cualquier
 cosa y la red de seguridad cuando no se encuentra un control.
+
+El enfoque (F1) tiene cuatro acciones en la paleta, para la cámara que se
+ve: *Enfocar en un punto (haz clic en él)* y *Enfocar en un objeto (haz
+clic en él)* empiezan el pico, *Mantener enfocada la selección* pasa a
+*Objeto* con lo seleccionado y *Enfocar por distancia* vuelve a
+*Distancia* con la distancia a la que estaba.
 
 Atajos iniciales (todos visibles en el tooltip del control y en *Atajos
 de teclado* del menú):

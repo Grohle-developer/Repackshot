@@ -10,8 +10,8 @@
 //! patterns (`pattern`) of the shading, the material programs of node materials (`program`), the
 //! path tracer (`integrator`), the photon map of the
 //! caustics (`caustics`), the tile renderer, its pixel filters and edge samples
-//! (`pixel_filter`) and the exact passes written next to the image for the AI post-processing
-//! (`passes`).
+//! (`pixel_filter`), the exact passes written next to the image for the AI post-processing
+//! (`passes`) and the chief ray and focus of a pixel for focus with a click (`focus`).
 //!
 //! It deliberately avoids every OS API (`std::fs`, `std::net`, `std::time`, `std::thread`) so
 //! that it compiles unchanged to `wasm32-unknown-unknown` and to any native target. Threading,
@@ -33,6 +33,7 @@ pub mod environment;
 pub mod example;
 pub mod exr;
 pub mod fmath;
+pub mod focus;
 pub mod geometry;
 pub mod hdr;
 pub mod ies;

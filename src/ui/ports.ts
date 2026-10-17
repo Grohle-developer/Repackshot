@@ -118,6 +118,14 @@ export interface ViewportPort {
   resize(width: number, height: number, dpr: number): void;
   /** Coordinates in CSS pixels relative to the canvas. */
   pick(x: number, y: number): PickResult | null;
+  /**
+   * F1, focus with a click: what the pixel at (x, y) shows as the engine renders it: its chief ray from the engine
+   * (the camera of the view as the Full view renders it: the pose, the camera looked through, the frame, a traced
+   * lens's distortion), cast at the viewport's geometry through both faces of every triangle. Without an engine that
+   * picks (no rt.wasm, or an older one) the viewport's own `pick`. With `settle`, for focus on a point of `camera` (or
+   * of the camera seen): the surface the pixel shows once that camera is focused on it (a traced lens breathes).
+   */
+  pickFocus?(x: number, y: number, opts?: { settle?: boolean; camera?: string }): Promise<PickResult | null>;
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
   /** S4a: the ambient effect whose region box the viewport draws (the one being edited), or null. */
   setSelectedEffect?(id: string | null): void;

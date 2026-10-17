@@ -5281,9 +5281,10 @@ párrafo dejaba abiertos):
 2. **La inclinación de una lente trazada es «el mismo plano que la lente
    simple»**, como está.
 3. **Con una lente trazada, *Por dos puntos* debe resolverse con rayos
-   reales.** Pendiente: F1 trae `Camera::focus_distance_to` con el mejor
-   foco trazado; cuando F1 esté en `main`, el plano por dos puntos de una
-   lente trazada pasará por él (no se construye en O4).
+   reales.** Hecho con F1: con el giro del plano de la lente simple, la
+   distancia es la media de las que el motor resuelve con rayos reales para
+   cada punto (`core/focus.ts exactFocusDistance`, `rt_scene_focus_at`);
+   sin `rt.wasm`, la del plano. Lo comprueba `tests/lens-o4.test.ts`.
 4. **El diafragma, la aberración cromática y el remolino son compartidos**
    por los dos modelos, como está.
 5. **Los tres tipos de bokeh de la lente trazada se quitan** de la rejilla
@@ -11980,6 +11981,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - que *Interior* encienda las verticales rectas;
   - el campo del ojo de pez, medido en la diagonal.
 
+- **F1** (enfoque por punto y por objeto): el *Objeto* sigue el centro de su caja; el rango y la escala logarítmica del deslizador, como están; en *Punto* y *Objeto* **mover el deslizador pasa a *Distancia***; el mejor foco de la lente trazada por el contraste de detalle fino, como está (la esquina con distorsión +1 queda abierta); un clip de foco gana; el clic en un vidrio enfoca su cara delantera. **Hecho en F1.**
+
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
 recetas del plugin, sin barra vertical.
@@ -12022,6 +12025,217 @@ recetas del plugin, sin barra vertical.
 - **Capturas regrabadas** (en *Sin publicar* de `GALERIA.md`): `scene-type-interior.png` (*Interior* con su receta de partida; `tools/scene-type-check.mjs` sigue a C1: elige después otra receta, que sí pregunta), `m3b-graphs.png` (los copos hacia fuera; ahora la hace `tests/m3b-graphs-sheet.test.ts`, con `REPACK_WRITE_CAPTURES=1`) y, del tema claro, `ai-section-light.png` y `ai-results-light.png` (`tools/ai-post-check.mjs`, que esperaba la intervención de fábrica en 30).
 
 **Puertas de la segunda ronda**, tras la fusión: `npm run engine:build` y `npm run qa` en verde (3108 tests: 3101 pasan, 7 se saltan); en `engine/`, `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace --release` (1142 pasan, 5 ignorados), la compilación wasm32 sin importaciones WASI, los bloques de paridad de `engine.yml` contra el `rt_wasm.wasm` real (42 imágenes, con la de O4; ninguna se movió), la paridad de la guarda con el `post.wasm` real (11 pasan) y los tests del código de la página con el `rt.wasm` real (129 pasan); el lanzador real con el *runtime* falso (`tests/ai-desktop.test.ts`); `tools/scene-type-check.mjs` y `tools/ai-post-check.mjs` (36 comprobaciones) en Chromium.
+
+## F1 · Enfoque por punto y por objeto — **Opus** — hecha
+
+**Petición del usuario** (17-10, tras B1), tal cual: «CRUCIAL! sigue sin
+resolverse el clickar sobre un punto y que se enfoque exactamente en esa
+cara, en ese pixel. Además, quiero que se pueda seleccionar en otro modo de
+enfoque, enfocar un objeto. Tener estos dos modos a la vez.» Y, sobre los
+valores: «quiero aparte flechas de up y down en todos los valores, o sliders
+cuando convenga más. En enfoque creo que se serviría de ambas. Un slider y al
+lado el valor con up and down». Es el punto 1.8 de `TODO.md`: el píxel exacto
+de la vista exacta.
+
+**Qué.** (1) Que el clic deje nítido, en el render final, exactamente lo que
+hay bajo el píxel, en cualquier vista: *Rápido* y *Completo*, lente fina,
+inclinación y descentramiento (O1), lente trazada (O2), proporciones de U13,
+mirar a través de una cámara guardada, la línea de tiempo con la cámara
+animada, y después de orbitar o acercarse. (2) Tres modos de enfoque por
+cámara: *Distancia* (el de siempre), *Punto* (el punto picado, que el enfoque
+sigue) y *Objeto* (una pieza, un grupo o el modelo).
+
+**Medido primero.** Una escena hecha para eso (`tests/browser/focus-scene.ts`):
+un damero de 1,3 mm inclinado 45° en profundidad que llena el cuadro, luz
+plana, 135 mm a f/1,4 a 600 mm (la profundidad de campo es de un par de
+milímetros: un milímetro de error mueve la banda nítida varios píxeles). Un
+navegador sin cabeza dibuja la vista previa y hace el clic como el visor
+(`tests/browser/focus-page.ts`); Node aplica la acción, pide al motor los
+pases exactos de profundidad y de círculo de confusión de la vista *Completo*
+(640 × 400) y del render final (480 × 270) en el píxel del clic, su propio
+enfoque para lo que ve ese píxel (`rt_scene_pick`), y renderiza el final con
+`rt` para ver dónde cae la banda nítida (un contraste paso banda a lo largo
+del gradiente de profundidad, el centro de la banda, medido igual antes y
+después; la banda mide ±15 px con la lente fina y ±25 px con las trazadas
+abiertas, y unos ±2 px son el ruido de la medida; `tests/focus-measure.test.ts`,
+`REPACK_FOCUS_MEASURE=1`). Siete clics por caso (centro, bordes, esquinas;
+la banda, en el centro y dos esquinas). Antes de F1 (en `319614b`) y después,
+banda nítida en píxeles del render desde el clic, y error de enfoque en mm:
+
+| caso | antes | después |
+| --- | --- | --- |
+| lente fina | 0,00 mm; banda −0,5 a −2 px | igual (el pico de B1 ya era el del píxel) |
+| inclinación 6° | profundidad exacta, pero banda a +34,5 y −36,5 px en las esquinas | −1 y −2 px |
+| descentramiento | 0,00 mm | 0,00 mm |
+| doble Gauss f/1,4 (O2) | banda a −31 px en el centro, −42 y −50,5 px en las esquinas, el clic fuera de ella | +5, −14,5 y −13 px, el clic dentro de la banda en los tres (su contraste, el 88 % del máximo) |
+| Petzval (O2) | −31,5 px en el centro, −32,5 y −44,5 en las esquinas | −2, +14 y +11 px, el clic dentro de la banda |
+| distorsión +1 (O2) | *Completo* −2,28 mm y el final −0,97 mm en la esquina (el visor no era el render); banda −31, −16,5 y −52,5 px | los dos a 0,00 mm del enfoque del motor; banda +5,5 y −15,5 px, el clic dentro; abajo a la derecha, −38,5 px (ver «no encajó») |
+| 1:1 y 9:16 activas | 0,00 mm | 0,00 mm |
+| mirar a través, 9:16 | *Completo* hasta 34,8 mm y 15 px de círculo de confusión en la esquina; el final, bien | 0,00 mm y 0,1 px en los dos |
+| línea de tiempo, t = 1 con órbita | ±6,5 mm, 3–4 px de círculo; banda −24,5 y +19,5 px | 0,00 mm; banda 0 y −1,5 px |
+| orbitar 8° tras el clic | hasta 16,9 mm, 8 px de círculo; banda ±42–44 px (en el píxel del clic) | 0,00 mm donde ha ido el punto (dejar la distancia, como antes, lo dejaría hasta 10,3 mm fuera); banda −1 a −1,5 px |
+| acercarse un 15 % tras el clic | 80–101 mm, 45–70 px de círculo | 0,00 mm donde ha ido el punto (dejada, 90 mm fuera) |
+| mover la pieza 15 mm tras el clic | — | 0,00 mm (dejada, 15 mm fuera) |
+
+**Causas medidas** (las hipótesis del encargo, h1–h6):
+
+1. **h1, la inclinación.** El clic ponía la profundidad del punto, pero la
+   lente inclinada enfoca el plano de la regla de la bisagra, que pasa por el
+   punto a otra distancia: `u (f − sin α (p · b)) = f z`. El motor y la
+   interfaz usan ahora la misma regla (`Camera::focus_distance_to`,
+   `core/focus.ts focusDistanceFor`, con un test de paridad contra `rt.wasm`).
+2. **h3, la lente trazada.** Se enfocaba paraxialmente, y abierta su
+   aberración esférica y la curvatura de campo ponen su imagen nítida varios
+   milímetros más allá. El motor resuelve la distancia con sus propios rayos.
+   El primer criterio, el círculo de menor confusión, tampoco servía (el
+   render seguía blando a −27,5 px): el halo arrastra los mínimos cuadrados.
+   El que queda es el contraste del detalle fino (10 y 5 pares de líneas por
+   mm del cuadro de 36 mm, el máximo más cercano a la menor confusión): para la
+   doble Gauss del caso, 601,5 mm por la menor confusión y 609,7 mm por el
+   contraste, que es donde las muestras del propio render dan más contraste
+   (607–610 mm). Con una sola frecuencia y el máximo de todo el tramo, un punto
+   cerca del borde superior salía a 538 mm en vez de 585 (un lóbulo lateral, la
+   resolución espuria, por encima de un principal débil).
+3. **h1, el visor no era el render.** El visor *Completo* ensancha el sensor
+   para cubrir el visor, y la lente trazada sacaba del sensor del visor las
+   semiaperturas, la altura de su distorsión y su viñeteo: con distorsión, el
+   píxel del visor no veía lo mismo que el del render. `LENS` lleva ahora
+   `frame_sensor_mm`.
+4. **h1, mirar a través.** El visor *Completo* de una cámara mirada a través
+   usaba el cuadro de la cámara activa: con otra proporción, otro sensor.
+5. **h2 y h4, la pose y el seguimiento.** En la línea de tiempo el clic
+   medía desde la cámara guardada, no desde la del instante; y tras el clic
+   la distancia se quedaba quieta al orbitar o acercarse. Lo arregla el modo
+   *Punto*: la distancia sale, en cada instante, de la cámara como está y del
+   punto donde está.
+6. **h6, la cara.** La vista previa dibuja solo la cara delantera de cada
+   triángulo y su pico no veía la trasera de una superficie de una sola cara,
+   que el motor sí renderiza. El rayo se lanza ahora por las dos caras.
+7. **h5, redondeo:** no es causa (solo de lo que se enseña).
+8. **Al medir apareció otra:** una lente trazada **respira** (su campo cambia
+   con el enfoque), así que lo que muestra el píxel se mueve cuando el
+   enfoque llega a él (0,9 mm de profundidad en la esquina con el damero
+   inclinado). El clic se asienta: se repite con la cámara ya enfocada hasta
+   que el punto no se mueve (`settledFocusPick`).
+
+**Qué se hizo.**
+
+- **El motor** (`rt_core::focus`, ARCHITECTURE §5.2 septendecies):
+  `rt_scene_pick` (el rayo principal de un punto de la imagen, el de
+  `generate_ray` con la pupila en su centro, y lo que toca por las dos caras)
+  y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS
+  frame_sensor_mm`; el mejor foco de una lente trazada por contraste.
+  `tools/wasm-parity.mjs --pick` y CI fijan los picos de las escenas de O1 y
+  O2 (`PINNED_FOCUS_PICK_O1`, `PINNED_FOCUS_PICK_O2`). Ningún *hash* de render
+  cambió.
+- **El clic** (`main.ts focusPickAt`): la escena de solo la cámara de la vista
+  como la escribe `projectScene` para *Completo* (`io/rsb.ts focusPickRsb`:
+  pose, cámara mirada a través con su cuadro, imagen del visor alrededor del
+  cuadro), el rayo del motor, lanzado contra la geometría de la vista previa
+  por las dos caras (`PreviewEngine.pickAlong`), asentado con una lente
+  trazada. Sin `rt.wasm` o con uno anterior (detectado por el nombre de las
+  exportaciones, sin bit nuevo de `rt_features`), el pico de la vista previa
+  y la distancia paraxial.
+- **Los modos** (`CameraState.focusMode`, `focusPoint`, `focusObject`;
+  SPEC §3.5): el punto se guarda en coordenadas de la pieza; la distancia se
+  resuelve donde se usa (`resolvedFocusDistance`, y `focusDistanceAt(estado,
+  cámara, t)` para la cola, los lotes y la ventana de render); el *store* deja
+  la de reposo en `focusDistance` (`syncFocus`). Si se borra la pieza o el
+  objeto, la cámara vuelve a su última distancia en la misma acción, con un
+  aviso. Los proyectos, cámaras guardadas y estudios de la biblioteca de antes
+  se leen como *Distancia*; ida y vuelta al guardar y abrir; todo deshacible.
+- **La interfaz** (UI.md): *Enfoque* segmentado *Distancia · Punto · Objeto*;
+  la distancia como deslizador logarítmico con su campo al lado (el `slider`
+  admite ahora una escala propia, `scale`, y hay `lengthSlider`); en *Punto*,
+  *Enfocar con clic* (la misma entrada de deshacer); en *Objeto*, elegir en el
+  visor o en el árbol, con el nombre; *Mantener enfocado* en el menú de una
+  pieza; cuatro órdenes en la paleta; la marca del punto en el visor con la
+  cámara seleccionada.
+
+**Tests.** `tests/focus-modes.test.ts` (27: la regla de cada lente, la
+paridad con `rt.wasm`, el seguimiento al orbitar, acercarse, mover la pieza,
+animarla y animar la cámara, el clip de foco, *Objeto*, la vuelta a
+*Distancia* al borrar, sin NaN, deshacer, proyectos viejos y dañados, la
+marca, el deslizador, el rayo de una cámara mirada a través y el de una lente
+trazada en el visor, el asentamiento); `tests/focus-browser.test.ts` (9, con
+Chromium: el clic en el navegador cae en el enfoque del motor para ese píxel
+en seis casos, la profundidad exacta con la lente fina, la banda nítida de la
+inclinación por el clic, y el visor sin motor); `rt-core focus::tests` (10,
+entre ellos que las muestras del propio render, a través del foco, dan más
+contraste donde el pico enfoca); `tools/focus-click-check.mjs` (15
+comprobaciones en la interfaz construida). Cada arreglo se comprobó
+deshaciéndolo: el test correspondiente falla (el informe del PR los lista).
+
+**No encajó con el plan:**
+
+1. **La lente trazada necesita al motor para enfocar.** Sin `rt.wasm` la
+   distancia es la paraxial (milímetros fuera, abierta). Con él, resolver
+   cuesta de 0,4 a 0,6 s en la página con la máquina cargada (y el clic asentado, hasta tres); los fotogramas de
+   un gesto usan la última diferencia con la paraxial para esa lente.
+2. **El escritorio no tiene una llamada propia**: la página lleva su
+   `rt.wasm`, el mismo `rt-core` que renderiza el lanzador; no hay
+   `/api/pick`.
+3. **El *swirl* artístico** entra en el mejor foco como en la imagen.
+4. **El paseo de cámara (N3) no está cableado**: el enganche
+   (`focusDistanceAt`) está; la cola y los lotes los toca N2.
+5. **El lector de cámaras de la biblioteca** (`io/library.ts`) sigue sin leer
+   la óptica de una cámara (ya era así); lee los modos de enfoque.
+6. **`slider()`** cambió por dentro lo justo: una escala opcional
+   (`toUnit`/`fromUnit`, 1000 posiciones), junto a las flechas, la variante
+   compacta y `setDisabled` de U15 (fusionadas).
+7. **El clic en vidrio** enfoca su cara delantera, como el resto (decidido).
+8. **La esquina de una lente trazada con distorsión artística +1** (abajo a
+   la derecha, a f/1,4) sigue con la banda a −38,5 px del clic, fuera de ella:
+   el enfoque escrito es el del motor para ese píxel (0,00 mm), así que lo que
+   no casa es el criterio del mejor foco con lo que el render ve allí (un
+   punto del sensor muy fuera, con mucha aberración); el resto de esquinas
+   trazadas cae dentro de la banda. El criterio se aceptó; esta esquina queda
+   abierta.
+9. **`cargo test --workspace`** con la máquina cargada: cuatro tests de
+   `rt-app` (descargas y actualizaciones con servidores locales, el
+   adaptativo con varios hilos) y cuatro de `rt-cli` (TIFF) fallan a veces y
+   pasan solos; no tocan F1.
+
+**Con K3 y N2** (fusionadas tras la fase): el rayo del pico es el de
+`Camera::generate_ray` con la pupila en su centro, así que la ortográfica, las
+dos panorámicas y las verticales rectas pican solas. `Camera::focus_distance_to`
+y `core/focus.ts focusDistanceFor` se extendieron: una panorámica es
+estenopeica y su distancia de enfoque (y la profundidad del pico, como su
+pase) es la distancia al punto, también detrás de la cámara; con verticales
+rectas la cámara que se renderiza es la nivelada (`renderedCamera`), y la
+distancia es la de esa cámara entre cos(inclinación corregida), una lente
+trazada resuelta sobre ella. Tests: el pico y el rayo principal en
+`rt-core focus::tests` con cámaras ortográfica, equirectangular y ojo de pez;
+la paridad TS–`rt.wasm` y el camino del clic, una por proyección, en
+`focus-modes.test.ts`. N2: la cola y los lotes ya escriben la distancia que
+sigue cada cámara (la resuelve la frontera del motor, `viewCamera`, con la
+cámara y la pose del trabajo); `batch.test.ts` lo comprueba en un lote de
+cámaras × estudios y en los fotogramas de una animación, y falla sin esa
+resolución.
+
+**Con O4** (fusionada tras la fase): *Por dos puntos* deja la cámara en
+*Distancia* (podía seguir un punto o un objeto) en la misma entrada de
+deshacer, y con una lente trazada enfoca a la media de las distancias que
+el motor resuelve para los dos puntos con la inclinación elegida (la
+decisión 3 de O4). El mejor foco de una lente trazada inclinada usa las
+muestras de la lente inclinada (su rejilla de límites del sensor); la regla
+paraxial de la interfaz para ella es la bisagra de la lente simple, como el
+plano de O4. Las funciones de enfoque anteriores sin uso
+(`camera.ts focusDistanceTo`, `interior-camera.ts focusDistanceFor`) se
+quitaron; sus tests apuntan a `core/focus.ts focusDistanceFor`.
+
+**Decisiones** (17-10, del responsable de la sesión; eran ◆): el *Objeto*
+sigue el centro de su caja (las otras dos candidatas siguen escritas y sin
+usar); el rango y la escala logarítmica del deslizador, como están; en
+*Punto* y *Objeto* el deslizador enseña la distancia que sale y **moverlo pasa
+la cámara a *Distancia*** desde ahí, en una sola entrada de deshacer (el
+deslizador no se vuelve a dibujar al cambiar de modo, así que el arrastre
+sigue; `tools/focus-click-check.mjs` lo comprueba); el mejor foco de una lente
+trazada por el contraste de 10 y 5 pares de líneas por milímetro, el máximo
+más cercano a la menor confusión (la esquina con distorsión +1 queda abierta);
+un clip de foco sobre una cámara en *Punto* gana, como ahora; el clic en un
+vidrio enfoca su cara delantera.
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el
