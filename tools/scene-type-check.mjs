@@ -8,15 +8,17 @@
 //
 //   control    the Product section has Scene type (Product, Interior, Catalogue) over Product type, Product pressed;
 //   no control the inspector has the same controls (the same labels, switches and buttons) whatever the type: the type
-//              changes values and removes nothing;
+//              changes values and removes nothing (the rows of the lights themselves aside: Interior brings its recipe);
 //   interior   choosing Interior is one undo step ("Scene type: Interior"), brings the Light section to the Interior style
 //              with its seven recipes and their thumbnails, turns the contact shadow off and the view transform to AgX; the
 //              Doctor lists its seven interior checks, which Product does not;
-//   recipe     choosing Midday window is one undo step and sets the strength of the environment of the recipe;
+//   recipe     Interior starts with the Midday window (C1); choosing the Morning window then asks about the lights there
+//              are, is one undo step and sets the strength of the environment of the recipe;
 //   back       choosing Product again puts the contact shadow and the view transform back, takes the Light section back to
 //              All and the interior checks out of the Doctor; Catalogue leaves the contact shadow on and the view Standard.
 //
-// Screenshot (docs/ui): scene-type-interior.png (Interior in force with the Midday window recipe, the Product and Light sections).
+// Screenshot (docs/ui): scene-type-interior.png (Interior in force with its starting recipe, the Midday window, the Product and
+// Light sections).
 // Results: out/scene-type-check.json.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -72,10 +74,14 @@ const ok = (cond, text, failures) => {
 const controls = (page) =>
   page.evaluate(() => {
     const root = document.querySelector('[data-section="product"]')?.parentElement ?? document.body;
-    const texts = (sel) => [...root.querySelectorAll(sel)].map((n) => (n.getAttribute('aria-label') || n.textContent || '').trim()).filter(Boolean);
+    // K3: in automatic exposure the Exposure field is the same control named Brightness (EV), its compensation.
+    const same = { 'Brightness (EV)': 'Exposure' };
+    const texts = (sel) => [...root.querySelectorAll(sel)].map((n) => (n.getAttribute('aria-label') || n.textContent || '').trim()).filter(Boolean).map((x) => same[x] ?? x);
     return {
       sections: texts('.section-head'),
-      labels: texts('.field-label'),
+      // C1: Interior brings its light recipe, so the lights' own rows (named by their role) are the recipe's: the
+      // controls compared are the rest.
+      labels: texts('.field-label').filter((x) => !/^(Key|Fill|Rim|Top|Principal|Relleno|Contra|Cenital)( \d+)?$/.test(x)),
       switches: root.querySelectorAll('[role="switch"]').length,
       buttons: texts('button.btn'),
       numbers: root.querySelectorAll('[role="spinbutton"], input[type="number"]').length,
@@ -93,7 +99,9 @@ const state = (page) =>
     const chips = [...(light?.querySelectorAll('[data-filter="style"] .chip') ?? [])];
     const switches = [...(product?.querySelectorAll('.field') ?? [])].map((f) => [f.querySelector('.field-label')?.textContent ?? '', f.querySelector('[role="switch"]')?.getAttribute('aria-checked') ?? null]);
     const image = document.querySelector('[data-section="image"]');
-    const vt = [...(image?.querySelectorAll('.seg button') ?? [])].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? '';
+    // The view transform's control (K3 put the exposure's By hand · Automatic before it in the same section).
+    const VIEW = ['Standard', 'Filmic', 'AgX', 'Estándar', 'Fílmica'];
+    const vt = [...(image?.querySelectorAll('.seg button') ?? [])].find((b) => b.getAttribute('aria-pressed') === 'true' && VIEW.includes(b.textContent ?? ''))?.textContent ?? '';
     return {
       types: seg.map((b) => b.textContent),
       pressedType: seg.find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? '',
@@ -212,24 +220,28 @@ try {
     ok(rows.filter((r) => INTERIOR_ROWS.includes(r.title)).every((r) => r.text.length > 10), 'each interior row says what it checks or what it found', f);
     await closeDoctor(page);
 
-    // A recipe.
-    await page.locator('[data-section="light"] .thumb', { hasText: 'Midday window' }).click();
-    await settle(page, 300);
-    // L7: over the lights there are it asks what happens to them; Replace is what it always did.
-    await page.locator('[data-light-question] .btn', { hasText: /^Replace$/ }).click();
-    await settle(page, 500);
-    s = await state(page);
-    ok(s.undo === 'Undo: Light setup: Midday window (replace the lights)', `a recipe is one undo step: ${s.undo}`, f);
-    const strength = await page.evaluate(() => {
-      const row = [...document.querySelectorAll('[data-section="environment"] .field')].find((x) => x.querySelector('.field-label')?.textContent === 'Intensity');
-      return row?.querySelector('[role="spinbutton"]')?.getAttribute('aria-valuenow') ?? null;
-    });
-    ok(strength !== null && Math.abs(Number(strength) - 0.15) < 1e-6, `the recipe sets the strength of the environment: ${strength}`, f);
-    ok((await state(page)).shadow === 'false', 'a recipe leaves the contact shadow as the type had it', f);
-    // The capture of the docs: Interior in force, with a recipe of its style (the pointer away, so no tooltip covers the thumbnails).
+    // C1: Interior starts with the Midday window over the product type's own lights, untouched.
+    const strengthNow = () =>
+      page.evaluate(() => {
+        const row = [...document.querySelectorAll('[data-section="environment"] .field')].find((x) => x.querySelector('.field-label')?.textContent === 'Intensity');
+        return row?.querySelector('[role="spinbutton"]')?.getAttribute('aria-valuenow') ?? null;
+      });
+    const strength = await strengthNow();
+    ok(strength !== null && Math.abs(Number(strength) - 0.15) < 1e-6, `Interior starts with the Midday window (its strength of the environment): ${strength}`, f);
+    // The capture of the docs: Interior in force, with its starting recipe (the pointer away, so no tooltip covers the thumbnails).
     await page.mouse.move(760, 200);
     await settle(page, 400);
     await page.screenshot({ path: join(SHOTS, 'scene-type-interior.png') });
+    // Another recipe. L7: over the recipe's lights (not the type's own any more) it asks; Replace is what it always did.
+    await page.locator('[data-section="light"] .thumb', { hasText: 'Morning window' }).click();
+    await settle(page, 300);
+    await page.locator('[data-light-question] .btn', { hasText: /^Replace$/ }).click();
+    await settle(page, 500);
+    s = await state(page);
+    ok(s.undo === 'Undo: Light setup: Morning window (replace the lights)', `a recipe is one undo step: ${s.undo}`, f);
+    const morning = await strengthNow();
+    ok(morning !== null && Math.abs(Number(morning) - 0.12) < 1e-6, `the recipe sets the strength of the environment: ${morning}`, f);
+    ok((await state(page)).shadow === 'false', 'a recipe leaves the contact shadow as the type had it', f);
     // Undo takes the recipe away and leaves the type.
     await page.keyboard.press('Control+z');
     await settle(page, 400);

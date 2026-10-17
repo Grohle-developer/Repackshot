@@ -148,12 +148,20 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
 
 // --- Light ------------------------------------------------------------------------
 
+/**
+ * What rebuilds the light fields: the shape of the list and what names each light (its role, whether it is own, its
+ * name), so a setup whose lights keep the same ids (the scene type's recipe, C1) does not leave the names of the lights
+ * before it. Values update in place.
+ */
+export function tuneLightsKey(s: ProjectState): string {
+  return s.studio.lights.map((l) => `${l.id}:${l.role}:${l.own ? 'o' : ''}:${l.name ?? ''}:${l.kelvin === null ? 'c' : 'k'}`).join(',');
+}
+
 function tuneLights(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
-  // Rebuilt when the list of lights changes shape (setup change), values update in place.
   return dynamic(
     scope,
-    (s) => s.studio.lights.map((l) => l.id + (l.kelvin === null ? 'c' : 'k')).join(','),
+    tuneLightsKey,
     (sc) => {
       const s = store.get();
       const blocks = s.studio.lights.map((l) => {

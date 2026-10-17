@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { SCENE_TYPES, sceneTypeEntry } from '../src/data/scene-types';
 import { typeLightsUntouched } from '../src/core/lighting';
+import { tuneLightsKey } from '../src/ui/panels/insp-scene';
 import { applySceneType, normalizeSceneType, normalizeTypeBase, qualityForSamples } from '../src/core/scene-type';
 import { createStore, reduce, type ProjectState } from '../src/core/store';
 import { loadProject, parseProject, serializeProject } from '../src/io/project';
@@ -259,6 +260,15 @@ describe('the starting light recipe of Interior (C1)', () => {
     expect(back.studio.lightSetup).toBe('INT_WINDOW_NOON');
     expect(back.studio.lights).toBe(touched);
     expect(back.scene.typeBase).toBeUndefined();
+  });
+
+  it('the Light section’s fields are made again for the recipe’s lights, whose ids are the type’s (their names change)', () => {
+    // The recipe keeps the ids l1…l3 and the pool's: a key of ids alone left the type's names on the recipe's lights.
+    const dressed = reduce(exampleState(), { type: 'studio/fitSet' });
+    const interior = switchTo(dressed, 'INTERIOR');
+    expect(interior.studio.lights.map((l) => l.id)).toEqual(dressed.studio.lights.map((l) => l.id));
+    expect(tuneLightsKey(interior)).not.toBe(tuneLightsKey(dressed));
+    expect(tuneLightsKey(switchTo(interior, 'PRODUCT'))).toBe(tuneLightsKey(dressed));
   });
 
   it('is undone in one step with the rest of the type', () => {
