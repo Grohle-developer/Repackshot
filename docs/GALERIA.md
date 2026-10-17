@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 125 archivos: 123 repartidos por versión y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 127 archivos: 125 repartidos por versión y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,19 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 43 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 44 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Ninguna captura nueva: todas las de `docs/ui/` están ya en una versión publicada (la última es v0.1.16). Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
+Dos capturas nuevas (N2). Las demás de `docs/ui/` están ya en una versión publicada (la última es v0.1.16). Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy.
+
+#### N2 · Cola, pases y lotes
+
+<a id="c-batch-window"></a><img src="ui/batch-window.png" width="480" alt="La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido."><br>
+`batch-window.png` · `8816f19` · La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido.
+
+<a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes."><br>
+`batch-queue.png` · `8816f19` · El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes.
 
 ### v0.1.16 · 2026-10-17
 
@@ -632,6 +640,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
 
+- [`batch-window.png`](#c-batch-window) · Sin publicar · N2
+- [`batch-queue.png`](#c-batch-queue) · Sin publicar · N2
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
