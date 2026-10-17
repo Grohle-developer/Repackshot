@@ -2087,6 +2087,18 @@ export function setFocusMode(ctx: Ctx, mode: FocusMode, camera?: string): void {
   else if (ctx.ui.get().pickMode?.kind === 'focus' || ctx.ui.get().pickMode?.kind === 'focusObject') ctx.ui.set({ pickMode: null });
 }
 
+/**
+ * C2: switches *Keep the size of what is in focus* of `camera` (the camera that is seen by default) on or off, one undo
+ * entry, and says which it is now (the palette's way; the inspector has the switch itself).
+ */
+export function toggleKeepFocusSize(ctx: Ctx, camera?: string): void {
+  const cam = focusCamera(ctx, camera);
+  if (!cam) return;
+  const on = cam.keepFocusSize !== true;
+  ctx.store.dispatch({ type: 'camera/set', id: cam.id, patch: { keepFocusSize: on }, label: editLabel('camera', 'camera.keepFocusSize') });
+  ctx.ui.toast(t(on ? 'toast.keepFocusSizeOn' : 'toast.keepFocusSizeOff', { camera: cameraName(ctx.store.get(), cam) }));
+}
+
 export function activateCamera(ctx: Ctx, id: string): void {
   const s = ctx.store.get();
   ctx.store.dispatch({ type: 'camera/activate', id, label: L('undo.activateCamera', { name: cameraLabel(s, s.camera.cameras[id]) }) });

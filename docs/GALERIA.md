@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 150 archivos: 148 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 151 archivos: 149 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,16 +22,21 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 19 versiones, 16 con capturas nuevas; las capturas se reparten en 51 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 19 versiones, 16 con capturas nuevas; las capturas se reparten en 52 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-El estudio de un lote que viaja con el proyecto (N2b) y el editor de elementos de la lente trazada (O2c).
+El estudio de un lote que viaja con el proyecto (N2b), el interruptor de la focal, *Mantener el tamaño de lo enfocado* (C2), y el editor de elementos de la lente trazada (O2c).
 
 #### N2b · El estudio viaja con el proyecto
 
 <a id="c-batch-queue-adopt"></a><img src="ui/batch-queue-adopt.png" width="480" alt="Un proyecto con un lote sobre dos estudios, abierto en otro perfil del navegador con la biblioteca vacía: el cajón de la cola con los dos trabajos terminados, cada uno en su estudio, y encima una línea por estudio, «El estudio “Studio 1” vino con el proyecto; no está en tu biblioteca», con el botón Añadir a mi biblioteca."><br>
 `batch-queue-adopt.png` · `e5e3c11` · Un proyecto con un lote sobre dos estudios, abierto en otro perfil del navegador con la biblioteca vacía: el cajón de la cola con los dos trabajos terminados, cada uno renderizado en la copia de su estudio que trae el proyecto, y encima una línea por estudio, *The studio “Studio 1” came with the project; it is not in your library*, con **Add to my library**. `tools/batch-check.mjs` (g).
+
+#### C2 · Interruptor de la focal
+
+<a id="c-c2-focal-switch"></a><img src="ui/c2-focal-switch.png" width="339" alt="El bloque Cámara del inspector con el interruptor nuevo debajo de la focal (85 mm): Mantener el tamaño de lo enfocado, encendido, y su línea auxiliar: encendido, al cambiar la focal la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño y cambia la perspectiva; apagado, la cámara se queda y cambia el encuadre."><br>
+`c2-focal-switch.png` · `bbf3c6b` · El bloque *Cámara* del inspector con el interruptor nuevo debajo de la focal (85 mm): *Mantener el tamaño de lo enfocado*, encendido, y su línea auxiliar, que dice lo que hace encendido (la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño; cambia la perspectiva) y lo que hace apagado (la cámara se queda y cambia el encuadre). `tools/focal-check.mjs --shots docs/ui`.
 
 #### O2c · Editor de elementos de la lente
 
@@ -740,6 +745,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`camera-edit.png`](#c-camera-edit) · v0.1.6 · sin fase
 - [`camera-section.png`](#c-camera-section) · v0.1.6 · sin fase
 - [`camera-aspect.png`](#c-camera-aspect) · v0.1.6 · U13
+- [`c2-focal-switch.png`](#c-c2-focal-switch) · Sin publicar · C2
 - [`f1-focus-inspector.png`](#c-f1-focus-inspector) · sin publicar · F1
 - [`f1-focus-marker.png`](#c-f1-focus-marker) · sin publicar · F1
 - [`f1-focus-sheet.png`](#c-f1-focus-sheet) · sin publicar · F1

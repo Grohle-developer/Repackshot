@@ -79,6 +79,12 @@ export interface CameraState {
    * person applies one the engine has checked. Absent: no edit in progress (every camera of before O2c).
    */
   lensDraft?: TracedLens;
+  /**
+   * C2, *Keep the size of what is in focus* (core/focal.ts): on, a change of the focal length moves the camera along its
+   * view axis so that the plane in focus keeps its size in the image; off (absent: every camera of before C2), the camera
+   * stays where it is and the framing changes, as on a real camera.
+   */
+  keepFocusSize?: boolean;
 }
 
 /** F1: how a camera's focus is set (CameraState.focusMode). */

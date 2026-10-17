@@ -377,6 +377,8 @@ function camera(v: unknown, path: string): CameraState {
     // K3: the fisheye's field and the straight verticals, when the camera has them.
     ...(o.fisheyeFovDeg !== undefined ? { fisheyeFovDeg: num(o.fisheyeFovDeg, `${path}.fisheyeFovDeg`, 1, 3600) } : {}),
     ...(o.straightVerticals === true ? { straightVerticals: true } : {}),
+    // C2: the focal length's switch, when it is on (a studio saved before C2 has none: off).
+    ...(o.keepFocusSize === true ? { keepFocusSize: true } : {}),
   };
 }
 

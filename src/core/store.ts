@@ -10,6 +10,7 @@ import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceInteriorCamera, type InteriorCameraAction } from './interior-camera';
+import { reduceFocal, type FocalAction } from './focal';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
 import { engineInputsChanged } from './doctor-engine';
 import { reduceEffects, type AmbientEffect, type EffectAction } from './effects';
@@ -166,6 +167,7 @@ export type Action =
   | StudioAction
   | CameraAction
   | InteriorCameraAction
+  | FocalAction
   | AnimationAction
   | RenderAction
   | DoctorAction
@@ -310,8 +312,10 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       // setup that keeps the lights there were (Hide, Add: L7) goes through core/previous-lights.ts first.
       return reducePrevious(state, action as StudioAction) ?? reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
     case 'camera':
-      // K3: the eye height and the interior lenses (core/interior-camera.ts) share the prefix.
-      return action.type === 'camera/eyeHeight' || action.type === 'camera/interiorLens' ? reduceInteriorCamera(state, action) : reduceCamera(state, action as CameraAction);
+      // K3: the eye height and the interior lenses (core/interior-camera.ts) share the prefix; C2: the focal length and
+      // the interior lenses, which change it, go through the switch that keeps the size of what is in focus (core/focal.ts).
+      if (action.type === 'camera/focal' || action.type === 'camera/interiorLens') return reduceFocal(state, action);
+      return action.type === 'camera/eyeHeight' ? reduceInteriorCamera(state, action) : reduceCamera(state, action as CameraAction);
     case 'anim':
       return reduceAnimation(state, action as AnimationAction);
     case 'render':

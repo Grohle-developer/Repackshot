@@ -12,6 +12,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - En la cola, un estudio que vino con el proyecto y no está en tu biblioteca tiene una línea con **Añadir a mi biblioteca** (N2b).
 - Los proyectos de antes se abren igual; un trabajo de un proyecto anterior a N2b busca su estudio en la biblioteca, como antes, y si no está falla con el motivo. Al editarlo con el estudio en la biblioteca, toma su copia (N2b).
 
+### Cámara
+
+- **Interruptor de la focal, *Mantener el tamaño de lo enfocado***, junto a la focal en el inspector de la cámara y en la paleta. Apagado (por defecto, como en una cámara), al cambiar la focal la cámara se queda y cambia el encuadre; encendido, la cámara se acerca o se aleja por su eje para que el plano enfocado (la distancia, el punto o el objeto de F1) conserve su tamaño en la imagen: cambia la perspectiva, no el tamaño. Una línea debajo dice cuál está activo, y que con una cámara bloqueada, ortográfica o panorámica no hay nada que mover. Cada paso de las flechas, cada arrastre y cada valor tecleado es una entrada de deshacer; las ópticas de interior también lo siguen. Se guarda con cada cámara, en el proyecto y en los estudios de la biblioteca; los de antes lo abren apagado (C2).
+
 ### Cámara y lente
 
 - **Editor de lente** (*Cámara ▸ Lente ▸ Editar elementos…*): los elementos de una lente trazada, sobre una copia (la del catálogo no cambia nunca): los radios, el grosor, el vidrio (los de las lentes del catálogo) y el diámetro de cada uno, más pequeño o más grande, el aire hasta el siguiente, **añadir** un elemento delante o detrás del elegido, **borrar** uno y **girarlo 180°**. Cada edición es una entrada de deshacer. Tras cada una el motor comprueba la lente y dice la focal del diseño, el tiraje, el f/, el círculo de imagen, la distorsión y la luz hacia la esquina, con el corte al día; una lente que no forma imagen, no deja pasar luz o tiene un hueco negativo dice por qué y no se aplica, pero se sigue editando. *Aplicar a la cámara* la pone como lente propia y *Guardar en la biblioteca…* la guarda en *Míos*; va y vuelve con el proyecto y con el archivo de la biblioteca (O2c).
