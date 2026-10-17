@@ -15,7 +15,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { cocPass, lensOf } from '../src/core/lens-coc';
-import { FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
+import { AI_PASS_KEYS, FLOOR_ID, passMask } from '../src/core/passes';
 import { projectScene, writeRsb } from '../src/io/rsb';
 import { passScene } from './browser/pass-scene';
 import { referencePasses } from './browser/reference-passes';
@@ -181,8 +181,8 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
   });
 
   it.skipIf(!RT_WASM)('agrees with the engine’s passes on the ids and the depth, the studio floor included', async () => {
-    const { scene } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...PASS_KEYS] });
-    const engine = renderWithPasses(await loadRt(), writeRsb(scene), W, H, 1, passMask([...PASS_KEYS])).passes;
+    const { scene } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...AI_PASS_KEYS] });
+    const engine = renderWithPasses(await loadRt(), writeRsb(scene), W, H, 1, passMask([...AI_PASS_KEYS])).passes;
     const part = get('partId');
     const material = get('materialId');
     const depth = get('depth').map((d) => (d === null ? Infinity : d));

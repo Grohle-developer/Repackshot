@@ -1445,6 +1445,7 @@ export class PathTracerEngine implements RenderEngine {
         if (b) acc.addBlock(r.index, b.x, b.y, b.w, b.h, r.first, r.count, r.data);
         else acc.add(r.index, r.first, r.count, r.data);
         if (passes && r.albedo) passes.addAlbedo(r.index, r.first, r.count, r.albedo);
+        if (passes && r.alpha) passes.addAlpha(r.index, r.first, r.count, r.alpha);
         if (passes && r.exact) passes.setExact(r.index, r.exact);
         const now = performance.now();
         if (now - lastReport > 100) {

@@ -6,15 +6,16 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
+import { AI_PASS_KEYS, FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
 import { projectScene, writeRsb } from '../src/io/rsb';
-import { ALBEDO_BIT, EXACT_BITS, keysOfMask, parsePasses, PassAccumulator, wordsPerPixel } from '../src/render/pass-planes';
+import { ALBEDO_BIT, ALPHA_BIT, EXACT_BITS, keysOfMask, parsePasses, PassAccumulator, SAMPLED_BITS, wordsPerPixel } from '../src/render/pass-planes';
 import { tileGrid } from '../src/render/tiles';
 import { passScene } from './browser/pass-scene';
 import { referencePasses } from './browser/reference-passes';
 import { fnv1a, loadRt, passHashes, pinned, pinnedPasses, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
 
-const ALL = passMask([...PASS_KEYS]);
+/** The six passes of X2 (the AI guard's contract): what the pinned hashes of that phase are over. N2's alpha has its own tests below. */
+const ALL = passMask([...AI_PASS_KEYS]);
 
 describe('putting the passes together', () => {
   it('masks follow the keys', () => {
@@ -88,6 +89,8 @@ describe('the launcher’s passes file', () => {
       expect(passes.partId![i]).toBe(i === 4 ? FLOOR_ID : i);
       expect(passes.materialId![i]).toBe(i === 4 ? FLOOR_ID : 2 * i);
       expect(passes.coc![i]).toBe(i / 8);
+      // N2: the alpha plane, appended after the six.
+      expect(passes.alpha![i]).toBe(Math.fround(i / 5));
     }
   });
 
@@ -124,7 +127,7 @@ describe.skipIf(!RT_WASM)('the passes of the real rt.wasm, rendered the pool’s
     const W = 192;
     const H = 108;
     const state = passScene(W, H);
-    const { scene, ids } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...PASS_KEYS] });
+    const { scene, ids } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...AI_PASS_KEYS] });
     expect(scene.render.passes).toBe(ALL);
     // The studio floor is a shadow catcher here, which the engine's passes count as FLOOR_ID.
     expect(scene.floor.mode).toBe(2);
@@ -193,5 +196,102 @@ describe.skipIf(!RT_WASM)('the passes of the real rt.wasm, rendered the pool’s
     expect(sharp).toBeGreaterThan(100);
     expect(floor).toBeGreaterThan(1000);
     expect(edges).toBeLessThan(W * H * 0.01);
+  }, 120000);
+});
+
+// ------------------------------------------------------------------ N2: the alpha pass
+
+describe('the alpha pass (N2): the seventh key, appended after the six', () => {
+  it('is bit 6 of the mask, a sampled pass like the albedo, and the exact planes stay the same five', () => {
+    expect(PASS_KEYS).toEqual([...AI_PASS_KEYS, 'alpha']);
+    expect(passMask(['alpha'])).toBe(0b1000000);
+    expect(ALPHA_BIT).toBe(64);
+    expect(SAMPLED_BITS).toBe(0b1000001);
+    expect(EXACT_BITS).toBe(0b111110);
+    expect(keysOfMask(0b1000101)).toEqual(['albedo', 'depth', 'alpha']);
+    expect(wordsPerPixel(0b1111111)).toBe(11);
+  });
+
+  it('adds the coverage in sample order in f32 and divides like Film::resolve; refuses out-of-order samples and a mask without it', () => {
+    const tiles = tileGrid(40, 3, 32);
+    const acc = new PassAccumulator(40, 3, passMask(['alpha']), tiles);
+    const t = tiles[1]; // 8 x 3 at x = 32
+    const sample = (s: number) => new Float32Array(t.w * t.h).map((_, i) => ((i + s) % 3 === 0 ? 0 : 1));
+    expect(acc.addAlpha(1, 0, 1, sample(0))).toBe(true);
+    expect(acc.addAlpha(1, 2, 1, sample(2))).toBe(false); // out of order
+    const two = new Float32Array(t.w * t.h * 2);
+    two.set(sample(1));
+    two.set(sample(2), t.w * t.h);
+    expect(acc.addAlpha(1, 1, 2, two)).toBe(true);
+    expect(acc.addAlpha(1, 3, 1, new Float32Array(2))).toBe(false); // too short
+    const r = acc.resolve();
+    expect(Object.keys(r).sort()).toEqual(['alpha', 'height', 'width']);
+    const third = Math.fround(1 / 3);
+    for (let y = 0; y < t.h; y++)
+      for (let x = 0; x < t.w; x++) {
+        const i = y * t.w + x;
+        const sum = Math.fround(Math.fround(sample(0)[i] + sample(1)[i]) + sample(2)[i]);
+        expect(r.alpha![(t.y + y) * 40 + t.x + x], `value ${i}`).toBe(Math.fround(sum * third));
+      }
+    // The tile that got nothing is transparent.
+    expect(r.alpha![0]).toBe(0);
+    // Without the bit nothing is accepted.
+    expect(new PassAccumulator(40, 3, passMask(['albedo']), tiles).addAlpha(1, 0, 1, sample(0))).toBe(false);
+  });
+});
+
+describe.skipIf(!RT_WASM)('the alpha pass of the real rt.wasm, rendered the pool’s way (N2)', () => {
+  it('is the native engine’s pinned plane on the example and on the E5 scene, and asking for it changes no pixel of the image', async () => {
+    const rt = await loadRt();
+    for (const [fixture, image, alpha] of [
+      ['tests/fixtures/example.rsb', 'PINNED_EXAMPLE_4SPP', 'PINNED_PASS_ALPHA'],
+      ['tests/fixtures/e5.rsb', 'PINNED_E5_HDRI_4SPP', 'PINNED_E5_PASS_ALPHA'],
+    ] as const) {
+      const rsb = new Uint8Array(readFileSync(fixture));
+      const [w, h] = fixture.includes('example') ? [512, 384] : [160, 120];
+      const { image: acc, passes } = renderWithPasses(rt, rsb, w, h, 4, ALPHA_BIT);
+      expect(fnv1a(resolveRgb(acc, 4)), `${fixture}: the image`).toBe(pinned('engine/crates/rt-core/src/render.rs', image));
+      expect(Object.keys(passes).sort(), 'only the alpha plane').toEqual(['alpha', 'height', 'width']);
+      expect(fnv1a(passes.alpha!).toString(16), `${fixture}: the alpha`).toBe(pinned('engine/crates/rt-core/src/render/passes_tests.rs', alpha).toString(16));
+      const values = new Set(passes.alpha);
+      expect(values.has(0) && values.has(1) && values.size > 2, 'background, object and soft edges').toBe(true);
+    }
+  }, 120000);
+
+  it('with the six X2 passes beside it, they keep their pinned hashes (appending the alpha moved none)', async () => {
+    const rt = await loadRt();
+    const rsb = new Uint8Array(readFileSync('tests/fixtures/example.rsb'));
+    const { passes } = renderWithPasses(rt, rsb, 512, 384, 4, ALL | ALPHA_BIT);
+    expect(passHashes(passes).map((x) => x.toString(16))).toEqual(pinnedPasses('').map((x) => x.toString(16)));
+    expect(fnv1a(passes.alpha!)).toBe(pinned('engine/crates/rt-core/src/render/passes_tests.rs', 'PINNED_PASS_ALPHA'));
+  }, 120000);
+
+  it('is the objects of the X4 scene: 1 on every part, 0 on the floor and the background, soft only on the edges', async () => {
+    const W = 192;
+    const H = 108;
+    const state = passScene(W, H);
+    const { scene } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: ['partId', 'alpha'] });
+    expect(scene.render.passes).toBe(passMask(['partId', 'alpha']));
+    const rt = await loadRt();
+    const { passes } = renderWithPasses(rt, writeRsb(scene), W, H, 4, passMask(['partId', 'alpha']));
+    let parts = 0;
+    let other = 0;
+    let soft = 0;
+    for (let i = 0; i < W * H; i++) {
+      const id = passes.partId![i];
+      const a = passes.alpha![i];
+      if (a > 0 && a < 1) soft++;
+      else if (id !== 0 && id !== FLOOR_ID) {
+        // The centre of the pixel is on a part; the pixel is not soft: all its samples are on parts.
+        expect(a, `pixel ${i}`).toBe(1);
+        parts++;
+      } else if (a === 0) other++;
+    }
+    expect(parts).toBeGreaterThan(2000);
+    expect(other).toBeGreaterThan(2000);
+    expect(soft).toBeGreaterThan(20);
+    // A pixel whose centre ray sees the studio floor, and none of the samples touch a part: alpha 0.
+    const floorOnly = Array.from({ length: W * H }, (_, i) => i).filter((i) => passes.partId![i] === FLOOR_ID && passes.alpha![i] === 0);
+    expect(floorOnly.length).toBeGreaterThan(1000);
   }, 120000);
 });
