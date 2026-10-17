@@ -11891,7 +11891,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 
 **Fases que salen de aquí:**
 - **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
-- **C2** · Interruptor de la focal (1.7).
+- **C2** · Interruptor de la focal (1.7). **Hecha**: ver C2, abajo.
 - **M3c** · Nodos *Madera* y *Tela* (1.6).
 - **N2b** · El estudio viaja con el proyecto.
 - **O2c** · Editor de elementos de la lente (1.5).
@@ -11914,7 +11914,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - **apagado** (por defecto, como en una cámara): la cámara se queda y cambia el encuadre;
   - **encendido**: la cámara se acerca o se aleja por su eje para que el plano enfocado conserve su tamaño en la imagen, es decir, cambia la perspectiva y no el tamaño.
 
-  El inspector dice cuál está activo. Es deshacible de una vez. **C2.**
+  El inspector dice cuál está activo. Es deshacible de una vez. **C2.** (hecho en C2)
 - **6.1–6.3** (los sets dentro de *Estudios*, sus luces desactivables). **Cerrado por L7.** Los sets son su propio grupo, y cada foco se enciende y apaga en la lista *Luces* sin tocar el resto.
 - **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC. (hecho en C1)
 - **E13** (MNEE). **No se fusiona.** Cuesta 1,8–2× con vidrio curvo y no mejora lo que se ve. Las cáusticas siguen en el mapa de fotones. La rama `wip/ccr-8df3f848/e13` se queda como referencia.
@@ -12025,6 +12025,134 @@ recetas del plugin, sin barra vertical.
 - **Capturas regrabadas** (en *Sin publicar* de `GALERIA.md`): `scene-type-interior.png` (*Interior* con su receta de partida; `tools/scene-type-check.mjs` sigue a C1: elige después otra receta, que sí pregunta), `m3b-graphs.png` (los copos hacia fuera; ahora la hace `tests/m3b-graphs-sheet.test.ts`, con `REPACK_WRITE_CAPTURES=1`) y, del tema claro, `ai-section-light.png` y `ai-results-light.png` (`tools/ai-post-check.mjs`, que esperaba la intervención de fábrica en 30).
 
 **Puertas de la segunda ronda**, tras la fusión: `npm run engine:build` y `npm run qa` en verde (3108 tests: 3101 pasan, 7 se saltan); en `engine/`, `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace --release` (1142 pasan, 5 ignorados), la compilación wasm32 sin importaciones WASI, los bloques de paridad de `engine.yml` contra el `rt_wasm.wasm` real (42 imágenes, con la de O4; ninguna se movió), la paridad de la guarda con el `post.wasm` real (11 pasan) y los tests del código de la página con el `rt.wasm` real (129 pasan); el lanzador real con el *runtime* falso (`tests/ai-desktop.test.ts`); `tools/scene-type-check.mjs` y `tools/ai-post-check.mjs` (36 comprobaciones) en Chromium.
+
+## C2 · Interruptor de la focal — **Opus** — hecha
+
+**Petición del usuario** (`TODO.md` §1.7), tal cual: «Al cambiar la focal
+length cambia el zoom respecto al objeto enfocado, y esto quiero que sea un
+toggle. O la cámara se acerca o el objeto / punto enfocado.» Decidido en
+*Decisiones de criterio* (1.7): un interruptor junto a la focal, *Mantener
+el tamaño de lo enfocado*; apagado por defecto (la cámara se queda y cambia
+el encuadre, como en una cámara); encendido, la cámara se acerca o se aleja
+por su eje para que el plano enfocado conserve su tamaño (cambia la
+perspectiva, no el tamaño); el inspector dice cuál está activo y cada cambio
+es una entrada de deshacer.
+
+**Hecho:**
+
+- **El estado, por cámara**: `CameraState.keepFocusSize` (opcional; ◆ por
+  cámara y no como preferencia del inspector: cada cámara tiene su óptica y
+  su sitio, y así viaja sola con el proyecto, con *Nueva desde la vista
+  actual* y al duplicar, y con los estudios de la biblioteca, que guardan la
+  cámara entera). Al abrir, solo `true` es encendido (`io/project.ts`
+  `withInteriorCamera`, `io/library.ts` `camera`); un proyecto o un estudio de
+  antes de C2 se lee apagado.
+- **La cuenta, en el núcleo** (`core/focal.ts`, ARCHITECTURE §2, SPEC §3.5
+  *Focal y tamaño de lo enfocado*). Un punto a la profundidad *z* sale *f/z*
+  veces su tamaño: el plano a *D* lo conserva si pasa a *D·f′/f*, así que la
+  cámara avanza *D − D·f′/f* por la recta que la une a su objetivo, y la
+  distancia de órbita y la de enfoque bajan lo mismo. *D* sale de la
+  resolución de F1 (`focusedPlaneDistance`): la tecleada en *Distancia*; en
+  *Punto* y *Objeto*, `focusDistanceFor` del punto que se sigue en reposo
+  (la profundidad; con inclinación, donde el plano de la bisagra corta el
+  eje; con verticales rectas, medida por el eje propio de la cámara, que es
+  por el que se mueve: la cámara nivelada que se renderiza conserva el
+  tamaño y el sitio del plano, comprobado en los tests). El **objetivo de
+  órbita** se queda mientras la cámara quede delante de él a más de
+  `MIN_ORBIT_FRACTION` (0,1) de la distancia de órbita escalada por la misma
+  razón; si no, avanza por el eje delante de ella (◆ la regla y el 0,1). El
+  plano lejano de recorte se queda donde estaba en el mundo al alejarse.
+  **Cámara bloqueada**: la focal cambia y la cámara no se mueve (◆, como con
+  el interruptor apagado; antes de C2 la focal de una cámara bloqueada ya se
+  podía cambiar). **Ortográfica y panorámicas**: no hacen nada (su encuadre
+  es el ancho o el campo de visión, no la focal), y lo dice la línea del
+  inspector (`focalBehaviour`). La acción es `camera/focal` (`store.ts` la
+  manda a `reduceFocal`), y las **ópticas de interior** de K3
+  (`camera/interiorLens`) pasan por el mismo sitio (◆).
+- **La interfaz** (UI.md §5.1 *Cámara*, §3): el interruptor en su fila justo
+  debajo de *Focal* (en la sección *Cámara* de la escena y en la ficha de
+  una cámara guardada, que dibujan los dos `cameraFields`), con su línea
+  auxiliar, que dice cuál está activo y cómo es el otro, o por qué no hace
+  nada (bloqueada, ortográfica, panorámica); el campo de la focal despacha
+  `camera/focal` con el gesto del campo, así que cada pulsación de las
+  flechas (mantenida, un solo gesto), cada arrastre y cada valor tecleado es
+  una entrada (*Cámara: Focal*); el interruptor, otra (*Cámara: Mantener el
+  tamaño de lo enfocado*). En la paleta, *Focal: mantener el tamaño de lo
+  enfocado (activar o desactivar)* para la cámara que se ve, con un aviso.
+  Cadenas en `es` y `en`; el cromo es el del interruptor de siempre
+  (acromático, comprobado en los dos temas).
+
+**Tests** (cada uno se comprobó deshaciendo su cambio: falla).
+
+- `tests/focal-switch.test.ts` (19): apagado, la cámara se queda y el plano
+  crece por la razón de focales; encendido, en *Distancia* con el foco en el
+  objetivo y fuera de él, en *Punto* y en *Objeto*, y con verticales rectas,
+  los puntos del plano enfocado **proyectados** con la cámara que se
+  renderiza (su nivelada y su *shift*) caen donde caían (< 10⁻⁹ mm) y su
+  tamaño no cambia (< 10⁻⁹ relativo), mientras lo de delante encoge y lo de
+  detrás crece; en *Punto* manda el punto aunque la distancia guardada
+  esté vieja; el objetivo empujado; el recorte lejano; nada de NaN; las
+  ópticas de interior; la cámara bloqueada, la ortográfica y las dos
+  panorámicas, quietas; deshacer (el interruptor y la focal, una entrada
+  cada uno, y deshacer devuelve la cámara exacta), un arrastre una entrada
+  (y acaba donde un cambio directo), cada pulsación de las flechas la suya;
+  ida y vuelta en el proyecto (también una cámara nueva copiada), uno de
+  antes y uno con `"yes"` se abren apagados; un estudio de la biblioteca lo
+  guarda y uno de antes se lee apagado; la orden de la paleta.
+  Mutaciones: quitar el movimiento hace fallar 11 (y 3 del navegador);
+  quitar el paso por el *store*, 16 (y 4); medir *D* hasta el objetivo en
+  vez del plano enfocado, 5 (y 1); leer *D* de la distancia guardada en
+  *Punto*, 1; quitar la comprobación de bloqueada, de ortográfica y
+  panorámicas, del empuje del objetivo, del recorte, de las ópticas de
+  interior, de la lectura del proyecto, de la de la biblioteca o de la
+  orden de la paleta, 1 cada una.
+- `tests/focal-browser.test.ts` (5, Chromium con SwiftShader; se salta sin
+  él): la página `tests/browser/focal-page.ts` dibuja con el motor de la
+  vista previa dos tarjetas que brillan, cambia la focal por el *store* como
+  el campo (un arrastre de 50 a 85 mm, una pulsación a 35 mm, verticales
+  rectas con 18° de 35 a 70 mm) y lee el lienzo: encendido, la tarjeta del
+  plano enfocado sale con **los mismos píxeles** (5145 de 5145, 83 px de
+  ancho; en *Punto* sobre la tarjeta de detrás, 2595 de 2595; con verticales,
+  2806 de 2806), dentro del 1 % que se pide, y en su sitio a menos de un
+  píxel, mientras la otra cambia; apagado, la tarjeta crece 1,70× (83 → 141
+  px). Una entrada de deshacer cada vez.
+- `tools/focal-check.mjs` (20 comprobaciones sobre la interfaz construida,
+  `npm run build` antes): el interruptor bajo la focal, apagado y su línea;
+  apagado, la flecha cambia la focal y deja la distancia de enfoque; encender
+  es una entrada; la flecha mueve la distancia de enfoque por la razón de
+  focales (688,4 → 696,5 mm de 85 a 86 mm) en una entrada que un Ctrl+Z
+  deshace entera; un arrastre, una entrada; la línea de la ortográfica y de
+  la bloqueada (y la bloqueada no se mueve); la paleta lo apaga con su aviso;
+  la línea en español; acromático en el tema oscuro y en el claro. Con el
+  campo de antes (`camera/set`) fallan `on_the_camera_dollies` y
+  `drag_dollies`. `--shots docs/ui` deja la captura.
+
+**Captura**: `docs/ui/c2-focal-switch.png` (el bloque *Cámara* con el
+interruptor encendido y su línea; en `GALERIA.md`, *Sin publicar*).
+
+**No encajó con el plan** (regla 12; ◆ para quien decide):
+
+1. **La focal no tiene deslizador**: es un campo con flechas que se arrastra
+   (U15). El «gesto de deslizador» es ese arrastre (una entrada); no se
+   añadió un deslizador a la focal.
+2. **No hay preferencias del inspector** donde guardar el interruptor; por
+   cámara encaja con el resto (ver arriba).
+3. **Con inclinación (O1)** se conserva el tamaño donde el plano corta el
+   eje: la regla de la bisagra depende de la focal, así que el plano
+   inclinado gira un poco al cambiarla y sus puntos fuera del eje no
+   conservan el tamaño exacto.
+4. **Con una lente trazada**, *D* es la distancia paraxial que guarda el
+   *store* (no pregunta al motor); abierta, el mejor foco cae a milímetros
+   de ella, y el tamaño en la imagen depende de la geometría, no de eso.
+5. **Los presets de *Óptica*** (`camera/lens`) siguen encuadrando la pieza
+   como antes, con el interruptor encendido o apagado; y los clips `ZOOM` de
+   la animación cambian la focal sin mover la cámara (un *dolly zoom*
+   animado sería otro clip).
+6. **El interruptor sigue activo** con la ortográfica y las panorámicas (se
+   puede dejar encendido para cuando la cámara vuelva a perspectiva); la
+   línea dice que ahí no hay nada que mantener.
+
+**Puertas.** `npm run engine:build` (el `rt.wasm`, el `rt-simd.wasm` y el `post.wasm` de siempre: el motor no se tocó, así que no hacen falta `cargo fmt`, `clippy` ni la compilación wasm aparte) y `npm run qa` en verde: tipos, *build* y 193 archivos de prueba, 186 pasan y 7 se saltan, con 3191 tests (3160 pasan, 31 se saltan; antes de la fase 191 archivos), sin repetir nada con `--maxWorkers=2`. `tests/focal-browser.test.ts` corrió dentro, en Chromium; `tools/focal-check.mjs` (20 de 20) sobre el `dist/` construido.
 
 ## F1 · Enfoque por punto y por objeto — **Opus** — hecha
 

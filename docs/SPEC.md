@@ -1133,6 +1133,40 @@ lanzado contra la geometría del visor por las dos caras de cada triángulo
 (como las ve el motor) y con la sección; la cámara que lo recibe es la que
 se ve (la mirada a través, la del plano del cabezal, o la activa).
 
+**Focal y tamaño de lo enfocado** (C2, `core/focal.ts`). Cada cámara lleva
+el interruptor *Mantener el tamaño de lo enfocado*,
+`CameraState.keepFocusSize` (opcional: una cámara, un proyecto o un
+estudio de la biblioteca de antes de C2 no lo tienen y se leen apagado; al
+abrir, cualquier valor que no sea `true` es apagado). La focal cambia con
+`camera/focal` (el campo del inspector: un paso de las flechas, un arrastre
+o un valor tecleado, cada uno una entrada de deshacer) o con una óptica de
+interior (`camera/interiorLens`), y pasa por él:
+
+- **apagado** (por defecto, como en una cámara): la cámara se queda donde
+  está y cambia el encuadre;
+- **encendido**: la cámara se mueve por su eje para que el plano enfocado
+  conserve su tamaño en la imagen. Un punto a la profundidad *z* sale *f/z*
+  veces su tamaño, así que el plano a la distancia *D* lo conserva si pasa a
+  *D·f′/f*: la cámara avanza *D − D·f′/f* (retrocede si la focal crece) y la
+  distancia de enfoque y la de órbita bajan lo mismo. *D* es la de F1 en
+  reposo: la tecleada en *Distancia*; en *Punto* y *Objeto*, la que pone en
+  foco el punto que se sigue (`focusDistanceFor`: su profundidad; con
+  inclinación, donde el plano de la bisagra que pasa por él corta el eje;
+  con verticales rectas se mide por el eje propio de la cámara, que es por el
+  que se mueve, y la cámara nivelada que se renderiza conserva el tamaño y
+  el sitio del plano). El **objetivo de órbita** se queda donde está
+  mientras la cámara quede delante de él a más de una décima de la
+  distancia de órbita escalada por la misma razón; si no, avanza por el eje
+  delante de la cámara (nunca queda detrás). El plano lejano de recorte se
+  queda donde estaba en el mundo.
+
+No mueve nada con la cámara **bloqueada** (la focal cambia como apagado), ni
+con la **ortográfica** ni las **panorámicas**, cuyo encuadre no depende de la
+focal (el ancho, el campo de visión). Elegir un **preset de óptica**
+(`camera/lens`) sigue encuadrando la pieza como antes; los clips `ZOOM` de
+una animación cambian la focal sin mover la cámara. *Nueva desde la vista
+actual* y duplicar copian el interruptor.
+
 **Óptica (O1, la lente simple; hasta O4 se llamaba *lente fina*, y el
 proyecto la sigue guardando como `thin`).** `CameraState.optics` (opcional;
 una cámara sin él, como todas las anteriores a O1, es la lente simple de

@@ -783,7 +783,8 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
    (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
    cámara tiene su óptica y su posición. Preset de óptica (8
-   `LENS_PRESETS`), focal en mm (campo arrastrable), diafragma (f/),
+   `LENS_PRESETS`), focal en mm (campo arrastrable), debajo el interruptor
+   **Mantener el tamaño de lo enfocado** (C2, ver abajo), diafragma (f/),
    **Enfoque** (F1, `src/ui/panels/insp-focus.ts`), interruptor
    Perspectiva / Ortográfica, **Proporción** (U13), *Encuadrar*, y
    *Guardar como cámara*. **Enfoque** es un control segmentado *Distancia ·
@@ -820,7 +821,26 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    pirámide, o el lápiz de esta cabecera), el visor marca su punto de
    enfoque con un glifo pequeño del mismo estilo que los de luces y cámaras:
    un anillo con cuatro marcas en *Punto* y cuatro esquinas en *Objeto*,
-   con un punto en el centro, donde el punto está en el cabezal. **Proporción** es una lista (*3:2 · Foto 35 mm*,
+   con un punto en el centro, donde el punto está en el cabezal.
+   **Mantener el tamaño de lo enfocado** (C2, `core/focal.ts`; captura
+   `docs/ui/c2-focal-switch.png`) es un interruptor justo debajo de la
+   focal, apagado en una cámara nueva. Apagado (como en una cámara), cambiar
+   la focal deja la cámara donde está y cambia el encuadre; encendido, la
+   cámara se acerca o se aleja por su eje para que el plano enfocado
+   (la distancia de *Distancia*, el punto de *Punto*, el objeto de *Objeto*)
+   conserve su tamaño en la imagen: cambia la perspectiva, no el tamaño. La
+   línea auxiliar de debajo dice cuál está activo y cómo es el otro
+   (*Apagado: al cambiar la focal la cámara se queda donde está y cambia el
+   encuadre, como en una cámara. Encendido, …*), y en tres casos lo cambia:
+   con la cámara **bloqueada** (*se queda donde está y cambia el encuadre;
+   desbloquéala…*), con la **ortográfica** y con las **panorámicas** (*la
+   focal no cambia el encuadre y no hay nada que mantener*). Cada paso de
+   las flechas de la focal (pulsarlas y mantenerlas es un solo paso), cada
+   arrastre del campo y cada valor tecleado es **una entrada de deshacer**
+   (*Cámara: Focal*), con el movimiento de la cámara dentro; el interruptor,
+   otra (*Cámara: Mantener el tamaño de lo enfocado*). Las ópticas de
+   interior (K3) lo siguen; elegir un preset de *Óptica* encuadra la pieza,
+   como antes. **Proporción** es una lista (*3:2 · Foto 35 mm*,
    *4:3*, *16:9 · Vídeo*, *1:1 · Cuadrado*, *5:4*, *4:5 · Retrato*,
    *9:16 · Vertical*, *21:9 · Ultra ancho*, *2:1*, *65:24 · Panorámica* y
    *Propia*) y, debajo, los campos `w : h`, que se pueden editar con
@@ -2344,6 +2364,11 @@ ve: *Enfocar en un punto (haz clic en él)* y *Enfocar en un objeto (haz
 clic en él)* empiezan el pico, *Mantener enfocada la selección* pasa a
 *Objeto* con lo seleccionado y *Enfocar por distancia* vuelve a
 *Distancia* con la distancia a la que estaba.
+
+El interruptor de la focal (C2) tiene la suya: *Focal: mantener el tamaño
+de lo enfocado (activar o desactivar)*, para la cámara que se ve, en una
+entrada de deshacer, con un aviso que dice cómo queda (*Cámara 1: al
+cambiar la focal se mantiene el tamaño de lo enfocado*).
 
 Atajos iniciales (todos visibles en el tooltip del control y en *Atajos
 de teclado* del menú):
