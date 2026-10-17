@@ -50,7 +50,7 @@ escribe en un componente.
 ```css
 :root {                       /* tema claro */
   --bg-0: #ffffff;  --bg-1: #f4f4f4;  --bg-2: #e9e9e9;  --bg-3: #d9d9d9;
-  --ink-0: #000000; --ink-1: #333333; --ink-2: #6b6b6b; --ink-3: #9a9a9a;
+  --ink-0: #000000; --ink-1: #333333; --ink-2: #5f5f5f; --ink-3: #9a9a9a;
   --line: #d0d0d0;  --line-strong: #000000;
   --viewport-bg: #8c8c8c;     /* gris neutro 18 % de reflectancia perceptual */
 }
@@ -587,7 +587,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    los valores de partida de `INTERIORS.md` §3.1 que existen hoy (el
    entorno, los rebotes, las cáusticas, la sombra de contacto, la
    transformada, las muestras, el terminar por ruido y el *denoise*, la focal),
-   y al volver a *Producto* deja lo que no se tocó como estaba. Con
+   *Interior* pone además la receta *Ventana de mediodía* sobre los focos del
+   tipo de producto sin tocar (C1; unos focos elegidos o editados se quedan), y
+   al volver a *Producto* deja lo que no se tocó como estaba. Con
    *Interior* la sección *Luz* se abre en el grupo *Luces* con su estilo;
    al dejarlo el estilo vuelve a *Todos*. Tipo de producto (desplegable con los 16
    `STUDIO_PRESETS`, *Estándar* el primero y activo por defecto, con su
@@ -647,7 +649,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    siguiente* dentro de lo que dejan grupo y filtros.
 
    **Con focos en la escena**, elegir un set o un montaje (también uno
-   propio, y desde la paleta) **pregunta qué pasa con ellos**, en línea
+   propio, y desde la paleta) **pregunta qué pasa con ellos** —salvo si son
+   los del tipo de producto sin tocar (los que pone, sin un foco añadido ni
+   editado desde entonces): esos se sustituyen sin preguntar (C1)—, en línea
    sobre la rejilla: «Hay focos en la escena. ¿Qué pasa con ellos al entrar
    *Rembrandt*?» (o «Los focos se han editado…» si estaban modificados),
    con **Sustituir** (los borra: lo de siempre), **Ocultar** (los conserva
@@ -2107,7 +2111,8 @@ resolución de trabajo (lado largo 1024, 1536 o 2048, en mosaicos por
 encima), pasos, **intervención por defecto** (0–100, la de la ventana de
 render), semilla (*fija* o *nueva cada vez*), descargar el codificador de
 texto a RAM, y en *Avanzado* las tolerancias de la guarda
-(`AI-POST.md` §3.2; las de fábrica las fija X1). Un aviso en línea si el
+(`AI-POST.md` §3.2; las de fábrica las fija X1), que la guarda usa en cada
+petición (C1). Un aviso en línea si el
 modelo no cabe en la memoria detectada.
 
 **Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para

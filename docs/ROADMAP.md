@@ -3366,7 +3366,7 @@ recuerda tras recargar, la pregunta). `data.test.ts`, `sets.test.ts` y
   `library-setups.png` no tiene herramienta y queda marcada como superada.
 - La variante `large` de las miniaturas (L6) se quitó: nadie la usa.
 
-**◆ Para Fable** (regla 11; también en *Decisiones para Fable*):
+**◆ Para Fable** (regla 11; también en *Decisiones de criterio*):
 1. Que los montajes que cambian el entorno sin crear nada (las 7 recetas de
    *Interior*, los tres de sol) sean *Luces*, y que `PRESET` cambie de grupo con
    el tipo de producto.
@@ -3999,7 +3999,7 @@ azul como `2b − 1` sin la intensidad, y el color de un ruido pone la mitad de
 las normales hacia dentro de la superficie (el 49 % de los puntos de la placa);
 el motor las dobla hasta el borde del lado que mira, como los mapas de normales
 de M2b (salen oscuras), y three.js las ilumina con el mundo (salen claras).
-**Decisión para Fable** (regla 11/12, el contrato es de M3a): que
+**Decisión para Fable** (regla 11/12, el contrato es de M3a; decidida en *Decisiones de criterio* y hecha en C1): que
 `NORMAL_MAP` mezcle hacia la normal del mapa por la intensidad y la deje fuera
 (como el de Blender), o que el ejemplo pase el ruido por un rango con el azul
 cerca de 1, o que el motor refleje una normal de programa de espaldas en vez de
@@ -11152,7 +11152,7 @@ verde; capturas.
   variante compacta deja el mismo sitio, no más. El test de disposición mide
   los valores de los estados que abre.
 - Los ◆ (la variante compacta, la lista de lo convertido y el ritmo de la
-  repetición) están en *Decisiones para Fable*.
+  repetición) están en *Decisiones de criterio*.
 
 ## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
 
@@ -11885,143 +11885,146 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   el render (coste medido); los terminados siguen abriendo el visor.
   **Hecha**: ver U14.
 
-### Decisiones para Fable (regla 11; datos en `TRIAGE.md`)
+### Decisiones de criterio (antes «Decisiones para Fable»)
 
-- **O2**: el veredicto de la hoja (`out/lens-sheet.html` de O2): qué
-  lentes dan ojo de gato, burbuja, cremoso y remolino; prescripciones y
-  diafragmas supuestos; constantes del adaptador anamórfico; focales de
-  los gráficos. Y el muestreo por máscara contra el ruido del bokeh trazado.
-- **2.1**: las tolerancias de la guarda de la IA (hoy ±4,6 % de luminancia y
-  ±1,8 % de color: casi invisible por diseño), con la comparación de X1
-  parte B.
-- **1.7**: qué mueve el interruptor de la focal (la cámara se acerca para
-  mantener el tamaño del objeto enfocado, o la cámara se queda y cambia el
-  encuadre) y cómo se ve en la cámara.
-- **6.1–6.3**: los sets de L6 dentro de *Estudios* con sus muestras
-  grandes, y sus luces como añadidos desactivables una a una sin tocar las
-  del estudio.
-- **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
-  absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
-  con el tamaño manual.
-- **E13** (MNEE; en la rama `wip/ccr-8df3f848/e13`, commit `385a4c9`, **sin
-  fusionar**): cumple el coste en la botella de E5 (1,09×) y deja la leche
-  dentro del 3 % de la referencia, pero no quita su grano (ruido 0,129 frente
-  a 0,124 con la regla de pared fina) ni mejora la cáustica del vaso de agua
-  (relMSE 0,52 frente a 0,49; el mapa de fotones da 0,29), y con vidrio curvo
-  cuesta 1,8–2× porque Newton resuelve pocos caminos (15 de 81 bajo una bola a
-  8 iteraciones). Con las cáusticas apagadas (los softbox) actuaría en casi
-  todo producto de vidrio, más lento y sin mejora visible, así que el
-  responsable no lo fusiona. Decidir: más iteraciones o semillas, cadenas de
-  cuatro superficies, dejar las cáusticas al mapa de fotones, cambiar
-  *Automático*, o fusionarlo apagado por defecto. Hoja en
-  `out/e13-sheet.html` de esa rama (regenerable con `rt --e13-sheet`).
-- **E10**: el adaptativo da 0,83–0,84× el relMSE del uniforme a igual
-  tiempo contra el ≤ 0,6× del criterio; el reparto ideal por bloques de 8×8
-  llegaría a 0,48× y 0,38× a igual número de muestras. Aceptarlo, cambiar el
-  criterio o cambiar la regla de reparto (el contrato del brief: el cuantil
-  50 % del error, bajando). Está solo detrás de *Terminar por ruido*.
-- **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b; el
-  párrafo de S4b dice cómo lo facilita).
-- **S4b** (hoja `out/ambient-sheet.html` de esa fase, regenerable con
-  `tools/ambient-sheet.mjs`): la parte del lóbulo hacia delante (propuesta
-  0,5; la hoja tiene 0,25, 0,75 y 1); el coste de la lluvia (1,63× contra el
-  1,3× del criterio, que no es la búsqueda sino la luz que la atraviesa):
-  aceptarlo, rastros más cortos o más escasos, o un modelo de gota más
-  barato para la cámara; el grano dentro de los rastros bajo la luz lateral;
-  y la regla de los caminos estrechos desde la cámara (las gotas refractan
-  también en ellos) frente a solo los rayos de cámara.
-- **1.5**: el editor de elementos de una lente (editar, mover, añadir,
-  girar 180°) sobre lo que O2 ya guarda como lente propia.
-- **1.6**: si se añaden nodos *Madera* y *Tela* con las recetas de E6 (M3b
-  no los trae; su párrafo dice cómo los facilita el intérprete), y si el
-  ejemplo de madera de los grafos tiene que parecerse a la familia *Madera*
-  (`docs/ui/m3b-wood.png`).
-- **M3b**: el `NORMAL_MAP` de M3a con el azul por debajo de 0,5 (los copos
-  de la pintura metalizada, la mitad de sus normales hacia dentro): cambiar
-  el nodo, el ejemplo o el motor (el párrafo de M3b, «no encajó» 8).
-- **4.2**: si el triaje se confirma con la escena del usuario, el recorte de
-  *fireflies* y el borde solo por luminancia del *denoise*.
-- **Q1** (los ◆ de su «no encajó»): dónde vive el control de la sección
-  (hoy en el inspector de Escena, no en la barra del visor); si la tapa de
-  un vidrio cortado refracta, como ahora en el motor, o es opaca del color
-  del vidrio, como opción para el fotógrafo; y si el estudio puede cortarse
-  alguna vez (hoy nunca, sin interruptor por pieza).
-- **K1** (los ◆ de su «no encajó», con las tablas de la propuesta): las
-  cifras de las siete recetas de interior (sol, paneles, partes, exposición
-  e intensidad del entorno), cuál es la de partida del tipo *Interior* (no
-  se eligió ninguna) y los umbrales del Doctor de interiores (escala de
-  100 mm a 30 m, óptica por debajo de 18 mm a 24 mm, altura de ojo de 0,3 a
-  2,2 m a 1,5 m, recorte cercano a la mitad de la distancia a la pared).
-- **D1** (los ◆ de su «no encajó»): si recortar con *Estándar* es un fallo
-  (los fondos blancos planos lo hacen) y si el arreglo es Filmic o AgX; los
-  umbrales de los *fireflies* (nivel 1, aislamiento ×4, parte 0,5, 16
-  muestras, 8 píxeles o 1e-5, recorte 10, que sesga); los del presupuesto
-  (suelo de 64 muestras, la mitad en *lo que llegue antes*, subir el tiempo
-  en vez de bajar muestras, 25 % de margen); y cuándo avisar del vídeo
-  (dormido hasta N1) y del *denoise*.
-- **N1** (los ◆ de su «no encajó»): el orden del asistente (hoy primero el
-  objetivo, como lo dejó N6); qué es un *Fundido* (la cantidad es la
-  opacidad final, y *aparecer* es el invertido; en el motor, cobertura
-  estocástica, y los emisores bajan); el polo del arco solar (fijo, detrás
-  del producto a 45°: latitud y norte); la forma del fundido a color
-  (centrado en el corte, como mucho medio plano, sin fundido al final); y
-  la calidad del vídeo (automática, unos 0,1 bits por píxel, sin alfa ni
-  sonido).
-- **L7** (los ◆ de su párrafo): que las recetas de *Interior* y los tres
-  montajes de sol (cambian el entorno, no crean nada) sean *Luces* y que
-  `PRESET` cambie de grupo con el tipo de producto; el tipo de producto solo
-  como filtro de *Sets* y solo por `StudioPreset.set` (falta una tabla de qué
-  sets sirven a cada tipo); el filtro *Sujeto*; que un set que entra sustituya
-  siempre la decoración del anterior y que *Luces* con *Ocultar* o *Añadir* la
-  deje; preguntar por defecto también con los focos sin tocar; los tres
-  tamaños de miniatura (4, 3 y 2 columnas, la pequeña sin etiqueta).
-- **H1** (pasada v0.1.16): los grises auxiliares `ink-2` e `ink-3` quedan
-  por debajo de 7:1 en 36 pares. Para llegar a 7:1 en todas las superficies
-  tendrían que ser `#434343` o más oscuros en claro y `#b5b5b5` o más
-  claros en oscuro, lo que aplana la jerarquía de grises. Decidir: subirlos,
-  limitar el texto auxiliar a `bg-0`, `bg-1` y *hover* (`#4e4e4e` /
-  `#afafaf`) o aceptar 4,5:1 para el texto secundario.
-- **F1** — **decididas** (17-10, por el responsable de la sesión; el párrafo
-  de F1 las recoge): el centro de la caja para *Objeto*; el rango y la escala
-  del deslizador, como están; mover el deslizador en *Punto* u *Objeto* pasa a
-  *Distancia*; el criterio del mejor foco, como está (la esquina con
-  distorsión +1 queda abierta); el clip de foco gana; el clic en vidrio, su
-  cara delantera.
+**Desde el 17-10 las toma el responsable**, por indicación del usuario («toma tú las decisiones de fable»). Los agentes las siguen preparando y anotando con ◆, y no las toman por su cuenta (regla 11). Esta lista recoge lo decidido. Cada entrada dice si basta lo que hay o qué fase lo construye. Los datos de partida siguen en `TRIAGE.md` y en el párrafo de cada fase.
 
-- **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
-  de las flechas (hoy un par más fino, siempre visible, en los campos con
-  etiqueta en línea y en el de un deslizador; la otra opción, flechas solo
-  al pasar el ratón o con el foco); la **lista de lo convertido a
-  deslizador** (`UI.md` §4.4: físicas, ángulos de la óptica, de los filtros,
-  del suavizado, de los patrones, de texturas y etiquetas y de un foco
-  propio; calidad JPEG, ruido e intensidad de la reducción de ruido;
-  velocidades, gizmo e intervención en Ajustes) y lo que se quedó en campo
-  (las luces del estudio, las asas, *Tamaño de la interfaz* y *del texto*);
-  y el ritmo de la repetición (400 ms y luego cada 50 ms).
-- **N2** (los ◆ de su «no encajó»): qué es el **alfa** (hoy una máscara de
-  objetos: el suelo, el fondo, el entorno y los paneles de luz visibles dan
-  0, y el vidrio y los recortes cuentan como superficie; abierto si el
-  suelo entra y si un recorte con textura da cobertura parcial); qué
-  **pases** se ofrecen (los cuatro pedidos; el albedo, el id de material y
-  el círculo de confusión ya existen en el motor); las **codificaciones**
-  (EXR de 32 bits por defecto; en PNG de 16 bits la profundidad casi
-  blanca con 0 para el fondo y el rango en un `tEXt`, las normales a
-  `n/2+½`, los ids con el suelo en 65535); el **ZIP** (apagado por
-  defecto, el grupo es lo que mete una orden, el nombre
-  `Proyecto_0001-0004.zip`, en memoria y sin ZIP64); el **orden del lote**
-  (cámara por cámara; estudio por estudio es igual de defendible); y si el
-  **estudio debe viajar con el proyecto**.
-- **K3** (los ◆ de su «no encajó»): las **alturas de ojo** (1,5 y 1,1 m);
-  las **ópticas de interior** (24, 28 y 35 mm); la **medida automática**
-  (media logarítmica recortada, 10 % oscuro y 5 % claro fuera, a gris del
-  18 %, ±16 EV); los presets de EV (7 y 5) y la calibración
-  EV100 = log2(683/1,2) − exposición; el **exterior** (1 por defecto, de
-  0,05 a 1); que *Interior* encienda las verticales rectas (corrigen hasta
-  30° de inclinación); y el campo del **ojo de pez** medido en la diagonal.
+**Fases que salen de aquí:**
+- **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
+- **C2** · Interruptor de la focal (1.7).
+- **M3c** · Nodos *Madera* y *Tela* (1.6).
+- **N2b** · El estudio viaja con el proyecto.
+- **O2c** · Editor de elementos de la lente (1.5).
+- El 1.2 entra en **S3**.
+
+- **O2** (la hoja de la lente trazada). Se acepta tal como está:
+  - qué lentes dan ojo de gato, burbuja, cremoso y remolino;
+  - las prescripciones y los diafragmas supuestos;
+  - las constantes del adaptador anamórfico;
+  - las focales de los gráficos;
+  - el muestreo por máscara.
+
+  Solo se revisa si un render real lo desmiente.
+- **2.1** (la guarda de la IA). El usuario dice que la fase de IA «no hace casi nada» (`TODO.md` §2.1), y la guarda es casi invisible por diseño. Por eso:
+  - se **doblan las tolerancias** de la guarda por defecto;
+  - la **intervención por defecto pasa de 30 a 50**.
+
+  Las dos siguen en *Ajustes*. **C1.** (hecho en C1)
+- **1.7** (el interruptor de la focal). Es un interruptor junto a la focal, *Mantener el tamaño de lo enfocado*:
+  - **apagado** (por defecto, como en una cámara): la cámara se queda y cambia el encuadre;
+  - **encendido**: la cámara se acerca o se aleja por su eje para que el plano enfocado conserve su tamaño en la imagen, es decir, cambia la perspectiva y no el tamaño.
+
+  El inspector dice cuál está activo. Es deshacible de una vez. **C2.**
+- **6.1–6.3** (los sets dentro de *Estudios*, sus luces desactivables). **Cerrado por L7.** Los sets son su propio grupo, y cada foco se enciende y apaga en la lista *Luces* sin tocar el resto.
+- **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC. (hecho en C1)
+- **E13** (MNEE). **No se fusiona.** Cuesta 1,8–2× con vidrio curvo y no mejora lo que se ve. Las cáusticas siguen en el mapa de fotones. La rama `wip/ccr-8df3f848/e13` se queda como referencia.
+- **E10** (el muestreo adaptativo). **Se acepta**, con 0,83× a igual tiempo: está solo detrás de *Terminar por ruido* y no empeora nada. La regla de reparto se revisa si un render real lo pide.
+- **1.2** (la gota y la mezcla de geometrías en *Ambiente*). **Sí.** Entra en **S3**, la fase de lluvia y polvo, que es la que ya toca esas geometrías.
+- **S4b** (las partículas de ambiente). Se acepta todo lo propuesto:
+  - el lóbulo hacia delante, a 0,5;
+  - el coste de la lluvia (1,63×), que solo se paga con lluvia;
+  - el grano en los rastros bajo luz lateral;
+  - la regla de los caminos estrechos, en los que las gotas también refractan.
+- **1.5** (el editor de elementos de una lente). **Sí**: editar, mover, añadir y girar 180°, sobre la lente propia que ya guarda O2. **O2c.**
+- **1.6** (nodos *Madera* y *Tela*). **Sí**, con las recetas de E6. El ejemplo de madera de los grafos tiene que parecerse a la familia *Madera* (`m3b-wood.png`). **M3c.**
+- **M3b** (`NORMAL_MAP` con el azul por debajo de 0,5). El nodo **no deja que una normal apunte hacia dentro**: la lleva al hemisferio de fuera. El ejemplo de los copos se rehace con normales hacia fuera. **C1**, con su test y, si cambia el motor, con los pines que se muevan explicados. (hecho en C1)
+- **4.2** (el recorte de *fireflies* y el borde del *denoise* solo por luminancia). **Se quedan como están** hasta tener la escena del usuario. Sin ella no hay con qué medir.
+- **Q1** (la sección):
+  - el control sigue en el inspector de *Escena*, y en la paleta;
+  - la tapa de un vidrio cortado **refracta**, como ahora, que es lo físico;
+  - el estudio **no se corta nunca**.
+- **K1** (las recetas de interior y el Doctor de interiores):
+  - se aceptan las cifras de las siete recetas;
+  - la **de partida del tipo *Interior* es *Ventana de mediodía***;
+  - se aceptan los umbrales del Doctor tal como se propusieron: escala de 100 mm a 30 m, óptica por debajo de 18 mm (aviso desde 24 mm), altura de ojo de 0,3 a 2,2 m (a 1,5 m), recorte cercano a la mitad de la distancia a la pared.
+
+  **C1** pone la receta de partida. (hecho en C1)
+- **D1** (el Doctor de motor):
+  - recortar con *Estándar* es un **aviso**, no un fallo, porque los fondos blancos planos lo buscan;
+  - el arreglo propone **AgX**;
+  - se aceptan los umbrales de los *fireflies* y del presupuesto;
+  - el aviso del vídeo se despierta, porque N1 ya está hecho;
+  - el del *denoise* sigue como está.
+
+  **C1.** (hecho en C1)
+- **N1** (la animación). Se acepta todo lo propuesto:
+  - el orden del asistente, primero el objetivo;
+  - qué es un *Fundido*;
+  - el polo del arco solar;
+  - la forma del fundido a color;
+  - la calidad automática del vídeo.
+- **L7** (*Sets* y *Luces*). Se acepta la clasificación, el filtro *Tipo de producto* solo en *Sets*, el filtro *Sujeto*, que un set nuevo sustituya la decoración y los tres tamaños de miniatura. Un cambio: **no se pregunta si los focos que hay son los del tipo de producto sin tocar**; se sustituyen sin más. **C1.** (hecho en C1)
+- **H1** (los grises auxiliares):
+  - se acepta **4,5:1** (WCAG AA) para el texto secundario;
+  - el texto principal sigue en 7:1;
+  - la jerarquía de grises no se aplana.
+
+  Si algún par del informe de H1 queda por debajo de 4,5:1, se sube ese par. **C1.** (hecho en C1)
+- **U15** (las flechas):
+  - la variante compacta, siempre visible (el usuario pidió flechas en todos los valores);
+  - la lista de lo convertido a deslizador, tal cual;
+  - la repetición, 400 ms y luego cada 50 ms.
+- **N2** (pases, lotes y ZIP). Se aceptan:
+  - el alfa como máscara de objetos, sin el suelo;
+  - los cuatro pases;
+  - las codificaciones;
+  - el ZIP apagado por defecto;
+  - el orden cámara por cámara.
+
+  Un recorte con textura dará cobertura parcial cuando el motor la tenga. Un cambio: **el estudio de un trabajo viaja con el proyecto**, guardado dentro, para que un proyecto abierto en otro equipo no falle sus trabajos. **N2b.**
+- **K3** (la cámara de interiores). Se acepta todo lo propuesto:
+  - las alturas de ojo, 1,5 y 1,1 m;
+  - las ópticas de interior, 24, 28 y 35 mm;
+  - la medida automática;
+  - los presets de EV 7 y 5, con su calibración;
+  - el exterior, de 0,05 a 1, con 1 por defecto;
+  - que *Interior* encienda las verticales rectas;
+  - el campo del ojo de pez, medido en la diagonal.
+
+- **F1** (enfoque por punto y por objeto): el *Objeto* sigue el centro de su caja; el rango y la escala logarítmica del deslizador, como están; en *Punto* y *Objeto* **mover el deslizador pasa a *Distancia***; el mejor foco de la lente trazada por el contraste de detalle fino, como está (la esquina con distorsión +1 queda abierta); un clip de foco gana; el clic en un vidrio enfoca su cara delantera. **Hecho en F1.**
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
 recetas del plugin, sin barra vertical.
+
+
+## C1 · Decisiones de criterio aplicadas — **Opus** — hecha
+
+**Qué.** Los cambios pequeños de *Decisiones de criterio* marcados **C1**, en un solo PR: 2.1, 5.1, M3b, K1, D1, L7 y H1.
+
+**Hecho:**
+
+- **2.1 · La guarda de la IA.** Valores de fábrica: *Intervención* 50 (era 30) en `DEFAULT_AI_PIPELINE`, en `Settings::DEFAULT` de `rt-post` y en *Ajustes* (`ai.intervention`); las tolerancias, el doble: ΔE₀₀ medio 4 y percentil 95 6 por material, y bordes 4 px en *Ajustes* (`ai.guard*`, eran 2, 3 y 2) y en el servicio sintético (`SYNTHETIC_LIMITS`); en la guarda del motor (`Tolerances::PROVISIONAL`) 4, 6 y **3 px** (era 1,5). `AI-POST.md` §3.2 y §4 lo dicen. *Migración*: el documento de *Ajustes* guarda todas las claves y `validateSettings` conserva lo guardado (no hay ningún paso de esquema), así que un valor igual al de fábrica de antes no se distingue de una elección: una instalación existente sigue con lo que tenía; solo una nueva (o *Restablecer*) toma los valores nuevos. Tests: `tests/ai-settings.test.ts` (los valores nuevos, el sintético con los mismos, un documento guardado que conserva 30 y 2/3/2 y uno sin la clave que toma 4) y `the_constants_are_the_contracts` en `rt-post` (50, 4/6/3 y los ΔE iguales a los de `settings.ts`). `tests/fixtures/ai-guard.json` regenerado: el escenario *forbidden* (que usa los valores por defecto) cambia de imagen, y *strong* y *limited* ya no necesitan recortar el color de la tapa ni de la etiqueta.
+- **5.1 · Tamaño en milímetros.** El código ya lo hace: `sizeMm` en mm (`core/textures.ts`), el campo de tamaño es un `lengthField` que muestra en la unidad de *Ajustes* y escribe mm, *Ajustar a la pieza* es un botón (`insp-textures.ts`), la madera y la tela son físicas (anillos por 100 mm, `pattern/wood.rs`) y el desgaste guarda su `refSize` en metros al crearse el material. Solo se corrigió la SPEC (§3.3, los dos párrafos que decían «sigue en tamaños de pieza» y «decisión pendiente»).
+- **M3b · `NORMAL_MAP`.** En espacio tangente el `2b − 1` del azul se toma en valor absoluto: una normal con el azul por debajo de 0,5 se refleja al hemisferio de fuera, igual en `program/interp.rs` y en `core/material-interp.ts` (los mismos bits). El ejemplo *Pintura metalizada con copos* pasa el ruido por *Separar RGB* → *Combinar RGB* con el azul en 1. Tests (cada uno falla sin el arreglo): `a_tangent_space_normal_map_never_points_into_the_surface` (Rust), el mapa de normales de `tests/material-program.test.ts` y «the metallic flakes face out of the surface at every point» (falla si se quitan a la vez el arreglo y el ejemplo nuevo). **Fijados que se mueven, todos por un mapa de normales con el azul por debajo de 0,5:** el ejemplo de grafo `METALLIC_FLAKES` (`eb24ca6b` → `3795f601`, ejemplo nuevo y nodo nuevo), dos casos de la prueba cruzada (`NMAP 0` y `NMAP 4`, la instrucción sola en espacio tangente sobre colores con el azul por debajo de 0,5; `NMAP 1`, en el de la pieza, no se mueve), el quinto de `PINNED_M3B_PROGRAM_VALUES` (`0x587e_907c` → `0x6d55_bcef`: la tarjeta con copos de `NOISEC` en `NMAP`) y `PINNED_M3B_PROGRAMS_4SPP` (`0x0d6e_20ba` → `0x90b4_2b6b`, la misma tarjeta en la imagen; también en `rt-app` y `rt-cli`). Los seis pases de M3b y todo fijado de una escena sin `NMAP` siguen igual. `engine.yml` lee los fijados del código (`sed`), así que sus bloques no cambian. En la comparación por regiones (`tests/programs-full-browser.test.ts`) los copos pasan de correlación −0,91 y una distancia de tono de 106 a **+0,87** y **28**, dentro del margen de los demás: el test ahora les exige tono y correlación positiva.
+- **K1 · Receta de partida de *Interior*.** `SceneTypeDefaults.lightSetup` (`INT_WINDOW_NOON` en *Interior*) y una casilla más del mecanismo de K1, `studio.lighting`: guarda el montaje, sus focos, `modified`, la intensidad de la cúpula y la exposición, y escribe lo mismo que elegir la receta en el catálogo (`applySet` con la decoración conservada). Solo actúa sobre los focos del tipo de producto sin tocar (la definición de L7, abajo); un montaje elegido o unos focos editados se quedan. Volver al tipo anterior devuelve los focos tal cual (el mismo arreglo), y si la persona tocó un foco de la receta, se quedan los suyos. Tests en `tests/scene-type.test.ts` (seis nuevos; los de ida y vuelta de K1 pasan sin cambios, «removes nothing» ya no pide los mismos focos en *Interior*).
+- **D1 · Doctor de motor.** El recorte con *Estándar* era ya un aviso (`WARN`: el Doctor no tiene otro estado de fallo); ahora lo dice el catálogo y la frase («es lo que busca un fondo blanco liso») y el arreglo pone **AgX**. El chequeo de vídeo ya despertó en N1 (dormido quería decir que hasta N1 los ajustes forzaban la secuencia de fotogramas): avisa solo de un contenedor que el sistema no codifica; la SPEC aún decía lo de antes y se corrigió. El del *denoise* no cambia. Tests: tres nuevos en `tests/doctor-engine.test.ts` (aviso y AgX en el arreglo y en la frase en los dos idiomas; el vídeo despierto; el *denoise* igual) y los dos que fijaban *Fílmica*.
+- **L7 · La pregunta por los focos.** «Los focos del tipo de producto sin tocar» es `typeLightsUntouched` (`core/lighting.ts`): el montaje en vigor es el del tipo (`PRESET`), `studio.modified` está apagado (lo enciende cualquier foco añadido, duplicado, editado, colocado, apuntado o borrado, y solo lo apaga poner un montaje) y los focos, sin la decoración de un set, son valor a valor los de `lightsFromRig` del tipo (así no hay focos propios ni conservados, y un tipo elegido sin rehacer el estudio no cuenta). Con ellos, `requestSetup` sustituye sin preguntar, también si *Ajustes* recuerda *Ocultar* o *Añadir*. Tests: dos nuevos en `tests/light-catalogue.test.ts`; `tests/library.test.ts` y `tests/light-panel-browser.test.ts` ya no esperan la pregunta sobre el proyecto recién abierto (el segundo elige primero un montaje sin pregunta y después otro, que sí pregunta).
+- **H1 · Contraste.** `tests/ui-contrast.test.ts` exige 7:1 al texto principal (`ink-0`, `ink-1`, el invertido) y 4,5:1 al secundario (`ink-2`) sobre todas las superficies de los cuatro temas, y que cada gris quede al menos un 10 % por debajo del de encima en cada superficie (la jerarquía no se aplana). El único par por debajo de 4,5:1 era `ink-2` del tema claro: **`#6b6b6b`** (3,78:1 sobre `bg-3`, 4,39 sobre `bg-2`, 4,43 sobre *overlay*) pasa a **`#5f5f5f`** (4,52:1 sobre `bg-3`, 6,4 sobre `bg-0`); el oscuro (`#9a9a9a`, 5,10 a 6,86) y los de alto contraste ya llegaban.
+
+**Qué no encajó con el plan** (regla 12; ◆ para quien decide):
+
+1. **Los mandos de la guarda de *Ajustes* no llegaban a la guarda** (decidido y hecho en la segunda ronda, abajo): `ai.guardDeltaE`, `ai.guardDeltaE95` y `ai.guardEdgePx` se guardaban y se mostraban, pero la guarda usaba siempre `Tolerances::PROVISIONAL`, y el borde de fábrica difería (1,5 px en el motor, 2 en *Ajustes*).
+2. **Las instalaciones existentes conservaban 30 y 2/3/2** por la convención de *Ajustes* (lo guardado manda): decidido migrarlas (segunda ronda).
+3. **`NORMAL_MAP` en el espacio de la pieza** podía aún doblar la normal hacia dentro con una intensidad por encima de 0,5: decidido plegarlo también (segunda ronda).
+4. **K1**: la decoración de un tipo de producto que es un set (el foco del charco, el fondo) se queda bajo la receta, como al añadir una receta conservando los focos; quitarla obligaría a la casilla a guardar piezas de la escena para devolverlas. Con la exposición automática de *Interior*, la exposición que pone la receta (la del tipo más 0,2) es la compensación, igual que al elegirla en el catálogo.
+5. **D1**: el recorte ya era aviso y el vídeo ya estaba despierto desde N1; lo nuevo es el arreglo (AgX), las frases, la SPEC y los tests.
+6. **H1: `ink-3` no se sube.** Es el gris de lo apagado (controles deshabilitados, separadores, asas, miniaturas vacías), que WCAG 1.4.3 no mide; subirlo a 4,5:1 lo pondría encima de `ink-2` y aplanaría la jerarquía. El texto que se lee y lo usaba pasa a `ink-2` (segunda ronda).
+7. **Capturas**: las que este cambio dejó viejas se regrabaron en la segunda ronda.
+
+**Puertas.** `npm run engine:build`, `npm run qa` (tipos y *build* en verde; de 3071 tests, en una pasada falló solo `tests/ai-desktop.test.ts` «cancelling mid-way», una carrera de tiempos con la máquina cargada que fija la intervención a 100 y no depende de los valores de fábrica: pasa solo tres veces seguidas, y la suite entera con `npx vitest run --maxWorkers=2` da 3065 pasan y 6 se saltan). En `engine/`: `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace --release` (1130 pasan, 5 ignorados), la compilación wasm32 de `rt-wasm` y `rt-post-wasm` sin importaciones WASI, los bloques de paridad de `engine.yml` contra el `rt_wasm.wasm` real (40 imágenes; M3b da `0x90b42b6b` con sus seis pases iguales), la paridad de la guarda con el `post.wasm` real (`tests/ai-post-wasm.test.ts`) y los tests del código de la página con el `rt.wasm` real (107 pasan). `tests/programs-full-browser.test.ts` y `tests/light-panel-browser.test.ts`, en Chromium.
+
+**Segunda ronda** (lo marcado ◆, decidido por el responsable):
+
+- **Fusión de `main`** (v0.1.17, el arranque en *Rápido* y O4): el CHANGELOG junta las dos partes por áreas; en el ROADMAP se queda el nombre *Decisiones de criterio* (O4 anotó sus decisiones en su propia fase y no tocó la lista).
+- **Migración de los valores de fábrica de antes.** `SETTINGS_SCHEMA` pasa a **2** y su paso 1 → 2 (`STEPS[1]`, con `OLD_AI_FACTORY`) cambia un `ai.intervention` guardado igual a 30 por 50, y unas tolerancias iguales a 2, 3 y 2 px por 4, 6 y 4 px, cada una por su cuenta; cualquier otro valor se queda, y un documento de esquema 2 se lee tal cual (allí un 30 es una elección). Test en `tests/ai-settings.test.ts`: un documento viejo toma los nuevos, uno con 35 conserva 35 (y un ΔE de 5 o un borde de 1 los suyos), uno de esquema 2 conserva 30.
+- **Los mandos de la guarda llegan a la guarda.** `AiPostRequest.tolerances` (`deltaEMean`, `deltaEP95`, `edgesPx`, las claves de `Tolerances::KEYS`) y `withGuardTolerances` (`core/ai-post.ts`), que envuelve el servicio de la aplicación (`main.ts`) y pone en cada petición, la de la cola y la de la vista previa, lo que dice *Ajustes* en ese momento (`guardTolerances`). En escritorio, `DesktopAiService` las manda en el JSON y el lanzador ya las aceptaba (`PostRequest.tolerances`); en la web, el servicio sintético mide contra ellas y `jobTolerances` las pone en el trabajo del `post.wasm`. El borde de fábrica es **4 px en todas partes** (`Tolerances::PROVISIONAL.edges_px`, era 3). Con eso apareció un fallo: el perfil que mide el borde llegaba a 4 px de cada lado y no podía medir más de unos 3, así que con un límite de 4 la comprobación no podía fallar nunca; ahora llega dos píxeles más allá del límite (`edge_reach`, de 4 a 16). Tests: con el `post.wasm` real, el plan y el informe usan 7,5, 9 y 6 si *Ajustes* lo dice, y los de fábrica si no (`tests/ai-post-wasm.test.ts`); el servicio sintético a través de `withGuardTolerances`, leído en cada llamada (`tests/ai-synthetic.test.ts`); el JSON que recibe el lanzador (`tests/ai-desktop-service.test.ts`) y, con el lanzador real y el *runtime* falso, el informe de su guarda con 7,5 y 6 (`tests/ai-desktop.test.ts`); en `rt-post`, `the_edge_profile_reaches_past_the_limit` y los dos tests de un borde movido, que movían 3 px (dentro del límite nuevo) y ahora mueven 6. `tests/fixtures/ai-guard.json` solo cambia el límite de bordes que dice el informe (3 → 4): ninguna imagen se movió.
+- **`NORMAL_MAP` en el espacio de la pieza**: un resultado al otro lado de la superficie se refleja en su plano (`r − 2(r·n)n`, normalizado), igual en `program/interp.rs` y en `core/material-interp.ts`. Con intensidad 0,5 o menos nunca pasa (la normal es al menos `1 − 2s` hacia fuera). Tests que fallan sin el arreglo: `a_part_space_normal_map_never_points_into_the_surface` (Rust) y el de `tests/material-program.test.ts`. **Fijado que se mueve:** solo el caso `NMAP 1` de la prueba cruzada (`9b01860a` → `6c271a5b`: la instrucción sola en el espacio de la pieza con intensidad 1 y la que da una coordenada de UV, sobre colores que apuntan contra la normal); los diez ejemplos y las escenas del motor no usan mapas en el espacio de la pieza, y ninguna imagen fijada se movió.
+- **Texto en `ink-3`**: la etiqueta *próximamente* de las tarjetas de efectos (`.fx-card-soon`), el rango de *Suavizado* (`.sw-aa-rank`) y los nombres de las filas ocultas y de los focos apagados (`.tree-row.is-hidden`, `.list-row.is-off`) pasan a `ink-2` (4,5:1). `tests/ui-contrast.test.ts` lee las hojas de estilo y exige que toda regla con texto en `ink-3` sea un control deshabilitado o rechazado o decoración (separador, asa, icono, miniatura vacía), y que esos cuatro papeles sean `ink-2`; falla si uno vuelve a `ink-3`.
+- **Un fallo de la sección *Luz* que destapó la receta de partida**: los campos de cada foco se rehacían solo cuando cambiaban los ids de los focos, y los de la receta son los del tipo (`l1`…`l3` y el del charco), así que con *Interior* seguían los nombres del tipo (*Relleno*, *Contra 1*) sobre los focos de la receta, y al volver los de la receta. Ahora los rehace también el papel, si es propio y su nombre (`tuneLightsKey`); test en `tests/scene-type.test.ts`, que falla con la clave de antes. La comprobación en el navegador (`tools/scene-type-check.mjs`) lo encontró; de paso se le quitó lo que K3 había dejado viejo (leía la transformada en el control de la exposición, y el nombre *Brillo (EV)* de la exposición automática contaba como un control nuevo) y no compara las filas de los focos, que con *Interior* son las de su receta. `tools/ai-post-check.mjs` elegía *PNG* por un texto que ahora es también el de *PNG 16 bits*: se le da exacto.
+- **Capturas regrabadas** (en *Sin publicar* de `GALERIA.md`): `scene-type-interior.png` (*Interior* con su receta de partida; `tools/scene-type-check.mjs` sigue a C1: elige después otra receta, que sí pregunta), `m3b-graphs.png` (los copos hacia fuera; ahora la hace `tests/m3b-graphs-sheet.test.ts`, con `REPACK_WRITE_CAPTURES=1`) y, del tema claro, `ai-section-light.png` y `ai-results-light.png` (`tools/ai-post-check.mjs`, que esperaba la intervención de fábrica en 30).
+
+**Puertas de la segunda ronda**, tras la fusión: `npm run engine:build` y `npm run qa` en verde (3108 tests: 3101 pasan, 7 se saltan); en `engine/`, `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace --release` (1142 pasan, 5 ignorados), la compilación wasm32 sin importaciones WASI, los bloques de paridad de `engine.yml` contra el `rt_wasm.wasm` real (42 imágenes, con la de O4; ninguna se movió), la paridad de la guarda con el `post.wasm` real (11 pasan) y los tests del código de la página con el `rt.wasm` real (129 pasan); el lanzador real con el *runtime* falso (`tests/ai-desktop.test.ts`); `tools/scene-type-check.mjs` y `tools/ai-post-check.mjs` (36 comprobaciones) en Chromium.
 
 ## F1 · Enfoque por punto y por objeto — **Opus** — hecha
 

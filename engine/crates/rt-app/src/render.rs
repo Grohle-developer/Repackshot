@@ -3434,7 +3434,7 @@ mod tests {
                 .fold(0x811c_9dc5u32, |h, b| {
                     (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
                 });
-            assert_eq!(hash, 0x0d6e_20ba, "{threads} threads");
+            assert_eq!(hash, 0x90b4_2b6b, "{threads} threads");
         }
     }
 

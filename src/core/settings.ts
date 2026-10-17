@@ -18,6 +18,7 @@
 // strings (`set.<key>` in src/ui/strings.ts). Pure: no DOM, no storage.
 
 import type { Lang } from '../data/types';
+import type { AiGuardTolerances } from './ai';
 import { DEFAULT_FAST_AA, DEFAULT_PIXEL_FILTER, FAST_AA, PIXEL_FILTERS, type FastAa, type PixelFilterSetting } from './antialias';
 import { QUALITY_KEYS, QUALITY_PRESETS } from '../data/quality';
 import { DEFAULT_SYSTEM_PROMPT, normaliseSystemPrompt } from './ai-prompt';
@@ -31,7 +32,7 @@ import type { ProjectState, ThemeSetting } from './store';
 import { validRelease, type ReleaseInfo } from './updates';
 
 /** Version of the stored document. 0 is the loose preferences of before (one localStorage entry each). */
-export const SETTINGS_SCHEMA = 1;
+export const SETTINGS_SCHEMA = 2;
 
 export type LengthUnit = ImportUnit;
 export const LENGTH_UNITS: readonly LengthUnit[] = IMPORT_UNITS;
@@ -281,15 +282,17 @@ export function defaultSettings(): Settings {
     'ai.gpu': 0,
     'ai.resolution': 1024,
     // Provisional until X1 part B measures them (AI-POST.md §2.1, §3.2): the distilled model's step count and
-    // the starting points of the guard.
+    // the starting points of the guard. C1 raised the intervention from 30 and doubled the guard's tolerances (2, 3
+    // and 2 px before): the AI pass changed next to nothing. A stored document of schema 1 that still holds those old
+    // factory values takes these (STEPS[1]); a value the person chose stays.
     'ai.steps': 8,
-    'ai.intervention': 30,
+    'ai.intervention': 50,
     'ai.seed': 'FIXED',
     'ai.offloadTextEncoder': false,
     'ai.systemPrompt': DEFAULT_SYSTEM_PROMPT,
-    'ai.guardDeltaE': 2,
-    'ai.guardDeltaE95': 3,
-    'ai.guardEdgePx': 2,
+    'ai.guardDeltaE': 4,
+    'ai.guardDeltaE95': 6,
+    'ai.guardEdgePx': 4,
     'ai.backend': 'AUTO',
 
     'storage.historyCount': 50,
@@ -684,7 +687,20 @@ export function migrateLegacy(prefs: LegacyPrefs): SettingsDoc {
  * Steps from each stored version to the next, applied in order. Version 1 is the first document; a later
  * schema adds its step here (rename a key, change a unit) and bumps SETTINGS_SCHEMA.
  */
-const STEPS: Record<number, (doc: Record<string, unknown>) => Record<string, unknown>> = {};
+const STEPS: Record<number, (doc: Record<string, unknown>) => Record<string, unknown>> = {
+  // 1 → 2 (C1): the AI post-processing's factory values went from Intervention 30 and a guard of 2, 3 and 2 px to 50
+  // and 4, 6 and 4 px. The document stores every setting, so a value still equal to the old factory one was never
+  // chosen: it takes the new one. Any other value is the person's and stays.
+  1: (doc) => {
+    if (!isRecord(doc.settings)) return doc;
+    const settings: Record<string, unknown> = { ...doc.settings };
+    for (const [key, was] of Object.entries(OLD_AI_FACTORY)) if (settings[key] === was) settings[key] = defaultSettings()[key as SettingKey];
+    return { ...doc, settings };
+  },
+};
+
+/** The factory values of the AI settings before C1, as schema 1 stored them. */
+export const OLD_AI_FACTORY: Readonly<Partial<Record<SettingKey, number>>> = { 'ai.intervention': 30, 'ai.guardDeltaE': 2, 'ai.guardDeltaE95': 3, 'ai.guardEdgePx': 2 };
 
 /**
  * Any stored document to a valid current one. A newer document (written by a later version of the
@@ -835,6 +851,11 @@ export interface ViewportLimit {
 }
 
 /** The results history's limits (core/results.ts) from the Storage section. */
+/** The guard's tolerances of Settings ▸ AI post-processing ▸ Advanced, as an AI request carries them (C1). */
+export function guardTolerances(s: Settings): AiGuardTolerances {
+  return { deltaEMean: s['ai.guardDeltaE'], deltaEP95: s['ai.guardDeltaE95'], edgesPx: s['ai.guardEdgePx'] };
+}
+
 export function historyLimits(s: Settings): { count: number; bytes: number } {
   return { count: s['storage.historyCount'], bytes: s['storage.historyMB'] * 1024 * 1024 };
 }

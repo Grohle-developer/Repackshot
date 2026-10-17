@@ -43,7 +43,7 @@
 }
 .tree-row.is-hidden .tree-name,
 .tree-row.is-hidden .tree-kind {
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .tree-indent {
   flex: none;
@@ -123,7 +123,7 @@
   background: var(--soft);
 }
 .list-row.is-off .list-main {
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .list-main {
   flex: 1;
@@ -1354,7 +1354,7 @@
   margin-top: auto;
   font-size: var(--fs-aux);
   text-transform: lowercase;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 
 /* O4: the tilt's direction (Camera ▸ Advanced optics and Lens ▸ More options): a dial, four presets and the angle. */

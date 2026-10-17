@@ -62,7 +62,7 @@ pub struct Settings {
 impl Settings {
     /// The configurator's defaults (`DEFAULT_AI_PIPELINE` in `src/core/ai.ts`).
     pub const DEFAULT: Settings = Settings {
-        intervention: 30,
+        intervention: 50,
         light: 50,
         bounce: 40,
         wear: 20,
@@ -142,11 +142,14 @@ pub struct Tolerances {
 }
 
 impl Tolerances {
-    /// The provisional defaults.
+    /// The provisional defaults, the factory values of Settings ▸ AI post-processing ▸ Advanced
+    /// for the three it shows. C1 doubled the colour limits (2 and 3 before) and took the edge
+    /// limit to Settings' 4 px (1.5 here and 2 there before): the guard was all but invisible,
+    /// and the AI pass changed next to nothing.
     pub const PROVISIONAL: Tolerances = Tolerances {
-        delta_e_mean: 2.0,
-        delta_e_p95: 3.0,
-        edges_px: 1.5,
+        delta_e_mean: 4.0,
+        delta_e_p95: 6.0,
+        edges_px: 4.0,
         detail_ssim: 0.98,
         focus: 0.15,
         in_focus_coc: 1.0,

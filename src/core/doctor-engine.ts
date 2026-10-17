@@ -250,7 +250,8 @@ export function clippedFraction(scan: FrameScan, exposureEv: number): number {
 function checkColor(state: ProjectState, f: EngineFacts): DoctorResult {
   if (f.availability === 'LOADING') return unavailable('color', 'loading');
   if (f.availability !== 'READY') return unavailable('color', 'noEngine');
-  // Filmic and AgX roll the highlights off: nothing to measure. Standard clips them.
+  // Filmic and AgX roll the highlights off: nothing to measure. Standard clips them: a warning (C1), since a flat white
+  // background is clipped on purpose.
   if (state.image.viewTransform !== 'STANDARD') return ok('color');
   if (!f.full) return unavailable('color', 'noFull');
   const scan = freshScan(f, state);
@@ -401,7 +402,8 @@ export function engineFix(state: ProjectState, key: DoctorCheckKey): ProjectStat
       return state;
     }
     case 'color':
-      return checkColor(state, f).status === 'WARN' ? { ...state, image: { ...state.image, viewTransform: 'FILMIC' } } : state;
+      // C1: AgX, and only proposed: Standard clipping is a warning, never a fault (a flat white background wants it).
+      return checkColor(state, f).status === 'WARN' ? { ...state, image: { ...state.image, viewTransform: 'AGX' } } : state;
     case 'caustics': {
       if (checkFireflies(state, f).status !== 'WARN') return state;
       const patch = firefliesPatch(state);

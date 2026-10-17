@@ -684,7 +684,11 @@ describe('the palette lists the user’s own items', () => {
     expect(s.materials[s.scene.nodes[ids.body].material!].name).toBe('Mi oro');
     run('Mi tipo');
     expect(ctx.store.get().studio.preset).toMatch(/^LIB:typ-/);
-    // L7: over the lights there are, it asks (the palette shows the question); Replace answers it.
+    // L7: over the lights there are, it asks (the palette shows the question); Replace answers it. C1: not over the
+    // product type's own lights untouched, which the type just put: they are replaced without a question.
+    expect(run('Mi luz')).toBeNull();
+    expect(ctx.store.get().studio.lightSetup).toMatch(/^LIB:set-/);
+    ctx.store.dispatch({ type: 'studio/setSetup', key: 'REMBRANDT' });
     (run('Mi luz') as ConfirmSpec).options[0].run();
     expect(ctx.store.get().studio.lightSetup).toMatch(/^LIB:set-/);
     ctx.store.dispatch({ type: 'camera/view', view: 'TOP' });

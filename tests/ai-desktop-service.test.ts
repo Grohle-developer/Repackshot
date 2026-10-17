@@ -134,6 +134,13 @@ describe('the desktop AI service', () => {
     expect(l.calls.some((c) => c.method === 'DELETE' && c.path === '/api/ai/post/3')).toBe(true);
   });
 
+  it('C1: sends the guard tolerances of Settings to the launcher, by the keys its guard takes', async () => {
+    const l = launcher([state({ state: 'DONE', tile: 1, attempt: 1, fraction: 1, version: 2, verdict: 'ACCEPTED', report: REPORT })], { image: { width: 4, height: 2, rgba: new Float32Array(32) } });
+    await new DesktopAiService(l.native, query).post({ ...render(), tolerances: { deltaEMean: 5, deltaEP95: 8, edgesPx: 2.5 } }, () => undefined, new AbortController().signal);
+    const post = l.calls.find((c) => c.method === 'POST')!;
+    expect(JSON.parse(post.body as string).tolerances).toEqual({ deltaEMean: 5, deltaEP95: 8, edgesPx: 2.5 });
+  });
+
   it('follows the attempts: which of how many, and why the guard sent the last one back (B1)', async () => {
     const why = 'detail SSIM 0.912 below 0.98';
     const script = [

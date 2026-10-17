@@ -327,7 +327,7 @@ try {
     const styleOptions = await page.locator(`${section} [data-ai="style"] option`).allTextContents();
     check(
       'b_six_controls',
-      JSON.stringify(controls.map((c) => c.key)) === JSON.stringify(expected) && controls.every((c) => c.name && c.sentence) && controls.find((c) => c.key === 'intervention').value === '30' && controls.find((c) => c.key === 'light').value === '50' && controls.find((c) => c.key === 'bounce').value === '40' && controls.find((c) => c.key === 'wear').value === '20' && controls.find((c) => c.key === 'style').value === 'NATURAL' && controls.find((c) => c.key === 'styleStrength').value === '30' && styleOptions.length === 6,
+      JSON.stringify(controls.map((c) => c.key)) === JSON.stringify(expected) && controls.every((c) => c.name && c.sentence) && controls.find((c) => c.key === 'intervention').value === '50' && controls.find((c) => c.key === 'light').value === '50' && controls.find((c) => c.key === 'bounce').value === '40' && controls.find((c) => c.key === 'wear').value === '20' && controls.find((c) => c.key === 'style').value === 'NATURAL' && controls.find((c) => c.key === 'styleStrength').value === '30' && styleOptions.length === 6,
       { controls, styleOptions },
     );
     const chips = await page.locator(`${section} .rw-ai-prot [data-protection]`).allTextContents();
@@ -448,7 +448,7 @@ try {
       await page.locator(`${section} [data-ai="${key}"] .num input`).press('Enter');
     }
     await page.waitForTimeout(800);
-    await page.locator('.rw .seg button', { hasText: 'PNG' }).click();
+    await page.locator('.rw .seg button', { hasText: /^PNG$/ }).click();
     await page.locator('.rw .num[aria-label="Samples"]').dblclick();
     await page.locator('.rw .num[aria-label="Samples"] input').fill('16');
     await page.locator('.rw .num[aria-label="Samples"] input').press('Enter');

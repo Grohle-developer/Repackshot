@@ -154,7 +154,8 @@ and write.
 this README. `tests/ui-achromatic.test.ts` fails if any colour in the
 interface's CSS has saturation. `tests/strings.test.ts` fails if a string
 exists in only one language. `tests/ui-contrast.test.ts` measures the text
-greys against their surfaces (WCAG ratio, 7:1), and `tests/a11y-browser.test.ts`
+greys against their surfaces (WCAG ratio: 7:1 for the main text, 4.5:1 for the
+secondary text), and `tests/a11y-browser.test.ts`
 audits the button names, the focus and the reduced motion of the running
 interface in Chromium.
 

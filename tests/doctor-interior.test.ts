@@ -217,7 +217,11 @@ describe('an opening for the sun and the sky', () => {
 
   it('lamps and panels need no opening, and an HDRI the person loaded is not asked about', () => {
     expect(status(apply(room(), { type: 'studio/setSetup', key: 'INT_NIGHT_LAMPS' }), 'interiorOpening')).toBe('OK');
-    expect(status(apply(room(), { type: 'env/set', patch: { kind: 'HDRI' } }), 'interiorOpening')).toBe('OK');
+    // C1: Interior now starts with the midday window, whose sun is asked about whatever the environment; the HDRI alone
+    // (over lamps) is not.
+    expect(room().studio.lightSetup).toBe('INT_WINDOW_NOON');
+    expect(status(apply(room(), { type: 'env/set', patch: { kind: 'HDRI' } }), 'interiorOpening')).toBe('WARN');
+    expect(status(apply(room(), { type: 'studio/setSetup', key: 'INT_NIGHT_LAMPS' }, { type: 'env/set', patch: { kind: 'HDRI' } }), 'interiorOpening')).toBe('OK');
   });
 
   it('a window of glass, or of a transparent material, is the opening: nothing to say', () => {

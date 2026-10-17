@@ -267,16 +267,23 @@ export const MATERIAL_GRAPHS: readonly ExampleGraph[] = [
   {
     key: 'METALLIC_FLAKES',
     label: { en: 'Metallic paint with flakes', es: 'Pintura metalizada con copos' },
-    description: { en: 'Deep red car paint under a clear coat, its flakes a fine noise that tilts the normal and lifts the colour.', es: 'Pintura roja de coche bajo un barniz, sus copos un ruido fino que inclina la normal y aclara el color.' },
+    description: { en: 'Deep red car paint under a clear coat, its flakes a fine noise that tilts the normal outwards and lifts the colour.', es: 'Pintura roja de coche bajo un barniz, sus copos un ruido fino que inclina la normal hacia fuera y aclara el color.' },
+    // C1: the noise's red and green tilt the normal and its blue is held at 1, so every flake faces out of the
+    // surface (a noise's own blue put half of them into it).
     nodes: [
       { id: 'flakes', type: 'NOISE', x: 40, y: 60, params: { octaves: 1 }, inputs: { scale: 900 } },
-      { id: 'nmap', type: 'NORMAL_MAP', x: 300, y: 60, inputs: { strength: 0.35 } },
+      { id: 'split', type: 'SEPARATE_RGB', x: 260, y: 60 },
+      { id: 'tilt', type: 'COMBINE_RGB', x: 440, y: 60, inputs: { b: 1 } },
+      { id: 'nmap', type: 'NORMAL_MAP', x: 640, y: 60, inputs: { strength: 0.35 } },
       { id: 'sparkle', type: 'NOISE', x: 40, y: 330, params: { octaves: 1, seed: 3 }, inputs: { scale: 900 } },
       { id: 'mix', type: 'MIX', x: 300, y: 330, inputs: { a: [0.3, 0.012, 0.02], b: [0.62, 0.07, 0.06] } },
       OUT({ metallic: 0.7, roughness: 0.33, coat: 1, coatRoughness: 0.02 }),
     ],
     links: [
-      ['flakes', 'color', 'nmap', 'color'],
+      ['flakes', 'color', 'split', 'color'],
+      ['split', 'r', 'tilt', 'r'],
+      ['split', 'g', 'tilt', 'g'],
+      ['tilt', 'color', 'nmap', 'color'],
       ['sparkle', 'value', 'mix', 'fac'],
       ['mix', 'color', 'out', 'baseColor'],
       ['nmap', 'normal', 'out', 'normal'],

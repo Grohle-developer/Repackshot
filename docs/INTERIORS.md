@@ -214,8 +214,9 @@ automático (K2, con el nodo `ROOM`).
   *Lámparas de noche*, *Hora azul* (lámparas y cielo equilibrados) y
   *Sala blanca de estudio*; cada uno fija sol o cielo o HDRI, exposición
   y curva. *(Hecho en K1: las siete recetas fijan su mundo, sol y cielo o
-  la cúpula de estudio, y su exposición; la curva y el HDRI no, y sus cifras
-  son una propuesta pendiente de decisión.)*
+  la cúpula de estudio, y su exposición; la curva y el HDRI no. Sus cifras se
+  aceptaron, y C1 hizo de *Ventana de mediodía* la receta de partida del tipo
+  *Interior*.)*
 - Luces físicas: las de L4 más **IES** (L5) y tiras y paneles emisivos
   muestreados por ángulo sólido.
 - **Grupos de luz** con intensidad y color editables **después** del

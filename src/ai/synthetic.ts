@@ -42,7 +42,7 @@ export interface SyntheticLimits {
   focus: number;
 }
 
-export const SYNTHETIC_LIMITS: Readonly<SyntheticLimits> = { deltaEMean: 2, deltaEP95: 3, edgePx: 2, detail: 0.9, focus: 0.25 };
+export const SYNTHETIC_LIMITS: Readonly<SyntheticLimits> = { deltaEMean: 4, deltaEP95: 6, edgePx: 4, detail: 0.9, focus: 0.25 };
 
 export interface SyntheticOptions {
   limits?: Partial<SyntheticLimits>;
@@ -409,7 +409,7 @@ const aborted = (): DOMException => new DOMException('aborted', 'AbortError');
 
 /** The synthetic service. Its `status()` is always `available`, backend `SYNTHETIC`, and it needs no model. */
 export function createSyntheticService(opts: SyntheticOptions = {}): AiPostService {
-  const limits: SyntheticLimits = { ...SYNTHETIC_LIMITS, ...opts.limits };
+  const factory: SyntheticLimits = { ...SYNTHETIC_LIMITS, ...opts.limits };
   const now = opts.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   return {
     async status(): Promise<AiRuntimeStatus> {
@@ -428,6 +428,9 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
       if (request.source.kind !== 'INLINE') throw new Error('the synthetic service takes INLINE sources only');
       const { image, passes } = request.source;
       const s = request.settings;
+      // C1: the person's tolerances, when the request carries them, in place of the factory ones.
+      const t = request.tolerances;
+      const limits: SyntheticLimits = t ? { ...factory, deltaEMean: t.deltaEMean, deltaEP95: t.deltaEP95, edgePx: t.edgesPx } : factory;
       check();
       report('CONDITIONING', at(1, 0.1), 1);
       if (opts.delayMs && opts.delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, opts.delayMs));

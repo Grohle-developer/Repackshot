@@ -42,6 +42,12 @@ export interface SceneTypeDefaults {
   straightVerticals?: boolean;
   /** K3, row "Exposición": the automatic exposure (the dial becomes its compensation). */
   autoExposure?: boolean;
+  /**
+   * C1, row "Luz": the light recipe (a catalogue setup key) the type starts with. It is put in force only over the
+   * product type's own lights, untouched (`typeLightsUntouched`): a setup the person chose, or lights they edited, are
+   * theirs and stay. The decoration of a product type that is a set (its pool, its backdrop) stays as it is.
+   */
+  lightSetup?: string;
 }
 
 export interface SceneTypeEntry {
@@ -67,8 +73,8 @@ export const SCENE_TYPES: readonly SceneTypeEntry[] = [
     key: 'INTERIOR',
     label: { es: 'Interior', en: 'Interior' },
     intent: {
-      es: 'Mobiliario en su contexto: sol y cielo por la ventana, más rebotes, sin cáusticas, AgX, muestras adaptativas con denoise, una óptica ancha con verticales rectas y exposición automática.',
-      en: 'Furniture in its context: sun and sky through the window, more bounces, no caustics, AgX, adaptive samples with denoise, a wide lens with straight verticals, and automatic exposure.',
+      es: 'Mobiliario en su contexto: sol y cielo por la ventana de mediodía, más rebotes, sin cáusticas, AgX, muestras adaptativas con denoise, una óptica ancha con verticales rectas y exposición automática.',
+      en: 'Furniture in its context: sun and sky through the midday window, more bounces, no caustics, AgX, adaptive samples with denoise, a wide lens with straight verticals, and automatic exposure.',
     },
     defaults: {
       environment: 'SKY',
@@ -82,6 +88,8 @@ export const SCENE_TYPES: readonly SceneTypeEntry[] = [
       focalMm: 28,
       straightVerticals: true,
       autoExposure: true,
+      // Decided in docs/ROADMAP.md (Decisiones de criterio, K1): the starting recipe is the midday window.
+      lightSetup: 'INT_WINDOW_NOON',
     },
   },
   {

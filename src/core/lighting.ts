@@ -211,6 +211,26 @@ export function lightsFromRig(preset: PresetRef, setupRef: SetupRef): LightInsta
   });
 }
 
+/** JSON with the keys of every object in order: two values are the same when this is (key order aside). */
+function canonical(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+}
+
+/**
+ * The lights are the product type's own, untouched (C1, for L7 and K1): the setup in force is the type's own rig
+ * (PRESET, not a catalogue or library setup), no light was added, kept, edited, placed, aimed or deleted since the
+ * type put them (`modified`, which every such action sets and only putting a setup in force clears), and they are,
+ * value for value, what the type's rig gives (`lightsFromRig`), so no light is an own one and none was kept from a
+ * setup before. A set's decoration (the pool's spot, `setPiece`) is not a light the person put there and is not
+ * looked at.
+ */
+export function typeLightsUntouched(state: Pick<ProjectState, 'studio'>): boolean {
+  const s = state.studio;
+  if (s.lightSetup !== 'PRESET' || s.modified) return false;
+  const lights = s.lights.filter((l) => !l.setPiece);
+  return canonical(lights) === canonical(lightsFromRig(presetRefOf(s), 'PRESET'));
+}
+
 /** The irradiance (same unit as `lightIrradiance`) a new light starts with: the mean of the lights on, or a third of the type's. */
 function newLightIrradiance(state: ProjectState): number {
   const on = state.studio.lights.filter((l) => l.enabled && l.power > 0);

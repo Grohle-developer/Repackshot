@@ -419,7 +419,7 @@ describe('color', () => {
     expect(r.result('color').status).toBe('WARN');
   });
 
-  it('warns when Standard clips the highlights, and the fix is Filmic, undoable, with no new image needed', () => {
+  it('warns when Standard clips the highlights, and the fix is AgX (C1), undoable, with no new image needed', () => {
     const r = rig();
     r.do({ type: 'image/set', patch: { viewTransform: 'STANDARD' } });
     r.engine.measure(r.store.get());
@@ -427,7 +427,7 @@ describe('color', () => {
     const w = r.result('color');
     expect(w).toMatchObject({ status: 'WARN', fixable: true, detail: { percent: 3, samples: 64 } });
     cmd.doctorFix(r.ctx, 'color');
-    expect(r.store.get().image.viewTransform).toBe('FILMIC');
+    expect(r.store.get().image.viewTransform).toBe('AGX');
     expect(r.result('color').status).toBe('OK');
     expect(r.store.history().undo[0]).toBe('Doctor: View transform');
     r.store.undo();
@@ -606,6 +606,49 @@ describe('caustics (fireflies)', () => {
     r.engine.scan = few(10);
     r.sync();
     expect(r.result('caustics').status).toBe('WARN');
+  });
+});
+
+describe('C1: the decisions on the engine Doctor (docs/ROADMAP.md, Decisiones de criterio, D1)', () => {
+  it('Standard clipping is a warning and nothing more, and its fix proposes AgX in the catalogue and the sentence', () => {
+    const r = rig();
+    r.do({ type: 'image/set', patch: { viewTransform: 'STANDARD' } });
+    r.engine.measure(r.store.get());
+    r.sync();
+    expect(r.result('color')).toMatchObject({ status: 'WARN', fixable: true });
+    // A warning counts as one, as any other: it is never more than that.
+    expect(warningCount(r.store.get().doctor.results)).toBeGreaterThanOrEqual(1);
+    expect(doctorCheck('color')?.fix.en).toContain('AgX');
+    expect(doctorCheck('color')?.fix.es).toContain('AgX');
+    for (const lang of ['en', 'es'] as const) {
+      setLang(lang);
+      const said = doctorSentence(r.result('color'), r.store.get());
+      expect(said, lang).toContain('AgX');
+      expect(said, lang).not.toMatch(/Filmic|Fílmica/);
+    }
+    setLang('en');
+    r.do({ type: 'doctor/fix', key: 'color' });
+    expect(r.store.get().image.viewTransform).toBe('AGX');
+  });
+
+  it('the video check is awake (N1 is done): an animation as video is judged by what this system encodes', () => {
+    expect(VIDEO_AVAILABLE).toBe(true);
+    const r = rig();
+    r.store.reset(asVideo(r.store.get(), 'WEBM'));
+    r.do({ type: 'doctor/refresh' });
+    expect(r.result('output')).toMatchObject({ status: 'WARN', fixable: true, detail: { reason: 'codec', video: 'WEBM' } });
+    r.ui.set({ video: { MP4: null, WEBM: 'VP9' } });
+    expect(r.result('output').status).toBe('OK');
+  });
+
+  it('the denoise check stays as it was: it warns of a viewport denoised and a Render that is not, and fixes it with both', () => {
+    const r = rig();
+    r.do(advanced({ denoise: 'VIEWPORT' }));
+    expect(r.result('denoise')).toMatchObject({ status: 'WARN', fixable: true, detail: { reason: 'render' } });
+    r.do(advanced({ denoise: 'RENDER' }));
+    expect(r.result('denoise').status).toBe('OK');
+    r.do(advanced({ denoise: 'VIEWPORT' }), { type: 'doctor/fix', key: 'denoise' });
+    expect(r.store.get().render.advanced.denoise).toBe('BOTH');
   });
 });
 
@@ -907,7 +950,7 @@ describe('every engine check fires and its fix clears it', () => {
     expect(r.store.history().undo[0]).toBe('Doctor: fix all');
     const after = r.store.get();
     expect(after.render.advanced).toMatchObject({ denoise: 'BOTH', clampIndirect: FIREFLY_CLAMP });
-    expect(after.image.viewTransform).toBe('FILMIC');
+    expect(after.image.viewTransform).toBe('AGX');
     expect(after.render.maxSeconds).toBe(170);
     // The image is another one now (the clamp), so the fireflies are waited for; what the system limits stays, with its words.
     r.engine.measure(r.store.get());

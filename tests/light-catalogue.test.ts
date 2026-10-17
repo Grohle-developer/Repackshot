@@ -5,6 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { typeLightsUntouched } from '../src/core/lighting';
 import { previousLights, reducePrevious } from '../src/core/previous-lights';
 import { activeSetupFilters, filterSetups, groupFilters, setupGroup, setupsInGroup, setupTags } from '../src/core/setup-groups';
 import { defaultLayout, validateLayout, validateSettings } from '../src/core/settings';
@@ -227,6 +228,46 @@ describe('L7: what the interface asks, and what it remembers', () => {
     expect(cmd.requestSetup(ctx, 'REMBRANDT')).toBeNull();
     expect(ctx.store.history().undo[0]).toBe('Light setup: Rembrandt');
     expect(cmd.requestSetup(ctx, 'REMBRANDT')).toBeNull();
+  });
+
+  it('C1: over the product type’s own lights, untouched, it does not ask: they are replaced, whatever was remembered', () => {
+    for (const remembered of ['ASK', 'HIDE', 'ADD'] as const) {
+      const ctx = makeCtx(exampleState());
+      ctx.ui.set({ settings: { ...ctx.ui.get().settings, 'light.previous': remembered } });
+      expect(typeLightsUntouched(ctx.store.get())).toBe(true);
+      expect(cmd.requestSetup(ctx, 'REMBRANDT'), remembered).toBeNull();
+      const s = ctx.store.get();
+      expect(s.studio.lightSetup).toBe('REMBRANDT');
+      // Replaced: none of the type's lights was kept.
+      expect(s.studio.lights.some((l) => l.own)).toBe(false);
+      expect(ctx.store.history().undo[0]).toBe('Light setup: Rembrandt');
+    }
+    // A Set too, and the type's own rig dressed as its set (the pool's spot is decoration, not a light of the person's).
+    const dressed = makeCtx(reduce(exampleState(), { type: 'studio/fitSet' }));
+    expect(dressed.store.get().studio.lights.some((l) => l.setPiece)).toBe(true);
+    expect(cmd.requestSetup(dressed, 'JEWEL_BOX')).toBeNull();
+    expect(dressed.store.get().studio.lightSetup).toBe('JEWEL_BOX');
+  });
+
+  it('C1: it asks again once a light is added, edited, placed or deleted, or another setup is in force', () => {
+    const touched = [
+      reduce(exampleState(), { type: 'studio/addLight', kind: 'POINT' }),
+      reduce(exampleState(), { type: 'studio/setLight', id: 'l1', patch: { enabled: false } }),
+      reduce(exampleState(), { type: 'studio/deleteLight', id: 'l2' }),
+      reduce(exampleState(), { type: 'studio/duplicateLight', id: 'l1' }),
+      setSetup(exampleState(), 'LOOP'),
+      // A type chosen without making the studio again: the lights there are the previous type's.
+      reduce(exampleState(), { type: 'studio/setPreset', key: 'JEWELLERY' }),
+    ];
+    for (const s of touched) {
+      expect(typeLightsUntouched(s)).toBe(false);
+      expect(cmd.requestSetup(makeCtx(s), 'REMBRANDT')?.options.map((o) => o.label)).toEqual(['Replace', 'Hide', 'Add']);
+    }
+    // Reset setup, or the type's own rig chosen again, makes them the type's untouched lights again.
+    const reset = reduce(touched[0], { type: 'studio/resetLights' });
+    expect(typeLightsUntouched(reset)).toBe(true);
+    expect(typeLightsUntouched(setSetup(touched[4], 'PRESET'))).toBe(true);
+    expect(cmd.requestSetup(makeCtx(reset), 'REMBRANDT')).toBeNull();
   });
 
   it('the setting is checked, and a document of before L7 opens the group its style was in', () => {

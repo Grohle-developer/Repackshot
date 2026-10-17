@@ -1,7 +1,7 @@
 // Phase L7, the Light section in a browser (headless Chromium, the page of the app itself through Vite), in English and
 // Spanish, at 1600×1000 and 1280×800: the Sets and Lights groups with their filters, every thumbnail of one size, the
 // size button of the section's header changing it (and the size kept after a reload), the question about the lights
-// there are, and nothing in the section cut off or out of its column. Skipped without Chromium (REPACKSHOT_CHROMIUM,
+// there are (none over the product type's own lights, untouched: C1), and nothing in the section cut off or out of its column. Skipped without Chromium (REPACKSHOT_CHROMIUM,
 // /opt/pw-browsers).
 
 import { existsSync, readdirSync } from 'node:fs';
@@ -185,8 +185,13 @@ describe.skipIf(!executablePath)('the Light section, in a browser', { timeout: 9
             await thumbSize.click();
             await thumbSize.click();
 
-            // Over the lights there are, a setup asks: Replace, Hide, Add (and Cancel), Remember my choice.
+            // C1: over the product type's own lights, untouched (the example as it opens), a setup replaces them
+            // without asking.
             await sec.locator('[data-filter="style"] .chip[data-value="TRADITIONAL"]').click();
+            await sec.locator('.thumbs .thumb').nth(1).click();
+            m = await measure(page);
+            expect(m.question).toEqual([]);
+            // Over the lights there are now, a setup asks: Replace, Hide, Add (and Cancel), Remember my choice.
             await sec.locator('.thumbs .thumb').nth(2).click();
             m = await measure(page);
             expect(m.question.slice(0, 3)).toEqual([w.replace, w.hide, w.add]);
