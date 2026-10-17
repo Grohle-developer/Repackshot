@@ -503,7 +503,9 @@ describe('inverted normals', () => {
     // The same answer however many times it is asked: the budget counts triangles, not what is cached.
     expect(status(flip(`S${fit}`), 'interiorNormals')).toBe('OK');
     expect(status(flip(`S${fit - 1}`), 'interiorNormals')).toBe('WARN');
-  });
+    // It has to fill the whole budget (half a million triangles) and ask six times: about 3.5 s alone, more
+    // on a loaded runner, so it gets its own limit like the other heavy tests.
+  }, 60_000);
 
   it('a part without a mesh in the registry, or hidden, is not asked about', () => {
     const s = room();
