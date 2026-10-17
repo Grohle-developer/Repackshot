@@ -57,7 +57,7 @@ describe('the focus distance of a point, by the engine’s rule', () => {
     }
   });
 
-  it.skipIf(!RT_WASM)('is the engine’s (rt_scene_focus_at) for the thin lens, the shift and the tilt', async () => {
+  it.skipIf(!RT_WASM)('is the engine’s (rt_scene_focus_at) for the thin lens, the shift, the tilt and K3’s cameras', async () => {
     const rt = await loadRt();
     expect(hasFocusExports(rt)).toBe(true);
     if (!hasFocusExports(rt)) return;
@@ -66,13 +66,24 @@ describe('the focus distance of a point, by the engine’s rule', () => {
       { ...cam, fstop: 2, optics: { ...OPTICS_NEUTRAL, shiftXMm: 4, shiftYMm: -3 } },
       { ...cam, fstop: 2, optics: { ...OPTICS_NEUTRAL, tiltDeg: 10, tiltAxisDeg: 35 } },
       { ...cam, fstop: 2, optics: { ...OPTICS_NEUTRAL, tiltDeg: -6, tiltAxisDeg: -70, shiftXMm: 2, shiftYMm: 0 } },
+      // K3's cameras: orthographic, the two panoramas (a pinhole: the distance, behind the camera too) and straight
+      // verticals (the level camera the engine renders, its focus written as the camera's times cos(corrected tilt)).
+      { ...cam, fstop: 2, projection: 'ORTHOGRAPHIC' },
+      { ...cam, fstop: 2, projection: 'EQUIRECTANGULAR', aspect: { preset: '2:1', w: 2, h: 1 } },
+      { ...cam, fstop: 2, projection: 'FISHEYE', fisheyeFovDeg: 200 },
+      { ...cam, fstop: 2, elevation: 12, straightVerticals: true },
+      { ...cam, fstop: 2, elevation: -9, straightVerticals: true, optics: { ...OPTICS_NEUTRAL, tiltDeg: 5, tiltAxisDeg: 10 } },
     ];
     for (const c of cams) {
-      for (const [d, r, u] of [[500, 100, 60], [900, -200, 30], [700, 0, -150]]) {
+      const points: [number, number, number][] = [[500, 100, 60], [900, -200, 30], [700, 0, -150]];
+      if (c.projection === 'EQUIRECTANGULAR' || c.projection === 'FISHEYE') points.push([-400, 50, 20]);
+      for (const [d, r, u] of points) {
         const p = along(c, d, r, u);
         const ts = focusDistanceFor(c, p)!;
-        const engine = engineFocusAt(rt, lensInfoRsb(c, 16, 9), p)!;
-        expect(Math.abs(ts - engine) / ts).toBeLessThan(2e-5);
+        // What the RSB carries for the camera focused there, against the engine's own focus for the point.
+        const written = cameraToRsb({ ...c, focusDistance: ts }, c.aspect.w, c.aspect.h, c.aspect.w, c.aspect.h).focusDist;
+        const engine = engineFocusAt(rt, lensInfoRsb(c, c.aspect.w, c.aspect.h), p)!;
+        expect(Math.abs(written - engine) / engine, `${c.projection} ${c.straightVerticals ? 'verticals' : ''} ${d}`).toBeLessThan(2e-5);
       }
     }
   });
@@ -383,6 +394,46 @@ describe.skipIf(!RT_WASM)('the engine’s rays and focus for the view (rt.wasm)'
       expect(fast).toBeCloseTo(exact, 3);
     } finally {
       setFocusSolver(null);
+    }
+  });
+
+  it('a click through K3’s cameras: the Full view writes the engine’s focus for the point its ray meets', async () => {
+    const rt = await loadRt();
+    if (!hasFocusExports(rt)) throw new Error('rt.wasm has no focus pick: npm run engine:build');
+    const s0 = exampleState();
+    const ids = keyIds(s0);
+    const base = activeCamera(s0);
+    const patches: Partial<CameraState>[] = [
+      { projection: 'ORTHOGRAPHIC' },
+      { projection: 'EQUIRECTANGULAR', aspect: { preset: '2:1', w: 2, h: 1 } },
+      { projection: 'FISHEYE', fisheyeFovDeg: 180 },
+      { elevation: 14, straightVerticals: true },
+    ];
+    // A surface slanted 45° through the target, met analytically along the engine's ray.
+    const { forward, right } = cameraBasis(base.azimuth, base.elevation);
+    const normal = scale(add(forward, right), -Math.SQRT1_2);
+    const centre = along(base, base.distance);
+    const cast = (o: Vec3, d: Vec3) => {
+      const k = dot(d, normal);
+      const t = Math.abs(k) > 1e-9 ? dot(sub(centre, o), normal) / k : -1;
+      return t > 0 ? { node: ids.label, point: add(o, scale(d, t)) } : null;
+    };
+    const [w, h] = [640, 400];
+    const view = { width: w, height: h, viewport: { viewW: w, viewH: h } };
+    for (const patch of patches) {
+      const s = apply(s0, { type: 'camera/set', id: base.id, patch: { fstop: 2, ...patch } });
+      let met = 0;
+      for (const [u, v] of [[0.5, 0.5], [0.3, 0.42], [0.62, 0.58]]) {
+        const ray = enginePick(rt, focusPickRsb(s, view), u, v)!;
+        const hit = cast(ray.origin, ray.dir);
+        if (!hit) continue;
+        const focused = apply(s, focusPickAction(s, null, hit, { label: '' })!);
+        const written = projectScene(focused, { ...view, maxSamples: 1, maxSeconds: 0 }).scene.camera.focusDist;
+        const engine = engineFocusAt(rt, focusPickRsb(focused, view), hit.point)!;
+        expect(Math.abs(written - engine) / engine, `${patch.projection ?? 'verticals'} (${u}, ${v})`).toBeLessThan(2e-5);
+        met++;
+      }
+      expect(met, `${patch.projection ?? 'verticals'}: the rays met the surface`).toBeGreaterThan(1);
     }
   });
 

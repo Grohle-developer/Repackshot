@@ -10,7 +10,8 @@
 //       Focus distance field moves once, to the clicked distance, and stays there (B1: it used to go 688 -> 660 -> 688);
 //   (b) the last entry of the undo history is "Focus with a click", not "Orbit";
 //   (c) F1: zooming with the wheel after the pick takes the focus along with the point (it stays on the point: the
-//       distance changes by what the camera moved), and the field is read-only in Point;
+//       distance changes by what the camera moved); moving the distance in Point switches to Distance from there, and
+//       one undo goes back to Point;
 //   (d) Focus ▸ Distance keeps the distance the camera was focused at; a typed one then survives a plain click on the
 //       bottle (it selects the part);
 //   (e) on a camera whose focus sat at the orbit distance (Distance), the same zoom takes the focus along;
@@ -165,7 +166,7 @@ try {
     check('undo_is_the_focus_click', tips.length > 0 && /Focus with a click/.test(tips[0]) && !/Orbit/.test(tips[0]), { tips });
     const pickBtn = page.locator('[data-section="camera"] button[aria-label="Focus with a click"]').first();
     check('point_mode_shows_the_pick_and_the_part', (await pickBtn.count()) === 1 && /^On /.test((await page.locator('[data-section="camera"] [data-focus-on]').first().textContent()) ?? ''), {});
-    check('field_read_only_in_point', (await page.locator(FIELD).first().getAttribute('class'))?.includes('is-disabled') === true, {});
+    check('field_editable_in_point', (await page.locator(FIELD).first().getAttribute('class'))?.includes('is-disabled') !== true, {});
     if (SHOTS) {
       await page.mouse.move(canvas.x + 20, canvas.y + 20);
       await settle(page, 300);
@@ -180,6 +181,20 @@ try {
     await zoom(page, canvas, -400);
     const afterZoom = await readField(page);
     check('zoom_follows_the_point', Number.isFinite(afterZoom) && afterZoom < picked - 1, { picked, afterZoom });
+
+    // (c2) moving the distance in Point switches the camera to Distance from the followed distance, in one undo entry.
+    await page.locator(FIELD).focus();
+    await page.keyboard.press('ArrowUp');
+    await settle(page, 400);
+    const moved = await readField(page);
+    const distanceBtn = page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Distance"]').first();
+    const movedTips = await undoTips(page);
+    check('moving_switches_to_distance', (await distanceBtn.getAttribute('aria-pressed')) === 'true' && moved > afterZoom && moved - afterZoom < 50 && /Focus distance/.test(movedTips[0] ?? ''), { afterZoom, moved, tips: movedTips });
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+z');
+    await settle(page, 500);
+    const pointBtn = page.locator('[data-section="camera"] [data-focus-mode] button[aria-label="Point"]').first();
+    check('one_undo_back_to_point', (await pointBtn.getAttribute('aria-pressed')) === 'true' && Math.abs((await readField(page)) - afterZoom) < 0.5, { back: await readField(page) });
 
     // (d) Focus ▸ Distance keeps that distance; a typed one survives a plain click on the bottle (it selects the part).
     await page.keyboard.press('Escape');

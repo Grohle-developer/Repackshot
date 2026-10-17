@@ -21,9 +21,10 @@
 // `resolvedFocusDistance` for the camera it writes.
 
 import { clipProgress, evaluate, type Pose } from './animation';
-import { cameraBasis, cameraPosition, type CameraId, type CameraState, type FocusMode, type FocusPoint } from './camera';
+import { cameraBasis, cameraPosition, isPanoramic, type CameraId, type CameraState, type FocusMode, type FocusPoint } from './camera';
+import { renderedCamera, verticalsOf } from './interior-camera';
 import { getMesh } from './meshes';
-import { add, boxCenter, cross, dot, emptyBox, isEmptyBox, lerp, mat4Compose, mat4Invert, mat4Multiply, normalize, scale, sub, transformBox, transformPoint, unionBox, type Box, type Mat4, type Vec3 } from './math';
+import { add, boxCenter, cross, dot, emptyBox, length, isEmptyBox, lerp, mat4Compose, mat4Invert, mat4Multiply, normalize, scale, sub, transformBox, transformPoint, unionBox, type Box, type Mat4, type Vec3 } from './math';
 import { isNeutralOptics } from './optics';
 import { localMatrix, partsUnder, productBounds, sceneBounds, type NodeId } from './scene';
 import type { ProjectState } from './store';
@@ -201,6 +202,17 @@ export function focusTarget(state: ProjectState, cam: CameraState, pose?: Pose |
  * exact one comes through `setFocusSolver`). Null for a point behind the camera or one a tilted plane never reaches.
  */
 export function focusDistanceFor(cam: CameraState, point: Vec3): number | null {
+  // K3: a panorama is a pinhole (no depth of field) whose depth is the distance; with straight verticals the camera
+  // renders level (io/rsb.ts `renderedCamera`), and its focus distance is the level camera's over cos(corrected tilt).
+  if (isPanoramic(cam.projection)) {
+    const r = length(sub(point, cameraPosition(cam)));
+    return r > 0 && Number.isFinite(r) ? r : null;
+  }
+  const v = verticalsOf(cam);
+  if (v) {
+    const d = focusDistanceFor(levelled(cam), point);
+    return d === null ? null : d / Math.cos((v.correctedDeg * Math.PI) / 180);
+  }
   const { forward, right, up } = cameraBasis(cam.azimuth, cam.elevation);
   const d = sub(point, cameraPosition(cam));
   const depth = dot(d, forward);
@@ -216,6 +228,11 @@ export function focusDistanceFor(cam: CameraState, point: Vec3): number | null {
   const below = f - Math.sin(tilt) * dot(d, b);
   const u = (f * depth) / below;
   return below > 0 && u > 0 && Number.isFinite(u) ? u : null;
+}
+
+/** K3: the camera the engine renders for one with straight verticals, as a camera of its own (level, its shift added). */
+function levelled(cam: CameraState): CameraState {
+  return { ...renderedCamera(cam), straightVerticals: false };
 }
 
 /** The engine's exact focus distance of a camera for a world point (main.ts: rt.wasm's `rt_scene_focus_at`), or null. */
@@ -241,8 +258,14 @@ function lensKey(cam: CameraState): string {
  * there is one (`fast`: the last offset the engine found for this lens instead, for the frames of a gesture).
  */
 function lensFocus(cam: CameraState, point: Vec3, fast: boolean): number | null {
+  const v = verticalsOf(cam);
+  if (v) {
+    // K3: the level camera's lens, solved as the engine renders it.
+    const d = lensFocus(levelled(cam), point, fast);
+    return d === null ? null : d / Math.cos((v.correctedDeg * Math.PI) / 180);
+  }
   const paraxial = focusDistanceFor(cam, point);
-  if (paraxial === null || !cam.optics?.traced || cam.projection === 'ORTHOGRAPHIC' || !solver) return paraxial;
+  if (paraxial === null || !cam.optics?.traced || cam.projection !== 'PERSPECTIVE' || !solver) return paraxial;
   const key = lensKey(cam);
   if (fast) return paraxial + (lastOffset.get(key) ?? 0);
   const exact = solver(cam, point);

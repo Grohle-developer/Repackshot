@@ -44,7 +44,37 @@ fn scenes() -> Vec<(&'static str, Scene)> {
         ("o1", example::o1_scene()),
         ("o2", example::o2_scene()),
         ("q1", example::q1_scene()),
+        ("orthographic", projected(None)),
+        (
+            "equirectangular",
+            projected(Some((
+                crate::scene::Projection::Equirectangular,
+                360.0,
+                180.0,
+            ))),
+        ),
+        (
+            "fisheye",
+            projected(Some((crate::scene::Projection::Fisheye, 180.0, 0.0))),
+        ),
     ]
+}
+
+/// K3's other cameras on the example: orthographic (`None`), or a panorama with its fields of view.
+fn projected(panorama: Option<(crate::scene::Projection, f32, f32)>) -> Scene {
+    let mut scene = example::scene();
+    match panorama {
+        None => {
+            scene.camera.ortho = true;
+            scene.camera.ortho_width = 300.0;
+        }
+        Some((projection, fov_x, fov_y)) => {
+            scene.camera.projection = projection;
+            scene.camera.fov_x_deg = fov_x;
+            scene.camera.fov_y_deg = fov_y;
+        }
+    }
+    scene
 }
 
 #[test]

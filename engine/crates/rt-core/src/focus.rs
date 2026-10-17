@@ -96,7 +96,12 @@ pub fn pick(scene: &Scene, u: f32, v: f32) -> Pick {
         instance: h.instance,
         t: h.t,
         point: h.point,
-        depth: (h.point - camera.position).dot(forward),
+        // A panorama's depth pass is the distance (K3).
+        depth: if camera.panoramic() {
+            (h.point - camera.position).length()
+        } else {
+            (h.point - camera.position).dot(forward)
+        },
         focus_dist: camera.focus_distance_to(h.point),
     });
     Pick { ray, hit }
@@ -106,8 +111,13 @@ impl Camera {
     /// F1: the focus distance (`focus_dist`) that puts the world point `point` on the plane of
     /// sharp focus (see the module documentation); `None` when none does (a point behind the
     /// camera, or one a tilted plane never reaches). An orthographic camera has no depth of field:
-    /// the point's depth.
+    /// the point's depth; nor has a panorama (K3, a pinhole round its position): the point's
+    /// distance, which is what its depth pass gives.
     pub fn focus_distance_to(&self, point: Vec3) -> Option<f32> {
+        if self.panoramic() {
+            let r = (point - self.position).length();
+            return (r > 0.0 && r.is_finite()).then_some(r);
+        }
         if let (Some(lens), false) = (&self.lens, self.ortho) {
             return lens.focus_distance_to(self, point);
         }

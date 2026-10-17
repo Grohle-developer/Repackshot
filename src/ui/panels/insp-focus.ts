@@ -1,7 +1,7 @@
 // The Focus of a camera (phase F1, UI.md §5.1 "Cámara"): a segmented control Distance · Point · Object, and under it
 // the focus distance as a slider with its value field (a logarithmic slider over the depth of the scene, core/focus.ts
 // `focusRange`). Distance edits it (one undo entry per gesture); Point and Object show the distance the camera works
-// out for the point or the object, read-only (◆ Fable: whether moving it should switch to Distance instead), with the
+// out for the point or the object, and moving it switches the camera to Distance from there (one undo entry), with the
 // pick (Focus with a click; Pick what to focus on) and the name of what it follows. It goes in the scene's camera
 // section and in the inspector of a saved camera (both draw `cameraFields`) and edits the camera it is given.
 
@@ -52,13 +52,19 @@ export function focusRows(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLEl
     },
     (m) => seg.set(m),
   );
+  // The distance: one slider for every mode (it is not drawn again when a move switches the mode, so the drag goes on).
+  const distance = distanceRow(ctx, scope, camId);
   const body = dynamic(scope, (s) => focusModeOf(s.camera.cameras[camId()] ?? activeCamera(s)), (inner, mode) => modeRows(ctx, inner, camId, mode));
-  return h('div', { class: 'stack', 'data-focus': '' }, field(t('camera.focusMode'), seg.el), body);
+  return h('div', { class: 'stack', 'data-focus': '' }, field(t('camera.focusMode'), seg.el), distance, body);
 }
 
-function modeRows(ctx: Ctx, scope: Scope, camId: () => CameraId, mode: FocusMode): HTMLElement {
+/**
+ * The focus distance as a logarithmic slider with its field. In Distance it is the camera's own; in Point and Object
+ * it shows the distance worked out for the point or the object, and moving it switches the camera to Distance from
+ * there (the decision on F1's ◆: one undo entry, the switch and the gesture together).
+ */
+function distanceRow(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
   const { store } = ctx;
-  const derived = mode !== 'DISTANCE';
   // The slider's range follows the scene and the camera; its scale is logarithmic.
   let range = { lo: 1, hi: 1e5 };
   const scale = {
@@ -72,9 +78,12 @@ function modeRows(ctx: Ctx, scope: Scope, camId: () => CameraId, mode: FocusMode
     max: 1e6,
     step: 1,
     ariaLabel: t('camera.focus'),
-    disabled: derived,
     scale,
-    onChange: (v, g) => store.dispatch({ type: 'camera/set', id: camId(), patch: { focusDistance: v }, gesture: g, label: cmd.editLabel('camera', 'camera.focus') }),
+    onChange: (v, g) => {
+      const cam = store.get().camera.cameras[camId()];
+      const patch: Partial<CameraState> = focusModeOf(cam ?? activeCamera(store.get())) === 'DISTANCE' ? { focusDistance: v } : { focusMode: 'DISTANCE', focusDistance: v };
+      store.dispatch({ type: 'camera/set', id: camId(), patch, gesture: g, label: cmd.editLabel('camera', 'camera.focus') });
+    },
   });
   ctl.el.setAttribute('data-focus-distance', '');
   scope.watch(
@@ -89,8 +98,12 @@ function modeRows(ctx: Ctx, scope: Scope, camId: () => CameraId, mode: FocusMode
     },
     (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2],
   );
-  const rows: (HTMLElement | null)[] = [field(t('camera.focus'), ctl.el)];
-  if (derived) {
+  return field(t('camera.focus'), ctl.el);
+}
+
+function modeRows(ctx: Ctx, scope: Scope, camId: () => CameraId, mode: FocusMode): HTMLElement {
+  const rows: HTMLElement[] = [];
+  if (mode !== 'DISTANCE') {
     const point = mode === 'POINT';
     const pickKind = point ? 'focus' : 'focusObject';
     const label = t(point ? 'camera.focusClick' : 'camera.focusObjectPick');
