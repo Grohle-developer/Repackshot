@@ -736,6 +736,42 @@ fn alpha_is_the_alpha_of_a_transparent_render_of_opaque_objects() {
 }
 
 #[test]
+fn alpha_with_edge_samples_is_the_alpha_of_the_film_with_them() {
+    // E11: an edge pixel renders k samples of each index and splats their mean once; the pass does
+    // the same with the coverage of those k samples, so it is still the film's alpha bit for bit
+    // (and finer than the base samples alone could tell: an eighth, from 2 samples at k = 4).
+    let mut scene = quad_over_floor();
+    scene.floor = Floor {
+        mode: FloorMode::None,
+        z: 0.0,
+        color: Rgb::BLACK,
+    };
+    scene.environment.background_mode = BACKGROUND_TRANSPARENT;
+    scene.render.edge_supersample = 4;
+    let prepared = Prepared::new(&scene);
+    let isa = Isa::detect();
+    let mut film = Film::new(40, 30);
+    let mut passes = Passes::new(40, 30, PASS_ALPHA);
+    for tile in tile_grid(40, 30, 16) {
+        let edges = crate::pixel_filter::EdgeMask::of(&scene, &prepared, tile, isa);
+        let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, PASS_ALPHA);
+        for sample in 0..2 {
+            render_tile_edges(&scene, &prepared, None, &edges, sample, &mut film, isa);
+            render_tile_albedo_edges(&scene, &prepared, &edges, sample, &mut pf, isa);
+        }
+        passes.copy_region(tile.x, tile.y, &pf.resolve());
+    }
+    assert_eq!(passes.alpha, film.resolve_alpha());
+    assert!(
+        passes
+            .alpha
+            .iter()
+            .any(|&a| (a * 8.0).fract() == 0.0 && (a * 8.0) as u32 % 2 == 1),
+        "an edge pixel has an odd eighth: its sub-samples were counted"
+    );
+}
+
+#[test]
 fn a_light_panel_the_camera_sees_has_no_coverage() {
     let mut scene = looking_along_y(100.0, 0.0, 24, 24);
     scene.materials = vec![lambert(Rgb::splat(0.5))];

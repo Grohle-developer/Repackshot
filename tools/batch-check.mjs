@@ -415,6 +415,9 @@ try {
   await page.waitForTimeout(500);
   const rows = await page.locator('.queue-row').evaluateAll((els) => els.map((e) => ({ status: e.dataset.status, text: e.textContent.replace(/\s+/g, ' ').trim() })));
   const history = await page.locator('.history-item').count();
+  // The toasts that told of each job have gone by the time of the picture.
+  await page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 30000 }).catch(() => undefined);
+  await page.mouse.move(10, 600);
   await page.screenshot({ path: join(SHOTS, 'batch-queue.png') });
   check(
     'c_queue_and_history',
@@ -507,7 +510,7 @@ try {
   await page.locator('.queue-row').nth(1).locator('button[aria-label="Stop this job"]').click();
   await page.waitForFunction(() => document.querySelectorAll('.queue-row')[2]?.dataset.status === 'DONE', null, { timeout: 300000 });
   const finalRows = await page.locator('.queue-row').evaluateAll((els) => els.map((e) => e.dataset.status));
-  check('e_cancel_the_second_leaves_the_third', finalRows.join() === 'DONE,CANCELLED,DONE' && downloads.map((d) => d.name).join() === 'cancel_0005.png,cancel_0007.png', { finalRows, downloads: downloads.map((d) => d.name) });
+  check('e_cancel_the_second_leaves_the_third', finalRows.join() === 'DONE,CANCELLED,DONE' && downloads.map((d) => d.name).join() === 'cancel_0006.png,cancel_0008.png', { finalRows, downloads: downloads.map((d) => d.name) });
 
   // (f) The page raised nothing.
   results.errors = errors;

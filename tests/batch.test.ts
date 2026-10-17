@@ -15,6 +15,7 @@ import { memoryResultsStore } from '../src/io/results';
 import * as cmd from '../src/ui/commands';
 import type { AppServices, FrameRequest, FrameResult } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
+import { summaryLine } from '../src/ui/panels/render-window';
 import { flushIdleZips, jobFileNames, jobProject, pendingZipFiles, queueSettled, studioRefs } from '../src/ui/render-queue';
 import { setLang } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
@@ -183,6 +184,14 @@ describe('cameras × studios: the jobs and their names', () => {
     expect(jobFileNames(st, none)[0]).toBe('Standard.png'); // the product type of the example
     const [one] = expandJobs(st, { ...settingsOf(st.render), name: '{studio}', studio: { kind: 'ONE', id: 'std-b', name: 'Studio B' } }, NOW);
     expect(jobFileNames(st, one)).toEqual(['Studio B.png']);
+  });
+
+  it('the window’s summary says how many images, passes and the ZIP, before the AI (the end of the line is what gets cut)', () => {
+    const st = makeCtx().ctx.store.get();
+    const s = settingsOf(st.render);
+    expect(summaryLine(s, 1)).toBe('1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · AI off');
+    expect(summaryLine({ ...s, passes: { keys: ['alpha', 'depth', 'partId'], format: 'EXR' }, zip: true }, 1, null, 4)).toBe('1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · 4 images · 3 passes · ZIP · AI off');
+    expect(summaryLine({ ...s, passes: { keys: ['depth'], format: 'EXR' } }, 1)).toContain('1 pass · AI off');
   });
 
   it('an animation renders the scene as it is and writes no pass files, whatever the window says', () => {
@@ -357,7 +366,7 @@ describe('the passes beside the image', () => {
     expect(f.requests[0].passes).toEqual(passes);
     expect(f.requests[0].imageName).toBe('Bottle_Camera 1_0001.png');
     expect(names(f)).toEqual(['Bottle_Camera 1_0001.png', 'Bottle_Camera 1_0001_alpha.exr', 'Bottle_Camera 1_0001_depth.exr', 'Bottle_Camera 1_0001_partId.exr', 'Bottle_Camera 1_0001_partId.json']);
-    expect(ctx.ui.get().toasts.at(-1)?.text).toBe('Saved Bottle_Camera 1_0001.png and 4 pass files');
+    expect(ctx.ui.get().toasts.at(-1)?.text).toBe('Saved Bottle_Camera 1_0001.png and 4 more files');
     // The history keeps the image once.
     expect(ctx.ui.get().results).toHaveLength(1);
   });
@@ -385,6 +394,20 @@ describe('the passes beside the image', () => {
     await queueSettled(ctx);
     expect(ctx.store.get().render.queue[0]).toMatchObject({ status: 'FAILED', error: 'The engine returned no passes' });
     expect(f.saved).toEqual([]);
+  });
+});
+
+describe('a queue that has nothing to run', () => {
+  it('Start on an empty queue does nothing, and the next Start (with a job) runs it (a finished loop is not kept as the running one)', async () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    cmd.toggleQueue(ctx); // nothing waits: the loop ends at once
+    await tick();
+    cmd.enqueue(ctx);
+    cmd.toggleQueue(ctx);
+    for (let i = 0; i < 20 && statuses(f)[0] !== 'DONE'; i++) await tick();
+    expect(statuses(f)).toEqual(['DONE']);
+    await queueSettled(ctx);
   });
 });
 

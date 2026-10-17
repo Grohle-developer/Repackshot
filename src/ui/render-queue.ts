@@ -819,7 +819,14 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
 }
 
 function ensureLoop(ctx: Ctx, r: Runner): void {
-  if (!r.loop) r.loop = loop(ctx, r);
+  if (r.loop) return;
+  // A loop with nothing to run ends before its first `await`: its own `finally` has run by the time it returns, so
+  // assigning the promise as it is would leave a finished loop in `r.loop` for good (no later Start could begin one,
+  // and `queueSettled` would never return). The promise clears itself once it settles.
+  const done: Promise<void> = loop(ctx, r).finally(() => {
+    if (r.loop === done) r.loop = null;
+  });
+  if (!r.loop) r.loop = done;
 }
 
 /** Start queue: every waiting job, in order. After a Pause (Resume): what was paused goes on. */

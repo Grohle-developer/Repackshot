@@ -87,7 +87,7 @@ function finishText(s: RenderSettings): string {
   return s.finishBy === 'SAMPLES' ? samples : s.finishBy === 'TIME' ? time : t('rw.summaryOr', { a: samples, b: time });
 }
 
-/** The footer's one line: "1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · AI off" (N2: and "4 images · 2 passes · ZIP"). */
+/** The footer's one line: "1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · AI off" (N2: with "4 images · 2 passes · ZIP" before the AI). */
 export function summaryLine(s: RenderSettings, frames: number, video: VideoSupportUi | null = null, images = 1): string {
   const dest = s.destination.kind === 'FOLDER' ? s.destination.name : t('rw.downloads');
   // N1: a video is its container and codec, not the frames' format.
@@ -100,10 +100,10 @@ export function summaryLine(s: RenderSettings, frames: number, video: VideoSuppo
   // N2: a batch says how many images it makes, passes how many files go beside each, and a ZIP that they are packed.
   const extra = [
     ...(images > 1 ? [t('rw.summaryBatch', { n: images })] : []),
-    ...(s.passes.keys.length > 0 ? [t('rw.summaryPasses', { n: s.passes.keys.length })] : []),
+    ...(s.passes.keys.length > 0 ? [s.passes.keys.length === 1 ? t('rw.summaryPass1') : t('rw.summaryPasses', { n: s.passes.keys.length })] : []),
     ...(s.zip ? [t('rw.summaryZip')] : []),
   ];
-  return [`${s.width} × ${s.height}`, `${s.dpi} ${t('rw.dpiUnit')}`, finishText(s), out, ai, ...extra].join(' · ');
+  return [`${s.width} × ${s.height}`, `${s.dpi} ${t('rw.dpiUnit')}`, finishText(s), out, ...extra, ai].join(' · ');
 }
 
 /** Pixel-samples per second the engine measured on this machine (never assumed). */

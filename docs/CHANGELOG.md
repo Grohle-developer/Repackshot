@@ -3,6 +3,34 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Motor
+
+- Un pase nuevo, **alfa** (el séptimo, bit 6 de `RNDR.passes`): la cobertura de los objetos, de 0 a 1, con los bordes suavizados como la imagen (cada muestra de cámara cuenta si su rayo encuentra una superficie). El suelo del estudio, el entorno, el fondo y los paneles de luz que ve la cámara valen 0 (N2).
+- `rt_render_tile_alpha` en `rt.wasm` y en el pool; el archivo `RPP1` del lanzador lo lleva el último, y el *pool* y el lanzador dan el mismo plano (N2).
+- Los *hash* fijados de los seis pases de X2 y de las imágenes no se mueven; el alfa tiene los suyos (`PINNED_PASS_ALPHA`, `PINNED_E5_PASS_ALPHA`), iguales en escalar, SSE2 y AVX2, en WASI, en el `rt.wasm` real (`tools/wasm-parity.mjs --expect-alpha`, dos bloques nuevos de CI) y por la API del lanzador (N2).
+- Con un fondo transparente y solo objetos opacos, el pase alfa es el alfa de la película bit a bit, también con muestras de borde (N2).
+
+### Interfaz
+
+- **Pases** en la ventana de render, donde decía *próximamente*: *Alfa*, *Profundidad*, *Normales* e *Id de pieza*, cada uno un archivo junto a la imagen (`<nombre>_alpha`, `_depth`, `_normal`, `_partId`), en **EXR** de 32 bits flotantes o **PNG de 16 bits**; el id de pieza lleva una leyenda `.json` de quién es quién (N2).
+- **Estudio** en la ventana de render: la escena como está, un estudio guardado o **todos**; con *Todas las cámaras*, un **lote cámaras × estudios** (2 × 2 son cuatro imágenes, cámara por cámara), con la plantilla `{project}_{camera}_{studio}`. El estudio se pone sobre una copia del proyecto: el proyecto abierto no se toca y la cámara conserva su vista (N2).
+- La ventana dice el tamaño del lote (*Lote de 4 imágenes: cámaras 2 × estudios 2*) y avisa cuando la plantilla daría el mismo nombre a dos archivos (N2).
+- **ZIP**: un interruptor empaqueta los archivos de lo que una orden *Render* o *+ Añadir a la cola* metió en la cola en un solo ZIP (escritor propio, sin comprimir, sin dependencias), que se descarga al acabar el último trabajo del grupo; si el ZIP no se pudiera crear, los archivos se guardan uno a uno (N2).
+- La cola enseña el estudio de cada trabajo junto a su cámara y *+3 pases · ZIP* al final del nombre; *Detener* el segundo de tres trabajos lo deja *Cancelado* y la cola sigue con el tercero (N2).
+- `{studio}` en el nombre es el estudio guardado del trabajo; sin él, el nombre del tipo de producto como antes. Un estudio que ya no está guardado hace fallar su trabajo con el motivo y la cola sigue (N2).
+- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
+
+### Limitaciones conocidas de esta versión
+
+- El pase alfa es una **máscara de objetos**: no es el alfa de un render con fondo transparente cuando el camino atraviesa vidrio (que sí cuenta como superficie) o el suelo es un atrapasombras con su sombra; los recortes de una textura cuentan como superficie. Con *Terminar por ruido* lleva las muestras de la primera ronda (N2).
+- Los pases son para imágenes: una animación no los escribe. De los seis pases del motor solo se ofrecen cuatro (el albedo, el id de material y el círculo de confusión no) (N2).
+- Un trabajo con un estudio de lote no pasa por el post-procesado IA, y los plugins de trabajos guardan sus imágenes aparte, fuera del ZIP (N2).
+- Los estudios de la biblioteca viven en el navegador: un proyecto abierto en otro equipo con trabajos que usan un estudio que allí no existe los falla con el motivo (N2).
+- El ZIP se arma en memoria y se escribe al acabar el último trabajo: cerrar la página antes lo pierde, y un lote muy grande con pases en EXR puede no caber (sin ZIP64, 4 GiB como mucho) (N2).
+- Los lotes nativos de la línea de órdenes (`rt` leyendo proyectos, E8) siguen sin hacerse (N2).
+
 ## v0.1.16 — 2026-10-17
 
 ### Accesibilidad

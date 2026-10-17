@@ -238,6 +238,18 @@ describe('the alpha pass (N2): the seventh key, appended after the six', () => {
     // Without the bit nothing is accepted.
     expect(new PassAccumulator(40, 3, passMask(['albedo']), tiles).addAlpha(1, 0, 1, sample(0))).toBe(false);
   });
+
+  it('multiplies by the reciprocal of the sample count, as the engine does (7 samples: 3 hits give fround(3 * fround(1/7)), which is not fround(3/7))', () => {
+    const tiles = tileGrid(8, 1, 32);
+    const acc = new PassAccumulator(8, 1, passMask(['alpha']), tiles);
+    // Pixel p is hit by the first `p` of the 7 samples (0..7 hits).
+    for (let s = 0; s < 7; s++) expect(acc.addAlpha(0, s, 1, new Float32Array(8).map((_, p) => (s < p ? 1 : 0)))).toBe(true);
+    const r = acc.resolve();
+    const inv = Math.fround(1 / 7);
+    for (let p = 0; p < 8; p++) expect(r.alpha![p], `pixel ${p}`).toBe(Math.fround(Math.min(p, 7) * inv));
+    expect(Math.fround(3 * inv)).not.toBe(Math.fround(3 / 7));
+    expect(r.alpha![3]).toBe(Math.fround(3 * inv));
+  });
 });
 
 describe.skipIf(!RT_WASM)('the alpha pass of the real rt.wasm, rendered the pool’s way (N2)', () => {

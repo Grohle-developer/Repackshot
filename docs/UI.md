@@ -1373,7 +1373,10 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
 
 - **Nombre**: plantilla con fichas insertables (`{proyecto}`,
   `{cámara}`, `{estudio}`, `{fecha}`, `{n}`) y la vista previa del nombre
-  resultante en auxiliar (*Botella_Cámara 1_0001.png*).
+  resultante en auxiliar (*Botella_Cámara 1_0001.png*). `{estudio}` es el estudio
+  guardado del trabajo en un lote (N2) y, en cualquier otro, el tipo de producto;
+  las claves de las fichas son las mismas en todos los idiomas (`{project}`,
+  `{camera}`, `{studio}`, `{date}`, `{n}`), solo cambia lo que dice cada ficha.
 - **Carpeta al terminar**: dónde se guarda. En el navegador, *Descargas*
   por defecto o **Elegir carpeta…** (con el acceso al sistema de
   archivos del navegador donde exista; el permiso se recuerda y la

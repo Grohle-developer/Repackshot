@@ -102,7 +102,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     // N2: the saved studio of a batch job, the passes beside its image and the ZIP it goes into.
     const look = jobStudio(j);
     const passKeys = anim ? [] : j.settings.passes.keys;
-    const tags = [...(passKeys.length > 0 ? [t('queue.tagPasses', { n: passKeys.length })] : []), ...(j.zip ? [t('queue.tagZip')] : [])];
+    const tags = [...(passKeys.length > 0 ? [passKeys.length === 1 ? t('queue.tagPass1') : t('queue.tagPasses', { n: passKeys.length })] : []), ...(j.zip ? [t('queue.tagZip')] : [])];
     // A result that went through the AI shows both pictures: the engine's and the AI's (its first image), side by side,
     // and how many AI images it has when there are several (X4b).
     const aiThumb = result ? aiImagesOf(result)[0]?.info.thumb : undefined;

@@ -1402,9 +1402,9 @@ guardados** (la pestaña *Estudios*; los de un proyecto antiguo, también) o *to
 el estudio se pone sobre una **copia** del proyecto y esa copia es lo que se renderiza,
 con la cámara del trabajo (el estudio no le quita su vista); el proyecto abierto no se
 toca. *Todas las cámaras* × *Todos los estudios* es un **lote**: un trabajo por cámara
-y estudio (primero por cámara), con el nombre de la plantilla (`{proyecto}_{cámara}_{estudio}`
-da cuatro archivos distintos en un 2 × 2; `{estudio}` es el estudio guardado del
-trabajo y, sin él, el nombre del tipo de producto como antes). Un estudio que ya no
+y estudio (primero por cámara), con el nombre de la plantilla (`{project}_{camera}_{studio}`,
+cuyas fichas dicen *Proyecto*, *Cámara* y *Estudio*, da cuatro archivos distintos en un 2 × 2;
+`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un estudio que ya no
 está guardado hace fallar su trabajo, con el motivo, y la cola sigue. Un trabajo con
 estudio no pasa por la IA (sus pases se dibujan del proyecto abierto).
 
