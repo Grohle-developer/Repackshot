@@ -5,6 +5,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- *Ajustes ▸ Preferencias ▸ Render por defecto para proyectos nuevos*: los botones *Descargas* y *Elegir carpeta…* de *Carpeta al terminar* ya no salen cortados. El icono iba en su propia línea y el texto caía debajo, fuera de los 26 px del botón; ahora icono y texto van en la misma línea en cualquier control segmentado con icono. Lo guarda `tests/seg-clip-browser.test.ts`, en el navegador y en los dos idiomas.
+
 ### Herramientas
 
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
