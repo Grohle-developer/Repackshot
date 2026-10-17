@@ -189,7 +189,7 @@ async function walk(page, { lang = 'en' } = {}) {
   return { steps, problems, total, lang };
 }
 
-const SUGGESTED = ['welcome', 'menu', 'parts', 'levels', 'tools', 'mode', 'product', 'light', 'environment', 'camera', 'material', 'lights', 'cameras', 'studios', 'add', 'render', 'render-window', 'render-queue', 'render-ai', 'results'];
+const SUGGESTED = ['welcome', 'menu', 'parts', 'levels', 'tools', 'mode', 'product', 'light', 'environment', 'camera', 'material', 'nodes', 'lights', 'cameras', 'studios', 'add', 'render', 'render-window', 'render-queue', 'render-ai', 'results'];
 
 const chromium = (await import(join(ROOT, 'node_modules', 'playwright-core', 'index.mjs'))).chromium;
 let browser = null;
