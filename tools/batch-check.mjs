@@ -251,6 +251,13 @@ const palette = async (page, text) => {
   await page.waitForTimeout(200);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(600);
+  // L7: a setup over the lights there are asks what happens to them, inline in the palette (modal); Replace is what
+  // the command always did.
+  const replace = page.locator('.palette .palette-item', { hasText: /^Replace/ });
+  if (await replace.count()) {
+    await replace.first().click();
+    await page.waitForTimeout(400);
+  }
 };
 
 async function setNumber(page, selector, value) {
