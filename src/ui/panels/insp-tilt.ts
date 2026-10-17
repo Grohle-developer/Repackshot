@@ -174,7 +174,7 @@ export function tiltShiftFields(ctx: Ctx, scope: Scope, camId: () => CameraId): 
   const shiftY = numberField({ value: optics().shiftYMm, min: OPTICS_LIMITS.shiftMm.min, max: OPTICS_LIMITS.shiftMm.max, step: 0.1, digits: 1, unit: 'mm', label: 'V', ariaLabel: t('camera.shiftY'), onChange: (v, g) => dispatch({ ...optics(), shiftYMm: v }, 'camera.shiftY', g) });
 
   const cylinders = h('div', { class: 'note', 'data-tilt-cylinders': '' }, t('camera.tiltCylinders'));
-  const tracedNote = h('div', { class: 'aux', 'data-tilt-traced': '' }, t('camera.tiltTracedNote'));
+  const tracedNote = h('div', { class: 'note', 'data-tilt-traced': '' }, t('camera.tiltTracedNote'));
   const tiltRows = h(
     'div',
     { class: 'stack', 'data-tilt': '' },
@@ -190,7 +190,7 @@ export function tiltShiftFields(ctx: Ctx, scope: Scope, camId: () => CameraId): 
     tiltRows,
     tracedNote,
     tip(field(t('camera.shift'), shiftX.el, shiftY.el), 'camera.shiftAux'),
-    h('div', { class: 'aux' }, t('camera.tiltNote')),
+    h('div', { class: 'note' }, t('camera.tiltNote')),
   );
   // The plane shows in the viewport while the pointer or the focus is on these rows.
   const hover = (on: boolean) => {

@@ -84,7 +84,7 @@ fn traced_fstop(scene: &Scene) -> f32 {
 }
 
 /// A camera at the origin looking along +y, z up.
-fn camera(focal: f32, fstop: f32, focus: f32) -> Camera {
+pub(crate) fn camera(focal: f32, fstop: f32, focus: f32) -> Camera {
     Camera {
         position: Vec3::ZERO,
         target: Vec3::new(0.0, 1000.0, 0.0),
@@ -110,7 +110,7 @@ fn frame(size: (u32, u32), sensor: f32) -> (f32, f32) {
 }
 
 /// A scene of `lights` on black, seen by camera rays only.
-fn lights_scene(size: (u32, u32), camera: Camera, lights: Vec<Light>) -> Scene {
+pub(crate) fn lights_scene(size: (u32, u32), camera: Camera, lights: Vec<Light>) -> Scene {
     Scene {
         camera,
         materials: Vec::new(),
@@ -143,7 +143,7 @@ fn lights_scene(size: (u32, u32), camera: Camera, lights: Vec<Light>) -> Scene {
 }
 
 /// A disc of `radiance` and `diameter` at `position`, facing the camera at the origin.
-fn disc(position: Vec3, diameter: f32, radiance: f32) -> Light {
+pub(crate) fn disc(position: Vec3, diameter: f32, radiance: f32) -> Light {
     let area_m2 = std::f32::consts::PI * (diameter / 2000.0).powi(2);
     Light {
         kind: LightKind::Disk,

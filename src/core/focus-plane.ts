@@ -161,7 +161,7 @@ const GRID = 6;
 /**
  * The hint of camera `camId`'s plane (the active camera's by default) around the product: a square on the plane, twice
  * the product's radius and a little more on a side, centred where the product's centre falls on it, its sides along
- * the tilt's axis and across it. Null for an orthographic camera (it has no lens).
+ * the camera's right laid on the plane and across it. Null for an orthographic camera (it has no lens).
  */
 export function focusPlaneHint(state: ProjectState, camId?: CameraId | null, picked: readonly Vec3[] = []): FocusPlaneHint | null {
   const cam = (camId ? state.camera.cameras[camId] : undefined) ?? activeCamera(state);
@@ -172,9 +172,11 @@ export function focusPlaneHint(state: ProjectState, camId?: CameraId | null, pic
   const centre0 = isEmptyBox(box) ? plane.point : boxCenter(box);
   const r = isEmptyBox(box) ? 0.25 * cam.focusDistance : Math.max(1, boxRadius(box));
   const centre = sub(centre0, scale(plane.normal, planeDistance(plane, centre0)));
-  const { right, a } = tiltFrame(cam, t.axisDeg);
-  // Along the tilt's axis (in the plane: a ⊥ forward and a ⊥ b), and across it on the plane.
-  const e1 = t.deg !== 0 ? normalize(sub(a, scale(plane.normal, dot(a, plane.normal)))) : normalize(sub(right, scale(plane.normal, dot(right, plane.normal))));
+  const { right, up } = tiltFrame(cam, t.axisDeg);
+  // The camera's right laid on the plane, and across it on the plane: the square reads as a sheet seen in perspective
+  // (a trapezoid as the plane leans), never turned on its corner. A plane seen edge on along the right uses the up.
+  const along = (w: Vec3) => sub(w, scale(plane.normal, dot(w, plane.normal)));
+  const e1 = length(along(right)) > 1e-3 ? normalize(along(right)) : normalize(along(up));
   const e2 = normalize(cross(plane.normal, e1));
   const half = 1.25 * r;
   const at = (x: number, y: number) => add(centre, add(scale(e1, x * half), scale(e2, y * half)));

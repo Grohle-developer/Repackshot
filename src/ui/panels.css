@@ -1422,3 +1422,7 @@
   align-items: center;
   gap: 4px;
 }
+/* O4: Camera ▸ Lens ▸ Lens model, its label above: the two models share the inspector's width. */
+.field.wide > .field-control > .seg.full {
+  flex: 1;
+}
