@@ -6,7 +6,8 @@
 //
 // Without --url it serves dist/ with `vite preview` on port 4193 and stops it at the end.
 //
-//   thin        Camera ▸ Lens starts on the thin lens, says what it is, and hides the traced lens's rows;
+//   thin        Camera ▸ Lens starts on the simple lens (O4: the thin lens renamed), says what it is, and hides the
+//               traced lens's rows;
 //   traced      Traced lens puts the double Gauss on (one undo entry, "Camera: Lens model"), its character chip and
 //               its source;
 //   info        the engine's numbers (focal length, back focus, f-number and T-stop, elements and groups...), the
@@ -15,12 +16,12 @@
 //               entry ("Camera: Lens") and the numbers follow (its four elements);
 //   adapter     the anamorphic adapter shows the lens behind it and the engine's squeeze;
 //   soft        the soft-focus lens shows its variable gap, and moving it is one undo entry;
-//   advanced    Advanced shows the artistic knobs under NOT PHYSICAL, and one moved is one undo entry;
-//   thinOnly    with a traced lens, Advanced optics turns the thin lens's tilt, profile, cat's eye and squeeze off;
-//   bokeh       the bokeh types of the traced lens are offered with their thumbnails, and Coma comet puts its lens on;
+//   advanced    More options (O4) shows the artistic knobs under NOT PHYSICAL, and one moved is one undo entry;
+//   thinOnly    with a traced lens the Bokeh and the Advanced optics (the simple lens's, O4) are not shown;
 //   meter       the Fast meter says the traced lens is approximated;
 //   save        Save lens as… asks for a name and keeps the lens in Mine;
-//   back        Thin lens takes the camera back.
+//   back        Simple lens takes the camera back;
+//   bokeh       with the simple lens the bokeh types of the traced lens are not in its grid (O4, decided).
 //
 // Screenshots (English, dark): lens-editor.png (the editor: model, character, lens, source, its own rows) and
 // lens-section.png (what the engine computes: the numbers, the curves and the cross-section). Results:
@@ -166,7 +167,7 @@ try {
   await settle(page, 400);
 
   const r0 = await read(page);
-  check('thin', r0.model.join() === 'Thin lens' && !r0.tracedShown && /ideal lens/.test(r0.text), { model: r0.model, tracedShown: r0.tracedShown });
+  check('thin', r0.model.join() === 'Simple lens' && !r0.tracedShown && /ideal lens/.test(r0.text), { model: r0.model, tracedShown: r0.tracedShown });
 
   await sub.locator('[aria-label="Lens model"] button', { hasText: 'Traced lens' }).click();
   await settle(page, 400);
@@ -227,24 +228,15 @@ try {
   const r6 = await read(page);
   check('advanced', /not physical/i.test(r6.text) && r6.undo?.includes('Distortion'), { undo: r6.undo });
 
-  const optHead = page.locator('[data-section="camera"] [data-action="cameraOptics"]');
-  if ((await optHead.getAttribute('aria-expanded')) !== 'true') await optHead.click();
-  await settle(page, 300);
-  const thinOnly = await page.evaluate(() => {
-    const adv = document.querySelector('[data-optics="cameraOptics"]');
-    const tilt = adv?.querySelector('[aria-label="Tilt"]');
-    const profile = adv?.querySelector('select[aria-label="Profile"]');
-    const note = adv?.querySelector('[data-thin-only]');
-    return { tilt: tilt ? tilt.closest('[data-disabled]') !== null || tilt.disabled === true : null, profile: profile?.disabled ?? null, note: note ? note.style.display !== 'none' : null };
+  const hidden = await page.evaluate(() => {
+    const shown = (sel) => {
+      const el = document.querySelector(sel);
+      return !!el && el.getClientRects().length > 0;
+    };
+    return { bokeh: shown('[data-optics="cameraBokeh"]'), optics: shown('[data-optics="cameraOptics"]'), tiles: [...document.querySelectorAll('[data-bokeh]')].some((e) => e.getClientRects().length > 0) };
   });
-  check('thinOnly', thinOnly.tilt === true && thinOnly.profile === true && thinOnly.note === true, thinOnly);
-
-  const coma = page.locator('[data-bokeh="coma_comet"]');
-  const comaState = await coma.evaluate((el) => ({ disabled: el.disabled, img: el.querySelector('img')?.getAttribute('src') ?? null }));
-  await coma.click();
-  await settle(page, 500);
+  check('thinOnly', !hidden.bokeh && !hidden.optics && !hidden.tiles, hidden);
   const r7 = await read(page);
-  check('bokeh', !comaState.disabled && /coma-comet\.png$/.test(comaState.img ?? '') && r7.lens === 'double_gauss_fast', { coma: comaState, lens: r7.lens });
 
   check('meter', /Traced lens: distortion and falloff approximated/.test(r7.meter), { meter: r7.meter });
 
@@ -259,10 +251,13 @@ try {
   const mine = await sub.locator('[data-lens-list]').textContent();
   check('save', /My fast lens/.test(mine ?? ''), { mine });
 
-  await sub.locator('[aria-label="Lens model"] button', { hasText: 'Thin lens' }).click();
+  await sub.locator('[aria-label="Lens model"] button', { hasText: 'Simple lens' }).click();
   await settle(page, 400);
   const r8 = await read(page);
-  check('back', r8.model.join() === 'Thin lens' && !r8.tracedShown && r8.undo?.includes('Lens model'), { model: r8.model, undo: r8.undo });
+  check('back', r8.model.join() === 'Simple lens' && !r8.tracedShown && r8.undo?.includes('Lens model'), { model: r8.model, undo: r8.undo });
+  const tracedTiles = await page.locator('[data-bokeh="coma_comet"], [data-bokeh="focus_breathing"], [data-bokeh="variable_sa"]').count();
+  const allTiles = await page.locator('[data-bokeh-grid] [data-bokeh]').count();
+  check('bokeh', tracedTiles === 0 && allTiles === 17, { tracedTiles, allTiles });
   check('no_errors', errors.length === 0, { errors });
 } catch (err) {
   check('run', false, { error: String(err?.stack ?? err) });

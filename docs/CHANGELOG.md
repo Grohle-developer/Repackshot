@@ -9,6 +9,21 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - **El visor arranca siempre en *Rápido*.** Antes arrancaba en el último modo, y en una instalación nueva ese era *Completo*: el motor se ponía a renderizar nada más abrir la aplicación, sin modelo. Desaparece el ajuste *Modo del visor al arrancar*; *Completo* se elige en la barra de arriba. Lo guarda `tests/start-mode-browser.test.ts`, que falla con el arranque de antes.
 
+### Cámara y lente
+
+- La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
+- **El bokeh y la óptica avanzada son de la lente simple**: con una lente trazada no salen, y elegir un bokeh ya no saca a la cámara de su lente trazada por ningún camino (si llega uno, un aviso dice que es una opción de la lente simple). Volver a la lente simple encuentra el bokeh y la óptica avanzada como estaban. Los tres tipos de bokeh de la lente trazada (cometa de coma, respiración de foco, aberración esférica variable) salen de la rejilla, que queda con los 17 de la lente simple: son de sus lentes en *Lente ▸ Lente trazada* (O4).
+- La lente trazada tiene **Más opciones** (antes *Avanzado*) con su propia **inclinación y desplazamiento**: el motor gira la lente real respecto al sensor hasta que su plano de enfoque es el que tendría la lente simple con la misma inclinación, y dice cuánto la gira; el resto del diafragma (redondez, giro, obstrucción) también está ahí. El adaptador anamórfico no se inclina, y lo dice (O4).
+- Una **inclinación más fácil**, en las dos lentes: la cantidad en un deslizador y la dirección hacia la que se aleja el plano en un dial con cuatro atajos (*como el suelo, como el techo, como una pared*); **Por dos puntos…**: dos clics en el producto ajustan la inclinación y la distancia de enfoque para que los dos salgan nítidos, en un solo paso de deshacer; y el **plano de enfoque dibujado en el visor** mientras se ajusta o siempre (*Ver el plano*) (O4).
+
+### Motor
+
+- **Lente trazada inclinada** (Scheimpflug por las superficies reales): el ángulo se resuelve con la óptica paraxial de la lente para que el plano sea el de la lente simple, el centro se reenfoca con rayos reales y los límites de la pupila se trazan en una rejilla de 9 × 9 posiciones del sensor. Sin inclinación, ni un bit cambia: todos los *hash* fijados siguen; uno nuevo para la escena O4. `rt --write-o4-example` y la hoja `rt --tilt-sheet` (O4).
+
+### Herramientas
+
+- `tools/o4-check.mjs`: las dos lentes en la aplicación construida (secciones de cada una, el plano por dos puntos como una entrada de deshacer, el plano en el visor, la inclinación de la trazada con el ángulo del motor, la vuelta a la lente simple) y sus capturas; `tools/lens-check.mjs` y `tools/optics-check.mjs` siguen a O4 (O4).
+
 ## v0.1.17 — 2026-10-17
 
 ### Motor

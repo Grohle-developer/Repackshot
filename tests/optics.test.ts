@@ -58,8 +58,9 @@ describe('the optics of a camera', () => {
         continue;
       }
       if (t.requires === 'traced') {
+        // The traced lens's own: it goes on, and the simple lens's bokeh type stays for when the camera comes back (O4).
         expect(o?.traced?.key, t.key).toBe(t.lens);
-        expect([o!.bokeh, o!.tiltDeg, o!.shiftXMm]).toEqual([t.key, 3, -2]);
+        expect([o!.bokeh, o!.tiltDeg, o!.shiftXMm]).toEqual([null, 3, -2]);
         continue;
       }
       expect(o!.bokeh).toBe(t.key);

@@ -43,9 +43,11 @@
 use super::paraxial;
 
 mod batch;
+mod tilt;
 use super::pupil::Iris;
 use crate::math::Vec3;
 pub use batch::{BatchSample, LANES};
+pub use tilt::{MAX_TRACED_TILT_DEG, TILT_GRID};
 
 /// `SurfaceSpec.kind`: a sphere.
 pub const SURFACE_SPHERE: u32 = 0;
@@ -217,6 +219,8 @@ pub struct LensInfo {
     pub sensor_mm: f32,
     /// An anamorphic lens's squeeze at its focus (1 without cylinders).
     pub squeeze: f32,
+    /// O4: the angle the lens is tilted by against the sensor, degrees (0: upright).
+    pub tilt_deg: f32,
     /// The lens as it is traced (scaled, focused, the derived semi-apertures), for drawing its
     /// cross-section.
     pub section: LensSection,
@@ -498,6 +502,8 @@ pub struct TracedLens {
     info: LensInfo,
     /// What it was prepared for.
     key: CameraOptics,
+    /// O4: the tilt against the sensor (`None`: upright, the only case before O4).
+    tilt: Option<tilt::Tilt>,
 }
 
 /// A prescription scaled and with its band indices, before focusing.
@@ -816,6 +822,105 @@ fn focus_of(surfaces: &[Surface], distance: f32) -> Option<(f32, f32)> {
     Some((image, m))
 }
 
+/// Focuses `surfaces` (the lens at infinity focus, its last vertex at `z_last`) on an object
+/// `object` in front of the first vertex by the prescription's focus mode: the sensor's position
+/// and the fraction `t` of the moving gaps' travel (O2; O4 calls it again for a tilted lens).
+fn focus_state(
+    surfaces: &[Surface],
+    moving: &[MovingGap],
+    p: &Prescription,
+    object: f32,
+    z_last: f32,
+    infinity: (f32, f32),
+) -> (f32, f32) {
+    let n = surfaces.len();
+    let last = |s: &[Surface]| positions(s)[n - 1];
+    let sensor_far = z_last + infinity.0;
+    let mut t = 0.0f32;
+    let sensor_z = match p.focus_mode {
+        FOCUS_INTERNAL if !moving.is_empty() => {
+            let miss = |t: f32| -> Option<f32> {
+                let s = with_gaps(surfaces, moving, t);
+                let (img, _) = focus_of(&s, object)?;
+                Some(last(&s) + img - sensor_far)
+            };
+            let (mut lo, mut hi) = (0.0f32, 2.0f32);
+            match (miss(lo), miss(hi)) {
+                (Some(a), Some(b)) if a.signum() != b.signum() => {
+                    for _ in 0..40 {
+                        let mid = 0.5 * (lo + hi);
+                        match miss(mid) {
+                            Some(m) if m.signum() == a.signum() => lo = mid,
+                            _ => hi = mid,
+                        }
+                    }
+                    t = 0.5 * (lo + hi);
+                    sensor_far
+                }
+                _ => {
+                    // Closer than the gaps reach: the furthest state, then the whole lens moves.
+                    t = if miss(0.0).is_some_and(|m| m.abs() < 1.0e-3) {
+                        0.0
+                    } else {
+                        2.0
+                    };
+                    let s = with_gaps(surfaces, moving, t);
+                    let (img, _) = focus_of(&s, object).unwrap_or(infinity);
+                    last(&s) + img
+                }
+            }
+        }
+        FOCUS_ANAMORPHIC if !moving.is_empty() => {
+            // The vertical meridian focuses as one unit; the adapter's gap brings the horizontal
+            // one to the same image, both from the moved lens (the front vertex stays).
+            let focus_y = |s: &[Surface]| focus_of(s, object).map(|(img, _)| last(s) + img);
+            let miss = |t: f32| -> Option<f32> {
+                let s = with_gaps(surfaces, moving, t);
+                let x = paraxial::image_distance_in(&s, 1, object, true)?;
+                Some(last(&s) + x - focus_y(&s)?)
+            };
+            let (mut lo, mut hi) = (0.0f32, 2.0f32);
+            t = match (miss(lo), miss(hi)) {
+                (Some(a), _) if a.abs() < 1.0e-4 => 0.0,
+                (Some(a), Some(b)) if a.signum() != b.signum() => {
+                    for _ in 0..40 {
+                        let mid = 0.5 * (lo + hi);
+                        match miss(mid) {
+                            Some(m) if m.signum() == a.signum() => lo = mid,
+                            _ => hi = mid,
+                        }
+                    }
+                    0.5 * (lo + hi)
+                }
+                // Beyond what the gap reaches: the adapter stays afocal.
+                _ => 0.0,
+            };
+            let s = with_gaps(surfaces, moving, t);
+            focus_y(&s).unwrap_or(z_last + infinity.0)
+        }
+        FOCUS_FLOATING if !moving.is_empty() => {
+            let (mb, mn) = p.magnification;
+            let mut z_sensor = sensor_far;
+            for _ in 0..4 {
+                let s = with_gaps(surfaces, moving, t);
+                let (img, m) = focus_of(&s, object).unwrap_or(infinity);
+                z_sensor = last(&s) + img;
+                t = if mn != mb {
+                    ((m - mb) / (mn - mb)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+            }
+            z_sensor
+        }
+        _ => {
+            let (img, _) = focus_of(surfaces, object).unwrap_or(infinity);
+            z_last + img
+        }
+    };
+    (sensor_z, t)
+}
+
 fn prepare(
     built: Built,
     p: &Prescription,
@@ -888,93 +993,28 @@ fn prepare(
     let (pupil_z, _) = paraxial::entrance_pupil(&surfaces, &z_base, stop, 1);
     // Focus: the object `focus_dist` in front of the camera position.
     let object = camera.focus_dist - (pupil_z - z_base[0]);
-    let last = |s: &[Surface]| positions(s)[n - 1];
     let (_, infinity) = (
         0,
         focus_of(&surfaces, f32::INFINITY).ok_or("no real image at infinity")?,
     );
-    let sensor_far = z_base[n - 1] + infinity.0;
-    let mut t = 0.0f32;
-    let sensor_z = match p.focus_mode {
-        FOCUS_INTERNAL if !moving.is_empty() => {
-            let miss = |t: f32| -> Option<f32> {
-                let s = with_gaps(&surfaces, &moving, t);
-                let (img, _) = focus_of(&s, object)?;
-                Some(last(&s) + img - sensor_far)
-            };
-            let (mut lo, mut hi) = (0.0f32, 2.0f32);
-            match (miss(lo), miss(hi)) {
-                (Some(a), Some(b)) if a.signum() != b.signum() => {
-                    for _ in 0..40 {
-                        let mid = 0.5 * (lo + hi);
-                        match miss(mid) {
-                            Some(m) if m.signum() == a.signum() => lo = mid,
-                            _ => hi = mid,
-                        }
-                    }
-                    t = 0.5 * (lo + hi);
-                    sensor_far
-                }
-                _ => {
-                    // Closer than the gaps reach: the furthest state, then the whole lens moves.
-                    t = if miss(0.0).is_some_and(|m| m.abs() < 1.0e-3) {
-                        0.0
-                    } else {
-                        2.0
-                    };
-                    let s = with_gaps(&surfaces, &moving, t);
-                    let (img, _) = focus_of(&s, object).unwrap_or(infinity);
-                    last(&s) + img
-                }
-            }
-        }
-        FOCUS_ANAMORPHIC if !moving.is_empty() => {
-            // The vertical meridian focuses as one unit; the adapter's gap brings the horizontal
-            // one to the same image, both from the moved lens (the front vertex stays).
-            let focus_y = |s: &[Surface]| focus_of(s, object).map(|(img, _)| last(s) + img);
-            let miss = |t: f32| -> Option<f32> {
-                let s = with_gaps(&surfaces, &moving, t);
-                let x = paraxial::image_distance_in(&s, 1, object, true)?;
-                Some(last(&s) + x - focus_y(&s)?)
-            };
-            let (mut lo, mut hi) = (0.0f32, 2.0f32);
-            t = match (miss(lo), miss(hi)) {
-                (Some(a), _) if a.abs() < 1.0e-4 => 0.0,
-                (Some(a), Some(b)) if a.signum() != b.signum() => {
-                    for _ in 0..40 {
-                        let mid = 0.5 * (lo + hi);
-                        match miss(mid) {
-                            Some(m) if m.signum() == a.signum() => lo = mid,
-                            _ => hi = mid,
-                        }
-                    }
-                    0.5 * (lo + hi)
-                }
-                // Beyond what the gap reaches: the adapter stays afocal.
-                _ => 0.0,
-            };
-            let s = with_gaps(&surfaces, &moving, t);
-            focus_y(&s).unwrap_or(z_base[n - 1] + infinity.0)
-        }
-        FOCUS_FLOATING if !moving.is_empty() => {
-            let (mb, mn) = p.magnification;
-            let mut z_sensor = sensor_far;
-            for _ in 0..4 {
-                let s = with_gaps(&surfaces, &moving, t);
-                let (img, m) = focus_of(&s, object).unwrap_or(infinity);
-                z_sensor = last(&s) + img;
-                t = if mn != mb {
-                    ((m - mb) / (mn - mb)).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-            }
-            z_sensor
-        }
-        _ => {
-            let (img, _) = focus_of(&surfaces, object).unwrap_or(infinity);
-            z_base[n - 1] + img
-        }
+    // O4: a tilted lens focuses where the tilt puts the focus point along its own axis.
+    let fit = if lens.tilt_deg != 0.0 {
+        Some(tilt::fit(
+            &surfaces,
+            &moving,
+            p,
+            lens,
+            camera,
+            pupil_z,
+            z_base[n - 1],
+            infinity,
+        )?)
+    } else {
+        None
+    };
+    let (sensor_z, t) = match &fit {
+        Some(f) => (f.sensor_z, f.t),
+        None => focus_state(&surfaces, &moving, p, object, z_base[n - 1], infinity),
     };
     if t != 0.0 {
         surfaces = with_gaps(&surfaces, &moving, t);
@@ -1033,17 +1073,25 @@ fn prepare(
             relative_illumination: Vec::new(),
             sensor_mm: sensor_z - z[n - 1],
             squeeze: 1.0,
+            tilt_deg: 0.0,
             section: LensSection::default(),
         },
         key: camera,
+        tilt: None,
         eta: etas(&surfaces),
         surfaces,
         z,
     };
     let shift = (lens.shift_x_mm * lens.shift_x_mm + lens.shift_y_mm * lens.shift_y_mm).sqrt();
+    // O4: a tilted lens's frame sits off its axis by the focus point's image.
+    let tilt = fit.as_ref().map(|f| tilt::Tilt::new(f, pupil_z));
+    let widen = match &tilt {
+        Some(t) => corner + shift + t.offset(),
+        None => corner + shift,
+    };
     // The derived semi-apertures from real rays too: a wide angle's paraxial chief ray runs far
     // below its real one, and rims sized by it would cut the corners of the frame off.
-    if lens_out.widen_derived(&derived, pupil_full * at_stop, corner + shift) {
+    if lens_out.widen_derived(&derived, pupil_full * at_stop, widen) {
         lens_out.rear_radius = 1.05 * lens_out.surfaces[n - 1].semi_aperture;
     }
     let (elements, groups) = lens_out.count_elements();
@@ -1058,6 +1106,14 @@ fn prepare(
         }
     }
     lens_out.precompute(0.75 * camera.sensor_mm + shift)?;
+    if let Some(t) = tilt {
+        // The paraxial fit, its centre refocused with real rays (the lens's own field curvature
+        // where the tilt puts the focus point), then the grid of bounds.
+        let t = lens_out.refine_tilt(t, camera);
+        lens_out.info.tilt_deg = t.deg;
+        lens_out.tilt = Some(t);
+        lens_out.precompute_tilt(0.75 * camera.sensor_mm + shift);
+    }
     // An anamorphic lens: the squeeze as the chief rays of two points near the axis trace it.
     if lens_out
         .surfaces
@@ -1294,6 +1350,14 @@ impl TracedLens {
     /// The film point of a sensor position `(x, y)` (camera frame, from the axis), with the
     /// artistic breathing and distortion, and its image height over the frame's corner.
     fn film_of(&self, x: f32, y: f32) -> (Vec3, f32) {
+        let (x, y, h) = self.film_xy(x, y);
+        (self.film(x, y), h)
+    }
+
+    /// The sensor position `(x, y)` with the artistic breathing and distortion, and its image
+    /// height over the frame's corner.
+    #[inline(always)]
+    fn film_xy(&self, x: f32, y: f32) -> (f32, f32, f32) {
         let (mut x, mut y) = (x * self.breathing, y * self.breathing);
         let r_sensor = (x * x + y * y).sqrt();
         let h = r_sensor / self.field;
@@ -1302,7 +1366,7 @@ impl TracedLens {
             x *= k;
             y *= k;
         }
-        (self.film(x, y), h)
+        (x, y, h)
     }
 
     /// Where on the rear plane (x) the chief ray of a film point at height `h` on +x crosses: the
@@ -1438,6 +1502,31 @@ impl TracedLens {
 
     /// Where a ray from the film crosses the stop, x (y with `vertical`) only (no rim checked),
     /// band G.
+    /// Where a ray from the film crosses the stop, `(x, y)` (no rim checked), band G (O4).
+    fn stop_point(&self, p: Vec3, d: Vec3) -> Option<(f32, f32)> {
+        let n = self.surfaces.len();
+        let (mut p, mut d) = (p, d);
+        let mut n_cur = self.surfaces[n - 1].index[1];
+        for i in (self.stop..n).rev() {
+            let s = &self.surfaces[i];
+            let (q, normal) = intersect(s, self.z[i], p, d)?;
+            if i == self.stop {
+                return Some((q.x, q.y));
+            }
+            p = Vec3::new(q.x, q.y, self.z[i] + q.z);
+            if s.kind == SURFACE_MIRROR {
+                d = d - normal * (2.0 * d.dot(normal));
+            } else {
+                let n_next = self.surfaces[i - 1].index[1];
+                if n_next != n_cur {
+                    d = refract(d, normal, n_cur / n_next)?;
+                    n_cur = n_next;
+                }
+            }
+        }
+        None
+    }
+
     fn stop_height(&self, p: Vec3, d: Vec3, vertical: bool) -> Option<f32> {
         let n = self.surfaces.len();
         let (mut p, mut d) = (p, d);
@@ -1487,6 +1576,9 @@ impl TracedLens {
         u: (f32, f32),
         swirl: f32,
     ) -> Option<SampleSetup> {
+        if let Some(tilt) = &self.tilt {
+            return self.sample_setup_tilted(tilt, x, y, u, swirl);
+        }
         let (film, h) = self.film_of(x, y);
         let r = (film.x * film.x + film.y * film.y).sqrt();
         let (c, s) = if r > 0.0 {
@@ -1548,6 +1640,9 @@ impl TracedLens {
         traced: Traced,
         stopped: bool,
     ) -> (Traced, f32) {
+        if let Some(tilt) = &self.tilt {
+            return self.sample_finish_tilted(tilt, setup, band, traced, stopped);
+        }
         if stopped {
             return (traced, 0.0);
         }
@@ -1582,6 +1677,9 @@ impl TracedLens {
     /// point `p` of the bounds' rectangle around it: what [`crate::scene::Camera::generate_ray`]
     /// and the exact passes use.
     pub fn chief(&self, x: f32, y: f32, p: (f32, f32)) -> Traced {
+        if let Some(tilt) = &self.tilt {
+            return self.chief_tilted(tilt, x, y, p);
+        }
         // The sample's film point (with the artistic breathing and distortion), so that the exact
         // passes line up with the image.
         let (film, _) = self.film_of(x, y);
@@ -1651,7 +1749,7 @@ impl LensInfo {
             format!("[{}]", items.join(","))
         };
         format!(
-            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"imageScaleMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{},\"section\":{}}}",
+            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"imageScaleMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{}{},\"section\":{}}}",
             json_number(self.efl_mm),
             json_number(self.bfl_mm),
             json_number(self.efl_focused_mm),
@@ -1671,6 +1769,11 @@ impl LensInfo {
             json_number(self.squeeze),
             pairs(&self.distortion),
             pairs(&self.relative_illumination),
+            if self.tilt_deg != 0.0 {
+                format!(",\"tiltDeg\":{}", json_number(self.tilt_deg))
+            } else {
+                String::new()
+            },
             self.section.to_json(),
         )
     }
@@ -1750,6 +1853,7 @@ impl TracedLens {
                 relative_illumination: Vec::new(),
                 sensor_mm: 0.0,
                 squeeze: 1.0,
+                tilt_deg: 0.0,
                 section: LensSection::default(),
             },
             key: CameraOptics {
@@ -1758,6 +1862,7 @@ impl TracedLens {
                 focus_dist: 0.0,
                 sensor_mm: 0.0,
             },
+            tilt: None,
             eta: etas(&surfaces),
             surfaces,
             z,

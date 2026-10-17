@@ -25,6 +25,7 @@ USAGE:
     rt --filter-noise <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --lens-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --lens-cost <dir> [--samples N] [--size WxH]
+    rt --tilt-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
@@ -45,6 +46,7 @@ USAGE:
     rt --write-o3a-example <scene.rsb>
     rt --write-film-thumb <scene.rsb>
     rt --write-o2-example <scene.rsb>
+    rt --write-o4-example <scene.rsb>
     rt --write-l5-example <scene.rsb>
     rt --write-k3-plan-example <scene.rsb>
     rt --write-k3-panorama-example <scene.rsb>
@@ -108,6 +110,9 @@ OPTIONS:
                             and without their connections to the lights (192x144, 16 spp, six
                             seeds; the variance of a pixel between the seeds) into
                             <dir>/noise.json
+        --tilt-sheet <dir>  render lights on a floor through the simple lens and the traced double
+                            Gauss, upright and tilted onto the floor, and their 2 x 2 composite
+                            (O4)
         --lens-sheet <dir>  render the perfume bottle through each traced lens of the catalogue
                             wide open and at f/8, points of light through each wide open and
                             through the thin lens at that f-number, and a chart in focus at the
@@ -193,6 +198,9 @@ OPTIONS:
         --write-o2-example <f>
                             write the O2 parity scene (the example through the traced double
                             Gauss, and bokeh lights) as an RSB file
+        --write-o4-example <f>
+                            write the O4 parity scene (the O2 scene with the traced lens tilted
+                            and shifted) as an RSB file
         --write-lens-catalogue <f>
                             write the prescriptions of the 16 lenses of src/data/lenses.json as
                             the engine reads them (tests/fixtures/lens-catalogue.json)
@@ -377,6 +385,13 @@ pub enum Command {
         only: Vec<String>,
     },
     /// Measure what the traced camera costs (O2) into a directory (`cost.json`).
+    /// Render the sheet of the tilted lens (O4) into a directory.
+    TiltSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Overrides (samples, threads, size).
+        options: Options,
+    },
     LensCost {
         /// Output directory.
         dir: PathBuf,
@@ -514,6 +529,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the O4 parity scene (`rt_core::example::o4_scene`) as an RSB file.
+    WriteO4Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -602,6 +622,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_o3a = None;
     let mut write_film_thumb = None;
     let mut write_o2 = None;
+    let mut write_o4 = None;
     let mut write_lens_catalogue = None;
     let mut sheet_dir = None;
     let mut pattern_dir = None;
@@ -610,6 +631,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut filter_noise_dir = None;
     let mut lens_sheet_dir = None;
     let mut lens_cost_dir = None;
+    let mut tilt_sheet_dir = None;
     let mut only: Vec<String> = Vec::new();
     let mut tone_table = false;
     let mut options = Options::default();
@@ -696,6 +718,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--filter-noise" => filter_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--lens-sheet" => lens_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--lens-cost" => lens_cost_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--tilt-sheet" => tilt_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--only" => {
                 only = value(&mut it, arg)?
                     .split(',')
@@ -754,6 +777,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-o3a-example" => write_o3a = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-film-thumb" => write_film_thumb = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-o2-example" => write_o2 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-o4-example" => write_o4 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-lens-catalogue" => {
                 write_lens_catalogue = Some(PathBuf::from(value(&mut it, arg)?))
             }
@@ -940,6 +964,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteO2Example { path });
     }
+    if let Some(path) = write_o4 {
+        if args.len() != 2 {
+            return Err("--write-o4-example takes no other option".into());
+        }
+        return Ok(Command::WriteO4Example { path });
+    }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
             return Err("--write-studio-hdri takes no other option".into());
@@ -991,6 +1021,20 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             );
         }
         return Ok(Command::LensSheet { dir, options, only });
+    }
+    if let Some(dir) = tilt_sheet_dir {
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || filter_noise_dir.is_some()
+            || !only.is_empty()
+        {
+            return Err(
+                "--tilt-sheet renders its own scenes: no scene, -o, --max-seconds, --only or --filter-noise"
+                    .into(),
+            );
+        }
+        return Ok(Command::TiltSheet { dir, options });
     }
     if let Some(dir) = lens_cost_dir {
         if input.is_some()
@@ -1216,6 +1260,12 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteO4Example { path } => {
+            let bytes = rt_core::example::o4_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteStudioHdri { path } => {
             let bytes = crate::scenes::studio_hdri_file();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -1315,6 +1365,24 @@ pub fn run(command: Command) -> Result<(), String> {
             );
             let n = run(&dir, size, samples, threads, &only)?;
             println!("wrote {n} images and {}", dir.join("index.json").display());
+            Ok(())
+        }
+        Command::TiltSheet { dir, options } => {
+            use crate::tilt_sheet::{run, TILT_SHEET_SAMPLES, TILT_SHEET_SIZE};
+            let size = options.size.unwrap_or(TILT_SHEET_SIZE);
+            let samples = options.samples.unwrap_or(TILT_SHEET_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "tilt sheet: {}x{}, {samples} spp, {threads} threads",
+                size.0, size.1
+            );
+            let n = run(&dir, size, samples, threads)?;
+            println!(
+                "wrote {n} images and {}",
+                dir.join("composite.png").display()
+            );
             Ok(())
         }
         Command::LensCost { dir, options } => {

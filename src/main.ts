@@ -540,6 +540,7 @@ const viewport: ViewportPort | null = preview
       },
       glyphAt: (x, y) => preview!.glyphAt(x, y),
       setMotionHint: (hint) => preview!.setMotionHint(hint),
+      setFocusPlane: (hint) => preview!.setFocusPlane(hint),
       objectAt: (obj) => preview!.objectAt(obj),
       gizmoHover: (x, y) => preview!.gizmoHover(x, y),
       gizmoBegin: (x, y) => {

@@ -12,6 +12,7 @@ import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, playheadPose, poseActive, type Pose } from '../core/animation';
 import { effectFxam, effectRegion, engineParticleCap, fxamPayload, PREVIEW_PARTICLES, type AmbientEffect } from '../core/effects';
 import type { MotionHint } from '../core/motion-hint';
+import type { FocusPlaneHint } from '../core/focus-plane';
 import { materialPreset } from '../data/materials';
 import { evalParticles, PARTICLE_FLOATS, previewTint, tintSeed, type RtParticleExports } from './particles';
 import type { Projection, Rect } from '../core/box-select';
@@ -446,6 +447,10 @@ export class PreviewEngine implements RenderEngine {
   private motionHighlight: readonly NodeId[] = [];
   private readonly motionLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }));
   private readonly motionDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
+  /** O4: the plane of sharp focus of a tilted lens: a translucent square, its outline and grid, its points. */
+  private readonly focusFill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false, toneMapped: false }));
+  private readonly focusLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, toneMapped: false }));
+  private readonly focusDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   /** Settings ▸ Preferences: how the mouse moves the camera, and the floor grid. */
   private tool: PreviewTool = 'select';
   private nav: NavigationPrefs = { mouse: 'LEFT', invertZoom: false, orbitSpeed: 1, zoomSpeed: 1 };
@@ -488,12 +493,13 @@ export class PreviewEngine implements RenderEngine {
     this.warpScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.warpMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) {
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.focusFill, this.focusLines, this.focusDots]) {
       g.frustumCulled = false;
       g.renderOrder = -1;
       g.visible = false;
     }
-    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.gizmo.root);
+    this.focusFill.renderOrder = -2;
+    this.overlayRoot.add(this.focusFill, this.focusLines, this.focusDots, this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.gizmo.root);
     this.overlayScene.add(this.overlayRoot);
   }
 
@@ -721,7 +727,7 @@ export class PreviewEngine implements RenderEngine {
   setInk(rgb: readonly number[]): void {
     this.outlineMaterial.uniforms.ink.value.set(rgb[0], rgb[1], rgb[2]);
     this.gizmo.setInk(rgb);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.focusFill, this.focusLines, this.focusDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.needsRender = true;
   }
 
@@ -1529,7 +1535,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.gizmoPosed()) || this.glyphs.length > 0 || this.motionLines.visible || this.motionDots.visible) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.gizmoPosed()) || this.glyphs.length > 0 || this.motionLines.visible || this.motionDots.visible || this.focusLines.visible) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -1898,6 +1904,26 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /**
+   * O4: the plane of sharp focus of a tilted lens (core/focus-plane.ts `focusPlaneHint`), over the image in the theme's
+   * ink: the square translucent, its outline and grid as lines, the focus point and the picked points as dots (model
+   * space; the overlay's basis turns it Y up). Null clears it.
+   */
+  setFocusPlane(hint: FocusPlaneHint | null): void {
+    const put = (obj: THREE.LineSegments | THREE.Points | THREE.Mesh, pts: readonly Vec3[]) => {
+      const data: number[] = [];
+      for (const p of pts) data.push(p[0], p[1], p[2]);
+      obj.geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3));
+      obj.geometry.computeBoundingSphere();
+      obj.visible = data.length > 0;
+    };
+    const q = hint?.quad;
+    put(this.focusFill, q ? [q[0], q[1], q[2], q[0], q[2], q[3]] : []);
+    put(this.focusLines, hint?.lines ?? []);
+    put(this.focusDots, hint?.dots ?? []);
+    this.needsRender = true;
+  }
+
   /** Where an object (a light, a camera) is on the canvas now, CSS pixels; null behind the view (for checks). */
   objectAt(obj: ViewObject): { x: number; y: number } | null {
     const s = this.state;
@@ -1949,7 +1975,7 @@ export class PreviewEngine implements RenderEngine {
     if (this.panoramaOf()) return;
     const gizmo = this.gizmo.visible && !this.gizmoPosed();
     // N6: the track of the animation selected in the timeline goes over everything too, also while it plays.
-    const motion = this.motionLines.visible || this.motionDots.visible;
+    const motion = this.motionLines.visible || this.motionDots.visible || this.focusLines.visible;
     if (!gizmo && this.glyphs.length === 0 && !motion) return;
     // The glyphs of lights and cameras (L4) go with the gizmo, over everything; while the animation plays, not the gizmo.
     const shown = this.gizmo.root.visible;
