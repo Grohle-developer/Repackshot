@@ -19,6 +19,8 @@ import { customFromPixels, type CameraAspect } from './aspect';
 import { ASPECT_PRESETS } from '../data/aspects';
 import { CAUSTICS_MODES, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseBits, type CausticsMode, type CausticsQuality, type DenoiseMode } from './caustics';
 import { nextId } from './ids';
+import { embedStudio, findEmbedded, pruneEmbedded, studioHash, type EmbeddedStudio } from './job-studios';
+import type { SavedStudio } from './lighting';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
 import { NO_PASSES, normalisePasses, type PassesOutput } from './pass-files';
 import { normalisePlugins, NO_PLUGINS, type PluginsSettings } from './plugins';
@@ -70,10 +72,16 @@ export type CameraChoice = { kind: 'ACTIVE' } | { kind: 'ALL' } | { kind: 'ONE';
  * name when it was chosen, for `{studio}` in the file name and for the queue.
  */
 export type StudioChoice = { kind: 'CURRENT' } | { kind: 'ALL' } | { kind: 'ONE'; id: string; name: string };
-/** A saved studio as the batch lists them: its id (library or project) and its name. */
+/**
+ * A saved studio as the batch lists them: its id (library or project) and its name. N2b: when it comes to make jobs it
+ * also brings the studio itself (`snapshot`, what `restoreStudio` applies), so the project keeps a copy of it, and the
+ * hash of that copy (`hash`, `studioHash`), worked out from the snapshot when it is not given.
+ */
 export interface StudioRef {
   id: string;
   name: string;
+  snapshot?: SavedStudio;
+  hash?: string;
 }
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
 
@@ -287,6 +295,12 @@ export interface RenderJob {
    * by one). The ZIP is written when the last job of the group ends.
    */
   zip: string | null;
+  /**
+   * N2b: the hash of the project's copy of its saved studio (`RenderState.studios`), when the project keeps one. The
+   * copy is what the job renders in, whatever the library holds now under the studio's id. Absent: the scene as it
+   * is, or a job written before N2b (its studio is looked up by id, as then).
+   */
+  studioCopy?: string;
   /** Results this job wrote to the history (the results store), oldest first. */
   resultIds: string[];
   error: string | null;
@@ -330,6 +344,11 @@ export interface RenderState extends RenderSettings {
   running: RenderProgress | null;
   /** The last render number given to a job. */
   seq: number;
+  /**
+   * N2b: the saved studios the jobs render in, a copy each (once per studio id and content), so the project opens and
+   * renders its batches on a machine whose library lacks them. Only the copies some job names are kept.
+   */
+  studios: EmbeddedStudio[];
 }
 
 /** Formats this version writes. */
@@ -446,7 +465,7 @@ export function defaultRenderSettings(): RenderSettings {
 const DEFAULT_STUDIO: StudioChoice = { kind: 'CURRENT' };
 
 export function defaultRenderState(): RenderState {
-  return { ...defaultRenderSettings(), queue: [], running: null, seq: 0 };
+  return { ...defaultRenderSettings(), queue: [], running: null, seq: 0, studios: [] };
 }
 
 /** Just the settings of a render state (or of anything that has them). */
@@ -630,10 +649,31 @@ function jobSettings(s: RenderSettings, camera: CameraId | null, studio: StudioR
   return { ...base, studio: studio ? { kind: 'ONE', id: studio.id, name: studio.name } : DEFAULT_STUDIO };
 }
 
-/** N2: the saved studio a job renders in; null for the scene as it is (and always for an animation). */
-export function jobStudio(job: Pick<RenderJob, 'settings'>): StudioRef | null {
+/**
+ * N2: the saved studio a job renders in; null for the scene as it is (and always for an animation). N2b: with the hash
+ * of the project's copy of it, when the job has one.
+ */
+export function jobStudio(job: Pick<RenderJob, 'settings'> & { studioCopy?: string }): StudioRef | null {
   const { studio, mode } = job.settings;
-  return mode !== 'ANIMATION' && studio?.kind === 'ONE' ? { id: studio.id, name: studio.name } : null;
+  if (mode === 'ANIMATION' || studio?.kind !== 'ONE') return null;
+  return job.studioCopy ? { id: studio.id, name: studio.name, hash: job.studioCopy } : { id: studio.id, name: studio.name };
+}
+
+/** N2b: the refs with the hash of each snapshot worked out (once), so the jobs and the project's copies agree. */
+function hashed(refs: readonly StudioRef[]): StudioRef[] {
+  return refs.map((x) => (x.snapshot && !x.hash ? { ...x, hash: studioHash(x.snapshot) } : x));
+}
+
+/** N2b: the queue's copies with those of `looks` that some job of `jobs` names. */
+function withCopies(list: readonly EmbeddedStudio[], jobs: readonly RenderJob[], looks: readonly StudioRef[]): EmbeddedStudio[] {
+  let next = list as EmbeddedStudio[];
+  for (const j of jobs) {
+    const look = jobStudio(j);
+    if (!look?.hash) continue;
+    const ref = looks.find((x) => x.id === look.id && x.hash === look.hash && x.snapshot);
+    if (ref?.snapshot) next = embedStudio(next, { ...ref.snapshot, id: ref.id, name: ref.snapshot.name }, look.hash);
+  }
+  return next;
 }
 
 /**
@@ -643,8 +683,13 @@ export function jobStudio(job: Pick<RenderJob, 'settings'>): StudioRef | null {
  */
 export function studiosOf(choice: StudioChoice | undefined, all: readonly StudioRef[], animation = false): (StudioRef | null)[] {
   if (animation || !choice || choice.kind === 'CURRENT') return [null];
-  if (choice.kind === 'ONE') return [{ id: choice.id, name: choice.name }];
-  return all.length > 0 ? all.map((x) => ({ id: x.id, name: x.name })) : [null];
+  // N2b: the studio itself (and its hash) comes with the ref of `all` that names it, when there is one.
+  const keep = (x: StudioRef, name = x.name): StudioRef => ({ id: x.id, name, ...(x.snapshot ? { snapshot: x.snapshot } : {}), ...(x.hash ? { hash: x.hash } : {}) });
+  if (choice.kind === 'ONE') {
+    const ref = all.find((x) => x.id === choice.id);
+    return [ref ? keep(ref, choice.name) : { id: choice.id, name: choice.name }];
+  }
+  return all.length > 0 ? all.map((x) => keep(x)) : [null];
 }
 
 /** The camera a job renders through (null: the camera track of the timeline). */
@@ -699,7 +744,9 @@ export function expandJobs(state: ProjectState, settings: RenderSettings, at: nu
     for (const look of looks) {
       const id = nextId('j', taken);
       taken.push(id);
-      jobs.push({ id, seq: r.seq + jobs.length + 1, settings: jobSettings(sizedFor(state, s, cam), cam, look), createdAt: at, ...freshRuntime(), zip });
+      // N2b: the job names the project's copy of its studio when the studio itself came with the ref.
+      const copy = look?.hash ?? (look?.snapshot ? studioHash(look.snapshot) : undefined);
+      jobs.push({ id, seq: r.seq + jobs.length + 1, settings: jobSettings(sizedFor(state, s, cam), cam, look), createdAt: at, ...freshRuntime(), zip, ...(look && copy && look.snapshot ? { studioCopy: copy } : {}) });
     }
   }
   return jobs;
@@ -719,8 +766,11 @@ export type RenderAction =
    * "All studios" stands for, as the interface lists them (the library's, then the project's).
    */
   | ({ type: 'render/enqueue'; at: number; position: 'FIRST' | 'LAST'; settings?: RenderSettings; studios?: readonly StudioRef[] } & ActionBase)
-  /** Edit: new settings for a job that is not running; it waits in the queue again. */
-  | ({ type: 'render/updateJob'; id: string; settings: RenderSettings } & ActionBase)
+  /**
+   * Edit: new settings for a job that is not running; it waits in the queue again. `studios` (N2b): the saved studios
+   * the window lists, with each studio itself, for a job moved to another studio (its copy goes into the project).
+   */
+  | ({ type: 'render/updateJob'; id: string; settings: RenderSettings; studios?: readonly StudioRef[] } & ActionBase)
   | ({ type: 'render/duplicateJob'; id: string; at: number } & ActionBase)
   | ({ type: 'render/removeJob'; id: string } & ActionBase)
   /** Moves a job to an index of the queue (drag to reorder). */
@@ -786,7 +836,8 @@ export function syncOutputSize(state: ProjectState): ProjectState {
 
 export function reduceRender(state: ProjectState, action: RenderAction): ProjectState {
   const r = state.render;
-  const withQueue = (queue: RenderJob[], extra: Partial<RenderState> = {}): ProjectState => ({ ...state, render: { ...r, ...extra, queue } });
+  // N2b: the project keeps only the copies of studios that some job names.
+  const withQueue = (queue: RenderJob[], extra: Partial<RenderState> = {}): ProjectState => ({ ...state, render: { ...r, ...extra, queue, studios: pruneEmbedded(extra.studios ?? r.studios ?? [], queue) } });
   switch (action.type) {
     case 'render/quality': {
       const q = QUALITY_PRESETS[action.quality];
@@ -796,10 +847,12 @@ export function reduceRender(state: ProjectState, action: RenderAction): Project
     case 'render/set':
       return setSettings(state, action.patch);
     case 'render/enqueue': {
-      const jobs = expandJobs(state, action.settings ?? settingsOf(r), action.at, action.studios ?? []);
+      const looks = hashed(action.studios ?? []);
+      const jobs = expandJobs(state, action.settings ?? settingsOf(r), action.at, looks);
       if (jobs.length === 0) return state;
       const queue = action.position === 'FIRST' ? [...jobs, ...r.queue] : [...r.queue, ...jobs];
-      return withQueue(queue, { seq: r.seq + jobs.length });
+      // N2b: the studios of the new jobs go into the project with them (one undo entry takes both away).
+      return withQueue(queue, { seq: r.seq + jobs.length, studios: withCopies(r.studios ?? [], jobs, looks) });
     }
     case 'render/updateJob': {
       const job = r.queue.find((j) => j.id === action.id);
@@ -807,11 +860,23 @@ export function reduceRender(state: ProjectState, action: RenderAction): Project
       const s = patchSettings(action.settings, {});
       const cam = s.mode === 'ANIMATION' ? null : camerasOf(state, s.camera.kind === 'ALL' ? job.settings.camera : s.camera)[0];
       // One job is one studio: "All studios" in an edit keeps the job's own (as All cameras does with its camera).
-      const look = s.studio.kind === 'ALL' ? jobStudio(job) : studiosOf(s.studio, [], s.mode === 'ANIMATION')[0];
+      const own = jobStudio(job);
+      const looks = hashed(action.studios ?? []);
+      const look = s.studio.kind === 'ALL' ? own : studiosOf(s.studio, looks, s.mode === 'ANIMATION')[0];
       const settings = jobSettings(s, cam, look);
+      // N2b: the same studio keeps the job's copy (the copy wins: an edit does not swap it for the library's); another
+      // one, or a job of before N2b without a copy, takes a copy of the studio the window brings, if it brings it.
+      const keeps = !!look && !!own && look.id === own.id && !!findEmbedded(r.studios, own.id, job.studioCopy);
+      const copy = !look ? undefined : keeps ? job.studioCopy : look.snapshot ? (look.hash ?? studioHash(look.snapshot)) : undefined;
       // Asking for a ZIP in an edit puts the job in a group of its own; not asking leaves its group.
       const zip = s.zip ? (job.zip ?? `z${job.seq}`) : null;
-      return withQueue(r.queue.map((j) => (j.id === action.id ? { ...j, settings, zip, status: 'QUEUED', progress: 0, error: null, startedAt: null, finishedAt: null, frame: 0, frames: 0 } : j)));
+      const queue = r.queue.map((j) => {
+        if (j.id !== action.id) return j;
+        const { studioCopy: _drop, ...rest } = j;
+        return { ...rest, settings, zip, status: 'QUEUED' as const, progress: 0, error: null, startedAt: null, finishedAt: null, frame: 0, frames: 0, ...(copy ? { studioCopy: copy } : {}) };
+      });
+      const studios = copy && !keeps && look ? withCopies(r.studios ?? [], queue.filter((j) => j.id === action.id), [{ ...look, hash: copy }]) : (r.studios ?? []);
+      return withQueue(queue, { studios });
     }
     case 'render/duplicateJob': {
       const i = r.queue.findIndex((j) => j.id === action.id);
@@ -934,6 +999,25 @@ const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : 
 const oneOf = <T extends string>(v: unknown, list: readonly T[]): T | undefined => (typeof v === 'string' && (list as readonly string[]).includes(v) ? (v as T) : undefined);
 const QUALITIES: readonly RenderQuality[] = ['DRAFT', 'PREVIEW', 'FINAL', 'CUSTOM'];
 const STATUSES: readonly JobStatus[] = ['QUEUED', 'RUNNING', 'DONE', 'FAILED', 'CANCELLED'];
+const HASH_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * N2b: the copies of studios of a render block, by their shape only (a hash, and a studio with its id and name); each
+ * once. What is inside a studio is the project file's to check (io/project.ts), as for the project's own blocks. A
+ * block of before N2b has none.
+ */
+function migrateStudios(raw: unknown): EmbeddedStudio[] {
+  if (!Array.isArray(raw)) return [];
+  const out: EmbeddedStudio[] = [];
+  for (const e of raw) {
+    if (!isObj(e) || typeof e.hash !== 'string' || !HASH_RE.test(e.hash) || !isObj(e.studio)) continue;
+    const st = e.studio;
+    if (typeof st.id !== 'string' || st.id === '' || typeof st.name !== 'string') continue;
+    if (findEmbedded(out, st.id, e.hash)) continue;
+    out.push({ hash: e.hash, studio: st as unknown as SavedStudio });
+  }
+  return out;
+}
 
 function defined<T extends object>(o: T): Partial<T> {
   const out: Partial<T> = {};
@@ -1037,6 +1121,8 @@ function migrateJob(raw: unknown, index: number): RenderJob | null {
     seq: Math.max(1, Math.round(num(raw.seq) ?? index + 1)),
     settings: jobSettings(settings, settings.mode === 'ANIMATION' ? null : settings.camera.kind === 'ONE' ? settings.camera.id : null, settings.studio.kind === 'ONE' ? { id: settings.studio.id, name: settings.studio.name } : null),
     zip: settings.zip ? (str(raw.zip) ?? `z${Math.max(1, Math.round(num(raw.seq) ?? index + 1))}`) : null,
+    // N2b: the hash of its studio's copy (a job of before N2b, or of the scene as it is, has none).
+    ...(settings.mode !== 'ANIMATION' && settings.studio.kind === 'ONE' && typeof raw.studioCopy === 'string' && HASH_RE.test(raw.studioCopy) ? { studioCopy: raw.studioCopy } : {}),
     status,
     progress: status === 'DONE' ? 1 : status === 'QUEUED' ? 0 : Math.max(0, Math.min(1, num(raw.progress) ?? 0)),
     createdAt: num(raw.createdAt) ?? 0,
@@ -1070,5 +1156,5 @@ export function migrateRender(raw: unknown): RenderState {
     });
   }
   const seq = Math.max(Math.round(num(raw.seq) ?? 0), ...queue.map((j) => j.seq), 0);
-  return { ...settings, queue, running: null, seq };
+  return { ...settings, queue, running: null, seq, studios: pruneEmbedded(migrateStudios(raw.studios), queue) };
 }

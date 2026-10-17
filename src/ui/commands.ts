@@ -72,6 +72,7 @@ import { focusCameraOf, focusModeAction, focusObjectAction, lookThroughCamera, o
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
 import { imageIdsInUse, retainImages } from '../core/images';
+import { embeddedImageIds, studiosToAdopt } from '../core/job-studios';
 import { dropAction, type AssignAction, type DroppedMaterial, type DropTarget } from '../core/material-drop';
 import { applyBox, facesInBox, itemsInBox, type BoxCombine, type BoxMode, type Rect } from '../core/box-select';
 import { cadFaceRegion } from '../core/faces';
@@ -112,7 +113,7 @@ import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, lightName, materialLabel, materialName, presetLabel, primitiveParamKey, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import type { Ctx } from './reactive';
-import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob, studioRefs } from './render-queue';
+import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob, studiosForJobs } from './render-queue';
 import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
@@ -497,7 +498,8 @@ function replaceProject(ctx: Ctx, state: ProjectState): void {
   ctx.store.reset(state);
   // History is gone with the old project, and so are the geometry and the images only it used.
   retainMeshes(meshIdsInUse(state));
-  retainImages([...imageIdsInUse(state.environment), ...textureImages(state).keys()]);
+  // N2b: the images of the studios its jobs keep a copy of, too.
+  retainImages([...imageIdsInUse(state.environment), ...textureImages(state).keys(), ...embeddedImageIds(state.render.studios)]);
   ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null, selectedClips: [] });
 }
 
@@ -2152,6 +2154,18 @@ export function moveStudioToLibrary(ctx: Ctx, id: string): void {
   ctx.ui.toast(t('library.saved', { name: st.name }));
 }
 
+/**
+ * N2b, *Add to my library*: a studio that came in the project (a copy a job keeps) and is not in the library goes into
+ * it, under its own id, so the window lists it and the jobs find it there too. The library has no undo (U4): it is the
+ * person's, not the project's; the project does not change.
+ */
+export function addProjectStudioToLibrary(ctx: Ctx, id: string): void {
+  const st = studiosToAdopt(ctx.store.get(), ctx.ui.get().library).find((x) => x.id === id);
+  if (!st) return;
+  const { id: _id, name, ...studio } = st;
+  commitItem(ctx, () => ({ id: st.id, name, createdAt: Date.now(), kind: 'studio', studio }));
+}
+
 // --- The user's library (U4) --------------------------------------------------------
 
 /** Size of the pictures of setups, product types and studios. */
@@ -2376,8 +2390,9 @@ async function folderAccess(ctx: Ctx, s: RenderSettings): Promise<void> {
 /** Adds jobs made from settings (first or last); returns the new jobs' ids. */
 function enqueueSettings(ctx: Ctx, settings: RenderSettings, position: 'FIRST' | 'LAST'): string[] {
   const before = new Set(ctx.store.get().render.queue.map((j) => j.id));
-  // N2: "All studios" stands for the saved studios as the window lists them.
-  ctx.store.dispatch({ type: 'render/enqueue', at: Date.now(), position, settings, studios: settings.studio.kind === 'ALL' ? studioRefs(ctx) : [], label: L('undo.enqueue') });
+  // N2: "All studios" stands for the saved studios as the window lists them. N2b: each comes with the studio itself, and
+  // the project keeps a copy of the ones its new jobs use.
+  ctx.store.dispatch({ type: 'render/enqueue', at: Date.now(), position, settings, studios: studiosForJobs(ctx, settings), label: L('undo.enqueue') });
   return ctx.store.get().render.queue.filter((j) => !before.has(j.id)).map((j) => j.id);
 }
 
@@ -2444,7 +2459,7 @@ export function editJob(ctx: Ctx, id: string): void {
 export function saveJobEdit(ctx: Ctx): void {
   const w = ctx.ui.get().renderWindow;
   if (w?.kind !== 'EDIT') return;
-  ctx.store.dispatch({ type: 'render/updateJob', id: w.jobId, settings: w.draft, label: L('undo.editJob') });
+  ctx.store.dispatch({ type: 'render/updateJob', id: w.jobId, settings: w.draft, studios: studiosForJobs(ctx, w.draft), label: L('undo.editJob') });
   ctx.ui.set({ renderWindow: null });
   ctx.ui.toast(t('rw.saved'));
 }

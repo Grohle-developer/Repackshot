@@ -376,13 +376,17 @@ describe('a batch at work', () => {
     expect(names(f)).toEqual(['Bottle_Camera 1_0001.png', 'Bottle_Camera 1_0003.png']);
   });
 
-  it('a studio that is not saved any more fails its job with the reason, and the next job goes on', async () => {
+  it('a studio deleted from the library after the jobs were made still renders, from the project’s copy (N2b); with no copy either, its job fails with the reason and the next goes on', async () => {
     const f = makeCtx();
     const { ctx } = f;
     ctx.store.dispatch({ type: 'render/set', patch: { name: '{studio}', studio: { kind: 'ALL' } } });
     cmd.enqueue(ctx);
     // Studio A is deleted from the library after the jobs were made.
     ctx.ui.set({ library: { ...ctx.ui.get().library, studios: ctx.ui.get().library.studios.filter((x) => x.id !== 'std-a') } });
+    expect(jobProject(ctx, ctx.store.get().render.queue[0]).studio.preset).toBe('JEWELLERY');
+    // Without the copy (a job written before N2b) it is nowhere: the job fails with the reason.
+    const st = ctx.store.get();
+    ctx.store.reset({ ...st, render: { ...st.render, studios: [], queue: st.render.queue.map(({ studioCopy: _c, ...j }) => j) } });
     cmd.toggleQueue(ctx);
     await queueSettled(ctx);
     const [a, b] = ctx.store.get().render.queue;
