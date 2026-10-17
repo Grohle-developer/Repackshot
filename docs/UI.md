@@ -6,6 +6,9 @@ para construirla leyendo solo esto, `ARCHITECTURE.md` y los catálogos de
 **Opus**. Las decisiones de diseño están tomadas; lo que queda abierto se
 dice explícitamente.
 
+Las capturas de `docs/ui/`, reunidas por versión y por función, están en
+[`GALERIA.md`](GALERIA.md).
+
 Lo que persigue: la **misma potencia que un renderizador de producto
 comercial, con la mitad de interfaz**. Una sola idea organiza todo:
 

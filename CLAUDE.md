@@ -46,7 +46,9 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
    ignoraría en silencio.
 2. **Una fase del roadmap por PR**, con `npm run qa` en verde antes de
    abrirlo y la fase marcada como hecha en `docs/ROADMAP.md` con un párrafo
-   de qué se hizo y qué no encajó con el plan.
+   de qué se hizo y qué no encajó con el plan; las capturas nuevas de la
+   fase, con su entrada en `docs/GALERIA.md` bajo *Sin publicar* (el PR de
+   la versión mueve ese bloque bajo la versión nueva).
 3. **Todo bug corregido lleva su test**, y se comprueba que el test falla
    si se reintroduce el bug. Si un bug se escapó porque un test o un
    *mock* era más permisivo que la realidad, se arregla también el test.
