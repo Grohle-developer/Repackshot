@@ -11776,6 +11776,26 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   velocidades, gizmo e intervención en Ajustes) y lo que se quedó en campo
   (las luces del estudio, las asas, *Tamaño de la interfaz* y *del texto*);
   y el ritmo de la repetición (400 ms y luego cada 50 ms).
+- **N2** (los ◆ de su «no encajó»): qué es el **alfa** (hoy una máscara de
+  objetos: el suelo, el fondo, el entorno y los paneles de luz visibles dan
+  0, y el vidrio y los recortes cuentan como superficie; abierto si el
+  suelo entra y si un recorte con textura da cobertura parcial); qué
+  **pases** se ofrecen (los cuatro pedidos; el albedo, el id de material y
+  el círculo de confusión ya existen en el motor); las **codificaciones**
+  (EXR de 32 bits por defecto; en PNG de 16 bits la profundidad casi
+  blanca con 0 para el fondo y el rango en un `tEXt`, las normales a
+  `n/2+½`, los ids con el suelo en 65535); el **ZIP** (apagado por
+  defecto, el grupo es lo que mete una orden, el nombre
+  `Proyecto_0001-0004.zip`, en memoria y sin ZIP64); el **orden del lote**
+  (cámara por cámara; estudio por estudio es igual de defendible); y si el
+  **estudio debe viajar con el proyecto**.
+- **K3** (los ◆ de su «no encajó»): las **alturas de ojo** (1,5 y 1,1 m);
+  las **ópticas de interior** (24, 28 y 35 mm); la **medida automática**
+  (media logarítmica recortada, 10 % oscuro y 5 % claro fuera, a gris del
+  18 %, ±16 EV); los presets de EV (7 y 5) y la calibración
+  EV100 = log2(683/1,2) − exposición; el **exterior** (1 por defecto, de
+  0,05 a 1); que *Interior* encienda las verticales rectas (corrigen hasta
+  30° de inclinación); y el campo del **ojo de pez** medido en la diagonal.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
