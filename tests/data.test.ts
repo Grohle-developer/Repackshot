@@ -80,6 +80,7 @@ const STYLES: readonly LightStyle[] = [
   'EXPERIMENTAL',
   'SIGNATURE',
   'SPICY',
+  'INTERIOR',
 ];
 
 function isLabel(v: unknown): v is Label {
@@ -181,14 +182,18 @@ describe('studio presets', () => {
 });
 
 describe('light setups', () => {
-  it('has 88 setups with unique keys: the 16 sets of L6 first, then the 72 of EZ Packshot with PRESET first', () => {
-    expect(LIGHT_SETUPS).toHaveLength(88);
+  it('has 95 setups with unique keys: the 16 sets of L6 first, then the 72 of EZ Packshot with PRESET first, then the 7 of Interior (K1)', () => {
+    expect(LIGHT_SETUPS).toHaveLength(95);
     expect(unique(LIGHT_SETUPS.map((s) => s.key))).toBe(true);
     expect(LIGHT_SETUPS.slice(0, 16).every((s) => s.style === 'SETS')).toBe(true);
     expect(LIGHT_SETUPS[16].key).toBe('PRESET');
+    expect(LIGHT_SETUPS.slice(88).map((s) => s.key)).toEqual([
+      'INT_WINDOW_MORNING', 'INT_WINDOW_NOON', 'INT_WINDOW_AFTERNOON', 'INT_OVERCAST', 'INT_NIGHT_LAMPS', 'INT_BLUE_HOUR', 'INT_WHITE_ROOM',
+    ]);
+    expect(LIGHT_SETUPS.slice(16, 88).every((s) => s.style !== 'SETS' && s.style !== 'INTERIOR')).toBe(true);
   });
 
-  it('has the 9 styles, SETS first, without the "all" filter entry', () => {
+  it('has the 10 styles, SETS first and INTERIOR last, without the "all" filter entry', () => {
     expect(LIGHT_STYLES.map((s) => s.key)).toEqual(STYLES);
   });
 
@@ -203,11 +208,12 @@ describe('light setups', () => {
       EXPERIMENTAL: 8,
       SIGNATURE: 6,
       SPICY: 6,
+      INTERIOR: 7,
     };
     for (const style of STYLES) expect(setupsInStyle(style)).toHaveLength(counts[style]);
-    expect(setupsInStyle('ALL')).toHaveLength(88);
-    expect(setupsInStyle()).toHaveLength(88);
-    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(88);
+    expect(setupsInStyle('ALL')).toHaveLength(95);
+    expect(setupsInStyle()).toHaveLength(95);
+    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(95);
   });
 
   it('keeps each style in one contiguous block of the catalogue', () => {
@@ -215,20 +221,30 @@ describe('light setups', () => {
     expect(order).toEqual(STYLES);
   });
 
-  it('has exactly three SKY worlds and the rest STUDIO', () => {
-    expect(LIGHT_SETUPS.filter((s) => s.world === 'SKY').map((s) => s.key)).toEqual([
+  it('has exactly three SKY worlds before K1, four more in Interior, and the rest STUDIO', () => {
+    expect(LIGHT_SETUPS.filter((s) => s.world === 'SKY' && s.style !== 'INTERIOR').map((s) => s.key)).toEqual([
       'SUN', 'GOLDEN_HOUR', 'DAWN',
     ]);
-    expect(LIGHT_SETUPS.filter((s) => s.world === 'STUDIO')).toHaveLength(85);
+    expect(LIGHT_SETUPS.filter((s) => s.world === 'SKY' && s.style === 'INTERIOR').map((s) => s.key)).toEqual([
+      'INT_WINDOW_MORNING', 'INT_WINDOW_NOON', 'INT_WINDOW_AFTERNOON', 'INT_BLUE_HOUR',
+    ]);
+    expect(LIGHT_SETUPS.filter((s) => s.world === 'STUDIO')).toHaveLength(88);
     expect(LIGHT_SETUPS.filter((s) => s.world === 'FLAT')).toHaveLength(0);
   });
 
-  it('gives sky setups a single SUN light', () => {
-    for (const s of LIGHT_SETUPS.filter((x) => x.world === 'SKY')) {
+  it('gives the sky setups before K1 a single SUN light, and the sky setups of Interior exactly one SUN among their lights', () => {
+    for (const s of LIGHT_SETUPS.filter((x) => x.world === 'SKY' && x.style !== 'INTERIOR')) {
       expect(s.lights).toHaveLength(1);
       expect(s.lights?.[0].type).toBe('SUN');
     }
-    expect(LIGHT_SETUPS.flatMap((s) => s.lights ?? []).filter((l) => l.type === 'SUN')).toHaveLength(3);
+    for (const s of LIGHT_SETUPS.filter((x) => x.world === 'SKY' && x.style === 'INTERIOR')) {
+      expect(s.lights?.filter((l) => l.type === 'SUN'), s.key).toHaveLength(1);
+    }
+    // The studio worlds of Interior have no sun at all: their light comes from panels and lamps.
+    for (const s of LIGHT_SETUPS.filter((x) => x.world === 'STUDIO' && x.style === 'INTERIOR')) {
+      expect(s.lights?.some((l) => l.type === 'SUN'), s.key).toBe(false);
+    }
+    expect(LIGHT_SETUPS.flatMap((s) => s.lights ?? []).filter((l) => l.type === 'SUN')).toHaveLength(7);
   });
 
   it('has lights: null only for PRESET', () => {
@@ -236,7 +252,7 @@ describe('light setups', () => {
   });
 
   it('has 155 recipe lights before L6, whose shares sum to 1 per setup', () => {
-    const recipes = LIGHT_SETUPS.filter((s) => s.lights !== null && s.style !== 'SETS');
+    const recipes = LIGHT_SETUPS.filter((s) => s.lights !== null && s.style !== 'SETS' && s.style !== 'INTERIOR');
     expect(recipes.flatMap((s) => s.lights ?? [])).toHaveLength(155);
     for (const s of recipes) {
       const total = (s.lights ?? []).reduce((a, l) => a + (l.share ?? 0), 0);
@@ -249,8 +265,9 @@ describe('light setups', () => {
     }
   });
 
-  it('marks exactly three recipe lights before L6 as seen by the camera, and the bright field of the sets', () => {
+  it('marks exactly three recipe lights before L6 as seen by the camera, and the bright field of the sets; no light of Interior is', () => {
     expect(LIGHT_SETUPS.filter((s) => s.style !== 'SETS').flatMap((s) => s.lights ?? []).filter((l) => l.camera)).toHaveLength(3);
+    expect(LIGHT_SETUPS.filter((s) => s.style === 'INTERIOR').flatMap((s) => s.lights ?? []).filter((l) => l.camera)).toHaveLength(0);
     expect(LIGHT_SETUPS.filter((s) => s.style === 'SETS' && s.lights?.some((l) => l.camera)).map((s) => s.key)).toEqual(['BRIGHT_FIELD']);
   });
 

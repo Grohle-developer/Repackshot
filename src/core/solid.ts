@@ -17,6 +17,7 @@ export const WELD_TOLERANCE = 1e-5;
 const MIN_VOLUME = 1e-9;
 
 const cache = new WeakMap<MeshData, boolean>();
+const orientations = new WeakMap<MeshData, Orientation>();
 
 /** True when the mesh is a closed solid wound counter-clockwise seen from outside (the cached answer). */
 export function isClosedSolid(data: MeshData): boolean {
@@ -28,11 +29,41 @@ export function isClosedSolid(data: MeshData): boolean {
   return known;
 }
 
+/**
+ * Which way a closed surface faces (K1, the interior Doctor's inverted normals): OUTWARD when it is a closed manifold wound
+ * counter-clockwise seen from outside (what `isClosedSolid` accepts), INWARD when it is the same surface wound the other
+ * way (a solid turned inside out, or a room whose walls face its inside), OPEN for anything that is not a closed manifold
+ * (a sheet, a model with holes, a non-manifold join) and for a surface that encloses no volume. In the mesh's own space:
+ * a part whose transform mirrors it (a negative determinant) faces the other way in the world. Cached per mesh.
+ */
+export type Orientation = 'OUTWARD' | 'INWARD' | 'OPEN';
+
+export function solidOrientation(data: MeshData): Orientation {
+  let known = orientations.get(data);
+  if (known === undefined) {
+    const r = analyseVolume(data.positions, data.indices);
+    const min = r ? r.extent * r.extent * r.extent * MIN_VOLUME : 0;
+    known = !r || !Number.isFinite(r.volume) ? 'OPEN' : r.volume > min ? 'OUTWARD' : r.volume < -min ? 'INWARD' : 'OPEN';
+    orientations.set(data, known);
+  }
+  return known;
+}
+
 /** The uncached rule on plain arrays (the tests call it with the hand-made meshes of the engine's tests). */
 export function analyse(positions: ArrayLike<number>, indices: ArrayLike<number>): boolean {
+  const r = analyseVolume(positions, indices);
+  return r !== null && Number.isFinite(r.volume) && r.volume > r.extent * r.extent * r.extent * MIN_VOLUME;
+}
+
+/**
+ * The volume a surface encloses, signed (positive: wound counter-clockwise seen from outside), and the extent it was measured
+ * against; null when the surface is not a closed manifold (every welded edge shared by exactly two triangles that run along
+ * it in opposite directions).
+ */
+function analyseVolume(positions: ArrayLike<number>, indices: ArrayLike<number>): { volume: number; extent: number } | null {
   const n = Math.floor(positions.length / 3);
   const triangles = Math.floor(indices.length / 3);
-  if (n === 0 || triangles === 0) return false;
+  if (n === 0 || triangles === 0) return null;
   const weld = weldIds(positions, n);
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
@@ -72,14 +103,13 @@ export function analyse(positions: ArrayLike<number>, indices: ArrayLike<number>
     const q2 = p[2];
     volume += p[0][0] * (q1[1] * q2[2] - q1[2] * q2[1]) + p[0][1] * (q1[2] * q2[0] - q1[0] * q2[2]) + p[0][2] * (q1[0] * q2[1] - q1[1] * q2[0]);
   }
-  if (edges.length === 0 || edges.length % 2 !== 0) return false;
+  if (edges.length === 0 || edges.length % 2 !== 0) return null;
   edges.sort((a, b) => a - b);
   // Sorted, a whole edge is (…, down), (…, up): the same two ids, the first run upwards-false, the second true.
   for (let i = 0; i < edges.length; i += 2) {
-    if (Math.floor(edges[i] / 2) !== Math.floor(edges[i + 1] / 2) || edges[i] % 2 !== 0 || edges[i + 1] % 2 !== 1) return false;
+    if (Math.floor(edges[i] / 2) !== Math.floor(edges[i + 1] / 2) || edges[i] % 2 !== 0 || edges[i + 1] % 2 !== 1) return null;
   }
-  volume /= 6;
-  return Number.isFinite(volume) && volume > extent * extent * extent * MIN_VOLUME;
+  return { volume: volume / 6, extent };
 }
 
 /** The weld id of every vertex: equal positions, then positions within the tolerance on every axis (transitively). */

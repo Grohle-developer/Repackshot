@@ -42,7 +42,11 @@ no un requisito.
    Al importar, una hoja de opciones en línea (unidades, eje arriba,
    centrar, apoyar en el suelo, encuadrar, agrupar por, mantener
    materiales, calidad de teselado) con valores por defecto que funcionan.
-2. **Tipo de producto y estudio.** Elegir una de 16 categorías (joyería,
+2. **Tipo de escena, tipo de producto y estudio.** El **tipo de escena**
+   (*Producto · Interior · Catálogo*, K1) solo reescribe valores de partida
+   (entorno, rebotes, cáusticas, sombra de suelo, transformada, muestras
+   y focal; `INTERIORS.md` §3.1) y no quita ningún control; cambiar y volver
+   deja el proyecto como estaba salvo lo que se tocó. Elegir una de 16 categorías (joyería,
    relojería, perfumería, cosmética, electrónica, electrodoméstico,
    mobiliario interior y exterior, calzado, textil, packaging, automoción,
    herramienta, óptica, médico, genérico). *Crear estudio* monta en un
@@ -53,8 +57,10 @@ no un requisito.
    o arrastrar un material del catálogo (86 presets en 7 categorías). Si
    el objetivo ya tiene materiales distintos, se pregunta con inventario.
    Editar parámetros con nombres de fotógrafo. Añadir desgaste.
-4. **Luz.** Elegir un montaje del catálogo (72 en 8 estilos) por su
-   miniatura e intención; la exposición no cambia al cambiar de montaje.
+4. **Luz.** Elegir un montaje del catálogo (95 en 10 estilos: los 16 sets de
+   L6 primero y las 7 recetas de interior, K1, al final) por su miniatura e
+   intención; la exposición no cambia al cambiar de montaje (salvo en un set,
+   que trae la suya, y en las recetas de interior).
    Afinar focos si se quiere; colocar un foco por reflejo apuntando a
    dónde se quiere el brillo. **O montar la luz desde cero**: añadir
    focos propios (área, punto, foco direccional, sol, y el perfil IES de una lámpara real),
@@ -796,6 +802,21 @@ estilo `SETS`, el primero del catálogo.
   sombra son los del tipo. *Mobiliario exterior* conserva su sol: no es un
   set.
 
+**Recetas de interior** (fase K1, estilo `INTERIOR`, el último del catálogo).
+Siete montajes (*Ventana de mañana*, *de mediodía*, *de tarde*, *Nublado*,
+*Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*; claves
+`INT_WINDOW_MORNING`, `INT_WINDOW_NOON`, `INT_WINDOW_AFTERNOON`,
+`INT_OVERCAST`, `INT_NIGHT_LAMPS`, `INT_BLUE_HOUR`, `INT_WHITE_ROOM`) que son
+sets **sin decoración**: eligen su mundo (`SKY` con un foco de sol que coloca el
+sol del cielo, o `STUDIO`) y traen `exposureEv` y `envStrength`, pero no
+`backdrop`, `floor`, `pool` ni `cards` (`hasDecoration`), así que dejan el
+suelo, la sombra de contacto y el fondo como los tenía la escena y, al dejarlos
+por otro montaje, no restauran un fondo que no pusieron. Sus focos se
+normalizan al nivel del tipo de producto como los de cualquier montaje; una
+receta que mezcla un sol con paneles lleva *shares* en la escala de
+`specIrradiance` (un sol cuenta su irradiancia y un panel sus vatios sobre
+4π d²). Sus cifras son una propuesta pendiente de decisión (`ROADMAP.md` K1).
+
 **Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
 pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
 *Añadir ▸* del menú de la cabecera, desde el clic derecho del visor en vacío y
@@ -1396,12 +1417,15 @@ crea una copia propia.
 ### 3.10 · Interiores y mobiliario
 
 Un **tipo de escena** (*Producto · Interior · Estudio de catálogo*) que
-solo cambia valores por defecto; una **habitación** paramétrica como nodo
+solo cambia valores por defecto (hecho en K1: `scene.type` en el proyecto,
+`scene/setType`, la memoria `scene.typeBase` de lo que cada tipo reemplazó, y
+los proyectos anteriores abren como *Producto*); una **habitación** paramétrica como nodo
 (medidas, aberturas, material por superficie, pared frontal oculta,
 ciclorama); **ventanas que iluminan solas** (portales automáticos, vidrio
 fino, vista exterior en un plano con paralaje); **cámara de interiores**
 (verticales rectas, altura de ojo, panorámica, alzados y planta,
-exposición automática, recorrido); Doctor de interiores; grupos de luz
+exposición automática, recorrido); Doctor de interiores (siete chequeos de escena, K1; el resto, con el
+motor); grupos de luz
 ajustables tras el render; entregables de mobiliario (silos con alfa y
 cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
 `INTERIORS.md`.
@@ -1409,7 +1433,8 @@ cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
 ## 4 · El Doctor
 
 Diecinueve chequeos, cada uno con detección y, cuando el proyecto puede
-cambiar algo, arreglo (`DOCTOR_CHECKS` en `src/data/doctor.ts`). Los de
+cambiar algo, arreglo (`DOCTOR_CHECKS` en `src/data/doctor.ts`), y siete más
+con el tipo de escena *Interior* (más abajo). Los de
 escena se evalúan sobre el modelo: escala
 plausible para el tipo de producto (una joya de 3 m está mal), origen y
 apoyo en el suelo, suavizado de normales, bisel de aristas (sin bisel, las
@@ -1447,6 +1472,25 @@ chequeos de motor se vuelven a pasar cuando cambia lo que leen (el estado de la
 interfaz, los ajustes de imagen, de motor, de presupuesto y de salida de
 animación del render, la imagen que acumula el visor) y tras deshacer y
 rehacer.
+
+**Doctor de interiores** (K1, `core/doctor-interior.ts`). Con el tipo de
+escena *Interior*, siete chequeos más que no piden el motor, cada uno con su
+arreglo, que es una acción normal del *store*: *escala y unidades* (el tamaño
+de la escena fuera de 100 mm–30 m: reescala por el factor del importador o
+por una potencia de diez), *abertura para el sol y el cielo* (la cámara dentro
+de un espacio cerrado que ilumina el sol o el cielo y ninguna pieza de
+vidrio o transparente: pone la *Sala blanca de estudio*), *vidrio de ventana*
+(una pieza plana de vidrio de paredes sólidas: la hace fina, en una copia si
+el material lo comparte otra pieza), *óptica* (menos de 18 mm: 24 mm), *altura
+de ojo* (fuera de 0,3–2,2 m sobre el suelo: 1,5 m, mirando al mismo punto),
+*recorte cercano* (el de una cámara dentro de la habitación llega a la pared más
+próxima: la mitad de la distancia) y *normales invertidas* (una superficie
+cerrada o una pared plana que mira al lado equivocado para donde está la
+cámara: las invierte). En *Interior* la comprobación de escala del Doctor
+no compara con el tamaño del tipo de producto. Mientras no existe el nodo
+habitación (K2), «espacio cerrado», «abertura» y «pared» se leen de la caja
+de las piezas, del vidrio y de los materiales transparentes. Con otro tipo de
+escena estos chequeos no están en la lista.
 
 ---
 

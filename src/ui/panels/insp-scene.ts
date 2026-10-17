@@ -3,6 +3,7 @@
 
 import { LENS_PRESETS } from '../../data/lenses';
 import { LIGHT_STYLES, lightSetup, setupsInStyle } from '../../data/light-setups';
+import { SCENE_TYPES } from '../../data/scene-types';
 import { STUDIO_PRESETS } from '../../data/studios';
 import type { LightSetup, LightStyle } from '../../data/types';
 import type { UiState } from '../ui-state';
@@ -36,6 +37,14 @@ export function setupThumb(key: string, small = false): string {
 function productSection(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const s0 = store.get();
+  // K1: the scene type, over the product type. It rewrites starting values and removes no control.
+  const sceneType = segmented(
+    SCENE_TYPES.map((x) => ({ value: x.key, label: lbl(x.label), title: lbl(x.intent) })),
+    s0.scene.type,
+    (v) => cmd.setSceneType(ctx, v),
+    { full: true, compact: true, ariaLabel: t('product.sceneType') },
+  );
+  scope.watch((s) => s.scene.type, (v) => sceneType.set(v));
   const typeSel = select(
     STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(studioLabel(p.key)) })),
     s0.studio.preset,
@@ -114,6 +123,7 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
   const body = h(
     'div',
     { class: 'stack' },
+    h('div', { class: 'stack', style: 'gap:3px', 'data-guide': 'scene-type' }, field(t('product.sceneType'), sceneType.el), h('div', { class: 'note', style: 'padding-left:112px' }, t('product.sceneTypeAux'))),
     h('div', { class: 'stack', style: 'gap:3px', 'data-guide': 'product-type' }, field(t('product.type'), typeSel.el), h('div', { style: 'padding-left:112px' }, typeAux)),
     field(t('product.partSize'), size.el),
     h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px' }, t('product.partSizeAux')),

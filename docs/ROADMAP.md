@@ -6751,7 +6751,12 @@ velocidad que el motor midió, *Arreglar todo* y un deshacer) y deja
 `docs/ui/doctor-engine.png`. El motor de Rust no se tocó: ni `rt_features` ni
 ningún *hash* fijado se mueve. Compuertas: `npm run qa` en verde (159 archivos y
 2746 pruebas pasan, 4 archivos y 6 pruebas omitidas; al empezar pasaban 2635) y
-`npm run engine:test` en verde (1098 pasan, 11 ignoradas). Coste: la lectura de
+`npm run engine:test` en verde (1098 pasan, 11 ignoradas). Con K1 en la
+misma rama conviven los dos: `runDoctor` da los 19 de `DOCTOR_CHECKS` y, con el tipo
+*Interior*, los siete de `INTERIOR_CHECKS` detrás; `fixDoctor` encamina cada clave a su
+Doctor (`isInteriorCheck`) y *Arreglar todo* limpia las dos clases en una entrada de
+deshacer (cuatro pruebas en `tests/doctor-engine.test.ts`, que también fija que las claves
+de interior no son ni de escena ni de motor). Coste: la lectura de
 la acumulación corre en el hilo principal cada vez que las muestras se doblan
 (de 16 en adelante: cinco o seis veces por vista) y tarda, medida en Node con el
 código caliente, 40 ms a 1280 × 720, 160 ms a 2560 × 1440 y 330 ms a 4K.
@@ -7751,7 +7756,7 @@ El gestor de modelos, el selector y la detección del equipo llegan en
 en vivo que el modelo activo cabe y una prueba de una imagen desde
 *Ajustes*) pasa a X4.
 
-## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet**
+## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet** — hecha
 
 **Qué.** `scene.type ∈ {PRODUCT, INTERIOR, CATALOGUE}` en el *store* y en
 la sección *Producto* del inspector, con la tabla de valores por defecto
@@ -7771,6 +7776,183 @@ normales invertidas) con su arreglo.
 que el usuario tocó (test); los montajes nuevos pasan los tests de
 recuento y normalización; cada chequeo nuevo detecta su caso y su arreglo
 lo limpia; captura con el tipo *Interior* activo.
+
+**Hecho.**
+
+*Tipo de escena.* `ProjectState.scene.type` (`PRODUCT` · `INTERIOR` · `CATALOGUE`, `Producto` por defecto) y la
+acción `scene/setType`, una sola entrada de deshacer. Los valores son datos (`src/data/scene-types.ts`, `SCENE_TYPES`:
+clave estable, etiqueta e intención en los dos idiomas, y los valores por defecto de cada tipo) y lo que los aplica es
+`src/core/scene-type.ts`. En la sección *Producto* del inspector, encima de *Tipo de producto*, un control segmentado
+*Producto · Interior · Catálogo* con la intención de cada tipo en su ayuda y una nota que dice que ningún control se mueve;
+la sección *Luz* salta al estilo *Interior* al elegirlo (estado de interfaz, no del proyecto) y vuelve a *Todos* al
+dejarlo. **Cambiar de tipo y volver deja el proyecto como estaba salvo lo que se tocó entre medias**: cada valor que un
+tipo escribe es una *casilla* (10 fijas y una por cámara, `camera.focal:<id>`) con lo que había (`base`) y lo que el tipo
+puso (`applied`), guardado en `scene.typeBase`. Al cambiar, una casilla cuyo valor sigue siendo `applied` no la tocó nadie
+y vuelve a `base` antes de que el tipo nuevo escriba la suya; una que ya no lo es la tocó la persona, y su valor es el `base`
+nuevo. Un tipo que pone lo que ya había no recuerda nada, y volver a Producto no deja memoria (`scene.typeBase` desaparece).
+Un HDRI cargado no lo sustituye ningún tipo (es el «o HDRI interior» de la tabla, y `worldFor` también lo deja ganar) y una
+cámara bloqueada conserva su óptica. **Proyecto**: se guarda `scene.type` y, mientras no sea Producto, `scene.typeBase`; el
+esquema sigue en 2; un proyecto anterior no tiene ninguno y abre como Producto, un tipo que esta versión no conoce abre como
+Producto y de la memoria se conservan solo las casillas que esta versión conoce y con valores que esa casilla admite
+(`normalizeSceneType`, `normalizeTypeBase`).
+
+*La tabla de `INTERIORS.md` §3.1, tal como está aplicada* (lo que no escribe Producto es lo que el proyecto ya tiene; las
+filas que nombran algo que no existe aún están en «Qué no encajó»):
+
+| Fila | Producto | Interior | Catálogo |
+| --- | --- | --- | --- |
+| Entorno | no escribe | tipo de entorno *Cielo* (sol y cielo) | *Cúpula de estudio* y fondo de color blanco `[1, 1, 1, 1]` |
+| Rebotes | no escribe (los del nivel de calidad) | 16 (`render.advanced.maxBounces`) | 8 |
+| Cáusticas | no escribe (Automático) | Apagadas | Apagadas |
+| Sombra de suelo | no escribe | sin sombra de contacto (`studio.shadow` apagado) | sombra de contacto encendida y suave (`environment.groundShadow` 0,35) |
+| Transformada | no escribe | AgX | Estándar |
+| Muestras objetivo | no escribe (256) | 512 (el nivel pasa a *Personalizado*), terminar por ruido y *denoise* en visor y render | 256 (el nivel *Vista previa*) |
+| Cámara | no escribe | 28 mm en cada cámara que no esté bloqueada | 50 mm |
+
+*Estilo Interior.* `LIGHT_STYLES` pasa de 9 a 10 entradas (`INTERIOR` la última) y `LIGHT_SETUPS` de 88 a 95: las siete
+recetas están **al final**, así que ninguna clave ni ningún orden anterior se movió (los 72 montajes de EZ Packshot y los
+16 sets, intactos: un test compara los 71 rigs con el fixture de antes de L6). Cada receta es un set sin decoración:
+elige su mundo (`SKY` con un foco de sol que coloca el sol del cielo, o `STUDIO`), y trae su desvío de exposición
+(`exposureEv`) y la intensidad del entorno (`envStrength`), porque la hora del día **es** el brillo de la imagen y aquí,
+a diferencia del resto de montajes, elegir una sí cambia el aspecto. Los focos están normalizados al nivel del tipo de
+producto como todos (un test con los 16 tipos: error < 10⁻⁶). Una receta que mezcla un sol con paneles lleva *shares* en
+la escala de `specIrradiance` (un sol cuenta su irradiancia en W/m² y un panel sus vatios sobre 4π d²): el *share* de un
+panel que da `r` veces lo que el sol es 4 d² r veces el del sol (por eso las ventanas llevan 5 a 14 frente al 1 del sol; el
+cálculo está en el comentario de `light-setups.ts`). Las cifras de las siete recetas son una propuesta (◆ pendiente de Fable: la
+tabla está en «Qué no encajó», 1). Mirando las miniaturas (`SPHERES`, 256 × 256, 96 muestras) la mañana tira a cálido, el mediodía es
+neutro, la tarde es ámbar, *Nublado* y *Sala blanca* son suaves y claras, las lámparas dejan la sala a oscuras y la hora
+azul parte cálido a la izquierda y azul a la derecha. **Miniaturas**: las siete se han renderizado con el motor nativo
+(`node tools/setup-thumbs.mjs --keys INT_WINDOW_MORNING,…`: 21 s de render en total) y están en
+`public/thumbs/setups/` (`thumb_int_*.png` y `setup_int_*.png`) y en `manifest.json`, que pasa a 95 entradas (el test que
+reconstruye cada escena con el código y compara su hash lo comprueba); `tests/set-heroes.ts` pone `SPHERES` de objeto del
+estilo.
+
+*Dos arreglos en `core/sets.ts`, con su prueba cada uno.* Una receta es un set sin decoración, y eso destapó tres cosas que
+un set con decoración no hacía notar: (1) `applySet` encendía el suelo y la sombra de contacto con cualquier set, también
+con uno que no trae nada que apoyar (contra el *Interior* que no lleva sombra propia); ahora solo con decoración
+(`hasDecoration`: fondo, suelo, charco o tarjetas, los 16 sets la tienen). (2) Una receta elegida tras un set con fondo
+dejaba **el fondo del set** en el marco (lo vio la miniatura: el fondo claro del barrido detrás de las esferas); ahora el
+fondo vuelve al del tipo de producto, como al elegir cualquier otro montaje. (3) Dejar una receta por otro montaje
+restauraba el fondo del tipo de producto aunque la receta nunca lo tocó, pisando el fondo de la persona (el blanco de
+*Catálogo*); ahora solo lo restaura quien dejó un fondo (`presetLook(…, background)`). Mutaciones: las tres se
+reintroducen y `tests/interior-setups.test.ts` falla (la segunda también el test de las miniaturas, porque el hash de la
+escena cambia).
+
+*Doctor de interiores.* `core/doctor-interior.ts` (lógica) y `data/doctor-interior.ts` (descriptores en los dos idiomas,
+`INTERIOR_DOCTOR_CHECKS`), enchufados al Doctor en pocas líneas: `runDoctor` añade `runInteriorDoctor(state)`, el `default`
+de `fixDoctor` llama a `fixInterior`, `doctorCheck(key)` conoce los dos listados y la ventana del Doctor busca el
+descriptor con `doctorCheck`. **Solo corren con el tipo *Interior***: en una escena de producto no están en los resultados
+(y `DOCTOR_CHECKS`, el listado del Doctor, no se toca). Siete claves estables: `interiorScale`, `interiorOpening`,
+`interiorGlass`, `interiorLens`, `interiorEye`, `interiorClip`, `interiorNormals`. Todos con arreglo, que es una acción
+normal del *store* (una entrada de deshacer):
+
+| Chequeo | Detección | Arreglo | Prueba | Mutaciones |
+| --- | --- | --- | --- | --- |
+| Escala y unidades | el tamaño mayor de la escena (la caja de las piezas que no son decoración) fuera de 100 mm–30 m | reescala por el factor del importador (metros, micrómetros) si cae en el rango; si no, por la potencia de diez más pequeña que lo logra; si ninguna, hasta el límite; el factor del importador se gasta | «escala y unidades» (5 pruebas: los límites, ×10, ×100, ×1000, ÷1000, lo más absurdo, el importador y el tamaño del tipo de producto) | 6 |
+| Abertura para el sol y el cielo | la cámara activa dentro de la caja de la escena (de más de 1,5 m por cada lado), el cielo o un sol encendido la ilumina y ninguna pieza visible lleva un material de vidrio, con `transmission` ≥ 0,5 u `opacity` ≤ 0,5 | pone el montaje *Sala blanca de estudio* (paneles y lámparas en lugar de sol y cielo) | «una abertura para el sol y el cielo» (5) | 9 |
+| Vidrio de ventana | una pieza visible, plana (grosor ≤ 12 % de su lado mayor, con dos lados grandes y el mayor ≥ 300 mm, medido en su caja propia por la escala de su matriz: una pieza girada o estirada de un cubo es igual de plana) con un material `GLASS` de paredes `SOLID` | pone `walls` a `THIN` (el mismo `material/setParam` de la interfaz); si el material lo comparte una pieza que no es un panel, un `material/detach` da a los paneles una copia y solo ella queda fina | «vidrio de ventana» (5) | 8 |
+| Óptica | una cámara en perspectiva con menos de 18 mm | 24 mm y sin preset de óptica, en todas las que lo pasan | «una óptica más ancha de 18 mm» (3) | 7 |
+| Altura de ojo | una cámara en perspectiva, no bloqueada, a menos de 0,3 m o más de 2,2 m sobre el suelo (z = 0) | 1,5 m: cambia la elevación mirando al mismo punto por el mismo lado a la misma distancia; si no llega a ese ángulo razonable (80°), retrocede y arrastra el enfoque | «altura de ojo» (5) | 8 |
+| Recorte cercano | una cámara en perspectiva dentro de la caja de la escena cuyo `clipStart` llega a la cara más cercana de esa caja (la pared) | `clipStart` a la mitad de esa distancia (mínimo 0,01 mm) | «el recorte cercano contra la pared» (4) | 6 |
+| Normales | una superficie cerrada (`solidOrientation`, nueva en `core/solid.ts`) que mira hacia fuera con la cámara dentro de su caja, o hacia dentro con la cámara fuera (un sólido al revés, una habitación con las paredes al exterior; una pieza reflejada se mira como queda en el mundo); y, con la cámara en la habitación, una pared plana (de más de 1 m y delgada como el 2 %) cuyas caras no miran a la cámara; con un presupuesto de 500 000 triángulos por pasada, en el orden del árbol | `scene/flipNormals` de esas piezas | «normales invertidas» (7, una el presupuesto de triángulos) + 3 de `solid.ts` | 11 |
+
+Hay 57 mutaciones del Doctor (2 de ellas, del tipo de escena: que corra o arregle en una escena de producto; la detección
+de cada chequeo apagada, cada arreglo vacío, cada umbral y cada condición, el resto) y 1 de `solidOrientation`; todas las detecta alguna prueba (dos sobrevivieron a la primera ronda, el giro del
+cristal y el preset de la óptica, y su prueba se arregló). La comprobación de escala del propio Doctor
+(`scale`) no compara una escena *Interior* con el tamaño del tipo de producto (un salón de 5 m frente a los 200 mm de
+*Estándar* da veinticinco veces): sigue preguntando por el tamaño declarado.
+
+*Pruebas.* Nuevas: `tests/scene-type.test.ts` (32: la tabla de cada tipo, los cinco recorridos de ida y vuelta con un
+proyecto nuevo y con todas las casillas tocadas a mano, lo que la persona tocó, el HDRI, la cámara bloqueada, cada cámara con
+la suya, el mismo tipo sin cambio, un solo deshacer, el proyecto guardado y abierto, uno anterior, un tipo desconocido, la
+memoria dañada, el comando y sus cadenas), `tests/interior-setups.test.ts` (14: el estilo, los mundos, las recetas como sets
+sin decoración, el sol del cielo donde dice la luz, la normalización con los 16 tipos, elegir y dejar una receta),
+`tests/doctor-interior.test.ts` (41) y 3 en `tests/solid.test.ts`. Actualizadas con sus números nuevos, sin tocar lo que no
+cambia: `data.test.ts` (95 montajes y 10 estilos, 7 mundos `SKY`, 7 soles), `rig.test.ts` (78 montajes normalizados con los
+16 tipos), `sets.test.ts` (los 72 de antes sin campos de L6; 95 escenas en el manifiesto) y `palette.test.ts` (95
+montajes). Mutaciones del tipo de escena: 5 (no restaurar, restaurar todo, no guardar la memoria, no normalizar el tipo,
+escribir una cámara bloqueada), todas detectadas. En el navegador: `tools/scene-type-check.mjs` (Playwright, *Rápido*: el
+control, que el inspector tiene los mismos controles con cada tipo, *Interior* en una entrada de deshacer con sus siete
+recetas y sus miniaturas cargadas, la sombra de contacto apagada y AgX, las siete filas del Doctor, una receta, *Catálogo*,
+volver a *Producto*); captura `docs/ui/scene-type-interior.png`.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de Fable: queda anotado, no decidido).
+
+1. ◆ **Las cifras de las siete recetas** son una propuesta mía, **pendiente de Fable**: altura, azimut y temperatura del sol,
+   peso de la ventana y del rebote, intensidad del cielo y desvío de exposición. Siguen los órdenes de magnitud de la
+   fotografía de interiores y están normalizadas como el resto, pero son decisiones fotográficas y no las he tomado. El
+   comentario de `light-setups.ts` lo dice. La propuesta, receta a receta (azimuts relativos a la cámara; tamaños en
+   tamaños de pieza, a la distancia dicha; *share* en la escala de `specIrradiance`, ver arriba):
+
+   | Receta | Etiqueta | Mundo | Intensidad del entorno | Exposición (EV) | Luces: tipo az/el/temperatura, tamaño en tamaños de pieza a su distancia, *share* |
+   | --- | --- | --- | --- | --- | --- |
+   | `INT_WINDOW_MORNING` | Ventana de mañana | `SKY` | 0,12 | +0,2 | sol −65°/20°/4300 K ×1; panel −70°/30°/7200 K 5×4 a 2,6 ×12,2; panel 70°/12°/5200 K 4×4 a 3,5 ×5,9 |
+   | `INT_WINDOW_NOON` | Ventana de mediodía | `SKY` | 0,15 | +0,2 | sol −55°/62°/5600 K ×1; panel −75°/40°/6800 K 5×4 a 2,6 ×8,1; panel 70°/12°/5600 K 4×4 a 3,5 ×4,9 |
+   | `INT_WINDOW_AFTERNOON` | Ventana de tarde | `SKY` | 0,11 | 0 | sol 70°/14°/3200 K ×1; panel 75°/24°/5600 K 5×4 a 2,6 ×10,8; panel −70°/10°/4600 K 4×4 a 3,5 ×7,4 |
+   | `INT_OVERCAST` | Nublado | `STUDIO` | 0,8 | +0,3 | panel −75°/38°/7000 K 7×5 a 3 ×0,5; panel 0°/82°/6800 K 6×6 a 2,8 ×0,25; panel 75°/14°/6800 K 5×5 a 3,6 ×0,25 |
+   | `INT_NIGHT_LAMPS` | Lámparas de noche | `STUDIO` | 0,04 | −0,7 | disco −110°/28°/2600 K 0,7 a 2,2 ×0,45; disco 125°/48°/2400 K 0,5 a 2,8 ×0,25; cuadrado 0°/80°/2900 K 1,4 a 2,8 ×0,2; panel 60°/12°/8500 K 4×4 a 3,5 ×0,1 |
+   | `INT_BLUE_HOUR` | Hora azul | `SKY` | 0,45 | −0,5 | sol 115°/3°/2300 K ×0,15; disco −100°/28°/2700 K 0,7 a 2,2 ×20; disco 135°/45°/2500 K 0,5 a 2,8 ×12; panel 75°/25°/10500 K 5×4 a 2,6 ×14; panel −35°/12°/7500 K 4×4 a 3,5 ×7 |
+   | `INT_WHITE_ROOM` | Sala blanca de estudio | `STUDIO` | 1 | +0,5 | panel 0°/85°/5600 K 6×5 a 2,6 ×0,3; panel −80°/28°/5600 K 6×5 a 2,8 ×0,3; panel 80°/22°/5600 K 5×5 a 3,2 ×0,2; panel 0°/15°/5600 K 4×4 a 3,5 ×0,2 |
+
+   Los azimuts son relativos a la cámara (`LightSpec.az`). Los órdenes de magnitud: el sol de 2 a 4 veces el cielo a mediodía y
+   de 1,5 a 2 al atardecer (la intensidad del entorno sale de que el cielo da la irradiancia de la cúpula de estudio, unos 2 por unidad
+   de intensidad en las unidades del normalizador, y el sol `sen(altura)` por su energía), lámparas de tungsteno a 2400–2900 K, un cielo claro a través de un
+   vidrio a 6500–10 500 K.
+2. ◆ **Los umbrales del Doctor de interiores**, propuesta mía **pendiente de Fable** (`INTERIORS.md` §3.6 nombra los
+   chequeos, no las cifras); son constantes exportadas de `core/doctor-interior.ts`:
+
+   | Constante | Valor | Para qué |
+   | --- | --- | --- |
+   | `INTERIOR_MIN_MM`, `INTERIOR_MAX_MM` | 100 mm y 30 m | tamaño de la escena que es un mueble o una habitación (un jarrón y un loft) |
+   | `WIDE_LENS_MM` | 18 mm | óptica que estira los bordes (la cifra es la de §3.4) |
+   | `INTERIOR_LENS_MM` | 24 mm | lo que pone el arreglo: la más ancha de las ópticas de interior de §3.4 |
+   | `EYE_MIN_MM`, `EYE_MAX_MM` | 0,3 m y 2,2 m | altura de ojo plausible sobre el suelo (z = 0) |
+   | `EYE_STANDING_MM` | 1,5 m | lo que pone el arreglo: una persona de pie (§3.4) |
+   | habitación, panel, pared | 1,5 m por lado; grosor ≤ 12 % y ≥ 300 mm; ≤ 2 % y ≥ 1 m | qué caja es una habitación, qué pieza es un cristal de ventana, qué pieza plana es una pared |
+   | recorte | la mitad de la distancia a la pared (≥ 0,01 mm) | lo que pone el arreglo |
+   | `INTERIOR_NORMALS_TRIANGLES` | 500 000 | presupuesto de triángulos de la comprobación de normales por pasada |
+
+3. ◆ **Valores de la tabla de §3.1 que son un número donde el documento da un intervalo o una palabra**: *Rebotes* «16–24» es
+   16 (el límite bajo; el *Final* podría pedir 24); *sombra de contacto suave* es una opacidad de 0,35 en el visor (la sombra
+   de contacto del motor no tiene intensidad: es el atrapasombras, y su suavidad la da el tamaño de las luces); *cúpula
+   blanca* es la cúpula de estudio con un fondo de color blanco puro. El tipo de escena **no cambia el montaje de luz**: elige
+   el entorno, y la sección *Luz* se abre en las recetas de *Interior*, pero cuál de las siete es la de partida es una
+   decisión de fotógrafo que no tomé.
+4. **Filas de §3.1 que no se aplican porque nombran algo que aún no existe o que no es del proyecto.** *Entorno*: el ciclorama
+   del catálogo (K2). *Exposición*: la automática con su mando EV (K3; la exposición queda en la del tipo de producto y el
+   desvío de la receta). *Cámara*: la altura de ojo de 1,5 m y las verticales rectas (K3), y «alzado o tres cuartos» (una
+   vista, no un valor: se queda la que hay). *Transformada*: «rodillo largo» y *Low contrast* — el mapeo de tonos no tiene
+   parámetro de rodillo y *Contraste* se guarda pero el motor aún no lo aplica (`image.postSoon`), así que solo se pone AgX
+   (y, de paso, `INTERIORS.md` §3.5 pide una curva por receta: `LightSetup` no tiene campo para ella). *Unidades mostradas*:
+   es una preferencia de la aplicación (*Ajustes ▸ General*), no del proyecto, y moverla con el tipo rompería «toda mutación
+   pasa por el *store* y es deshacible» y la ida y vuelta; el Doctor sí habla en mm y metros. «**HDRI interior**»: no hay
+   recetas de entorno propias todavía (`STUDIO-TOOLS.md` §2); se respeta el HDRI que la persona haya cargado.
+5. **La tabla dice «Producto (hoy): Estándar / AgX» y el proyecto nuevo arranca en *Fílmica*.** Producto no escribe nada, así
+   que no hay conflicto; la fila de la tabla no es lo que el proyecto trae.
+6. **La bruma del cielo por receta** (la turbidez es `environment.skyTurbidity`, no del montaje) **no está**: `LightSetup`
+   no tiene el campo y dejarlo exige una regla de qué devolver al salir de la receta. Las recetas de día usan la bruma que
+   haya (3 por defecto); *Nublado* es la cúpula de estudio con una ventana difusa, no un cielo cubierto (no hay modelo de
+   nubes). ◆
+7. **Sin el nodo `ROOM` de K2 el Doctor usa lo que hay.** «Habitación cerrada» es la cámara dentro de la caja de las piezas;
+   «abertura» es un material de vidrio o transparente; «pared» es una cara de esa caja. K2 sustituye lo primero y lo segundo
+   por las aberturas de la habitación; los chequeos y los arreglos se quedan. **El arreglo de la abertura es un sustituto**:
+   los focos de la receta *Sala blanca* están alrededor del producto a distancias en tamaños de pieza, así que en una
+   habitación importada de verdad cerrada quedan fuera de sus paredes; el arreglo bueno (*añadir una ventana*) es de K2.
+8. **Normales: solo superficies cerradas y paredes planas con la cámara dentro.** Una malla abierta que no es una pared (más
+   de 1 m, 2 % de grosor) no se mira, ni las piezas que pasan de un presupuesto de 500 000 triángulos por pasada, en el orden
+   del árbol (la primera vez que se mira una malla se sueldan sus vértices y una sala amueblada entera pararía el primer
+   cambio de la escena; se cuentan triángulos y no lo que está en la caché, así que la misma escena da siempre la misma
+   respuesta), ni se detecta lo de «una cara» (una pared sin grosor por donde la luz se cuela en las esquinas); un caso borde conocido: una habitación
+   cerrada vista **desde fuera** con las caras hacia dentro (un corte) da aviso.
+9. **Los chequeos de interior no están en `DOCTOR_CHECKS`** (los 17 que ya tenía el Doctor) sino en el suyo,
+   `INTERIOR_DOCTOR_CHECKS`, para no mover ese listado (otra fase, D1, añade sus chequeos de motor) ni el orden de los
+   resultados de una escena de producto; `doctorCheck(clave)` los conoce a los dos.
+10. **Cambiar a *Interior* no mueve la cámara**: pone 28 mm y la pieza se ve más pequeña hasta que K3 traiga la altura de ojo
+    y el encuadre de interiores. *Crear estudio* vuelve a escribir de su tipo de producto la calidad y las muestras (como
+    siempre) y no reaplica los valores del tipo de escena.
+11. La mezcla de un sol con paneles en una receta (que `specIrradiance` mide en unidades distintas) obliga a *shares* de 5 a 20
+    en las ventanas y las lámparas de la hora azul; los que son solo de paneles suman 1 como los demás. Es la escala del
+    normalizador de siempre, no una nueva: está explicada en el comentario.
 
 ## K2 · Habitación, portales y vista exterior — **Opus**
 

@@ -5,7 +5,8 @@
 
 import { materialPreset } from '../data/materials';
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
-import type { DoctorCheckKey, IesRef, Label, Lang, StudioPreset } from '../data/types';
+import type { DoctorCheckKey, IesRef, Label, Lang, SceneType, StudioPreset } from '../data/types';
+import { sceneTypeEntry } from '../data/scene-types';
 import { aiFileName } from '../core/ai-post';
 import { aiImagesOf, aiVariantsOf } from '../core/results';
 import { activeCamera, type CameraId } from '../core/camera';
@@ -1755,6 +1756,19 @@ export function setProductType(ctx: Ctx, key: string): void {
   }
   if (!studioPreset(key)) return;
   ctx.store.dispatch({ type: 'studio/setPreset', key, label: L('undo.productType', { name: studioLabel(key) }) });
+}
+
+/**
+ * The scene type (K1): Product, Interior or Catalogue. It rewrites the starting values (data/scene-types.ts) in one undo
+ * step and leaves every control where it is. The Light section follows to the recipes of Interior, which has a style of
+ * its own, and comes back to All when Interior is left.
+ */
+export function setSceneType(ctx: Ctx, type: SceneType): void {
+  if (ctx.store.get().scene.type === type) return;
+  ctx.store.dispatch({ type: 'scene/setType', sceneType: type, label: L('undo.sceneType', { name: sceneTypeEntry(type).label }) });
+  const style = ctx.ui.get().lightStyle;
+  if (type === 'INTERIOR') ctx.ui.set({ lightStyle: 'INTERIOR' });
+  else if (style === 'INTERIOR') ctx.ui.set({ lightStyle: 'ALL' });
 }
 
 export function buildStudio(ctx: Ctx): void {

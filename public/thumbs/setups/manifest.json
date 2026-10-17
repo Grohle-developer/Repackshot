@@ -189,6 +189,41 @@
    "rsb": "6b85d8af86c5993a282653c035ab1785a2116b3be17036367227706458998a6d",
    "png": "5532656cb3be060e4052e115423d1760abde5017f66400a883943b954d10952e"
   },
+  "INT_BLUE_HOUR": {
+   "hero": "SPHERES",
+   "rsb": "3c50808748be70a89a360acce8220ba81788f092f15349bf7c314da75050084e",
+   "png": "cb67c152ff0a3024fcda65458968157e0896c3ca0a36b1365effca024cf03725"
+  },
+  "INT_NIGHT_LAMPS": {
+   "hero": "SPHERES",
+   "rsb": "3feb5446fec6ab62fabfd78d644a3649019e39ba660cb0e1c67baeb04b830392",
+   "png": "b41694454484efc46dc5873096bf5ca15040828e4e504f8077d1daa8a670cbf7"
+  },
+  "INT_OVERCAST": {
+   "hero": "SPHERES",
+   "rsb": "972520b9453c4c1da99a52e0c1d7aa3510e9b51ae6e82a6fc6954d405d113f99",
+   "png": "37522c917fc5b4f230d7952396ac7c7c26cc1d5aefeaa3d76c9697af7f037a65"
+  },
+  "INT_WHITE_ROOM": {
+   "hero": "SPHERES",
+   "rsb": "fb73ff6ef279a5d9a9e799f69ca7d25ada27d410596e9ec6602e0d6535ac47cb",
+   "png": "fa086a3a20a0b83906db039e0edc0ffd8deff6591e4495a216bc6eb185f82868"
+  },
+  "INT_WINDOW_AFTERNOON": {
+   "hero": "SPHERES",
+   "rsb": "7bd64838d96ad58a702c6968a30e7bec9e7ed65e54508a94740237e8b63f7a6b",
+   "png": "87661ac4c0325794f4ab977bfbfbe1e11669c59f02aee49baf83cbbe483c2a51"
+  },
+  "INT_WINDOW_MORNING": {
+   "hero": "SPHERES",
+   "rsb": "16028cda8d04c7167c9362627476f8c328339c70c6c8f966a76154efd784f19d",
+   "png": "41cc731544690ebb1ac8ecaaa0e52d952653fe817e78bddb4b170ca8e982fc76"
+  },
+  "INT_WINDOW_NOON": {
+   "hero": "SPHERES",
+   "rsb": "82e9493b540dcb3a2714cf7e38baddb7ce2a868f160589f58839dfa89c892e73",
+   "png": "5f8c880e6da27be1e90edc964afaa0971f96c7293c48b7f817cb61c334396bae"
+  },
   "JEWEL_BOX": {
    "hero": "RING",
    "rsb": "b2f617d568588802f75a5a3cb6c63987f092410878312e2ecc85fda131c6f286",

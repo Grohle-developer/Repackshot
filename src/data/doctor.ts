@@ -1,6 +1,7 @@
 // Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
 
 import type { DoctorCheck } from './types';
+import { INTERIOR_DOCTOR_CHECKS } from './doctor-interior';
 
 // Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the
 // ones of Repackshot's own phases: `aspect`, U13; `physics`, S2; `particles`, S4a).
@@ -247,6 +248,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   },
 ];
 
+/** A check's descriptor: of the Doctor's list, or (K1) of the interior Doctor's, which only runs while the scene is an interior. */
 export function doctorCheck(key: string): DoctorCheck | undefined {
-  return DOCTOR_CHECKS.find((c) => c.key === key);
+  return DOCTOR_CHECKS.find((c) => c.key === key) ?? INTERIOR_DOCTOR_CHECKS.find((c) => c.key === key);
 }

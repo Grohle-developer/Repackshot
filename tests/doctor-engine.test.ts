@@ -5,9 +5,11 @@
 // so each check goes from the state of the engine to the findings in the store. Every check fires, and its fix clears it.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { DOCTOR_CHECKS } from '../src/data/doctor';
+import { DOCTOR_CHECKS, doctorCheck } from '../src/data/doctor';
+import { INTERIOR_DOCTOR_CHECKS } from '../src/data/doctor-interior';
 import type { DoctorCheckKey } from '../src/data/types';
 import { SCENE_CHECKS, fixAll, fixDoctor, runDoctor, warningCount, type DoctorResult } from '../src/core/doctor';
+import { INTERIOR_CHECKS } from '../src/core/doctor-interior';
 import {
   BUDGET_REACH,
   CLIP_FRACTION,
@@ -26,7 +28,7 @@ import {
   type FrameScan,
 } from '../src/core/doctor-engine';
 import { DEFAULT_ADVANCED, MAX_SECONDS, VIDEO_AVAILABLE } from '../src/core/render';
-import { createStore, reduce, type Action, type ProjectState, type Store } from '../src/core/store';
+import { createInitialState, createStore, reduce, type Action, type ProjectState, type Store } from '../src/core/store';
 import { SETTING_ROWS } from '../src/core/settings';
 import { touchesImage as nativeTouchesImage } from '../src/render/native';
 import { touchesImage } from '../src/render/pathtracer';
@@ -38,7 +40,7 @@ import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { setLang, STRINGS, t } from '../src/ui/strings';
 import { createUiStore, type EngineInfo, type UiStore } from '../src/ui/ui-state';
-import { exampleState } from './helpers';
+import { apply, exampleState } from './helpers';
 
 // ------------------------------------------------------------------ the fake engine
 
@@ -188,6 +190,19 @@ describe('the Doctor without an engine fact', () => {
     for (const k of ENGINE_CHECKS) expect(SCENE_CHECKS.has(k), k).toBe(false);
     for (const k of keys) expect(SCENE_CHECKS.has(k) || ENGINE_CHECKS.has(k), k).toBe(true);
     expect(keys).toHaveLength(SCENE_CHECKS.size + ENGINE_CHECKS.size);
+  });
+
+  it('keeps the interior Doctor’s keys in their own list: none of them is a scene check or an engine check, and each has its descriptor', () => {
+    const interior = INTERIOR_DOCTOR_CHECKS.map((c) => c.key);
+    expect(interior).toEqual([...INTERIOR_CHECKS]);
+    for (const k of interior) {
+      expect(SCENE_CHECKS.has(k), k).toBe(false);
+      expect(ENGINE_CHECKS.has(k), k).toBe(false);
+      expect(DOCTOR_CHECKS.some((c) => c.key === k), k).toBe(false);
+      expect(doctorCheck(k), k).toBeDefined();
+    }
+    // A product scene lists the 19 and nothing more; the checks of both lists have a descriptor.
+    expect(runDoctor(exampleState()).map((r) => r.key)).toEqual(DOCTOR_CHECKS.map((c) => c.key));
   });
 
   it('fixes nothing of the engine checks, and Fix all leaves the project as it was', () => {
@@ -1088,6 +1103,94 @@ describe('what a row of the Doctor offers', () => {
     r.do(advanced({ denoise: 'VIEWPORT' }));
     const kinds = Object.fromEntries(r.store.get().doctor.results.filter((x) => x.status === 'WARN').map((x) => [x.key, doctorRowAction(x)?.kind]));
     expect(kinds).toEqual({ engine: 'settings', simd: 'noFix', denoise: 'fix' });
+  });
+});
+
+// ------------------------------------------------------------------ with the interior Doctor (K1)
+
+describe('the engine checks and the interior Doctor run together', () => {
+  const box = (name: string, size: [number, number, number], position: [number, number, number], material?: string): Action => ({
+    type: 'scene/addPrimitive',
+    kind: 'BOX',
+    params: { width: size[0], depth: size[1], height: size[2], bevel: 0, bevelSegments: 1 },
+    position,
+    name,
+    ...(material ? { material } : {}),
+  });
+  /** A 4 x 4 x 2.6 m room with a thick glass pane, the camera inside with a 12 mm lens and a clip that reaches the wall (K1's own scene of faults). */
+  const roomWithFaults = (): ProjectState =>
+    apply(
+      reduce(apply(createInitialState(), box('Room', [4000, 4000, 2600], [0, 0, 1300]), box('Pane', [1500, 30, 1000], [0, 1990, 1300], 'GLASS_CLEAR')), { type: 'scene/setType', sceneType: 'INTERIOR' }),
+      { type: 'camera/set', id: 'cam1', patch: { target: [0, 0, 1300], distance: 1900, azimuth: 0, elevation: 0, focalMm: 12, clipStart: 400 } },
+    );
+  const interiorKeys = (rs: readonly DoctorResult[]) => rs.filter((x) => (INTERIOR_CHECKS as readonly string[]).includes(x.key));
+  const engineRig = () => {
+    const r = rig((e) => {
+      e.cores = 2;
+      e.throughput = 1e6;
+    });
+    r.store.reset(roomWithFaults());
+    r.do({ type: 'render/set', patch: { finishBy: 'TIME', maxSeconds: 30 } }, advanced({ denoise: 'VIEWPORT' }));
+    return r;
+  };
+
+  it('lists the 19 of the catalogue and then the 7 of the interior, each judged by its own Doctor, in an interior scene only', () => {
+    const r = engineRig();
+    const results = r.store.get().doctor.results;
+    expect(results.map((x) => x.key)).toEqual([...DOCTOR_CHECKS.map((c) => c.key), ...INTERIOR_CHECKS]);
+    const warned = results.filter((x) => x.status === 'WARN').map((x) => x.key);
+    // Engine: one worker (the system), denoise on in the viewport only, a 30 s budget. Interior: the pane, the lens, the clip.
+    for (const k of ['engine', 'denoise', 'budget', 'interiorGlass', 'interiorLens', 'interiorClip']) expect(warned, k).toContain(k);
+    // A product scene has only the 19, with the same engine facts.
+    r.store.reset(exampleState());
+    r.do({ type: 'doctor/refresh' });
+    expect(r.store.get().doctor.results).toHaveLength(DOCTOR_CHECKS.length);
+    expect(interiorKeys(r.store.get().doctor.results)).toEqual([]);
+  });
+
+  it('gives every warning a row action that is not "fix coming soon": a Fix, a Settings button or "not fixable here"', () => {
+    const r = engineRig();
+    for (const x of r.store.get().doctor.results.filter((y) => y.status === 'WARN')) {
+      const kind = doctorRowAction(x)?.kind;
+      expect(kind, `${x.key} ${JSON.stringify(x.detail)}`).toBeDefined();
+      if (interiorKeys([x]).length > 0) expect(x.fixable, x.key).toBe(true);
+      if (x.fixable) expect(kind, x.key).toBe('fix');
+    }
+  });
+
+  it('Fix all clears both kinds in one undo step, leaves the engine ones the project cannot fix, and one undo brings everything back', () => {
+    const r = engineRig();
+    const before = r.store.get();
+    const warnedBefore = before.doctor.results.filter((x) => x.status === 'WARN').map((x) => x.key);
+    expect(warnedBefore).toEqual(expect.arrayContaining(['engine', 'denoise', 'budget', 'interiorGlass', 'interiorLens', 'interiorClip']));
+    const undo = r.store.history().undo.length;
+    cmd.doctorFixAll(r.ctx);
+    expect(r.store.history().undo.length).toBe(undo + 1);
+    expect(r.store.history().undo[0]).toBe('Doctor: fix all');
+    const after = r.store.get().doctor.results;
+    const warnedAfter = after.filter((x) => x.status === 'WARN').map((x) => x.key);
+    // The interior ones and the fixable engine ones are gone; what the system limits stays with its words.
+    expect(interiorKeys(after).filter((x) => x.status === 'WARN').map((x) => x.key)).toEqual([]);
+    for (const k of ['denoise', 'budget']) expect(warnedAfter, k).not.toContain(k);
+    expect(warnedAfter).toContain('engine');
+    expect(r.store.get().render.advanced.denoise).toBe('BOTH');
+    expect(r.store.get().render.maxSeconds).toBe(170);
+    expect(r.store.get().camera.cameras.cam1.focalMm).not.toBe(12);
+    r.store.undo();
+    expect(r.store.get().render.advanced.denoise).toBe('VIEWPORT');
+    expect(r.store.get().render.maxSeconds).toBe(30);
+    expect(r.store.get().camera.cameras.cam1.focalMm).toBe(12);
+    expect(r.store.get().doctor.results.filter((x) => x.status === 'WARN').map((x) => x.key)).toEqual(warnedBefore);
+  });
+
+  it('each kind’s fix is its own: an interior key is never an engine fix and an engine key is never an interior one', () => {
+    const r = engineRig();
+    const s = r.store.get();
+    expect(fixDoctor(s, 'interiorLens')).not.toBe(s);
+    expect(fixDoctor(s, 'denoise').render.advanced.denoise).toBe('BOTH');
+    // The interior fix changes the camera and nothing the engine reads; the engine fix changes the render and no camera.
+    expect(fixDoctor(s, 'interiorLens').render).toBe(s.render);
+    expect(fixDoctor(s, 'denoise').camera).toBe(s.camera);
   });
 });
 

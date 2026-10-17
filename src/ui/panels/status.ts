@@ -3,7 +3,7 @@
 // version on the right. Everything printed here comes from the state or
 // from engine.status().
 
-import { DOCTOR_CHECKS } from '../../data/doctor';
+import { doctorCheck } from '../../data/doctor';
 import { effectPreset } from '../../data/effects';
 import { warningCount, type DoctorResult } from '../../core/doctor';
 import { ENGINE_CHECKS } from '../../core/doctor-engine';
@@ -47,6 +47,28 @@ export function doctorSentence(r: DoctorResult, state: ProjectState): string {
       return t('doctor.aspect', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), aspect: String(d.aspect), output: String(d.output) });
     case 'physics':
       return t('doctor.physics', { count: Number(d.count), name: String(d.name) });
+    // K1: the interior Doctor.
+    case 'interiorScale': {
+      const actual = formatNumber(Number(d.actual), getLang(), 4);
+      if (d.hint === 1000) return t('doctor.scale.metres', { actual });
+      if (d.hint === 0.001) return t('doctor.scale.micro', { actual });
+      const factor = formatNumber(Number(d.factor), getLang(), 4);
+      return d.reason === 'small' ? t('doctor.interior.scaleSmall', { actual, min: Number(d.min), factor }) : t('doctor.interior.scaleLarge', { actual, max: Number(d.max), factor });
+    }
+    case 'interiorOpening':
+      return t('doctor.interior.opening');
+    case 'interiorGlass':
+      return t('doctor.interior.glass', { count: Number(d.count), name: String(d.name) });
+    case 'interiorLens':
+      return t('doctor.interior.lens', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), focal: formatNumber(Number(d.focal), getLang(), 1), wide: Number(d.wide), fixed: Number(d.fixed) });
+    case 'interiorEye': {
+      const metres = (mm: number) => `${formatNumber(mm / 1000, getLang(), 2)} m`;
+      return t('doctor.interior.eye', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), height: metres(Number(d.height)), min: metres(Number(d.min)), max: metres(Number(d.max)), fixed: metres(Number(d.fixed)) });
+    }
+    case 'interiorClip':
+      return t('doctor.interior.clip', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), clip: formatNumber(Number(d.clip), getLang(), 2), wall: formatNumber(Number(d.wall), getLang(), 0), fixed: formatNumber(Number(d.fixed), getLang(), 2) });
+    case 'interiorNormals':
+      return t('doctor.interior.normals', { count: Number(d.count), name: String(d.name) });
     case 'particles': {
       const preset = effectPreset(String(d.preset));
       const name = String(d.name ?? '') || (preset ? lbl(preset.label) : '');
@@ -115,7 +137,7 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
     (results) => {
       const fixable = results.some((r) => r.status === 'WARN' && r.fixable);
       const rows = results.map((r) => {
-        const check = DOCTOR_CHECKS.find((c) => c.key === r.key)!;
+        const check = doctorCheck(r.key)!;
         const warn = r.status === 'WARN';
         const text = warn ? doctorSentence(r, ctx.store.get()) : r.status === 'UNAVAILABLE' ? doctorUnavailable(r) : lbl(check.checks);
         let action: HTMLElement | null = null;

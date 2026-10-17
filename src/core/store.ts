@@ -3,7 +3,7 @@
 // Reducers are pure functions in the core modules; effects (render,
 // download) live outside and subscribe.
 
-import type { Label, Lang, RGB, RGBA, StudioPreset } from '../data/types';
+import type { Label, Lang, RGB, RGBA, SceneType, StudioPreset } from '../data/types';
 import type { ImageRef } from './images';
 import type { SkyModel } from './sky';
 import { VERSION } from './version';
@@ -19,6 +19,7 @@ import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneN
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 import { reducePhysics, type PhysicsAction } from './physics';
+import { reduceSceneType, type SceneTypeAction, type TypeMemory } from './scene-type';
 import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
 import { reduceGraph, type GraphAction } from './material-graph';
@@ -82,7 +83,15 @@ export interface ImageState {
 
 export interface ProjectState {
   meta: { name: string; version: string; dirty: boolean; lang: Lang; theme: ThemeSetting };
-  scene: { nodes: Record<NodeId, SceneNode>; roots: NodeId[]; partSizeMm: number };
+  scene: {
+    nodes: Record<NodeId, SceneNode>;
+    roots: NodeId[];
+    partSizeMm: number;
+    /** K1: what the scene is for (INTERIORS.md §3.1). It rewrites defaults and leaves every control where it is. */
+    type: SceneType;
+    /** K1: what the scene type in force replaced (core/scene-type.ts), so that switching back leaves the project as it was. */
+    typeBase?: TypeMemory;
+  };
   selection: Selection;
   materials: Record<MaterialId, MaterialInstance>;
   studio: {
@@ -134,6 +143,7 @@ export type Action =
   | SceneAction
   | TransformAction
   | PrimitiveAction
+  | SceneTypeAction
   | PhysicsAction
   | MaterialAction
   | TextureAction
@@ -191,7 +201,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
   const partSizeMm = 200;
   const base: ProjectState = {
     meta: { name: '', version: VERSION, dirty: false, lang: opts.lang ?? 'en', theme: opts.theme ?? 'system' },
-    scene: { nodes: {}, roots: [], partSizeMm },
+    scene: { nodes: {}, roots: [], partSizeMm, type: 'PRODUCT' },
     selection: { level: 'PART', ids: [] },
     materials: {},
     studio: {
@@ -259,12 +269,14 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
   const prefix = action.type.slice(0, action.type.indexOf('/'));
   switch (prefix) {
     case 'scene': {
-      // The tree and selection (scene.ts), the part operations (transform.ts) and the primitives (primitive-ops.ts)
-      // share the prefix.
+      // The tree and selection (scene.ts), the part operations (transform.ts), the primitives (primitive-ops.ts) and the
+      // scene type (scene-type.ts, K1) share the prefix.
       const next = reduceScene(state, action as SceneAction);
       if (next !== state) return next;
       const moved = reduceTransform(state, action as TransformAction);
-      return moved !== state ? moved : reducePrimitive(state, action as PrimitiveAction);
+      if (moved !== state) return moved;
+      const primitive = reducePrimitive(state, action as PrimitiveAction);
+      return primitive !== state ? primitive : reduceSceneType(state, action as SceneTypeAction);
     }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);
