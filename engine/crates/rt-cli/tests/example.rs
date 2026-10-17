@@ -333,6 +333,23 @@ fn the_programs_are_the_same_bits_with_1_4_or_16_threads() {
 }
 
 #[test]
+fn a_section_is_the_same_bits_with_1_4_or_16_threads() {
+    // Q1: the plane clips every ray to the same interval and the cap is decided by the model alone,
+    // so the E5 scene cut in two with a cap is rt-core's pinned image (PINNED_Q1_SECTION_4SPP)
+    // on any number of threads, read back from its own RSB.
+    let scene = Scene::from_rsb(&rt_core::example::q1_scene().to_rsb()).expect("reads");
+    assert!(scene.section.is_some());
+    for threads in [1, 4, 16] {
+        let out = rt_cli::render(&scene, 4, threads);
+        assert_eq!(
+            fnv1a_f32(&out.film.resolve()),
+            0xedd0_29e7,
+            "{threads} threads"
+        );
+    }
+}
+
+#[test]
 fn media_are_the_same_bits_with_1_4_or_16_threads() {
     // E9b: a walk takes its random numbers from hashed dimensions of its pixel's sample, never
     // from a thread, and so does the wavelength a path chooses at a dispersive glass (E9c), so

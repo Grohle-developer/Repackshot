@@ -204,6 +204,7 @@ pub fn scene() -> Scene {
         bitmaps: Vec::new(),
         patterns: Vec::new(),
         effects: Vec::new(),
+        section: None,
         images: Vec::new(),
         textures: Vec::new(),
         programs: Vec::new(),
@@ -368,6 +369,19 @@ pub fn e5b_scene() -> Scene {
     let mut scene = e5_scene(false);
     scene.render.caustic_photons = 2048;
     scene.render.caustic_radius = 4.0;
+    scene
+}
+
+/// The Q1 parity scene: the E5 scene (the blue glass sphere, the lacquered floor, the metal sphere,
+/// the thin glass card and the cut-out card, lit by an HDRI over a background image) cut in two
+/// by the plane `x = 0`, whose normal points at the camera's side (the section view removes the
+/// right half and caps the cut). Its glass sphere is cut open and refracts through its cap, the
+/// thin card is removed, the cut-out card and the other sphere stay. `rt --write-q1-example`
+/// writes it for `tools/wasm-parity.mjs`; `render::section_tests` pins its hash.
+pub fn q1_scene() -> Scene {
+    let mut scene = e5_scene(false);
+    scene.section = crate::geometry::SectionPlane::new(Vec3::new(1.0, 0.0, 0.0), 0.0, true);
+    scene.apply_section();
     scene
 }
 

@@ -3,6 +3,8 @@
 //! Units are millimetres for distances and degrees for angles. The world is Z-up.
 
 pub mod rsb;
+#[cfg(test)]
+mod section_rsb_tests;
 
 pub use crate::bitmap::Bitmap;
 use crate::color::Rgb;
@@ -11,7 +13,7 @@ pub use crate::optics::{Lens, LensParams};
 
 pub use crate::geometry::{
     Geometry, GeometryError, Hit, Instance, Mesh, MeshError, ParticleSet, PixelFootprint, RayHit,
-    Transform, INSTANCE_ONE_SIDED,
+    SectionPlane, Solid, Transform, CAP_TRIANGLE, INSTANCE_ONE_SIDED,
 };
 pub use crate::texture::{MaterialTextures, TextureImage};
 pub use rsb::RsbError;
@@ -805,6 +807,10 @@ pub struct Scene {
     /// The ambient effects (S4a, `FXAM`), in file order. Their particles live in the geometry
     /// ([`Geometry::particle_sets`], built by [`Scene::build_particles`]).
     pub effects: Vec<AmbientParams>,
+    /// The section view (Q1, `SECT`): a plane that removes one side of the model and caps the
+    /// cut. It lives in the geometry too, which every query asks ([`Scene::apply_section`] puts it
+    /// there; the RSB reader and [`Scene::build_particles`] do).
+    pub section: Option<SectionPlane>,
     /// The texture images (M2b, `IMGS`), by index, with their mipmaps.
     pub images: Vec<Arc<TextureImage>>,
     /// The texture block of each material (M2b, `MATL` from byte 100), by material index; a
@@ -848,6 +854,24 @@ impl Scene {
         // The instances come from a valid geometry and fit with the sets: this cannot fail.
         self.geometry =
             Geometry::with_particles(meshes, instances, sets, width).unwrap_or_default();
+        self.apply_section();
+    }
+
+    /// Puts [`Scene::section`] in the geometry, which cuts and caps what its queries see (Q1).
+    /// The materials say which instances are not capped (a thin wall has no inside). Call it
+    /// after anything that rebuilds the geometry or changes the instances or the materials.
+    pub fn apply_section(&mut self) {
+        let capped: Vec<bool> = self
+            .geometry
+            .instances()
+            .iter()
+            .map(|i| {
+                self.materials
+                    .get(i.material_id as usize)
+                    .is_none_or(|m| m.flags & MATERIAL_FLAG_THIN == 0)
+            })
+            .collect();
+        self.geometry.set_section(self.section, &capped);
     }
 
     /// Builds the particles' BVHs again for the scene's camera and image size as they are now (a

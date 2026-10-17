@@ -39,6 +39,7 @@ USAGE:
     rt --adaptive-noise <dir> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
        [--rounds N]
     rt --write-e11-example <scene.rsb>
+    rt --write-q1-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
     rt --write-o3a-example <scene.rsb>
@@ -154,6 +155,9 @@ OPTIONS:
         --write-e11-example <f>
                             write the E11 parity scene (the example with the fine filter and
                             twice the samples on its edges) as an RSB file
+        --write-q1-example <f>
+                            write the Q1 parity scene (the E5 scene, glass sphere and cards,
+                            cut in half by a section plane that caps the cut) as an RSB file
         --write-ambient-example <f>
                             write the S4a parity scene (the example with dust, rain and
                             snow: three ambient effects) as an RSB file
@@ -425,6 +429,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the Q1 parity scene (`rt_core::example::q1_scene`) as an RSB file.
+    WriteQ1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
     WriteAmbientExample {
         /// RSB file to write.
@@ -533,6 +542,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e9 = None;
     let mut sss_dir = None;
     let mut write_e11 = None;
+    let mut write_q1 = None;
     let mut write_e10 = None;
     let mut adaptive_noise_dir = None;
     let mut write_ambient = None;
@@ -657,6 +667,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-m3b-example" => write_m3b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-q1-example" => write_q1 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--rounds" => options.rounds = Some(positive(value(&mut it, arg)?, arg)?),
@@ -797,6 +808,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e11-example takes no other option".into());
         }
         return Ok(Command::WriteE11Example { path });
+    }
+    if let Some(path) = write_q1 {
+        if args.len() != 2 {
+            return Err("--write-q1-example takes no other option".into());
+        }
+        return Ok(Command::WriteQ1Example { path });
     }
     if let Some(path) = write_e10 {
         if args.len() != 2 {
@@ -1023,6 +1040,12 @@ pub fn run(command: Command) -> Result<(), String> {
             )?;
             print!("{table}");
             println!("wrote {}", dir.join("noise.json").display());
+            Ok(())
+        }
+        Command::WriteQ1Example { path } => {
+            let bytes = rt_core::example::q1_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
         Command::WriteE11Example { path } => {

@@ -80,10 +80,14 @@ pub const FEATURE_TEXTURES: u32 = 1;
 /// bit has [`FEATURE_TEXTURES`] too.
 pub const FEATURE_PROGRAMS: u32 = 2;
 
+/// [`FEATURES`] bit 2 (Q1): the engine cuts the model by the `SECT` section of the RSB (the section
+/// view, [`geometry::SectionPlane`]); an engine without it draws the whole model.
+pub const FEATURE_SECTION: u32 = 4;
+
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
 /// page writes only what the engine says it reads.
-pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS;
+pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS | FEATURE_SECTION;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

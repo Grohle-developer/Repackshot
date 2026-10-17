@@ -136,7 +136,9 @@ fn foreign_hosts_origins_and_missing_tokens_are_refused() {
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_TEXTURES, 1);
     // M3b: and the material programs.
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_PROGRAMS, 2);
-    assert_eq!(info.get("features").unwrap().as_f64(), Some(3.0));
+    // Q1: and the section view.
+    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_SECTION, 4);
+    assert_eq!(info.get("features").unwrap().as_f64(), Some(7.0));
     assert_eq!(info.get("portable").unwrap().as_bool(), Some(false));
     assert!(!ok.text().contains(TOKEN), "the token is never echoed");
 }
