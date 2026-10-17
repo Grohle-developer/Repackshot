@@ -44,19 +44,19 @@
 // the page is visible), kept in `ui.liveFrame`; when it ends with a result,
 // the view becomes the results viewer of that result.
 
-import { totalDuration } from '../core/animation';
+import { shotFadeAt, totalDuration } from '../core/animation';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { FrameCadence, liveBox } from '../core/live-frame';
 import { outputFileName, type NameValues } from '../core/name-template';
-import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, type JobRuntime, type JobStatus, type RenderJob, type RenderProgress, type RenderSettings } from '../core/render';
+import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, videoExtension, videoLabel, type JobRuntime, type JobStatus, type RenderJob, type RenderProgress, type RenderSettings } from '../core/render';
 import { controlsFor, frameControls, seedProvenance, type PluginLabel, type PluginManifest, type PluginRenderSettings } from '../core/plugins';
 import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
 import { promptContext } from './ai-query';
 import { cameraName, dyn, studioLabel } from './names';
 import { pluginImageFile, recordPluginResult } from './plugin-results';
-import type { FrameRequest, FrameResult } from './ports';
+import type { FrameRequest, FrameResult, VideoWriterPort } from './ports';
 import type { Ctx } from './reactive';
 import { lbl, t, tIn } from './strings';
 
@@ -115,9 +115,16 @@ export function jobFrames(state: ProjectState, settings: RenderSettings): { n: n
   return out;
 }
 
-/** The file names a job writes, in order (images: one; animations: `…_0001.png` and on). */
+/** N1: a job writes one encoded video (an animation output as video), not a frame sequence. */
+export function isVideoJob(s: Pick<RenderSettings, 'mode' | 'animation'>): boolean {
+  return s.mode === 'ANIMATION' && s.animation.output === 'VIDEO';
+}
+
+/** The file names a job writes, in order (images: one; animations: `…_0001.png` and on; a video: one `.webm` or `.mp4`). */
 export function jobFileNames(state: ProjectState, job: RenderJob, date = new Date()): string[] {
   const cam = jobCamera(job, state);
+  // N1: a video is one file, numbered like an image (its render number).
+  if (isVideoJob(job.settings)) return [outputFileName(job.settings.name, nameValues(state, job, cam, job.seq, date), videoExtension(job.settings.animation.video))];
   const ext = formatExtension(job.settings.format);
   return jobFrames(state, job.settings).map((f) =>
     f.n === null ? outputFileName(job.settings.name, nameValues(state, job, cam, job.seq, date), ext) : outputFileName(job.settings.name, nameValues(state, job, cam, f.n, date), ext, true),
@@ -378,139 +385,174 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
   const names = jobFileNames(state, job, date);
   const total = frames.length;
   const anim = s.mode === 'ANIMATION';
+  // N1: a video: every frame goes to the browser's encoder and the job saves one file at the end.
+  const video = isVideoJob(s);
   patchJob(ctx, job.id, { status: 'RUNNING', progress: 0, startedAt: now(), finishedAt: null, error: null, frame: 0, frames: anim ? total : 0 });
-  const resultIds: string[] = [];
-  const saved: string[] = [];
-  let lastTick = 0;
-  // AI post-processing: single images only (animations arrive later), after the engine's image is safe.
-  const withAi = s.ai.enabled && !anim && !!ctx.services.ai;
-  // Plugins switched on for render jobs (decision 9): every image, a frame's seed its own.
-  const plugins = jobPlugins(ctx, s);
-  const renderSource = async () => {
-    try {
-      return (await ctx.services.ai?.renderSource()) ?? false;
-    } catch {
-      return false;
-    }
-  };
-  // U14: the live view's pictures of this job (the results viewer in progress): only while it shows this job and
-  // the page is visible, at most every LIVE_FRAME_MS (the first one at once, also when the view opens again). While
-  // it asks for none the engine makes none (FrameRequest.frameBox).
-  const live = liveTap(ctx, job.id, now);
-  if (ctx.ui.get().liveFrame?.jobId === job.id) ctx.ui.set({ liveFrame: null });
-  for (let k = 0; k < total; k++) {
-    if (signal.aborted) throw new DOMException('aborted', 'AbortError');
-    const f = frames[k];
-    const tick = (p: number, samples: number, seconds: number, force = false, adaptive?: RenderProgress['adaptive']) => {
-      const t = now();
-      if (!force && t - lastTick < 200) return;
-      lastTick = t;
-      const progress = Math.min(1, (k + p) / total);
-      ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress, samples, seconds, ...(anim ? { frame: k + 1, frames: total } : {}), ...(adaptive ? { adaptive } : {}) } });
-      patchJob(ctx, job.id, { progress, frame: anim ? k + 1 : 0 });
+  let writer: VideoWriterPort | null = null;
+  if (video) {
+    const port = ctx.services.video;
+    if (!port) throw new Error(t('render.videoCannot', { video: videoLabel(s.animation.video) }));
+    writer = await port.open({ container: s.animation.video, width: s.width, height: s.height, fps: s.animation.fps });
+  }
+  try {
+    return await renderFrames();
+  } finally {
+    // Stopped, failed or done: the encoder is let go (a finished one already is).
+    writer?.close();
+  }
+
+  async function renderFrames(): Promise<{ resultIds: string[]; names: string[] }> {
+    const resultIds: string[] = [];
+    const saved: string[] = [];
+    let lastTick = 0;
+    // AI post-processing: single images only (animations arrive later), after the engine's image is safe.
+    const withAi = s.ai.enabled && !anim && !!ctx.services.ai;
+    // Plugins switched on for render jobs (decision 9): every image, a frame's seed its own (a video's frames: not yet).
+    const plugins = video ? [] : jobPlugins(ctx, s);
+    const renderSource = async () => {
+      try {
+        return (await ctx.services.ai?.renderSource()) ?? false;
+      } catch {
+        return false;
+      }
     };
-    tick(0, 0, 0, true);
-    const req: FrameRequest = {
-      width: s.width,
-      height: s.height,
-      finishBy: s.finishBy,
-      maxSamples: s.maxSamples,
-      maxSeconds: s.maxSeconds,
-      noiseThreshold: s.noiseThreshold,
-      transparent: s.transparent,
-      format: s.format,
-      bitDepth: s.bitDepth,
-      jpegQuality: s.jpegQuality,
-      dpi: s.dpi,
-      advanced: s.advanced,
-      signal,
-      onProgress: (p, samples, seconds, adaptive) => tick(p, samples, seconds, false, adaptive),
-      frameBox: live.frameBox,
-      onFrame: live.onFrame,
-      ...(cam ? { camera: cam } : {}),
-      ...(f.time !== undefined ? { time: f.time } : {}),
-      // The AI step works from the render the launcher keeps with its passes (desktop).
-      ...(withAi && k === 0 && (await renderSource()) ? { aiPasses: true } : {}),
-    };
-    const out = await ctx.services.renderFrame(req);
-    if (signal.aborted) throw new DOMException('aborted', 'AbortError');
-    const where = await ctx.services.files.save(s.destination, names[k], out.file);
-    saved.push(names[k]);
-    // E5b-1: the image before denoise, next to it (`<name>-noisy`).
-    if (out.noisyFile) {
-      const noisy = noisyName(names[k]);
-      await ctx.services.files.save(s.destination, noisy, out.noisyFile);
-      saved.push(noisy);
-    }
-    // A measured throughput for the window's estimate (the whole render, upload and conversion included).
-    if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
-    // The history keeps the image of a job (the first frame of an animation).
-    let first: ResultMeta | null = null;
-    if (k === 0) {
-      // The pipeline's progress, tile by tile (and variant by variant, X4b), in place of the render's (the render is done).
-      let lastAi = '';
-      const aiTick = (p: AiStepProgress) => {
+    // U14: the live view's pictures of this job (the results viewer in progress): only while it shows this job and
+    // the page is visible, at most every LIVE_FRAME_MS (the first one at once, also when the view opens again). While
+    // it asks for none the engine makes none (FrameRequest.frameBox).
+    const live = liveTap(ctx, job.id, now);
+    if (ctx.ui.get().liveFrame?.jobId === job.id) ctx.ui.set({ liveFrame: null });
+    for (let k = 0; k < total; k++) {
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      const f = frames[k];
+      const tick = (p: number, samples: number, seconds: number, force = false, adaptive?: RenderProgress['adaptive']) => {
         const t = now();
-        const key = `${p.variant}|${p.stage}|${p.tile}|${p.attempt}|${p.reason ?? ''}`;
-        if (key === lastAi && t - lastTick < 200) return;
-        lastAi = key;
+        if (!force && t - lastTick < 200) return;
         lastTick = t;
-        const where = { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt, ...(p.maxAttempts ? { maxAttempts: p.maxAttempts } : {}), ...(p.reason ? { reason: p.reason } : {}), ...(p.variants > 1 ? { variant: p.variant, variants: p.variants } : {}) };
-        ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: Math.min(1, p.fraction), samples: out.samples, seconds: out.seconds, ai: where } });
-        patchJob(ctx, job.id, { progress: Math.min(1, p.fraction) });
+        const progress = Math.min(1, (k + p) / total);
+        ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress, samples, seconds, ...(anim ? { frame: k + 1, frames: total } : {}), ...(adaptive ? { adaptive } : {}) } });
+        patchJob(ctx, job.id, { progress, frame: anim ? k + 1 : 0 });
       };
-      // Stopped or paused during the AI step: the engine's image is kept in the history all the same, with the
-      // variants already finished (X4b).
-      let interrupted: unknown = null;
-      const variants: AiVariantDone[] = [];
-      // The AI's own throughput on this computer (pixels a second, measured around each request), for the window's estimate.
-      const measure = (seconds: number) => seconds > 0 && ctx.ui.set({ aiThroughput: (out.width * out.height) / seconds });
-      if (withAi) {
-        try {
-          await aiStep(ctx, s, out, cam, names[k], signal, aiTick, variants, measure);
-        } catch (err) {
-          interrupted = err;
+      tick(0, 0, 0, true);
+      const req: FrameRequest = {
+        width: s.width,
+        height: s.height,
+        finishBy: s.finishBy,
+        maxSamples: s.maxSamples,
+        maxSeconds: s.maxSeconds,
+        noiseThreshold: s.noiseThreshold,
+        // N1: a video's frames are 8-bit opaque pictures for the encoder (its format is the container's).
+        transparent: video ? false : s.transparent,
+        format: video ? 'PNG' : s.format,
+        bitDepth: video ? 8 : s.bitDepth,
+        jpegQuality: s.jpegQuality,
+        dpi: s.dpi,
+        advanced: video ? { ...s.advanced, saveNoisy: false } : s.advanced,
+        // N1: the camera track's fade to a colour at this frame (a change of shot with a fade).
+        ...(anim && f.time !== undefined ? { fade: shotFadeAt(state, f.time) } : {}),
+        signal,
+        onProgress: (p, samples, seconds, adaptive) => tick(p, samples, seconds, false, adaptive),
+        frameBox: live.frameBox,
+        onFrame: live.onFrame,
+        ...(cam ? { camera: cam } : {}),
+        ...(f.time !== undefined ? { time: f.time } : {}),
+        // The AI step works from the render the launcher keeps with its passes (desktop).
+        ...(withAi && k === 0 && (await renderSource()) ? { aiPasses: true } : {}),
+      };
+      const out = await ctx.services.renderFrame(req);
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      // N1: a video's frame goes to the encoder; a frame of a sequence, or an image, to its file.
+      let where: 'DOWNLOAD' | 'FOLDER' = s.destination.kind === 'FOLDER' ? 'FOLDER' : 'DOWNLOAD';
+      if (writer) await writer.add(out.file, k);
+      else {
+        where = await ctx.services.files.save(s.destination, names[k], out.file);
+        saved.push(names[k]);
+      }
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      // E5b-1: the image before denoise, next to it (`<name>-noisy`).
+      if (out.noisyFile && !writer) {
+        const noisy = noisyName(names[k]);
+        await ctx.services.files.save(s.destination, noisy, out.noisyFile);
+        saved.push(noisy);
+      }
+      // A measured throughput for the window's estimate (the whole render, upload and conversion included).
+      if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
+      // The history keeps the image of a job (the first frame of an animation).
+      let first: ResultMeta | null = null;
+      if (k === 0) {
+        // The pipeline's progress, tile by tile (and variant by variant, X4b), in place of the render's (the render is done).
+        let lastAi = '';
+        const aiTick = (p: AiStepProgress) => {
+          const t = now();
+          const key = `${p.variant}|${p.stage}|${p.tile}|${p.attempt}|${p.reason ?? ''}`;
+          if (key === lastAi && t - lastTick < 200) return;
+          lastAi = key;
+          lastTick = t;
+          const where = { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt, ...(p.maxAttempts ? { maxAttempts: p.maxAttempts } : {}), ...(p.reason ? { reason: p.reason } : {}), ...(p.variants > 1 ? { variant: p.variant, variants: p.variants } : {}) };
+          ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: Math.min(1, p.fraction), samples: out.samples, seconds: out.seconds, ai: where } });
+          patchJob(ctx, job.id, { progress: Math.min(1, p.fraction) });
+        };
+        // Stopped or paused during the AI step: the engine's image is kept in the history all the same, with the
+        // variants already finished (X4b).
+        let interrupted: unknown = null;
+        const variants: AiVariantDone[] = [];
+        // The AI's own throughput on this computer (pixels a second, measured around each request), for the window's estimate.
+        const measure = (seconds: number) => seconds > 0 && ctx.ui.set({ aiThroughput: (out.width * out.height) / seconds });
+        if (withAi) {
+          try {
+            await aiStep(ctx, s, out, cam, names[k], signal, aiTick, variants, measure);
+          } catch (err) {
+            interrupted = err;
+          }
+        }
+        const [firstVariant, ...more] = variants;
+        const st = ctx.store.get();
+        const camId = cam ?? st.camera.active;
+        const meta: ResultMeta = {
+          id: resultId(now()),
+          jobId: job.id,
+          // N1: the history keeps a video's first frame as the picture it is (its name as a frame of a sequence).
+          name: writer ? outputFileName(s.name, nameValues(st, job, cam, f.n ?? 1, date), 'png', true) : names[k],
+          createdAt: now(),
+          width: out.width,
+          height: out.height,
+          dpi: s.dpi,
+          samples: out.samples,
+          seconds: out.seconds,
+          cameraId: anim ? null : camId,
+          camera: anim ? t('rw.cameraTrack') : cameraName(st, st.camera.cameras[camId]),
+          format: writer ? 'PNG' : s.format,
+          bitDepth: writer ? 8 : s.bitDepth,
+          savedTo: where === 'FOLDER' && s.destination.kind === 'FOLDER' ? s.destination : { kind: 'DOWNLOADS' },
+          ...(writer ? { video: { name: names[0], codec: writer.track } } : {}),
+          thumb: await thumbnailOf(out.display ?? out.file),
+          bytes: out.file.size + (out.display?.size ?? 0) + variants.reduce((n, v) => n + (v.blob?.size ?? 0), 0),
+          ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
+          ...(firstVariant ? { ai: firstVariant.info } : {}),
+          ...(more.length > 0 ? { aiMore: more.map((v) => v.info) } : {}),
+        };
+        await recordResult(ctx, meta, out, firstVariant?.blob ?? null, more.map((v) => v.blob));
+        first = meta;
+        resultIds.push(meta.id);
+        patchJob(ctx, job.id, { resultIds: [...resultIds] });
+        if (interrupted) {
+          const kept = variants.filter((v) => v.blob).length;
+          ctx.ui.toast(kept > 0 ? t('render.aiStoppedVariants', { n: kept }) : t('render.aiStopped'));
+          throw interrupted;
         }
       }
-      const [firstVariant, ...more] = variants;
-      const st = ctx.store.get();
-      const camId = cam ?? st.camera.active;
-      const meta: ResultMeta = {
-        id: resultId(now()),
-        jobId: job.id,
-        name: names[k],
-        createdAt: now(),
-        width: out.width,
-        height: out.height,
-        dpi: s.dpi,
-        samples: out.samples,
-        seconds: out.seconds,
-        cameraId: anim ? null : camId,
-        camera: anim ? t('rw.cameraTrack') : cameraName(st, st.camera.cameras[camId]),
-        format: s.format,
-        bitDepth: s.bitDepth,
-        savedTo: where === 'FOLDER' && s.destination.kind === 'FOLDER' ? s.destination : { kind: 'DOWNLOADS' },
-        thumb: await thumbnailOf(out.display ?? out.file),
-        bytes: out.file.size + (out.display?.size ?? 0) + variants.reduce((n, v) => n + (v.blob?.size ?? 0), 0),
-        ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
-        ...(firstVariant ? { ai: firstVariant.info } : {}),
-        ...(more.length > 0 ? { aiMore: more.map((v) => v.info) } : {}),
-      };
-      await recordResult(ctx, meta, out, firstVariant?.blob ?? null, more.map((v) => v.blob));
-      first = meta;
-      resultIds.push(meta.id);
-      patchJob(ctx, job.id, { resultIds: [...resultIds] });
-      if (interrupted) {
-        const kept = variants.filter((v) => v.blob).length;
-        ctx.ui.toast(kept > 0 ? t('render.aiStoppedVariants', { n: kept }) : t('render.aiStopped'));
-        throw interrupted;
-      }
+      // The frame's index in the animation (its number less one): a range rendered in parts draws the same grain.
+      if (plugins.length > 0) saved.push(...(await pluginsStep(ctx, s, plugins, out, names[k], anim ? Math.max(0, (f.n ?? 1) - 1) : 0, first, signal)));
+      tick(1, out.samples, out.seconds, true);
     }
-    // The frame's index in the animation (its number less one): a range rendered in parts draws the same grain.
-    if (plugins.length > 0) saved.push(...(await pluginsStep(ctx, s, plugins, out, names[k], anim ? Math.max(0, (f.n ?? 1) - 1) : 0, first, signal)));
-    tick(1, out.samples, out.seconds, true);
+    if (writer) {
+      // N1: every frame encoded: the video, muxed and saved as one file.
+      const file = await writer.finish();
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      await ctx.services.files.save(s.destination, names[0], file);
+      saved.push(names[0]);
+    }
+    return { resultIds, names: saved };
   }
-  return { resultIds, names: saved };
 }
 
 function nextJob(ctx: Ctx, r: Runner): RenderJob | undefined {

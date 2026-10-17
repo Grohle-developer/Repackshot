@@ -18,7 +18,10 @@ import type {
 // analytically (see `ease` in core/light-math.ts), so there is no Bezier
 // interpolation to surprise anyone.
 
-/** The 17 move kinds (PHYSICS, phase S2, is not ported: Record as animation makes it; SECTION, phase Q1, is ours). `amountLabel` says what the clip's single amount means. */
+/**
+ * The 22 move kinds (PHYSICS, phase S2, is not ported: Record as animation makes it; SECTION, phase Q1, is ours; FADE,
+ * PAN, MATERIAL_COLOR, SUN_ARC and the reserved PATH are N1's). `amountLabel` says what the clip's single amount means.
+ */
 export const MOVE_KINDS: readonly MoveItem[] = [
   {
     key: 'ORBIT',
@@ -144,6 +147,50 @@ export const MOVE_KINDS: readonly MoveItem[] = [
     },
     amountLabel: { es: 'Desplazamiento', en: 'Offset' },
   },
+  // N1: the kinds of SPEC §3.7 that were missing. The keys above are unchanged.
+  {
+    key: 'FADE',
+    label: { es: 'Fundido', en: 'Fade' },
+    description: {
+      es: 'La opacidad baja hasta el porcentaje que digas; invertido, aparece desde él',
+      en: 'The opacity goes down to the percentage you set; reversed, it fades in from it',
+    },
+    amountLabel: { es: 'Opacidad final', en: 'Final opacity' },
+  },
+  {
+    key: 'PAN',
+    label: { es: 'Panorámica', en: 'Pan' },
+    description: {
+      es: 'La cámara gira sobre sí misma, sin moverse. Solo cámaras',
+      en: 'The camera turns where it stands. Cameras only',
+    },
+    amountLabel: { es: 'Grados', en: 'Degrees' },
+  },
+  {
+    key: 'MATERIAL_COLOR',
+    label: { es: 'Color de material', en: 'Material colour' },
+    description: {
+      es: 'El color del material pasa al que elijas. Solo materiales',
+      en: 'The colour of the material goes to the one you pick. Materials only',
+    },
+  },
+  {
+    key: 'SUN_ARC',
+    label: { es: 'Arco solar', en: 'Sun arc' },
+    description: {
+      es: 'El sol recorre su arco del día: 15 grados por hora',
+      en: 'The sun goes along its arc of the day: 15 degrees an hour',
+    },
+    amountLabel: { es: 'Grados de arco', en: 'Degrees of arc' },
+  },
+  {
+    key: 'PATH',
+    label: { es: 'Recorrido', en: 'Path' },
+    description: {
+      es: 'La cámara sigue una curva por puntos. Reservado: llega en una fase posterior',
+      en: 'The camera follows a curve through points. Reserved: it comes in a later phase',
+    },
+  },
 ];
 
 /** Fallback meaning of a clip's amount for moves without an `amountLabel`. */
@@ -181,6 +228,15 @@ export const EASING_KINDS: readonly EasingItem[] = [
     key: 'EASE_STRONG',
     label: { es: 'Muy suave', en: 'Very smooth' },
     description: { es: 'Arranque y frenada largos', en: 'Long ramp up and down' },
+  },
+  // N1: a curve of two handles (a cubic Bézier from (0, 0) to (1, 1)), the clip's own.
+  {
+    key: 'CUSTOM',
+    label: { es: 'Personalizada', en: 'Custom' },
+    description: {
+      es: 'Una curva con dos asas que arrastras',
+      en: 'A curve with two handles you drag',
+    },
   },
 ];
 
@@ -279,15 +335,30 @@ export const EXPLODE_MODES: readonly ExplodeItem[] = [
 /** Moves that make the target look at the centre of the part. */
 export const AIMING_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'DOLLY']);
 /** Moves that only make sense for cameras. */
-export const CAMERA_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['ZOOM', 'FOCUS']);
+export const CAMERA_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['ZOOM', 'FOCUS', 'PAN']);
 /** Moves that only make sense for lights. */
 export const LIGHT_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['INTENSITY', 'TINT']);
 /** Moves that act on the environment and the scene as a whole (the light sweep, the section plane). */
-export const SCENE_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['HDRI', 'SECTION']);
+export const SCENE_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['HDRI', 'SECTION', 'SUN_ARC']);
 /** Moves driven by a displacement vector instead of a single amount. */
 export const VECTOR_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['TRACK', 'MOVE']);
 /** Moves driven by a colour. */
-export const COLOR_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['TINT']);
+export const COLOR_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['TINT', 'MATERIAL_COLOR']);
+/** N1: moves that act on a material (every part that wears it). */
+export const MATERIAL_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['MATERIAL_COLOR']);
+/** N1: kinds the catalogue names but nothing makes or plays yet (the wizard does not offer them). */
+export const RESERVED_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['PATH']);
+
+/**
+ * N1: the groups of the wizard's grid of kinds (SPEC §3.7): parts, camera, light and environment, materials. A kind
+ * may sit in two groups (a fade is a part's and a material's); the wizard shows the groups of the target's kinds.
+ */
+export const MOVE_GROUPS: readonly { key: 'PARTS' | 'CAMERA' | 'LIGHT' | 'MATERIAL'; label: Label; moves: readonly MoveKind[] }[] = [
+  { key: 'PARTS', label: { es: 'Piezas', en: 'Parts' }, moves: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'FADE', 'EXPLODE', 'VISIBILITY', 'PHYSICS'] },
+  { key: 'CAMERA', label: { es: 'Cámara', en: 'Camera' }, moves: ['ORBIT', 'RISE', 'DOLLY', 'TRACK', 'PAN', 'ZOOM', 'FOCUS', 'PATH'] },
+  { key: 'LIGHT', label: { es: 'Luz y entorno', en: 'Light and environment' }, moves: ['INTENSITY', 'TINT', 'HDRI', 'SUN_ARC', 'SECTION'] },
+  { key: 'MATERIAL', label: { es: 'Materiales', en: 'Materials' }, moves: ['MATERIAL_COLOR', 'FADE'] },
+];
 
 // Sequence presets. `shots` are the durations in seconds of each shot, in
 // order. A clip with target CAM acts on the camera of shot number `shot`

@@ -41,7 +41,7 @@ import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
 import { buildExample } from './core/example';
-import { adaptiveOf, DEFAULT_NOISE_THRESHOLD, needsLinearSums } from './core/render';
+import { adaptiveOf, DEFAULT_NOISE_THRESHOLD, needsLinearSums, videoLabel } from './core/render';
 import { encodeDng, encodeExr, encodeImage, encodePixels, encodePng16, encodeTiff } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
@@ -69,7 +69,8 @@ import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
 import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
-import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba, straightWords16 } from './render/tiles';
+import { exactWords16 as exactWords16Of, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba as straightLinearRgbaOf, straightWords16 } from './render/tiles';
+import { fadeDisplay, fadeLinear } from './core/fade';
 import { mountApp } from './ui/app';
 import { watchReset as watchPhysicsReset } from './ui/physics';
 import { cameraLabel, lightName } from './ui/names';
@@ -82,7 +83,8 @@ import { maybeStartTour } from './ui/tour';
 import type { AiPort, AppServices, EngineConfig, PluginsPort, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
-import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
+import { createUiStore, effectiveMode, type EngineInfo, type VideoSupportUi } from './ui/ui-state';
+import { browserVideoEnv, createVideoWriter, probeVideo, type VideoSupport } from './io/video';
 import { installDoctorFacts } from './ui/doctor-facts';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
@@ -774,9 +776,27 @@ const pluginsPort: PluginsPort = {
   encode: (img, format, dpi) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, format, 0.92, { dpi }),
 };
 
+// N1: encoded video. What this system encodes is asked of the browser once (WebCodecs, for a 1080p frame at 24 fps)
+// and kept in the interface state: the render window offers only that, and the Doctor warns of a project that asks
+// for more. A job asks again for its own size and rate when it opens its writer.
+const videoEnv = browserVideoEnv();
+let videoProbe: Promise<VideoSupport> | null = null;
+const videoSupport = (): Promise<VideoSupport> => (videoProbe ??= probeVideo(videoEnv));
+const videoUi = (v: VideoSupport): VideoSupportUi => ({ MP4: v.MP4 ? 'H264' : null, WEBM: v.WEBM ? (v.WEBM.track === 'VP8' ? 'VP8' : 'VP9') : null });
+void videoSupport().then((v) => ui.set({ video: videoUi(v) }));
+
 const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
   viewport,
+  video: {
+    support: async () => videoUi(await videoSupport()),
+    async open(o) {
+      const choice = videoEnv ? (await probeVideo(videoEnv, o.width, o.height, o.fps))[o.container] : null;
+      if (!videoEnv || !choice) throw new Error(t('render.videoCannot', { video: videoLabel(o.container) }));
+      const w = createVideoWriter(videoEnv, { container: o.container, choice, width: o.width, height: o.height, fps: o.fps });
+      return { track: w.track, add: (picture, index) => w.add(picture, index), finish: () => w.finish(), close: () => w.close() };
+    },
+  },
   async renderFrame(req) {
     // Render and every queue job use the path tracer, whatever the viewport shows; without the engine there is
     // no render (the preview is never passed off as one).
@@ -806,11 +826,17 @@ const services: AppServices = {
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds, p.adaptive),
     });
     // The file in the job's format from the 8-bit pixels and, for 16 bits, EXR, the 32-bit TIFF and DNG, the linear sums.
-    const encode = async (data: Uint8ClampedArray, sum: Float32Array | undefined): Promise<{ file: Blob; display: Blob | null }> => {
+    // N1: a frame of an animation under a fade to a colour (the camera track's change of shot) is mixed with it: the
+    // display picture in its own values, linear light in linear light (core/fade.ts).
+    const fade = req.fade ?? null;
+    const encode = async (raw: Uint8ClampedArray, sum: Float32Array | undefined): Promise<{ file: Blob; display: Blob | null }> => {
+      const data = fadeDisplay(raw, fade, 255);
       const img = { ...px, data };
       const { width, height } = px;
+      const straightLinearRgba = (s: Float32Array, n: number, ev: number) => fadeLinear(straightLinearRgbaOf(s, n, ev), fade);
+      const exactWords16 = (s: Float32Array, n: number, ev: number, tm: number) => fadeDisplay(exactWords16Of(s, n, ev, tm), fade, 65535);
       if (req.format === 'EXR') {
-        const linear = linearRgba(sum!, px.samples, px.exposureEv);
+        const linear = fadeLinear(linearRgba(sum!, px.samples, px.exposureEv), fade);
         const file = new Blob([encodeExr({ width, height, data: linear }, { alpha: req.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
         // Browsers do not show EXR: the viewer and the thumbnails use the 8-bit image of the same render.
         return { file, display: await encodePixels(img, 'PNG', 0.92, { dpi: req.dpi }) };

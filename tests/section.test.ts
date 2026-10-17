@@ -216,9 +216,10 @@ describe('the plane the animation puts it in', () => {
   const withPlane = (...clips: Omit<MotionClip, 'id'>[]): ProjectState => apply(exampleState(), { type: 'section/set', plane: plane() }, ...clips.map((c) => ({ type: 'anim/addClip' as const, clip: c })));
 
   it('is a scene move, offered for the scene, in part sizes, starting by cutting more', () => {
-    expect(MOVE_KINDS.at(-1)?.key).toBe('SECTION');
+    // Q1 appended it after PHYSICS; N1's kinds come after it.
+    expect(MOVE_KINDS.map((m) => m.key).indexOf('SECTION')).toBe(MOVE_KINDS.map((m) => m.key).indexOf('PHYSICS') + 1);
     expect(SCENE_MOVES.has('SECTION')).toBe(true);
-    expect(TARGET_MOVES.SCENE).toEqual(['HDRI', 'SECTION']);
+    expect(TARGET_MOVES.SCENE.slice(0, 2)).toEqual(['HDRI', 'SECTION']);
     expect(amountUnit('SECTION')).toBe('parts');
     expect(defaultAmount('SECTION')).toBeLessThan(0);
   });

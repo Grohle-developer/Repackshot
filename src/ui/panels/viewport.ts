@@ -1,6 +1,7 @@
 // Viewport (UI.md §2.3): the render itself, with overlays that never cover
 // the part. Talks to the engine only through the ViewportPort.
 
+import { shotFadeAt } from '../../core/animation';
 import { cameraFrameRect } from '../../core/camera';
 import { viewedCamera } from '../../core/view-objects';
 import * as cmd from '../commands';
@@ -50,7 +51,9 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
 
   // Darken what falls outside the output frame: the viewport is the render.
   const mask = h('div', { class: 'frame-mask' }, h('div'), h('div'), h('div'), h('div'), h('div', { class: 'frame-edge' }));
-  const el = h('main', { class: 'vp', 'aria-label': t('app.name') }, host, mask);
+  // N1: the camera track's fade to a colour at the playhead, over the frame (the render's content: black or white).
+  const fade = h('div', { class: 'vp-fade', 'aria-hidden': 'true', style: 'display:none' });
+  const el = h('main', { class: 'vp', 'aria-label': t('app.name') }, host, fade, mask);
 
   const layoutMask = () => {
     const w = el.clientWidth;
@@ -63,7 +66,25 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
     Object.assign(left.style, { left: '0', top: `${r.y}px`, width: `${r.x}px`, height: `${r.height}px` });
     Object.assign(right.style, { left: `${r.x + r.width}px`, top: `${r.y}px`, width: `${w - r.x - r.width}px`, height: `${r.height}px` });
     Object.assign(edge.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
+    Object.assign(fade.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
   };
+  // Only while the animation is shown (playing, or the playhead moved): at 0 the scene is shown as it is edited.
+  scope.watch(
+    (s) => {
+      const a = s.animation;
+      const f = a.playing || a.playhead > 0 ? shotFadeAt(s, a.playhead) : null;
+      return f ? `${f.color.join(',')}|${f.amount.toFixed(3)}` : '';
+    },
+    (key) => {
+      fade.style.display = key ? '' : 'none';
+      if (!key) return;
+      const [rgb, amount] = key.split('|');
+      const [r, g, b] = rgb.split(',').map((v) => Math.round(Number(v) * 255));
+      fade.style.background = `rgb(${r}, ${g}, ${b})`;
+      fade.style.opacity = amount;
+      fade.dataset.amount = amount;
+    },
+  );
 
   const ro = new ResizeObserver(() => {
     port?.resize(host.clientWidth, host.clientHeight, window.devicePixelRatio || 1);

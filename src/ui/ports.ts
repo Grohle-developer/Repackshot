@@ -2,6 +2,7 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
+import type { FadeToColor } from '../core/animation';
 import type { FastAa, PixelFilterFields, PixelFilterSetting } from '../core/antialias';
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
 import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
@@ -15,7 +16,7 @@ import type { MaterialInstance } from '../core/materials';
 import type { Program } from '../core/material-program';
 import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { RenderPasses } from '../core/passes';
-import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat, RenderProgress } from '../core/render';
+import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat, RenderProgress, VideoCodec } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { MotionHint } from '../core/motion-hint';
@@ -31,7 +32,7 @@ import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/setti
 import type { InstallerPort, UpdateOutcome } from '../core/updates';
 import type { InstallOutcome, PluginImageRequest, PluginPresets, PluginRunRequest, PluginRunResult, PluginsSnapshot, ThumbsOutcome } from '../core/plugins';
 import type { PluginRegistryEntry } from '../data/plugins';
-import type { PerfResult, Tool } from './ui-state';
+import type { PerfResult, Tool, VideoSupportUi } from './ui-state';
 import type { PhysicsRunHandle, PhysicsRunOptions, PhysicsSpec, PhysicsUpdate } from '../core/physics';
 
 export interface PickResult {
@@ -286,6 +287,8 @@ export interface FrameRequest {
   camera?: CameraId;
   /** A frame of an animation: the instant rendered (the camera track's camera). */
   time?: number;
+  /** N1: the camera track's fade to a colour at that instant (core/animation.ts `shotFadeAt`): mixed into the file. */
+  fade?: FadeToColor | null;
   advanced?: AdvancedSettings;
   /** E10, Finish by Noise: its threshold, percent (core/render.ts `adaptiveOf` makes it the engine's). */
   noiseThreshold?: number;
@@ -317,6 +320,28 @@ export interface FrameTone {
 }
 
 /** What a frame request gives back. */
+/**
+ * N1: encoded video (src/io/video.ts, WebCodecs and our own muxers): what this system encodes, and a writer for one
+ * video, frame by frame. Absent where the page has no such service (a test without it): video is not offered.
+ */
+export interface VideoPort {
+  /** The track codec each container is encoded with here (null: it cannot be), asked of the browser once. */
+  support(): Promise<VideoSupportUi>;
+  /** A writer for one video of this size and rate in this container; rejects when the system cannot encode it. */
+  open(opts: { container: VideoCodec; width: number; height: number; fps: number }): Promise<VideoWriterPort>;
+}
+
+export interface VideoWriterPort {
+  /** The codec the frames are encoded with (`VP9`, `VP8`, `H264`). */
+  readonly track: string;
+  /** Frame `index` of the video (0 for the first), a picture the browser decodes; resolves once it is taken. */
+  add(picture: Blob, index: number): Promise<void>;
+  /** The file, once every frame is encoded and muxed. */
+  finish(): Promise<Blob>;
+  /** Stops and lets the encoder go. */
+  close(): void;
+}
+
 export interface FrameResult {
   /** The file as it is saved. */
   file: Blob;
@@ -623,6 +648,8 @@ export interface AppServices {
   renderImage(req: RenderRequest): Promise<Blob>;
   /** One image of a render job with the path tracer (never the preview), encoded as the job asks. */
   renderFrame(req: FrameRequest): Promise<FrameResult>;
+  /** N1: encoded video (WebCodecs); absent, a video job cannot run and the window offers frames. */
+  video?: VideoPort;
   /** The results history. */
   results: ResultsPort;
   /** Saving outputs. */

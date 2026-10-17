@@ -12,6 +12,10 @@ import { libraryFoot, mineEmpty, mineRows, namePrompt, type MineSpec } from '../
 import { registerDropZone } from '../components/material-drag';
 import { confirmBox, openMenu, tabs, type MenuItems } from '../components/widgets';
 import { partMenu } from './part-menu';
+import { clipIcon } from './anim-tree';
+import * as anim from '../anim-commands';
+import { clipSentence, clipShort } from '../sentence';
+import type { MotionClip } from '../../core/animation';
 import { lightMenuItems, primitiveMenuItems } from './add-menu';
 import { openScalePanel } from './scale-panel';
 import { h, icon } from '../dom';
@@ -127,6 +131,27 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
     return el;
   };
 
+  // N1: a target's animations under it in the tree, as KeyShot shows them (SPEC §3.7): its icon and its short
+  // sentence; a click opens the timeline with it selected.
+  const clipRow = (clip: MotionClip, depth: number) => {
+    const s = store.get();
+    const lang = getLang();
+    const el = h(
+      'div',
+      { class: 'tree-row tree-anim', role: 'treeitem', 'aria-level': depth + 1, 'data-clip-row': clip.id, tabindex: -1, 'data-tip': clipSentence(s, clip, lang) },
+      h('span', { class: 'tree-indent', style: `width:${depth * 14}px` }),
+      h('span', { class: 'tree-twisty' }),
+      h('span', { class: 'tree-kind' }, icon(clipIcon(clip.move), 14)),
+      h('span', { class: 'tree-text' }, h('span', { class: 'tree-name tree-anim-text' }, clipShort(clip, lang))),
+    );
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ui.set({ drawer: 'animation' });
+      anim.selectClips(ctx, [clip.id]);
+    });
+    return el;
+  };
+
   const rebuild = () => {
     const s = store.get();
     const u = ui.get();
@@ -150,6 +175,8 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
       const kids = node.children.filter((c) => s.scene.nodes[c]);
       list.appendChild(row(node, depth, kids.length > 0, folded));
       order.push(id);
+      // N1: its animations (the model's under the first root), before its children.
+      if (!folded) for (const c of s.animation.clips) if ((c.target.kind === 'NODE' && c.target.id === id) || (c.target.kind === 'SUBJECT' && id === s.scene.roots[0])) list.appendChild(clipRow(c, depth + 1));
       if (!folded) for (const c of kids) walk(c, depth + 1);
     };
     for (const r of s.scene.roots) walk(r, 0);
@@ -162,7 +189,14 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
     const s = store.get();
     const sel = new Set(s.selection.ids);
     const hover = ui.get().hover;
+    const clips = new Set(ui.get().selectedClips);
     for (const el of list.querySelectorAll<HTMLElement>('.tree-row')) {
+      const clip = el.dataset.clipRow;
+      if (clip) {
+        el.classList.toggle('is-selected', clips.has(clip));
+        el.setAttribute('aria-selected', String(clips.has(clip)));
+        continue;
+      }
       const id = el.dataset.id!;
       el.classList.toggle('is-selected', sel.has(id));
       el.setAttribute('aria-selected', String(sel.has(id)));
@@ -170,8 +204,8 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
     }
   };
 
-  scope.watch((s, u) => [s.scene.nodes, s.scene.roots, s.materials, u.treeFilter, u.folded], rebuild, shallowEq);
-  scope.watch((s, u) => [s.selection, u.hover], paint, shallowEq);
+  scope.watch((s, u) => [s.scene.nodes, s.scene.roots, s.materials, s.animation.clips, s.studio.lights, s.meta.lang, u.treeFilter, u.folded], rebuild, shallowEq);
+  scope.watch((s, u) => [s.selection, u.hover, u.selectedClips], paint, shallowEq);
 
   // A material dragged onto a row (a part, a group or the model) goes to everything under it, in one action.
   // The row lights up, and so do the parts in the viewport (the same outline as the pointer over them).

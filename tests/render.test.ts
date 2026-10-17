@@ -14,6 +14,7 @@ import {
   migrateRender,
   patchSettings,
   settingsOf,
+  VIDEO_AVAILABLE,
   type RenderJob,
 } from '../src/core/render';
 import { createInitialState, createStore, type Store } from '../src/core/store';
@@ -76,9 +77,14 @@ describe('render settings', () => {
     expect([s.width, s.height]).toEqual([2160, 2700]);
   });
 
-  it('video stays off until it exists; the AI switch is the interface\'s to gate (AiPostService.status), not the store\'s', () => {
-    const s = patchSettings(defaultRenderSettings(), { animation: { ...defaultRenderSettings().animation, output: 'VIDEO' }, ai: { ...defaultRenderSettings().ai, enabled: true } });
-    expect(s.animation.output).toBe('FRAMES');
+  it('video is written since N1 (whether this system encodes it is the window\'s and the Doctor\'s to say); the AI switch is the interface\'s to gate (AiPostService.status), not the store\'s', () => {
+    const s = patchSettings(defaultRenderSettings(), { animation: { ...defaultRenderSettings().animation, output: 'VIDEO', video: 'WEBM' }, ai: { ...defaultRenderSettings().ai, enabled: true } });
+    expect(VIDEO_AVAILABLE).toBe(true);
+    expect(s.animation.output).toBe('VIDEO');
+    expect(s.animation.video).toBe('WEBM');
+    // Anything but the two outputs and the two containers is read as frames and as MP4.
+    const odd = patchSettings(defaultRenderSettings(), { animation: { ...defaultRenderSettings().animation, output: 'GIF' as never, video: 'AVI' as never } });
+    expect([odd.animation.output, odd.animation.video]).toEqual(['FRAMES', 'MP4']);
     expect(s.ai.enabled).toBe(true);
   });
 

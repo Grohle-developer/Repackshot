@@ -1160,10 +1160,10 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | Grupo | Tipo | Qué hace |
 | --- | --- | --- |
 | Piezas | **Plato giratorio** (`SPIN` sobre el modelo) | El modelo entero gira sobre su eje vertical |
-| | **Rotación** (`SPIN`, `TUMBLE` y eje libre) | Una pieza o grupo gira sobre un eje (X, Y, Z o personalizado) alrededor de un pivote (su centro, un punto, otra pieza) |
+| | **Rotación** (`SPIN`, `TUMBLE` y eje libre) | Una pieza o grupo gira sobre un eje alrededor de un **pivote** (N1, `MotionClip.pivot`): su propio origen (sin pivote, como antes), el **centro de otra pieza** o grupo (una tapa sobre su bisagra) o **un punto** en mm. El eje es el propio del objetivo: Z en el giro (`SPIN`), X en el vuelco (`TUMBLE`); el eje libre (cualquier dirección) es de una fase posterior. Con pivote, el objetivo recorre un arco a distancia constante de él |
 | | **Traslación** (`MOVE`, `TRACK`) | Se desplaza una distancia en un eje, local o global |
 | | **Escala** (`SCALE`) | Cambia de tamaño por un factor |
-| | **Fundido** (`FADE`, nuevo) | Opacidad de 0 a 1 o de 1 a 0 |
+| | **Fundido** (`FADE`, N1) | La opacidad baja hasta la **opacidad final** (la cantidad, 0–100 %; por defecto 0 %, desaparece); **invertido**, aparece desde ella. Los fundidos de un nodo y de sus grupos se multiplican; en el motor, una pieza que se funde es un recorte estocástico de esa cobertura (con su sombra), un emisor baja su emisión, y a 0 % la pieza no está |
 | | **Despiece** (`EXPLODE`) | Las piezas del modelo o de un grupo se separan: lineal, radial, esférico o por niveles, con excepciones (ver abajo) |
 | | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
 | | **Simulación** (`PHYSICS`, S2) | La caída grabada de una simulación (§3.1, *Físicas*); no se crea desde el asistente: la crea cada simulación |
@@ -1171,16 +1171,16 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
 | | **Zoom** (`ZOOM`) | Cambia la focal, mm |
 | | **Travelling** (`DOLLY`) | Se acerca o aleja, % de la distancia |
-| | **Panorámica** (`PAN`, nuevo) | Gira sobre su propio eje, grados. **Aún no está implementado** (no existe en `MoveKind` ni en `evaluate`): hasta que lo esté, el *barrido rápido* de la biblioteca de movimientos (`camera-moves.json`, A6) es una órbita rápida con curva fuerte alrededor del producto, y una variante con `PAN` se añadirá junto a él |
+| | **Panorámica** (`PAN`, N1) | Gira sobre sí misma, sin moverse, grados (positivo: hacia su derecha): su objetivo da la vuelta alrededor de su posición. El *barrido rápido* de la biblioteca de movimientos (`camera-moves.json`, A6) sigue siendo una órbita rápida con curva fuerte alrededor del producto; una variante con `PAN` junto a él queda pendiente |
 | | **Enfoque** (`FOCUS`) | Cambia la distancia de enfoque |
 | | **Cambio de cámara** (evento de la pista de cámara) | Pasa a otra cámara en ese instante, con corte o fundido |
-| | **Recorrido** (`PATH`, fase posterior) | Sigue una curva por puntos |
+| | **Recorrido** (`PATH`, reservado en N1) | Sigue una curva por puntos. La clave está en el catálogo; nada lo crea ni lo reproduce todavía, y el asistente no lo ofrece |
 | | **Paseo** (`WALK`) | La cámara camina por una trayectoria a altura de ojos, con o sin simulación de pasos (ver abajo) |
 | Luz y entorno | **Barrido de luz** (`HDRI`) | Gira el entorno |
 | | **Intensidad** (`INTENSITY`), **Color** (`TINT`) | De un foco |
-| | **Arco solar** (`SUN_ARC`, con el cielo de E5) | El sol recorre el día |
+| | **Arco solar** (`SUN_ARC`, N1, con el cielo de E5) | El sol recorre su arco del día: gira alrededor del **polo celeste** (hacia el oeste, 15° por hora; la cantidad son grados de ese giro), así que conserva su ángulo al polo y 360° es un día entero. Mueve el primer foco solar del montaje que alumbra; sin él, el sol propio del cielo. El polo está detrás del producto, a 45° de altura (`SUN_POLE_AZ`, `SUN_LATITUDE`), en el marco de los focos (relativo a la cámara) |
 | | **Sección** (`SECTION`, Q1, sobre la escena como `HDRI`) | El plano de la vista en sección se desplaza a lo largo de su normal, en tamaños de pieza: cantidad negativa, corta más adentro (por defecto −0,5); positiva, descubre. Suma con otros clips `SECTION` y se parte sin salto; no hace nada sin plano o con el plano apagado |
-| Materiales | **Color de material** (`MATERIAL_COLOR`, nuevo), **Fundido de material** (`FADE` sobre el material) | Transición de color u opacidad |
+| Materiales | **Color de material** (`MATERIAL_COLOR`, N1), **Fundido de material** (`FADE` sobre el material) | Sobre un **material** (objetivo `MATERIAL`) y con él todas las piezas que lo llevan: su color base pasa al del clip (`color`, desde el que dejaron los clips anteriores) o su opacidad baja como en un fundido. Un material de nodos (M3a) se funde pero no cambia de color (su aspecto sale de su grafo) |
 
 **Paseo (`WALK`)**, pensado para mobiliario e interiores: crea la
 trayectoria de la cámara por ti. La trayectoria se traza en el visor con
@@ -1276,13 +1276,19 @@ mientras un nodo está así, el *gizmo* no aparece sobre él.
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
 eje, pivote, local o global; los del despiece, arriba), inicio y duración
 en segundos, **curva de tiempo** (`EASING_KINDS`: lineal, suave, entrada,
-salida, fuerte, y *personalizada* con una curva de dos asas; o la
-**suavidad**, un mando sobre las tres simétricas), **invertida** (sí/no:
+salida, fuerte, y **personalizada**, N1, `CUSTOM`: una Bézier cúbica de (0, 0)
+a (1, 1) con **dos asas** (`MotionClip.curve`, x1, y1, x2, y2; las x dentro de
+0..1, para que nunca vuelva atrás en el tiempo, y las y entre −0,25 y 1,25, un
+poco de rebote), resuelta por Newton con bisección cuando la curva se pone
+vertical (`core/curve.ts`); o la **suavidad**, un mando sobre las tres
+simétricas), **invertida** (sí/no:
 se reproduce al revés y, antes de empezar, guarda su estado final) y
 **repetir** (n veces seguidas: la barra dura n veces su duración). Su frase en lenguaje llano ("La cámara orbita 90°
 durante 4 s, suave") es su nombre por defecto y su representación en la
 interfaz; también aparece **bajo su objetivo en el árbol de la escena**,
-como hace KeyShot.
+como hace KeyShot (N1: bajo su pieza o grupo, y las del modelo bajo el
+modelo; las de cámara, focos, entorno y materiales, solo en la línea de
+tiempo).
 
 **Evaluación**: `evaluate(state, t)` devuelve las transformaciones y
 parámetros en el instante `t` aplicando cada animación activa con su
@@ -1316,15 +1322,28 @@ principio y al final, bucle, y **vista previa rápida** (la vista previa
 rasterizada) o **previa renderizada** (el motor a pocas muestras por
 fotograma, fase posterior).
 
-**Fundidos** entre cámaras: corte, fundido a color (negro o blanco), o
-cruzado (fase posterior, exige dos cámaras en el solape).
+**Fundidos** entre cámaras (N1): cada plano dice cómo se entra en él
+(`Shot.transition`): **corte** (sin campo, como todos los de antes) o
+**fundido a color**, negro o blanco, de una duración (0,04–10 s, 0,5 s por
+defecto) centrada en el corte: la imagen va al color en la primera mitad,
+la cámara cambia debajo y la imagen vuelve en la segunda, con la curva
+suave y nunca más larga que la mitad de cualquiera de los dos planos; en el
+primer plano, la animación empieza en el color y la imagen aparece
+(`shotFadeAt`). El motor renderiza el plano tal cual y el fotograma se
+mezcla con el color después (en los valores de la imagen, o en luz lineal
+en los formatos lineales); el visor lo enseña encima del encuadre mientras
+se reproduce o el cabezal no está en 0. El fundido **cruzado** (dos cámaras
+a la vez) queda para una fase posterior.
 
 **Salida**: en la barra de render, el modo **Animación** añade rango de
-fotogramas (todo, o de–a), fps, y salida como **vídeo** (WebM o MP4
-codificado en el navegador) o como **secuencia de fotogramas** (PNG o
-JPEG con numeración), con el presupuesto de muestras o tiempo **por
-fotograma** y la estimación del total; el trabajo entra en la cola como
-cualquier otro.
+fotogramas (todo, o de–a), fps, y salida como **vídeo** (N1: WebM con
+VP9, o VP8 donde VP9 no está, o MP4 con H.264, codificado en la página con
+WebCodecs y escrito por nuestros *muxers*; solo lo que este sistema
+codifica, preguntado en tiempo de ejecución) o como **secuencia de
+fotogramas** (PNG o JPEG con numeración, siempre disponible), con el
+presupuesto de muestras o tiempo **por fotograma** y la estimación del
+total; el trabajo entra en la cola como cualquier otro y un vídeo es **un
+archivo**. Un vídeo tiene tamaño par (4:2:0).
 
 ### 3.8 · Render
 

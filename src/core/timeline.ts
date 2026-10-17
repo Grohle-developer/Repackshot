@@ -9,7 +9,7 @@ import type { ProjectState } from './store';
 
 /** The key of a target: one row of the tree per key. */
 export function targetKey(t: ClipTarget): string {
-  return t.kind === 'NODE' || t.kind === 'LIGHT' ? `${t.kind}:${t.id}` : t.kind;
+  return t.kind === 'NODE' || t.kind === 'LIGHT' || t.kind === 'MATERIAL' ? `${t.kind}:${t.id}` : t.kind;
 }
 
 /** One row of the timeline: a target (the camera track among them) or one of its clips. */
@@ -19,7 +19,8 @@ export type TimelineRow =
 
 /**
  * The rows, in a fixed order: the camera track first (always: its segments say which camera is seen), then the model,
- * its groups and parts in tree order, the lights in the rig's order, the environment, and any other target last.
+ * its groups and parts in tree order, the lights in the rig's order, the environment, the materials (N1) in the order
+ * of the project, and any other target last.
  * A folded target hides its clips (its row shows their bars).
  */
 export function timelineRows(state: ProjectState, folded: Readonly<Record<string, true>> = {}): TimelineRow[] {
@@ -32,6 +33,7 @@ export function timelineRows(state: ProjectState, folded: Readonly<Record<string
   }
   const tree = treeOrder(state);
   const lights = state.studio.lights.map((l) => l.id);
+  const materials = Object.keys(state.materials);
   const rank = (t: ClipTarget): [number, number] => {
     switch (t.kind) {
       case 'CAMERA':
@@ -48,8 +50,12 @@ export function timelineRows(state: ProjectState, folded: Readonly<Record<string
       }
       case 'SCENE':
         return [4, 0];
+      case 'MATERIAL': {
+        const i = materials.indexOf(t.id);
+        return [5, i < 0 ? materials.length : i];
+      }
       default:
-        return [5, 0];
+        return [6, 0];
     }
   };
   const entries = [...groups.entries()].map(([key, g], i) => ({ key, g, r: rank(g.target), i }));

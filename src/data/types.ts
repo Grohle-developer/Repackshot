@@ -550,9 +550,20 @@ export type MoveKind =
   /** A recorded simulation (S2): the clip carries the baked track and plays it. */
   | 'PHYSICS'
   /** The section view's plane (Q1): its offset along its normal over the clip. */
-  | 'SECTION';
+  | 'SECTION'
+  /** N1: the opacity of a part, a group, the model or a material, to `amount` percent. */
+  | 'FADE'
+  /** N1: the camera turns about its own position (a pan), degrees. */
+  | 'PAN'
+  /** N1: a material's colour goes to the clip's `color`. */
+  | 'MATERIAL_COLOR'
+  /** N1: the sun goes along its daily arc (about the celestial pole), degrees of hour angle. */
+  | 'SUN_ARC'
+  /** N1: reserved for a camera path through points (a later phase): the catalogue names it, nothing makes or plays it. */
+  | 'PATH';
 
-export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRONG';
+/** CUSTOM (N1): a cubic Bézier of two handles, the clip's `curve`. */
+export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRONG' | 'CUSTOM';
 
 /** What a clip animates. */
 export type TargetKind = 'OBJECT' | 'SUBJECT' | 'SCENE';

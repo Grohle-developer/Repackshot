@@ -86,7 +86,14 @@ export interface WizardState {
   duration: number;
   easing: EasingKind;
   shot: number | null;
+  /** N1: the step on screen: 1 what moves, 2 how (the grid of kinds), 3 how much and for how long. Absent: 1. */
+  step?: 1 | 2 | 3;
+  /** N1: MATERIAL_COLOR and TINT: the colour it goes to, linear RGB. */
+  color?: [number, number, number];
 }
+
+/** N1: the track codec of each container on this system (null: it cannot be encoded here). */
+export type VideoSupportUi = { MP4: 'H264' | null; WEBM: 'VP9' | 'VP8' | null };
 
 /**
  * Where the read of a CAD file (STEP, IGES) is. The sheet opens at once for them and says it: the reader
@@ -319,6 +326,8 @@ export interface UiState {
   wizard: WizardState | null;
   /** Clip selected in the animation drawer: the one the properties edit (the last one picked). */
   selectedClip: string | null;
+  /** N1: the shot of the camera track whose properties the drawer shows (a segment clicked), or null. */
+  selectedShot: string | null;
   /** S4a: the ambient effect being edited in the scene's Ambient section (its region is drawn), or null. */
   effectSelected: string | null;
   /** S4a: the gallery of effect presets is open (Ambient ▸ Add). */
@@ -385,6 +394,11 @@ export interface UiState {
   resultsStorage: 'LOADING' | 'PERSISTENT' | 'MEMORY';
   /** Pixel-samples per second the engine reached on this machine (measured, never assumed); null until measured. */
   throughput: number | null;
+  /**
+   * N1: the codec each video container is encoded with on this system (WebCodecs, asked once at start: `VP9`, `VP8`,
+   * `H264`), null for one it cannot encode; the whole field null until the browser has answered.
+   */
+  video: VideoSupportUi | null;
   /**
    * E10: what the Full view sampling adaptively to a noise target (a fraction) said: the seconds it takes to reach it
    * (those rendered and those it expects from its last pass) on `pixels` pixels; null until it said so.
@@ -512,6 +526,7 @@ export function defaultUiState(): UiState {
     narrow: false,
     wizard: null,
     selectedClip: null,
+    selectedShot: null,
     effectSelected: null,
     effectGallery: false,
     sectionAxis: 'Z',
@@ -543,6 +558,7 @@ export function defaultUiState(): UiState {
     results: [],
     resultsStorage: 'LOADING',
     throughput: null,
+    video: null,
     noiseEstimate: null,
     aiThroughput: null,
     queueRun: 'IDLE',

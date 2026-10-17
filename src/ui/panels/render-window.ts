@@ -29,7 +29,8 @@ import {
   NOISE_THRESHOLD_MIN,
   settingsOf,
   supportsAlpha,
-  VIDEO_AVAILABLE,
+  videoExtension,
+  videoLabel,
   type AdvancedSettings,
   type BitDepth,
   type CameraChoice,
@@ -48,6 +49,7 @@ import { aiPostBody } from './ai-post';
 import { pluginsBody, renderPlugins } from './plugins';
 import { runtimeBadge } from './ai-runtime-notice';
 import type { Ctx, Scope } from '../reactive';
+import type { VideoSupportUi } from '../ui-state';
 import { nameValues } from '../render-queue';
 import { kbdText } from '../shortcuts';
 import { formatClock, formatNumber, framesText, getLang, lbl, t } from '../strings';
@@ -82,9 +84,10 @@ function finishText(s: RenderSettings): string {
 }
 
 /** The footer's one line: "1920 × 1080 · 300 DPI · 256 samples · PNG 8-bit → Downloads · AI off". */
-export function summaryLine(s: RenderSettings, frames: number): string {
+export function summaryLine(s: RenderSettings, frames: number, video: VideoSupportUi | null = null): string {
   const dest = s.destination.kind === 'FOLDER' ? s.destination.name : t('rw.downloads');
-  const out = `${formatText(s)} → ${dest}`;
+  // N1: a video is its container and codec, not the frames' format.
+  const out = `${s.mode === 'ANIMATION' && s.animation.output === 'VIDEO' ? videoLabel(s.animation.video, video?.WEBM) : formatText(s)} → ${dest}`;
   // X4b: with several variants, how many AI images the one render becomes (images only).
   const ai = !s.ai.enabled ? t('rw.summaryAiOff') : s.ai.variants > 1 && s.mode !== 'ANIMATION' ? t('rw.summaryAiVariants', { n: s.ai.variants }) : t('rw.summaryAiOn');
   if (s.mode === 'ANIMATION') {
@@ -381,32 +384,50 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     { ariaLabel: t('rw.fps') },
   );
   const durationNote = h('div', { class: 'note tabular' });
-  const animOut = segmented(
-    [
-      { value: 'VIDEO' as const, label: t('rw.video'), disabled: !VIDEO_AVAILABLE, title: t('rw.videoSoon') },
-      { value: 'FRAMES' as const, label: t('rw.frames') },
-    ],
-    s0.animation.output,
-    (v) => set({ animation: { ...get().animation, output: v } }),
-    { ariaLabel: t('rw.animOutput') },
-  );
-  const codec = segmented(
-    [
-      { value: 'MP4' as const, label: 'MP4 H.264', disabled: !VIDEO_AVAILABLE },
-      { value: 'WEBM' as const, label: 'WebM VP9', disabled: !VIDEO_AVAILABLE },
-    ],
-    s0.animation.video,
-    (v) => set({ animation: { ...get().animation, video: v } }),
-    { ariaLabel: t('rw.video') },
-  );
+  // N1: video where this system encodes it (asked at start: `ui.video`); the frames always. A codec it cannot encode
+  // is there, disabled, with why; nothing is offered that would not be written.
+  const animOutHost = h('span', { class: 'rw-inline' });
+  const codecHost = h('span', { class: 'rw-inline' });
+  let animOut: ReturnType<typeof segmented<'VIDEO' | 'FRAMES'>> | null = null;
+  let codec: ReturnType<typeof segmented<'MP4' | 'WEBM'>> | null = null;
+  let videoKey = '';
+  const buildVideo = () => {
+    const v = ui.get().video;
+    const key = v ? `${v.MP4}|${v.WEBM}` : 'asking';
+    if (key === videoKey) return;
+    videoKey = key;
+    const any = !!v && (v.MP4 !== null || v.WEBM !== null);
+    animOut = segmented(
+      [
+        { value: 'VIDEO' as const, label: t('rw.video'), disabled: !any && get().animation.output !== 'VIDEO', title: !v ? t('rw.videoAsking') : any ? t('rw.videoTip') : t('rw.videoNone') },
+        { value: 'FRAMES' as const, label: t('rw.frames') },
+      ],
+      get().animation.output,
+      (o) => set({ animation: { ...get().animation, output: o } }),
+      { ariaLabel: t('rw.animOutput') },
+    );
+    codec = segmented(
+      [
+        { value: 'MP4' as const, label: videoLabel('MP4'), disabled: !v?.MP4, title: v?.MP4 ? undefined : t('rw.codecCannot', { video: videoLabel('MP4') }) },
+        { value: 'WEBM' as const, label: videoLabel('WEBM', v?.WEBM), disabled: !v?.WEBM, title: v?.WEBM ? undefined : t('rw.codecCannot', { video: videoLabel('WEBM') }) },
+      ],
+      get().animation.video,
+      (c) => set({ animation: { ...get().animation, video: c } }),
+      { ariaLabel: t('rw.video') },
+    );
+    animOutHost.replaceChildren(animOut.el);
+    codecHost.replaceChildren(codec.el);
+  };
+  buildVideo();
   const framesNote = h('div', { class: 'note' });
+  const videoNote = h('div', { class: 'note', 'data-video-note': '' });
   const animSize = makeSizeControls();
   const animBody = h(
     'div',
     { class: 'rw-section' },
     row(t('rw.range'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, range.el, rangeBox), durationNote)),
     row(t('rw.fps'), fps.el),
-    row(t('rw.animOutput'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, animOut.el, codec.el, h('span', { class: 'aux' }, t('common.comingSoon'))), framesNote)),
+    row(t('rw.animOutput'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, animOutHost, codecHost), framesNote, videoNote)),
     row(t('rw.frameSize'), h('div', { class: 'rw-stack' }, animSize.preset.el, animSize.el)),
     row(t('rw.cameraShort'), h('div', { class: 'note' }, t('rw.cameraTrack'))),
   );
@@ -622,11 +643,23 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     to.set(Number(toUnit(a.to).toFixed(2)));
     fps.set(String(a.fps));
     durationNote.textContent = t('rw.duration', { frames: framesText(fr.count), time: formatNumber(fr.count / a.fps, getLang(), 2) });
-    animOut.set(a.output);
-    // A codec is chosen only for video (until N1 the output is always frames).
-    codec.set(a.output === 'VIDEO' ? a.video : null);
-    codec.el.style.opacity = VIDEO_AVAILABLE ? '' : '0.6';
+    buildVideo();
+    const v = ui.get().video;
+    const isVideo = a.output === 'VIDEO';
+    animOut?.set(a.output);
+    // A codec is chosen only for video.
+    codec?.set(isVideo ? a.video : null);
+    codecHost.style.display = isVideo ? '' : 'none';
+    framesNote.style.display = isVideo ? 'none' : '';
     framesNote.textContent = t('rw.framesNote', { name: outputFileName(s.name, nameValues(st, { seq: st.render.seq + 1, settings: s }, null, fr.first), formatExtension(s.format), true) });
+    videoNote.style.display = isVideo ? '' : 'none';
+    if (isVideo) {
+      const name = outputFileName(s.name, nameValues(st, { seq: st.render.seq + 1, settings: s }, null), videoExtension(a.video));
+      const can = a.video === 'MP4' ? v?.MP4 : v?.WEBM;
+      const lines = [can ? t('rw.videoNote', { name, codec: videoLabel(a.video, v?.WEBM), frames: framesText(fr.count), fps: a.fps }) : v ? t('rw.codecCannot', { video: videoLabel(a.video) }) : t('rw.videoAsking')];
+      if (s.width % 2 !== 0 || s.height % 2 !== 0) lines.push(t('rw.videoEven', { w: s.width - (s.width % 2), h: s.height - (s.height % 2) }));
+      videoNote.textContent = lines.join(' · ');
+    }
     // Quality.
     finishBy.set(s.finishBy === 'FIRST' ? null : s.finishBy);
     firstNote.style.display = s.finishBy === 'FIRST' ? '' : 'none';
@@ -654,7 +687,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     saveNoisyRow.style.display = denoiseIn(s.advanced.denoise, 'RENDER') ? '' : 'none';
     perFrame.style.display = anim ? '' : 'none';
     estimate.textContent = estimateLine(s, throughputOf(ctx), anim ? fr.count : 1, ctx.ui.get().noiseEstimate);
-    summary.textContent = summaryLine(s, fr.count);
+    summary.textContent = summaryLine(s, fr.count, ui.get().video);
     // Edit mode.
     const w = ui.get().renderWindow;
     const job = w?.kind === 'EDIT' ? st.render.queue.find((j) => j.id === w.jobId) : undefined;
@@ -662,7 +695,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   };
   // Settings, not progress: a running job's ticks change `s.render` but none of these.
   scope.watch(
-    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, u.throughput, u.noiseEstimate] as unknown[],
+    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, u.throughput, u.noiseEstimate, u.video] as unknown[],
     sync,
     (x, y) => x.length === y.length && x.every((v, i) => v === y[i]),
   );

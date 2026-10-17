@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 121 archivos: 119 repartidos por versión y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 125 archivos: 123 repartidos por versión y fase (4 de ellos aún sin publicar), y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,25 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 16 versiones, 13 con capturas nuevas, repartidas en 42 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: lo que está sin publicar y 16 versiones, 13 con capturas nuevas; las capturas se reparten en 43 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.15).
+Animación y vídeo: el asistente en tres pasos con la rejilla de tipos, la curva personalizada, los fundidos entre planos y el vídeo codificado en la ventana de render.
+
+#### N1 · Animación y vídeo al estilo KeyShot
+
+<a id="c-animation-n1-wizard"></a><img src="ui/animation-n1-wizard.png" width="480" alt="La línea de tiempo con tres pistas (la cámara con tres planos y un fundido a negro en el corte del segundo, el modelo que gira y el material Gloss ABS que cambia de color con una curva personalizada) y el asistente de «+ Animar…» en el paso 1 de 3, con «Una pieza o un grupo» y la tapa elegidas. Las animaciones salen también bajo su objetivo en el árbol de la escena."><br>
+`animation-n1-wizard.png` · `b2eeab6` · La línea de tiempo con tres pistas (la cámara con tres planos y un fundido a negro en el corte del segundo, el modelo que gira y el material Gloss ABS que cambia de color con una curva personalizada) y el asistente de «+ Animar…» en el paso 1 de 3, con «Una pieza o un grupo» y la tapa elegidas. Las animaciones salen también bajo su objetivo en el árbol de la escena.
+
+<a id="c-animation-n1-cards"></a><img src="ui/animation-n1-cards.png" width="480" alt="El paso 2 del asistente para un material: la rejilla de tarjetas del grupo Materiales (Color de material y Fundido, cada una con su frase), con Atrás y Siguiente."><br>
+`animation-n1-cards.png` · `b2eeab6` · El paso 2 del asistente para un material: la rejilla de tarjetas del grupo Materiales (Color de material y Fundido, cada una con su frase), con Atrás y Siguiente.
+
+<a id="c-animation-n1-curve"></a><img src="ui/animation-n1-curve.png" width="480" alt="Las propiedades de «Gloss ABS · Color de material · 0–3 s» con la curva Personalizada: el editor con sus dos asas, la primera arrastrada (x1 0,62, y1 0,4) y sus campos debajo; en el visor, las piezas de ese material marcadas."><br>
+`animation-n1-curve.png` · `b2eeab6` · Las propiedades de «Gloss ABS · Color de material · 0–3 s» con la curva Personalizada: el editor con sus dos asas, la primera arrastrada (x1 0,62, y1 0,4) y sus campos debajo; en el visor, las piezas de ese material marcadas.
+
+<a id="c-render-window-video"></a><img src="ui/render-window-video.png" width="480" alt="La ventana de Render en Animación con salida Vídeo: WebM VP9 elegido y MP4 H.264 deshabilitado (este Chromium no lo codifica), la línea «Un archivo: Untitled_Camera 1_0001.webm, WebM VP9, 48 fotogramas a 24 fps» y el resumen con WEBM VP9. Es lo que render-window-animation.png (U5) enseñaba aún como «próximamente»."><br>
+`render-window-video.png` · `b2eeab6` · La ventana de Render en Animación con salida Vídeo: WebM VP9 elegido y MP4 H.264 deshabilitado (este Chromium no lo codifica), la línea «Un archivo: Untitled_Camera 1_0001.webm, WebM VP9, 48 fotogramas a 24 fps» y el resumen con WEBM VP9. Es lo que render-window-animation.png (U5) enseñaba aún como «próximamente».
 
 ### v0.1.15 · 2026-10-17
 
@@ -614,6 +628,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
 
+- [`render-window-video.png`](#c-render-window-video) · Sin publicar · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
 - [`render-size-from-camera.png`](#c-render-size-from-camera) · v0.1.6 · U13
@@ -652,6 +667,9 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`explode-types.png`](#c-explode-types) (v0.1.6): los despieces del frasco por tipo, cuatro fotogramas de cada uno.
 
+- [`animation-n1-wizard.png`](#c-animation-n1-wizard) · Sin publicar · N1
+- [`animation-n1-cards.png`](#c-animation-n1-cards) · Sin publicar · N1
+- [`animation-n1-curve.png`](#c-animation-n1-curve) · Sin publicar · N1
 - [`animation-timeline.png`](#c-animation-timeline) · v0.1.6 · N6
 - [`explode-types.png`](#c-explode-types) · v0.1.6 · N6 **← propuesta**
 - [`animation-drawer.png`](#c-animation-drawer) · v0.1.0 · U1
@@ -731,6 +749,7 @@ Funciones del `CHANGELOG.md` que no tienen captura en `docs/ui/`, o la tienen so
 
 | Versión | Fase | Qué falta |
 | --- | --- | --- |
+| Sin publicar | N1 | El **fundido a negro o a blanco** en el visor y en un fotograma renderizado, una pieza que **se funde** (translúcida en *Rápido*, con su cobertura en *Completo*), el **pivote** de un giro y el **arco solar**: `tools/video-check.mjs` comprueba el fundido del visor pero no lo captura. Tampoco hay un fotograma del vídeo, ni MP4, que el Chromium de las pruebas no codifica. |
 | v0.1.15 | K1 | Las siete filas nuevas del **Doctor de interiores** con el tipo Interior (escala y unidades, abertura para el sol y el cielo, vidrio de ventana, óptica demasiado angular, altura de ojo, recorte cercano, normales de las paredes). `tools/scene-type-check.mjs` las comprueba pero solo deja `scene-type-interior.png`, que enseña el control y las recetas. |
 | v0.1.14 | Q1 | El movimiento **Sección** de la línea de tiempo (desplaza el plano a lo largo de su normal) y las dos acciones de la paleta. Las dos capturas son del inspector y del visor. |
 | v0.1.14 | L5 | **Luces IES**: hay el inspector con el gráfico polar y el visor en Completo, pero falta un render que enseñe lo que hace el perfil frente a un foco corriente del mismo nivel (en *Rápido* el perfil se aproxima con un foco, en *Completo* y en el render se usa el archivo entero). |

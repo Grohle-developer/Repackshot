@@ -174,6 +174,13 @@ decisiones escritas (datos, contratos, revisión), no código.
   etiquetas como capa; `rt_features`; los mismos píxeles sin texturas; 474
   tests de `rt-core` — **Opus**.
 
+- **N1** · Animación y vídeo: `FADE`, `PAN`, `MATERIAL_COLOR`, `SUN_ARC` (y
+  `PATH` reservado), giro con pivote, curva personalizada de dos asas, cambio de
+  cámara con fundido a negro o blanco, asistente en tres pasos con rejilla de
+  tipos, animaciones bajo su objetivo en el árbol, vídeo WebM/MP4 por WebCodecs
+  con *muxers* propios y el Doctor `output` conectado; un proyecto de U1
+  reproduce lo mismo; 2907 tests web y 1098 del motor (sin tocar) — **Opus**.
+
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
 
@@ -6604,7 +6611,7 @@ imágenes viajan al motor como secciones RSB propias.
 (un cubo recibe la textura sin estirar en las seis caras); el proyecto
 guarda las imágenes embebidas.
 
-## N1 · Animación y vídeo al estilo KeyShot — **Opus**
+## N1 · Animación y vídeo al estilo KeyShot — **Opus** — hecha
 
 **Qué.** Sustituir el editor de U1 (planos + tarjetas) por el modelo de
 `SPEC.md` §3.7 y la interfaz de `UI.md` §2.5, que siguen cómo funciona
@@ -6647,6 +6654,202 @@ abierto en el paso 1.
 
 **Qué no tocar.** Las claves existentes de `MOVE_KINDS` y
 `SEQUENCE_PRESETS` (se añade, no se renombra); el motor (`engine/`).
+
+**Auditoría al empezar** (sobre `main` en v0.1.15, punto por punto del
+brief y del criterio; N6 y U5 ya habían construido una parte):
+
+| Punto | Estado al empezar | De qué fase | Qué hizo N1 |
+| --- | --- | --- | --- |
+| Una línea de tiempo con una pista por objetivo y barras arrastrables y estirables | Hecho | N6: árbol de lo animado + carriles, imán, un arrastre = una entrada de deshacer | Nada que rehacer; filas nuevas para los materiales |
+| Pista de cámara con tramos de cámara activa | Hecho | N6 (tramos, borde arrastrable, cámara del plano en su menú) | Clic en un tramo: sus propiedades |
+| Cambio de cámara: corte o fundido a color | Parcial: solo el corte implícito en el borde de un plano | U1, N6 | `Shot.transition`: corte o fundido a negro o blanco con duración; propiedades del plano, marca en la pista, el visor y cada fotograma |
+| Asistente en tres pasos (tipo en rejilla de tarjetas agrupadas, objetivo, parámetros), en línea | Parcial: tres secciones a la vez, el tipo en una lista | U1; N6 puso el objetivo de la selección | Tres pasos con *Atrás* y *Siguiente*, la rejilla de tarjetas agrupada; el objetivo primero (el orden de N6) |
+| Inspector de animación: curva de tiempo, *personalizada* con dos asas | Parcial: curva con vista previa, sin personalizada | N6 | `CUSTOM` con el editor de dos asas |
+| Invertir y repetir | Hecho | N6 (`reverse`, `repeat`) | Probados en el criterio de `FADE` |
+| Las animaciones bajo su objetivo en el árbol | Falta | — | Bajo piezas, grupos y el modelo |
+| Reproducción: cabezal, fps, bucle, vista previa rápida | Hecho | U1, N6 | Los fundidos, colores y el sol en la vista previa rápida |
+| Tipos `FADE`, `PAN`, `MATERIAL_COLOR`, `SUN_ARC`, `PATH` reservado | Falta | — | Los cinco, al final de `MOVE_KINDS` |
+| `evaluate` completo, composición por objetivo, conflictos visibles | Parcial: los tipos de entonces; conflictos marcados | U1, N6 | Los tipos nuevos, el pivote de un giro, el objetivo material |
+| Despiece (centro, disposición, factor) | Hecho | N6 | — |
+| Migración del estado de U1 (planos a tramos, movimientos a barras), con un proyecto de U1 | Parcial: el modelo de N6 es el de U1 (planos y clips) y se lee; ningún test decía que reproduce lo mismo | N6, U2 (`project-v1.json`) | Test con `project-v1.json` contra las poses que daba el código de U1 |
+| Salida: modo *Animación* (rango, fps, vídeo o fotogramas, presupuesto por fotograma, estimación) | Hecho salvo el vídeo | U5 | El vídeo |
+| Un RSB por fotograma renderizado por el *pool* | Hecho | U5 | — |
+| Codificación en el navegador (WebCodecs → WebM/MP4), secuencia siempre disponible | Falta (*próximamente*); el `output` del Doctor dormido | U5, D1 | WebCodecs, *muxers* propios, el Doctor conectado |
+| Trabajos de animación en la cola | Hecho | U5 | Trabajos de vídeo |
+| Previa renderizada y fundido cruzado: *próximamente* | — | — | Siguen *próximamente* |
+| Criterio: órbita de 90° en 4 s a mitad con *suave* da 45° | Hecho | U1 (`tests/animation.test.ts`) | — |
+| Criterio: rotación con pivote en otra pieza mantiene la distancia | Falta (no había pivote) | — | `tests/animation-n1.test.ts` |
+| Criterio: `FADE` invertida y repetida 2 veces, 5 instantes | Falta | — | Ídem |
+| Criterio: curva personalizada (0.42, 0) y (0.58, 1) ±1e-3 | Falta | — | Ídem (frente a una bisección propia de la prueba) |
+| Criterio: los 16 presets dan un estado válido en cada fotograma | Hecho | U1 | Extendido a los campos nuevos de la pose |
+| Criterio: una barra arrastrada es una entrada de deshacer | Hecho | N6 (prueba y `tools/animation-check.mjs`) | Lo mismo para un asa de la curva y un fundido |
+| Criterio: el proyecto de U1 migra igual en t = 2 s | Falta | — | `tests/animation-migration.test.ts` |
+| Criterio: un vídeo de 2 s a 12 fps sale y se reproduce | Falta | — | `tests/video.test.ts` y `tools/video-check.mjs` |
+| Criterio: captura de la línea de tiempo con tres pistas y el asistente en el paso 1 | Falta | — | `docs/ui/animation-n1-wizard.png` |
+
+**Hecho.** Lo que faltaba o estaba a medias, sin rehacer lo de N6 ni U5:
+
+- **Tipos nuevos** (`src/data/animation.ts`, añadidos al final; las 17 claves de
+  antes, intactas): `FADE` (la cantidad es la **opacidad final** en %, por
+  defecto 0; invertido, aparece; los de un nodo y sus grupos se multiplican),
+  `PAN` (la cámara gira donde está: su objetivo da la vuelta alrededor de su
+  posición; positivo, a su derecha), `MATERIAL_COLOR` (el color base de un
+  material, desde el que dejaron los clips anteriores, hacia el del clip),
+  `SUN_ARC` (el sol gira alrededor del polo celeste, 15° por hora: el primer foco
+  solar que alumbra o, sin él, el sol propio del cielo) y `PATH`, solo en el
+  catálogo (`RESERVED_MOVES`: nada lo ofrece ni lo reproduce). `CUSTOM` se añade a
+  `EASING_KINDS`; `MOVE_GROUPS` da sus grupos al asistente. Un objetivo nuevo,
+  `MATERIAL` (`ClipTarget`), y con él todas las piezas que lo llevan
+  (`partsWearing`).
+- **Giro con pivote** (`MotionClip.pivot`): `SPIN` y `TUMBLE` de una pieza o
+  grupo alrededor del centro de otra pieza o de un punto, sobre su propio eje (Z o
+  X), hecho en el mundo y devuelto al padre; sin pivote, exactamente lo de antes.
+- **Curva personalizada** (`src/core/curve.ts`): Bézier cúbica de dos asas
+  (x en 0..1, y en −0,25..1,25), Newton desde la fase y bisección donde la curva
+  se pone vertical. Editor en las propiedades (`ui/components/curve-editor.ts`):
+  arrastre con una entrada de deshacer, flechas, y sus cuatro números.
+- **Cambio de cámara** (`Shot.transition`, `shotFadeAt`): corte o fundido a
+  negro o blanco (0,04–10 s, 0,5 s por defecto) centrado en el corte, con la curva
+  suave y nunca más largo que la mitad de cualquiera de los dos planos; en el
+  primer plano, un fundido de entrada. Propiedades del plano al hacer clic en su
+  tramo, marca sobre el corte en la pista, el color sobre el encuadre del visor al
+  reproducir, y en cada fotograma renderizado (`src/core/fade.ts`: en los valores
+  de una imagen de 8 o 16 bits, en luz lineal en EXR, TIFF de 32 bits y DNG).
+- **El motor sin tocarlo**: la escena RSB (`src/io/rsb.ts`) lleva los fundidos
+  como cobertura (una copia del material por opacidad, con su dibujo de madera o
+  tela y su programa; un emisor baja su emisión; a 0 % la pieza no está), el color
+  de un material posado y el sol del cielo movido. Sin animación nueva, los mismos
+  bytes que antes (las pruebas de paridad siguen fijadas).
+- **Rápido** (`src/render/fade-preview.ts`): el material compartido puesto como lo
+  deja el clip (y devuelto a su instancia después), una copia translúcida para
+  cada pieza que se funde, el sol del arco en el cielo y en los focos.
+- **Asistente en tres pasos** con la rejilla de tarjetas (icono, nombre, frase),
+  agrupada en *Piezas · Cámara · Luz y entorno · Materiales* con el grupo del
+  objetivo primero; *Un material* como objetivo; el color en el paso 3.
+- **Bajo su objetivo en el árbol de la escena**: las animaciones de una pieza o
+  grupo bajo ella, las del modelo bajo el modelo, con su icono y su frase corta;
+  clic abre el cajón con ella elegida.
+- **Vídeo codificado** (`src/io/video.ts`, `webm.ts`, `mp4.ts`; ARCHITECTURE
+  §5.4 ter): WebCodecs preguntado en tiempo de ejecución (WebM con VP9 o VP8, MP4
+  con H.264 *Constrained Baseline* del nivel que pide el tamaño), *muxers* propios
+  de las especificaciones públicas, un trabajo de vídeo en la cola que pasa cada
+  fotograma al codificador y guarda **un archivo**; la ventana de render solo
+  ofrece lo que el sistema codifica (lo demás deshabilitado con su porqué). En el
+  Chromium de aquí: **VP9, VP8 y AV1 sí, H.264 no**.
+- **Doctor** (`output`): `EngineFacts.videoCodecs` sale de la respuesta del
+  navegador (`ui.video`, `encodableCodecs`) y el chequeo avisa **solo** de un
+  vídeo con un contenedor que este sistema no codifica (arreglo: fotogramas); las
+  pruebas de D1 se reescribieron con eso (un vídeo que sí se codifica ya no es un
+  aviso), y una nueva sigue la respuesta del navegador hasta el aviso.
+- **Accesibilidad del cajón** (lo que el repaso de H1 dejó a esta fase): los
+  presets vuelven a ser botones, cada uno dentro de un elemento `listitem` de una
+  lista con nombre; el árbol de lo animado (`role="tree"`, con nombre y el foco)
+  dice qué fila está activa con `aria-activedescendant` (cada fila con su `id` y
+  `aria-selected`) y **↑ ↓** van a la animación de arriba o de abajo; la regla,
+  que está dentro del árbol, queda para el puntero (`aria-hidden`, sin etiqueta;
+  su ayuda sigue) porque el cabezal ya se mueve con el teclado desde el árbol.
+  `tests/a11y-timeline.test.ts` (4, en Chromium como el de H1) y una prueba de las
+  teclas.
+- **La marca del fundido** en la pista de cámara tapaba el principio del nombre del
+  plano siguiente y usaba la duración pedida aunque los fotogramas la recorten a la
+  mitad de un plano: `shotFadeSpan` (core) es ahora el tramo que usan los
+  fotogramas (`shotFadeAt`) y la pista, y el nombre del plano empieza pasada la
+  marca (una prueba del tramo y otra en Chromium, que fallan sin el arreglo).
+- **Galería**: las cuatro capturas, con su entrada en `docs/GALERIA.md` bajo
+  *Sin publicar* (por versión y por función) y una fila en «Sin captura» con lo de
+  N1 que no tiene imagen (el fundido en el visor y en un fotograma, una pieza que
+  se funde, el pivote, el arco solar, un fotograma del vídeo y el MP4).
+- **Migración de U1**: `tests/fixtures/u1-hero-poses.json`, tomadas con el
+  `evaluate` de U1 (commit `67b9154`) sobre `project-v1.json` en 0, 2, 5,5 y 9 s;
+  el proyecto abierto hoy reproduce lo mismo a 1e-9, con sus planos como tramos y
+  sus movimientos como barras.
+
+Pruebas: `tests/animation-n1.test.ts` (21: pivote en otra pieza y en un punto,
+también con un padre fuera del origen; `FADE` invertida y repetida en cinco
+instantes, sus multiplicaciones y su partición; `PAN`; `MATERIAL_COLOR`;
+`SUN_ARC` y su ángulo al polo; la curva frente a una bisección propia, también
+con asas en los extremos, y su arrastre como una entrada de deshacer; los fundidos
+de la pista, su tramo y sus píxeles; los 16 presets en cada fotograma; el asistente, los
+planos y los materiales), `tests/animation-migration.test.ts` (2) y
+`tests/video.test.ts` (12: los dos contenedores releídos por lectores aparte, un
+vídeo de 2 s a 12 fps de 24 fotogramas, el escritor con un codificador falso, un
+trabajo de la cola hasta el archivo, y fotogramas reales de libx264 y libvpx en
+nuestros MP4 y WebM leídos por ffprobe donde la máquina tiene ffmpeg). Mutaciones:
+**48**, todas muertas (en `evaluate` de los tipos nuevos y del pivote, en la curva,
+en los dos *muxers* y el escritor, en la cola de vídeo, en el Doctor, en la
+accesibilidad del cajón y en la marca del fundido); una sobrevivió
+al principio (quitar la vuelta al padre del giro con pivote: el padre de la tapa está
+en el origen) y se mató con una prueba sobre el cuerpo, que cuelga del modelo.
+En el navegador, `tools/video-check.mjs` (Chromium con WebCodecs de verdad): los
+códecs, un vídeo de 2 s a 12 fps por el escritor de la aplicación en VP9
+(18 760 bytes) y en VP8 (6 798 bytes) leídos por ffprobe (24 fotogramas, 2 s,
+320 × 180), el asistente en tres pasos, un fundido a negro, un asa arrastrada y
+deshecha, el fundido en el visor, y un render de la aplicación en WebM VP9 de 48
+fotogramas (2 s a 24 fps, 160 × 90) leído por ffprobe; capturas
+`docs/ui/animation-n1-wizard.png` (la línea de tiempo con tres pistas y el
+asistente en el paso 1), `animation-n1-cards.png`, `animation-n1-curve.png` y
+`render-window-video.png`. El motor de Rust no se tocó. Compuertas, con `main`
+mezclado (H1 y la galería) y `rt.wasm` compilado: `npm run qa` en verde (169
+archivos y 2907 pruebas pasan, 4 archivos y 6 pruebas omitidas; al empezar pasaban
+161 y 2836, y H1 trae las suyas) y `npm run engine:test` en verde (1098 pasan, 11
+ignoradas), como antes.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- ◆ **El orden del asistente.** El brief pide tipo → objetivo → parámetros; N6
+  entregó el objetivo primero (*+ Animar Tapón…* lo trae puesto) y se mantiene: el
+  paso 2 es la rejilla, con solo los tipos de ese objetivo y su grupo primero.
+- **Una pista por objetivo con barras**: se queda el modelo de N6 (una fila por
+  objetivo y, debajo, una por animación; plegado, las barras de todas en la fila
+  del objetivo), que ya estaba aceptado.
+- ◆ **Qué es un fundido**: la cantidad es la opacidad final y aparecer es el
+  fundido invertido (el SPEC decía «de 0 a 1 o de 1 a 0»). En el motor es una
+  cobertura estocástica (con poco muestreo se ve como un tramado) y un emisor baja
+  su emisión, porque el motor no da cobertura a los emisores; en *Rápido*, una
+  copia translúcida sin escritura de profundidad.
+- ◆ **El arco solar**: polo fijo detrás del producto a 45° de altura, en el marco de
+  los focos (`SUN_POLE_AZ`, `SUN_LATITUDE`); la latitud y dónde está el norte no
+  son de esta fase.
+- ◆ **El fundido a color**: centrado en el corte, medio en cada plano, curva suave,
+  nunca más de la mitad de un plano; el de entrada solo en el primero, y no hay
+  fundido de salida al final de la animación. Se mezcla en los píxeles después
+  del motor: en los formatos lineales, hacia el color en luz lineal con la
+  exposición (el blanco es 1, que con *Fílmica* o *AgX* no es el blanco de la
+  imagen).
+- ◆ **La calidad del vídeo**: UI.md decía *con calidad*; no hay mando, es
+  automática (unos 0,1 bits por píxel, de 1 a 50 Mbit/s). Sin alfa ni sonido.
+- **H.264** solo *Constrained Baseline* (sin fotogramas B, así el MP4 no necesita
+  `ctts`); el Chromium de código abierto de aquí no lo codifica, así que el MP4 se
+  probó en Node con fotogramas reales de libx264 y ffprobe, no con WebCodecs.
+  WebM cae a VP8 donde no hay VP9; AV1 no se ofrece aunque Chromium lo codifique.
+- **Los fps de la ventana** son 24, 25, 30 y 60: el vídeo de 12 fps del criterio
+  sale por el escritor de la aplicación (la prueba con el codificador falso y el
+  navegador con el de verdad); el camino entero de la aplicación se probó a 24 fps.
+- **Un vídeo se guarda al final**: un trabajo detenido no deja nada; los plugins de
+  trabajos no pasan por sus fotogramas y el historial guarda el primero como PNG
+  (`ResultMeta.video` dice de qué vídeo).
+- **El aviso de D1 «un archivo que un fallo pierde entero»** se quita: el encargo
+  dice que `output` avise solo de un códec que no se codifica (era la ◆ de D1).
+- **Pivote**: el eje es el propio del objetivo (Z o X); el eje libre no se
+  construye. Si la pieza pivote se mueve, el pivote no la sigue (se toma en reposo).
+- **Color de material**: el color base de los parámetros *Simple*; un material de
+  nodos (M3a) no cambia de color, ni en el motor ni en *Rápido* (sí se funde).
+- **Bajo su objetivo en el árbol**: solo piezas, grupos y modelo; las de cámara,
+  focos, entorno y materiales se ven en la línea de tiempo.
+- El *barrido rápido* de la biblioteca de movimientos (A6) sigue siendo una
+  órbita; la variante con `PAN` queda pendiente.
+- `ease()` de `light-math` trata `CUSTOM` como lineal: la curva de un clip vive en
+  `clipCurve`, que es la que la usa.
+- `tools/render-window-check.mjs` se para en su paso (g) (tras elegir *Copper* en la
+  paleta, Ctrl+Mayús+Intro no arranca el render y espera hasta agotar el tiempo); pasa
+  igual en una compilación de `main` sin N1 (`3096821`), así que no es de esta fase y
+  no se toca aquí. Por eso `render-window-animation.png` (U5) no se ha regrabado y
+  sigue enseñando el vídeo como *próximamente*; lo de ahora está en
+  `render-window-video.png`.
+- **La regla de la línea de tiempo** no es un `slider`: está dentro del árbol, que
+  solo puede contener sus filas, y el cabezal ya tiene el teclado (Inicio, Fin,
+  ← →) desde el árbol; se oculta a las ayudas técnicas. Si se quiere un control
+  propio para el cabezal, va fuera del árbol (otra estructura del cajón).
 
 ## N2 · Cola, pases y lotes — **Sonnet**
 

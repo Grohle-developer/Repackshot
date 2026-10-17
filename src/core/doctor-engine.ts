@@ -72,7 +72,7 @@ export interface EngineFacts {
   simdOff: boolean;
   /** The engine has a denoiser (rt.wasm exports `rt_denoise`; the native engine always does). */
   denoise: boolean;
-  /** The video codecs this system encodes now (N1 is not built: none). */
+  /** N1: the video containers this system encodes now (WebCodecs, asked at run time; none before it answers). */
   videoCodecs: readonly VideoCodec[];
   /** Pixel-samples per second measured on this computer (the viewport's meter, Measure performance, a render); null before. */
   throughput: number | null;
@@ -284,10 +284,14 @@ function checkFireflies(state: ProjectState, f: EngineFacts): DoctorResult {
 
 // ------------------------------------------------------------------ video output
 
+/**
+ * N1: an animation output as a video in a container this system cannot encode (a project made on another computer,
+ * a browser without WebCodecs). A video the system encodes is not a fault. The fix is the frame sequence.
+ */
 function checkOutput(state: ProjectState, f: EngineFacts): DoctorResult {
   const r = state.render;
   if (r.mode !== 'ANIMATION' || r.animation.output !== 'VIDEO') return ok('output');
-  return warn('output', { reason: f.videoCodecs.includes(r.animation.video) ? 'single' : 'codec', video: r.animation.video }, true);
+  return f.videoCodecs.includes(r.animation.video) ? ok('output') : warn('output', { reason: 'codec', video: r.animation.video }, true);
 }
 
 // ------------------------------------------------------------------ time budget

@@ -25,6 +25,11 @@ Las partículas de *Ambiente* (S4a) no añaden dependencias: el simulador
 es un *crate* propio del motor (`rt-sim`) y la vista previa usa los
 `THREE.Points` e `InstancedMesh` de three.js, que ya estaba.
 
+El vídeo codificado (N1) tampoco: el codificador es el del navegador
+(WebCodecs, una API de la plataforma) y los contenedores WebM y MP4 los
+escriben dos *muxers* propios de `src/io/` (§5.4 ter). No hay biblioteca
+de *muxing* que apuntar en esta tabla.
+
 Lo que **no** se usa: React/Vue/Svelte, Tailwind, fuentes de iconos,
 fuentes de red, Electron, WebGPU, ningún renderizador existente (ni
 Embree, ni OptiX, ni ports de pbrt, ni `three-gpu-pathtracer`), ningún
@@ -107,7 +112,9 @@ src/
     traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
-    animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6)
+    animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6); N1: los tipos FADE, PAN, MATERIAL_COLOR, SUN_ARC (y PATH reservado), el pivote de un giro, el objetivo material, el cambio de plano con fundido (`shotFadeAt`)
+    curve.ts                la curva de tiempo personalizada de dos asas (N1): Bézier cúbica de (0, 0) a (1, 1), Newton con bisección
+    fade.ts                 el fundido a color de la pista de cámara sobre los píxeles de un fotograma (N1): en los valores de la imagen o en luz lineal
     explode.ts              el despiece configurable (N6): geometrías, niveles, orden, excepciones; lo que se mueve y cuándo
     timeline.ts             la aritmética de la línea de tiempo (N6): filas del árbol, regla, tramos de cámara, imán
     motion-hint.ts          lo que el visor dibuja de la animación elegida (N6): su objetivo y su pista
@@ -148,6 +155,7 @@ src/
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
     particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
     section-preview.ts      la vista en sección en Rápido (Q1): el plano compartido por los materiales del modelo, las tapas, el estudio sin plano, la selección y el cardán sin lo quitado
+    fade-preview.ts         los fundidos y colores de material de la animación en Rápido (N1): el material compartido puesto como lo deja el clip, una copia translúcida por pieza que se funde
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
     lens-filter-image.ts    los filtros de efecto de la lente en imagen (O3a): los núcleos en píxeles y su convolución en TS, la referencia del pase WebGL
@@ -177,6 +185,7 @@ src/
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
+    video.ts                el vídeo codificado (N1): WebCodecs preguntado en tiempo de ejecución, el escritor de un vídeo fotograma a fotograma (§5.4 ter); webm.ts y mp4.ts, los *muxers* propios; video-track.ts, sus tipos
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c); los programas de los materiales de nodos (`PROG`, M3b)
     phys.ts                 escritor de PHY1, la escena del simulador (S2, §5.6)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
@@ -211,7 +220,7 @@ src/
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
       graph-canvas.ts       el lienzo del editor: tarjetas, tomas por forma, conexiones, zoom y desplazamiento (M3a)
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
-      animation.ts          el cajón de animación (N6): transporte y las tres zonas; anim-tree.ts (qué se anima), anim-timeline.ts (regla, barras, imán, pista de cámara), anim-props.ts (propiedades, asistente, presets)
+      animation.ts          el cajón de animación (N6): transporte y las tres zonas; anim-tree.ts (qué se anima), anim-timeline.ts (regla, barras, imán, pista de cámara con sus fundidos), anim-props.ts (propiedades, el asistente en tres pasos, las de un plano, presets); components/curve-editor.ts, la curva de dos asas (N1)
     texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
     physics.ts              la simulación en marcha (S2): Dejar caer, Iniciar, Pausar, Parar, Reiniciar, los clips que crecen
     panels/physics.ts  panels/insp-physics.ts  la barra de físicas (cajón de la barra inferior) y la sección Físicas del inspector (S2)
@@ -2614,6 +2623,83 @@ escritorio: el lanzador solo lo guarda, `image/tiff` como `.tif` e
   otro formato, y el alfa a falso en JPEG y DNG). Chromium y Firefox no
   muestran TIFF ni DNG: el render guarda, junto al archivo, la copia PNG
   de 8 bits que ya guardaba para el EXR (`needsDisplayCopy`).
+
+### 5.4 ter · Vídeo codificado (N1)
+
+La salida *Vídeo* de una animación (`RenderSettings.animation.output`
+`VIDEO`, contenedor `video`: `MP4` o `WEBM`) se codifica **en la página**,
+también en el escritorio (WebView2 es Chromium): cada fotograma lo
+renderiza el motor como siempre (un RSB por fotograma, `evaluate` en su
+instante) y sale como un PNG de 8 bits opaco; el codificador del navegador
+lo comprime y nuestros *muxers* escriben el archivo. Sin dependencias.
+
+- **Qué codifica este sistema** (`src/io/video.ts`): `probeVideo` pregunta
+  a `VideoEncoder.isConfigSupported` por cada contenedor, en orden: WebM,
+  **VP9** (`vp09.00.10.08`) y si no **VP8**; MP4, **H.264** *Constrained
+  Baseline* (`avc1.42E0xx`, el nivel que piden el tamaño y los fps según
+  la tabla A-1 de ISO/IEC 14496-10: sin fotogramas B, así que el orden de
+  decodificación es el de presentación y el MP4 no lleva `ctts`). Sin
+  WebCodecs (fuera de un contexto seguro, un navegador sin ella) no hay
+  nada. `main.ts` lo pregunta una vez al arrancar (1080p a 24 fps) y lo deja
+  en `ui.video`; la ventana de render solo ofrece lo que hay (lo demás
+  deshabilitado con su porqué), el Doctor (`output`) avisa solo de un
+  códec que aquí no se codifica, y un trabajo pregunta otra vez con su
+  tamaño y sus fps al abrir su escritor.
+- **El escritor** (`createVideoWriter`): `configure` con el códec, el
+  tamaño **par** (4:2:0: una fila o columna impar se deja fuera), los fps,
+  ~0,1 bit por píxel (de 1 a 50 Mbit/s) y `latencyMode: 'quality'`; cada
+  fotograma `i` es un `VideoFrame` del `ImageBitmap` del PNG con
+  `timestamp = round(i · 10⁶ / fps)` µs y su duración, fotograma clave cada
+  2 s (`KEY_EVERY_S`), con espera mientras la cola del codificador pasa de
+  dos. Los trozos se guardan en memoria con su tiempo y si son clave; en
+  H.264 (`avc: { format: 'avc' }`) el registro de configuración
+  (`decoderConfig.description`) es el `avcC`. Al acabar, `flush` y el
+  *muxer*. El entorno (`VideoEncoder`, `VideoFrame`, `createImageBitmap`)
+  entra como `VideoEnv`: las pruebas usan este mismo código con un
+  codificador falso.
+- **WebM** (`src/io/webm.ts`), de la especificación pública de EBML (RFC
+  8794) y de Matroska (RFC 9559) y las guías de WebM: cabecera EBML
+  (`DocType` `webm`, versión 4), `Segment` con `Info` (`TimestampScale`
+  1 ms, `Duration` en ms como `f64`, `MuxingApp` y `WritingApp`),
+  `Tracks` (una pista de vídeo, `V_VP9` o `V_VP8`, `DefaultDuration` en ns,
+  `PixelWidth` y `PixelHeight`), `Cues` **antes** de los *clusters* (un
+  `CuePoint` por *cluster*, con su `CueClusterPosition` relativo al inicio
+  de los datos del `Segment` escrito en 8 bytes, así que el tamaño de
+  `Cues` no depende de las posiciones) y un `Cluster` en cada fotograma
+  clave (o cuando un bloque se alejaría más de 30 s de su inicio: el
+  desplazamiento de un `SimpleBlock` es un entero de 16 bits con signo),
+  con su `Timestamp` y un `SimpleBlock` por fotograma (pista 1,
+  desplazamiento en ms, bandera de clave). Todos los tamaños se conocen
+  antes de escribir: tamaños EBML de la longitud mínima.
+- **MP4** (`src/io/mp4.ts`), de ISO/IEC 14496-12 (cajas) y 14496-15
+  (`avc1`/`avcC`): `ftyp` (`isom`, compatible `iso2`, `avc1`, `mp41`),
+  `moov` **delante** (*fast start*) con `mvhd` (escala 1000), una `trak`
+  (`tkhd`, `mdia`: `mdhd` con escala `fps × 1000`, `hdlr` `vide`, `minf`:
+  `vmhd`, `dinf`/`dref`, `stbl`: `stsd` con la entrada `avc1` y su `avcC`,
+  `stts` en tramos, `stss` con los fotogramas clave, `stsc` con un solo
+  *chunk*, `stsz` y `stco`, o `co64` si el archivo pasara de 4 GiB) y
+  `mdat` con los fotogramas seguidos.
+- **La cola** (`src/ui/render-queue.ts`): un trabajo de vídeo abre su
+  escritor antes de renderizar (si el sistema no codifica el contenedor,
+  falla en ese momento, sin renderizar nada, y lo dice), le pasa cada
+  fotograma en lugar de guardarlo, y al final guarda **un archivo**
+  (`<nombre>.webm` o `.mp4`, numerado como una imagen); el historial guarda
+  el primer fotograma como el PNG que es (`ResultMeta.video` dice de qué
+  vídeo). Los plugins de trabajos no pasan por los fotogramas de un vídeo
+  todavía.
+- **El fundido a color de la pista de cámara** (`core/fade.ts`) se aplica a
+  los píxeles de cada fotograma después del motor (que no sabe de él): en
+  los valores de una imagen de 8 o 16 bits y en luz lineal (con la
+  exposición) en EXR, TIFF de 32 bits y DNG, con el alfa hacia opaco.
+- **Pruebas.** `tests/video.test.ts` relee los dos contenedores con lectores
+  propios de la prueba (`tests/video-readers.ts`: EBML y cajas, escritos
+  aparte de los escritores), comprueba que un vídeo de 2 s a 12 fps tiene 24
+  fotogramas y 2 s, conduce el escritor con un codificador falso y un
+  trabajo de la cola hasta el archivo y, donde la máquina tiene ffmpeg,
+  mete fotogramas reales de libx264 y libvpx en nuestros MP4 y WebM y deja
+  que ffprobe los lea. `tools/video-check.mjs` hace lo mismo en Chromium con
+  el WebCodecs de verdad, y el camino entero de la aplicación (el motor, el
+  codificador, la descarga), leído por ffprobe.
 
 ### 5.5 · Escritorio: el lanzador `repackshot`
 
