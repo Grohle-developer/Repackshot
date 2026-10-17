@@ -47,6 +47,10 @@
 // failed, stopped or removed); if the ZIP cannot be made the files are saved one by one, so nothing is lost. A job with a
 // studio does not go through the AI (its passes are drawn from the open project).
 //
+// The studio travels with the project (N2b): a job keeps a copy of its studio in the project (`render.studios`), made
+// when the job was, and renders in that copy whatever the library holds now (core/job-studios.ts `resolveStudio`); a
+// job of before N2b, without one, looks its studio up in the library as then, and fails with the reason without it.
+//
 // Live view (U14): a job that runs while the live view shows it (a click on
 // its row: `ui.liveView`) gets pictures of its render as it accumulates
 // (`liveTap`: at most every LIVE_FRAME_MS, only while the view shows it and
@@ -56,6 +60,7 @@
 import { shotFadeAt, totalDuration } from '../core/animation';
 import { restoreStudio } from '../core/lighting';
 import { findItem, savedStudioOf } from '../core/library';
+import { resolveStudio } from '../core/job-studios';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { FrameCadence, liveBox } from '../core/live-frame';
@@ -396,21 +401,37 @@ export function savedStudioOfId(ctx: Ctx, id: string): ReturnType<typeof savedSt
   return ctx.store.get().studio.saved.find((x) => x.id === id) ?? null;
 }
 
-/** The saved studios a batch can use, in the order the window lists them: the library's, then the project's own (older files). */
-export function studioRefs(ctx: Ctx): StudioRef[] {
-  const lib = ctx.ui.get().library.studios.map((x) => ({ id: x.id, name: x.name }));
-  const own = ctx.store.get().studio.saved.filter((x) => !lib.some((l) => l.id === x.id)).map((x) => ({ id: x.id, name: x.name }));
+/**
+ * The saved studios a batch can use, in the order the window lists them: the library's, then the project's own (older
+ * files). With `snapshots` (N2b, to make jobs) each brings the studio itself, so the project keeps a copy of it.
+ */
+export function studioRefs(ctx: Ctx, opts: { snapshots?: boolean } = {}): StudioRef[] {
+  const items = ctx.ui.get().library.studios;
+  const saved = ctx.store.get().studio.saved;
+  const lib = items.map((x) => (opts.snapshots ? { id: x.id, name: x.name, snapshot: savedStudioOf(x) } : { id: x.id, name: x.name }));
+  const own = saved.filter((x) => !lib.some((l) => l.id === x.id)).map((x) => (opts.snapshots ? { id: x.id, name: x.name, snapshot: x } : { id: x.id, name: x.name }));
   return [...lib, ...own];
 }
 
-/** The project a job renders: the open one, or, for a job with a saved studio, a copy with the studio on and the job's camera kept. */
+/** N2b: the refs a Render or an edit of these settings brings to the store: the studios it uses, each with the studio itself. */
+export function studiosForJobs(ctx: Ctx, settings: Pick<RenderSettings, 'studio' | 'mode'>): StudioRef[] {
+  if (settings.mode === 'ANIMATION' || settings.studio.kind === 'CURRENT') return [];
+  const all = studioRefs(ctx, { snapshots: true });
+  const one = settings.studio;
+  return one.kind === 'ALL' ? all : all.filter((x) => x.id === one.id);
+}
+
+/**
+ * The project a job renders: the open one, or, for a job with a saved studio, a copy with the studio on and the job's
+ * camera kept. The studio is the project's copy of it (N2b), else the library's, else an older project's own.
+ */
 export function jobProject(ctx: Ctx, job: RenderJob): ProjectState {
   const look = jobStudio(job);
   const state = ctx.store.get();
   if (!look) return state;
-  const saved = savedStudioOfId(ctx, look.id);
-  if (!saved) throw new Error(t('render.studioMissing', { name: look.name }));
-  return restoreStudio(state, saved, { camera: false });
+  const found = resolveStudio(state, ctx.ui.get().library, look.id, look.hash);
+  if (!found) throw new Error(t('render.studioMissing', { name: look.name }));
+  return restoreStudio(state, found.studio, { camera: false });
 }
 
 /** The files of a ZIP waiting for the last job of its group. */

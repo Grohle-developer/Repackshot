@@ -186,6 +186,12 @@ decisiones escritas (datos, contratos, revisión), no código.
   detener el segundo deja el tercero; un fallo antiguo de la cola corregido;
   3005 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
 
+- **N2b** · El estudio viaja con el proyecto: cada trabajo con un estudio guardado
+  guarda una copia de él en el proyecto (`render.studios`, una por id y *hash* del
+  contenido, el trabajo la nombra con `studioCopy`) y renderiza en ella, también en un
+  equipo cuya biblioteca no lo tiene; las imágenes de la copia van una vez en `images`;
+  *Añadir a mi biblioteca* en la cola; el esquema sigue en 2 — **Opus**.
+
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
 
@@ -4219,7 +4225,7 @@ familia y la del ejemplo de nodos, la misma madera; y la nueva
 *Madera* seleccionado (`tools/material-nodes-check.mjs --only wood`, que
 también comprueba que el frasco se vuelve de madera en *Rápido*).
 
-No encajó con el plan (◆ para quien decide):
+No encajó con el plan (lo marcado ◆ está decidido en *Decisiones de criterio*):
 
 1. ◆ **La pelusa no llega a ningún sitio.** La *Tela* da su *Pelusa* (el
    `fuzz` del material, un número) como pide el encargo, pero la salida de
@@ -7532,7 +7538,7 @@ brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
 - **Los estudios del lote son los guardados**: los de la pestaña *Estudios* (biblioteca, del
   navegador o de la carpeta de datos del escritorio) y los que un proyecto antiguo guardaba
   dentro. Un trabajo guarda el id y el nombre, no el estudio: abierto en otro equipo sin
-  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto.
+  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto (decidido: sí; hecho en N2b).
 - **Un trabajo con estudio no pasa por la IA** (sus pases se dibujan del proyecto abierto en
   el modo Rápido); lo dice un aviso y se guarda la imagen del motor. Los plugins de trabajos
   guardan aparte, fuera del ZIP.
@@ -7555,6 +7561,132 @@ brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
   terminaba el bucle antes de su primer `await` y dejaba la promesa ya acabada como «el
   bucle en marcha»; ningún *Iniciar* posterior arrancaba otro. Arreglado en `ensureLoop`
   (la promesa se limpia sola al acabar) y con su prueba, que falla si vuelve el código viejo.
+
+## N2b · El estudio viaja con el proyecto — **Opus** — hecha
+
+**Qué** (de *Decisiones de criterio*, N2). El estudio de un trabajo de lote viaja **dentro
+del proyecto**: un proyecto abierto en otro equipo, o en otro perfil del navegador, no
+falla sus trabajos porque allí falte un estudio de la biblioteca.
+
+**Hecho:**
+
+- **La copia en el proyecto** (`core/job-studios.ts`). `render.studios` es una lista de
+  `{ hash, studio }`: `studio`, el `SavedStudio` que aplica `restoreStudio` (focos,
+  entorno, imagen, cámara, materiales por pieza y visibilidad, con su id y su nombre);
+  `hash`, el SHA-256 de su contenido sin id ni nombre en JSON de claves ordenadas
+  (`canonicalJson`, `studioHash`, con el `core/sha256.ts` que ya había). **Una copia por
+  id y *hash***: los cuatro trabajos de un 2 × 2 sobre dos estudios son dos copias, y
+  *+ Añadir a la cola* dos veces con el mismo estudio sigue siendo una. Cada trabajo la
+  nombra con el campo opcional `RenderJob.studioCopy` (su `settings.studio` no cambia:
+  `{ kind: 'ONE', id, name }`). El *reducer* de la cola guarda la copia con los trabajos
+  en la misma acción (`render/enqueue` y `render/updateJob` reciben en `studios` cada
+  `StudioRef` con su `snapshot`; la interfaz los da con `studiosForJobs`), así que
+  deshacer *Añadir a la cola* se lleva las dos cosas, y solo guarda las copias que nombra
+  algún trabajo (`pruneEmbedded` en `withQueue`: quitar el último trabajo de un estudio
+  quita su copia, deshacer la devuelve; *Duplicar* comparte la del original).
+- **Lo grande, una vez.** Las luces llevan su perfil IES en el JSON, como las del proyecto
+  (L5); el HDRI, la imagen de fondo y las texturas de la copia son `ImageRef`, y sus
+  archivos van en el bloque `images` con los del proyecto (U2/E5/M2a), **una vez cada
+  imagen** la nombre quien la nombre (`embeddedImageRefs` en `serializeProject`). Al abrir,
+  `placeImages` y `placeTextureImages` las colocan con las del proyecto, decodificando cada
+  una una sola vez, y le cambian el id a la vez en el proyecto y en las copias cuando en la
+  sesión ya nombra otra imagen; `replaceProject` conserva en el registro las de las copias.
+- **Al abrir y al renderizar.** `migrateRender` toma de `render.studios` lo que tiene forma
+  de copia (un *hash* de 64 cifras, un estudio con id y nombre, sin repetir) y `studioCopy`
+  de cada trabajo; `checkState` lee cada copia como los bloques del proyecto (entorno,
+  imagen y cámara completados con los valores de un proyecto nuevo y con los tipos
+  comprobados, perfiles IES con `withReadableProfile`, materiales con `readMaterial`, que es
+  lo de antes sacado a una función, y los materiales que nombran sus piezas presentes); una
+  copia dañada se quita, no el proyecto. Al renderizar, `resolveStudio` da el estudio del
+  trabajo: **su copia**; sin ella, el de la biblioteca con ese id; si no, uno que el
+  proyecto guardaba dentro (`studio.saved`); si no, el fallo con su motivo, como antes.
+- **Formato.** Las convenciones de `io/project.ts`: dos campos añadidos con su valor por
+  defecto, sin paso de esquema; **el esquema sigue en 2** (cabecera de `io/project.ts` y
+  `ARCHITECTURE.md` §8). Un proyecto anterior abre igual (sin copias, los mismos trabajos;
+  `project-v1.json` y `project-v2.json`), y una versión anterior que abra uno nuevo ignora
+  los dos campos y busca los estudios en su biblioteca.
+- **Añadir a mi biblioteca.** En el cajón *Cola*, entre la cabecera y la lista, una línea por
+  estudio que vino con el proyecto y no está en la biblioteca (ni guardado en el proyecto):
+  *El estudio «Estudio A» vino con el proyecto; no está en tu biblioteca* · **Añadir a mi
+  biblioteca** (`studiosToAdopt`, `addProjectStudioToLibrary`), que lo guarda en *Míos* con
+  su id y quita la línea. En la ventana de render, al editar un trabajo cuyo estudio solo
+  está en el proyecto, la lista lo nombra *Estudio A (en el proyecto)* en vez de *(ya no está
+  guardado)*. Cadenas en `es` y `en` (`queue.studioInProject`, `queue.addToLibrary`,
+  `rw.studioInProject`).
+
+**Pruebas.** `tests/job-studios.test.ts` (13): el **2 × 2 sobre dos estudios de la
+biblioteca** guardado, abierto en otra «máquina» con la biblioteca vacía por *Abrir
+proyecto* y renderizado: los cuatro trabajos terminan, con los nombres de la plantilla, cada
+uno con el tipo de producto, los focos y la exposición de su estudio y por su cámara; **sin
+el cambio falla** (los cuatro en *Fallido* con «El estudio “Studio A” ya no está guardado»:
+comprobado con `git stash` de `src/` y el mismo test sin importar nada nuevo). La copia gana
+a un estudio de la biblioteca guardado encima con el mismo id, y uno nuevo toma el de ahora;
+una copia por estudio (dos *Añadir* iguales, el archivo la tiene una vez y los trabajos la
+nombran por su *hash*); el *hash* no depende del orden de las claves, del id ni del nombre;
+las copias siguen a los trabajos (deshacer, quitar, duplicar); editar conserva la copia o
+toma la del estudio nuevo; **el HDRI del proyecto en un estudio no se duplica** (una entrada
+en `images`, el archivo crece menos de la mitad del base64 de la imagen; abierto en una
+sesión nueva la copia nombra el HDRI colocado, y en una sesión donde `hdri:1` es otra imagen
+el proyecto y la copia pasan al mismo id nuevo) y un HDRI que solo tiene el estudio viaja
+igual; los proyectos de antes abren igual; un trabajo de antes de N2b usa la biblioteca y,
+sin el estudio, falla con el motivo; editarlo le da copia; una copia dañada se quita y el
+proyecto abre; *Añadir a mi biblioteca* (qué ofrece, el id que conserva, que no toca el
+proyecto). En `tests/batch.test.ts`, la prueba de N2 «un estudio que ya no está guardado
+falla» pasa a decir lo de ahora: borrado de la biblioteca, el trabajo renderiza su copia; sin
+copia tampoco, falla con el motivo. Cada prueba nueva se comprobó con una mutación (10
+mutantes, todos muertos: sin las imágenes de las copias en el archivo, sin cambiarles el id
+al abrir, sin podar, la biblioteca antes que la copia, sin quitar repetidas, el *hash* sin
+ordenar las claves, una edición que cambia la copia, sin leer las copias al abrir, sin
+conservar sus imágenes al abrir, y el render sin mirar la copia); dos sobrevivían al
+principio (el *hash* sin ordenar y la edición) y sus pruebas se reforzaron.
+`tools/batch-check.mjs` (g), en Chromium con el `rt.wasm` real: dos estudios y un lote
+sobre los dos añadido a la cola en un perfil, *Guardar proyecto* (el `.repack` tiene las dos
+copias y los trabajos las nombran), abierto en otro perfil con la biblioteca vacía: la cola
+ofrece las dos líneas, *Iniciar cola* da `Studio 1.png` y `Studio 2.png` distintas, y añadir
+uno deja la línea del otro. Captura nueva `batch-queue-adopt.png`.
+
+**Puertas.** `npm run engine:build` y `npm run qa`: tipos y *build* en verde; de 3180 tests
+(192 archivos), 3148 pasan, 31 se saltan y uno, `tests/material-program-cross.test.ts` «has a
+fixture of every case», pasó del tiempo límite de 5 s con la máquina cargada por otros agentes
+(no toca nada de esta fase): solo pasa (3 de 3). `tools/batch-check.mjs` en Chromium con el
+`rt.wasm` real: las nueve comprobaciones en verde, (a)–(f) de N2 y (g1), (g2) de N2b. El motor
+no se toca.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ está decidido en *Decisiones de criterio*: se acepta tal como está):
+
+- ◆ **La copia gana** sobre un estudio de la biblioteca con el mismo id y otro contenido
+  (guardado encima), para los trabajos que ya la tenían; un trabajo nuevo de ese estudio
+  toma el de la biblioteca como está y lleva otra copia con el mismo id. No hay *Actualizar
+  desde la biblioteca* ni un aviso de que difieren.
+- ◆ **Editar** un trabajo sin cambiarle el estudio conserva su copia, aunque la biblioteca
+  haya cambiado; cambiárselo toma la del estudio nuevo (y la vieja sale si nadie la nombra).
+- ◆ ***Añadir a mi biblioteca*** guarda el estudio con **su id** (los trabajos lo encuentran
+  también allí), no se deshace (la biblioteca es de la persona, sin historial, U4: la regla 6
+  se cumple en todo lo del proyecto, que no cambia) y solo se ofrece para un id que la
+  biblioteca no tiene: una copia con el id de un estudio de la biblioteca que se guardó
+  encima no se ofrece como estudio aparte. Está en el cajón *Cola*, no en un detalle del
+  trabajo (no hay vista de detalle).
+- ◆ **El esquema sigue en 2**, por la convención del formato (lo añadido con valor por
+  defecto no sube el esquema): una versión anterior abre un proyecto nuevo sin error, sin
+  las copias.
+- **Un trabajo de antes de N2b no recibe copia al abrir** (abrir no cambia el proyecto: los
+  proyectos de antes abren igual), ni al guardar (el archivo no ve la biblioteca): busca su
+  estudio en la biblioteca, como antes; la recibe al editarlo o al volver a añadirlo.
+- **La copia puede llevar más que la biblioteca.** La biblioteca no guarda imágenes (E5):
+  tras recargar la página sus estudios no tienen HDRI; la copia lleva lo que el estudio
+  tenía al crear el trabajo (en la misma sesión, también su HDRI, que entonces sí viaja).
+- **Lo que sí va repetido, pequeño**: el perfil IES de un foco de la copia que también está
+  en el proyecto va dos veces en el JSON (el formato no tiene un bloque de perfiles: L5 los
+  lleva en la luz), y los materiales de la copia, como en todo estudio guardado. Las imágenes
+  no se repiten nunca.
+- **Los estudios que un proyecto antiguo guardaba dentro** (`studio.saved`) siguen sin
+  escribir su HDRI en el archivo, como antes de N2b: no es de esta fase.
+- **El *hash* no se recalcula al abrir**: es el nombre de la copia (completar sus campos al
+  leerla cambiaría el texto); una copia editada a mano conserva su *hash*.
+- **El motivo del fallo** sigue siendo «El estudio «…» ya no está guardado», también para un
+  proyecto antiguo abierto en otro equipo.
+- `tools/batch-check.mjs` se corrió con `--shots` a una carpeta aparte y solo se copió la
+  captura nueva: las de N2 (`batch-window.png`, `batch-queue.png`) no cambian.
 
 ## D1 · Doctor de motor — **Sonnet** — hecha
 
@@ -12113,9 +12245,10 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 
 **Fases que salen de aquí:**
 - **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
-- **C2** · Interruptor de la focal (1.7).
+- **C2** · Interruptor de la focal (1.7). **Hecha**: ver C2, abajo.
 - **M3c** · Nodos *Madera* y *Tela* (1.6). **Hecha**: ver M3c, tras M3b.
-- **N2b** · El estudio viaja con el proyecto.
+- **M3d** · La madera de la familia en *Rápido* por el camino del nodo *Madera* (M3c ◆3).
+- **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5).
 - El 1.2 entra en **S3**.
 
@@ -12136,7 +12269,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - **apagado** (por defecto, como en una cámara): la cámara se queda y cambia el encuadre;
   - **encendido**: la cámara se acerca o se aleja por su eje para que el plano enfocado conserve su tamaño en la imagen, es decir, cambia la perspectiva y no el tamaño.
 
-  El inspector dice cuál está activo. Es deshacible de una vez. **C2.**
+  El inspector dice cuál está activo. Es deshacible de una vez. **C2.** (hecho en C2)
 - **6.1–6.3** (los sets dentro de *Estudios*, sus luces desactivables). **Cerrado por L7.** Los sets son su propio grupo, y cada foco se enciende y apaga en la lista *Luces* sin tocar el resto.
 - **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC. (hecho en C1)
 - **E13** (MNEE). **No se fusiona.** Cuesta 1,8–2× con vidrio curvo y no mejora lo que se ve. Las cáusticas siguen en el mapa de fotones. La rama `wip/ccr-8df3f848/e13` se queda como referencia.
@@ -12193,7 +12326,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el ZIP apagado por defecto;
   - el orden cámara por cámara.
 
-  Un recorte con textura dará cobertura parcial cuando el motor la tenga. Un cambio: **el estudio de un trabajo viaja con el proyecto**, guardado dentro, para que un proyecto abierto en otro equipo no falle sus trabajos. **N2b.**
+  Un recorte con textura dará cobertura parcial cuando el motor la tenga. Un cambio: **el estudio de un trabajo viaja con el proyecto**, guardado dentro, para que un proyecto abierto en otro equipo no falle sus trabajos. **N2b.** (hecho en N2b)
 - **K3** (la cámara de interiores). Se acepta todo lo propuesto:
   - las alturas de ojo, 1,5 y 1,1 m;
   - las ópticas de interior, 24, 28 y 35 mm;
@@ -12204,6 +12337,9 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el campo del ojo de pez, medido en la diagonal.
 
 - **F1** (enfoque por punto y por objeto): el *Objeto* sigue el centro de su caja; el rango y la escala logarítmica del deslizador, como están; en *Punto* y *Objeto* **mover el deslizador pasa a *Distancia***; el mejor foco de la lente trazada por el contraste de detalle fino, como está (la esquina con distorsión +1 queda abierta); un clip de foco gana; el clic en un vidrio enfoca su cara delantera. **Hecho en F1.**
+- **N2b** (el estudio viaja con el proyecto). Se aceptan las cuatro tal como están: la copia gana sobre un estudio de la biblioteca con el mismo id y otro contenido; editar un trabajo sin cambiarle el estudio conserva su copia; *Añadir a mi biblioteca* guarda con su id, no se deshace y vive en el cajón *Cola*; el esquema sigue en 2. **Hecho en N2b.**
+- **C2** (interruptor de la focal). Se aceptan las seis tal como están: el interruptor va en cada cámara (viaja con ella al proyecto y a los estudios); una cámara bloqueada cambia la focal sin moverse; el objetivo de la órbita avanza por el eje cuando la cámara quedaría a menos de 0,1 × distancia × f′/f; las ópticas de interior pasan por el interruptor, los presets de lente siguen encuadrando el producto y los clips *ZOOM* no se mueven; la fila va debajo de *Focal*; con ortográfica o panorámica el interruptor sigue usable, no hace nada y lo dice. **Hecho en C2.**
+- **M3c** (nodos *Madera* y *Tela*). ◆1, la pelusa: se queda como está, una salida numérica de la *Tela* que se puede usar en el grafo; la entrada de pelusa de la salida de material (la 16 del programa) llega con **M5**, cuando el motor pinte la pelusa, no antes. ◆2, la tela bajo un bisel: se acepta como está (fuera del radio de bisel, los mismos bits que la familia; su propio fijado). ◆3, la madera de la familia en *Rápido*: **sí**, que se hornee por el mismo camino que el nodo, para que la madera en escena se vea como en las esferas también en *Rápido*: **M3d**. Lo demás (vista desde dentro, el bit de la normal, los nudos contra la caja en *Rápido*, el color medio, la semilla copiada al convertir), como está. **Hecho en M3c**, salvo M3d y lo que va a M5.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
@@ -12247,6 +12383,134 @@ recetas del plugin, sin barra vertical.
 - **Capturas regrabadas** (en *Sin publicar* de `GALERIA.md`): `scene-type-interior.png` (*Interior* con su receta de partida; `tools/scene-type-check.mjs` sigue a C1: elige después otra receta, que sí pregunta), `m3b-graphs.png` (los copos hacia fuera; ahora la hace `tests/m3b-graphs-sheet.test.ts`, con `REPACK_WRITE_CAPTURES=1`) y, del tema claro, `ai-section-light.png` y `ai-results-light.png` (`tools/ai-post-check.mjs`, que esperaba la intervención de fábrica en 30).
 
 **Puertas de la segunda ronda**, tras la fusión: `npm run engine:build` y `npm run qa` en verde (3108 tests: 3101 pasan, 7 se saltan); en `engine/`, `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace --release` (1142 pasan, 5 ignorados), la compilación wasm32 sin importaciones WASI, los bloques de paridad de `engine.yml` contra el `rt_wasm.wasm` real (42 imágenes, con la de O4; ninguna se movió), la paridad de la guarda con el `post.wasm` real (11 pasan) y los tests del código de la página con el `rt.wasm` real (129 pasan); el lanzador real con el *runtime* falso (`tests/ai-desktop.test.ts`); `tools/scene-type-check.mjs` y `tools/ai-post-check.mjs` (36 comprobaciones) en Chromium.
+
+## C2 · Interruptor de la focal — **Opus** — hecha
+
+**Petición del usuario** (`TODO.md` §1.7), tal cual: «Al cambiar la focal
+length cambia el zoom respecto al objeto enfocado, y esto quiero que sea un
+toggle. O la cámara se acerca o el objeto / punto enfocado.» Decidido en
+*Decisiones de criterio* (1.7): un interruptor junto a la focal, *Mantener
+el tamaño de lo enfocado*; apagado por defecto (la cámara se queda y cambia
+el encuadre, como en una cámara); encendido, la cámara se acerca o se aleja
+por su eje para que el plano enfocado conserve su tamaño (cambia la
+perspectiva, no el tamaño); el inspector dice cuál está activo y cada cambio
+es una entrada de deshacer.
+
+**Hecho:**
+
+- **El estado, por cámara**: `CameraState.keepFocusSize` (opcional; ◆ por
+  cámara y no como preferencia del inspector: cada cámara tiene su óptica y
+  su sitio, y así viaja sola con el proyecto, con *Nueva desde la vista
+  actual* y al duplicar, y con los estudios de la biblioteca, que guardan la
+  cámara entera). Al abrir, solo `true` es encendido (`io/project.ts`
+  `withInteriorCamera`, `io/library.ts` `camera`); un proyecto o un estudio de
+  antes de C2 se lee apagado.
+- **La cuenta, en el núcleo** (`core/focal.ts`, ARCHITECTURE §2, SPEC §3.5
+  *Focal y tamaño de lo enfocado*). Un punto a la profundidad *z* sale *f/z*
+  veces su tamaño: el plano a *D* lo conserva si pasa a *D·f′/f*, así que la
+  cámara avanza *D − D·f′/f* por la recta que la une a su objetivo, y la
+  distancia de órbita y la de enfoque bajan lo mismo. *D* sale de la
+  resolución de F1 (`focusedPlaneDistance`): la tecleada en *Distancia*; en
+  *Punto* y *Objeto*, `focusDistanceFor` del punto que se sigue en reposo
+  (la profundidad; con inclinación, donde el plano de la bisagra corta el
+  eje; con verticales rectas, medida por el eje propio de la cámara, que es
+  por el que se mueve: la cámara nivelada que se renderiza conserva el
+  tamaño y el sitio del plano, comprobado en los tests). El **objetivo de
+  órbita** se queda mientras la cámara quede delante de él a más de
+  `MIN_ORBIT_FRACTION` (0,1) de la distancia de órbita escalada por la misma
+  razón; si no, avanza por el eje delante de ella (◆ la regla y el 0,1). El
+  plano lejano de recorte se queda donde estaba en el mundo al alejarse.
+  **Cámara bloqueada**: la focal cambia y la cámara no se mueve (◆, como con
+  el interruptor apagado; antes de C2 la focal de una cámara bloqueada ya se
+  podía cambiar). **Ortográfica y panorámicas**: no hacen nada (su encuadre
+  es el ancho o el campo de visión, no la focal), y lo dice la línea del
+  inspector (`focalBehaviour`). La acción es `camera/focal` (`store.ts` la
+  manda a `reduceFocal`), y las **ópticas de interior** de K3
+  (`camera/interiorLens`) pasan por el mismo sitio (◆).
+- **La interfaz** (UI.md §5.1 *Cámara*, §3): el interruptor en su fila justo
+  debajo de *Focal* (en la sección *Cámara* de la escena y en la ficha de
+  una cámara guardada, que dibujan los dos `cameraFields`), con su línea
+  auxiliar, que dice cuál está activo y cómo es el otro, o por qué no hace
+  nada (bloqueada, ortográfica, panorámica); el campo de la focal despacha
+  `camera/focal` con el gesto del campo, así que cada pulsación de las
+  flechas (mantenida, un solo gesto), cada arrastre y cada valor tecleado es
+  una entrada (*Cámara: Focal*); el interruptor, otra (*Cámara: Mantener el
+  tamaño de lo enfocado*). En la paleta, *Focal: mantener el tamaño de lo
+  enfocado (activar o desactivar)* para la cámara que se ve, con un aviso.
+  Cadenas en `es` y `en`; el cromo es el del interruptor de siempre
+  (acromático, comprobado en los dos temas).
+
+**Tests** (cada uno se comprobó deshaciendo su cambio: falla).
+
+- `tests/focal-switch.test.ts` (19): apagado, la cámara se queda y el plano
+  crece por la razón de focales; encendido, en *Distancia* con el foco en el
+  objetivo y fuera de él, en *Punto* y en *Objeto*, y con verticales rectas,
+  los puntos del plano enfocado **proyectados** con la cámara que se
+  renderiza (su nivelada y su *shift*) caen donde caían (< 10⁻⁹ mm) y su
+  tamaño no cambia (< 10⁻⁹ relativo), mientras lo de delante encoge y lo de
+  detrás crece; en *Punto* manda el punto aunque la distancia guardada
+  esté vieja; el objetivo empujado; el recorte lejano; nada de NaN; las
+  ópticas de interior; la cámara bloqueada, la ortográfica y las dos
+  panorámicas, quietas; deshacer (el interruptor y la focal, una entrada
+  cada uno, y deshacer devuelve la cámara exacta), un arrastre una entrada
+  (y acaba donde un cambio directo), cada pulsación de las flechas la suya;
+  ida y vuelta en el proyecto (también una cámara nueva copiada), uno de
+  antes y uno con `"yes"` se abren apagados; un estudio de la biblioteca lo
+  guarda y uno de antes se lee apagado; la orden de la paleta.
+  Mutaciones: quitar el movimiento hace fallar 11 (y 3 del navegador);
+  quitar el paso por el *store*, 16 (y 4); medir *D* hasta el objetivo en
+  vez del plano enfocado, 5 (y 1); leer *D* de la distancia guardada en
+  *Punto*, 1; quitar la comprobación de bloqueada, de ortográfica y
+  panorámicas, del empuje del objetivo, del recorte, de las ópticas de
+  interior, de la lectura del proyecto, de la de la biblioteca o de la
+  orden de la paleta, 1 cada una.
+- `tests/focal-browser.test.ts` (5, Chromium con SwiftShader; se salta sin
+  él): la página `tests/browser/focal-page.ts` dibuja con el motor de la
+  vista previa dos tarjetas que brillan, cambia la focal por el *store* como
+  el campo (un arrastre de 50 a 85 mm, una pulsación a 35 mm, verticales
+  rectas con 18° de 35 a 70 mm) y lee el lienzo: encendido, la tarjeta del
+  plano enfocado sale con **los mismos píxeles** (5145 de 5145, 83 px de
+  ancho; en *Punto* sobre la tarjeta de detrás, 2595 de 2595; con verticales,
+  2806 de 2806), dentro del 1 % que se pide, y en su sitio a menos de un
+  píxel, mientras la otra cambia; apagado, la tarjeta crece 1,70× (83 → 141
+  px). Una entrada de deshacer cada vez.
+- `tools/focal-check.mjs` (20 comprobaciones sobre la interfaz construida,
+  `npm run build` antes): el interruptor bajo la focal, apagado y su línea;
+  apagado, la flecha cambia la focal y deja la distancia de enfoque; encender
+  es una entrada; la flecha mueve la distancia de enfoque por la razón de
+  focales (688,4 → 696,5 mm de 85 a 86 mm) en una entrada que un Ctrl+Z
+  deshace entera; un arrastre, una entrada; la línea de la ortográfica y de
+  la bloqueada (y la bloqueada no se mueve); la paleta lo apaga con su aviso;
+  la línea en español; acromático en el tema oscuro y en el claro. Con el
+  campo de antes (`camera/set`) fallan `on_the_camera_dollies` y
+  `drag_dollies`. `--shots docs/ui` deja la captura.
+
+**Captura**: `docs/ui/c2-focal-switch.png` (el bloque *Cámara* con el
+interruptor encendido y su línea; en `GALERIA.md`, *Sin publicar*).
+
+**No encajó con el plan** (regla 12; lo marcado ◆ está decidido en *Decisiones de criterio*: se acepta tal como está):
+
+1. **La focal no tiene deslizador**: es un campo con flechas que se arrastra
+   (U15). El «gesto de deslizador» es ese arrastre (una entrada); no se
+   añadió un deslizador a la focal.
+2. **No hay preferencias del inspector** donde guardar el interruptor; por
+   cámara encaja con el resto (ver arriba).
+3. **Con inclinación (O1)** se conserva el tamaño donde el plano corta el
+   eje: la regla de la bisagra depende de la focal, así que el plano
+   inclinado gira un poco al cambiarla y sus puntos fuera del eje no
+   conservan el tamaño exacto.
+4. **Con una lente trazada**, *D* es la distancia paraxial que guarda el
+   *store* (no pregunta al motor); abierta, el mejor foco cae a milímetros
+   de ella, y el tamaño en la imagen depende de la geometría, no de eso.
+5. **Los presets de *Óptica*** (`camera/lens`) siguen encuadrando la pieza
+   como antes, con el interruptor encendido o apagado; y los clips `ZOOM` de
+   la animación cambian la focal sin mover la cámara (un *dolly zoom*
+   animado sería otro clip).
+6. **El interruptor sigue activo** con la ortográfica y las panorámicas (se
+   puede dejar encendido para cuando la cámara vuelva a perspectiva); la
+   línea dice que ahí no hay nada que mantener.
+
+**Puertas.** `npm run engine:build` (el `rt.wasm`, el `rt-simd.wasm` y el `post.wasm` de siempre: el motor no se tocó, así que no hacen falta `cargo fmt`, `clippy` ni la compilación wasm aparte) y `npm run qa` en verde: tipos, *build* y 193 archivos de prueba, 186 pasan y 7 se saltan, con 3191 tests (3160 pasan, 31 se saltan; antes de la fase 191 archivos), sin repetir nada con `--maxWorkers=2`. `tests/focal-browser.test.ts` corrió dentro, en Chromium; `tools/focal-check.mjs` (20 de 20) sobre el `dist/` construido.
 
 ## F1 · Enfoque por punto y por objeto — **Opus** — hecha
 

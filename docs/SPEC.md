@@ -1155,6 +1155,40 @@ lanzado contra la geometría del visor por las dos caras de cada triángulo
 (como las ve el motor) y con la sección; la cámara que lo recibe es la que
 se ve (la mirada a través, la del plano del cabezal, o la activa).
 
+**Focal y tamaño de lo enfocado** (C2, `core/focal.ts`). Cada cámara lleva
+el interruptor *Mantener el tamaño de lo enfocado*,
+`CameraState.keepFocusSize` (opcional: una cámara, un proyecto o un
+estudio de la biblioteca de antes de C2 no lo tienen y se leen apagado; al
+abrir, cualquier valor que no sea `true` es apagado). La focal cambia con
+`camera/focal` (el campo del inspector: un paso de las flechas, un arrastre
+o un valor tecleado, cada uno una entrada de deshacer) o con una óptica de
+interior (`camera/interiorLens`), y pasa por él:
+
+- **apagado** (por defecto, como en una cámara): la cámara se queda donde
+  está y cambia el encuadre;
+- **encendido**: la cámara se mueve por su eje para que el plano enfocado
+  conserve su tamaño en la imagen. Un punto a la profundidad *z* sale *f/z*
+  veces su tamaño, así que el plano a la distancia *D* lo conserva si pasa a
+  *D·f′/f*: la cámara avanza *D − D·f′/f* (retrocede si la focal crece) y la
+  distancia de enfoque y la de órbita bajan lo mismo. *D* es la de F1 en
+  reposo: la tecleada en *Distancia*; en *Punto* y *Objeto*, la que pone en
+  foco el punto que se sigue (`focusDistanceFor`: su profundidad; con
+  inclinación, donde el plano de la bisagra que pasa por él corta el eje;
+  con verticales rectas se mide por el eje propio de la cámara, que es por el
+  que se mueve, y la cámara nivelada que se renderiza conserva el tamaño y
+  el sitio del plano). El **objetivo de órbita** se queda donde está
+  mientras la cámara quede delante de él a más de una décima de la
+  distancia de órbita escalada por la misma razón; si no, avanza por el eje
+  delante de la cámara (nunca queda detrás). El plano lejano de recorte se
+  queda donde estaba en el mundo.
+
+No mueve nada con la cámara **bloqueada** (la focal cambia como apagado), ni
+con la **ortográfica** ni las **panorámicas**, cuyo encuadre no depende de la
+focal (el ancho, el campo de visión). Elegir un **preset de óptica**
+(`camera/lens`) sigue encuadrando la pieza como antes; los clips `ZOOM` de
+una animación cambian la focal sin mover la cámara. *Nueva desde la vista
+actual* y duplicar copian el interruptor.
+
 **Óptica (O1, la lente simple; hasta O4 se llamaba *lente fina*, y el
 proyecto la sigue guardando como `thin`).** `CameraState.optics` (opcional;
 una cámara sin él, como todas las anteriores a O1, es la lente simple de
@@ -1585,9 +1619,24 @@ con la cámara del trabajo (el estudio no le quita su vista); el proyecto abiert
 toca. *Todas las cámaras* × *Todos los estudios* es un **lote**: un trabajo por cámara
 y estudio (primero por cámara), con el nombre de la plantilla (`{project}_{camera}_{studio}`,
 cuyas fichas dicen *Proyecto*, *Cámara* y *Estudio*, da cuatro archivos distintos en un 2 × 2;
-`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un estudio que ya no
-está guardado hace fallar su trabajo, con el motivo, y la cola sigue. Un trabajo con
+`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un trabajo con
 estudio no pasa por la IA (sus pases se dibujan del proyecto abierto).
+
+**El estudio viaja con el proyecto** (N2b). Al crear un trabajo con un estudio guardado,
+el proyecto guarda una **copia** de ese estudio (lo que pone *Restaurar*: focos, entorno,
+imagen, cámara, materiales por pieza y visibilidad), una sola por estudio y contenido
+aunque la usen muchos trabajos, y el trabajo la nombra por el *hash* de su contenido.
+Esa copia es lo que el trabajo renderiza: abierto el proyecto en otro equipo o en otro
+perfil del navegador sin ese estudio en la biblioteca, los trabajos salen igual; y si la
+biblioteca tiene un estudio con el mismo id pero otro contenido (se guardó encima), **gana
+la copia** para los trabajos que ya estaban; uno nuevo toma el estudio como está ahora.
+Editar un trabajo sin cambiarle el estudio conserva su copia; cambiárselo toma la del
+nuevo. La copia sale del proyecto con el último trabajo que la nombra (y vuelve con
+deshacer). Su HDRI, su imagen de fondo y sus texturas no se guardan dos veces: van con
+las del proyecto, una vez cada imagen. Un estudio que llegó en el proyecto y no está en
+la biblioteca se puede **añadir a la biblioteca** desde la cola. Un trabajo de un
+proyecto anterior a N2b no tiene copia: busca su estudio en la biblioteca, como antes,
+y sin él falla con el motivo y la cola sigue.
 
 Con **ZIP**, los archivos de los trabajos que una orden *Render* o *+ Añadir a la cola*
 metió en la cola (imágenes, pases, leyendas) no se guardan uno a uno: se acumulan y, al
@@ -1633,7 +1682,8 @@ distingue de cualquier otro JSON); hasta v0.1.6 se llamaba `.repack.json`,
 y esos archivos se siguen abriendo igual (selector, diálogo del escritorio y
 al soltarlos en la ventana). *Guardar* y *Guardar como…* proponen `.repack`;
 guardar sobre un archivo abierto lo escribe donde está, con el nombre que
-tenga.
+tenga. Los estudios que usan los trabajos de la cola van dentro del proyecto
+(N2b, §3.8), aunque el estudio sea de la biblioteca.
 
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
 entre proyectos: materiales (*Guardar material como…*), montajes de luz

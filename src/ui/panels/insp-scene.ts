@@ -11,6 +11,7 @@ import { activeCamera, CAMERA_PROJECTIONS, type CameraId, type CameraProjection,
 import { EXPOSURE_PRESETS, EXTERIOR_MAX, EXTERIOR_MIN, FISHEYE_FOV_MAX, FISHEYE_FOV_MIN, VERTICALS_MAX_TILT_DEG } from '../../data/interior-camera';
 import { EYE_HEIGHT_PRESETS, exteriorOf, eyeHeightOf, INTERIOR_LENSES, verticalsOf } from '../../core/interior-camera';
 import { fisheyeFov } from '../../core/panorama';
+import { focalBehaviour, keepsFocusSize, type FocalBehaviour } from '../../core/focal';
 import { autoExposure, presetExposure } from '../../core/image-passes';
 import { itemsOf, type LightSetupItem, type ProductTypeItem } from '../../core/library';
 import { libraryKey, lightShares, lightIrradiance, presetRefOf } from '../../core/lighting';
@@ -584,6 +585,15 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
 
 // --- Camera ---------------------------------------------------------------------------
 
+/** C2: the aux line under the focal length's switch, by what a focal change does to the camera now. */
+const FOCAL_NOTES: Record<FocalBehaviour, StringKey> = {
+  FRAMING: 'camera.keepFocusSizeOff',
+  DOLLY: 'camera.keepFocusSizeOn',
+  LOCKED: 'camera.keepFocusSizeLocked',
+  ORTHOGRAPHIC: 'camera.keepFocusSizeOrtho',
+  PANORAMA: 'camera.keepFocusSizePano',
+};
+
 /** Camera fields for one camera (the active one in the scene context). */
 export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
   const { store } = ctx;
@@ -601,7 +611,20 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     },
     t('camera.lens'),
   );
-  const focal = numberField({ value: cam0.focalMm, min: 8, max: 600, step: 1, unit: 'mm', ariaLabel: t('camera.focal'), onChange: (v, g) => set({ focalMm: v }, 'camera.focal', g) });
+  // C2: the focal length goes through its switch (core/focal.ts): a step of the arrows, a drag or a typed value is one
+  // undo entry, the camera's dolly with it when the switch is on.
+  const focal = numberField({
+    value: cam0.focalMm,
+    min: 8,
+    max: 600,
+    step: 1,
+    unit: 'mm',
+    ariaLabel: t('camera.focal'),
+    onChange: (v, g) => store.dispatch({ type: 'camera/focal', id: camId(), focalMm: v, gesture: g, label: cmd.editLabel('camera', 'camera.focal') }),
+  });
+  const keep = toggle(keepsFocusSize(cam0), (v) => set({ keepFocusSize: v }, 'camera.keepFocusSize'), t('camera.keepFocusSize'));
+  keep.el.setAttribute('data-keep-focus-size', '');
+  const keepNote = h('div', { class: 'note', 'data-focal-note': '' });
   const fstop = numberField({ value: cam0.fstop, min: 0.95, max: 32, step: 0.1, digits: 1, prefix: 'f/', ariaLabel: t('camera.fstop'), onChange: (v, g) => set({ fstop: v }, 'camera.fstop', g) });
   // F1: Focus, Distance · Point · Object, and the distance as a slider (insp-focus.ts).
   const focus = focusRows(ctx, scope, camId);
@@ -621,6 +644,11 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
       if (!c) return;
       lens.set(c.lens ?? '');
       focal.set(c.focalMm);
+      keep.set(keepsFocusSize(c));
+      // Which behaviour is on, and the other one (the aux line of the switch).
+      const behaviour = focalBehaviour(c);
+      keepNote.dataset.behaviour = behaviour;
+      keepNote.textContent = t(FOCAL_NOTES[behaviour]);
       fstop.set(c.fstop);
       proj.set(c.projection);
     },
@@ -631,6 +659,8 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     { class: 'stack', 'data-guide': 'camera' },
     field(t('camera.lens'), lens.el),
     field(t('camera.focal'), focal.el),
+    field(t('camera.keepFocusSize'), keep.el),
+    keepNote,
     field(t('camera.fstop'), fstop.el),
     focus,
     h('div', { class: 'note' }, t('camera.dofNote')),

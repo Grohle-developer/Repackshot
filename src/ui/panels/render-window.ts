@@ -666,10 +666,12 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     // Studio (N2): rebuilt only when the saved studios change, like the cameras'.
     const refs = studioRefs(ctx);
     const gone = s.studio.kind === 'ONE' && !refs.some((x) => x.id === (s.studio as { id: string }).id) ? s.studio : null;
+    // N2b: a studio not saved here any more may still be in the project (the copy a job keeps): it renders.
+    const inProject = gone ? st.render.studios.some((e) => e.studio.id === gone.id) : false;
     const studioOpts = [
       { value: 'CURRENT', label: t('rw.studioCurrent'), disabled: false },
       ...refs.map((x) => ({ value: `ONE:${x.id}`, label: x.name, disabled: false })),
-      ...(gone ? [{ value: `ONE:${gone.id}`, label: t('rw.studioGone', { name: gone.name }), disabled: false }] : []),
+      ...(gone ? [{ value: `ONE:${gone.id}`, label: t(inProject ? 'rw.studioInProject' : 'rw.studioGone', { name: gone.name }), disabled: false }] : []),
       { value: 'ALL', label: t('rw.studioAll', { n: refs.length }), disabled: editing || refs.length === 0 },
     ];
     const ssel = studioSel.el as HTMLSelectElement;
@@ -790,7 +792,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   };
   // Settings, not progress: a running job's ticks change `s.render` but none of these.
   scope.watch(
-    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, s.studio.saved, u.library.studios, u.throughput, u.noiseEstimate, u.video] as unknown[],
+    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, s.studio.saved, s.render.studios, u.library.studios, u.throughput, u.noiseEstimate, u.video] as unknown[],
     sync,
     (x, y) => x.length === y.length && x.every((v, i) => v === y[i]),
   );

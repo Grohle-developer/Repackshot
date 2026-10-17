@@ -72,6 +72,12 @@ export interface CameraState {
    * Absent: off (every camera of before K3).
    */
   straightVerticals?: boolean;
+  /**
+   * C2, *Keep the size of what is in focus* (core/focal.ts): on, a change of the focal length moves the camera along its
+   * view axis so that the plane in focus keeps its size in the image; off (absent: every camera of before C2), the camera
+   * stays where it is and the framing changes, as on a real camera.
+   */
+  keepFocusSize?: boolean;
 }
 
 /** F1: how a camera's focus is set (CameraState.focusMode). */
