@@ -36,6 +36,8 @@ import { partKnots, type PartKnots } from '../core/knots';
 import { setKnots } from './knots';
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
+import { SectionPreview } from './section-preview';
+import { resolveSection } from '../core/section';
 import { TexturePreview } from './texture-preview';
 import { filterActive, filtersOf, opticsOf } from '../core/optics';
 import { filterKernel, type FilterKernel } from './lens-filter-image';
@@ -307,6 +309,8 @@ export class PreviewEngine implements RenderEngine {
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
   private readonly materials = new Map<string, THREE.MeshPhysicalMaterial>();
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
+  /** Q1: the section view: the cutting plane every material of the model carries, and the caps of the cut solids. */
+  private readonly section = new SectionPreview();
   /** E6: a copy of a wood material per part that shows its knots (they lie where that part's box puts them). */
   private readonly knotMaterials = new Map<string, THREE.MeshPhysicalMaterial>();
   /** The program key each of them was last compiled with (its textures' and its knots'). */
@@ -458,6 +462,10 @@ export class PreviewEngine implements RenderEngine {
     this.scene.add(this.shadowLight, this.shadowLight.target);
     this.maskSelected.color.setRGB(1, 0, 0);
     this.maskHover.color.setRGB(0, 1, 0);
+    // Q1: what draws the model for the outline and for depth is cut like the model (both sides while it cuts, so the
+    // cap shows in the mask), and so is what a box selection reads.
+    for (const m of [this.fallbackMaterial, this.idBlack, this.idColours]) this.section.clip(m);
+    for (const m of [this.maskSelected, this.maskHover, this.depthOnly]) this.section.clipTwoSided(m);
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
     this.copyScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMaterial));
     this.warpScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.warpMaterial));
@@ -476,6 +484,8 @@ export class PreviewEngine implements RenderEngine {
     RectAreaLightUniformsLib.init();
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Q1: the materials of the model carry the section's plane (and nothing else does).
+    this.renderer.localClippingEnabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -728,6 +738,17 @@ export class PreviewEngine implements RenderEngine {
     this.nodesPosed = pose !== null;
     this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
     this.poseActive = posed;
+    // Q1: the section plane where the playhead has put it, and the caps of what it cuts (made again when the parts or
+    // the materials changed, or the section went on or off).
+    const wasCutting = this.section.active;
+    const wasCapping = this.section.capping;
+    const cut = resolveSection(state.section, pose?.sectionOffsetMm ?? 0);
+    this.section.setPlane(cut ? { normal: toThree(cut.normal), distance: cut.distance, cap: cut.cap } : null);
+    if (this.section.active !== wasCutting) {
+      // Both sides of every material while it cuts (an open mesh shows its inside), the front otherwise.
+      for (const m of [this.fallbackMaterial, ...this.materials.values(), ...this.knotMaterials.values()]) this.section.sided(m);
+    }
+    if (full || nodesChanged || matsChanged || this.section.capping !== wasCapping) this.section.syncCaps(state, this.objects);
     // Lights and environment follow the playhead only when a clip moves them.
     const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT'));
     const poseEnv = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'SCENE'));
@@ -771,7 +792,7 @@ export class PreviewEngine implements RenderEngine {
       // A graph's maps are made for the parts that carry it: their meshes count too.
       const graphParts = !!inst.graph && !!prev && prev.scene.nodes !== state.scene.nodes;
       if (!m) {
-        const made = makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm);
+        const made = this.section.sided(this.section.clip(makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm)));
         if (inst.graph) this.graphs.apply(made, inst, state);
         else this.textures.apply(made, inst);
         this.materials.set(id, made);
@@ -930,6 +951,8 @@ export class PreviewEngine implements RenderEngine {
       this.knotMaterials.set(key, m);
     }
     base.userData = userData;
+    // A copy has its own planes (three.js clones them): the shared one again.
+    this.section.sided(this.section.clip(m));
     setKnots(m, knots.frame, knots.knots, knots.darkness, base);
     // A new texture configuration under the knots: a new program.
     const program = m.customProgramCacheKey();
@@ -1285,7 +1308,7 @@ export class PreviewEngine implements RenderEngine {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const ink = this.outlineMaterial.uniforms.ink.value as THREE.Vector3;
-    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(ink.x, ink.y, ink.z), transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false, side: THREE.DoubleSide });
+    const m = this.section.clip(new THREE.MeshBasicMaterial({ color: new THREE.Color(ink.x, ink.y, ink.z), transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false, side: THREE.DoubleSide }));
     const mesh = new THREE.Mesh(g, m);
     obj.add(mesh);
     return mesh;
@@ -1950,12 +1973,22 @@ export class PreviewEngine implements RenderEngine {
       for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
       return true;
     };
-    const meshes = [...this.objects.values()].filter((o) => o instanceof THREE.Mesh && visible(o));
-    const hit = this.raycaster.intersectObjects(meshes, false)[0];
-    if (!hit || !hit.face) return null;
-    const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+    // Q1: through a section, what is cut away takes no click, and the cap of a cut solid is the solid: the caps' meshes
+    // join the ray's, the back of a closed solid being what the engine reads as the cut (`firstKept`).
+    const meshes = [...this.objects.values(), ...this.section.capMeshes()].filter((o) => o instanceof THREE.Mesh && visible(o));
+    const found = this.section.firstKept(this.raycaster.intersectObjects(meshes, false), this.raycaster.ray);
+    if (!found) return null;
+    const { hit, cap } = found;
+    const face = hit.face;
+    if (!face) return null;
+    const node = hit.object.userData.nodeId as NodeId;
+    if (cap) {
+      const n = fromThree(cap.normal);
+      return { node, face: hit.faceIndex ?? 0, point: fromThree(cap.point), normal: [n[0], n[1], n[2]] };
+    }
+    const normal = face.normal.clone().transformDirection(hit.object.matrixWorld);
     const n = fromThree(normal);
-    return { node: hit.object.userData.nodeId as NodeId, face: hit.faceIndex ?? 0, point: fromThree(hit.point), normal: [n[0], n[1], n[2]] };
+    return { node, face: hit.faceIndex ?? 0, point: fromThree(hit.point), normal: [n[0], n[1], n[2]] };
   }
 
   // ------------------------------------------------------------------ box selection
@@ -1975,7 +2008,8 @@ export class PreviewEngine implements RenderEngine {
       ...(profile ? { shown: (x: number, y: number) => shownOfSource(profile, view, x, y) } : {}),
       mvp: (id) => {
         const obj = this.objects.get(id);
-        if (!(obj instanceof THREE.Mesh)) return null;
+        // Q1: a part the section cuts away entirely is not there to select.
+        if (!(obj instanceof THREE.Mesh) || this.section.removed(obj)) return null;
         obj.updateWorldMatrix(true, false);
         return new THREE.Matrix4().multiplyMatrices(viewProj, obj.matrixWorld).elements.slice();
       },
@@ -2286,6 +2320,7 @@ export class PreviewEngine implements RenderEngine {
     for (const g of this.geometries.values()) g.dispose();
     for (const m of this.materials.values()) m.dispose();
     for (const m of this.knotMaterials.values()) m.dispose();
+    this.section.dispose();
     this.textures.dispose();
     this.envTexture?.dispose();
     this.envMap?.dispose();

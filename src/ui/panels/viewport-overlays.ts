@@ -22,6 +22,7 @@ import { h, icon } from '../dom';
 import type { IconName } from '../icons';
 import { cameraLabel, cameraName, dyn, lightName, targetLabel } from '../names';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
+import { finishSectionPick, sectionBanner } from '../section-commands';
 import { kbdFor } from '../shortcuts';
 import { L, formatNumber, getLang, isaLabel, t } from '../strings';
 import { drawAllGlyphs, type Tool } from '../ui-state';
@@ -375,6 +376,7 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       else if (pm?.kind === 'reflect') pickBanner.textContent = t('viewport.pickReflect', { light: lightName(s, pm.light, getLang()) });
       else if (pm?.kind === 'pivot') pickBanner.textContent = t('viewport.pickPivot');
       else if (pm?.kind === 'link') pickBanner.textContent = t('viewport.pickLink');
+      else if (pm?.kind === 'section') pickBanner.textContent = sectionBanner(pm.pick);
       else if (pm?.kind === 'surface') pickBanner.textContent = t('viewport.pickSurface', { light: lightName(s, pm.light, getLang()) });
       else if (pm?.kind === 'aim') pickBanner.textContent = t(pm.part ? 'viewport.pickAimPart' : 'viewport.pickAim', { light: lightName(s, pm.light, getLang()) });
     },
@@ -619,6 +621,10 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         cmd.linkMaterial(ctx, pm.parts, tg.part);
       } else if (pm.kind === 'surface' || pm.kind === 'aim') {
         cmd.finishLightPick(ctx, pm, tg.part, tg.hit.point, tg.hit.normal);
+      } else if (pm.kind === 'section') {
+        // Q1: the section plane. A line goes on to its second point; everything else is done with this click.
+        finishSectionPick(ctx, pm.pick, tg.hit.point, tg.hit.normal);
+        return;
       } else {
         store.dispatch({ type: 'studio/placeLight', id: pm.light, point: tg.hit.point, normal: tg.hit.normal, label: L('undo.placeLight', { name: { en: lightName(s, pm.light, 'en'), es: lightName(s, pm.light, 'es') } }) });
       }

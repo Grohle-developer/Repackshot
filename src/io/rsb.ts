@@ -12,6 +12,7 @@
 // after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
 import { playheadPose, type Pose } from '../core/animation';
+import { resolveSection } from '../core/section';
 import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
 import { instanceFromPreset } from '../core/materials';
 import type { EffectMaterial } from '../data/effects';
@@ -66,6 +67,12 @@ export const TAG_PROG = 'PROG';
 export const TAG_LENS = 'LENS';
 /** S4a: an ambient effect's parameters (rt_sim::params; the engine evaluates the particles). */
 export const TAG_FXAM = 'FXAM';
+/** Q1: the section view's plane (written after the FXAM sections; absent without a section). */
+export const TAG_SECT = 'SECT';
+/** `SECT.flags` bit 0: the cut solids are capped. */
+export const SECTION_CAP = 1;
+/** Bytes of a `SECT` payload: `u32 flags; f32 normal[3] distance`. */
+export const SECT_BYTES = 20;
 
 /** `MATL.kind`. */
 export const MATERIAL_PRINCIPLED = 0;
@@ -524,6 +531,15 @@ export interface RsbScene {
   effects?: RsbEffect[];
   /** M3b: the materials' programs (PROG, last), each referring to its material by index. */
   programs?: RsbProgram[];
+  /** Q1: the section view's plane (SECT): `normal · p = distance` (mm), what stays is `<=`; absent: the whole model. */
+  section?: RsbSection;
+}
+
+/** Q1: the section view's plane, as `SECT` holds it (core/section.ts `resolveSection`). */
+export interface RsbSection {
+  normal: RsbVec;
+  distance: number;
+  cap: boolean;
 }
 
 /** M3b: a material's program, the payload of `PROG` after its material index. */
@@ -812,6 +828,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   const images = tex ? (scene.images ?? []) : [];
   const effects = scene.effects ?? [];
   const programs = scene.programs ?? [];
+  const section = scene.section ?? null;
   let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
@@ -822,6 +839,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   if (withMeshes && images.length > 0) size += 8 + imagesBytes(images);
   if (instances) size += instances.length * (8 + INST_BYTES);
   for (const p of programs) size += 8 + 4 + p.bytes.length;
+  if (section) size += 8 + SECT_BYTES;
 
   const w = new ByteWriter(size);
   w.tag(RSB_MAGIC);
@@ -944,6 +962,14 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     });
   }
   for (const e of effects) w.section(TAG_FXAM, FXAM_BYTES, () => w.raw(fxamPayload(e)));
+  // Q1: the section view, only when there is one: a scene without it is the bytes of before.
+  if (section) {
+    w.section(TAG_SECT, SECT_BYTES, () => {
+      w.u32(section.cap ? SECTION_CAP : 0);
+      w.vec(section.normal);
+      w.f32(section.distance);
+    });
+  }
   if (withMeshes && images.length > 0) {
     w.section(TAG_IMGS, imagesBytes(images), () => {
       w.u32(images.length);
@@ -1859,6 +1885,10 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     effects.push(effectFxam(state, e, materialId, cap));
   }
 
+  // Q1: the cutting plane where the animation has put it, for an engine that cuts (every one this version ships).
+  const cutting = resolveSection(state.section, pose?.sectionOffsetMm ?? 0);
+  const section: RsbSection | null = cutting ? { normal: [cutting.normal[0], cutting.normal[1], cutting.normal[2]], distance: cutting.distance, cap: cutting.cap } : null;
+
   const env = state.environment;
   const flat = env.kind === 'FLAT';
   // The engine's flat environment is grey: the colour's luminance.
@@ -1955,7 +1985,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   }
 
   return {
-    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),
