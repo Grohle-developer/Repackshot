@@ -10,10 +10,10 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
 | --- | --- |
 | `types.ts` | Shared contracts: `Label`, `LightSpec`, `StudioPreset`, `MaterialPreset`, `WearProps`, ... |
 | `quality.ts` | `QUALITY_PRESETS` (3), `RESOLUTION_PRESETS` (5) |
-| `aspects.ts` | `ASPECT_PRESETS` (10, U13; not ported): the image aspect ratios a camera is offered (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`, `21:9`, `2:1`, `65:24`) with stable keys, and `CUSTOM` (`w : h` kept on the camera). Logic is `src/core/aspect.ts` |
+| `aspects.ts` | `ASPECT_PRESETS` (10, U13): the image aspect ratios a camera is offered (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`, `21:9`, `2:1`, `65:24`) with stable keys, and `CUSTOM` (`w : h` kept on the camera). Logic is `src/core/aspect.ts` |
 | `studios.ts` | `STUDIO_PRESETS` (16 product types, 50 lights) |
-| `light-setups.ts` | `LIGHT_STYLES` (10: the 16 sets of L6 first, the Interior style of K1 last), `LIGHT_SETUPS` (95: 16 sets, the 72 of EZ Packshot, the 7 of Interior), `SPEC_DEFAULTS`, `LIGHT_ROLES`, camera angles |
-| `scene-types.ts` | `SCENE_TYPES` (3, K1; not ported): Product, Interior and Catalogue with their label, intent and the default values each writes (INTERIORS.md §3.1). Logic is `src/core/scene-type.ts` |
+| `light-setups.ts` | `LIGHT_STYLES` (10: the 16 sets of L6 first, the Interior style of K1 last), `LIGHT_SETUPS` (95: 16 sets, the 72 of the base catalogue, the 7 of Interior), `SPEC_DEFAULTS`, `LIGHT_ROLES`, camera angles |
+| `scene-types.ts` | `SCENE_TYPES` (3, K1): Product, Interior and Catalogue with their label, intent and the default values each writes (INTERIORS.md §3.1). Logic is `src/core/scene-type.ts` |
 | `materials.ts` | `MATERIAL_CATEGORIES` (7), `MATERIAL_PRESETS` (77) |
 | `wear.ts` | `WEAR_TYPES` (8), per-family and per-category tables, `WEAR_PRESETS` (9) |
 | `fuzz.ts` | `FUZZ_PRESETS` (10), data only |
@@ -22,29 +22,28 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
 | `bokeh.ts`, `bokeh.json` | `BOKEH_TYPES` (20, the taxonomy of optics.md §1), `BOKEH_NEUTRAL`, `PUPIL_PROFILES`, `bokehType(key)`, `bokehParams(type, variant)`. Each type is a set of thin-lens parameters (blades, roundness, mask id, pupil profile, obstruction, cat's eye, squeeze, CA, swirl, rings, texture), or needs a traced lens (`requires: 'traced'`, `lens` key) or wave optics (`requires: 'wave'`, coming soon). Mask ids are those of `public/assets/aperture/index.json` |
 | `camera-moves.ts`, `camera-moves.json` | `CAMERA_MOVE_LIBRARY` (14) and `HANDHELD_PRESETS` (3): product-relative camera moves as lists of the existing animation kinds (degrees, % of the framing distance, part sizes, focal and focus factors; times as fractions of the duration), and the handheld noise parameters. `src/core/camera-moves.ts` expands a move into the clips of the timeline |
 | `animation.ts` | `MOVE_KINDS` (16, `PHYSICS` from S2), `EASING_KINDS` (5), `TARGET_KINDS`, `EXPLODE_MODES`, move groups, `SEQUENCE_PRESETS` (16) |
-| `doctor.ts` | `DOCTOR_CHECKS` (19: the 14 of upstream, with the texts of the engine ones rewritten for Repackshot's engine in D1; `simd` after `engine` and `budget` after `output`, D1; and, appended after them, `aspect`, U13, `physics`, S2, and `particles`, S4a), descriptors only; `doctorCheck(key)` also knows those of `doctor-interior.ts` |
-| `doctor-interior.ts` | `INTERIOR_DOCTOR_CHECKS` (7, K1; not ported): the checks of the interior Doctor, which only run while the scene type is Interior (`src/core/doctor-interior.ts`), descriptors only |
-| `physics.ts` | Physics (S2, not ported): `DENSITY_BY_CATEGORY` (kg/m³ by material category), `DEFAULT_DENSITY`, `PHYSICS_DEFAULTS` (friction, bounciness), `FLOOR_SURFACE`, `PHYSICS_LIMITS`, `PHYSICS_ROLES` (4, cloth and liquid coming soon), `BUILT_ROLES`, `MAX_SIMULATED_SECONDS` |
+| `doctor.ts` | `DOCTOR_CHECKS` (19: the 14 base checks, with the texts of the engine ones rewritten for Repackshot's engine in D1; `simd` after `engine` and `budget` after `output`, D1; and, appended after them, `aspect`, U13, `physics`, S2, and `particles`, S4a), descriptors only; `doctorCheck(key)` also knows those of `doctor-interior.ts` |
+| `doctor-interior.ts` | `INTERIOR_DOCTOR_CHECKS` (7, K1): the checks of the interior Doctor, which only run while the scene type is Interior (`src/core/doctor-interior.ts`), descriptors only |
+| `physics.ts` | Physics (S2): `DENSITY_BY_CATEGORY` (kg/m³ by material category), `DEFAULT_DENSITY`, `PHYSICS_DEFAULTS` (friction, bounciness), `FLOOR_SURFACE`, `PHYSICS_LIMITS`, `PHYSICS_ROLES` (4, cloth and liquid coming soon), `BUILT_ROLES`, `MAX_SIMULATED_SECONDS` |
 | `environment.ts` | Studio dome grey levels and bright-field limits |
-| `primitives.json`, `primitives.ts` | `PRIMITIVES` (12, U9; no portado): las formas de *Añadir ▸ Primitiva* con clave estable, papel en el estudio (`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`) y medidas (clave, longitud o número, mínimo, paso, factor del tamaño de la escena o valor por defecto), y el material neutro que llevan; los nombres y etiquetas son cadenas de la interfaz y la geometría es `src/core/primitives.ts` |
+| `primitives.json`, `primitives.ts` | `PRIMITIVES` (12, U9): las formas de *Añadir ▸ Primitiva* con clave estable, papel en el estudio (`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`) y medidas (clave, longitud o número, mínimo, paso, factor del tamaño de la escena o valor por defecto), y el material neutro que llevan; los nombres y etiquetas son cadenas de la interfaz y la geometría es `src/core/primitives.ts` |
 | `update-feed.ts` | `UPDATE_FEED`: the GitHub repository (`owner`, `repo`) whose releases are the update feed; change it here only |
 | `ai-models.json`, `ai-models.ts` | AI post-processing models (files with pinned URLs, sizes and `sha256`, licences, requirements) and the recommendation table (AI-POST.md §2.4); JSON because the desktop launcher embeds it too. Types in `ai-models.ts` |
 
 ## Conventions
 
 - Catalogue names (`STUDIO_PRESETS`, `LIGHT_SETUPS`, ...) and catalogue keys
-  (`'JEWELLERY'`, `'WRAP'`, `'ALU_ANOD'`, ...) are the upstream ones, unchanged,
-  so documentation can reference them. Keys inside objects are camelCase
-  (`size_y` is `sizeY`, `coat_roughness` is `coatRoughness`).
-- Every user-facing string is a `Label` (`{ es, en }`). Spanish text is ASCII
-  without accents, as upstream. The files that are not ported (`ai-models.json`
+  (`'JEWELLERY'`, `'WRAP'`, `'ALU_ANOD'`, ...) are stable, so documentation can
+  reference them. Keys inside objects are camelCase (`sizeY`,
+  `coatRoughness`).
+- Every user-facing string is a `Label` (`{ es, en }`). The Spanish text of the
+  base catalogue is ASCII without accents. Newer files (`ai-models.json`
   and the studio-tools data: `lenses.json`, `bokeh.json`, `camera-moves.json`, `aspects.ts`) use
   proper Spanish with accents, like the interface strings.
 - Catalogues are arrays when order matters (UI lists) and have a
   `key` field on every entry; use the `xxxPreset(key)` lookups to find one.
-- Wear: the upstream `wear_` prefix is dropped (`wear_edge_color` is
-  `edgeColor`, `rough_var` is `roughVar`). The intensity of a wear type is the
-  `WearProps` field with the type's own name.
+- Wear: the intensity of a wear type is the `WearProps` field with the type's
+  own name.
 
 ## Azimuth convention
 
@@ -76,27 +75,20 @@ exposure.
 
 ## Licence note
 
-The values in this directory are data ported by hand from EZPackshot
-(https://github.com/Grohle/EZPackshot, GPL-3.0). Both repositories belong to
-the same author, who asked for this port. Only the data and the formulas were
-carried over, rewritten as TypeScript; no upstream code, node graphs or
-operators were copied. Every source file says so in its header.
-
 The studio-tools data (`lenses.json`, `bokeh.json`, `camera-moves.json`, with their
-loaders) is not from EZPackshot: it is Repackshot's own (STUDIO-TOOLS §0). The lens
-prescriptions are facts re-keyed from expired patents and a textbook, each with its
-patent number or book in `source`; no name of a brand, maker or catalogue glass
-appears in any key, label or value (`tests/lenses.test.ts` fails if one does).
+loaders) follows STUDIO-TOOLS §0. The lens prescriptions are facts re-keyed from
+expired patents and a textbook, each with its patent number or book in `source`; no
+name of a brand, maker or catalogue glass appears in any key, label or value
+(`tests/lenses.test.ts` fails if one does).
 
-## Keeping it in sync
+## Keys and counts
 
-Ported by hand from EZPackshot; keep keys stable; counts are pinned by
-`tests/data.test.ts`.
+Keep keys stable; counts are pinned by `tests/data.test.ts`.
 
-Deviations and oddities worth knowing about (values were ported as they are):
+Oddities worth knowing about:
 
-- Upstream has 16 sequence presets, not 15 (`CATALOG` has four shots and no
-  clips).
+- There are 16 sequence presets: the sixteenth, `CATALOG`, has four shots and
+  no clips.
 - Sequence clips use the target `CAM` (the camera of shot number `shot`),
   which is not one of `TARGET_KINDS`; it becomes an `OBJECT` target once the
   shot cameras exist.
@@ -105,26 +97,21 @@ Deviations and oddities worth knowing about (values were ported as they are):
 - `colorFromPreset` is supported by the maths but no setup uses it. It takes the
   colour of the FIRST light of the preset rig, which is not always the key
   (`JEWELLERY` and `EYEWEAR` start with `TOP`, `PERFUME` with `RIM`).
-- Upstream light types also list POINT and SPOT; no recipe uses them and they
-  are not ported (`LightType` is `AREA | SUN`).
-- The upstream roadmap says the default wear master "sits at 0.30"; the code
-  (and so this port) uses 0.45 in `WEAR_CATEGORY_DEFAULTS`.
-- Woods (E6, the lead's ruling on the wood sheet): `ringDensity` now counts
+- The 72 recipes of the base catalogue use only AREA and SUN lights.
+- The default wear master is 0.45, in `WEAR_CATEGORY_DEFAULTS`.
+- Woods (E6, the lead's ruling on the wood sheet): `ringDensity` counts
   rings per 100 mm (physical) and its values are each species' own (oak 33,
-  i.e. 3 mm; upstream's were per part size, 14 for oak); the woods gain
-  `ringContrast`, `poreSize`, `poreDepth`, `poreBand` and, for bamboo, MDF and
-  ebony, `woodFigure`, which upstream does not have; ebony has no pores and
-  walnut and mahogany half the depth (second ruling). Knots (`knotCount`,
-  `knotSize`, `knotSizeVar`, `knotDarkness`; asked for by the user) are not
-  upstream either: pine 4, cherry and walnut 1, the rest 0.
-- Fabrics (E6): `threadCount` now counts threads per cm (physical; knit:
+  i.e. 3 mm); the woods have `ringContrast`, `poreSize`, `poreDepth`,
+  `poreBand` and, for bamboo, MDF and ebony, `woodFigure`; ebony has no pores
+  and walnut and mahogany half the depth (second ruling). Knots (`knotCount`,
+  `knotSize`, `knotSizeVar`, `knotDarkness`; asked for by the user): pine 4,
+  cherry and walnut 1, the rest 0.
+- Fabrics (E6): `threadCount` counts threads per cm (physical; knit:
   stitches per cm; felt: fibres of `1 / threadCount` cm) and its values are
   each fabric's own (cotton 40, linen 18, twill 36, denim 24, satin 100,
   canvas 14, velvet 30, felt 20, knit 4, mesh 8, microfibre 120, carbon 5
-  tows per cm; upstream's were per part size: cotton 200, carbon 90).
-  Denim's weave is `TWILL31` (a 3/1 warp-faced twill, which upstream does
-  not have; its `TWILL` is a 2/2). `yarnTwist` (0 to 1, default 1) is new
-  too: carbon's tows and the mesh's monofilaments are smooth (0). The lead
-  accepted these values on the cloth sheet, and chose for carbon a
-  `weaveDepth` of 0.05 (upstream 0.3: its clear coat follows the relief, so
-  the tows read as glossy tubes).
+  tows per cm). Denim's weave is `TWILL31` (a 3/1 warp-faced twill; `TWILL`
+  is a 2/2). `yarnTwist` (0 to 1, default 1): carbon's tows and the mesh's
+  monofilaments are smooth (0). The lead accepted these values on the cloth
+  sheet, and chose for carbon a `weaveDepth` of 0.05: its clear coat follows
+  the relief, and a deeper one makes the tows read as glossy tubes.

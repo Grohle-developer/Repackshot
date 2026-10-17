@@ -396,7 +396,7 @@ pub fn macro_html(fields: &[MacroImage], alternatives: &[MacroImage]) -> String 
             "<h1 style=\"margin-top:28px\">Alternatives</h1>\n<p class=\"meta\">Sphere, close-up \
              and macro of each, to compare with its row above. <b>Denim</b>: real denim is a 3/1 \
              twill (the indigo warp on three quarters of the face), which the catalogue sends now; \
-             here it is woven as the 2/2 twill of the other twills, as upstream's <code>TWILL</code> \
+             here it is woven as the 2/2 twill of the other twills, as the weave <code>TWILL</code> \
              would.</p>\n<div class=\"macro\">",
         );
         for m in alternatives {

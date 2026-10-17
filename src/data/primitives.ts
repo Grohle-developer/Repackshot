@@ -1,4 +1,4 @@
-// Parametric primitives (phase U9): not ported from EZPackshot, see README.md.
+// Parametric primitives (phase U9), see README.md.
 //
 // The catalogue of the shapes Add ▸ Primitive offers, in primitives.json: a stable key per shape (added, never
 // renamed: saved projects keep it), its role in a studio set and its parameters. Names and parameter labels are

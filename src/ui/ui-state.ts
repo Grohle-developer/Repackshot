@@ -20,7 +20,8 @@ import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
 import type { PluginsSnapshot } from '../core/plugins';
 import type { RuntimeWarning } from '../core/ai-runtimes';
-import { defaultLayout, defaultSettings, type EditorRect, type Layout, type SectionId, type Settings } from '../core/settings';
+import { defaultLayout, defaultSettings, type EditorRect, type Layout, type SectionId, type Settings, type ThumbSize } from '../core/settings';
+import type { SetupGroup } from '../core/setup-groups';
 import { NO_INSTALL, type InstallRequest, type InstallStatus, type ReleaseInfo, type UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
@@ -306,8 +307,17 @@ export interface UiState {
   /** A category of the catalogue, or 'MINE': the user's own materials. */
   materialCategory: MaterialCategory | 'MINE';
   materialFilter: string;
-  /** A style of the catalogue, 'ALL', or 'MINE': the user's own setups. */
+  /**
+   * The style filter of the Lights group of the light catalogue (L7): a style, 'ALL', or 'MINE' (the user's own
+   * setups). 'SETS' is not a style of the Lights: setting it shows the Sets group (`lightGroup`).
+   */
   lightStyle: LightStyle | 'ALL' | 'MINE';
+  /** L7: the group of the light catalogue on show. */
+  lightGroup: SetupGroup;
+  /** L7: the filters of the Sets group chosen (`type`, `hero`; core/setup-groups.ts). */
+  lightFilters: Record<string, string>;
+  /** L7: the size of the light catalogue's thumbnails. */
+  thumbSize: ThumbSize;
   treeFilter: string;
   /** Tree rows folded by the user (rows are unfolded by default). */
   folded: Record<NodeId, true>;
@@ -481,6 +491,9 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'rightCollapsed',
   'sections',
   'lightStyle',
+  'lightGroup',
+  'lightFilters',
+  'thumbSize',
   'materialCategory',
   'tuneOpen',
   'space',
@@ -494,6 +507,11 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'updateLatest',
   'materialEditorRect',
 ];
+
+/** 'SETS' asked as a style (a URL, a document of before L7) is the Sets group, its Lights style at All. */
+function withLightGroup(state: UiState): UiState {
+  return (state.lightStyle as string) === 'SETS' ? { ...state, lightGroup: 'SETS', lightStyle: 'ALL' } : state;
+}
 
 export const PANEL_MIN = 220;
 export const PANEL_MAX = 480;
@@ -513,6 +531,9 @@ export function defaultUiState(): UiState {
     materialCategory: 'METAL',
     materialFilter: '',
     lightStyle: 'ALL',
+    lightGroup: 'SETS',
+    lightFilters: {},
+    thumbSize: 'M',
     treeFilter: '',
     folded: {},
     hover: null,
@@ -601,6 +622,7 @@ export function createUiStore(initial: Partial<UiState> = {}, opts: UiStoreOptio
   state.leftWidth = Math.min(PANEL_MAX, Math.max(PANEL_MIN, state.leftWidth));
   state.rightWidth = Math.min(PANEL_MAX, Math.max(PANEL_MIN, state.rightWidth));
   if (state.viewportMode !== 'FAST' && state.viewportMode !== 'FULL') state.viewportMode = 'FULL';
+  state = withLightGroup(state);
   const listeners = new Set<UiListener>();
   let toastId = 0;
   const store: UiStore = {
@@ -610,12 +632,12 @@ export function createUiStore(initial: Partial<UiState> = {}, opts: UiStoreOptio
       for (const k of Object.keys(patch) as (keyof UiState)[]) if (state[k] !== patch[k]) changed = true;
       if (!changed) return;
       const prev = state;
-      state = { ...state, ...patch };
+      state = withLightGroup({ ...state, ...patch });
       if (opts.onLayout) {
         const saved: Partial<Layout> = {};
         let any = false;
         for (const k of PERSISTED)
-          if (k in patch && state[k] !== prev[k]) {
+          if (state[k] !== prev[k]) {
             (saved as Record<string, unknown>)[k] = state[k];
             any = true;
           }

@@ -559,21 +559,25 @@ function setLook(state: ProjectState, set: LightSetup, preset: StudioPreset | un
  * A scene with nothing of the user's gets the lights and the look, and its decoration when a product comes in
  * (`studio/fitSet`).
  */
-export function applySet(state: ProjectState, set: LightSetup, names: SetPieceNames = {}, asType = false): ProjectState {
+export function applySet(state: ProjectState, set: LightSetup, names: SetPieceNames = {}, asType = false, keepDecoration = false): ProjectState {
   const preset = resolvePreset(presetRefOf(state.studio));
-  const clean = withoutSetDecoration(state);
+  // L7: a set without decoration (an Interior recipe) added over a set's, keeping the previous lights (Hide, Add):
+  // the decoration in force and its pool stay, and so does the background it brought.
+  const keep = keepDecoration && !hasDecoration(set);
+  const clean = keep ? state : withoutSetDecoration(state);
   const key = asType ? 'PRESET' : set.key;
+  const pools = keep ? clean.studio.lights.filter((l) => l.setPiece) : [];
   const lit: ProjectState = {
     ...clean,
     // A chosen set puts the studio's floor and contact shadow on; the type's own keeps the type's.
-    studio: { ...clean.studio, lightSetup: key, customSetup: null, lights: lightsFromRig(presetRefOf(clean.studio), key), modified: false, ...(asType || !hasDecoration(set) ? {} : { floor: true, shadow: true }) },
+    studio: { ...clean.studio, lightSetup: key, customSetup: null, lights: [...lightsFromRig(presetRefOf(clean.studio), key), ...pools], modified: false, ...(asType || !hasDecoration(set) ? {} : { floor: true, shadow: true }) },
     environment: { ...clean.environment, kind: worldFor(clean, key) },
   };
   // A set with no backdrop of its own (the Interior recipes, K1) does not paint over the one the set before it left on the
   // frame: that background goes back to the product type's.
-  const base = set.backdrop === undefined && broughtBackground(state) ? presetLook(lit, preset) : lit;
+  const base = !keep && set.backdrop === undefined && broughtBackground(state) ? presetLook(lit, preset) : lit;
   const looked = setLook(base, set, preset);
-  return hasOwnParts(looked) ? addSetDecoration(looked, set, names) : looked;
+  return !keep && hasOwnParts(looked) ? addSetDecoration(looked, set, names) : looked;
 }
 
 /** The names the pieces of the decoration in force have now (so a refit keeps them). */

@@ -10,6 +10,7 @@ import { iesEfficiency, iesHalfAngle, iesProfileOf } from './ies';
 import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math';
 import { areaLightFlux, luminance, LUMENS_PER_WATT, pointLightFlux, spotFraction } from './photometry';
 import { activeRig, presetIrradiance, resolvePreset, setupExposure, type PresetRef, type SetupRef } from './rig';
+import type { PreviousLights } from './previous-lights';
 import type { ActionBase, EnvironmentState, ImageState, ProjectState } from './store';
 import type { SetPieceNames } from './sets';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
@@ -608,13 +609,17 @@ export type StudioAction =
   | ({ type: 'studio/setPreset'; key: string; custom?: StudioPreset } & ActionBase)
   /** `names`: what the pieces of a set (L6) are called, in the interface's language (core/sets.ts). */
   | ({ type: 'studio/build'; names?: SetPieceNames } & ActionBase)
-  | ({ type: 'studio/setSetup'; key: string; names?: SetPieceNames } & ActionBase)
+  /**
+   * `previous` (L7): what happens to the lights already in the scene, Replace (absent: the same) deletes them, Hide
+   * keeps them switched off, Add keeps them on (core/previous-lights.ts); `keptNames` names the kept ones, by id.
+   */
+  | ({ type: 'studio/setSetup'; key: string; names?: SetPieceNames; previous?: PreviousLights; keptNames?: Readonly<Record<string, string>> } & ActionBase)
   /** L6: Use the set's camera — the elevation and focal length the set in force suggests, the product framed again. */
   | ({ type: 'studio/useSetCamera' } & ActionBase)
   /** L6: the decoration of the set in force made again for the scene as it is (a product came in). */
   | ({ type: 'studio/fitSet'; names?: SetPieceNames } & ActionBase)
   /** An own light setup (library): normalised to the product type in force, like a catalogue one. */
-  | ({ type: 'studio/applySetup'; setup: CustomSetup } & ActionBase)
+  | ({ type: 'studio/applySetup'; setup: CustomSetup; previous?: PreviousLights; keptNames?: Readonly<Record<string, string>> } & ActionBase)
   | ({ type: 'studio/setLight'; id: string; patch: Partial<Omit<LightInstance, 'id'>> } & ActionBase)
   | ({ type: 'studio/placeLight'; id: string; point: Vec3; normal: Vec3 } & ActionBase)
   /** L4: Add light ▸ — a new own light, selected. */

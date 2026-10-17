@@ -271,9 +271,9 @@ twice (0: off).
   masked by the direction from its centre: 1 inside the inner cone, a smoothstep to 0 at the
   edge of its cone of `spread_deg` (the soft edge `angle_deg` wide). `flags` bit 0 **glossy**:
   seen by BSDF-sampled rays and lighting every lobe (with MIS); without it the light lights only
-  the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
-  visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
-  sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
+  the diffuse lobe, by light sampling alone, and is invisible in reflections (like Blender's
+  "glossy" visibility). Bit 1 **camera**: visible to camera rays (a point's sphere too).
+  Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
   not darkened by it either). **One light per vertex, chosen per point** (E12): in proportion to a
   bound of the irradiance each light can give the shading point unoccluded, the flat case of the
   light tree of Conty Estevez and Kulla (HPG 2018) with its orientation bound (§4.3): `lum(I) ·

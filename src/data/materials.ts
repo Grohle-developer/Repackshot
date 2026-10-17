@@ -1,12 +1,9 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type { MaterialCategoryEntry, MaterialPreset } from './types';
 
-// Material library (upstream MAT_CATEGORIES and MAT_METAL ... MAT_OTHER):
-// 77 presets in upstream order, grouped by category; the five set pieces of L6
-// (cards, acrylic floors, a black mirror), each in its category; and the
-// translucent materials and liquids of phase E9 and its dispersive crystal (not
-// from upstream) at the end of their category. The family decides which shader
+// Material library: the 77 base presets in their order, grouped by category;
+// the five set pieces of L6 (cards, acrylic floors, a black mirror), each in its
+// category; and the translucent materials and liquids of phase E9 and its
+// dispersive crystal at the end of their category. The family decides which shader
 // recipe is built; the params fill in its editable properties. Colours are
 // linear RGBA.
 //
@@ -173,7 +170,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     params: { baseColor: [1, 1, 1, 1], roughness: 0.45, ior: 1.49, transmission: 1, absorptionMm: 0,
       scatterMm: 4, scatterColor: [0.999, 0.999, 0.999, 1], scatterG: 0.3 },
   },
-  // L6: the floors of the sets (not ported from EZ Packshot): sheets of cast acrylic, black and white, with the
+  // L6: the floors of the sets: sheets of cast acrylic, black and white, with the
   // slight haze of a real sheet (roughness 0.12): they smear what they reflect a little, they are not mirrors.
   {
     key: 'ACRYLIC_BLACK', category: 'PLASTIC', family: 'SIMPLE',
@@ -291,7 +288,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
   },
 
   // --- Fabrics ---
-  // E6: threadCount is threads per cm (physical, each fabric's own; upstream's were per part size). Denim is
+  // E6: threadCount is threads per cm (physical, each fabric's own). Denim is
   // a 3/1 twill (TWILL31), warp-faced like the real one.
   {
     key: 'COTTON', category: 'FABRIC', family: 'FABRIC',
@@ -393,7 +390,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     label: { es: 'Espejo', en: 'Mirror' },
     params: { baseColor: [0.95, 0.96, 0.97, 1], metallic: 1, roughness: 0 },
   },
-  // L6: the mirror floor of a set (not ported): a black glass mirror, a dark full reflection.
+  // L6: the mirror floor of a set: a black glass mirror, a dark full reflection.
   {
     key: 'MIRROR_BLACK', category: 'GLASS', family: 'SIMPLE',
     label: { es: 'Espejo negro', en: 'Black mirror' },
@@ -564,7 +561,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     params: { baseColor: [1, 1, 1, 1], roughness: 0.25, ior: 1.4, transmission: 1, absorptionMm: 0,
       scatterMm: 0.19, scatterColor: [0.99997, 0.9995, 0.9949, 1], scatterG: 0 },
   },
-  // L6: the cards of the sets (not ported): matte card stock, white (0.92) and black (0.02). The silver card of a
+  // L6: the cards of the sets: matte card stock, white (0.92) and black (0.02). The silver card of a
   // set is brushed aluminium (ALU_BRUSH), which is what a silver card is.
   {
     key: 'CARD_WHITE', category: 'OTHER', family: 'SIMPLE',

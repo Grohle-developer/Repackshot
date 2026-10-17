@@ -586,8 +586,8 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    entorno, los rebotes, las cáusticas, la sombra de contacto, la
    transformada, las muestras, el terminar por ruido y el *denoise*, la focal),
    y al volver a *Producto* deja lo que no se tocó como estaba. Con
-   *Interior* la sección *Luz* se abre en su estilo; al dejarlo vuelve a
-   *Todos*. Tipo de producto (desplegable con los 16
+   *Interior* la sección *Luz* se abre en el grupo *Luces* con su estilo;
+   al dejarlo el estilo vuelve a *Todos*. Tipo de producto (desplegable con los 16
    `STUDIO_PRESETS`, *Estándar* el primero y activo por defecto, con su
    etiqueta y, debajo en auxiliar, focal y diafragma que trae; más los
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
@@ -597,21 +597,74 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
    ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
-2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
-   (*Todos* + los 10 `LIGHT_STYLES`, **Sets** el primero, L6, e **Interior**
-   el último, K1), rejilla de
-   miniaturas (`public/thumbs/setups/thumb_<clave>.png`, 256 × 256,
-   renderizadas por el motor: §6) con la etiqueta debajo, la activa con
-   borde de selección. Los **sets** van primero y en grande: dos columnas
-   y cuadradas (el doble de alto que las demás); los demás montajes, en
-   tres columnas y 4:3, como estaban; en *Todos*, la rejilla de los sets y
-   debajo la del resto. La **ayuda** de la miniatura de un set dice su
-   intención y su **razón fotográfica** (`why`, dos frases); la de un
-   montaje, su intención. Debajo, la **intención** del montaje activo en
-   una frase. Flechas *anterior / siguiente* dentro del estilo. Las siete
+2. **Luz** — El **catálogo de montajes**, en **dos grupos** (L7), *Sets ·
+   Luces*, un control segmentado a todo el ancho arriba de la sección:
+   - **Sets**: lo que monta algo además de los focos (fondo, suelo,
+     tarjetas, charco de luz: la decoración de L6). Son los 16 sets y
+     *El del tipo de producto* (`PRESET`) cuando el tipo en vigor es un set
+     (15 de los 16; con *Mobiliario exterior*, que conserva su sol, está en
+     *Luces*): 17 entradas.
+   - **Luces**: lo que solo coloca focos (algunos eligen además un cielo,
+     una exposición y la intensidad del entorno, como las siete recetas de
+     *Interior* y el sol de *Cinematográfico*, pero no ponen nada en la
+     escena): los 71 montajes de antes y las 7 recetas, 78 entradas.
+
+   El grupo se decide por lo que hace la entrada al aplicarla
+   (`core/setup-groups.ts`, con `hasDecoration` de `core/sets.ts`), no por
+   su estilo; ninguna clave ni ningún orden cambia. Cada grupo tiene sus
+   **filtros**, filas de *chips* como las de las recetas de un plugin
+   (P6b, el mismo componente, `ui/components/filter-chips.ts`): el nombre
+   del filtro, *Todos* y sus valores, combinados (Y). **Sets**: *Tipo de
+   producto* (los 16; un tipo deja el set que es su rig propio, y el rig
+   propio del tipo en vigor; *Mobiliario exterior* no deja ninguno) y
+   *Sujeto* (*Frasco, Caja, Anillo, Cromado, Zapato, Esferas*, el héroe de
+   cada set). **Luces**: *Estilo* (los nueve estilos de antes salvo *Sets*,
+   *Interior* el último, y *Míos*, los montajes propios de la biblioteca,
+   con sus tarjetas de siempre). Debajo, la cuenta (*7 de 17 sets*,
+   *78 montajes*) o, si los filtros no dejan nada, *Ningún set cumple estos
+   filtros.* / *Ningún montaje cumple estos filtros.* La entrada en vigor
+   que los filtros dejan fuera sigue en la rejilla, la primera, atenuada y
+   con *Fuera de los filtros* en su ayuda. Grupo, filtros y estilo se
+   recuerdan por persona (el `layout` de los ajustes, como el estilo de
+   antes); un documento de antes de L7 abre *Sets* si su estilo era *Sets*
+   o *Todos*, y *Luces* con su estilo si no.
+
+   La **rejilla de miniaturas** (`public/thumbs/setups/thumb_<clave>.png`,
+   256 × 256, renderizadas por el motor: §6) lleva la etiqueta debajo y la
+   activa con borde de selección; **todas del mismo tamaño**, 4:3, en los
+   dos grupos (L7: los sets dejan de ir en dos columnas cuadradas). A la
+   **derecha de la cabecera** de la sección, un botón de icono cambia el
+   tamaño, en vuelta: *pequeñas* (cuatro columnas, solo la imagen; el
+   nombre va en la ayuda y en la etiqueta accesible), *medianas* (tres, el
+   tamaño que tenían todos los montajes, *Campo oscuro* incluido; el de
+   partida) y *grandes* (dos). La etiqueta se parte en las líneas que haga
+   falta: no se corta nada. El tamaño se recuerda por persona. La **ayuda**
+   de la miniatura de un set dice su intención y su **razón fotográfica**
+   (`why`, dos frases); la de un montaje, su intención. Debajo, la
+   **intención** del montaje activo en una frase. Flechas *anterior /
+   siguiente* dentro de lo que dejan grupo y filtros.
+
+   **Con focos en la escena**, elegir un set o un montaje (también uno
+   propio, y desde la paleta) **pregunta qué pasa con ellos**, en línea
+   sobre la rejilla: «Hay focos en la escena. ¿Qué pasa con ellos al entrar
+   *Rembrandt*?» (o «Los focos se han editado…» si estaban modificados),
+   con **Sustituir** (los borra: lo de siempre), **Ocultar** (los conserva
+   apagados; la lista *Luces* los enciende uno a uno), **Añadir** (los
+   conserva encendidos y añade los nuevos), *Cancelar* y la casilla
+   **Recordar mi elección**, que la guarda en *Ajustes ▸ Preferencias ▸
+   Luces*. Es una entrada de deshacer con la respuesta en su nombre
+   (*Montaje de luz: Rembrandt (ocultar los focos que había)*). Los focos
+   conservados pasan a ser propios, con el nombre de donde venían
+   («Principal · Rembrandt»), y *Restablecer montaje* los quita. Un set que
+   entra sustituye la decoración del set anterior sea cual sea la
+   respuesta; un montaje de *Luces* con *Ocultar* o *Añadir* deja la
+   decoración, el charco y el aspecto del set como estaban (y *En el set*
+   sigue con sus filas, sin *Usar la cámara del set*). Sin focos en la
+   escena, o eligiendo otra vez el montaje en vigor, no pregunta.
+   Las siete
    recetas de **Interior** (*Ventana de mañana*, *de mediodía*, *de tarde*,
    *Nublado*, *Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*)
-   van en tres columnas como los montajes; cada una trae su mundo, su
+   traen cada una su mundo, su
    exposición y la intensidad del entorno (a diferencia de los montajes de
    los demás estilos, elegirla sí cambia el brillo), y ninguna trae
    decoración: no aparece *En el set*.
@@ -966,7 +1019,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    auxiliar, de dónde sale (*Del material (Metal): 7 800 kg/m³*, *Sin
    material: 1 000 kg/m³ (agua)* o *Densidad propia*, con el botón *Usar
    la del material*). **Rozamiento** (0–2) y **Rebote** (0–1),
-   arrastrables. Con un grupo o un modelo, el interruptor **Como piezas**
+   con deslizador y valor (U15). Con un grupo o un modelo, el interruptor **Como piezas**
    y su nota. Una nota dice que la masa es la densidad por el volumen de
    la envolvente convexa, y el botón **Dejar caer**. Cada cambio es una
    acción del *store* y un arrastre una sola entrada de deshacer
@@ -1007,7 +1060,8 @@ vatios (W/m² en el sol) con el equivalente en lúmenes (lux en el sol) en
 auxiliar y lo que significan los vatios, *visible en reflejos*, *visible a
 cámara*, *proyecta sombra*, encendido; botones *Colocar por reflejo*,
 *Colocar sobre superficie*, *Mirar a través*, *Duplicar*, *Eliminar* (fase
-L4).
+L4). Acimut, elevación, giro, dispersión, cono, transición y disco del sol
+van con deslizador y valor (U15, §4.4).
 
 **Pestaña *Míos*** en cada catálogo (materiales, montajes de luz, tipos de
 producto, estudios): lo guardado por el usuario, con miniatura, renombrar
@@ -1304,11 +1358,10 @@ ya se está descargando (lo marcó el instalador) no es un aviso. Es la
 misma línea que la de las actualizaciones, en el mismo sitio.
 
 **Popover del Doctor**: la lista de `DOCTOR_CHECKS` con estado, una frase
-de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba. Es
-la traducción del panel Doctor de EZ Packshot. Los chequeos de escena
-(escala, origen, suavizado, bisel, clipping) se implementan sobre el modelo
-de datos. Una comprobación nuestra (U13) es **Proporción de la
-animación**: avisa de los planos cuya cámara
+de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba.
+Los chequeos de escena (escala, origen, suavizado, bisel, clipping) se
+implementan sobre el modelo de datos. Una comprobación de U13 es
+**Proporción de la animación**: avisa de los planos cuya cámara
 tiene otra proporción que el tamaño de salida (*Planos con otra
 proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
 (4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
@@ -1383,7 +1436,7 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   carpeta se muestra por su nombre); donde no exista, el selector dice
   *Este navegador solo permite descargar* y se usa *Descargas*. En el
   escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
-- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR, **TIFF** (8, 16
+- **Formato**: PNG (8 o 16 bits), JPEG (calidad, deslizador con su campo), EXR, **TIFF** (8, 16
   o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
   el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
   dice por qué). Cada formato
@@ -1460,8 +1513,8 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
 
 - **Terminar por**: segmento **Muestras · Tiempo · Ruido**. *Muestras*: campo con
   atajos *Borrador 64 · Previa 256 · Final 1024* y valor libre. *Tiempo*:
-  campo `hh:mm:ss`. En *Avanzado*, la opción *Lo que llegue antes* con
-  los dos campos. **Ruido** (E10): el campo *Ruido* (0,5–5 %, por defecto
+  campo `hh:mm:ss` con sus flechas (un minuto por paso, §4.4). En *Avanzado*, la opción *Lo que llegue antes* con
+  los dos campos. **Ruido** (E10): el deslizador *Ruido* con su campo (U15; 0,5–5 %, por defecto
   1 %, en décimas: *1,5 %*), con la nota *Cada píxel termina por debajo de este ruido
   (el error relativo de su media): las muestras van a las partes ruidosas,
   nunca más que Muestras*, y el campo de *Muestras* debajo, a la vista, como tope; el
@@ -1496,7 +1549,7 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
   parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
   del medidor, U11, y el render final usa siempre el filtro completo),
-  con su **Intensidad** debajo (fase U11b; 0–100 %, por defecto 100 %, oculta
+  con su **Intensidad** debajo (fase U11b; deslizador con su campo desde U15; 0–100 %, por defecto 100 %, oculta
   con la reducción *Apagada*): la imagen entregada es la mezcla
   `ruidosa × (1 − s) + filtrada × s`, por canal y en luz lineal, hecha en el
   motor; vale a la vez para el render y para el visor *Completo* (un solo
@@ -1855,7 +1908,7 @@ título del grupo en versalitas auxiliares:
 | Grupo | Sección | Qué hay |
 | --- | --- | --- |
 | **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
-| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
+| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Luces* (L7): *Un montaje sobre focos* (*Preguntar* · *Sustituir* · *Ocultar* · *Añadir*), lo que hace un set o un montaje con los focos que hay; *Recordar mi elección* de la pregunta lo escribe aquí. *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
@@ -1864,12 +1917,13 @@ título del grupo en versalitas auxiliares:
 | | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
 | | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
-| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
+| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (la literatura pública que sigue el motor) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
 ahí y las filas en bloques con un subtítulo y una línea fina entre
 bloques. Cada fila: nombre, una línea auxiliar si hace falta, y el
-control a la derecha (segmento, interruptor, campo numérico de §4.4,
+control a la derecha (segmento, interruptor, campo numérico de §4.4 o,
+para los porcentajes con rango natural, deslizador con su campo,
 desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
@@ -2181,11 +2235,10 @@ de teclado* del menú):
 
 ### 4.1 · Selección por niveles
 
-Tomado de EZ Packshot y es la pieza central de la asignación de
-materiales. Cuatro niveles, **excluyentes**: **Modelo** (todo lo
-importado como una unidad), **Grupo** (un ensamblaje: nodo con hijos),
-**Pieza** (una malla) y **Caras** (una selección de caras dentro de una
-pieza). El selector aparece en la cabecera del inspector y encima del
+Es la pieza central de la asignación de materiales. Cuatro niveles,
+**excluyentes**: **Modelo** (todo lo importado como una unidad), **Grupo**
+(un ensamblaje: nodo con hijos), **Pieza** (una malla) y **Caras** (una
+selección de caras dentro de una pieza). El selector aparece en la cabecera del inspector y encima del
 árbol, como un segmento de cuatro posiciones con atajos `1`–`4`.
 
 - Al hacer clic en el visor, el nivel decide qué se selecciona: con
@@ -2259,6 +2312,65 @@ grueso), flechas ↑↓ ±1 paso, doble clic para escribir, Enter confirma,
 `Esc` restaura. Deslizadores siempre acompañados del campo. Ningún valor
 se aplica a medias: un arrastre genera una sola entrada de deshacer.
 
+**Flechas de paso** (fase U15). Todo campo numérico lleva en su extremo
+derecho, dentro del marco, dos botones apilados **▲ ▼** (los *chevron* de
+1,5 px del juego de iconos, en `ink-2`; en `ink-0` con un fondo `soft` al
+pasar el ratón). Un clic sube o baja un paso; con `Shift`, una décima de
+paso, y con `Ctrl`/`⌘`, diez pasos, igual que el arrastre y las flechas del
+teclado. **Mantenido**, repite: el primer paso al pulsar, el segundo a los
+400 ms y luego uno cada 50 ms (`STEP_REPEAT_DELAY_MS`, `STEP_REPEAT_MS`);
+`Shift` o `Ctrl` pulsados durante la repetición cambian el paso de los
+siguientes. **Una pulsación, por larga que sea, es un solo gesto y una sola
+entrada de deshacer**, como un arrastre, y avisa a `onHold`/`onRelease` al
+empezar y al soltar (lo costoso, la vista previa de la IA, espera a que se
+suelte). El valor se queda en su mínimo y su máximo, y la flecha que ya no
+puede moverlo se apaga; al llegar ahí la repetición para, y la pulsación
+sigue acabando donde se suelte el botón, dentro o fuera de él. Un campo
+deshabilitado apaga las dos (también el que una fila deshabilita:
+*próximamente* en Ajustes, los términos de la proporción, los mandos de la
+lente fina con una lente trazada; `setDisabled`). Las flechas **no son
+paradas de tabulación** ni toman el foco: lo tiene el *spinbutton*, que
+sigue con el teclado; se llaman *Aumentar* y *Disminuir* (`strings.ts`)
+para las ayudas técnicas, y un clic sin puntero (el de un lector de
+pantalla) es un paso. No arrastran el campo ni abren la edición con doble
+clic; si se estaba escribiendo un valor, una pulsación lo toma primero y
+sube o baja desde él. Ocupan la altura del campo (26 px, una línea) sin
+hacer crecer la fila; nada se anima con *Reducir movimiento*.
+
+**Variante compacta** ◆ Fable. Un campo con etiqueta en línea (la X, Y, Z
+de un triplete, U y V, H y V) y el campo de un deslizador llevan un par
+más fino (10 px en lugar de 14) y un margen más justo, para que el valor
+conserve el sitio que tenía antes de las flechas (en un triplete de
+102 px, 47 px de valor). Es la propuesta por defecto; la alternativa,
+flechas que solo salen al pasar el ratón o con el foco, mueve el valor o
+tapa la unidad, y queda para Fable.
+
+**Deslizador o campo: la regla** (U15). Un valor con un **rango natural
+acotado** —un factor de 0 a 1, un porcentaje, un ángulo en un rango fijo,
+una opacidad— es un **deslizador con su campo y sus flechas al lado**
+(`slider()`). Una **magnitud física o sin tope** —una distancia en mm, un
+tamaño, una potencia, una temperatura de color, una cuenta, un tiempo, una
+semilla— se queda en **campo con flechas**. No se convierte lo que dejaría
+la fila apretada o rota: los campos de dos en dos o de tres en tres con
+etiqueta en línea (el acimut y la elevación de las luces del estudio, las
+asas de la curva) y lo que reescala la ventana bajo el pulgar (*Tamaño de
+la interfaz* y *Tamaño del texto*) siguen siendo campos. Lo que se
+convirtió en U15 (◆ Fable confirma la lista): en el inspector, *Rozamiento*
+y *Rebote* (físicas), *Giro* del bokeh, *Inclinación* y *Eje de la
+inclinación* (óptica avanzada), el *Ángulo* de un filtro, el *Ángulo de
+suavizado* de la pieza, el *Ángulo* de un patrón circular, el *Giro* de una
+textura y de una etiqueta, y en un foco propio *Acimut*, *Elevación*,
+*Giro*, *Dispersión*, *Ángulo de cono*, *Transición* y *Disco del sol*; en
+la ventana de render, la *Calidad* del JPEG, el *Ruido* de *Terminar por
+ruido* y la *Intensidad* de la reducción de ruido; en Ajustes, *Velocidad
+de órbita*, *Velocidad de zoom*, *Tamaño del gizmo* e *Intervención por
+defecto*. La línea de tiempo no tenía ninguno que convertir (tiempos,
+cuentas y las asas). La *Distancia de enfoque* de la cámara no se toca aquí
+(la reconstruye la fase F1). El **campo de tiempo** de la ventana de render
+(`hh:mm:ss`) es ya un `NumberField` de segundos, con sus flechas (un
+minuto por paso; `Shift`, 6 s; `Ctrl`, 10 min) y que se escribe como hora,
+`mm:ss` o segundos.
+
 ### 4.5 · Deshacer todo
 
 Cada cambio de estado pasa por el *store* y es deshacible, incluidos los
@@ -2272,7 +2384,7 @@ del inspector con el paso actual y botones *Siguiente / Cerrar*, y dibuja
 una **flecha** apuntando al control del que habla, sin ocultar ni mover
 nada. Seis pasos: importar o cargar el ejemplo → elegir tipo de producto y
 crear estudio → asignar un material → elegir un montaje de luz → encuadrar
-y enfocar → render. Tomado del tutorial con flechas de EZ Packshot.
+y enfocar → render.
 
 ### 4.7 · Recorrido guiado
 
@@ -2419,15 +2531,12 @@ rendimiento importa: 60 fps con la pieza de ejemplo en un portátil.
   `CHROME` un toro cromado, `SHOE` una cápsula de cuero, `SPHERES` tres
   esferas mate, brillante y metal) y cada montaje anterior sobre el héroe
   de su estilo, con el tipo *Estándar*, la cámara de referencia (o la del
-  set), 96 muestras, *denoise* y semilla fija. Sustituyen a las de EZ
-  Packshot. `manifest.json` guarda el *hash* de cada escena y de cada PNG;
-  la suite comprueba que el código sigue construyendo esas escenas.
-- **Materiales**: no hay PNG upstream (se renderizan dentro de Blender).
-  En U1 se generan **en el navegador** con el propio visor: una esfera
-  con el material sobre el fondo del tema, renderizada a 96 × 96 en un
-  canvas al abrir cada categoría y cacheada en memoria (y en
-  `localStorage` como data URL, envuelto en `try/catch`). Es lo que hacía
-  EZ Packshot con `ensure_material_preview`, pero sin Blender.
+  set), 96 muestras, *denoise* y semilla fija. `manifest.json` guarda el
+  *hash* de cada escena y de cada PNG; la suite comprueba que el código sigue construyendo esas escenas.
+- **Materiales**: en U1 se generan **en el navegador** con el propio
+  visor: una esfera con el material sobre el fondo del tema, renderizada a
+  96 × 96 en un canvas al abrir cada categoría y cacheada en memoria (y en
+  `localStorage` como data URL, envuelto en `try/catch`).
 - **Tipo de producto**: sin miniatura; etiqueta e intención bastan.
 
 ---

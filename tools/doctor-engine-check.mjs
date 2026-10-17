@@ -221,9 +221,11 @@ try {
     await page.locator('.rw [role="group"][aria-label="Denoise"] button, .rw [aria-label="Denoise"] button', { hasText: /^Viewport$/ }).first().click();
     await page.locator('.rw [aria-label="Finish by"] button', { hasText: /^Time$/ }).first().click();
     await settle(page, 300);
-    const time = page.locator('.rw input[aria-label="Time"]').first();
-    await time.fill('5');
-    await time.press('Enter');
+    // The time budget is a number field (U15): typed after a double click, as a time or plain seconds.
+    await page.locator('.rw [role="spinbutton"][aria-label="Time"]').first().dblclick();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('5');
+    await page.keyboard.press('Enter');
     await settle(page, 300);
     await page.keyboard.press('Escape');
     await settle(page, 300);

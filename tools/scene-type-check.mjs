@@ -89,7 +89,8 @@ const state = (page) =>
     const light = document.querySelector('[data-section="light"]');
     const seg = [...(product?.querySelectorAll('[data-guide="scene-type"] .seg button') ?? [])];
     const guides = [...(product?.querySelectorAll('[data-guide]') ?? [])].map((n) => n.getAttribute('data-guide'));
-    const chips = [...(light?.querySelectorAll('[role="tablist"] .chip') ?? [])];
+    // L7: the Lights group's style row.
+    const chips = [...(light?.querySelectorAll('[data-filter="style"] .chip') ?? [])];
     const switches = [...(product?.querySelectorAll('.field') ?? [])].map((f) => [f.querySelector('.field-label')?.textContent ?? '', f.querySelector('[role="switch"]')?.getAttribute('aria-checked') ?? null]);
     const image = document.querySelector('[data-section="image"]');
     const vt = [...(image?.querySelectorAll('.seg button') ?? [])].find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? '';
@@ -213,9 +214,12 @@ try {
 
     // A recipe.
     await page.locator('[data-section="light"] .thumb', { hasText: 'Midday window' }).click();
+    await settle(page, 300);
+    // L7: over the lights there are it asks what happens to them; Replace is what it always did.
+    await page.locator('[data-light-question] .btn', { hasText: /^Replace$/ }).click();
     await settle(page, 500);
     s = await state(page);
-    ok(s.undo === 'Undo: Light setup: Midday window', `a recipe is one undo step: ${s.undo}`, f);
+    ok(s.undo === 'Undo: Light setup: Midday window (replace the lights)', `a recipe is one undo step: ${s.undo}`, f);
     const strength = await page.evaluate(() => {
       const row = [...document.querySelectorAll('[data-section="environment"] .field')].find((x) => x.querySelector('.field-label')?.textContent === 'Intensity');
       return row?.querySelector('[role="spinbutton"]')?.getAttribute('aria-valuenow') ?? null;

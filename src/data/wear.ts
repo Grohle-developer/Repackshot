@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type {
   MaterialCategory,
   MaterialFamily,
@@ -12,17 +10,15 @@ import type {
   WearTypeInfo,
 } from './types';
 
-// Procedural wear layer (upstream WEAR_*): eight wear types under one master
+// Procedural wear layer: eight wear types under one master
 // amount, each material preset coming out with the physics of its own material.
 // Scales are in part sizes (`refSize` is the reference part size), so the same
 // scratch looks equally fine on a ring and on a sofa.
 //
-// Naming: upstream `wear_` prefixes are dropped (`wear_edge_color` is
-// `edgeColor`) and `rough_var` is `roughVar`. The intensity of a wear type is
-// the WearProps property with the same name as the type.
+// Naming: the intensity of a wear type is the WearProps property with the
+// same name as the type.
 
-// The eight types and what each one does (descriptions follow the upstream
-// roadmap table for item Q).
+// The eight types and what each one does.
 export const WEAR_TYPES: readonly WearTypeInfo[] = [
   {
     key: 'edges',

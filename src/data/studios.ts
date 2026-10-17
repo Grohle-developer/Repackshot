@@ -1,12 +1,9 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type { StudioPreset } from './types';
 
-// Studio presets, one per product type (upstream STUDIO_PRESETS, 16 entries,
-// in upstream order). Each category has its conventions: the typical size
-// drives focal length and distance, the reflectance of the material decides
-// whether the light wraps or is directional, and transparency forces
-// caustics on.
+// Studio presets, one per product type (16 entries). Each category has its
+// conventions: the typical size drives focal length and distance, the
+// reflectance of the material decides whether the light wraps or is
+// directional, and transparency forces caustics on.
 //
 // Lights (L6: redesigned, each type takes the lights of a set, `PRESET_SETS`, at the level it had): `dist`, `size`
 // and `sizeY` are in multiples of the part size, so the same preset suits a ring and a sofa. `az` is already relative
