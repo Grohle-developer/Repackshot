@@ -86,7 +86,7 @@ export const TARGET_MOVES: Readonly<Record<ClipTargetKind, readonly MoveKind[]>>
   // EXPLODE on a node: a model or a group (the interface offers it only for those).
   NODE: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY'],
   LIGHT: ['INTENSITY', 'TINT', 'ORBIT', 'RISE', 'VISIBILITY'],
-  SCENE: ['HDRI'],
+  SCENE: ['HDRI', 'SECTION'],
 };
 
 /** What a clip's amount is measured in, for the sentence and the field unit. */
@@ -111,6 +111,7 @@ export function amountUnit(move: MoveKind): 'deg' | 'pct' | 'factor' | 'mm' | 'm
     case 'EXPLODE':
     case 'TRACK':
     case 'MOVE':
+    case 'SECTION':
       return 'parts';
     default:
       return 'none';
@@ -134,6 +135,8 @@ export function defaultAmount(move: MoveKind): number {
     HDRI: 90,
     EXPLODE: 1.5,
     VISIBILITY: 0,
+    // Q1: along the normal, towards the removed side: negative moves the plane into what is kept (cuts more).
+    SECTION: -0.5,
   };
   return table[move] ?? 1;
 }
@@ -262,6 +265,8 @@ export interface Pose {
   nodes: Record<NodeId, NodePose>;
   lights: Record<string, LightPose>;
   envRotationDeg: number;
+  /** Q1: how far the SECTION clips have moved the cutting plane along its normal, mm (0 without clips). */
+  sectionOffsetMm: number;
 }
 
 function targetKey(t: ClipTarget): string {
@@ -281,7 +286,7 @@ export function playheadPose(state: ProjectState): Pose | null {
   const held = new Set(anim.clips.filter((c) => c.move === 'PHYSICS' && c.target.kind === 'NODE').map((c) => (c.target.kind === 'NODE' ? c.target.id : '')));
   if (held.size === 0) return null;
   const pose = evaluate(state, anim.playhead);
-  return { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
+  return { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
 }
 
 /**
@@ -293,7 +298,7 @@ export function evaluate(state: ProjectState, t: number): Pose {
   const anim = state.animation;
   const size = state.scene.partSizeMm || 1;
   const shot = shotIndexAt(state, t);
-  const pose: Pose = { t, shot, camera: null, nodes: {}, lights: {}, envRotationDeg: state.environment.rotationDeg };
+  const pose: Pose = { t, shot, camera: null, nodes: {}, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0 };
 
   // Camera: the camera of the current shot, moved by the clips of that shot.
   const shotCamId = shot >= 0 ? anim.shots[shot]?.camera : null;
@@ -439,9 +444,12 @@ export function evaluate(state: ProjectState, t: number): Pose {
     }
   }
 
-  // Environment.
+  // Environment, and the scene as a whole: the light sweep, and the section plane (Q1: its offset along its normal,
+  // in part sizes like a MOVE, added up with the curve of each clip).
   for (const c of anim.clips) {
-    if (c.target.kind === 'SCENE' && c.move === 'HDRI') pose.envRotationDeg += c.amount * clipProgress(c, t);
+    if (c.target.kind !== 'SCENE') continue;
+    if (c.move === 'HDRI') pose.envRotationDeg += c.amount * clipProgress(c, t);
+    else if (c.move === 'SECTION') pose.sectionOffsetMm += c.amount * size * clipProgress(c, t);
   }
   return pose;
 }
@@ -571,7 +579,7 @@ export function isPinned(state: ProjectState, clip: MotionClip, parts: readonly 
 }
 
 /** Kinds whose amount adds up over time (a turn, a distance): a split gives each half its share. */
-const ADDITIVE: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'SPIN', 'TUMBLE', 'HDRI', 'TRACK', 'MOVE', 'EXPLODE']);
+const ADDITIVE: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'SPIN', 'TUMBLE', 'HDRI', 'TRACK', 'MOVE', 'EXPLODE', 'SECTION']);
 
 /**
  * Whether a clip can be cut in two at time t: strictly inside it, played once and forwards, of a kind whose amount

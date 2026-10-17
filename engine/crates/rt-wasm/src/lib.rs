@@ -1405,6 +1405,8 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_TEXTURES, 1);
         // M3b: the material programs.
         assert_eq!(rt_features() & rt_core::FEATURE_PROGRAMS, 2);
+        // Q1: the section view.
+        assert_eq!(rt_features() & rt_core::FEATURE_SECTION, 4);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.

@@ -22,20 +22,27 @@ mod bvh;
 pub mod edges;
 mod mesh;
 pub mod particles;
+mod section;
+mod solid;
 mod transform;
 mod traverse;
 pub mod triangle;
 
+#[cfg(test)]
+mod section_tests;
 #[cfg(test)]
 mod tests;
 
 pub use bvh::{BvhStats, BvhWidth, BINS, SAH_DEPTH_LIMIT};
 pub use mesh::{Mesh, MeshError, MAX_TRIANGLES, MAX_UV_SETS};
 pub use particles::{is_clear_material, ParticleSet, PixelFootprint, ScreenProjection, MIN_PIXELS};
+pub use section::{SectionPlane, CAP_TRIANGLE};
+pub use solid::Solid;
 pub use transform::Transform;
 pub use triangle::{intersect_triangle, Cull, TriangleHit};
 
 use bvh::{leaf_ref, BuildParams, Bvh, MAX_LEAF_FIRST};
+use section::Section;
 use traverse::{AnyBatchKernel, AnyKernel, NearestBatchKernel, NearestKernel};
 use triangle::{watertight, PreparedRay};
 
@@ -45,6 +52,10 @@ use std::fmt;
 
 /// Instance flag: back faces (as wound in the mesh) are not hit.
 pub const INSTANCE_ONE_SIDED: u32 = 1;
+
+/// Instance flag: the section view (Q1) does not cut this instance, neither removes nor caps it:
+/// the studio around the product (a set's backdrop, floor and cards), not the model.
+pub const INSTANCE_NO_SECTION: u32 = 2;
 
 /// Largest number of instances in one [`Geometry`] (particle sets included).
 pub const MAX_INSTANCES: usize = MAX_LEAF_FIRST;
@@ -238,6 +249,9 @@ pub struct Geometry {
     bounds: Aabb,
     /// The particle sets of the ambient effects (S4a), in effect order.
     particles: Vec<ParticleSet>,
+    /// The section view (Q1): a plane that removes one side of the model, capping the cut. None
+    /// until [`Geometry::set_section`], and then every query sees the cut model.
+    section: Option<Section>,
 }
 
 /// True when `ray` can be traced: finite origin and a finite, non-zero direction.
@@ -345,6 +359,7 @@ impl Geometry {
             tlas_instances,
             bounds,
             particles,
+            section: None,
         })
     }
 
@@ -524,6 +539,14 @@ impl Geometry {
         if !usable(ray) {
             return None;
         }
+        match &self.section {
+            Some(section) => self.trace_sectioned(section, ray, isa, class),
+            None => self.trace_raw(ray, isa, class),
+        }
+    }
+
+    /// The nearest hit of a usable `ray`, whole (the section view, if any, left out).
+    fn trace_raw(&self, ray: &Ray, isa: Isa, class: RayClass) -> Option<RayHit> {
         isa.dispatch(NearestKernel {
             geometry: self,
             ray,
@@ -534,6 +557,12 @@ impl Geometry {
     /// [`Geometry::trace`] for every ray of `rays`, into `out` (one dispatch for the batch).
     /// Extra entries of the longer slice are left alone.
     pub fn trace_batch_with(&self, rays: &[Ray], out: &mut [Option<RayHit>], isa: Isa) {
+        if self.section.is_some() {
+            for (ray, slot) in rays.iter().zip(out.iter_mut()) {
+                *slot = self.trace_class(ray, isa, RayClass::Secondary);
+            }
+            return;
+        }
         isa.dispatch(NearestBatchKernel {
             geometry: self,
             rays,
@@ -556,15 +585,29 @@ impl Geometry {
     /// [`Geometry::occluded`] seeing the particles as a ray of `class` does.
     pub fn occluded_class(&self, ray: &Ray, isa: Isa, class: RayClass) -> bool {
         usable(ray)
-            && isa.dispatch(AnyKernel {
-                geometry: self,
-                ray,
-                class,
-            })
+            && match &self.section {
+                Some(section) => self.occluded_sectioned(section, ray, isa, class),
+                None => self.occluded_raw(ray, isa, class),
+            }
+    }
+
+    /// Whether a usable `ray` hits anything, whole (the section view, if any, left out).
+    fn occluded_raw(&self, ray: &Ray, isa: Isa, class: RayClass) -> bool {
+        isa.dispatch(AnyKernel {
+            geometry: self,
+            ray,
+            class,
+        })
     }
 
     /// [`Geometry::occluded`] for every ray of `rays`, into `out` (one dispatch for the batch).
     pub fn occluded_batch_with(&self, rays: &[Ray], out: &mut [bool], isa: Isa) {
+        if self.section.is_some() {
+            for (ray, slot) in rays.iter().zip(out.iter_mut()) {
+                *slot = self.occluded_class(ray, isa, RayClass::Shadow);
+            }
+            return;
+        }
         isa.dispatch(AnyBatchKernel {
             geometry: self,
             rays,
@@ -658,6 +701,9 @@ impl Geometry {
 
     /// Surface details of a hit returned by [`Geometry::trace`] for the same `ray`.
     pub fn hit_details(&self, ray: &Ray, hit: RayHit) -> Option<Hit> {
+        if hit.triangle == CAP_TRIANGLE {
+            return self.cap_details(ray, hit);
+        }
         if let Some(set) = self.particle_set(hit.instance) {
             set.slot(hit.triangle)?;
             let point = ray.at(hit.t);

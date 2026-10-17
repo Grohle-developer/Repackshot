@@ -1835,4 +1835,6 @@ fn shadow_catcher<T: Tracer>(
 #[cfg(test)]
 mod particle_tests;
 #[cfg(test)]
+mod section_tests;
+#[cfg(test)]
 mod tests;

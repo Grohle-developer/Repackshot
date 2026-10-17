@@ -203,9 +203,9 @@ fn position_key(p: Vec3) -> (u32, u32, u32) {
 }
 
 /// The welded vertices of a mesh: the weld id of every vertex and the position of every id.
-struct Weld {
-    ids: Vec<u32>,
-    positions: Vec<Vec3>,
+pub(super) struct Weld {
+    pub(super) ids: Vec<u32>,
+    pub(super) positions: Vec<Vec3>,
 }
 
 /// `(x, y, z)` order of positions (IEEE total order per coordinate).
@@ -218,7 +218,7 @@ fn position_order(p: Vec3, q: Vec3) -> std::cmp::Ordering {
 /// Welds the vertices of `mesh`: equal positions, then positions within [`WELD_TOLERANCE`] of the
 /// mesh's largest extent on every axis (transitively). Ids follow the `(x, y, z)` order of the
 /// welded positions, each the smallest of its vertices; deterministic.
-fn weld_vertices(mesh: &Mesh) -> Weld {
+pub(super) fn weld_vertices(mesh: &Mesh) -> Weld {
     let n = mesh.vertex_count();
     let positions: Vec<Vec3> = (0..n)
         .map(|i| mesh.position(i).unwrap_or_default())

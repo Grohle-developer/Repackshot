@@ -7706,7 +7706,7 @@ redirigido (subsistema gráfico); sin probar en un Windows real (Edge por
 App Paths, VRAM con drivers reales, el instalador pulsado a mano,
 SmartScreen: el `.exe` no está firmado).
 
-## Q1 · Vista en sección — **Sonnet**
+## Q1 · Vista en sección — **Sonnet** — hecha
 
 **Qué.** Plano de corte por clic + eje, por dos puntos, o animado como un
 movimiento más (`MOVE_KINDS` gana `SECTION`); se implementa en el
@@ -7714,6 +7714,149 @@ integrador (descartar la parte del plano, tapar con el color del
 material) y en la vista previa con `clippingPlanes` de three.
 
 **Depende de.** E3, N1.
+
+**Criterio.** Una comparación por regiones como la de
+`tests/textures-full-browser.test.ts`: la botella de ejemplo cortada por
+la mitad, con el `rt.wasm` real por el escritor de la página frente a
+*Rápido* (three.js en Chromium), y el acuerdo dicho en números. Tests que
+fallan sin la función: plano desde clic + eje y desde dos puntos, ida y
+vuelta por RSB, el motor descarta el lado quitado y tapa las mallas
+cerradas (una caja cortada por la mitad: área y color de la tapa),
+interpolación de `SECTION`, deshacer y rehacer, determinismo con 1, 4 y
+16 hilos, paridad wasm (`rt --write-q1-example` con su *hash* fijado y un
+bloque en `.github/workflows/engine.yml`).
+
+**Hecho.** (1) *Dato*: `state.section` (`core/section.ts`), un solo plano
+por proyecto: `{ enabled, point, normal, cap }` con la normal hacia el
+lado que **se quita**; acciones `section/set|patch|enable|flip|clear` por
+el *store* (deshacibles, un arrastre es una entrada, nada para lo que no
+cambia), guardado en el proyecto (un archivo anterior se abre sin plano).
+Se pone de tres maneras: **clic en la pieza + eje** (X, Y, Z o la normal
+de la superficie; se quita el lado que mira al espectador), **dos
+puntos** (el plano contiene los dos y la dirección de la vista; se quita
+lo que queda a la izquierda de la línea del primero al segundo) y
+**números** (punto y normal); más *Cambiar de lado*, *Tapar el corte* y el
+interruptor, que sin plano hace uno por el centro del producto, de cara a
+la cámara. (2) *Animación*: `SECTION` es un movimiento más de
+`MOVE_KINDS`, sobre la escena (`{ kind: 'SCENE' }`, como `HDRI`): su
+cantidad es el desplazamiento del plano a lo largo de su normal en
+tamaños de pieza (negativa corta más adentro, positiva descubre; por
+defecto −0,5), con la curva del clip, suma con otros clips y se parte sin
+salto; `Pose.sectionOffsetMm` lo lleva a los dos motores. (3) *Motor*
+(`geometry/section.rs`, `geometry/solid.rs`): el plano vive **dentro de
+`Geometry`**, así que cámara, reflejos, refracciones, sombras, fotones,
+selección y pases ven lo mismo sin tocar los núcleos SIMD ni el
+integrador: un rayo se recorta al intervalo en que está en el lado que
+queda (un semiespacio corta un rayo en un intervalo, y `t` es el mismo en
+el mundo y en el espacio de la malla) y es un rayo corriente con otro
+`t_min` y `t_max`. **La tapa** va donde el corte pasa por dentro de un
+sólido cerrado: la primera superficie que el rayo encuentra tras el plano
+se ve **por detrás** (`Solid::inside_before`), y entonces el cruce estaba
+dentro; el impacto es plano, sobre el plano, con la normal del plano de
+cara al rayo y el material del sólido (sin textura, dibujo, programa ni
+bisel: el color liso). El análisis de sólido (soldar vértices por
+posición y luego con tolerancia, cada arista compartida por exactamente
+dos triángulos en sentido contrario, volumen con signo para el sentido)
+se hace una vez por malla (`SolidCache`) y lo repite en TypeScript
+`core/solid.ts` para que *Rápido* tape las mismas piezas. (4) *Formato*:
+sección `SECT` nueva (20 B: `u32 flags` con el bit 0 = tapar, `f32
+normal[3]`, `f32 distance`), a lo sumo una, después de `FXAM` y antes de
+`IMGS`, `BMAP` y `ENVR`; sin plano no se escribe (los bytes de antes);
+bit nuevo de `rt_features` (4) y de `/api/info`. (5) *Vista previa*
+(`render/section-preview.ts`): un `THREE.Plane` compartido por todos los
+materiales del modelo (lejos cuando no hay sección: los *shaders* no
+cambian al encenderla), tapa con una copia de la geometría de cada pieza
+cerrada que pinta solo las caras de atrás con el material de la pieza y
+la normal del plano (el equivalente al *stencil*), materiales a doble
+cara mientras se corta, y la selección, la caja de selección (que mira los vértices cuando
+la caja de la pieza queda cortada), el contorno y el cardán (que se oculta
+para una selección que el corte se ha llevado entera) ignoran lo quitado. (6) *Interfaz*: sección **Sección** del
+inspector de Escena (decisión y por qué abajo), modos de clic con
+aviso en el visor y `Esc`, acciones de la paleta *Vista en sección:
+activar o desactivar* y *cambiar de lado*, frases del movimiento, todo en
+`es` y `en`. (7) *El estudio no se corta*: las piezas de un set
+(*Backdrop*, *Floor*, tarjetas) no son el modelo; el escritor las marca
+con el bit 1 de `INST.flags` (`INSTANCE_NO_SECTION`, solo mientras corta
+un plano) y el motor las busca también en el lado quitado, saltando
+las superficies del modelo cortado (como mucho 48; una escena sin
+instancias marcadas no toma ese camino); *Rápido* les da una copia del
+material sin plano.
+
+*Medido.* **Región** (`tests/section-full-browser.test.ts`, botella
+cortada por el eje con un plano a través de la cámara, 300 × 220, 32
+muestras; el motor es el `rt.wasm` real por `projectScene` + `writeRsb`):
+el acuerdo por píxel en lo que ambas imágenes dan por asentado es de
+**1,000** (8 903 píxeles), la unión de las secciones de cuerpo, tapón,
+collar y núcleo se solapa en **0,963** (IoU) y, por clase, cuerpo 0,962,
+tapón 0,948, collar 0,839 (un anillo de unos milímetros) y el disco del
+núcleo escondido dentro del cuerpo 0,977 (solo la primera superficie
+tras el plano puede decirlo). Sin tapas el corte deja de ser plano en las
+dos imágenes (irregularidad del brillo 0,054 frente a 0,027 en *Rápido*,
+0,100 frente a 0,034 en el motor) y por tono coinciden en 1,000. Los
+controles se caen como deben: el plano del motor movido 15 mm deja el
+núcleo en 20 píxeles frente a los 1 954 de *Rápido* (acuerdo 0,74) y
+cambiado de lado, 19 (acuerdo 0,46). El **estudio**: un suelo de set bajo
+la botella tiene 31 335 píxeles en *Rápido* y 31 317 en el motor
+(IoU 0,996) y llena la franja de abajo del cuadro (1,00 y 1,00); el mismo
+suelo como pieza corriente se corta en las dos (20 512 y 20 809,
+IoU 0,983; franja de abajo 0,00 y 0,00); el cardán y la selección en caja
+no alcanzan la etiqueta que el corte se llevó entera y sí el cuerpo y el
+tapón. Capturas: `docs/ui/section-fast.png` y `docs/ui/section-full.png`
+(`tools/section-check.mjs`). **Fijado**:
+`PINNED_Q1_SECTION_4SPP = 0x7a4182ea` (la escena de E5 cortada por `x = 0`,
+con su suelo lacado como estudio, igual en escalar, SSE2 y AVX2, con 1, 4 y
+16 hilos, en wasm escalar y `simd128`); ningún *hash* de antes se movió
+(la escena sin plano es la de E5 bit a bit). **Coste**: a 640 × 480 y 32
+muestras con 4 hilos, la escena cortada da 4,99 Mrayos/s frente a 4,74 de
+la de E5 sin plano (con la mitad quitada baja de 7,1 s a 6,4 s); el
+camino del estudio no se nota.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+Fable: queda anotado, no decidido).
+
+1. ◆ **Dónde vive el control**: en el **inspector de Escena**, entre
+   *Ambiente* y *Cámara*, plegado y con el interruptor en la cabecera, y
+   no en la barra del visor. Es un objeto de la escena guardado y
+   animado, como el entorno y el ambiente; las herramientas de la barra
+   son de navegación y transformación. Los modos de clic sí avisan en el
+   visor. El recorrido guiado no lista *Ambiente* ni *Sección*, así que no
+   gana paso.
+2. ◆ **Tapa de un vidrio.** En el motor un sólido de vidrio cortado tiene
+   una tapa que **refracta** (físicamente es un vidrio cortado, que se
+   ve a su través); *Rápido* la dibuja como vidrio transparente. Una
+   tapa **opaca** del color del vidrio sería una opción de cara al
+   fotógrafo; no se hizo. La interfaz lo dice en una nota.
+3. ◆ **El estudio no se corta.** El brief decía "un lado del modelo"; se
+   entendió así (un suelo cortado deja el producto flotando sobre el
+   fondo). Cualquier otro uso del plano sobre el estudio (cortar el
+   fondo para ver detrás) no se puede pedir hoy: no hay interruptor por
+   pieza.
+4. **Mallas abiertas, sólidos al revés y piezas con material por cara.**
+   Una malla abierta no tiene dentro: el corte enseña su interior (y se
+   dice en una nota con las piezas). Un sólido cerrado con las caras al
+   revés lo tapa el motor (decide por el signo del volumen) y *Rápido* no
+   (lo trata como abierto). Una pieza con un material por cara no se tapa
+   en ninguno (el motor ve cada grupo como una lámina) y un vidrio de
+   pared fina tampoco.
+5. **Límites conocidos del motor**: un rayo de `t_max` finito que entra
+   en el lado que queda dentro de un sólido y acaba antes de salir no ve
+   la tapa (la siguiente superficie queda más allá de su final), y una
+   malla emisiva muestreada como luz sigue alumbrando desde su parte
+   quitada.
+6. **Pases de *Rápido* para la IA** (profundidad, normales,
+   identificadores) no conocen el plano; el color sí. La IA del
+   post-procesado recibiría la pieza entera con el color cortado.
+7. **El abierto en *Rápido* y en el motor** no se pinta igual: la copa de
+   la base, que es una malla abierta, se ve por dentro en los dos pero
+   con 509 píxeles amarillos frente a 339 (IoU 0,24 en esa clase: el
+   interior de una copa fina depende del sombreado de cada uno); lo que
+   se compara de las mallas abiertas es que el corte deje de ser plano.
+8. `FEATURE_SECTION` (bit 4) lo publican el módulo y el lanzador, pero la
+   interfaz no lo usa: los dos motores que se publican cortan. Un
+   `rt.wasm` viejo en `public/engine/` mostraría la pieza entera en
+   *Completo* sin avisar (se arregla con `npm run engine:build`).
+
+---
 
 ## H1 · Accesibilidad e i18n — **Haiku**
 

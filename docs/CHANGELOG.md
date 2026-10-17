@@ -3,6 +3,25 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Motor
+
+- **Vista en sección**: un plano que quita un lado de la pieza y tapa el corte con el color de su material (solo los sólidos cerrados; una malla abierta enseña su interior). Lo quitado ni se ve ni sombrea, en la cámara, los reflejos, las refracciones, las sombras y los fotones; un vidrio cortado refracta por su tapa. La misma imagen con cualquier número de hilos, igual en el navegador, en el lanzador y en `rt` (`rt --write-q1-example`). Sin plano, los mismos píxeles que antes. El fondo, el suelo y las tarjetas de un set no se cortan (Q1).
+- Sección nueva `SECT` del formato de escena (20 B) y el bit 1 de `INST.flags` (el estudio no se corta); `rt_features` y `/api/info` publican el bit de la sección (Q1).
+
+### Interfaz
+
+- Sección **Sección** en el inspector de Escena: un plano por clic en la pieza y un eje (*X*, *Y*, *Z* o la normal de la superficie), por dos puntos o en números, con *Cambiar de lado*, *Tapar el corte* y un interruptor; todo deshacible (Q1).
+- El movimiento **Sección** de la línea de tiempo desplaza el plano a lo largo de su normal, en tamaños de pieza, con la curva del clip (Q1).
+- *Rápido* corta y tapa con el plano de recorte de three.js; la selección, la caja de selección y el cardán no ven lo que el corte se ha llevado. Dos acciones en la paleta: *Vista en sección: activar o desactivar* y *cambiar de lado* (Q1).
+
+### Limitaciones conocidas de esta versión
+
+- *Rápido* dibuja la tapa de un vidrio como vidrio transparente; *Completo* y *Render* refractan a su través.
+- Una pieza con un material por cara, un vidrio de pared fina o una malla abierta no se tapan; un sólido cerrado con las caras al revés lo tapa el motor y *Rápido* no.
+- Los pases de *Rápido* para la IA (profundidad, normales, identificadores) no conocen el plano.
+
 ## v0.1.13 — 2026-10-16
 
 Versión de prueba con el muestreo adaptativo y *Terminar por ruido* en la

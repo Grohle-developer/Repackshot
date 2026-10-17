@@ -14,6 +14,7 @@ import type { ImageRef } from '../core/images';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
 import type { ViewObject } from '../core/view-objects';
+import type { SectionAxis, SectionPick } from '../core/section';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
@@ -58,6 +59,8 @@ export type PickMode =
   | { kind: 'aim'; light: string; part: boolean }
   | { kind: 'pivot'; ids: NodeId[] }
   | { kind: 'link'; parts: NodeId[] }
+  /** Q1: the section plane, by a click and an axis, or by the two points of a line (the first, once clicked). */
+  | { kind: 'section'; pick: SectionPick }
   | null;
 
 /**
@@ -318,6 +321,8 @@ export interface UiState {
   effectSelected: string | null;
   /** S4a: the gallery of effect presets is open (Ambient ▸ Add). */
   effectGallery: boolean;
+  /** Q1: the axis a click on the model cuts across (Section ▸ Cut across). */
+  sectionAxis: SectionAxis;
   /**
    * N6: every clip selected in the timeline (the multiple selection, `selectedClip` among them). Code that only knows
    * `selectedClip` keeps working: the commands of ui/anim-commands.ts keep the two in step.
@@ -507,6 +512,7 @@ export function defaultUiState(): UiState {
     selectedClip: null,
     effectSelected: null,
     effectGallery: false,
+    sectionAxis: 'Z',
     selectedClips: [],
     animFolded: {},
     animZoom: 1,

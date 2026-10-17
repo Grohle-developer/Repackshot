@@ -114,6 +114,8 @@ src/
     doctor.ts               chequeos y arreglos sobre el modelo
     physics.ts              físicas (S2): la sección Físicas de un nodo, qué se simula (`physicsSpec`), las poses del simulador de vuelta a los nodos, la pista del clip PHYSICS y su ancla, las acciones `physics/*` (§5.6)
     effects.ts              los efectos de Ambiente (S4a): el efecto como dato, sus acciones `effect/*`, la región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos de un archivo
+    section.ts              la vista en sección (Q1): el plano como dato (`state.section`), sus acciones `section/*`, desde un clic y un eje o desde dos puntos, resuelto en un instante de la animación para los motores, qué piezas corta, cuáles tapa y cuáles son estudio (`partIsExempt`)
+    solid.ts                qué mallas son sólidos cerrados (Q1): la misma regla que `geometry/solid.rs` del motor, para que Rápido tape las mismas piezas
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
     textures.ts             texturas de imagen y etiquetas de un material (M2a): ranuras, mapeado, etiquetas, sus acciones `texture/*`, y la matemática de las proyecciones y de las etiquetas que siguen el shader y el motor
     texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
@@ -141,6 +143,7 @@ src/
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
     particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
+    section-preview.ts      la vista en sección en Rápido (Q1): el plano compartido por los materiales del modelo, las tapas, el estudio sin plano, la selección y el cardán sin lo quitado
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
     lens-filter-image.ts    los filtros de efecto de la lente en imagen (O3a): los núcleos en píxeles y su convolución en TS, la referencia del pase WebGL
@@ -181,6 +184,7 @@ src/
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
+    section-commands.ts     los comandos de la vista en sección (Q1): encender, cambiar de lado, armar el siguiente clic del visor y lo que hace
     lens-peek.ts            lo que decide la ventana de una lente (O2b), sin DOM: a qué cámara se pregunta al motor y la caché de respuestas por lente y por lo que los números dependen de (`lensPeekCache`, una por puerto), cuándo se abre y se cierra (`createPeekController`, 300 ms de reposo) y lo que dice cada tarjeta (`peekCard`: nada que el motor no haya dicho, regla 10)
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
@@ -197,6 +201,7 @@ src/
       insp-traced.ts        Cámara ▸ Lente (O2): lente fina o trazada, carácter, lente, fuente, objetivo detrás, tratamiento, hueco variable, láminas; los números, las curvas y el corte del motor; Avanzado (no físico); Guardar lente como…
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
       insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
+      insp-section.ts       inspector ▸ Escena ▸ Sección: interruptor, eje, dos modos de clic, punto y normal, cambiar de lado, tapar (Q1)
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
       graph-canvas.ts       el lienzo del editor: tarjetas, tomas por forma, conexiones, zoom y desplazamiento (M3a)
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
@@ -229,6 +234,7 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG, TIFF y DNG (U12);
                             imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c);
                             partículas de Ambiente: esferas, discos y cápsulas con su BVH y su rejilla de pantalla (geometry/particles.rs, S4a, S4b); el lóbulo hacia delante (bsdf/forward.rs, S4b);
+                            la vista en sección: el plano dentro de `Geometry`, rayos recortados a lo que queda, tapas de los sólidos cerrados y estudio sin cortar (geometry/section.rs y solid.rs, Q1);
                             texturas de imagen y etiquetas del sombreado (texture/: imagen y mipmaps, proyecciones,
                             ranuras y etiquetas en el punto, M2b);
                             los programas de los materiales de nodos (program.rs y program/: lectura y comprobación,
@@ -538,6 +544,18 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
+- **`SECT`** (Q1, a lo sumo una, 20 B; un motor anterior la salta y muestra
+  la pieza entera): el plano de la vista en sección, `u32 flags` (bit 0:
+  tapar el corte; los demás se ignoran), `f32 normal[3]` (hacia el lado que
+  **se quita**; se normaliza salvo que ya sea unitaria dentro del redondeo,
+  y cero o no finita es archivo inválido) y `f32 distance` (mm, el plano es
+  `normal · p = distance` y lo que queda es `<=`). Va después de las luces y
+  de las `FXAM` y antes de `IMGS`, `BMAP` y `ENVR`; sin plano no se escribe
+  (los bytes de antes de Q1), una actualización sin `MESH` lo trae o lo
+  quita, y dos `SECT` son error. `INST.flags` gana el bit 1
+  (`INSTANCE_NO_SECTION`): el plano no corta ni tapa esa instancia (el
+  estudio, §5.2 terdecies). `rt_features` y `/api/info` suben el bit 2
+  (valor 4, `FEATURE_SECTION`). Reglas en §5.2 terdecies.
 - **`PATN`** (E6, nueva, repetible, 108 B): el dibujo procedural de un
   material (`u32 material kind; f32 color_a[3] color_b[3] scale_mm
   params[16]; u32 variant seed`, §5.2 octies). `kind` 1 madera, 2 tela; un
@@ -2245,6 +2263,96 @@ progreso de la cola, de los segundos que el motor espera.
 16 hilos, por el `rt.wasm` real escalar y SIMD (`rt --write-e10-example`) y
 por el código de la página; sin el *flag*, ninguno de antes se movió.
 
+### 5.2 terdecies · La vista en sección (Q1, `rt_core::geometry::section`)
+
+El plano de corte es un dato del proyecto (`state.section`, SPEC §3.1) que
+cada motor lee a su manera y que da **la misma imagen**: el RSB lo lleva en
+`SECT` (§5.2) ya resuelto en el instante de la animación
+(`resolveSection(plano, offsetMm)`: `distance = normal · (punto + normal ·
+desplazamiento)`; el desplazamiento es la suma de los clips `SECTION` de la
+pose, `Pose.sectionOffsetMm`), y *Rápido* lo pone en un `THREE.Plane`. Lo que
+queda es `normal · p <= distance`.
+
+**En el motor** el plano vive **dentro de `Geometry`**
+(`Geometry::set_section`; el lector del RSB y `Scene::build_particles` lo
+llaman, porque una geometría reconstruida no lo tiene), y cada consulta
+(rayo de cámara, secundario, de sombra, fotones, selección, pases, lotes) lo
+ve sin que cambie ninguno de los núcleos SIMD ni el integrador:
+
+- **Recorte.** Un semiespacio corta un rayo en un intervalo
+  (`Span::{Removed, Whole, Enters(t), Leaves(t)}`), y `t` vale lo mismo en
+  el mundo que en el espacio de cada malla, así que el rayo recortado es un
+  rayo corriente con otro `t_min` y `t_max`. Sin sección el camino es el de
+  siempre (los *hash* de antes no se mueven: la escena sin plano es la de
+  E5 bit a bit, y un plano que no corta nada tampoco cambia un píxel).
+- **Tapa.** Un rayo que cruza el plano ha estado fuera de toda superficie
+  que no golpeó, así que si el cruce está dentro de un sólido lo dice la
+  **siguiente superficie del propio rayo**: si la encuentra **por detrás**
+  (`Solid::inside_before`, por el sentido del triángulo con la
+  transformación de la instancia), el cruce estaba dentro y hay tapa. Un
+  rayo que entra al lado que queda reutiliza el mismo recorrido (cero
+  coste); uno que sale sin haber golpeado nada mira más allá del plano
+  (`RayClass::Parts`: las partículas no son sólidos); un rechazo previo por
+  la caja de las instancias tapables (`cap_bounds`) deja fuera casi todos
+  los rayos. El impacto es `RayHit { instance, triangle: CAP_TRIANGLE
+  (u32::MAX), t }`: plano, **sobre** el plano, con la normal del plano de
+  cara al rayo, `front_face = outside = (normal · dir < 0)`; como no tiene
+  triángulo no hay textura, dibujo, programa ni bisel: el color liso del
+  material (y un vidrio cortado es una interfaz que refracta, como un vidrio
+  macizo que acabara ahí). Un rayo de `t_max` finito que entra dentro de un
+  sólido y acaba antes de salir no ve la tapa (límite documentado).
+- **Sólido** (`geometry/solid.rs`, una vez por malla, `SolidCache` en
+  `OnceLock`): vértices soldados por posición exacta y luego con tolerancia
+  `1e-5 ×` la extensión; los triángulos sin área no cuentan; cada arista
+  soldada tiene que estar en exactamente dos triángulos recorridas en sentido
+  contrario; el volumen con signo (bloques de 256, respecto al centro de la
+  caja) dice `Outward` o `Inward`; si no, `Open`. Una pieza con materiales
+  por cara (`faceMaterials`) y un vidrio de pared fina no se tapan
+  (`partIsCapped` repite la regla). `core/solid.ts` es el gemelo de
+  TypeScript (los dos leen las mismas mallas a mano de los tests).
+- **El estudio no se corta.** Una instancia con `INSTANCE_NO_SECTION` (el
+  escritor la pone, solo mientras corta un plano, a las piezas de un set:
+  fondo, suelo y tarjetas) no la quita ni la tapa el plano. Como el rayo
+  recortado no puede verla en el lado quitado, `exempt_in` recorre ese
+  tramo dentro de la caja de cada instancia exenta, pasando por encima de
+  las superficies del modelo cortado (como mucho 48; `t` sube justo por
+  encima de cada una) hasta dar con una exenta; una escena sin instancias
+  exentas nunca entra ahí. Las sombras ven el estudio desde los dos lados.
+- **Determinismo.** La decisión de tapa depende solo de las mallas y del
+  plano: nada de tiempo, de hilos ni de azar; el mismo *hash* con 1, 4 y 16
+  hilos, en escalar, SSE2 y AVX2, y en wasm escalar y `simd128`
+  (`PINNED_Q1_SECTION_4SPP`, `rt --write-q1-example`, bloque de paridad de
+  `engine.yml`).
+
+**En Rápido** (`render/section-preview.ts`): `renderer.localClippingEnabled`;
+un solo `THREE.Plane` en `clippingPlanes` de todos los materiales del modelo
+(el de los pases de identificadores incluido), con `Plane(−normal_three,
+distance)` (three conserva `m·x + c >= 0`; la normal pasa por `toThree`, el
+único sitio del eje Y arriba) y **lejos** (`1e9`) cuando no hay sección: los
+*shaders* no cambian al encenderla ni al apagarla. Mientras corta, los
+materiales del modelo se pintan a doble cara (una malla abierta enseña su
+interior, como en el motor) y la **tapa** es una segunda malla hija de cada
+pieza que es un sólido cerrado (`isClosedSolid`), con la geometría de la
+pieza, solo caras de atrás (`BackSide`), el material liso de la pieza con
+`onBeforeCompile` poniendo como normal la del plano y `polygonOffset −1`:
+donde el corte se ha llevado la cara de delante se ve la de atrás, que es la
+tapa (el equivalente al *stencil*, sin el segundo pase). Un vidrio cortado se
+pinta transparente (la tapa que refracta es de *Completo*). El estudio dibuja
+con una copia de su material sin plano (`unclipped`, solo mientras corta).
+La selección por clic usa `firstKept` (el primer impacto del lado que queda;
+el de una tapa es el corte, con el punto en el plano y su normal), la caja
+de selección y el cardán excluyen las piezas que el corte se ha llevado
+enteras (`removed`, mira los vértices cuando la caja queda cortada y guarda
+la respuesta), y el suelo, los efectos y las superposiciones no llevan el
+plano.
+
+**Interfaz** (UI.md §2.4, punto *Sección*): `ui/panels/insp-section.ts`,
+`ui/section-commands.ts` y el modo de clic `PickMode { kind: 'section' }`
+del visor (aviso propio, `Esc` lo baja, el primer clic de dos puntos solo
+recuerda el punto). Está en el inspector de Escena y no en la barra del
+visor porque es un objeto de la escena (se guarda, se anima, se ve en
+Completo y en Render), como el entorno y el ambiente.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -2806,6 +2914,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Ambiente (S4a, S4b) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests`, `geometry::tests`, `geometry::particles::grid_tests`, `bsdf::forward::tests` e `integrator::particle_tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %). En S4b, además: la rejilla de pantalla da los impactos de la fuerza bruta (estenopeica y lente fina, las tres formas, partículas en el plano de la cámara); el lóbulo hacia delante integra 1 con g como coseno medio, se muestrea con su densidad, el horno blanco de su BSDF y de una mota da 1, y la NEE sola, el BSDF solo y el MIS coinciden (1 %); los caminos tras un lóbulo ancho no ven una gota sin sombra (bit a bit) y la cruzan con la transmitancia de la sombra, la cámara la sigue viendo refractar, y la regla de las gotas lisas no cambia la media |
+| Vista en sección (Q1) | `tests/section.test.ts`, `solid.test.ts`, `section-rsb.test.ts` (con el `rt.wasm` real), `section-full-browser.test.ts` (Chromium y `rt.wasm`); `geometry::section_tests`, `integrator::section_tests`, `scene::section_rsb_tests` y `render::section_tests` de rt-core, `rt-cli/tests/example.rs`; `tools/section-check.mjs` | El plano desde un clic y cada eje, desde dos puntos y desde números; las acciones por el *store* (deshacer, gestos, nada para lo que no cambia), guardar y abrir; `SECTION` interpolado con la curva del clip, sumando, partido y repetido; `SECT` byte a byte frente a `rt --write-q1-example` y dónde la pone el escritor; en el motor, el rayo ignora el lado quitado y no deja que bloquee una sombra, una caja cortada por la mitad se tapa con el área de su sección y su color, las mallas abiertas y las de pared fina no, el vidrio cortado refracta por su tapa como un vidrio macizo que acabara ahí, el estudio (referencia: modelo solo + estudio solo = lo más cercano de los dos, con tapa y sin ella), el *hash* fijado en cada ISA y con 1, 4 y 16 hilos y en wasm; la comparación por regiones del criterio (botella cortada, acuerdo por píxel 1,000 y IoU de las secciones 0,963, controles que se caen, el suelo del set entero en los dos y cortado como pieza corriente) y el cardán y la selección en caja sin lo quitado |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
 | Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente fina no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente fina y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
 | Ventana de la lente (O2b) | `tests/lens-peek.test.ts` (con el `rt.wasm` real), `tests/lens-peek-browser.test.ts`, `tools/lens-hover-check.mjs` | A qué cámara se pregunta y que la lente puesta es la cámara tal cual; la caché (una pregunta por lente, compartida la que está en vuelo, otra al cambiar focal, foco, f/, encuadre o ajustes, la negativa se guarda y «sin motor» y el fallo no, acotada); el reposo de 300 ms (cruzar la lista no abre nada), cerrar al salir, con Esc y al elegir, y no reabrir hasta que vuelve el puntero; las tarjetas con solo los números del motor (cargando, sin motor y negada, sin números ni dibujo; es y en); la colocación dentro de la ventana; los números de lentes que no están en la cámara contra los del motor real. En Chromium, sobre la sección de verdad: abre junto a la lista y junto al chip con el nombre, la fuente, el dibujo y los números de esa lente, no toma foco ni puntero, el teclado la abre y la mueve de lente en lente, y elegir pone la lente. Con la aplicación y el motor reales: los números de la ventana son los de la sección al poner la lente, y volver a pasar no vuelve a preguntar al módulo |
@@ -2887,6 +2996,14 @@ preset disponible (y sus parámetros) un preset que esta versión no conoce.
 El esquema sigue en 2. El Doctor se vuelve a pasar al abrir con los
 chequeos de esta versión: un archivo anterior trae los suyos sin
 `particles`.
+
+**Sección** (Q1). `state.section` es el plano de la vista en sección
+(SPEC §3.1): `{ enabled, point, normal, cap }` o `null`. Un archivo sin el
+campo (anterior a Q1) abre sin plano; al abrir, `normalizeSection` toma un
+plano roto (sin normal, con números que no lo son) por ninguno, completa
+los indicadores que faltan (encendido y tapado) y vuelve unitaria la
+normal. El esquema sigue en 2 y no hay migración. Los clips `SECTION` de
+la animación son clips de siempre, de objetivo `{ kind: 'SCENE' }`.
 
 **Texturas** (M2a). Las imágenes de las ranuras y de las etiquetas de los
 materiales van en el mismo bloque `images`, detrás de las del entorno, una

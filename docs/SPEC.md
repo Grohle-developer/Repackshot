@@ -338,6 +338,47 @@ función pura de (semilla, id, instante). Ni caché ni horneado.
   simulador, en el hilo de la página); sin `rt.wasm` pinta la caja de la
   región y el medidor lo dice. *Completo* y *Render* las pintan todas.
 
+**Vista en sección (Q1).** Un plano que quita un lado de la pieza y tapa el
+corte, para enseñar cómo está hecho el producto por dentro.
+
+- **Dato**: `state.section`, a lo sumo **un plano** por proyecto (`null`
+  hasta que la persona hace uno): `enabled` (se corta o no; apagado, el plano
+  se conserva), `point` (mm, mundo, Z arriba), `normal` (unitaria, hacia el
+  lado que **se quita**) y `cap` (tapar el corte). Lo que queda es lo que
+  está del lado contrario a la normal. Se guarda en el proyecto: un archivo
+  anterior se abre sin plano, y uno con un plano roto lo abre sin él.
+- **Cómo se pone** (todo por el *store*, deshacible): **clic en la pieza + eje**
+  (*X*, *Y*, *Z* o *Superficie*: la normal de la superficie donde se hace
+  clic): el plano pasa por el punto y es perpendicular al eje, y se quita el
+  lado que mira al espectador; **dos puntos**: el plano contiene los dos
+  puntos y la dirección de la vista, y se quita lo que queda a la izquierda de
+  la línea del primero al segundo (el mismo punto dos veces, o dos uno detrás
+  del otro según la vista, no hacen plano y se vuelve a pedir el segundo);
+  **números**: el punto y la normal (la normal se convierte en vector unitario
+  y una que no sea nada no se toma). Además *Cambiar de lado*, *Tapar el
+  corte*, *Quitar el plano* y el interruptor, que sin plano hace el de por
+  defecto: por el centro del producto, de cara a la cámara, tapado. Acciones
+  `section/set`, `section/patch`, `section/enable`, `section/flip` y
+  `section/clear`; un arrastre de un número es una entrada de deshacer y lo
+  que no cambia nada no deja entrada.
+- **Qué se corta**: la pieza y todo lo que la persona haya puesto en la escena
+  (una base, un pedestal), no el **estudio**: el fondo, el suelo y las
+  tarjetas de un set (L6) son la sala, no el modelo, y se ven enteros a los
+  dos lados del plano. Los cortes de los **sólidos cerrados** (mallas sin
+  agujeros, con cada arista compartida por dos triángulos y las caras hacia
+  fuera) se tapan con el color liso de su material (sin textura ni dibujo);
+  una **malla abierta** no tiene dentro: el corte enseña su interior, y la
+  interfaz lo dice (con las piezas). Tampoco se tapan una pieza con un material
+  por cara ni un vidrio de pared fina.
+- **Qué hace en cada visor**: *Completo* y *Render* quitan el lado de la
+  normal para todos los rayos (cámara, reflejos, refracciones y sombras: lo
+  quitado ni se ve ni sombrea) y tapan como se ha dicho; un vidrio cortado
+  refracta por su tapa, como un vidrio macizo que acabara ahí. *Rápido* pinta
+  lo mismo con el plano de recorte de three.js y una tapa por pieza cerrada;
+  un vidrio cortado se ve transparente. La selección, la caja de selección y
+  el cardán no ven lo que el corte se ha llevado.
+- **Animación**: el movimiento `SECTION` (§3.7).
+
 ### 3.2 · Selección por niveles
 
 `level ∈ {MODEL, GROUP, PART, FACES}`, excluyentes. Un clic en el visor
@@ -1069,6 +1110,7 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | Luz y entorno | **Barrido de luz** (`HDRI`) | Gira el entorno |
 | | **Intensidad** (`INTENSITY`), **Color** (`TINT`) | De un foco |
 | | **Arco solar** (`SUN_ARC`, con el cielo de E5) | El sol recorre el día |
+| | **Sección** (`SECTION`, Q1, sobre la escena como `HDRI`) | El plano de la vista en sección se desplaza a lo largo de su normal, en tamaños de pieza: cantidad negativa, corta más adentro (por defecto −0,5); positiva, descubre. Suma con otros clips `SECTION` y se parte sin salto; no hace nada sin plano o con el plano apagado |
 | Materiales | **Color de material** (`MATERIAL_COLOR`, nuevo), **Fundido de material** (`FADE` sobre el material) | Transición de color u opacidad |
 
 **Paseo (`WALK`)**, pensado para mobiliario e interiores: crea la

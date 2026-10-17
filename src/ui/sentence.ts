@@ -44,7 +44,8 @@ function subject(state: ProjectState, clip: MotionClip, lang: Lang): string {
     case 'LIGHT':
       return tIn(lang, 'say.light', { name: lightName(state, clip.target.id, lang).toLowerCase() });
     case 'SCENE':
-      return tIn(lang, 'say.scene');
+      // Q1: the section plane is what moves, not the environment.
+      return tIn(lang, clip.move === 'SECTION' ? 'say.section' : 'say.scene');
   }
 }
 
@@ -94,6 +95,9 @@ function verb(clip: MotionClip, lang: Lang): string {
     }
     case 'TINT':
       return tIn(lang, 'say.TINT');
+    case 'SECTION':
+      // Q1: along the normal, towards what is cut away (uncovers) or back into what is kept (cuts deeper).
+      return tIn(lang, clip.amount < 0 ? 'say.SECTION.neg' : 'say.SECTION', { amount: tIn(lang, 'say.amount.SIZE', { n: amount(clip.amount) }) });
     default: {
       // A kind without its own words (a clip kind added later, like a baked simulation): its catalogue name.
       const k = keyIf(`say.${clip.move}`);
@@ -169,6 +173,8 @@ export function clipKindName(clip: MotionClip, lang: Lang): string {
 export function clipAmountText(clip: MotionClip, lang: Lang): string {
   const n = (v: number) => formatNumber(v, lang);
   if (clip.move === 'EXPLODE') return explodeAmountText(clip, lang);
+  // Q1: the plane's offset keeps its sign (negative cuts deeper).
+  if (clip.move === 'SECTION') return tIn(lang, 'say.amount.SIZE', { n: n(clip.amount) });
   switch (amountUnit(clip.move)) {
     case 'deg':
       return `${n(clip.amount)}°`;
