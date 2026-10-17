@@ -1108,7 +1108,7 @@ gato recorta el haz hacia las esquinas y las oscurece (es el viñeteo
 una de tres bandas (decisión 3) sin mover el plano de enfoque. Los tipos
 que necesitan la lente trazada (cometa de coma, respiración de foco,
 aberración esférica variable) ponen su lente del catálogo en la cámara
-(O2; desde O4 la interfaz no los ofrece como bokeh, son lentes de *Lente
+(O2; desde O4 la rejilla de bokeh no los enseña, son lentes de *Lente
 trazada*) y el de difracción espera a la óptica de ondas. **El bokeh y la
 óptica avanzada son de la lente simple (O4)**: ningún tipo de bokeh se
 aplica a una cámara con lente trazada ni la saca de ella

@@ -132,10 +132,9 @@ describe.skipIf(!executablePath)('the simple and the traced lens in the inspecto
     const back = await page.evaluate(() => window.lensTest!.optics());
     expect({ ...back, traced: undefined }).toEqual({ ...chosen, traced: undefined });
     expect(await page.locator('[data-bokeh="bubble"]').getAttribute('aria-pressed')).toBe('true');
-    // The traced lens's own bokeh types are shown, and say where they are, without switching anything.
-    const coma = page.locator('[data-bokeh="coma_comet"]');
-    expect(await coma.isDisabled()).toBe(true);
-    expect(await coma.getAttribute('data-tip')).toMatch(/Lens ▸ Traced lens/);
+    // The traced lens's own bokeh types are not in the simple lens's grid at all (O4, decided): the rest are.
+    for (const key of ['coma_comet', 'focus_breathing', 'variable_sa']) expect(await page.locator(`[data-bokeh="${key}"]`).count()).toBe(0);
+    expect(await page.locator('[data-bokeh-grid] [data-bokeh]').count()).toBe(17);
     expect(errors).toEqual([]);
   }, 120000);
 

@@ -898,16 +898,15 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      ![ventana de una lente de la lista](lens-hover.png)
      ![ventana de las lentes de un carácter](lens-hover-chip.png)
    - **Bokeh** (abierto; **solo con la lente simple**, O4: con una lente
-     trazada no sale): rejilla de 4 columnas con los 20 tipos de
-     `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
+     trazada no sale): rejilla de 4 columnas con los 17 tipos de la lente
+     simple de `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
      el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
      doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
      descripción del tipo va en el *tooltip* y, del elegido, en una nota.
      Los tres de la lente trazada (O2: cometa de coma, respiración de
-     foco, aberración esférica variable) enseñan su miniatura renderizada
-     con su lente, pero salen apagados y el *tooltip* dice dónde está esa
-     lente (*Sale de una lente trazada: elige … en Lente ▸ Lente trazada*):
-     un clic en el bokeh ya no cambia el modelo de lente (O4); el de
+     foco, aberración esférica variable) **no están en la rejilla** (O4:
+     son de sus lentes en *Lente ▸ Lente trazada*, y en las opciones de la
+     lente simple no se mezcla nada de la trazada); el de
      difracción sale apagado con *Próximamente* (*Necesita óptica de
      ondas*). Ningún camino aplica un bokeh a una cámara con lente trazada
      ni la saca de ella: todos pasan por la orden `applyBokeh`

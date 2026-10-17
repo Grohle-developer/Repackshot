@@ -5148,9 +5148,10 @@ paridad wasm.
   (`opticsWithLensModel`, `setLensModel`) ya no borra el tipo de bokeh ni su
   variante: el bokeh, sus parámetros y la inclinación de la lente simple se
   quedan en `optics` y vuelven tal cual; cambiar de lente trazada tampoco lo
-  borra. Los tres tipos de la lente trazada siguen en la rejilla con su
-  miniatura, apagados, diciendo dónde está su lente (*Lente ▸ Lente
-  trazada*) ◆. Tests: `tests/lens-o4.test.ts` (cada tipo y cada variante
+  borra. Los tres tipos de la lente trazada (cometa de coma, respiración de
+  foco, aberración esférica variable) **no están en la rejilla** de la lente
+  simple: son de sus lentes en *Lente ▸ Lente trazada* (decidido, abajo; al
+  principio salían apagados diciendo dónde estaba su lente). Tests: `tests/lens-o4.test.ts` (cada tipo y cada variante
   contra una cámara trazada; la orden con su aviso; la vuelta con el bokeh y
   la óptica avanzada) y `tests/traced-lens.test.ts`, cuyo test de O2
   esperaba justo el bug («un tipo de la lente fina devuelve la cámara a la
@@ -5167,7 +5168,7 @@ paridad wasm.
   queda nítido), y el ángulo se resuelve con la óptica paraxial de la lente
   (el conjugado del plano del sensor, `Abcd`, bisección) para que su plano
   de enfoque se incline **como el de la lente simple** de la misma
-  inclinación ◆; el centro se reenfoca con rayos reales (la curvatura de
+  inclinación (decidido); el centro se reenfoca con rayos reales (la curvatura de
   campo donde la inclinación pone el punto de enfoque: sin eso el centro
   quedaba hasta un 4,5 % lejos en el tele); los límites de la pupila se
   trazan en 9 × 9 posiciones del sensor y el peso lleva el coseno del
@@ -5205,7 +5206,7 @@ paridad wasm.
   dos puntos a la misma profundidad solo enfocan; un segundo punto
   imposible (más de 12°, en línea con la vista, detrás) avisa y espera. La
   función resuelve también el plano por **tres** puntos (test), aunque el
-  visor solo pide dos ◆. **El plano en el visor**: un cuadrado translúcido
+  visor solo pide dos (decidido: sin tercer punto por ahora). **El plano en el visor**: un cuadrado translúcido
   con rejilla, en la tinta de la interfaz, alrededor del producto y en
   perspectiva, con el punto de enfoque (y el primer punto elegido), en
   Rápido y en Completo, mientras el puntero o el foco están en el bloque,
@@ -5241,23 +5242,23 @@ mismo plano que la lente simple (la lente real gira el ángulo que haga
 falta, y el motor lo dice), para que el dibujo del plano y los dos puntos
 valgan con las dos lentes; la otra opción, que el número sea el giro físico
 de la lente y el plano salga de su óptica, hace falsa la cuenta de la
-interfaz con una lente trazada ◆. (3) **Curvatura de campo.** Con una
+interfaz con una lente trazada. (3) **Curvatura de campo.** Con una
 lente trazada el plano por dos puntos es exacto en el centro y paraxial
 fuera: un punto en la esquina de la doble Gauss a f/8 cae a un 3–10 % de
 profundidad del plano (en el triplete, mucho más: es su campo curvo, igual
 que derecha). Resolverlo con rayos reales pediría al motor el plano de una
-cámara (un puerto nuevo) ◆. (4) **La inclinación de la lente trazada se
+cámara (un puerto nuevo): pendiente para después de F1 (abajo). (4) **La inclinación de la lente trazada se
 guarda aparte** (`tracedTiltDeg`, `tracedTiltAxisDeg`): una cámara trazada
 de antes con una inclinación de la lente simple guardada (el motor la
 ignoraba) no empieza a inclinarse; el desplazamiento, en cambio, es uno
 solo para las dos lentes, porque el motor ya lo aplicaba a las dos. (5) **El
 diafragma y la aberración cromática y el remolino** son de la cámara, no de
 cada lente (el motor los usa con las dos y así se guardaban): tocarlos con
-una lente trazada deja el bokeh de la lente simple en *A medida* ◆.
-(6) **Los tipos de bokeh de la lente trazada** en la rejilla: apagados y
-diciendo dónde está su lente; también se podían quitar o dejar el clic que
-pasa a la lente trazada ◆. (7) El plano del visor se dibuja encima de todo
-(como los glifos y el *gizmo*), sin cortarse con el producto ◆. (8) El dial
+una lente trazada deja el bokeh de la lente simple en *A medida*.
+(6) **Los tipos de bokeh de la lente trazada** en la rejilla: primero
+salían apagados diciendo dónde estaba su lente; con la decisión se quitan
+de la rejilla. (7) El plano del visor se dibuja encima de todo
+(como los glifos y el *gizmo*), sin cortarse con el producto. (8) El dial
 guarda, al tocarlo, la inclinación positiva y el eje girado 180° si hacía
 falta: el mismo plano (test); lo guardado antes no se toca hasta que se
 edita. (9) **Coordinación**: *Por dos puntos* escribe la distancia de
@@ -5268,7 +5269,30 @@ enfoque ni su rayo. K3: sus verticales rectas no escriben los campos
 componen (arriba). (10) El modo
 Rápido sigue sin desenfoque: el plano dibujado es lo que lo sustituye
 mientras se ajusta. (11) El límite de 12° es el de la lente simple de O1
-para las dos (un descentrable real llega a unos 8,5°) ◆.
+para las dos (un descentrable real llega a unos 8,5°).
+
+**Decidido** (por la dirección de la sesión, sobre los puntos que este
+párrafo dejaba abiertos):
+
+1. **Sin tercer punto por ahora**: *Por dos puntos* basta. El plano del
+   visor se queda como está (encima de todo, al pasar el puntero, al elegir
+   los puntos o siempre con *Ver el plano*). `solveTilt` sigue resolviendo
+   tres puntos (test), sin mando.
+2. **La inclinación de una lente trazada es «el mismo plano que la lente
+   simple»**, como está.
+3. **Con una lente trazada, *Por dos puntos* debe resolverse con rayos
+   reales.** Pendiente: F1 trae `Camera::focus_distance_to` con el mejor
+   foco trazado; cuando F1 esté en `main`, el plano por dos puntos de una
+   lente trazada pasará por él (no se construye en O4).
+4. **El diafragma, la aberración cromática y el remolino son compartidos**
+   por los dos modelos, como está.
+5. **Los tres tipos de bokeh de la lente trazada se quitan** de la rejilla
+   de la lente simple (la persona no quiere opciones de la trazada
+   mezcladas). Hecho: la rejilla tiene 17 tipos; lo comprueban
+   `tests/lens-modes-browser.test.ts`, `tools/lens-check.mjs` y
+   `tools/optics-check.mjs`, y `camera-bokeh.png` está regrabada.
+6. **El límite de 12° se queda.**
+7. **La hoja `rt --tilt-sheet` se acepta.**
 
 ## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 
@@ -11956,18 +11980,6 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   claros en oscuro, lo que aplana la jerarquía de grises. Decidir: subirlos,
   limitar el texto auxiliar a `bg-0`, `bg-1` y *hover* (`#4e4e4e` /
   `#afafaf`) o aceptar 4,5:1 para el texto secundario.
-- **O4** (los ◆ de su párrafo): el plan de interacción de la inclinación
-  (cantidad y dirección con dial y cuatro atajos; *Por dos puntos*, con o
-  sin un tercer punto; el plano dibujado al pasar el puntero o siempre,
-  encima de todo o cortado con el producto); qué significa la inclinación
-  de una lente trazada (el mismo plano que la lente simple, como ahora, o
-  el giro físico de la lente); si el plano por dos puntos debe resolverse
-  con rayos reales del motor con una lente trazada (su curvatura de campo);
-  el diafragma, la aberración cromática y el remolino compartidos por los
-  dos modelos o uno por modelo; los tipos de bokeh de la lente trazada en
-  la rejilla de la lente simple (apagados diciendo dónde, quitados, o el
-  clic que cambia de lente); el límite de 12° para las dos lentes; y el
-  veredicto de la hoja `rt --tilt-sheet`.
 
 - **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
   de las flechas (hoy un par más fino, siempre visible, en los campos con

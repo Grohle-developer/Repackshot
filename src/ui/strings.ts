@@ -637,8 +637,6 @@ const TABLE = {
   'camera.bokehType': ['Bokeh type', 'Tipo de bokeh'],
   'camera.bokehVariant': ['Variant', 'Variante'],
   'camera.bokehCustom': ['Custom: a knob was moved by hand', 'A medida: se ha movido un mando a mano'],
-  'camera.bokehTraced': ['Comes from a traced lens: choose {lens} in Lens ▸ Traced lens', 'Sale de una lente trazada: elige {lens} en Lente ▸ Lente trazada'],
-  'camera.bokehTracedSoon': ['Traced lens', 'Lente trazada'],
   'camera.bokehSimpleOnly': ['Bokeh is an option of the simple lens: this camera has a traced lens, which makes its own', 'El bokeh es una opción de la lente simple: esta cámara tiene una lente trazada, que hace el suyo'],
   'camera.bokehWave': ['Needs wave optics: coming soon', 'Necesita óptica de ondas: próximamente'],
   'camera.bokehSoon': ['Coming soon', 'Próximamente'],

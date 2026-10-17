@@ -285,7 +285,7 @@ Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector 
 #### O1 · Lente fina mejorada y selector de bokeh
 
 <a id="c-camera-bokeh"></a><img src="ui/camera-bokeh.png" width="300" alt="El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente»."><br>
-`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7, y en Sin publicar: los tres de la lente trazada con su miniatura, apagados, diciendo dónde está su lente, O4)*
+`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7, y en Sin publicar: diecisiete tipos, sin los tres de la lente trazada, O4)*
 
 <a id="c-camera-optics"></a><img src="ui/camera-optics.png" width="300" alt="Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico»."><br>
 `camera-optics.png` · `0830f93` · Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico». *(regrabada en v0.1.7, y en Sin publicar con el bloque de inclinación de O4)*

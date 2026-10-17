@@ -21,8 +21,7 @@
 //   meter       the Fast meter says the traced lens is approximated;
 //   save        Save lens as… asks for a name and keeps the lens in Mine;
 //   back        Simple lens takes the camera back;
-//   bokeh       with the simple lens the bokeh types of the traced lens show their thumbnails and say where their
-//               lens is (Lens ▸ Traced lens), without a click that switches the lens model (O4).
+//   bokeh       with the simple lens the bokeh types of the traced lens are not in its grid (O4, decided).
 //
 // Screenshots (English, dark): lens-editor.png (the editor: model, character, lens, source, its own rows) and
 // lens-section.png (what the engine computes: the numbers, the curves and the cross-section). Results:
@@ -256,10 +255,9 @@ try {
   await settle(page, 400);
   const r8 = await read(page);
   check('back', r8.model.join() === 'Simple lens' && !r8.tracedShown && r8.undo?.includes('Lens model'), { model: r8.model, undo: r8.undo });
-  const coma = page.locator('[data-bokeh="coma_comet"]');
-  await coma.scrollIntoViewIfNeeded();
-  const comaState = await coma.evaluate((el) => ({ disabled: el.disabled, img: el.querySelector('img')?.getAttribute('src') ?? null, tip: el.getAttribute('data-tip') }));
-  check('bokeh', comaState.disabled && /coma-comet\.png$/.test(comaState.img ?? '') && /Lens ▸ Traced lens/.test(comaState.tip ?? ''), { coma: comaState });
+  const tracedTiles = await page.locator('[data-bokeh="coma_comet"], [data-bokeh="focus_breathing"], [data-bokeh="variable_sa"]').count();
+  const allTiles = await page.locator('[data-bokeh-grid] [data-bokeh]').count();
+  check('bokeh', tracedTiles === 0 && allTiles === 17, { tracedTiles, allTiles });
   check('no_errors', errors.length === 0, { errors });
 } catch (err) {
   check('run', false, { error: String(err?.stack ?? err) });

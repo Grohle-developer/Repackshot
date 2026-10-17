@@ -8,7 +8,6 @@
 import { BOKEH_TYPES, PUPIL_PROFILES, bokehParams, bokehType, type BokehThin, type BokehType, type PupilProfile } from '../../data/bokeh';
 import type { CameraId, CameraState } from '../../core/camera';
 import { OPTICS_LIMITS, OPTICS_NEUTRAL, SQUEEZES, bokehApplies, filtersOf, opticsOf, thinOf, type CameraOptics } from '../../core/optics';
-import { lensPrescription } from '../../data/lenses';
 import * as cmd from '../commands';
 import { field, numberField, segmented, select, slider, type Control } from '../components/controls';
 import { thumb } from '../components/widgets';
@@ -74,16 +73,15 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   const grid = h('div', { class: 'thumbs cols-4', role: 'listbox', 'aria-label': t('camera.bokehType'), 'data-bokeh-grid': '' });
   const tiles = new Map<string, HTMLButtonElement>();
   for (const type of BOKEH_TYPES) {
-    // O2: the types of the traced lens are that lens's own; since O4 the grid (the simple lens's) shows them with their
-    // thumbnail and says where they are (Lens ▸ Traced lens), without switching the lens model. Wave optics is to come.
-    const traced = type.requires === 'traced' && !!type.lens && !!lensPrescription(type.lens);
+    // O4 (decided): the types of the traced lens (coma, focus breathing, variable spherical aberration) are that lens's
+    // own and are not in this grid, the simple lens's: no traced option mixed in. Wave optics is to come.
+    if (type.requires === 'traced') continue;
     const can = type.requires === null && type.thin !== null;
-    const lensName = traced ? lbl(lensPrescription(type.lens!)!.name) : '';
     const el = thumb({
-      src: can || traced ? bokehThumb(type.key) : null,
+      src: can ? bokehThumb(type.key) : null,
       caption: lbl(type.name),
       active: false,
-      title: traced ? `${lbl(type.description)} · ${t('camera.bokehTraced', { lens: lensName })}` : can ? lbl(type.description) : `${lbl(type.description)} · ${t('camera.bokehWave')}`,
+      title: can ? lbl(type.description) : `${lbl(type.description)} · ${t('camera.bokehWave')}`,
       onClick: () => {
         if (can) choose(type.key, optics().bokeh === type.key ? optics().variant : defaultVariant(type));
       },
@@ -92,7 +90,6 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     if (!can) {
       el.disabled = true;
       el.setAttribute('aria-disabled', 'true');
-      if (traced) el.setAttribute('data-bokeh-traced', '');
       el.querySelector('.thumb-ph')?.append(h('span', { class: 'aux', style: 'display:block;padding-top:30%' }, t('camera.bokehSoon')));
     }
     tiles.set(type.key, el);
