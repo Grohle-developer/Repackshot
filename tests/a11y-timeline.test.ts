@@ -1,7 +1,8 @@
 // N1, with H1's accessibility pass: the animation drawer in a browser (headless Chromium, the app itself through
 // Vite). The presets are buttons inside the items of a list; the tree of what is animated has a name, holds the
 // focus and says which row is active (`aria-activedescendant`, ↑ ↓ move it); the ruler, inside the tree, is for the
-// pointer and hidden from assistive technology, with no label of its own. Skipped without Chromium.
+// pointer and hidden from assistive technology, with no label of its own; a fade drawn over a cut leaves the name of
+// the shot after it readable. Skipped without Chromium.
 
 import { existsSync, readdirSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -86,5 +87,24 @@ describe.skipIf(!executablePath)('the animation drawer, for assistive technology
   it('the ruler is for the pointer: hidden from assistive technology, with no label of its own', async () => {
     const ruler = await page.locator('.tl-ruler').evaluate((el) => ({ hidden: el.getAttribute('aria-hidden'), label: el.getAttribute('aria-label'), role: el.getAttribute('role'), tip: el.getAttribute('data-tip') }));
     expect(ruler).toEqual({ hidden: 'true', label: null, role: null, tip: 'Ruler: click or drag to move the playhead' });
+  });
+
+  it('a fade across a cut leaves the name of the shot after it readable', async () => {
+    // The HERO preset has three shots; a fade to black into the second, from its properties.
+    await page.locator('.tl-seg[data-shot="1"] .tl-seg-text').click();
+    await page.locator('.anim-props .seg button', { hasText: 'Fade to black' }).click();
+    await page.waitForSelector('.tl-fade[data-fade="BLACK"]');
+    const boxes = await page.evaluate(() => {
+      const box = (sel: string) => {
+        const r = document.querySelector(sel)!.getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      };
+      return { fade: box('.tl-fade[data-fade="BLACK"]'), text: box('.tl-seg[data-shot="1"] .tl-seg-text'), seg: box('.tl-seg[data-shot="1"]') };
+    });
+    // The marker straddles the cut; the label of the shot starts after it, still inside its segment.
+    expect(boxes.fade.left).toBeLessThan(boxes.seg.left);
+    expect(boxes.fade.right).toBeGreaterThan(boxes.seg.left);
+    expect(boxes.text.left).toBeGreaterThanOrEqual(boxes.fade.right - 0.5);
+    expect(boxes.text.left).toBeLessThan(boxes.seg.right);
   });
 });

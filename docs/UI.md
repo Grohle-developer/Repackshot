@@ -1094,8 +1094,10 @@ la versión de U1 con planos y tarjetas queda sustituida.
   cámaras a la vez) con la **Duración del fundido** y una nota de qué hace
   (en el primer plano: la animación empieza en el color), y *Quitar el
   plano*; el tramo elegido lleva borde grueso. Un fundido se dibuja sobre el
-  corte, medio en cada plano, como una marca que sube hasta el color en el
-  corte y baja después (negro o blanco puros, con un borde gris); la de un objetivo, una franja tenue de su primera a su última
+  corte, medio en cada plano y con lo que dura en los fotogramas (nunca más
+  de la mitad de uno de los dos), como una marca que sube hasta el color en
+  el corte y baja después (negro o blanco puros, con un borde gris); el
+  nombre del plano empieza pasada la marca; la de un objetivo, una franja tenue de su primera a su última
   animación (plegado, las barras de todas, finas); la de una animación,
   su **barra** con la frase corta (las repeticiones, con marcas
   discontinuas; invertida, con una flecha a la izquierda). Una barra se

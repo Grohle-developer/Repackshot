@@ -369,30 +369,45 @@ export function shotTransition(shot: Pick<Shot, 'transition'>): ShotTransition {
 }
 
 /**
+ * N1: the stretch of time the change into shot i covers, seconds (SPEC §3.7 "Fundidos"), or null for a cut. A FADE into
+ * shot i (i ≥ 1) straddles the cut: half of its length before and half after, never longer than half of either shot;
+ * one into the first shot runs from 0 over its length (no longer than the shot). The timeline draws this very span.
+ */
+export function shotFadeSpan(shots: readonly Pick<Shot, 'duration' | 'transition'>[], i: number): { start: number; cut: number; end: number } | null {
+  const shot = shots[i];
+  if (!shot) return null;
+  const tr = shotTransition(shot);
+  if (tr.kind !== 'FADE') return null;
+  if (i === 0) {
+    const d = Math.min(tr.duration, Math.max(0, shot.duration));
+    return d > 0 ? { start: 0, cut: 0, end: d } : null;
+  }
+  let cut = 0;
+  for (let k = 0; k < i; k++) cut += Math.max(0, shots[k].duration);
+  const half = Math.min(tr.duration / 2, Math.max(0, shots[i - 1].duration) / 2, Math.max(0, shot.duration) / 2);
+  return half > 0 ? { start: cut - half, cut, end: cut + half } : null;
+}
+
+/**
  * N1: the camera track's fade to a colour at time t (SPEC §3.7 "Fundidos"). A FADE change into shot i (i ≥ 1) takes the
- * image to its colour over the half of its length before the cut and back over the half after (never longer than half
- * of either shot), with the smooth curve; one into the first shot is a fade from the colour over its length from 0.
- * Where two overlap the stronger one is seen. Null when no fade is under way.
+ * image to its colour over the half of its span before the cut and back over the half after, with the smooth curve;
+ * one into the first shot is a fade from the colour over its span from 0 (`shotFadeSpan`). Where two overlap the
+ * stronger one is seen. Null when no fade is under way.
  */
 export function shotFadeAt(state: Pick<ProjectState, 'animation'>, t: number): FadeToColor | null {
   const shots = state.animation.shots;
   let best: FadeToColor | null = null;
-  let at = 0;
   for (let i = 0; i < shots.length; i++) {
-    const tr = shotTransition(shots[i]);
-    const start = at;
-    at += Math.max(0, shots[i].duration);
-    if (tr.kind !== 'FADE') continue;
+    const span = shotFadeSpan(shots, i);
+    if (!span) continue;
     let amount = 0;
-    if (i === 0) {
-      const d = Math.min(tr.duration, Math.max(0, shots[0].duration));
-      amount = d > 0 && t < d ? ease(1 - Math.max(0, t) / d, 'EASE') : 0;
-    } else {
-      const half = Math.min(tr.duration / 2, Math.max(0, shots[i - 1].duration) / 2, Math.max(0, shots[i].duration) / 2);
-      const off = Math.abs(t - start);
-      amount = half > 0 && off < half ? ease(1 - off / half, 'EASE') : 0;
+    if (i === 0) amount = t < span.end ? ease(1 - Math.max(0, t) / span.end, 'EASE') : 0;
+    else {
+      const half = span.end - span.cut;
+      const off = Math.abs(t - span.cut);
+      amount = off < half ? ease(1 - off / half, 'EASE') : 0;
     }
-    if (amount > 0 && (!best || amount > best.amount)) best = { color: fadeColor(tr.color), amount };
+    if (amount > 0 && (!best || amount > best.amount)) best = { color: fadeColor(shotTransition(shots[i]).color), amount };
   }
   return best;
 }

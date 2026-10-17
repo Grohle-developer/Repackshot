@@ -736,6 +736,8 @@
 }
 .tl-seg-text {
   padding: 0 8px;
+  /* N1: after the half of a fade that falls on this shot, which is drawn over its start. */
+  margin-left: var(--tl-fade-in, 0px);
   overflow: hidden;
   text-overflow: ellipsis;
 }

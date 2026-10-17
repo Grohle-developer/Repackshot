@@ -11,6 +11,7 @@ import {
   partsWearing,
   poseActive,
   shotFadeAt,
+  shotFadeSpan,
   splitClip,
   SUN_LATITUDE,
   SUN_POLE_AZ,
@@ -326,6 +327,11 @@ describe('the camera track’s changes of shot (N1)', () => {
     expect(shotFadeAt(s, 3)).toBeNull();
     expect(shotFadeAt(s, 3.5)!.amount).toBeCloseTo(0.5, 12);
     expect(shotFadeAt(s, 5)).toBeNull();
+    // The span the timeline draws is the one the frames have: 1.5–2.5 s, and 3–5 s for the clipped one.
+    expect(shotFadeSpan(s.animation.shots, 0)).toBeNull();
+    expect(shotFadeSpan(s.animation.shots, 1)).toEqual({ start: 1.5, cut: 2, end: 2.5 });
+    expect(shotFadeSpan(s.animation.shots, 2)).toEqual({ start: 3, cut: 4, end: 5 });
+    expect(shotFadeSpan(s.animation.shots, 3)).toBeNull();
     // Back to a cut: the field goes.
     s = apply(s, { type: 'anim/setShot', id: third.id, patch: { transition: undefined } });
     expect(s.animation.shots[2].transition).toBeUndefined();
@@ -341,6 +347,7 @@ describe('the camera track’s changes of shot (N1)', () => {
     expect(shotFadeAt(s, 0)).toEqual({ color: [0, 0, 0], amount: 1 });
     expect(shotFadeAt(s, 0.25)!.amount).toBeCloseTo(0.5, 12);
     expect(shotFadeAt(s, 0.5)).toBeNull();
+    expect(shotFadeSpan(s.animation.shots, 0)).toEqual({ start: 0, cut: 0, end: 0.5 });
     const damaged = { ...s, animation: { ...s.animation, shots: s.animation.shots.map((x, i) => (i === 1 ? { ...x, transition: { kind: 'WIPE', color: 'RED', duration: 'long' } as never } : x)) } };
     expect(shotFadeAt(damaged, 2)).toBeNull();
     // A fade's length within its limits.
