@@ -2972,7 +2972,6 @@ const TABLE = {
   'undo.focusClick': ['Focus with a click', 'Enfocar con clic'],
   'undo.activateCamera': ['Activate {name}', 'Activar {name}'],
   'undo.newCamera': ['New camera', 'Nueva cámara'],
-  'undo.sceneType': ['Scene type: {name}', 'Tipo de escena: {name}'],
   'undo.deleteCamera': ['Delete {name}', 'Eliminar {name}'],
   'undo.renameCamera': ['Rename camera', 'Renombrar cámara'],
   'undo.setCamera': ['Use the set’s camera', 'Usar la cámara del set'],

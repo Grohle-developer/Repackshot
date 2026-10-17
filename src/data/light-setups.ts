@@ -1464,7 +1464,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
   // between 5 and 14 against the sun's 1, and the lamps of the blue hour between 7 and 20). Recipes of panels alone take
   // shares that sum to 1, as the others do.
   //
-  // PROPOSAL, pending Fable (ROADMAP K1): every number below -- the sun's height, azimuth and temperature, the weight of the
+  // PROPOSAL, pending the photographic decision (ROADMAP K1): every number below -- the sun's height, azimuth and temperature, the weight of the
   // window and of the bounce, the strength of the sky, the exposure offset -- is a photographic choice that was not taken
   // by the author of the phase. They follow the usual orders of magnitude (the sun 2 to 4 times the sky at midday, 1.5 to 2
   // times at sunset; tungsten lamps at 2400 to 2900 K; a clear sky through glass at 6500 to 10500 K) and are one table in

@@ -572,7 +572,19 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
 
 **Con la escena seleccionada (nada seleccionado):**
 
-1. **Producto** — Tipo de producto (desplegable con los 16
+1. **Producto** — **Tipo de escena** (K1; encima del tipo de producto): un
+   control segmentado *Producto · Interior · Catálogo* (`SCENE_TYPES`, la
+   intención de cada uno en su ayuda) con una nota debajo: «Fija los valores
+   de partida (entorno, rebotes, transformada, muestras, óptica). Todos los
+   controles siguen ahí; al volver se queda lo que cambiaste». Cambiarlo es
+   una entrada de deshacer y **no quita ni mueve ningún control** (la captura
+   `docs/ui/scene-type-interior.png` lo muestra con *Interior*): reescribe
+   los valores de partida de `INTERIORS.md` §3.1 que existen hoy (el
+   entorno, los rebotes, las cáusticas, la sombra de contacto, la
+   transformada, las muestras, el terminar por ruido y el *denoise*, la focal),
+   y al volver a *Producto* deja lo que no se tocó como estaba. Con
+   *Interior* la sección *Luz* se abre en su estilo; al dejarlo vuelve a
+   *Todos*. Tipo de producto (desplegable con los 16
    `STUDIO_PRESETS`, *Estándar* el primero y activo por defecto, con su
    etiqueta y, debajo en auxiliar, focal y diafragma que trae; más los
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
@@ -583,7 +595,8 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
 2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
-   (*Todos* + los 9 `LIGHT_STYLES`, **Sets** el primero, L6), rejilla de
+   (*Todos* + los 10 `LIGHT_STYLES`, **Sets** el primero, L6, e **Interior**
+   el último, K1), rejilla de
    miniaturas (`public/thumbs/setups/thumb_<clave>.png`, 256 × 256,
    renderizadas por el motor: §6) con la etiqueta debajo, la activa con
    borde de selección. Los **sets** van primero y en grande: dos columnas
@@ -592,7 +605,13 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    debajo la del resto. La **ayuda** de la miniatura de un set dice su
    intención y su **razón fotográfica** (`why`, dos frases); la de un
    montaje, su intención. Debajo, la **intención** del montaje activo en
-   una frase. Flechas *anterior / siguiente* dentro del estilo.
+   una frase. Flechas *anterior / siguiente* dentro del estilo. Las siete
+   recetas de **Interior** (*Ventana de mañana*, *de mediodía*, *de tarde*,
+   *Nublado*, *Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*)
+   van en tres columnas como los montajes; cada una trae su mundo, su
+   exposición y la intensidad del entorno (a diferencia de los montajes de
+   los demás estilos, elegirla sí cambia el brillo), y ninguna trae
+   decoración: no aparece *En el set*.
    Con un **set** en vigor, debajo: **Usar la cámara del set** (solo si
    sugiere una; la ayuda dice cuál, «8° de altura, 85 mm»; desactivado con
    la cámara bloqueada; una entrada de deshacer) y **En el set**: una fila
@@ -1240,6 +1259,19 @@ tiene otra proporción que el tamaño de salida (*Planos con otra
 proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
 (4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
 tamaño de salida.
+
+**Doctor de interiores** (K1): con el tipo de escena *Interior*, siete filas
+más al final de la lista, cada una con su *Arreglar* (y entran en *Arreglar
+todo*); con otro tipo no están. *Escala y unidades* (el tamaño de un mueble
+o una habitación, un archivo en metros leído como milímetros), *Abertura para
+el sol y el cielo* (la cámara dentro de un espacio cerrado con sol o cielo y
+sin vidrio), *Vidrio de ventana* (un panel grueso o refractivo: el arreglo lo
+hace fino), *Óptica demasiado angular* (menos de 18 mm: 24 mm), *Altura de ojo*
+(fuera de 0,3 a 2,2 m: 1,5 m), *Recorte cercano* (el de una cámara dentro de
+la habitación llega a la pared más próxima) y *Normales de las paredes*
+(una superficie cerrada o una pared plana que mira al lado equivocado: las
+invierte). En *Interior* la comprobación de escala del Doctor no compara con
+el tamaño del tipo de producto.
 
 ---
 

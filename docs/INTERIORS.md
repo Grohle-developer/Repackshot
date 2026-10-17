@@ -125,6 +125,14 @@ por defecto** y deja todos los controles donde están:
 | Cámara | 85–100 mm, tres cuartos | 28 mm, altura de ojo 1,5 m, verticales rectas | 50 mm, alzado o tres cuartos |
 | Unidades mostradas | mm | m y cm | mm |
 
+**Hecho en K1** (`ROADMAP.md`): `scene.type`, con sus valores por defecto
+aplicados al cambiar de tipo, las filas que existen hoy (entorno, rebotes,
+cáusticas, sombra de suelo, transformada, muestras con adaptativo y
+*denoise*, focal). Siguen sin aplicarse, por esperar a su fase o no ser del
+proyecto: el ciclorama (K2), la exposición automática y el mando EV, la
+altura de ojo y las verticales rectas (K3), el rodillo largo y *Low contrast*,
+y las unidades mostradas (una preferencia de la aplicación).
+
 ### 3.2 · La habitación es un nodo
 
 Nodo `ROOM` paramétrico (fase K2), con lo mínimo que piden los flujos
@@ -184,7 +192,9 @@ un entorno completo.
   mañana*, *Ventana de mediodía*, *Ventana de tarde*, *Nublado*,
   *Lámparas de noche*, *Hora azul* (lámparas y cielo equilibrados) y
   *Sala blanca de estudio*; cada uno fija sol o cielo o HDRI, exposición
-  y curva.
+  y curva. *(Hecho en K1: las siete recetas fijan su mundo, sol y cielo o
+  la cúpula de estudio, y su exposición; la curva y el HDRI no, y sus cifras
+  son una propuesta pendiente de decisión.)*
 - Luces físicas: las de L4 más **IES** (L5) y tiras y paneles emisivos
   muestreados por ángulo sólido.
 - **Grupos de luz** con intensidad y color editables **después** del
@@ -209,7 +219,10 @@ encendidas, muchas luces físicas, pocas muestras); cámara inclinada sin
 *shift*, óptica por debajo de 18 mm, altura de ojo implausible, recorte
 cercano dentro de una pared; normales de pared invertidas o de una cara;
 escala de textura o grano fuera de unidades reales y pelusa por encima
-del presupuesto.
+del presupuesto. *(Hecho en K1, los que no piden el motor: escala y
+unidades, abertura ausente con sol o cielo, vidrio grueso, óptica por debajo
+de 18 mm, altura de ojo, recorte cercano y normales invertidas; los demás
+esperan al motor o a K2.)*
 
 ### 3.7 · Entregables de mobiliario
 
@@ -349,7 +362,7 @@ appleseed (MIT). La guía práctica (`practical-path-guiding`) y Mitsuba
 
 | Fase | Responsable | Qué | Depende de |
 | --- | --- | --- | --- |
-| **K1** | Sonnet | Tipo de escena con sus valores por defecto; estilo *Interior* del catálogo de luz; Doctor de interiores (chequeos de escena) | U1, L4 |
+| **K1** (hecha) | Sonnet | Tipo de escena con sus valores por defecto; estilo *Interior* del catálogo de luz; Doctor de interiores (chequeos de escena) | U1, L4 |
 | **K2** | Opus | Nodo habitación paramétrico con aberturas, materiales por superficie, pared frontal oculta, ciclorama; portales automáticos (declarados y heurísticos); vidrio fino; vista exterior con paralaje | U3, I3 |
 | **K3** | Opus | Cámara de interiores: *shift* automático, altura de ojo, ópticas, visibilidad a cámara por objeto, ortográfica para alzados y planta, panorámica, exposición automática y EV, recorrido | U1, E3 |
 | **K4** | Opus | Motor interior, conjunto mínimo: desplazamiento ULP y BVH de dos niveles, sol disco y cielo, luces por ángulo sólido, portales, árbol de luces, *fireflies* y adaptativo, AOV y *denoise* à-trous demodulado | E5, K2 |

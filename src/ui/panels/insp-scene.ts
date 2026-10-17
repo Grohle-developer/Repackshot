@@ -42,7 +42,7 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
     SCENE_TYPES.map((x) => ({ value: x.key, label: lbl(x.label), title: lbl(x.intent) })),
     s0.scene.type,
     (v) => cmd.setSceneType(ctx, v),
-    { full: true, ariaLabel: t('product.sceneType') },
+    { full: true, compact: true, ariaLabel: t('product.sceneType') },
   );
   scope.watch((s) => s.scene.type, (v) => sceneType.set(v));
   const typeSel = select(

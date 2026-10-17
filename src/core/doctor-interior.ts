@@ -14,7 +14,7 @@
 // the camera inside the bounds of the scene, an "opening" is glass or a transparent material, and a wall is what the bounds
 // say it is. K2 replaces those two with the room's own data; the checks and the fixes stay.
 //
-// The thresholds are a proposal (ROADMAP K1, pending Fable): INTERIORS.md names the checks, not the numbers.
+// The thresholds are a proposal (ROADMAP K1, pending the decision): INTERIORS.md names the checks, not the numbers.
 
 import { INTERIOR_DOCTOR_CHECKS } from '../data/doctor-interior';
 import type { DoctorCheckKey, InteriorCheckKey } from '../data/types';

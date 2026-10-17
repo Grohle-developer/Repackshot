@@ -103,9 +103,18 @@ const state = (page) =>
       thumbs: [...(light?.querySelectorAll('.thumbs .thumb') ?? [])].map((t) => (t.textContent ?? '').trim()),
       shadow: switches.find(([l]) => l === 'Contact shadow')?.[1] ?? null,
       viewTransform: vt,
-      undo: document.querySelector('.hdr button[aria-label="Undo"]')?.getAttribute('data-tip') ?? null,
+      undo: document.querySelector('.hdr button[aria-label="Undo"], .hdr button[aria-label="Deshacer"]')?.getAttribute('data-tip') ?? null,
       doctor: document.querySelector('.doctor-btn')?.textContent ?? '',
     };
+  });
+
+/** The right edge of the Scene type control against the one of the Product type next to it (it must not stick out of the column). */
+const fit = (page) =>
+  page.evaluate(() => {
+    const seg = document.querySelector('[data-guide="scene-type"] .seg')?.getBoundingClientRect();
+    const sel = document.querySelector('[data-guide="product-type"] select')?.getBoundingClientRect();
+    const section = document.querySelector('[data-section="product"]')?.getBoundingClientRect();
+    return seg && sel && section ? { seg: Math.round(seg.right), select: Math.round(sel.right), section: Math.round(section.right), width: Math.round(seg.width) } : null;
   });
 
 /** The rows of the Doctor's popover (opened if it is not): title and whether it warns. */
@@ -170,6 +179,9 @@ try {
     ok(s.pressedType === 'Product', `Product is in force: ${s.pressedType}`, f);
     ok(s.order.indexOf('scene-type') >= 0 && s.order.indexOf('scene-type') < s.order.indexOf('product-type'), `Scene type is over Product type: ${s.order.join(', ')}`, f);
     ok(s.tips.every((t) => t.length > 20), `each type says what it is for in its tooltip: ${s.tips.length}`, f);
+    const box = await fit(page);
+    log.fit = box;
+    ok(box !== null && box.seg <= box.select + 1, `the control does not stick out of the column: ${JSON.stringify(box)}`, f);
     const product = await controls(page);
     const startRows = await doctorRows(page);
     await closeDoctor(page);
@@ -251,6 +263,24 @@ try {
     ok((await state(page)).pressedType === 'Catalogue', `undo brings Catalogue back: ${(await state(page)).pressedType}`, f);
     ok(errors.length === 0, `page errors: ${errors.join(' | ')}`, f);
     await context.close();
+
+    // The same in Spanish: the labels fit the column too, and the strings are there.
+    const es = await browser.newContext({ viewport: { width: 1600, height: 1300 }, deviceScaleFactor: 1 });
+    const pes = await es.newPage();
+    await pes.goto(`${BASE_URL}/?example=1&theme=light&mode=fast&tour=0&lang=es`);
+    await pes.waitForSelector('#app[data-ready="1"]', { timeout: 60000 });
+    await settle(pes, 400);
+    const esState = await state(pes);
+    log.es = esState;
+    ok(JSON.stringify(esState.types) === JSON.stringify(['Producto', 'Interior', 'Catálogo']), `Tipo de escena offers Producto, Interior and Catálogo: ${esState.types.join(', ')}`, f);
+    const esBox = await fit(pes);
+    ok(esBox !== null && esBox.seg <= esBox.select + 1, `in Spanish the control does not stick out of the column either: ${JSON.stringify(esBox)}`, f);
+    await pes.locator('[data-guide="scene-type"] .seg button', { hasText: /^Interior$/ }).click();
+    await settle(pes, 500);
+    const esInterior = await state(pes);
+    ok(esInterior.pressedStyle === 'Interior' && esInterior.thumbs.length === 7, `in Spanish: the Interior style with its seven recipes: ${esInterior.thumbs.join(', ')}`, f);
+    ok(esInterior.undo === 'Deshacer: Tipo de escena: Interior', `in Spanish: one undo step: ${esInterior.undo}`, f);
+    await es.close();
   } finally {
     await browser.close();
   }
