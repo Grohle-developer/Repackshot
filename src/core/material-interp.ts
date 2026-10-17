@@ -589,8 +589,8 @@ export class ProgramRunner {
           const my = f(f(2 * V[a3 + 1]) - 1);
           const mz = f(f(2 * V[a3 + 2]) - 1);
           const n = c * 3;
-          // C1: in tangent space a blue below 0.5 would point the normal into the surface; its 2b − 1 is mirrored, so
-          // the normal stays on the outer side (the engine's program/interp.rs does the same).
+          // C1: no normal points into the surface (the engine's program/interp.rs does the same): in tangent space a blue
+          // below 0.5 has its 2b − 1 mirrored, and in the part's space a result past the surface is mirrored across it.
           if (k === 1) {
             // In the part's space: towards the map's direction by the strength.
             normalizeInto(V, d3, mx, my, mz, n);
@@ -598,6 +598,12 @@ export class ProgramRunner {
             const ty = V[d3 + 1];
             const tz = V[d3 + 2];
             normalizeInto(V, d3, f(V[n] + f(s * f(tx - V[n]))), f(V[n + 1] + f(s * f(ty - V[n + 1]))), f(V[n + 2] + f(s * f(tz - V[n + 2]))), n);
+            // C1: past the surface (a map against it, at a strength over 0.5), mirrored across its plane.
+            const back = f(f(f(V[d3] * V[n]) + f(V[d3 + 1] * V[n + 1])) + f(V[d3 + 2] * V[n + 2]));
+            if (back < 0) {
+              const t2 = f(2 * back);
+              normalizeInto(V, d3, f(V[d3] - f(t2 * V[n])), f(V[d3 + 1] - f(t2 * V[n + 1])), f(V[d3 + 2] - f(t2 * V[n + 2])), n);
+            }
           } else {
             frameAround(V, n);
             const up = Math.abs(mz);

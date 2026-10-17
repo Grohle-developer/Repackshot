@@ -823,22 +823,31 @@ fn frame_around(n: [f32; 3], t: [f32; 3]) -> ([f32; 3], [f32; 3]) {
 }
 
 /// `NMAP`: a normal map's colour `color` at strength `s` around `n0`, in tangent space (0, the
-/// frame of `t`) or in the part's space (1). In tangent space a blue below 0.5 would point the
-/// normal into the surface: its `2b - 1` is taken as it is mirrored (C1), so the normal stays on
-/// the outer side.
+/// frame of `t`) or in the part's space (1). No normal points into the surface (C1): in tangent
+/// space a blue below 0.5 has its `2b - 1` mirrored, and in the part's space a result past the
+/// surface is mirrored across its plane.
 #[inline]
 fn normal_map(space: u32, color: [f32; 3], s: f32, n0: [f32; 3], t: [f32; 3]) -> [f32; 3] {
     let mut m = color.map(|x| (2.0 * x) - 1.0);
     if space == 1 {
         let tt = normalize_or(m, n0);
-        normalize_or(
+        let r = normalize_or(
             [
                 n0[0] + s * (tt[0] - n0[0]),
                 n0[1] + s * (tt[1] - n0[1]),
                 n0[2] + s * (tt[2] - n0[2]),
             ],
             n0,
-        )
+        );
+        // C1: past the surface (a map against it, at a strength over 0.5), the normal is mirrored
+        // across the surface's plane to the outer side.
+        let k = dot(r, n0);
+        if k < 0.0 {
+            let t = 2.0 * k;
+            normalize_or([r[0] - t * n0[0], r[1] - t * n0[1], r[2] - t * n0[2]], n0)
+        } else {
+            r
+        }
     } else {
         m[2] = m[2].abs();
         let (ft, fb) = frame_around(n0, t);
@@ -884,5 +893,28 @@ mod tests {
         // A blue above 0.5 is as before.
         let n = normal_map(0, [1.0, 0.5, 0.5], 1.0, n0, t);
         assert!((n[0] - 1.0).abs() < 1.0e-6, "{n:?}");
+    }
+
+    #[test]
+    fn a_part_space_normal_map_never_points_into_the_surface() {
+        // C1: a map against the surface at a strength over 0.5 is mirrored across its plane; under
+        // 0.5 (or with the map on the outer side) it is as before.
+        let n0 = [0.0, 0.0, 1.0];
+        let t = [1.0, 0.0, 0.0];
+        let against = [0.6, 0.5, 0.0]; // (0.2, 0, -1) in the part's space
+        for s in [0.6, 1.0, 3.0, 10.0] {
+            let n = normal_map(1, against, s, n0, t);
+            assert!(dot(n, n0) >= 0.0, "at {s}: {n:?}");
+            assert!((dot(n, n) - 1.0).abs() < 1.0e-5);
+        }
+        // Straight into the surface at full strength: the surface's plane is all there is, and
+        // mirrored the normal is the surface's own.
+        let n = normal_map(1, [0.5, 0.5, 0.0], 1.0, n0, t);
+        assert!(dot(n, n0) >= 0.0, "{n:?}");
+        // At 0.5 or under, nothing changes.
+        let n = normal_map(1, against, 0.4, n0, t);
+        assert!(dot(n, n0) > 0.0);
+        let tilted = normal_map(1, [1.0, 0.5, 0.5], 1.0, n0, t);
+        assert!((tilted[0] - 1.0).abs() < 1.0e-6, "{tilted:?}");
     }
 }

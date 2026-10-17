@@ -374,6 +374,16 @@ describe('the instructions', () => {
       const up = nmap([color[0], color[1], 1 - color[2]]);
       for (let i = 0; i < 3; i++) expect(n[i]).toBeCloseTo(up[i], 6);
     }
+    // C1: in the part's space too, at any strength: a map against the surface past 0.5 is mirrored across its plane.
+    const part = (color: number[], strength: number) => probe(graph([{ id: 'x', type: 'NORMAL_MAP', params: { space: 'OBJECT' }, inputs: { color: color as never, strength } }], []), 'x', 'normal');
+    for (const strength of [0.6, 1, 3, 10]) {
+      const n = part([0.6, 1, 0.5], strength);
+      expect(-n[1], `strength ${strength}`).toBeGreaterThanOrEqual(0);
+      expect(Math.hypot(...n)).toBeCloseTo(1, 5);
+    }
+    expect(-part([0.5, 1, 0.5], 1)[1]).toBeGreaterThanOrEqual(0);
+    // Under 0.5 nothing is folded: the same as before C1.
+    expect(-part([0.6, 1, 0.5], 0.4)[1]).toBeGreaterThan(0);
     // A height rising along x bends the normal against x.
     const bumped = probe(
       graph(
