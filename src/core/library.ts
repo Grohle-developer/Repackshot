@@ -329,6 +329,8 @@ function specOf(l: LightInstance): LightSpec {
   if (l.shadow === false) spec.shadow = false;
   if (l.aim) spec.aim = [l.aim[0], l.aim[1], l.aim[2]];
   if (l.roll) spec.roll = l.roll;
+  // An IES light's profile (L5) travels with the setup: it is the light.
+  if (l.ies) spec.ies = { name: l.ies.name, text: l.ies.text };
   return spec;
 }
 

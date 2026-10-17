@@ -100,6 +100,7 @@ src/
     scene.ts                piezas, grupos, jerarquía, selección por niveles
     materials.ts            instancia de material, parámetros, desgaste
     lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
+    ies.ts                  perfiles fotométricos IES (L5): el lector del formato LM-63 (puerto del de `rt_core::ies`, con el mismo fichero de conformidad), la intensidad y el flujo del perfil, el foco que lo aproxima en Rápido y las curvas del gráfico polar
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
     optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2)
@@ -477,7 +478,7 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), programas de material (M3b, `program`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, las luces IES, L5)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -561,8 +562,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   Henyey–Greenstein, recortada a ±0,9) y `abbe` (0; el número de Abbe del
   vidrio macizo sin medio: por encima de 0, dispersión cromática,
   §5.2 sexies).
-- **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
-  (L4); ≥ 5 es error. Rectángulo y disco:
+- **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto, 4 foco
+  (L4) y 5 IES (L5, §5.2 terdecies); ≥ 6 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
   con la mitad de intensidad a `spread/2` (180 = sin caída). Sol: `power`
   = irradiancia en W/m², disco de `angle_deg`. Punto (L4): una esfera de
@@ -575,7 +576,17 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   sigue poniendo `[0, 0, 1]` sin giro, como antes de L4). `flags` bit 0
   *glossy* (ilumina todos los lóbulos y se ve en reflejos; sin él solo
   difuso por NEE), bit 1 visible a cámara, bit 2 (L4) **sin sombra**: no se
-  trazan sus rayos de sombra (un fichero anterior nunca lo pone).
+  trazan sus rayos de sombra (un fichero anterior nunca lo pone). IES (L5):
+  el punto de `power` W y diámetro `size_x` cuya intensidad sigue el perfil
+  de la sección `IESP` que nombra el `u32` que viene tras `flags` (el `LGHT`
+  de un IES mide 80 B; los demás, 76 como siempre).
+- **`IESP`** (L5, nueva, repetible): `u32 byte_len`, los bytes de un archivo
+  IES LM-63 como texto y relleno a 4. Cada perfil distinto va una vez, tras
+  los `LGHT`, en el orden del primer uso; el motor lee el texto con
+  `rt_core::ies` (un archivo que no lee hace inválido el RSB, con el motivo).
+  Una sección `IESP` que ninguna luz nombra se lee sin quejas, y un motor
+  anterior a L5 la salta (y rechaza el `kind` 5: por eso existe
+  `FEATURE_IES`). Sin luces IES, los bytes son los de antes de L5.
 - **`ENVR`** (84 B desde E5c; 80 B en E5) `kind`: 0 cúpula (lineal en z: suelo −1,
   horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (con
   `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
@@ -1200,7 +1211,7 @@ Splitting», HPG 2018), con su cota de orientación del §4.3. Pesos en
 
 | Luz | Peso en `x` |
 | --- | --- |
-| Punto o foco | `lum(I) · máscara(x) / max(d², r²)` (la máscara del foco es exacta: el modelo enmascara por la dirección desde su centro) |
+| Punto, foco o IES | `lum(I) · máscara(x) / max(d², r²)` (la máscara del foco es exacta: el modelo enmascara por la dirección desde su centro; la de una luz IES es la intensidad del perfil hacia `x` sobre su pico, también exacta) |
 | Rectángulo o disco | `lum(L) · A · cos θ' / max(d², A)` |
 | Malla emisora | lo mismo desde su centroide, con el cono de normales de sus caras; de dos caras o cerrada, `cos θ' = 1`, y cuenta una vez (una cara mira a `x`) |
 | Sol | `lum(E)` |
@@ -2245,6 +2256,99 @@ progreso de la cola, de los segundos que el motor espera.
 16 hilos, por el `rt.wasm` real escalar y SIMD (`rt --write-e10-example`) y
 por el código de la página; sin el *flag*, ninguno de antes se movió.
 
+### 5.2 terdecies · Luces IES (L5, `rt_core::ies`)
+
+**El lector** (`rt_core::ies`, `IesProfile::parse`; `src/core/ies.ts` es su
+puerto). El formato es el texto público de IES LM-63 (ediciones de 1995 y
+2002, y la de 1991 sin línea de versión): cabecera de líneas `[CLAVE] valor`
+(`[MORE]` continúa la anterior), `TILT=NONE`, trece números, los ángulos
+verticales, los horizontales y las candelas. Se lee la fotometría **tipo C**;
+los ángulos verticales corren 0–90, 0–180 o 90–180 y los horizontales son uno
+(redondo), 0–90 (cuatro cuadrantes iguales), 0–180, 90–270 o 0–360. **Tipo B y
+tipo A se rechazan** con su propio mensaje (convertirlos es un remuestreo de
+la esfera que no hace falta: cualquier luminaria se puede publicar en tipo C),
+y también `TILT=INCLUDE` y `TILT=<archivo>`. El lector es estricto: cuentas que
+no casan con los números que hay (de menos, el archivo está cortado; de más,
+las cuentas están mal), ángulos que no crecen, candelas negativas o no
+finitas, rangos que el estándar no admite, más de 2 MiB o una tabla toda a
+cero son errores con su mensaje, nunca una suposición. Admite separadores
+como los archivos reales (espacios, tabuladores, comas, saltos `\r\n` o `\r`).
+Los lúmenes del archivo, el número de lámparas, los factores de balasto y las
+dimensiones de la abertura se leen y **no se usan**: el archivo da la *forma*
+(§siguiente). **No se entrega ningún perfil de fabricante**: las dos pruebas de
+`tests/fixtures/ies/` están escritas a mano y cada persona trae los suyos.
+
+**La distribución.** `IesProfile::intensity(γ, φ)` interpola **bilinealmente**
+las candelas en el ángulo vertical γ (desde el eje, 0° donde apunta la luz) y
+el horizontal φ, con las tablas no uniformes tal cual, después de reducir φ al
+rango guardado por la simetría del archivo (cuadrante, bilateral 0–180,
+bilateral 90–270, completo, redondo); fuera del rango vertical es 0 (un
+*downlight* no manda luz hacia arriba). Con una dirección en el marco de la
+luz, `intensity_dir`: `+z` el eje, φ = 0 a lo largo de `+y` (el `up` de la
+luz) y φ crece de `+y` hacia `+x`, contra el reloj mirando a lo largo del eje
+desde detrás (como el estándar dibuja el ángulo horizontal visto desde arriba
+de un *downlight*); γ y φ salen de `atan2` de `fmath`, sin `acos` (que pierde
+la precisión cerca del eje). El **flujo** (`IesProfile::flux`) es la integral
+de esa misma función sobre la esfera, en forma cerrada por celda (el trapecio
+es exacto en φ, donde es lineal, y la integral de `sin γ` por una función
+lineal en γ tiene primitiva): es el flujo de lo que se renderiza, no una
+estimación; para un perfil isótropo da `4π c` y para 1000 cos² un sexto de
+`4π · 1000` con la precisión de la tabla (0,5 % con pasos de 10°, 5·10⁻⁵ con
+pasos de 1°). `efficiency() = flux / (4π · pico)`.
+
+**La luz** (`LightKind::Ies`, `Light::ies`). Es la luz de punto o esfera de
+`power` W y diámetro `size_x` con una máscara por dirección, la misma
+mecánica del foco: `máscara(x) = intensidad(dirección del centro a x en el
+marco de la luz) / pico`, en [0, 1]. **El perfil da la forma y `power` el
+nivel**: la luz es tan brillante en la dirección más brillante del perfil como
+el punto de `power` W (intensidad `power / 4π` W/sr), igual que un foco es tan
+brillante en su eje como su punto: un perfil escrito para 500 lm y otro para
+5000 dan la misma imagen, y cambiar un foco por una luz IES o al revés no
+mueve la exposición. `direction` es el eje del perfil, `up` el origen de φ
+(el escritor de la página manda el `up` con el giro de la luz: girar la luz
+gira el patrón). Se muestrea por NEE como cualquier esfera (cono que llena,
+posición delta cuando es un punto, MIS con los rayos BSDF si es *glossy*; la
+máscara se evalúa también para el rayo de cámara y los reflejos). **Elección
+de luz** (§5.2 ter, E12): por punto, el peso `lum(I) · máscara(x) / max(d²,
+r²)` es exacto; en la elección estática (más de 64 entradas, el atrapasombras)
+una luz IES **dentro de la esfera que envuelve la escena** pesa por su flujo
+(el del punto del pico por la eficiencia del perfil: su luz va a todas las
+direcciones donde está la escena) y fuera de ella, como un foco, por la
+intensidad hacia el centro de la escena (`0,05 + 0,95 · máscara(centro)`; el
+flujo del archivo no es la medida correcta ahí: un haz de 10° dirigido a la
+escena, con poco flujo, es la luz que más cuenta). No lanza fotones de
+cáusticas (como el punto y el foco).
+
+**En el RSB y en la página.** `LGHT` 5 y `IESP` (§5.2). `LightInstance.type`
+gana `'IES'` y `LightInstance.ies = { name, text, base }`: el texto del archivo
+(un carácter por byte), su nombre y la potencia con que entró; el
+multiplicador del inspector es `power / base` (× 1 es el nivel con que
+entró la luz, calibrado como el de un punto nuevo: la media de los focos
+encendidos, así que la imagen no salta). Viaja en el proyecto (JSON del
+estado: el `.repack` se abre en otro equipo sin el archivo; un perfil dañado o
+que el lector rechaza se quita al abrir y la luz es un punto), en los estudios,
+en un montaje guardado (`LightSpec.ies`) y en la biblioteca (el validador exige
+un perfil que el lector acepte). Sus lúmenes son el flujo del punto del pico
+por la eficiencia del perfil (`lightLumens`), no los lúmenes que dice el
+archivo. **Rápido lo aproxima** (el medidor de la luz lo dice, regla 10) con
+un `SpotLight` de three.js con la intensidad del eje y un cono cuya
+transición vale exactamente la mitad del pico en el semiángulo de la mitad de
+intensidad `β` del archivo (`iesSpot`: borde interior a `0,4 β`, exterior
+donde `cos` queda a medias, como mucho 90°; una lámpara que no baja a la
+mitad es un hemisferio de borde duro): lo que no se ve es el perfil entero.
+El motor lo lee **solo cuando dice que sabe** (`rt_features` bit 2,
+`rt_core::FEATURE_IES`; `render/engine.ts` `readsIes`; el *pool*, `NativeEngine`
+y *Exportar escena del motor* lo ponen en `SceneView.ies`): para un motor
+anterior la luz va como el foco que la aproxima en Rápido, que cualquier
+motor lee.
+
+**Hashes.** `PINNED_L5_IES_4SPP` = `0x920f0be1` (`rt --write-l5-example`: el
+ejemplo con su panel a una quinta parte y dos luces IES, una esfera de 24 mm
+con el perfil del *downlight* y un punto cálido con el *wall washer* girado
+sobre su eje; 160 × 120), igual en cada ruta SIMD, en `rt` con 1, 4 y 16 hilos,
+en WASI y en el `rt.wasm` real (CI y `tests/ies-engine.test.ts`); ningún hash
+anterior se movió.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -2805,6 +2909,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
+| Luces IES (L5) | `ies::tests`, `light::tests`, `integrator::tests` y `scene::rsb::tests` de rt-core, `render::tests` (fijado L5), `rt-cli/tests/example.rs` (1, 4 y 16 hilos), `tests/ies.test.ts` (con `tests/fixtures/ies/conformance.json`, que escriben las pruebas del motor), `ies-lights`, `ies-switch`, `ies-engine` (con el `rt.wasm` real); `tools/ies-check.mjs` | Los dos perfiles escritos a mano: la intensidad que muestrea el motor a 0°, 30° y 60° es la del archivo (pruebas de muestreo y de la imagen de un suelo, a 1e-4 del pico, y la interpolación entre nodos y la orientación de φ); el flujo contra el caso cerrado (isótropo `4π c`, 1000 cos² con 1° de paso a 1e-4, contra una cuadratura numérica de la propia función); las simetrías (un mismo reparto escrito como cuadrante, bilateral y completo da lo mismo en cada dirección y en flujo); 68 archivos (sanos y mal formados: cortados, cuentas de más y de menos, negativos, ángulos, TILT, tipos A y B) con lo que hace el motor, que el lector de la página repite con los mismos mensajes; RSB con el perfil una vez por cada distinto y `LGHT` de 80 B, los bytes de antes sin luces IES y `l5.rsb` byte a byte con el escritor de la página; selección por punto y estática; el interruptor `FEATURE_IES` del *pool* y del lanzador; el mismo fijado con 1, 4 y 16 hilos y en el `rt.wasm` real; proyecto, estudio, montaje y biblioteca; Playwright con Chromium en *Rápido* y *Completo* (menú, archivo, gráfico polar, multiplicador, cambiar perfil, archivo rechazado). Nueve mutaciones del motor, todas detectadas |
 | Ambiente (S4a, S4b) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests`, `geometry::tests`, `geometry::particles::grid_tests`, `bsdf::forward::tests` e `integrator::particle_tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %). En S4b, además: la rejilla de pantalla da los impactos de la fuerza bruta (estenopeica y lente fina, las tres formas, partículas en el plano de la cámara); el lóbulo hacia delante integra 1 con g como coseno medio, se muestrea con su densidad, el horno blanco de su BSDF y de una mota da 1, y la NEE sola, el BSDF solo y el MIS coinciden (1 %); los caminos tras un lóbulo ancho no ven una gota sin sombra (bit a bit) y la cruzan con la transmitancia de la sombra, la cámara la sigue viendo refractar, y la regla de las gotas lisas no cambia la media |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
 | Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente fina no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente fina y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |

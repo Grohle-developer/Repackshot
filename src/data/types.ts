@@ -54,8 +54,21 @@ export interface ResolutionPreset {
 // ---------------------------------------------------------------------------
 
 export type LightRole = 'KEY' | 'FILL' | 'RIM' | 'TOP';
-/** AREA: a panel (or a glowing sphere, shape SPHERE); POINT: a small round source; SPOT: a point with a cone (L4); SUN: distant. */
-export type LightType = 'AREA' | 'POINT' | 'SPOT' | 'SUN';
+/**
+ * AREA: a panel (or a glowing sphere, shape SPHERE); POINT: a small round source; SPOT: a point with a cone (L4); SUN: distant;
+ * IES (L5): a point whose intensity follows a photometric profile, an IES LM-63 file (`LightInstance.ies`).
+ */
+export type LightType = 'AREA' | 'POINT' | 'SPOT' | 'SUN' | 'IES';
+
+/**
+ * An IES photometric profile as a light carries it (L5): the file's text, one character per byte (core/ies.ts), and the name
+ * shown for it (the file's luminaire description, else the file's name). It travels in the project, the studios and the library,
+ * so the light opens elsewhere without the file.
+ */
+export interface IesRef {
+  name: string;
+  text: string;
+}
 /** Shapes of an AREA light; SPHERE (L4) glows the same in every direction, like a point light with a size. */
 export type LightShape = 'RECTANGLE' | 'SQUARE' | 'DISK' | 'ELLIPSE' | 'SPHERE';
 
@@ -109,6 +122,8 @@ export interface LightSpec {
   aim?: [number, number, number];
   /** L4: turn about its own axis, degrees (a panel's long side, default 0: level with the floor). */
   roll?: number;
+  /** IES (L5): the photometric profile of an IES light; its `power` is the level, the profile the shape. */
+  ies?: IesRef;
 }
 
 /** The defaults a LightSpec falls back to when a field is absent. */

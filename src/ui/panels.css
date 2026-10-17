@@ -832,6 +832,74 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* The polar plot of an IES profile (phase L5): greys only, the solid curve is C0-C180 and the dashed one C90-C270. */
+.ies-plot-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-left: 116px;
+}
+.ies-plot {
+  width: 150px;
+  height: 150px;
+  flex: none;
+}
+.ies-plot-ring {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.ies-plot-ring.is-peak {
+  stroke: var(--ink-3);
+}
+.ies-plot-axes {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.ies-plot-tick {
+  fill: var(--ink-3);
+  font-size: calc(8px * var(--text-scale));
+}
+.ies-plot-curve {
+  fill: none;
+  stroke: var(--ink-0);
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+}
+.ies-plot-c90 {
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.ies-plot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  white-space: nowrap;
+}
+.ies-plot-key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ies-plot-swatch {
+  display: inline-block;
+  width: 16px;
+  border-top: 2px solid var(--ink-0);
+}
+.ies-plot-key-c90 .ies-plot-swatch {
+  border-top: 2px dashed var(--ink-2);
+}
+.ies-profile-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .anim-pin {
   display: inline-flex;
   align-items: center;

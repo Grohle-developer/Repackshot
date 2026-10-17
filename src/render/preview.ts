@@ -18,6 +18,7 @@ import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
+import { iesProfileOf, iesSpot } from '../core/ies';
 import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { lensOf } from '../core/lens-coc';
@@ -983,9 +984,14 @@ export class PreviewEngine implements RenderEngine {
       } else if (isSphereLike(l)) {
         // A point, a glowing sphere or a spot (L4): the engine's intensity for that flux (core/photometry.ts), decay 2.
         const intensity = pointLightIntensity(l.power, state.scene.partSizeMm);
-        if (l.type === 'SPOT') {
-          const half = (Math.min(179, Math.max(1, l.spread)) * Math.PI) / 360;
-          const spot = new THREE.SpotLight(color, intensity, 0, half, Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)), 2);
+        // An IES light (L5) is a spot light here: the axis intensity and a cone made from the profile's half-intensity angle
+        // (core/ies.ts `iesSpot`). Approximate: the engine reads the whole file (Full, and Render).
+        const profile = l.type === 'IES' && l.ies ? iesProfileOf(l.ies.text) : null;
+        const ies = profile ? iesSpot(profile) : null;
+        if (l.type === 'SPOT' || ies) {
+          const half = ((ies ? Math.min(179, ies.cone) : Math.min(179, Math.max(1, l.spread))) * Math.PI) / 360;
+          const blend = ies ? ies.blend : Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend));
+          const spot = new THREE.SpotLight(color, intensity, 0, half, blend, 2);
           spot.position.copy(pos);
           spot.target.position.copy(aim);
           this.lightRoot.add(spot, spot.target);

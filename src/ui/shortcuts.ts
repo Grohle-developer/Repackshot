@@ -116,6 +116,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'convertMesh', label: 'primitive.convert', run: (ctx) => cmd.convertToMesh(ctx) },
   // Add light ▸ (phase L4), one entry per kind, and the Lights and cameras button of the view bar.
   ...NEW_LIGHT_KINDS.map((k): AppAction => ({ id: `addLight.${k}`, label: `lights.addAction.${k}` as StringKey, run: (ctx) => cmd.addLight(ctx, k) })),
+  // L5: an IES profile asks for its file first.
+  { id: 'addLight.IES', label: 'lights.addAction.IES', run: (ctx) => void cmd.addIesLight(ctx) },
   { id: 'glyphs', label: 'action.glyphs', run: (ctx) => cmd.toggleGlyphs(ctx) },
   // M3a: the material editor on the selection's material.
   { id: 'materialEditor', label: 'action.materialEditor', run: (ctx) => void openMaterialEditor(ctx) },
