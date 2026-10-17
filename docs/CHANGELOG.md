@@ -27,6 +27,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Doctor: recortar con *Estándar* es un aviso (un fondo blanco liso lo busca) y el arreglo propone **AgX** en vez de *Fílmica* (C1).
 - El ejemplo de grafo *Pintura metalizada con copos* inclina la normal con el rojo y el verde del ruido y deja el azul en 1: todos los copos miran hacia fuera (C1).
 
+### Cola y proyecto
+
+- **El estudio de un trabajo viaja con el proyecto.** Un trabajo de la cola con un estudio guardado (uno, o *Todos los estudios* de un lote) guarda en el proyecto una copia de ese estudio, una sola por estudio aunque la usen muchos trabajos, y renderiza en ella. Un proyecto abierto en otro equipo o en otro perfil del navegador, sin esos estudios en la biblioteca, renderiza sus lotes igual; antes fallaban con *El estudio «…» ya no está guardado*. Si la biblioteca tiene un estudio con el mismo id pero guardado encima, los trabajos que ya estaban siguen con su copia y uno nuevo toma el estudio como está ahora (N2b).
+- El HDRI, la imagen de fondo y las texturas de esos estudios van en el proyecto **una vez cada imagen**: un estudio con el HDRI del proyecto solo añade unos kB de JSON (N2b).
+- En la cola, un estudio que vino con el proyecto y no está en tu biblioteca tiene una línea con **Añadir a mi biblioteca** (N2b).
+- Los proyectos de antes se abren igual; un trabajo de un proyecto anterior a N2b busca su estudio en la biblioteca, como antes, y si no está falla con el motivo. Al editarlo con el estudio en la biblioteca, toma su copia (N2b).
+
 ### Cámara y lente
 
 - La **lente fina** se llama ahora **lente simple** (*Simple lens*), en la interfaz, la ayuda y la documentación; los proyectos la siguen guardando igual y se abren sin cambios (O4).
@@ -49,6 +56,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Herramientas
 
+- `tools/batch-check.mjs` comprueba también N2b en Chromium: un lote sobre dos estudios guardado en un perfil y abierto en otro con la biblioteca vacía se renderiza en sus estudios, y la cola ofrece *Añadir a mi biblioteca* (N2b).
 - `tools/o4-check.mjs`: las dos lentes en la aplicación construida (secciones de cada una, el plano por dos puntos como una entrada de deshacer, el plano en el visor, la inclinación de la trazada con el ángulo del motor, la vuelta a la lente simple) y sus capturas; `tools/lens-check.mjs` y `tools/optics-check.mjs` siguen a O4 (O4).
 
 ### Documentación

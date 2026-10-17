@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 147 archivos: 145 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 148 archivos: 146 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,16 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 48 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 49 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). El estudio de un lote que viaja con el proyecto (N2b). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+
+#### N2b · El estudio viaja con el proyecto
+
+<a id="c-batch-queue-adopt"></a><img src="ui/batch-queue-adopt.png" width="480" alt="Un proyecto con un lote sobre dos estudios, abierto en otro perfil del navegador con la biblioteca vacía: el cajón de la cola con los dos trabajos terminados, cada uno en su estudio, y encima una línea por estudio, «El estudio “Studio 1” vino con el proyecto; no está en tu biblioteca», con el botón Añadir a mi biblioteca."><br>
+`batch-queue-adopt.png` · (este PR) · Un proyecto con un lote sobre dos estudios, abierto en otro perfil del navegador con la biblioteca vacía: el cajón de la cola con los dos trabajos terminados, cada uno renderizado en la copia de su estudio que trae el proyecto, y encima una línea por estudio, *The studio “Studio 1” came with the project; it is not in your library*, con **Add to my library**. `tools/batch-check.mjs` (g).
 
 #### F1 · Enfoque por punto y por objeto
 
@@ -731,6 +736,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 - [`batch-window.png`](#c-batch-window) · v0.1.17 · N2
 - [`batch-queue.png`](#c-batch-queue) · v0.1.17 · N2
+- [`batch-queue-adopt.png`](#c-batch-queue-adopt) · sin publicar · N2b
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**

@@ -1557,6 +1557,8 @@ const TABLE = {
   'say.customCurve': ['custom curve', 'curva propia'],
 
   // Queue
+  'queue.studioInProject': ['The studio “{name}” came with the project; it is not in your library', 'El estudio «{name}» vino con el proyecto; no está en tu biblioteca'],
+  'queue.addToLibrary': ['Add to my library', 'Añadir a mi biblioteca'],
   'queue.empty': ['The queue is empty. Render… opens the render window; its “+ Add to queue” prepares a batch.', 'La cola está vacía. Render… abre la ventana de render; su «+ Añadir a la cola» prepara un lote.'],
   'queue.start': ['Start queue', 'Iniciar cola'],
   'queue.clear': ['Clear', 'Vaciar'],
@@ -1634,6 +1636,7 @@ const TABLE = {
   'rw.studio': ['Studio', 'Estudio'],
   'rw.studioCurrent': ['The scene as it is', 'La escena como está'],
   'rw.studioAll': ['All studios ({n})', 'Todos los estudios ({n})'],
+  'rw.studioInProject': ['{name} (in the project)', '{name} (en el proyecto)'],
   'rw.studioGone': ['{name} (no longer saved)', '{name} (ya no está guardado)'],
   'rw.studioNone': ['Save a studio in the Studios tab to render with it', 'Guarda un estudio en la pestaña Estudios para renderizar con él'],
   'rw.studioAnimation': ['An animation renders the scene as it is', 'Una animación renderiza la escena como está'],

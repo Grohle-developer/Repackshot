@@ -186,6 +186,12 @@ decisiones escritas (datos, contratos, revisión), no código.
   detener el segundo deja el tercero; un fallo antiguo de la cola corregido;
   3005 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
 
+- **N2b** · El estudio viaja con el proyecto: cada trabajo con un estudio guardado
+  guarda una copia de él en el proyecto (`render.studios`, una por id y *hash* del
+  contenido, el trabajo la nombra con `studioCopy`) y renderiza en ella, también en un
+  equipo cuya biblioteca no lo tiene; las imágenes de la copia van una vez en `images`;
+  *Añadir a mi biblioteca* en la cola; el esquema sigue en 2 — **Opus**.
+
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
 
@@ -7310,7 +7316,7 @@ brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
 - **Los estudios del lote son los guardados**: los de la pestaña *Estudios* (biblioteca, del
   navegador o de la carpeta de datos del escritorio) y los que un proyecto antiguo guardaba
   dentro. Un trabajo guarda el id y el nombre, no el estudio: abierto en otro equipo sin
-  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto.
+  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto (decidido: sí; hecho en N2b).
 - **Un trabajo con estudio no pasa por la IA** (sus pases se dibujan del proyecto abierto en
   el modo Rápido); lo dice un aviso y se guarda la imagen del motor. Los plugins de trabajos
   guardan aparte, fuera del ZIP.
@@ -7333,6 +7339,132 @@ brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
   terminaba el bucle antes de su primer `await` y dejaba la promesa ya acabada como «el
   bucle en marcha»; ningún *Iniciar* posterior arrancaba otro. Arreglado en `ensureLoop`
   (la promesa se limpia sola al acabar) y con su prueba, que falla si vuelve el código viejo.
+
+## N2b · El estudio viaja con el proyecto — **Opus** — hecha
+
+**Qué** (de *Decisiones de criterio*, N2). El estudio de un trabajo de lote viaja **dentro
+del proyecto**: un proyecto abierto en otro equipo, o en otro perfil del navegador, no
+falla sus trabajos porque allí falte un estudio de la biblioteca.
+
+**Hecho:**
+
+- **La copia en el proyecto** (`core/job-studios.ts`). `render.studios` es una lista de
+  `{ hash, studio }`: `studio`, el `SavedStudio` que aplica `restoreStudio` (focos,
+  entorno, imagen, cámara, materiales por pieza y visibilidad, con su id y su nombre);
+  `hash`, el SHA-256 de su contenido sin id ni nombre en JSON de claves ordenadas
+  (`canonicalJson`, `studioHash`, con el `core/sha256.ts` que ya había). **Una copia por
+  id y *hash***: los cuatro trabajos de un 2 × 2 sobre dos estudios son dos copias, y
+  *+ Añadir a la cola* dos veces con el mismo estudio sigue siendo una. Cada trabajo la
+  nombra con el campo opcional `RenderJob.studioCopy` (su `settings.studio` no cambia:
+  `{ kind: 'ONE', id, name }`). El *reducer* de la cola guarda la copia con los trabajos
+  en la misma acción (`render/enqueue` y `render/updateJob` reciben en `studios` cada
+  `StudioRef` con su `snapshot`; la interfaz los da con `studiosForJobs`), así que
+  deshacer *Añadir a la cola* se lleva las dos cosas, y solo guarda las copias que nombra
+  algún trabajo (`pruneEmbedded` en `withQueue`: quitar el último trabajo de un estudio
+  quita su copia, deshacer la devuelve; *Duplicar* comparte la del original).
+- **Lo grande, una vez.** Las luces llevan su perfil IES en el JSON, como las del proyecto
+  (L5); el HDRI, la imagen de fondo y las texturas de la copia son `ImageRef`, y sus
+  archivos van en el bloque `images` con los del proyecto (U2/E5/M2a), **una vez cada
+  imagen** la nombre quien la nombre (`embeddedImageRefs` en `serializeProject`). Al abrir,
+  `placeImages` y `placeTextureImages` las colocan con las del proyecto, decodificando cada
+  una una sola vez, y le cambian el id a la vez en el proyecto y en las copias cuando en la
+  sesión ya nombra otra imagen; `replaceProject` conserva en el registro las de las copias.
+- **Al abrir y al renderizar.** `migrateRender` toma de `render.studios` lo que tiene forma
+  de copia (un *hash* de 64 cifras, un estudio con id y nombre, sin repetir) y `studioCopy`
+  de cada trabajo; `checkState` lee cada copia como los bloques del proyecto (entorno,
+  imagen y cámara completados con los valores de un proyecto nuevo y con los tipos
+  comprobados, perfiles IES con `withReadableProfile`, materiales con `readMaterial`, que es
+  lo de antes sacado a una función, y los materiales que nombran sus piezas presentes); una
+  copia dañada se quita, no el proyecto. Al renderizar, `resolveStudio` da el estudio del
+  trabajo: **su copia**; sin ella, el de la biblioteca con ese id; si no, uno que el
+  proyecto guardaba dentro (`studio.saved`); si no, el fallo con su motivo, como antes.
+- **Formato.** Las convenciones de `io/project.ts`: dos campos añadidos con su valor por
+  defecto, sin paso de esquema; **el esquema sigue en 2** (cabecera de `io/project.ts` y
+  `ARCHITECTURE.md` §8). Un proyecto anterior abre igual (sin copias, los mismos trabajos;
+  `project-v1.json` y `project-v2.json`), y una versión anterior que abra uno nuevo ignora
+  los dos campos y busca los estudios en su biblioteca.
+- **Añadir a mi biblioteca.** En el cajón *Cola*, entre la cabecera y la lista, una línea por
+  estudio que vino con el proyecto y no está en la biblioteca (ni guardado en el proyecto):
+  *El estudio «Estudio A» vino con el proyecto; no está en tu biblioteca* · **Añadir a mi
+  biblioteca** (`studiosToAdopt`, `addProjectStudioToLibrary`), que lo guarda en *Míos* con
+  su id y quita la línea. En la ventana de render, al editar un trabajo cuyo estudio solo
+  está en el proyecto, la lista lo nombra *Estudio A (en el proyecto)* en vez de *(ya no está
+  guardado)*. Cadenas en `es` y `en` (`queue.studioInProject`, `queue.addToLibrary`,
+  `rw.studioInProject`).
+
+**Pruebas.** `tests/job-studios.test.ts` (13): el **2 × 2 sobre dos estudios de la
+biblioteca** guardado, abierto en otra «máquina» con la biblioteca vacía por *Abrir
+proyecto* y renderizado: los cuatro trabajos terminan, con los nombres de la plantilla, cada
+uno con el tipo de producto, los focos y la exposición de su estudio y por su cámara; **sin
+el cambio falla** (los cuatro en *Fallido* con «El estudio “Studio A” ya no está guardado»:
+comprobado con `git stash` de `src/` y el mismo test sin importar nada nuevo). La copia gana
+a un estudio de la biblioteca guardado encima con el mismo id, y uno nuevo toma el de ahora;
+una copia por estudio (dos *Añadir* iguales, el archivo la tiene una vez y los trabajos la
+nombran por su *hash*); el *hash* no depende del orden de las claves, del id ni del nombre;
+las copias siguen a los trabajos (deshacer, quitar, duplicar); editar conserva la copia o
+toma la del estudio nuevo; **el HDRI del proyecto en un estudio no se duplica** (una entrada
+en `images`, el archivo crece menos de la mitad del base64 de la imagen; abierto en una
+sesión nueva la copia nombra el HDRI colocado, y en una sesión donde `hdri:1` es otra imagen
+el proyecto y la copia pasan al mismo id nuevo) y un HDRI que solo tiene el estudio viaja
+igual; los proyectos de antes abren igual; un trabajo de antes de N2b usa la biblioteca y,
+sin el estudio, falla con el motivo; editarlo le da copia; una copia dañada se quita y el
+proyecto abre; *Añadir a mi biblioteca* (qué ofrece, el id que conserva, que no toca el
+proyecto). En `tests/batch.test.ts`, la prueba de N2 «un estudio que ya no está guardado
+falla» pasa a decir lo de ahora: borrado de la biblioteca, el trabajo renderiza su copia; sin
+copia tampoco, falla con el motivo. Cada prueba nueva se comprobó con una mutación (10
+mutantes, todos muertos: sin las imágenes de las copias en el archivo, sin cambiarles el id
+al abrir, sin podar, la biblioteca antes que la copia, sin quitar repetidas, el *hash* sin
+ordenar las claves, una edición que cambia la copia, sin leer las copias al abrir, sin
+conservar sus imágenes al abrir, y el render sin mirar la copia); dos sobrevivían al
+principio (el *hash* sin ordenar y la edición) y sus pruebas se reforzaron.
+`tools/batch-check.mjs` (g), en Chromium con el `rt.wasm` real: dos estudios y un lote
+sobre los dos añadido a la cola en un perfil, *Guardar proyecto* (el `.repack` tiene las dos
+copias y los trabajos las nombran), abierto en otro perfil con la biblioteca vacía: la cola
+ofrece las dos líneas, *Iniciar cola* da `Studio 1.png` y `Studio 2.png` distintas, y añadir
+uno deja la línea del otro. Captura nueva `batch-queue-adopt.png`.
+
+**Puertas.** `npm run engine:build` y `npm run qa`: tipos y *build* en verde; de 3180 tests
+(192 archivos), 3148 pasan, 31 se saltan y uno, `tests/material-program-cross.test.ts` «has a
+fixture of every case», pasó del tiempo límite de 5 s con la máquina cargada por otros agentes
+(no toca nada de esta fase): solo pasa (3 de 3). `tools/batch-check.mjs` en Chromium con el
+`rt.wasm` real: las nueve comprobaciones en verde, (a)–(f) de N2 y (g1), (g2) de N2b. El motor
+no se toca.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es para quien decide):
+
+- ◆ **La copia gana** sobre un estudio de la biblioteca con el mismo id y otro contenido
+  (guardado encima), para los trabajos que ya la tenían; un trabajo nuevo de ese estudio
+  toma el de la biblioteca como está y lleva otra copia con el mismo id. No hay *Actualizar
+  desde la biblioteca* ni un aviso de que difieren.
+- ◆ **Editar** un trabajo sin cambiarle el estudio conserva su copia, aunque la biblioteca
+  haya cambiado; cambiárselo toma la del estudio nuevo (y la vieja sale si nadie la nombra).
+- ◆ ***Añadir a mi biblioteca*** guarda el estudio con **su id** (los trabajos lo encuentran
+  también allí), no se deshace (la biblioteca es de la persona, sin historial, U4: la regla 6
+  se cumple en todo lo del proyecto, que no cambia) y solo se ofrece para un id que la
+  biblioteca no tiene: una copia con el id de un estudio de la biblioteca que se guardó
+  encima no se ofrece como estudio aparte. Está en el cajón *Cola*, no en un detalle del
+  trabajo (no hay vista de detalle).
+- ◆ **El esquema sigue en 2**, por la convención del formato (lo añadido con valor por
+  defecto no sube el esquema): una versión anterior abre un proyecto nuevo sin error, sin
+  las copias.
+- **Un trabajo de antes de N2b no recibe copia al abrir** (abrir no cambia el proyecto: los
+  proyectos de antes abren igual), ni al guardar (el archivo no ve la biblioteca): busca su
+  estudio en la biblioteca, como antes; la recibe al editarlo o al volver a añadirlo.
+- **La copia puede llevar más que la biblioteca.** La biblioteca no guarda imágenes (E5):
+  tras recargar la página sus estudios no tienen HDRI; la copia lleva lo que el estudio
+  tenía al crear el trabajo (en la misma sesión, también su HDRI, que entonces sí viaja).
+- **Lo que sí va repetido, pequeño**: el perfil IES de un foco de la copia que también está
+  en el proyecto va dos veces en el JSON (el formato no tiene un bloque de perfiles: L5 los
+  lleva en la luz), y los materiales de la copia, como en todo estudio guardado. Las imágenes
+  no se repiten nunca.
+- **Los estudios que un proyecto antiguo guardaba dentro** (`studio.saved`) siguen sin
+  escribir su HDRI en el archivo, como antes de N2b: no es de esta fase.
+- **El *hash* no se recalcula al abrir**: es el nombre de la copia (completar sus campos al
+  leerla cambiaría el texto); una copia editada a mano conserva su *hash*.
+- **El motivo del fallo** sigue siendo «El estudio «…» ya no está guardado», también para un
+  proyecto antiguo abierto en otro equipo.
+- `tools/batch-check.mjs` se corrió con `--shots` a una carpeta aparte y solo se copió la
+  captura nueva: las de N2 (`batch-window.png`, `batch-queue.png`) no cambian.
 
 ## D1 · Doctor de motor — **Sonnet** — hecha
 
@@ -11893,7 +12025,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
 - **C2** · Interruptor de la focal (1.7).
 - **M3c** · Nodos *Madera* y *Tela* (1.6).
-- **N2b** · El estudio viaja con el proyecto.
+- **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5).
 - El 1.2 entra en **S3**.
 
@@ -11971,7 +12103,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el ZIP apagado por defecto;
   - el orden cámara por cámara.
 
-  Un recorte con textura dará cobertura parcial cuando el motor la tenga. Un cambio: **el estudio de un trabajo viaja con el proyecto**, guardado dentro, para que un proyecto abierto en otro equipo no falle sus trabajos. **N2b.**
+  Un recorte con textura dará cobertura parcial cuando el motor la tenga. Un cambio: **el estudio de un trabajo viaja con el proyecto**, guardado dentro, para que un proyecto abierto en otro equipo no falle sus trabajos. **N2b.** (hecho en N2b)
 - **K3** (la cámara de interiores). Se acepta todo lo propuesto:
   - las alturas de ojo, 1,5 y 1,1 m;
   - las ópticas de interior, 24, 28 y 35 mm;

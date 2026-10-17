@@ -1563,9 +1563,24 @@ con la cámara del trabajo (el estudio no le quita su vista); el proyecto abiert
 toca. *Todas las cámaras* × *Todos los estudios* es un **lote**: un trabajo por cámara
 y estudio (primero por cámara), con el nombre de la plantilla (`{project}_{camera}_{studio}`,
 cuyas fichas dicen *Proyecto*, *Cámara* y *Estudio*, da cuatro archivos distintos en un 2 × 2;
-`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un estudio que ya no
-está guardado hace fallar su trabajo, con el motivo, y la cola sigue. Un trabajo con
+`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un trabajo con
 estudio no pasa por la IA (sus pases se dibujan del proyecto abierto).
+
+**El estudio viaja con el proyecto** (N2b). Al crear un trabajo con un estudio guardado,
+el proyecto guarda una **copia** de ese estudio (lo que pone *Restaurar*: focos, entorno,
+imagen, cámara, materiales por pieza y visibilidad), una sola por estudio y contenido
+aunque la usen muchos trabajos, y el trabajo la nombra por el *hash* de su contenido.
+Esa copia es lo que el trabajo renderiza: abierto el proyecto en otro equipo o en otro
+perfil del navegador sin ese estudio en la biblioteca, los trabajos salen igual; y si la
+biblioteca tiene un estudio con el mismo id pero otro contenido (se guardó encima), **gana
+la copia** para los trabajos que ya estaban; uno nuevo toma el estudio como está ahora.
+Editar un trabajo sin cambiarle el estudio conserva su copia; cambiárselo toma la del
+nuevo. La copia sale del proyecto con el último trabajo que la nombra (y vuelve con
+deshacer). Su HDRI, su imagen de fondo y sus texturas no se guardan dos veces: van con
+las del proyecto, una vez cada imagen. Un estudio que llegó en el proyecto y no está en
+la biblioteca se puede **añadir a la biblioteca** desde la cola. Un trabajo de un
+proyecto anterior a N2b no tiene copia: busca su estudio en la biblioteca, como antes,
+y sin él falla con el motivo y la cola sigue.
 
 Con **ZIP**, los archivos de los trabajos que una orden *Render* o *+ Añadir a la cola*
 metió en la cola (imágenes, pases, leyendas) no se guardan uno a uno: se acumulan y, al
@@ -1611,7 +1626,8 @@ distingue de cualquier otro JSON); hasta v0.1.6 se llamaba `.repack.json`,
 y esos archivos se siguen abriendo igual (selector, diálogo del escritorio y
 al soltarlos en la ventana). *Guardar* y *Guardar como…* proponen `.repack`;
 guardar sobre un archivo abierto lo escribe donde está, con el nombre que
-tenga.
+tenga. Los estudios que usan los trabajos de la cola van dentro del proyecto
+(N2b, §3.8), aunque el estudio sea de la biblioteca.
 
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
 entre proyectos: materiales (*Guardar material como…*), montajes de luz

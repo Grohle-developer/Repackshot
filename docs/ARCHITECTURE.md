@@ -121,6 +121,7 @@ src/
     curve.ts                la curva de tiempo personalizada de dos asas (N1): Bézier cúbica de (0, 0) a (1, 1), Newton con bisección
     fade.ts                 el fundido a color de la pista de cámara sobre los píxeles de un fotograma (N1): en los valores de la imagen o en luz lineal
     pass-files.ts           los archivos de los pases de un render (N2): las cuatro salidas (alfa, profundidad, normales, id de pieza), `PassesOutput` (qué y en qué formato: PNG de 16 bits o EXR), las palabras de 16 bits de cada pase, los nombres de los archivos y la leyenda de los ids; `normalisePasses`
+    job-studios.ts          los estudios de los trabajos dentro del proyecto (N2b): la copia de cada estudio que usa un trabajo, una por id y *hash* de su contenido (`studioHash`, `embedStudio`, `pruneEmbedded`), sus imágenes, de dónde sale el estudio de un trabajo (`resolveStudio`: la copia, la biblioteca, los guardados del proyecto) y los que se pueden añadir a la biblioteca (`studiosToAdopt`); §8
     explode.ts              el despiece configurable (N6): geometrías, niveles, orden, excepciones; lo que se mueve y cuándo
     timeline.ts             la aritmética de la línea de tiempo (N6): filas del árbol, regla, tramos de cámara, imán
     motion-hint.ts          lo que el visor dibuja de la animación elegida (N6): su objetivo y su pista
@@ -3068,6 +3069,14 @@ añade los pases como archivos, el estudio como eje del lote y el ZIP.
   quitar el último trabajo en espera, o deshacer su *Añadir*, también lo
   escribe). Si el ZIP falla se guardan los archivos uno a uno. Los plugins de
   trabajos guardan aparte, fuera del ZIP.
+- **El estudio de un trabajo** (N2b, `ui/render-queue.ts`). *Render*, *+ Añadir a
+  la cola* y *Guardar cambios* de una edición llevan al *store* los estudios que
+  usan con el estudio mismo (`studiosForJobs`: `StudioRef.snapshot`); el
+  *reducer* de la cola guarda la copia en `render.studios` y el trabajo la nombra
+  (`studioCopy`), todo en la misma entrada de deshacer. `jobProject` pone en la
+  copia del proyecto que se renderiza el estudio que da `resolveStudio`. La
+  biblioteca sigue siendo de la persona (sin deshacer, U4): *Añadir a mi
+  biblioteca* (`addProjectStudioToLibrary`) no cambia el proyecto.
 - **Pruebas.** `tests/batch.test.ts` (los trabajos y nombres de un lote de 2 × 2,
   la cola con el segundo trabajo detenido o quitado, el estudio puesto en una
   copia, los pases, el ZIP en todos sus casos leído por fflate),
@@ -3649,6 +3658,42 @@ de imagen van en el bloque `images` con las de las texturas, y una que
 falta deja su nodo sin imagen. Un grafo guardado y abierto es el mismo
 grafo y se guarda otra vez en el mismo texto (test). El esquema sigue en
 2.
+
+**Estudios de los trabajos** (N2b). `state.render.studios` es la lista de
+copias de los estudios guardados en los que renderizan los trabajos de la
+cola: `[{ "hash", "studio" }]`, `studio` el `SavedStudio` tal como lo pone
+`restoreStudio` (`core/lighting.ts`; con su `id` y su `name`) y `hash` el
+SHA-256 en hexadecimal de su contenido sin id ni nombre, en JSON con las
+claves ordenadas (`studioHash`, `core/job-studios.ts`), así que la misma
+copia sale igual la escriba quien la escriba. Hay **una copia por id y
+*hash***, la usen los trabajos que la usen, y cada trabajo la nombra con el
+campo opcional `studioCopy` (el *hash*; su `settings.studio` sigue siendo
+`{ kind: 'ONE', id, name }`). Solo se guardan las copias que nombra algún
+trabajo (`pruneEmbedded`, en el *reducer*: quitar el último trabajo de un
+estudio quita su copia, y deshacer la devuelve). Lo grande no va dos veces:
+las luces llevan su perfil IES en el JSON, como las del proyecto (L5), y el
+HDRI, la imagen de fondo y las texturas de la copia son `ImageRef` cuyos
+archivos van en el bloque `images` con los del proyecto, **una vez cada
+imagen** la nombre quien la nombre (un estudio con el HDRI del proyecto
+solo añade su JSON). Al abrir, `migrateRender` toma las entradas con forma
+de copia (un *hash* de 64 cifras, un estudio con id y nombre, sin repetir)
+y `checkState` lee cada una como los bloques del proyecto: su entorno, su
+imagen y su cámara se completan con los valores de un proyecto nuevo y se
+comprueban los tipos, los perfiles IES de sus luces se leen
+(`withReadableProfile`), sus materiales como los del proyecto (`textures`,
+`graph`) y cada material que nombran sus piezas tiene que estar en ella;
+una copia dañada se quita, no el proyecto (su trabajo busca entonces el
+estudio en la biblioteca, como antes). `placeImages` y `placeTextureImages`
+colocan sus imágenes con las del proyecto y le cambian los ids igual
+(un id que en la sesión nombra otra imagen pasa a uno nuevo en el proyecto
+y en sus copias a la vez). El *hash* guardado no se recalcula al abrir: es
+el nombre de la copia. Un trabajo renderiza en su copia; sin ella (un
+archivo anterior a N2b o una copia quitada), en el estudio de la biblioteca
+de ese id; si no, en uno que el proyecto guardaba dentro (`studio.saved`);
+si no, falla con el motivo (`resolveStudio`). Un archivo anterior a N2b no
+tiene ni la lista ni `studioCopy` y abre igual; una versión anterior que
+abra uno nuevo ignora los dos campos y busca los estudios en su biblioteca.
+El esquema sigue en 2.
 ---
 
 ## 9 · Plugins (P6)
