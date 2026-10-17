@@ -147,10 +147,10 @@ src/
     box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
     primitives.ts           primitivas paramétricas: generadores puros y deterministas (caras lógicas, UV, normales), medidas válidas, id de malla `prim:<dueño>:<FORMA>:<medidas>` (U9)
     primitive-ops.ts        las primitivas en la escena: dónde nacen (base bajo el producto, junto a él, bajo él), añadir, editar en vivo, convertir en malla; `fitSweep` ajusta el fondo infinito a la cámara y a los focos traseros (U9)
-    light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
-    rig.ts                  studioRig / setupRig normalizados           (portado); el reparto del charco de un set (L6)
+    light-math.ts           kelvin → rgb, irradiancia, polar, ease
+    rig.ts                  studioRig / setupRig normalizados; el reparto del charco de un set (L6)
     sets.ts                 los sets (L6): aplicar, sustituir y quitar su decoración (tarjetas, barrido, suelo, charco), su aspecto, Usar la cámara del set
-    wear.ts                 valores por defecto del desgaste            (portado)
+    wear.ts                 valores por defecto del desgaste
     version.ts
   data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2); effects.ts: los presets de Ambiente (S4a)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
@@ -311,10 +311,10 @@ test suyo comprueba que coincide con la de `rt-core`.
 
 ## 3 · Catálogos (`src/data/`)
 
-Portados de EZ Packshot por su autor. Las claves (`GOLD`, `REMBRANDT`,
-`JEWELLERY`…) son **estables**: la documentación, las miniaturas y los
-proyectos guardados las referencian. Añadir entradas es libre; renombrar
-o borrar es un ítem de roadmap con migración.
+Las claves (`GOLD`, `REMBRANDT`, `JEWELLERY`…) son **estables**: la
+documentación, las miniaturas y los proyectos guardados las referencian.
+Añadir entradas es libre; renombrar o borrar es un ítem de roadmap con
+migración.
 
 Contratos (ver `src/data/types.ts`, que manda sobre este resumen):
 
@@ -333,7 +333,7 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
 - **`LightSetup`** — montaje del catálogo: etiqueta, intención, estilo,
   `world` (`STUDIO` cúpula, `SKY` cielo, `FLAT` plano) y focos; `PRESET`
   usa el rig del tipo de producto. **Set** (L6, todo opcional: los 72
-  montajes portados no tienen nada): `backdrop` (`SetBackdrop`: `FLAT`,
+  montajes del catálogo base no tienen nada): `backdrop` (`SetBackdrop`: `FLAT`,
   `GRADIENT` arriba y abajo, `SWEEP`), `pool` (`SetPool`: `az`, `el`,
   `cone`, `share`, `kelvin` o `color`), `floor` (`SetFloor`: `CATCHER`,
   `MATTE`, `GLOSSY`, `MIRROR`, con `material` y `color`), `cards`
@@ -352,9 +352,8 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
   `FABRIC`, `EMISSIVE`) y parámetros.
 - Desgaste, pelusa, ópticas, movimientos, suavizados, secuencias,
   chequeos del Doctor, calidad y resolución: ver sus ficheros.
-- **Herramientas de estudio (A6)**, datos propios y no portados
-  (`docs/STUDIO-TOOLS.md`): `lenses.json` (las 16 prescripciones de lente,
-  con su cargador tipado en `lenses.ts`), `bokeh.json` (los 20 tipos) y
+- **Herramientas de estudio (A6)** (`docs/STUDIO-TOOLS.md`): `lenses.json`
+  (las 16 prescripciones de lente, con su cargador tipado en `lenses.ts`), `bokeh.json` (los 20 tipos) y
   `camera-moves.json` (14 movimientos de cámara relativos al producto y
   3 presets de cámara en mano). Sus JSON se leen con una llamada marcada
   `/* @__PURE__ */` para que la página no los lleve en el primer *chunk*
@@ -374,8 +373,8 @@ petición con un ETag del SHA-256 de sus bytes.
 **Normalización de exposición** (`src/core/rig.ts`): al aplicar un
 montaje sobre un tipo de producto, la suma de irradiancias de sus focos
 se iguala a la del rig del tipo de producto (`presetIrradiance`), de modo
-que cambiar de montaje no cambia la exposición. Es la solución que en EZ
-Packshot permite recorrer 72 montajes sin tocar la exposición, y la suite
+que cambiar de montaje no cambia la exposición. Es lo que permite
+recorrer 72 montajes sin tocar la exposición, y la suite
 la fija para las 16 × 71 combinaciones. El charco de un set (L6) entra en
 la suma como un foco a `POOL_THROW` = 2,5 tamaños de pieza
 (`poolWeight`): el set y su charco suman el nivel del tipo; sus focos, el
@@ -3238,7 +3237,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
 
-Reglas, heredadas de EZ Packshot y no negociables:
+Reglas no negociables:
 
 1. Ningún cambio se entrega sin `npm run qa` en verde.
 2. Todo bug corregido lleva su test, y se comprueba que el test **falla**

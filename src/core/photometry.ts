@@ -1,5 +1,5 @@
 // The units both engines agree on (phase E4; area-light convention corrected by the light-power
-// fix). The rig speaks in the photographer's terms of the EZ Packshot recipes
+// fix). The rig speaks in the photographer's terms of the recipes
 // (`LightInstance.power`: watts at part size 1 for an area light, W/m2 for a sun); the path tracer
 // speaks radiometry (RSB `LGHT.power`: the flux in watts of a one-sided Lambertian panel, scene
 // millimetres read as 1e-3 m; `MATL.emission_power`: radiance). These are the conversions, derived,
@@ -7,11 +7,11 @@
 //
 // The recipes were tuned by eye in Blender Cycles, so the watts mean what Cycles makes of them.
 // There an area light of power P and area A has the radiance L = P / (4 A) (Cycles' area light
-// scales its emission by `0.25 * invarea`; Blender issue 108505 derives the factor), and EZ Packshot
-// writes `energy = energy_factor * u^2` for a part of u metres (`apply_light_data`). The comment
-// next to that line in the add-on speaks of an isotropic point source, E = P / (4 pi d^2): that is
-// the unit of the recipes' `share` (`specIrradiance`, which normalises the setups to one another and
-// stays as it is), not what the renderer shows, which is pi times brighter on axis.
+// scales its emission by `0.25 * invarea`; Blender issue 108505 derives the factor), and a recipe
+// light's watts, stated at part size 1, grow with u^2 for a part of u metres. An isotropic point
+// source, E = P / (4 pi d^2), is the unit of the recipes' `share` (`specIrradiance`, which
+// normalises the setups to one another and stays as it is), not what the renderer shows, which is
+// pi times brighter on axis.
 
 /** Millimetres of one part size at which the recipes' watts are stated (part size 1 = 1 m). */
 export const RECIPE_PART_SIZE_MM = 1000;
@@ -21,12 +21,12 @@ export const RECIPE_PART_SIZE_MM = 1000;
  *
  * Cycles turns the rig's power P into the radiance L = P / (4 A) over an area of A square metres.
  * The engine's panel of flux F has the radiance L = F / (pi A), so F = pi L A = (pi / 4) P: the area
- * cancels. For a part of S metres the recipe's power is `energy_factor * S^2` and the distances are
+ * cancels. For a part of S metres the recipe's power grows with S^2 and the distances are
  * S times longer, so the same look needs S^2 times the flux: F = (pi / 4) * power * S^2.
  *
  * Seen from far away on its axis, a panel of flux F gives E = F / (pi d^2) (its intensity is F / pi),
  * so at `dist` part sizes the irradiance is E = power / (4 dist^2): what Cycles delivers for the same
- * recipe, and pi times the isotropic-source E = power / (4 pi dist^2) of the comment in the add-on.
+ * recipe, and pi times the isotropic-source E = power / (4 pi dist^2) the recipes' `share` is stated in.
  */
 export function areaLightFlux(power: number, partSizeMm: number): number {
   const s = (partSizeMm > 0 ? partSizeMm : RECIPE_PART_SIZE_MM) / RECIPE_PART_SIZE_MM;
@@ -61,9 +61,8 @@ export const EMIT_RADIANCE_PER_WATT = 0.06;
 
 /**
  * Flux of a point light (and of the sphere of an AREA light of shape SPHERE) for the engine (RSB `LGHT.power` of
- * kind 3, W, isotropic), phase L4. No recipe of EZ Packshot has one, so their watts are ours to define, and they are
- * defined to mean what a panel's mean: **a point of P watts is as bright on its axis as a panel of P watts facing
- * the product from the same distance**. A panel gives E = power / (4 dist^2) there (`areaLightFlux`), so the point's
+ * kind 3, W, isotropic), phase L4. Its watts are defined to mean what a panel's mean: **a point of P watts is as
+ * bright on its axis as a panel of P watts facing the product from the same distance**. A panel gives E = power / (4 dist^2) there (`areaLightFlux`), so the point's
  * intensity is power * S^2 / 4 W/sr for a part of S metres, and its isotropic flux F = 4 pi I = pi * power * S^2.
  * Like a panel's, it is then pi times the measure the recipes are normalised with (`specIrradiance`,
  * power / (4 pi dist^2)), so setups that mix panels, points and spots keep their balance. (Cycles' point light

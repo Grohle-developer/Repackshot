@@ -10,8 +10,8 @@
 // and the hierarchy (`levels`) is orthogonal to them: every part on its own, the target's children as blocks, or the
 // blocks first and then the parts inside each group, in stages.
 //
-// The legacy keys of EXPLODE_MODES keep working: RADIAL is the spherical one (its meaning since the catalogue was
-// ported: "each part moves outward from the centre"), AXIS_X/Y/Z are LINEAR SEPARATE along that axis. A clip without
+// The legacy keys of EXPLODE_MODES keep working: RADIAL is the spherical one (its meaning from the start: "each
+// part moves outward from the centre"), AXIS_X/Y/Z are LINEAR SEPARATE along that axis. A clip without
 // parameters (every clip saved before N6) is the explode of then: spherical, every part the same distance (EVEN),
 // from the centre of the model, all at once.
 

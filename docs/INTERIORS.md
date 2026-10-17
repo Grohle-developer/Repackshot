@@ -149,9 +149,9 @@ posición, tamaño y alféizar; un **material por superficie** (suelo,
 paredes, techo); zócalo opcional; **ocultar la pared del lado de la
 cámara** en un clic (el "recorte de cámara" de Chaos, hecho sin pensar
 en planos de recorte); y una variante **ciclorama** para catálogo (suelo
-que sube en curva a pared blanca, como `cyclorama_profile` en EZ
-Packshot). Se edita en el inspector como cualquier pieza y se guarda en
-el proyecto. Importar una habitación hecha fuera sigue valiendo: es lo
+que sube en curva a pared blanca, como el barrido infinito de las
+primitivas, `src/core/primitives.ts`). Se edita en el inspector como
+cualquier pieza y se guarda en el proyecto. Importar una habitación hecha fuera sigue valiendo: es lo
 que hacen los profesionales (§2), y para ella funcionan la detección de
 aberturas y el resto de lo de abajo.
 

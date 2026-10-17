@@ -64,9 +64,9 @@
 //! caster.
 //!
 //! **Anisotropy**: the shading frame's tangent runs around the instance's local Z axis through
-//! the centre of its mesh's bounds (Blender's default radial tangent, which the recipes' brushed
-//! metals were tuned with), projected onto the tangent plane; where that degenerates, the
-//! instance's X axis; then any.
+//! the centre of its mesh's bounds (the radial tangent Blender uses by default, which the
+//! catalogue's brushed metals are tuned for), projected onto the tangent plane; where that
+//! degenerates, the instance's X axis; then any.
 
 pub mod dispersion;
 pub mod medium;

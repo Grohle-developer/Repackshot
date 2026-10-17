@@ -516,7 +516,7 @@ impl LightKind {
 
 /// Light flag (bit 0): the light is seen by BSDF-sampled rays (reflections) and lights every
 /// lobe. Without it the light only lights the diffuse lobe, through explicit sampling, and is
-/// invisible in reflections (Blender's "glossy" ray visibility, where the recipes come from).
+/// invisible in reflections (like Blender's "glossy" ray visibility).
 pub const LIGHT_FLAG_GLOSSY: u32 = 1;
 /// Light flag (bit 1): the light is directly visible to camera rays.
 pub const LIGHT_FLAG_CAMERA: u32 = 2;

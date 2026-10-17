@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 // Pure photometric and geometric helpers for the lighting rig and for the
 // animation easing. No state, no DOM, no three.js: everything here is plain
 // numbers in, plain numbers out, so it is cheap to test and to reuse in a
@@ -74,10 +72,10 @@ export function specColor(spec: ColorSpec, inherited?: RGB): RGB {
  * an irradiance and does not depend on where the object is placed. The
  * energy is `energy` when present, otherwise `share`.
  *
- * This is the measure the recipes are normalised with (`rig.ts`), the same
- * one EZ Packshot's `setup_rig` uses, so it only fixes the ratios between
- * lights and setups. It is not what the renderers deliver: they follow
- * Blender Cycles' area light, pi times brighter on axis (`photometry.ts`).
+ * This is the measure the recipes are normalised with (`rig.ts`), so it
+ * only fixes the ratios between lights and setups. It is not what the
+ * renderers deliver: they follow Blender Cycles' area light, pi times
+ * brighter on axis (`photometry.ts`).
  */
 export function specIrradiance(spec: IrradianceSpec): number {
   const energy = spec.energy ?? spec.share ?? 0;

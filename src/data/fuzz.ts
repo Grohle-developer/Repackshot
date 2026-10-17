@@ -1,8 +1,6 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type { FuzzPreset } from './types';
 
-// Fuzz and hair presets (upstream FUZZ_PRESETS, data only). The fibres are
+// Fuzz and hair presets (data only). The fibres are
 // physical: lengths and radii are in metres and the presets are calibrated on
 // a part of FUZZ_REF_SIZE_M. On a smaller part the fibre shrinks in proportion
 // (an 8 mm fuzz on a 30 mm ring is a mane); on a bigger one it keeps its

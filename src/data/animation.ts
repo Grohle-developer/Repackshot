@@ -1,5 +1,3 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
-
 import type {
   EasingItem,
   ExplodeItem,
@@ -10,8 +8,8 @@ import type {
   TargetItem,
 } from './types';
 
-// Animation catalogues (upstream MOVE_ITEMS_*, EASING_ITEMS_*, TARGET_ITEMS_*,
-// EXPLODE_ITEMS_*, SEQUENCE_PRESETS). A sequence is two independent lists:
+// Animation catalogues: moves, easings, targets, explode modes and sequence
+// presets. A sequence is two independent lists:
 //   - Shots: which camera is seen at each moment. They generate the cuts.
 //   - Clips: what moves, when and how much. They add up.
 // Everything is baked frame by frame with the easing curve applied
@@ -19,8 +17,8 @@ import type {
 // interpolation to surprise anyone.
 
 /**
- * The 22 move kinds (PHYSICS, phase S2, is not ported: Record as animation makes it; SECTION, phase Q1, is ours; FADE,
- * PAN, MATERIAL_COLOR, SUN_ARC and the reserved PATH are N1's). `amountLabel` says what the clip's single amount means.
+ * The 22 move kinds (PHYSICS, phase S2, is made by Record as animation; SECTION is phase Q1's; FADE, PAN,
+ * MATERIAL_COLOR, SUN_ARC and the reserved PATH are N1's). `amountLabel` says what the clip's single amount means.
  */
 export const MOVE_KINDS: readonly MoveItem[] = [
   {
@@ -331,7 +329,7 @@ export const EXPLODE_MODES: readonly ExplodeItem[] = [
   },
 ];
 
-// Move groups (upstream AIMING_MOVES ... COLOR_MOVES).
+// Move groups.
 /** Moves that make the target look at the centre of the part. */
 export const AIMING_MOVES: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'DOLLY']);
 /** Moves that only make sense for cameras. */

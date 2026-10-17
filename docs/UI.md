@@ -1333,11 +1333,10 @@ ya se está descargando (lo marcó el instalador) no es un aviso. Es la
 misma línea que la de las actualizaciones, en el mismo sitio.
 
 **Popover del Doctor**: la lista de `DOCTOR_CHECKS` con estado, una frase
-de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba. Es
-la traducción del panel Doctor de EZ Packshot. Los chequeos de escena
-(escala, origen, suavizado, bisel, clipping) se implementan sobre el modelo
-de datos. Una comprobación nuestra (U13) es **Proporción de la
-animación**: avisa de los planos cuya cámara
+de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba.
+Los chequeos de escena (escala, origen, suavizado, bisel, clipping) se
+implementan sobre el modelo de datos. Una comprobación de U13 es
+**Proporción de la animación**: avisa de los planos cuya cámara
 tiene otra proporción que el tamaño de salida (*Planos con otra
 proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
 (4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
@@ -1871,7 +1870,7 @@ título del grupo en versalitas auxiliares:
 | | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
 | | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
-| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
+| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (la literatura pública que sigue el motor) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
 ahí y las filas en bloques con un subtítulo y una línea fina entre
@@ -2188,11 +2187,10 @@ de teclado* del menú):
 
 ### 4.1 · Selección por niveles
 
-Tomado de EZ Packshot y es la pieza central de la asignación de
-materiales. Cuatro niveles, **excluyentes**: **Modelo** (todo lo
-importado como una unidad), **Grupo** (un ensamblaje: nodo con hijos),
-**Pieza** (una malla) y **Caras** (una selección de caras dentro de una
-pieza). El selector aparece en la cabecera del inspector y encima del
+Es la pieza central de la asignación de materiales. Cuatro niveles,
+**excluyentes**: **Modelo** (todo lo importado como una unidad), **Grupo**
+(un ensamblaje: nodo con hijos), **Pieza** (una malla) y **Caras** (una
+selección de caras dentro de una pieza). El selector aparece en la cabecera del inspector y encima del
 árbol, como un segmento de cuatro posiciones con atajos `1`–`4`.
 
 - Al hacer clic en el visor, el nivel decide qué se selecciona: con
@@ -2279,7 +2277,7 @@ del inspector con el paso actual y botones *Siguiente / Cerrar*, y dibuja
 una **flecha** apuntando al control del que habla, sin ocultar ni mover
 nada. Seis pasos: importar o cargar el ejemplo → elegir tipo de producto y
 crear estudio → asignar un material → elegir un montaje de luz → encuadrar
-y enfocar → render. Tomado del tutorial con flechas de EZ Packshot.
+y enfocar → render.
 
 ### 4.7 · Recorrido guiado
 
@@ -2426,15 +2424,12 @@ rendimiento importa: 60 fps con la pieza de ejemplo en un portátil.
   `CHROME` un toro cromado, `SHOE` una cápsula de cuero, `SPHERES` tres
   esferas mate, brillante y metal) y cada montaje anterior sobre el héroe
   de su estilo, con el tipo *Estándar*, la cámara de referencia (o la del
-  set), 96 muestras, *denoise* y semilla fija. Sustituyen a las de EZ
-  Packshot. `manifest.json` guarda el *hash* de cada escena y de cada PNG;
-  la suite comprueba que el código sigue construyendo esas escenas.
-- **Materiales**: no hay PNG upstream (se renderizan dentro de Blender).
-  En U1 se generan **en el navegador** con el propio visor: una esfera
-  con el material sobre el fondo del tema, renderizada a 96 × 96 en un
-  canvas al abrir cada categoría y cacheada en memoria (y en
-  `localStorage` como data URL, envuelto en `try/catch`). Es lo que hacía
-  EZ Packshot con `ensure_material_preview`, pero sin Blender.
+  set), 96 muestras, *denoise* y semilla fija. `manifest.json` guarda el
+  *hash* de cada escena y de cada PNG; la suite comprueba que el código sigue construyendo esas escenas.
+- **Materiales**: en U1 se generan **en el navegador** con el propio
+  visor: una esfera con el material sobre el fondo del tema, renderizada a
+  96 × 96 en un canvas al abrir cada categoría y cacheada en memoria (y en
+  `localStorage` como data URL, envuelto en `try/catch`).
 - **Tipo de producto**: sin miniatura; etiqueta e intención bastan.
 
 ---
