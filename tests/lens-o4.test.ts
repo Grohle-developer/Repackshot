@@ -15,7 +15,7 @@ import { createStore } from '../src/core/store';
 import { newTracedLens, parseLensInfo } from '../src/core/traced-lens';
 import { BOKEH_TYPES } from '../src/data/bokeh';
 import { serializeProject, parseProject } from '../src/io/project';
-import { cameraToRsb, lensToRsb, writeRsb, type RsbScene } from '../src/io/rsb';
+import { cameraToRsb, lensInfoRsb, lensToRsb, writeRsb, type RsbScene } from '../src/io/rsb';
 import { applyBokeh, armTiltPick, finishTiltPick, setLensModel } from '../src/ui/lens-commands';
 import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
@@ -23,6 +23,10 @@ import { STRINGS } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { exampleState } from './helpers';
 import { readRsb } from './rsb-reader';
+import { setFocusSolver } from '../src/core/focus';
+import { allParts } from '../src/core/scene';
+import { focusPickAction } from '../src/core/view-objects';
+import { engineFocusAt, focusSolverOf, hasFocusExports } from '../src/render/focus-pick';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
 
 const camera = (optics: CameraOptics | undefined, patch: Partial<CameraState> = {}): CameraState => ({ ...makeCamera('cam1', '', 200), ...(optics ? { optics } : {}), ...patch });
@@ -279,6 +283,52 @@ describe('the plane through two points, in the viewport (one undo entry)', () =>
     armTiltPick(ctx, camId);
     expect(ctx.ui.get().pickMode).toBeNull();
   });
+});
+
+describe('F1 with the two-point plane', () => {
+  it('a camera that followed a point is focused by distance after the pick, in the same undo entry', () => {
+    const { ctx, camId } = context();
+    const s0 = ctx.store.get();
+    const cam0 = s0.camera.cameras[camId];
+    const part = allParts(s0)[0];
+    ctx.store.dispatch(focusPickAction(s0, null, { node: part, point: pointAt(cam0, 0, 0, cam0.focusDistance) }, { label: 'Focus with a click' })!);
+    expect(ctx.store.get().camera.cameras[camId].focusMode).toBe('POINT');
+    const before = ctx.store.get().camera.cameras[camId];
+    armTiltPick(ctx, camId);
+    finishTiltPick(ctx, pointAt(cam0, 0, -0.6, cam0.focusDistance * 0.9));
+    finishTiltPick(ctx, pointAt(cam0, 0.2, 0.6, cam0.focusDistance * 1.1));
+    const cam = ctx.store.get().camera.cameras[camId];
+    expect(cam.focusMode).toBe('DISTANCE');
+    expect(ctx.store.history().undo[0]).toBe('Tilt the focus plane through two points');
+    ctx.store.undo();
+    expect(ctx.store.get().camera.cameras[camId]).toEqual(before);
+  });
+
+  it.skipIf(!RT_WASM)('a traced lens refocuses the two-point plane with its real rays (the engine’s solve)', async () => {
+    const rt = await loadRt();
+    if (!hasFocusExports(rt)) throw new Error('rt.wasm has no focus pick: npm run engine:build');
+    setFocusSolver(focusSolverOf(rt, (c) => lensInfoRsb(c, c.aspect.w, c.aspect.h)));
+    try {
+      const { ctx, camId } = context(traced('double_gauss_fast'));
+      ctx.store.dispatch({ type: 'camera/set', id: camId, patch: { fstop: 1.4, focalMm: 85 } });
+      const cam0 = ctx.store.get().camera.cameras[camId];
+      const a = pointAt(cam0, 0, -0.5, cam0.focusDistance * 0.95);
+      const b = pointAt(cam0, 0.1, 0.5, cam0.focusDistance * 1.05);
+      const paraxial = solveTilt(cam0, [a, b]) as TiltSolution;
+      armTiltPick(ctx, camId);
+      finishTiltPick(ctx, a);
+      finishTiltPick(ctx, b);
+      const cam = ctx.store.get().camera.cameras[camId];
+      // The engine's own focus for each point with the tilt chosen: the distance written is their mean.
+      const tilted = { ...cam, focusDistance: paraxial.focusDistance };
+      const [da, db] = [a, b].map((p) => engineFocusAt(rt, lensInfoRsb(tilted, tilted.aspect.w, tilted.aspect.h), p)!);
+      expect(cam.focusMode).toBe('DISTANCE');
+      expect(cam.focusDistance).toBeCloseTo(0.5 * (da + db), 2);
+      expect(Math.abs(cam.focusDistance - paraxial.focusDistance)).toBeGreaterThan(0.5);
+    } finally {
+      setFocusSolver(null);
+    }
+  }, 300000);
 });
 
 describe('with the straight verticals of K3 (the camera rendered level, its lens shifted)', () => {

@@ -166,17 +166,6 @@ export function cameraBasis(azimuth: number, elevation: number): { forward: Vec3
 }
 
 /**
- * The focus distance that puts `point` exactly in focus. The engine focuses a plane at right angles to
- * the view axis (`Camera::generate_ray`: the plane at `focus_dist` along the axis), so this is the
- * distance from the camera to the point measured along the view axis, not the straight-line distance
- * (which is longer for every point off the centre of the frame). At least 1 mm.
- */
-export function focusDistanceTo(cam: Pick<CameraState, 'azimuth' | 'elevation' | 'distance' | 'target'>, point: Vec3): number {
-  const { forward } = cameraBasis(cam.azimuth, cam.elevation);
-  return Math.max(1, dot(sub(point, cameraPosition(cam)), forward));
-}
-
-/**
  * Field of view for a focal length on the 36 mm sensor, fitted to the longer
  * side of an image of `aspect` (width / height). Radians.
  */

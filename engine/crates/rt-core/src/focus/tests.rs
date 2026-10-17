@@ -547,3 +547,56 @@ fn a_traced_lens_wide_open_renders_sharpest_where_the_pick_focuses() {
         }
     }
 }
+
+#[test]
+fn a_tilted_traced_lens_renders_sharpest_where_the_pick_focuses() {
+    // O4's tilted traced lens: the pick's focus for a point off the centre (where the tilted plane
+    // is far from the depth) is where the render's own samples give its fine detail the most
+    // contrast, through focus.
+    let mut scene = example::o2_scene();
+    scene.camera.lens = Some(
+        Lens::new(LensParams {
+            tilt_deg: 6.0,
+            tilt_axis_deg: 0.0,
+            prescription: Some(crate::optics::traced_tests::catalogue_prescription(
+                "double_gauss_normal",
+            )),
+            ..LensParams::default()
+        })
+        .expect("valid"),
+    );
+    scene.camera.focal_mm = 85.0;
+    scene.camera.fstop = 2.0;
+    scene.camera.focus_dist = 900.0;
+    scene.camera.prepare_lens().expect("prepares");
+    let aspect = scene.render.width as f32 / scene.render.height as f32;
+    let (forward, _, _) = scene.camera.basis();
+    let uv = (0.5, 0.2);
+    let depth = 800.0f32;
+    let chief = scene.camera.generate_ray(aspect, uv.0, uv.1, (0.0, 0.0));
+    let point = chief.origin
+        + chief.dir
+            * ((depth - (chief.origin - scene.camera.position).dot(forward))
+                / chief.dir.dot(forward));
+    let focus = scene.camera.focus_distance_to(point).expect("a focus");
+    assert!(
+        (focus - depth).abs() > 20.0,
+        "the tilt hardly moves the focus ({focus} mm for a depth of {depth} mm)"
+    );
+    let nu = crate::optics::traced::FOCUS_LP_MM * scene.camera.focal_mm / depth;
+    let at = |f: f32| {
+        let mut camera = scene.camera.clone();
+        camera.focus_dist = f;
+        camera.prepare_lens().expect("prepares");
+        rendered_focus(&camera, aspect, uv, depth, nu, 3000).0
+    };
+    let mut best = f32::MIN;
+    for k in -40..=40 {
+        best = best.max(at(focus + 0.5 * k as f32));
+    }
+    let picked = at(focus);
+    assert!(
+        picked >= 0.95 * best,
+        "at the pick's {focus} mm the render's contrast is {picked}, the most through focus {best}"
+    );
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { activeCamera, cameraBasis, cameraPosition, focusDistanceTo, focusFollowsOrbit, orbitPatch, type CameraState } from '../src/core/camera';
+import { activeCamera, cameraBasis, cameraPosition, focusFollowsOrbit, orbitPatch, type CameraState } from '../src/core/camera';
+import { focusDistanceFor } from '../src/core/focus';
 import { add, dot, length, normalize, scale, sub, type Vec3 } from '../src/core/math';
 import { allParts } from '../src/core/scene';
 import { createStore, type ProjectState } from '../src/core/store';
@@ -13,7 +14,7 @@ function engineFocusPoint(position: Vec3, forward: Vec3, through: Vec3, focus: n
   return add(position, scale(dir, focus / dot(dir, forward)));
 }
 
-const cam = { azimuth: -35, elevation: 18, distance: 900, target: [0, 0, 60] as Vec3 };
+const cam: CameraState = { ...activeCamera(exampleState()), azimuth: -35, elevation: 18, distance: 900, target: [0, 0, 60] as Vec3 };
 
 describe('focus with a click (user report: the click did not focus exactly on the clicked point)', () => {
   const pos = cameraPosition(cam);
@@ -21,7 +22,7 @@ describe('focus with a click (user report: the click did not focus exactly on th
 
   it('puts a point off the centre of the frame exactly on the focus plane', () => {
     const point = add(pos, add(scale(forward, 500), add(scale(right, 220), scale(up, -140))));
-    const focus = focusDistanceTo(cam, point);
+    const focus = focusDistanceFor(cam, point)!;
     expect(focus).toBeCloseTo(500, 6);
     const p = engineFocusPoint(pos, forward, point, focus);
     expect(length(sub(p, point))).toBeLessThan(1e-6);
@@ -32,12 +33,12 @@ describe('focus with a click (user report: the click did not focus exactly on th
 
   it('is the straight-line distance for a point on the view axis', () => {
     const point = add(pos, scale(forward, 750));
-    expect(focusDistanceTo(cam, point)).toBeCloseTo(length(sub(point, pos)), 6);
+    expect(focusDistanceFor(cam, point)).toBeCloseTo(length(sub(point, pos)), 6);
   });
 
-  it('never goes below 1 mm, even for a point beside or behind the lens', () => {
-    expect(focusDistanceTo(cam, add(pos, scale(right, 100)))).toBe(1);
-    expect(focusDistanceTo(cam, add(pos, scale(forward, -100)))).toBe(1);
+  it('has none for a point beside or behind the lens (the camera keeps the distance it has)', () => {
+    expect(focusDistanceFor(cam, add(pos, scale(right, 100)))).toBeNull();
+    expect(focusDistanceFor(cam, add(pos, scale(forward, -100)))).toBeNull();
   });
 });
 
@@ -147,7 +148,7 @@ describe('focus with a click, measured from the camera that is seen', () => {
     expect(a).toMatchObject({ type: 'camera/set', id: side });
     expect(apply(s, a).camera.cameras[side].focusDistance).toBeCloseTo(420, 6);
     // The active camera sees that point at another distance: it is not the one measured.
-    expect(Math.abs(focusDistanceTo(activeCamera(s), point) - 420)).toBeGreaterThan(1);
+    expect(Math.abs(focusDistanceFor(activeCamera(s), point)! - 420)).toBeGreaterThan(1);
     expect(apply(s, a).camera.cameras.cam1.focusDistance).toBe(activeCamera(s).focusDistance);
   });
 

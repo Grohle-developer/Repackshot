@@ -5281,9 +5281,10 @@ párrafo dejaba abiertos):
 2. **La inclinación de una lente trazada es «el mismo plano que la lente
    simple»**, como está.
 3. **Con una lente trazada, *Por dos puntos* debe resolverse con rayos
-   reales.** Pendiente: F1 trae `Camera::focus_distance_to` con el mejor
-   foco trazado; cuando F1 esté en `main`, el plano por dos puntos de una
-   lente trazada pasará por él (no se construye en O4).
+   reales.** Hecho con F1: con el giro del plano de la lente simple, la
+   distancia es la media de las que el motor resuelve con rayos reales para
+   cada punto (`core/focus.ts exactFocusDistance`, `rt_scene_focus_at`);
+   sin `rt.wasm`, la del plano. Lo comprueba `tests/lens-o4.test.ts`.
 4. **El diafragma, la aberración cromática y el remolino son compartidos**
    por los dos modelos, como está.
 5. **Los tres tipos de bokeh de la lente trazada se quitan** de la rejilla
@@ -12208,6 +12209,17 @@ sigue cada cámara (la resuelve la frontera del motor, `viewCamera`, con la
 cámara y la pose del trabajo); `batch.test.ts` lo comprueba en un lote de
 cámaras × estudios y en los fotogramas de una animación, y falla sin esa
 resolución.
+
+**Con O4** (fusionada tras la fase): *Por dos puntos* deja la cámara en
+*Distancia* (podía seguir un punto o un objeto) en la misma entrada de
+deshacer, y con una lente trazada enfoca a la media de las distancias que
+el motor resuelve para los dos puntos con la inclinación elegida (la
+decisión 3 de O4). El mejor foco de una lente trazada inclinada usa las
+muestras de la lente inclinada (su rejilla de límites del sensor); la regla
+paraxial de la interfaz para ella es la bisagra de la lente simple, como el
+plano de O4. Las funciones de enfoque anteriores sin uso
+(`camera.ts focusDistanceTo`, `interior-camera.ts focusDistanceFor`) se
+quitaron; sus tests apuntan a `core/focus.ts focusDistanceFor`.
 
 **Decisiones** (17-10, del responsable de la sesión; eran ◆): el *Objeto*
 sigue el centro de su caja (las otras dos candidatas siguen escritas y sin

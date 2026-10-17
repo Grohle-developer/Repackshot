@@ -2766,6 +2766,13 @@ TypeScript:
   (`renderedCamera`): la interfaz resuelve sobre ella y guarda esa distancia
   entre cos(inclinación corregida), que es lo que `renderedCamera` vuelve a
   multiplicar.
+- **Con O4** (§5.2 sedecies). Una lente trazada inclinada se resuelve con
+  sus propias muestras (`sample_setup` de la lente inclinada, su rejilla de
+  límites del sensor) en el marco de la cámara, como su rayo principal; la
+  regla paraxial de la interfaz para ella es la de la bisagra, el mismo
+  plano que O4 le pide. *Por dos puntos* de una lente trazada enfoca a la
+  media de `exactFocusDistance` de los dos puntos con la inclinación
+  resuelta.
 - **`frame_sensor_mm`** (al final de `LENS`, tras la prescripción, opcional):
   el sensor del cuadro de salida a lo largo de su lado largo cuando el de la
   cámara abarca más (la imagen del visor). La lente trazada saca de él lo que

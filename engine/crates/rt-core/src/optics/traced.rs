@@ -1655,7 +1655,7 @@ impl TracedLens {
     /// frame of its radius, turned by `(c, s)`): a bin's scan ([`PUPIL_GRID`]² points over the rear
     /// vertex's disc in the three bands, a cell wider) at that point itself, so that what is found
     /// there does not hang on how the bins happen to fall (a viewport's lens spaces them wider).
-    fn rect_at(&self, film: Vec3, (c, s): (f32, f32)) -> Option<[f32; 4]> {
+    fn focus_rect(&self, film: Vec3, (c, s): (f32, f32)) -> Option<[f32; 4]> {
         let g = PUPIL_GRID;
         let r = self.rear_radius;
         let cell = 2.0 * r / g as f32;
@@ -1787,15 +1787,20 @@ impl TracedLens {
             Traced::Blocked => return None,
         };
         // The camera samples of the position as the image takes them (its film point, the swirl), over
-        // the rectangle where its light passes, found at the position itself.
-        let (film, h) = self.film_of(x, y);
-        let r = (film.x * film.x + film.y * film.y).sqrt();
-        let turn = if r > 0.0 {
-            (film.x / r, film.y / r)
+        // the rectangle where its light passes, found at the position itself; a tilted lens (O4)
+        // draws its own (its sensor's grid of bounds), its rays in the camera's frame as its chief.
+        let upright = if self.tilt.is_none() {
+            let (film, h) = self.film_of(x, y);
+            let r = (film.x * film.x + film.y * film.y).sqrt();
+            let turn = if r > 0.0 {
+                (film.x / r, film.y / r)
+            } else {
+                (1.0, 0.0)
+            };
+            Some((film, h, turn, self.focus_rect(film, turn)?))
         } else {
-            (1.0, 0.0)
+            None
         };
-        let rect = self.rect_at(film, turn)?;
         // Each ray's offset from the chief ray in the plane square to it at distance s: a + b s.
         let mut rays: Vec<(Vec3, Vec3, f32)> = Vec::with_capacity(3 * FOCUS_GRID * FOCUS_GRID);
         for (band, luma) in LUMA.iter().enumerate() {
@@ -1805,7 +1810,13 @@ impl TracedLens {
                         (i as f32 + 0.5) / FOCUS_GRID as f32,
                         (j as f32 + 0.5) / FOCUS_GRID as f32,
                     );
-                    let setup = self.setup_in(film, h, turn, rect, u, swirl);
+                    let setup = match upright {
+                        Some((film, h, turn, rect)) => self.setup_in(film, h, turn, rect, u, swirl),
+                        None => match self.sample_setup(x, y, u, swirl) {
+                            Some(setup) => setup,
+                            None => continue,
+                        },
+                    };
                     let (traced, stopped) = self.trace_with(setup.film, setup.d, band, true, true);
                     let (traced, weight) = self.sample_finish(&setup, band, traced, stopped);
                     let Traced::Out { origin, dir } = traced else {

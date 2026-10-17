@@ -25,7 +25,8 @@ import { cameraBasis, cameraPosition, isPanoramic, type CameraId, type CameraSta
 import { renderedCamera, verticalsOf } from './interior-camera';
 import { getMesh } from './meshes';
 import { add, boxCenter, cross, dot, emptyBox, length, isEmptyBox, lerp, mat4Compose, mat4Invert, mat4Multiply, normalize, scale, sub, transformBox, transformPoint, unionBox, type Box, type Mat4, type Vec3 } from './math';
-import { isNeutralOptics } from './optics';
+import { isNeutralOptics, tiltOf } from './optics';
+import { tracedLensTilts } from './traced-lens';
 import { localMatrix, partsUnder, productBounds, sceneBounds, type NodeId } from './scene';
 import type { ProjectState } from './store';
 
@@ -218,10 +219,13 @@ export function focusDistanceFor(cam: CameraState, point: Vec3): number | null {
   const depth = dot(d, forward);
   if (!(depth > 0) || !Number.isFinite(depth)) return null;
   const o = cam.optics;
-  // The engine's LENS section is written only for optics that are not the plain thin lens; a traced lens has no tilt.
-  if (cam.projection === 'ORTHOGRAPHIC' || !o || isNeutralOptics(o) || o.traced || !o.tiltDeg) return depth;
-  const tilt = (Math.min(45, Math.max(-45, o.tiltDeg)) * Math.PI) / 180;
-  const axis = (o.tiltAxisDeg * Math.PI) / 180;
+  // The engine's LENS section is written only for optics that are not the plain thin lens. A traced lens tilts by its
+  // own tilt (O4: the same plane as the simple lens's, paraxially; the engine's solve adds its real rays) when it can.
+  if (cam.projection === 'ORTHOGRAPHIC' || !o || isNeutralOptics(o)) return depth;
+  const own = o.traced && !tracedLensTilts(o.traced) ? { deg: 0, axisDeg: 0 } : tiltOf(o);
+  if (!own.deg) return depth;
+  const tilt = (Math.min(45, Math.max(-45, own.deg)) * Math.PI) / 180;
+  const axis = (own.axisDeg * Math.PI) / 180;
   const a = add(scale(right, Math.cos(axis)), scale(up, Math.sin(axis)));
   const b = cross(forward, a);
   const f = Math.max(1, cam.focalMm);
@@ -250,7 +254,7 @@ export function setFocusSolver(s: FocusSolver | null): void {
 
 /** The lens a traced offset belongs to: what changes the solve but the camera's placement. */
 function lensKey(cam: CameraState): string {
-  return JSON.stringify([cam.id, cam.optics?.traced, cam.optics?.blades, cam.optics?.swirl, cam.focalMm, cam.fstop]);
+  return JSON.stringify([cam.id, cam.optics?.traced, cam.optics?.tracedTiltDeg, cam.optics?.tracedTiltAxisDeg, cam.optics?.blades, cam.optics?.swirl, cam.focalMm, cam.fstop]);
 }
 
 /**
@@ -273,6 +277,15 @@ function lensFocus(cam: CameraState, point: Vec3, fast: boolean): number | null 
   lastOffset.set(key, exact - paraxial);
   if (lastOffset.size > 64) lastOffset.delete(lastOffset.keys().next().value!);
   return exact;
+}
+
+/**
+ * The focus distance that puts `point` in focus through `cam`'s lens as the engine renders it: the engine's solve for a
+ * traced lens when rt.wasm has handed it (`setFocusSolver`), the rule of `focusDistanceFor` otherwise. O4's two-point
+ * plane of a traced lens refocuses with it.
+ */
+export function exactFocusDistance(cam: CameraState, point: Vec3): number | null {
+  return lensFocus(cam, point, false);
 }
 
 /**

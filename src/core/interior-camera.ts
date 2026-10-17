@@ -13,7 +13,7 @@
 
 import { EXTERIOR_MAX, EXTERIOR_MIN, EYE_HEIGHT_PRESETS, INTERIOR_LENSES, VERTICALS_MAX_TILT_DEG } from '../data/interior-camera';
 import { lensPreset } from '../data/lenses';
-import { cameraPosition, focusDistanceTo, focusFollowsOrbit, orbitFromPosition, type CameraId, type CameraState } from './camera';
+import { cameraPosition, focusFollowsOrbit, orbitFromPosition, type CameraId, type CameraState } from './camera';
 import { add, clamp, type Vec3 } from './math';
 import { polar } from './light-math';
 import { OPTICS_NEUTRAL } from './optics';
@@ -62,16 +62,6 @@ export function renderedCamera(cam: CameraState): CameraState {
     out.optics = { ...o, shiftYMm: o.shiftYMm + v.shiftYMm };
   }
   return out;
-}
-
-/**
- * Focus with a click (core/view-objects.ts): the focus distance that puts `point` in focus. With straight verticals the
- * focus plane is square to the rendered camera's axis, whose focus distance is the camera's times cos(corrected tilt).
- */
-export function focusDistanceFor(cam: CameraState, point: Vec3): number {
-  const v = verticalsOf(cam);
-  if (!v) return focusDistanceTo(cam, point);
-  return Math.max(1, focusDistanceTo(renderedCamera(cam), point) / Math.cos(rad(v.correctedDeg)));
 }
 
 /** The exterior factor of a project (`environment.exterior`, absent: 1), within its range. */

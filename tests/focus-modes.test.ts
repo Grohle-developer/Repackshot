@@ -8,7 +8,8 @@ import { evaluate, playheadPose, type MotionClip } from '../src/core/animation';
 import { activeCamera, cameraBasis, cameraPosition, focusFollowsOrbit, orbitPatch, type CameraState } from '../src/core/camera';
 import { anchorOf, focusDistanceAt, focusDistanceFor, focusModeOf, focusRange, focusTarget, normaliseFocus, objectFocusPoint, posedBounds, posedWorldMatrix, resolvedFocusDistance, setFocusSolver, syncFocus } from '../src/core/focus';
 import { add, boxCenter, cross, dot, length, scale, sub, transformPoint, type Vec3 } from '../src/core/math';
-import { OPTICS_NEUTRAL } from '../src/core/optics';
+import { OPTICS_NEUTRAL, withTilt } from '../src/core/optics';
+import { focusPlaneOf, planeDistance } from '../src/core/focus-plane';
 import { createStore, type ProjectState } from '../src/core/store';
 import { newTracedLens } from '../src/core/traced-lens';
 import { focusCameraOf, focusModeAction, focusObjectAction, focusPickAction, glyphsOf, viewProjector } from '../src/core/view-objects';
@@ -54,6 +55,16 @@ describe('the focus distance of a point, by the engine’s rule', () => {
       const n = add(scale(forward, cam.focalMm), scale(b, d * Math.sin((8 * Math.PI) / 180)));
       expect(Math.abs(dot(sub(p, along(cam, d)), n)) / length(n)).toBeLessThan(1e-6);
       expect(Math.abs(d - 600)).toBeGreaterThan(1);
+    }
+  });
+
+  it('a tilted traced lens (O4) without the engine: the paraxial distance is the simple lens’s plane through the point', () => {
+    const c: CameraState = { ...cam, fstop: 2, optics: withTilt({ ...OPTICS_NEUTRAL, traced: newTracedLens('double_gauss_normal') }, 6, 20) };
+    for (const [d, r, u] of [[500, 100, 60], [900, -200, 30], [700, 0, -150]]) {
+      const p = along(c, d, r, u);
+      const f = focusDistanceFor(c, p)!;
+      expect(Math.abs(planeDistance(focusPlaneOf({ ...c, focusDistance: f }), p))).toBeLessThan(1e-6);
+      expect(Math.abs(f - depthOf(c, p))).toBeGreaterThan(1);
     }
   });
 
