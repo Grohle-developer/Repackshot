@@ -424,9 +424,9 @@ impl Lens {
     }
 
     /// F1: a traced lens's focus distance for the point `d` from the camera position (`depth`
-    /// along the axis): the one at which the circle of least confusion of the sensor position
-    /// that images the point ([`TracedLens::film_position_through`],
-    /// [`TracedLens::best_focus`]) lies at the point's depth. The lens is focused paraxially (its
+    /// along the axis): the one at which the best focus of the sensor position that images the
+    /// point ([`TracedLens::film_position_through`], [`TracedLens::best_focus`]: where fine detail
+    /// has its most contrast) lies at the point's depth. The lens is focused paraxially (its
     /// object plane `focus_dist` in front of the entrance pupil), and wide open its spherical
     /// aberration and its field curvature put the sharpest image of that plane some depths of
     /// field away from it; this is found by the secant method from the paraxial answer, the lens

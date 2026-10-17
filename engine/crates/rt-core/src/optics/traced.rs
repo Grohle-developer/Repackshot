@@ -1627,6 +1627,11 @@ pub(crate) struct SampleSetup {
 /// F1: how many pupil samples per side (and per band) [`TracedLens::best_focus`] traces.
 pub const FOCUS_GRID: usize = 32;
 
+/// F1: the detail [`TracedLens::best_focus`] brings to its most contrast, line pairs per
+/// millimetre of the 36 mm frame (the usual figure for a lens's contrast; the frame's own sensor
+/// scales it, so the viewport's wider image and the render agree).
+pub const FOCUS_LP_MM: f32 = 10.0;
+
 impl TracedLens {
     /// F1: the sensor position (camera frame, from the axis, desqueezed: what
     /// [`TracedLens::chief`] takes) whose chief ray passes through the object-side point `p` (lens
@@ -1669,13 +1674,18 @@ impl TracedLens {
         (rx.abs() <= scale && ry.abs() <= scale).then_some((x, y))
     }
 
-    /// F1: where along its chief ray the light of sensor position `(x, y)` is most concentrated:
-    /// the chief ray (lens frame) and the distance `s` along it of the circle of least confusion,
-    /// the plane square to the ray where the camera samples of that position (a
-    /// [`FOCUS_GRID`]² grid over the pupil in each band, weighed by the sample's weight and the
-    /// band's share of the luminance; the artistic `swirl` as the image has it) spread least about
-    /// their centroid (the least squares of their offsets, linear in `s`). `None` when the lens
-    /// passes nothing there.
+    /// F1: where along its chief ray sensor position `(x, y)` sees sharpest: the chief ray (lens
+    /// frame) and the distance `s` along it of the plane square to the ray where the camera
+    /// samples of that position (a [`FOCUS_GRID`]² grid over the pupil in each band, weighed by
+    /// the sample's weight and the band's share of the luminance; the artistic `swirl` as the
+    /// image has it) give fine detail its most contrast: the modulation of a pattern of
+    /// [`FOCUS_LP_MM`] line pairs per millimetre of the 36 mm frame, the mean of two directions
+    /// square to each other. Wide open, spherical aberration spreads a halo whose least squares
+    /// (the circle of least confusion) sit millimetres from where the core is tightest and the
+    /// image is sharp: the double Gauss at f/1.4, 135 mm, 600 mm away, has its least confusion at
+    /// 601.5 mm and its contrast at 607–610 mm, where the render is sharp. The search spans where
+    /// the rays cross the chief ray, from the least squares out. `None` when the lens passes
+    /// nothing there.
     pub fn best_focus(&self, x: f32, y: f32, swirl: f32) -> Option<(Vec3, Vec3, f32)> {
         let (oc, dc) = match self.chief(x, y, (0.0, 0.0)) {
             Traced::Out { origin, dir } => (origin, dir),
@@ -1737,8 +1747,94 @@ impl TracedLens {
         if den.is_nan() || den <= 0.0 {
             return None;
         }
-        let s = -num / den;
-        s.is_finite().then_some((oc, dc, s))
+        let s_rms = -num / den;
+        if !s_rms.is_finite() || s_rms <= 0.0 {
+            return None;
+        }
+        // Where each ray crosses the chief ray (its closest approach), weighed: the stretch of the
+        // ray along which the light can come to a focus, from the paraxial to the marginal one.
+        let mut cross: Vec<(f32, f32)> = rays
+            .iter()
+            .filter_map(|(a, b, w)| {
+                let bb = b.dot(*b);
+                (bb > 0.0)
+                    .then(|| (-a.dot(*b) / bb, *w))
+                    .filter(|c| c.0.is_finite())
+            })
+            .collect();
+        cross.sort_by(|p, q| p.0.total_cmp(&q.0));
+        let quantile = |q: f32| {
+            let mut acc = 0.0f32;
+            for (s, w) in &cross {
+                acc += *w;
+                if acc >= q * total {
+                    return *s;
+                }
+            }
+            cross.last().map_or(s_rms, |c| c.0)
+        };
+        let lo = quantile(0.02).min(s_rms);
+        let hi = quantile(0.98).max(s_rms);
+        // Two directions square to the chief ray, and the pattern's frequency where the light
+        // lands (cycles per millimetre at distance s: the film's, scaled by the image scale).
+        let e1 = if dc.x.abs() < 0.9 {
+            Vec3::new(1.0, 0.0, 0.0)
+        } else {
+            Vec3::new(0.0, 1.0, 0.0)
+        };
+        let e1 = (e1 - dc * e1.dot(dc)).normalize();
+        let e2 = dc.cross(e1);
+        let film_nu = FOCUS_LP_MM * 36.0 * 0.6 / self.field.max(1.0e-3);
+        let nu = film_nu * self.info.image_scale_mm.abs() / s_rms;
+        let tau = 2.0 * std::f32::consts::PI * nu;
+        let contrast = |s: f32| -> f32 {
+            let (mut c1, mut s1, mut c2, mut s2) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            for (a, b, w) in &rays {
+                let o = *a + *b * s;
+                let (si, co) = crate::fmath::sin_cos(tau * o.dot(e1));
+                c1 += *w * co;
+                s1 += *w * si;
+                let (si, co) = crate::fmath::sin_cos(tau * o.dot(e2));
+                c2 += *w * co;
+                s2 += *w * si;
+            }
+            0.5 * ((c1 * c1 + s1 * s1).sqrt() + (c2 * c2 + s2 * s2).sqrt()) / total
+        };
+        // A scan over the stretch, then golden sections round its best step.
+        const STEPS: usize = 48;
+        let step = (hi - lo) / STEPS as f32;
+        if step.is_nan() || step <= 0.0 {
+            return Some((oc, dc, s_rms));
+        }
+        let mut best = (s_rms, contrast(s_rms));
+        for k in 0..=STEPS {
+            let s = lo + step * k as f32;
+            let m = contrast(s);
+            if m > best.1 {
+                best = (s, m);
+            }
+        }
+        let (mut a, mut b) = (best.0 - step, best.0 + step);
+        let g = 0.618_034f32;
+        let (mut x1, mut x2) = (b - g * (b - a), a + g * (b - a));
+        let (mut f1, mut f2) = (contrast(x1), contrast(x2));
+        for _ in 0..24 {
+            if f1 >= f2 {
+                b = x2;
+                x2 = x1;
+                f2 = f1;
+                x1 = b - g * (b - a);
+                f1 = contrast(x1);
+            } else {
+                a = x1;
+                x1 = x2;
+                f1 = f2;
+                x2 = a + g * (b - a);
+                f2 = contrast(x2);
+            }
+        }
+        let s = 0.5 * (a + b);
+        (s.is_finite() && s > 0.0).then_some((oc, dc, s))
     }
 
     /// The ray of the sensor position `(x, y)` (camera frame, from the axis) through the centre
