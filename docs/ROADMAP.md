@@ -4738,6 +4738,201 @@ lentes (unos 550 px) se recorta en vez de moverse o encogerse; con menos de
 (7) El reposo es de 300 ms siempre, sin un «calentamiento» que lo acorte entre
 entradas vecinas: salir cierra y entrar espera de nuevo.
 
+## O2c · Editor de elementos de la lente — **Opus** — hecha
+
+**Petición del usuario** (`TODO.md` §1.5, tal cual): «Un editor de lentes
+donde, aparte de las opciones actuales, se pueda: editar los elementos,
+cambiar tamaño o distancias entre cada elemento, añadir uno nuevo, rotarlo
+180º». Decidido en *Decisiones de criterio*, 1.5: sí, sobre la lente propia
+de O2.
+
+**Qué.** Desde *Cámara ▸ Lente ▸ Lente trazada*, un **editor de lente** (una
+ventana como el editor de material) sobre una **copia** de la lente: la del
+catálogo no se edita nunca, editar hace una lente propia. Enseña el **corte**
+del motor (`components/lens-section.ts`) y la **lista de elementos**; por
+elemento, sus radios, grosor, vidrio (de la lista que hay) y apertura libre,
+su **tamaño**, el **aire** hasta el siguiente, **añadir** un singlete donde se
+elija, **borrar** y **girar 180°** (intercambia y niega los radios). Cada
+edición es una entrada de deshacer; un arrastre, un gesto. Tras cada edición
+el motor comprueba la prescripción y los números se ponen al día (focal,
+tiraje, f/, círculo de imagen, las curvas que ya enseña la aplicación); una
+lente inválida dice por qué, no se aplica y se sigue pudiendo editar; nunca
+un fallo ni un NaN. Se guarda como lente propia en el proyecto y en la
+biblioteca, con los mecanismos de O2, se renombra y va y vuelve.
+
+**Depende de.** O2, O2b, O4, F1.
+
+**Criterio.** Tests del efecto de cada operación en la prescripción, con lo
+físicamente correcto (girar una biconvexa no cambia nada; una asimétrica
+conserva la focal y cambia el tiraje y las aberraciones); deshacer; la lente
+inválida; la persistencia; un test en el navegador (vitest y playwright-core,
+saltado sin Chromium) que abre el editor, añade un elemento, gira uno y ve
+cambiar la focal y redibujarse el corte, sin nada recortado. Dos capturas.
+
+**Hecho.**
+
+- **El modelo** (`src/core/lens-edit.ts`, sin DOM). `TracedLens.edited`
+  (opcional) guarda la **prescripción editada** a la escala del diseño (las
+  superficies con las convenciones de `lenses.json`), su **nombre** y su
+  **enfoque**; `composeLens` la manda al motor en vez de la del catálogo, y la
+  `key` sigue diciendo de qué lente salió (su diafragma, su fuente). Sin
+  `edited`, nada cambia ni un byte. `startEdit` copia lo que el motor traza
+  de la lente ahora (con el tratamiento y el hueco variable de la persona).
+  La lista (`lensRows`): cada elemento de vidrio entre su superficie
+  delantera y trasera, los cementados marcados, y el diafragma. Las
+  operaciones, una prescripción dentro y otra fuera: `setElement` (radios
+  —`0` o `∞` es un plano—, grosor, vidrio, diámetro: las dos semiaperturas
+  escaladas para que la mayor sea su mitad, `null` vuelve a la automática),
+  `scaleElement` (más pequeño, más grande: la apertura por el factor, la
+  automática desde la del motor), `setGapAfter`, `insertElement`,
+  `deleteElement` (un singlete en aire deja el resto donde estaba; en un
+  grupo cementado, los demás siguen cementados), `rotateElement` (las
+  superficies en orden inverso con los radios negados, los vidrios y
+  grosores al revés, tratamientos y aperturas con su superficie; un grupo
+  cementado gira entero; el aire de delante y de detrás, igual) y
+  `renameEdited`. **El elemento nuevo** (`defaultSinglet`,
+  `insertionAperture`): un biconvexo débil del vidrio de la lente simple del
+  catálogo, radios ±4 f y grosor 4 % de f (entre 1 y 12 mm), f la focal del
+  diseño, tan ancho como el más estrecho de sus vecinos; en medio del hueco si
+  cabe con un 1 % de f de aire a cada lado **también en los bordes** (si no,
+  la lente se separa), a un 5 % de f delante del primero o detrás del último,
+  nunca dentro de un grupo cementado, y lo bastante grueso para su propio
+  borde. **El enfoque**: los huecos que mueve una lente de enfoque interno o
+  flotante se siguen a través de las ediciones (editar uno mueve su
+  recorrido; añadir delante los corre dos superficies); si una edición quita
+  uno, la lente enfoca moviéndose entera, y el editor lo dice. **La lista de
+  vidrios** (`LENS_GLASSES`): no había ninguna; son los 66 vidrios distintos
+  de las prescripciones del catálogo, por índice y número de Abbe en la línea
+  d (crown o flint por la línea de 50), sin nombres de fabricante.
+- **Lo que está mal** (`structuralProblems`, antes de preguntar al motor: no
+  se le manda nada con un hueco negativo, que el motor trazaría sin queja):
+  de 2 a 64 superficies, algún vidrio y en aire al final, un solo diafragma,
+  cada número un número, grosor de vidrio positivo, aire no negativo, una
+  apertura dada no más ancha que su esfera, y con las aperturas **dadas**,
+  las dos superficies de un elemento que se cruzan dentro de ella (el borde)
+  o dos elementos que chocan; del motor (`refusalProblem`, `engineProblems`):
+  sin imagen real o afocal, sin luz por el eje, la imagen dentro de la lente;
+  y otra razón, en sus palabras. Cada problema dice dónde (*Elemento 3*).
+- **El motor** (`rt-core/src/optics/traced.rs`): `LensInfo.design_efl_mm`,
+  `"designEflMm"` en el JSON de `rt_scene_lens_info` y de
+  `/api/lens/info`: la focal paraxial de la prescripción tal como está
+  escrita (en su banda verde), antes de escalarla a la de la cámara. Sin
+  ella, la focal que dice el motor es siempre la de la cámara y añadir un
+  elemento no cambiaría ningún número de focal. Nada de render: **ningún
+  *hash* fijado se mueve**. El motivo del rechazo ya salía por
+  `rt_scene_error_copy` y el JSON de error del lanzador:
+  `render/lens-info.ts readLensVerdict` y `LensPort.check` lo llevan al
+  editor (`main.ts`, con la página o el lanzador, y una trampa del módulo es
+  «sin motor», nunca un fallo).
+- **La copia y sus órdenes** (`src/ui/lens-edit-commands.ts`).
+  `CameraState.lensDraft` (opcional, se guarda con el proyecto): la primera
+  edición copia la lente de la cámara, con su nombre y *(editada)*; cada
+  edición es `camera/set` con la copia, una entrada (*Editor de lente: girar
+  un elemento 180°*…), o una por gesto; la que no cambia ningún número no
+  apunta nada. **Aplicar** pone la copia en la cámara (una entrada) y solo si
+  es la lente que el motor comprobó (la ventana se la pasa; otra, se
+  rechaza); **Descartar**, una entrada; **Guardar en la biblioteca…** con
+  `saveLensToLibrary` (que acepta la lente a guardar).
+- **La ventana** (`src/ui/panels/lens-editor.ts`, `lens-editor.css`, `UI.md`
+  §2.11): barra con el nombre (un campo), *Descartar cambios*, *Guardar en la
+  biblioteca…* y *Aplicar a la cámara*; el corte del motor con el número de
+  cada elemento y el elegido más oscuro (`lensSectionSvg` con `highlight` y
+  `labels`; un clic en un elemento lo elige; atenuado cuando no es el de la
+  lente que hay); las herramientas del elegido; la tabla de campos (la lista
+  se rehace solo cuando cambia su forma, así un arrastre no pierde su campo);
+  a la derecha, si se puede aplicar o por qué no, y lo que calcula el motor:
+  *Focal del diseño* (y la de la cámara), *Tiraje*, *Diafragma*, *Elementos ·
+  grupos*, *Longitud*, *Círculo de imagen* (de la luz hacia la esquina del
+  motor: hasta dónde llega y si cubre el encuadre) y las curvas de
+  distorsión y luz. Pregunta al motor 40 ms después de la última edición y
+  solo cuenta la respuesta de la última. *Cámara ▸ Lente*: **Editar
+  elementos…** (apagado y diciendo por qué con el adaptador y la lente de
+  espejo), *Lente editada: nombre* y el aviso de una edición sin aplicar;
+  elegir una lente de la lista vuelve a poner la del catálogo; sin hueco
+  variable para una lente editada; su corte y sus números se preguntan al
+  motor sin la caché de O2b, y la ventana de la lista (O2b) enseña la del
+  catálogo para la lente de la que salió una editada.
+- **Persistencia.** El proyecto lleva `edited` y `lensDraft` y vuelven igual
+  (`io/project.ts` lee la copia; unos `edited` que no se leen abren la lente
+  del catálogo, una copia que no se lee se descarta); la biblioteca lleva la
+  lente editada en `LensPayload.traced` y rechaza un elemento cuyos `edited`
+  no se leen (nunca una lente del catálogo callada en su sitio).
+- **Tests.** `tests/lens-edit.test.ts` (20): la lista y la copia (cada lente
+  del catálogo que se edita, sin nada mal; el adaptador y la de espejo, no);
+  girar (radios intercambiados y negados, dos veces es la lente, un plano es
+  un plano, la biconvexa es ella misma, el doblete gira entero, el
+  diafragma no gira); radios, grosor, vidrio, diámetro con su proporción,
+  tamaño con la apertura del motor, lo que no es un número no cambia nada;
+  el aire y solo él; añadir en medio de un hueco ancho (los vértices de
+  detrás donde estaban), en uno estrecho (la lente crece), delante, detrás,
+  nunca dentro de un cementado; **añadir en cada sitio de cuatro lentes sin
+  chocar en los bordes**; borrar (un singlete, el crown y el flint de un
+  doblete); el enfoque interno seguido y perdido; lo que está mal y dónde, y
+  las palabras del motor; con el `rt.wasm` real, la **focal del diseño** de
+  las 14 lentes contra la del informe y su escala, el **giro de una
+  biconvexa** (misma focal, tiraje y distorsión), el de una **plano-convexa**
+  (la misma focal a 1e-4, el tiraje movido t/n —el plano principal trasero
+  pasa de un vértice al otro— y otra distorsión), el del acromático
+  (misma focal, otro tiraje), **añadir en cada sitio de las 14 lentes** (el
+  motor la traza, un elemento más), añadir acorta la focal y borrar la
+  devuelve, y el rechazo sin imagen real o afocal con su motivo; la copia en
+  el *store* (la primera edición la hace, una entrada por edición o gesto,
+  nada sin cambio, deshacer hasta sin copia, el catálogo intacto; aplicar
+  solo la comprobada, en una entrada, con deshacer; descartar; sin lente
+  trazada o con la de espejo no se abre); el proyecto de ida y vuelta (con la
+  copia; las de antes, byte a byte; dañados, a la lente del catálogo y sin
+  copia) y la biblioteca (renombrada, de ida y vuelta, la dañada
+  rechazada); el corte con el elegido y los números, y la ventana de la
+  lista. `tests/lens-editor-browser.test.ts` (3, Chromium y el `rt.wasm`
+  real de la página): abre el editor, **añade un elemento** (ocho filas, la
+  focal del diseño más corta, siete vidrios en el corte, el nuevo elegido),
+  **gira el primero** (otra focal del sistema y otro tiraje, otro corte), dos
+  entradas de deshacer y vuelta atrás, la lente de la cámara intacta hasta
+  aplicar; un hueco negativo escrito (*Elemento 1*, sin aplicar, el corte
+  atenuado), corregido y comprobado; un radio que deja la lente sin imagen
+  (el motivo del motor); aplicar; y **nada recortado** en inglés y en español
+  en una ventana más pequeña. rt-core
+  `the_lens_information_tells_the_focal_length_of_the_design_before_the_scale`.
+  `tools/lens-editor-check.mjs` (cinco comprobaciones en la aplicación
+  construida con el `rt.wasm` real) deja `o2c-lens-editor.png` y
+  `o2c-lens-modified.png`.
+
+**No encajó con el plan.** (1) **O2 no guardaba la prescripción.** La
+decisión 1.5 dice «sobre la lente propia que ya guarda O2», pero O2 (su punto
+5) guardaba la clave del catálogo y los ajustes, no las superficies. O2c añade
+`TracedLens.edited` (opcional, solo en una lente editada); `STUDIO-TOOLS` sí
+hablaba de guardar «la prescripción y los ajustes». (2) **No había lista de
+vidrios**: es la de los vidrios de las prescripciones del catálogo. (3) **La
+focal no cambia en la cámara**: el motor escala toda lente a la focal de la
+cámara (O2), así que lo que cambia al añadir un elemento es la **focal del
+diseño**, que hacía falta que el motor dijera (`designEflMm`, sin render).
+Las medidas de la lista son las del diseño, y el pie lo dice. (4) **Tamaño**
+es la apertura libre del elemento (su diámetro), no su escala entera. (5) La
+copia vive en la cámara (`lensDraft`) y viaja con el proyecto: así cada
+edición es una entrada del *store* y una lente mala no llega nunca a la
+cámara. (6) **Girar un elemento cementado gira su grupo** (girar uno solo
+rompería el cemento). (7) **Lentes que no se editan**: el adaptador
+anamórfico (cilindros, compuesto con otra lente) y la de espejo (pliega la
+luz: sus distancias negativas no son huecos). (8) **El borde y el choque** se
+comprueban solo con las aperturas dadas: con las que el motor calcula al haz
+(las ensancha con rayos reales del encuadre), varias lentes del catálogo
+darían choques que no existen. (9) Sin motor la lente se edita pero no se
+aplica (no se puede comprobar). (10) La ventana se mueve pero no se
+redimensiona ni recuerda dónde estaba (el editor de material sí). (11) El
+recorrido del diafragma de una lente editada sigue siendo el de la lente de
+la que salió. (12) La ventana de la lista (O2b) enseña la lente del catálogo
+para la de la que salió una editada, y la sección de la cámara pregunta al
+motor por la editada sin la caché de O2b. (13) Un círculo de imagen menor que
+el encuadre se dice pero no impide aplicar (un ojo de pez circular lo es).
+**◆ Para decidir** (regla 11; están como se dice arriba): el elemento nuevo
+por defecto (radios ±4 f, grosor 4 % de f, el vidrio de la lente simple del
+catálogo, tan ancho como el vecino más estrecho, centrado en el hueco); los
+márgenes (1 % de f de aire, 5 % delante y detrás, 1e-3 mm de tolerancia en
+los bordes); el paso de *Más pequeño · Más grande* (10 %); el umbral del
+círculo de imagen (una luz relativa de 0,001) y si un círculo que no cubre
+el encuadre debería impedir aplicar; y si una lente editada debe conservar
+el recorrido del diafragma de la del catálogo.
+
 ## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable** — hecha
 
 Petición del usuario (14-10): en la lente, filtros «de estilo» (difusión
@@ -9553,7 +9748,7 @@ una*.
 | **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
 | **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
 | **O6** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
-| **O5** | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* |
+| **O5** — hecha (en O2 y O2c) | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* (O2); los elementos de la lente (O2c) |
 | **W1** | Opus | Evaluador de pines en el motor con muestreo por importancia; editor de pines; *Colocar brillo* |
 | **W2** | Sonnet | Biblioteca de 39 entornos (recetas, miniaturas, *hash*), exportar HDR/EXR, interiores horneados |
 | **L6** | Sonnet | Colocación *Reflejo · Directo · Órbita*, normal suavizada, obstáculos, potencia automática |
@@ -11894,7 +12089,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **C2** · Interruptor de la focal (1.7).
 - **M3c** · Nodos *Madera* y *Tela* (1.6).
 - **N2b** · El estudio viaja con el proyecto.
-- **O2c** · Editor de elementos de la lente (1.5).
+- **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
 - El 1.2 entra en **S3**.
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
@@ -11925,7 +12120,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   - el coste de la lluvia (1,63×), que solo se paga con lluvia;
   - el grano en los rastros bajo luz lateral;
   - la regla de los caminos estrechos, en los que las gotas también refractan.
-- **1.5** (el editor de elementos de una lente). **Sí**: editar, mover, añadir y girar 180°, sobre la lente propia que ya guarda O2. **O2c.**
+- **1.5** (el editor de elementos de una lente). **Sí**: editar, mover, añadir y girar 180°, sobre la lente propia que ya guarda O2. **O2c.** (hecho en O2c)
 - **1.6** (nodos *Madera* y *Tela*). **Sí**, con las recetas de E6. El ejemplo de madera de los grafos tiene que parecerse a la familia *Madera* (`m3b-wood.png`). **M3c.**
 - **M3b** (`NORMAL_MAP` con el azul por debajo de 0,5). El nodo **no deja que una normal apunte hacia dentro**: la lleva al hemisferio de fuera. El ejemplo de los copos se rehace con normales hacia fuera. **C1**, con su test y, si cambia el motor, con los pines que se muevan explicados. (hecho en C1)
 - **4.2** (el recorte de *fireflies* y el borde del *denoise* solo por luminancia). **Se quedan como están** hasta tener la escena del usuario. Sin ella no hay con qué medir.

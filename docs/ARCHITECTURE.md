@@ -115,6 +115,7 @@ src/
     optics.ts               la óptica de una cámara más allá de la lente simple (O1; se llamaba lente fina hasta O4): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2); los dos modelos de lente (`lensModelOf`, `opticsWithLensModel`: cambiar no borra nada), el bokeh solo de la lente simple (`bokehApplies`) y la inclinación de cada modelo (`tiltOf`, `withTilt`, O4)
     focus-plane.ts          el plano de enfoque de una lente inclinada (O4): la regla de la bisagra del motor, la inclinación que lo pone por dos o tres puntos (`solveTilt`), su lectura como cantidad y dirección hacia la que se aleja (`recedeOf`), y lo que dibuja el visor (`focusPlaneHint`)
     traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
+    lens-edit.ts            los elementos editados de una lente trazada (O2c): la lista (elementos y diafragma), las operaciones sobre la prescripción (radios, grosor, vidrio, apertura, tamaño, aire, añadir, borrar, girar 180°), el enfoque seguido a través de ellas, la lista de vidrios del catálogo y lo que está mal antes y después de preguntar al motor
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
     animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6); N1: los tipos FADE, PAN, MATERIAL_COLOR, SUN_ARC (y PATH reservado), el pivote de un giro, el objetivo material, el cambio de plano con fundido (`shotFadeAt`)
@@ -212,6 +213,7 @@ src/
     doctor-facts.ts         lo que sabe el Doctor del motor (D1): `engineFactsFrom` (estado de la interfaz y `status()` del visor a `EngineFacts`) e `installDoctorFacts`, que se lo entrega cuando cambia (`doctor/refresh`, también tras deshacer y rehacer)
     section-commands.ts     los comandos de la vista en sección (Q1): encender, cambiar de lado, armar el siguiente clic del visor y lo que hace
     lens-commands.ts        los comandos del modelo de lente, el bokeh y la inclinación (O4): `setLensModel`, `applyBokeh` (por donde pasa todo bokeh: con una lente trazada avisa y no toca la cámara), el plano por dos puntos (`armTiltPick`, `finishTiltPick`: una entrada de deshacer) y el texto de su aviso
+    lens-edit-commands.ts   los comandos del editor de lente (O2c): la copia de la lente de la cámara (`lensDraft`, una entrada de deshacer por edición o gesto), aplicarla solo si el motor la comprobó, descartarla y guardarla en la biblioteca
     lens-peek.ts            lo que decide la ventana de una lente (O2b), sin DOM: a qué cámara se pregunta al motor y la caché de respuestas por lente y por lo que los números dependen de (`lensPeekCache`, una por puerto), cuándo se abre y se cierra (`createPeekController`, 300 ms de reposo) y lo que dice cada tarjeta (`peekCard`: nada que el motor no haya dicho, regla 10)
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
@@ -231,6 +233,7 @@ src/
       insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
       insp-section.ts       inspector ▸ Escena ▸ Sección: interruptor, eje, dos modos de clic, punto y normal, cambiar de lado, tapar (Q1)
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
+      lens-editor.ts        la ventana Editor de lente (O2c, UI.md §2.11): el corte del motor, las herramientas del elemento elegido, la lista de elementos y lo que calcula el motor de la copia, o por qué no se puede aplicar
       graph-canvas.ts       el lienzo del editor: tarjetas, tomas por forma, conexiones, zoom y desplazamiento (M3a)
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
       animation.ts          el cajón de animación (N6): transporte y las tres zonas; anim-tree.ts (qué se anima), anim-timeline.ts (regla, barras, imán, pista de cámara con sus fundidos), anim-props.ts (propiedades, el asistente en tres pasos, las de un plano, presets); components/curve-editor.ts, la curva de dos asas (N1)
@@ -2076,7 +2079,9 @@ por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
   al foco, **escala de imagen** cerca del eje (`h = k tan θ`, con los
   ajustes no físicos: la respiración a foco cercano no es distorsión),
   tiraje, f/ en uso y el más rápido, T-stop, transmisión por banda,
-  longitud, pupila de entrada, elementos y grupos, la compresión de un
+  longitud, pupila de entrada, elementos y grupos, la **focal del diseño**
+  (`designEflMm`, O2c: la de la prescripción tal como está escrita, antes de
+  escalarla; el editor de lente enseña sus medidas a esa escala), la compresión de un
   anamórfico, la **distorsión** contra esa escala y la **iluminación
   relativa** en 17 alturas del encuadre de salida (un anamórfico, en su
   meridiano vertical), y el **corte** (`section`: cada superficie tal como

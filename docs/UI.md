@@ -892,8 +892,15 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      valores que la *Óptica avanzada*, ahora a mano también con una lente
      trazada, que los usa en su diafragma) y, bajo **NO FÍSICO**,
      *Distorsión*, *Viñeteo*, *Carácter de la esférica*, *Respiración*,
-     *Aberración cromática* y *Remolino*. **Guardar lente como…** pide un
-     nombre en el sitio y la guarda en *Míos*. Dos notas: el modo Rápido
+     *Aberración cromática* y *Remolino*. **Editar elementos…** (O2c) abre
+     el **editor de lente** (§2.11) sobre una copia de la lente; con el
+     adaptador anamórfico o la lente de espejo el botón está apagado y dice
+     por qué. Una lente con los elementos editados lo dice bajo la fuente
+     (*Lente editada: su nombre*; elegir una lente de la lista vuelve a poner
+     la del catálogo), y una edición abierta sin aplicar también (*Hay una
+     edición de esta lente abierta en el editor de lente*). **Guardar lente
+     como…** pide un nombre en el sitio y la guarda en *Míos* (una lente
+     editada, con sus elementos). Dos notas: el modo Rápido
      dibuja la distorsión y el viñeteo como aproximación (y el medidor añade
      *Lente trazada: distorsión y viñeteo aproximados, el render la traza*;
      el contorno, el *gizmo* y los glifos van con ella, y los clics, la caja
@@ -2328,6 +2335,82 @@ la aplicación. Las demás teclas sueltas no llegan a las herramientas del
 visor mientras el foco está en el editor. Con el foco fuera, la aplicación
 tiene las suyas: el editor no es modal. El recorrido guiado tiene un paso
 para *Nodos…*.
+
+### 2.11 · Editor de lente (fase O2c)
+
+Lo pidió el usuario (`TODO.md` §1.5): «un editor de lentes donde, aparte de
+las opciones actuales, se pueda editar los elementos, cambiar tamaño o
+distancias entre cada elemento, añadir uno nuevo, rotarlo 180º». Se abre
+con **Editar elementos…** de *Cámara ▸ Lente ▸ Lente trazada*, sobre la
+lente de esa cámara. Es una ventana flotante como el editor de material
+(§2.10), de unos **1060 × 680 px** (menos en una pantalla pequeña),
+centrada y **sin atenuar** lo de detrás; se mueve por su barra de título y
+`Esc` o la × la cierran. Acromática: el corte es tinta sobre el fondo, el
+vidrio en gris y el elemento elegido más oscuro.
+
+![editor de lente](ui/o2c-lens-editor.png)
+
+- **La copia.** La lente del catálogo no se edita nunca: la primera
+  edición hace una **copia** con el nombre de la lente y *(editada)*, que
+  es de la cámara hasta que se aplica (se guarda con el proyecto). Cada
+  edición es **una entrada de deshacer** (*Editor de lente: girar un
+  elemento 180°*…); arrastrar un campo es un gesto, una entrada. Deshacer
+  la primera deja la ventana sobre la lente de la cámara, sin copia.
+- **Barra de título.** *Editor de lente*, el **nombre** de la lente (un
+  campo: renombrarla es una edición), **Descartar cambios** (vuelve a la
+  lente de la cámara, una entrada), **Guardar en la biblioteca…** (la
+  guarda en *Míos* con el diafragma y los mandos de la cámara, pidiendo
+  un nombre) y **Aplicar a la cámara** (la pone en la cámara como lente
+  propia, una entrada). Guardar y aplicar solo están encendidos cuando el
+  motor ha comprobado **esa** lente y no tiene nada mal.
+- **El corte**, arriba: el del motor (como en *Cámara ▸ Lente*: escalado a
+  la focal de la cámara y enfocado), con el número de cada elemento encima
+  y el elegido más oscuro; un clic en un elemento lo elige. Cuando la
+  lente tiene algo mal y el motor no se pregunta, el corte que queda es el
+  de la última lente buena, atenuado.
+- **Las herramientas del elemento elegido** (*Elemento 3*):
+  **Añadir delante** y **Añadir detrás** (un singlete biconvexo débil de
+  un vidrio crown común, radios ±4 veces la focal del diseño, 4 % de ella
+  de grosor y tan ancho como el más estrecho de sus vecinos; en medio del
+  aire si cabe, con aire a los dos lados también en los bordes, o
+  separando la lente; nunca dentro de un grupo cementado), **Girar 180°**
+  (sus radios se intercambian y cambian de signo, en su sitio; un grupo
+  cementado gira entero), **Borrar** (los de detrás se quedan donde
+  estaban; la lente conserva al menos un elemento), **Más pequeño** y **Más
+  grande** (su apertura un 10 %) y **Apertura automática** (el motor la
+  vuelve a ajustar al haz).
+- **La lista**: una fila por elemento (su número; los cementados lo dicen
+  en *Aire detrás*) y una por el diafragma, con *Radio delantero*, *Radio
+  trasero* (en mm; positivo abomba hacia el sujeto; `0` o `∞` es plano),
+  *Grosor*, *Vidrio* (la lista de los vidrios de las lentes del catálogo:
+  índice y número de Abbe en la línea d, crown o flint), *Diámetro* (la
+  apertura libre; *auto* cuando la ajusta el motor, con su valor) y *Aire
+  detrás* (la distancia al siguiente; el último no tiene: el tiraje es del
+  motor). Los campos son los de siempre (§4.4: arrastrar, flechas, doble
+  clic para escribir).
+- **A la derecha**, si se puede aplicar: *Comprobada por el motor: lista
+  para aplicar*, *Preguntando al motor…*, *Esta es la lente de la cámara*
+  (antes de editar) o **por qué no** (*Esta lente no se puede aplicar: se
+  puede seguir editando* y la lista: un hueco de aire negativo tras un
+  elemento, un elemento sin grosor, dos superficies que se cruzan dentro de
+  su apertura o dos elementos que chocan, una apertura más ancha que su
+  esfera, la imagen dentro de la lente, y lo que dice el motor: sin imagen
+  real, sin luz por el eje). Sin motor (la web sin `rt.wasm`): la lente se
+  edita, y se aplica cuando el motor la haya comprobado. Debajo, **lo que
+  calcula el motor**, al día tras cada edición: *Focal del diseño* (la de
+  la lente como está escrita, la que cambia al editarla, y la de la cámara,
+  a la que el motor la escala), *Tiraje*, *Diafragma* (f/ y T-stop),
+  *Elementos · grupos*, *Longitud*, *Círculo de imagen* (si cubre el
+  encuadre) y las curvas de *Distorsión* y *Luz hacia la esquina*.
+  Una lente que enfocaba moviendo unos huecos y ha perdido uno lo dice:
+  ahora enfoca moviéndose entera.
+- **Pie**: las medidas son milímetros a la escala del diseño (la cámara
+  escala la lente entera a su focal); `Ctrl/⌘ Z` deshace cada edición.
+  Con el foco en el editor, las teclas sueltas son suyas (`Supr` en un campo
+  no borra una pieza); las que llevan `Ctrl/⌘` siguen siendo de la
+  aplicación.
+
+![lente modificada](ui/o2c-lens-modified.png)
 
 ## 3 · Paleta de comandos y teclado
 

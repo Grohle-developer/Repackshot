@@ -51,6 +51,10 @@ export interface SectionOptions {
   sensorHalfMm?: number;
   /** An accessible name. */
   title?: string;
+  /** O2c: elements drawn stronger (the lens editor's selection), as the first and last surface of each. */
+  highlight?: readonly (readonly [number, number])[];
+  /** O2c: a label over each element (its number in the lens editor's list), by its first and last surface. */
+  labels?: readonly { front: number; back: number; text: string }[];
 }
 
 /**
@@ -66,10 +70,13 @@ export function lensSectionSvg(section: LensSection, o: SectionOptions): string 
   const z0 = Math.min(...zs, section.sensorZMm);
   const z1 = Math.max(...zs, section.sensorZMm);
   const pad = 8;
-  const k = Math.min((o.width - 2 * pad) / Math.max(1e-3, z1 - z0), (o.height - 2 * pad) / (2.3 * ext));
+  // Room for the labels over the drawing.
+  const top = o.labels && o.labels.length > 0 ? 14 : 0;
+  const k = Math.min((o.width - 2 * pad) / Math.max(1e-3, z1 - z0), (o.height - top - 2 * pad) / (2.3 * ext));
   const cx = (o.width - k * (z1 - z0)) / 2;
   const X = (z: number) => (cx + (z - z0) * k).toFixed(2);
-  const Y = (y: number) => (o.height / 2 - y * k).toFixed(2);
+  const Y = (y: number) => (top + (o.height - top) / 2 - y * k).toFixed(2);
+  const strong = (i: number) => (o.highlight ?? []).some(([a, b]) => i >= a && i < b);
   const path = (pts: [number, number][]) => pts.map(([z, y], i) => `${i ? 'L' : 'M'}${X(z)} ${Y(y)}`).join('');
   const parts: string[] = [];
   // Glass: between a surface followed by glass and the next one (rims joined straight).
@@ -79,7 +86,8 @@ export function lensSectionSvg(section: LensSection, o: SectionOptions): string 
     if (!(a.index > 1) || a.kind === MIRROR) continue;
     const front = outline(a, heights[i]);
     const back = outline(b, heights[i + 1]).reverse();
-    parts.push(`<path d="${path([...front, ...back])}Z" fill="currentColor" fill-opacity="0.16" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>`);
+    const on = strong(i);
+    parts.push(`<path d="${path([...front, ...back])}Z" data-surface="${i}"${on ? ' data-selected=""' : ''} fill="currentColor" fill-opacity="${on ? 0.42 : 0.16}" stroke="currentColor" stroke-width="${on ? 1.75 : 1}" stroke-linejoin="round"/>`);
   }
   // Mirrors, thick.
   surfaces.forEach((s, i) => {
@@ -97,6 +105,15 @@ export function lensSectionSvg(section: LensSection, o: SectionOptions): string 
     parts.push(`<line x1="${X(section.sensorZMm)}" y1="${Y(o.sensorHalfMm)}" x2="${X(section.sensorZMm)}" y2="${Y(-o.sensorHalfMm)}" stroke="currentColor" stroke-width="2"/>`);
   }
   parts.push(`<line x1="${pad}" y1="${Y(0)}" x2="${o.width - pad}" y2="${Y(0)}" stroke="currentColor" stroke-opacity="0.45" stroke-width="0.75" stroke-dasharray="4 3"/>`);
+  // The labels: each over the middle of its element, along the top.
+  for (const l of o.labels ?? []) {
+    const a = surfaces[l.front];
+    const b = surfaces[l.back];
+    if (!a || !b) continue;
+    const x = (cx + ((a.z + b.z) / 2 - z0) * k).toFixed(2);
+    const text = l.text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    parts.push(`<text x="${x}" y="${(pad + 3).toFixed(2)}" font-size="10" text-anchor="middle" fill="currentColor" data-label="${l.front}">${text}</text>`);
+  }
   const title = o.title ? `<title>${o.title.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</title>` : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${o.width} ${o.height}" width="100%" style="max-width:${o.width}px;height:auto" role="img">${title}${parts.join('')}</svg>`;
 }

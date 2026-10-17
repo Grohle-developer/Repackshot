@@ -5,6 +5,7 @@ import { CAMERA_AZIMUTH_DEG, CAMERA_ELEVATION_DEG } from '../data/light-setups';
 import { lensPreset } from '../data/lenses';
 import { aspectNearPixels, DEFAULT_ASPECT, normaliseAspect, type CameraAspect } from './aspect';
 import type { CameraOptics } from './optics';
+import type { TracedLens } from './traced-lens';
 import { polar } from './light-math';
 import type { ActionBase, ProjectState } from './store';
 import { nextId } from './ids';
@@ -72,6 +73,12 @@ export interface CameraState {
    * Absent: off (every camera of before K3).
    */
   straightVerticals?: boolean;
+  /**
+   * O2c: the lens editor's copy of this camera's traced lens while its elements are being edited (core/lens-edit.ts,
+   * always with `edited`): every edit goes here, one undo entry each, and the camera's own lens changes only when the
+   * person applies one the engine has checked. Absent: no edit in progress (every camera of before O2c).
+   */
+  lensDraft?: TracedLens;
 }
 
 /** F1: how a camera's focus is set (CameraState.focusMode). */

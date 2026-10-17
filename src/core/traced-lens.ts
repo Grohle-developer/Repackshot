@@ -1,11 +1,13 @@
 // The traced lens of a camera (phase O2, STUDIO-TOOLS §1 mode 2): a prescription of src/data/lenses.json that the
 // engine traces surface by surface (rt-core `optics::traced`), and what the person set on it. The project keeps the
-// catalogue key and the settings, never a copy of the surfaces (the keys are stable); `composeLens` puts together
-// what the engine is sent: the person's coating and variable gap, and an anamorphic adapter in front of the lens it
-// is mounted on. The numbers the interface shows of a lens (focal length, T-stop, distortion...) are the engine's
+// catalogue key and the settings, and a copy of the surfaces only when the person edited its elements (O2c,
+// core/lens-edit.ts: `edited`, which then replaces the catalogue's); `composeLens` puts together what the engine is
+// sent: the person's coating and variable gap (or the edited surfaces), and an anamorphic adapter in front of the
+// lens it is mounted on. The numbers the interface shows of a lens (focal length, T-stop, distortion...) are the engine's
 // (rule 10), never computed here.
 
-import { lensPrescription, LENS_PRESCRIPTIONS, type CoatingId, type LensFocus, type LensFocusTravel, type LensPrescription, type LensSurface } from '../data/lenses';
+import { lensPrescription, LENS_PRESCRIPTIONS, type CoatingId, type LensFocus, type LensFocusTravel, type LensGlass, type LensPrescription, type LensSurface } from '../data/lenses';
+import { editableLens, editedFocus, editedFrom, MAX_SURFACES, type EditedLens } from './lens-edit';
 
 /** A camera's traced lens (CameraOptics.traced). */
 export interface TracedLens {
@@ -25,6 +27,12 @@ export interface TracedLens {
   breathing: number;
   /** An adapter (the anamorphic one): the LENS_PRESCRIPTIONS key of the lens behind it; null: DEFAULT_MASTER. */
   master: string | null;
+  /**
+   * O2c: the lens's elements as the person edited them (core/lens-edit.ts), in place of the catalogue's surfaces;
+   * `key` still names the lens they came from (its iris, f-number range and source). Absent: the catalogue lens, as
+   * every lens of before O2c (whose files do not change by a byte).
+   */
+  edited?: EditedLens;
 }
 
 /** The lens an adapter goes in front of when none is chosen. */
@@ -71,16 +79,92 @@ export function normalizeTracedLens(v: unknown): TracedLens | null {
   const variable = p.variable?.[0];
   const master = typeof r.master === 'string' && lensPrescription(r.master) && !isAdapter(lensPrescription(r.master)!) ? r.master : null;
   const L = TRACED_LIMITS;
+  const edited = r.edited !== undefined && editableLens(p) ? normalizeEdited(r.edited) : null;
   return {
     key: p.key,
     coating: COATING_IDS.includes(r.coating as CoatingId) ? (r.coating as CoatingId) : null,
-    variable: variable && typeof r.variable === 'number' && Number.isFinite(r.variable) ? Math.min(variable.max, Math.max(variable.min, r.variable)) : null,
+    variable: !edited && variable && typeof r.variable === 'number' && Number.isFinite(r.variable) ? Math.min(variable.max, Math.max(variable.min, r.variable)) : null,
     distortion: clamp(r.distortion, L.distortion.min, L.distortion.max),
     vignetting: clamp(r.vignetting, L.vignetting.min, L.vignetting.max),
     spherical: clamp(r.spherical, L.spherical.min, L.spherical.max),
     breathing: clamp(r.breathing, L.breathing.min, L.breathing.max),
     master: isAdapter(p) ? master : null,
+    ...(edited ? { edited } : {}),
   };
+}
+
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const SURFACE_KINDS: readonly LensSurface['kind'][] = ['sphere', 'plane', 'asphere'];
+
+/** A glass of a file (index 1 to 3, Abbe number not negative), or undefined when it is not one. */
+function normalizeGlass(v: unknown): LensGlass | null | undefined {
+  if (v === null) return null;
+  if (typeof v !== 'object') return undefined;
+  const g = v as Partial<Record<keyof LensGlass, unknown>>;
+  if (!num(g.nd) || g.nd < 1 || g.nd > 3 || !num(g.vd) || g.vd < 0) return undefined;
+  return { nd: g.nd, vd: g.vd, ...(num(g.dPgF) ? { dPgF: g.dPgF } : {}), ...(g.vdEstimated === true ? { vdEstimated: true as const } : {}) };
+}
+
+/**
+ * The edited elements of a file (O2c), or null when they cannot be read: then the lens opens as the catalogue's.
+ * Only the structure is checked (every number a number, one stop, at most 64 surfaces, in air at the end); what the
+ * engine makes of it (an image, light through it) is asked again when the lens is used or edited.
+ */
+export function normalizeEdited(v: unknown): EditedLens | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const r = v as Record<string, unknown>;
+  if (!Array.isArray(r.surfaces) || r.surfaces.length < 2 || r.surfaces.length > MAX_SURFACES) return null;
+  const surfaces: LensSurface[] = [];
+  for (const raw of r.surfaces as unknown[]) {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const x = raw as Record<string, unknown>;
+    const kind = SURFACE_KINDS.includes(x.kind as LensSurface['kind']) ? (x.kind as LensSurface['kind']) : null;
+    const glass = normalizeGlass(x.glass);
+    if (!kind || glass === undefined) return null;
+    if (!(x.r === null || num(x.r)) || !(x.d === null || num(x.d)) || !(x.semiAperture === null || (num(x.semiAperture) && x.semiAperture >= 0))) return null;
+    const coating = x.coating === null || COATING_IDS.includes(x.coating as CoatingId) ? (x.coating as CoatingId | null) : null;
+    const s: LensSurface = {
+      kind: kind === 'sphere' && (x.r === null || x.r === 0) ? 'plane' : kind,
+      r: x.r === 0 ? null : (x.r as number | null),
+      d: x.d as number | null,
+      glass,
+      semiAperture: x.semiAperture as number | null,
+      role: x.role === 'stop' ? 'stop' : 'normal',
+      coating,
+    };
+    if (kind === 'asphere') {
+      const a = (x.asphere ?? {}) as Record<string, unknown>;
+      const coefficients = Array.isArray(a.coefficients) ? (a.coefficients as unknown[]).filter(num).slice(0, 4) : [];
+      s.asphere = { conic: num(a.conic) ? a.conic : 0, coefficients };
+    }
+    surfaces.push(s);
+  }
+  if (surfaces.filter((s) => s.role === 'stop').length !== 1 || surfaces[surfaces.length - 1].glass !== null) return null;
+  const f = (typeof r.focus === 'object' && r.focus !== null ? r.focus : {}) as Record<string, unknown>;
+  const mode = f.mode === 'internal' || f.mode === 'floating' ? f.mode : 'unit';
+  const moving: LensFocusTravel[] = [];
+  for (const m of Array.isArray(f.moving) ? (f.moving as unknown[]) : []) {
+    const x = (typeof m === 'object' && m !== null ? m : {}) as Record<string, unknown>;
+    if (!num(x.surface) || !Number.isInteger(x.surface) || x.surface < 0 || x.surface >= surfaces.length - 1 || !num(x.dBase) || !num(x.dNear) || x.dBase < 0 || x.dNear < 0) return null;
+    moving.push({ surface: x.surface, dBase: x.dBase, dNear: x.dNear });
+  }
+  const focus = editedFocus({ mode, moving, ...(typeof f.base === 'string' ? { base: f.base.slice(0, 64) } : {}), ...(typeof f.near === 'string' ? { near: f.near.slice(0, 64) } : {}) });
+  const name = typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 64) : 'Lens';
+  return { name, surfaces, focus };
+}
+
+/**
+ * O2c: lens `t` with its elements copied to be edited: the surfaces the engine traces for it now (its coating and
+ * variable gap in), its focus, and `name`. An edited lens is returned as it is; null for a lens whose elements
+ * cannot be edited (the anamorphic adapter, the mirror lens) or an unknown key.
+ */
+export function startEdit(t: TracedLens, name: string): TracedLens | null {
+  if (t.edited) return t;
+  const p = lensPrescription(t.key);
+  if (!p || !editableLens(p)) return null;
+  const c = composeLens(t);
+  if (!c) return null;
+  return { ...t, variable: null, edited: editedFrom(name, c.surfaces, c.focus) };
 }
 
 /** True when the engine tilts `t` (O4): a lens with cylinders (the anamorphic adapter) does not. */
@@ -159,16 +243,19 @@ export function composeLens(t: TracedLens): ComposedLens | null {
       squeezeFocus: unit && gap >= 0 ? { surface: gap, dBase: scaled[gap].d!, dNear: scaled[gap].d! * ADAPTER_FOCUS_TRAVEL } : null,
     };
   }
-  const surfaces = withCoating(p.surfaces, t.coating);
+  // O2c: the edited elements replace the catalogue's (their focus is the edited lens's own).
+  const edited = t.edited ?? null;
+  const surfaces = withCoating(edited ? edited.surfaces : p.surfaces, t.coating);
   const variable = p.variable?.[0];
-  if (variable && t.variable !== null) surfaces[variable.surface] = { ...surfaces[variable.surface], d: t.variable };
+  if (!edited && variable && t.variable !== null) surfaces[variable.surface] = { ...surfaces[variable.surface], d: t.variable };
   const stop = surfaces.findIndex((s) => s.role === 'stop');
+  const focus = edited ? edited.focus : p.focus;
   return {
     surfaces,
     stop: Math.max(0, stop),
-    focus: p.focus,
+    focus,
     fNumberMin: p.fNumber ?? p.iris.fNumberMin ?? 0,
-    magnification: p.focus.mode === 'floating' ? [stateMagnification(p.focus.base), stateMagnification(p.focus.near)] : [0, 0],
+    magnification: focus.mode === 'floating' ? [stateMagnification(focus.base), stateMagnification(focus.near)] : [0, 0],
     squeeze: 1,
     obstruction: p.obstructionRatio ?? 0,
     squeezeFocus: null,
@@ -179,6 +266,11 @@ export function composeLens(t: TracedLens): ComposedLens | null {
 export interface EngineLensInfo {
   /** Paraxial focal length at infinity, mm (the camera's focal length). */
   eflMm: number;
+  /**
+   * O2c: the prescription's own focal length as written, before the engine scales it to the camera's, mm (NaN from an
+   * engine of before O2c): what editing its elements changes; `eflMm / designEflMm` is the scale the camera puts on it.
+   */
+  designEflMm: number;
   /** Back focal distance at infinity, from the rear vertex, mm. */
   bflMm: number;
   /** Focal length at the focus distance (breathing), mm. */
@@ -283,6 +375,7 @@ export function parseLensInfo(text: string): EngineLensInfo | null | undefined {
   const ri = pairs(r.relativeIllumination);
   const info: EngineLensInfo = {
     eflMm: num('eflMm'),
+    designEflMm: num('designEflMm'),
     bflMm: num('bflMm'),
     eflFocusedMm: num('eflFocusedMm'),
     imageScaleMm: num('imageScaleMm'),

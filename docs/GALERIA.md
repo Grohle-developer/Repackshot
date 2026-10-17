@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 147 archivos: 145 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 149 archivos: 147 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,19 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 48 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 49 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4). Y el editor de lente de O2c: la ventana sobre la lente del catálogo y una lente modificada.
+
+#### O2c · Editor de elementos de la lente
+
+<a id="c-o2c-lens-editor"></a><img src="ui/o2c-lens-editor.png" width="480" alt="El editor de lente abierto sobre la doble Gauss del catálogo, flotando sobre la aplicación: el corte del motor con los seis elementos numerados y el primero elegido, las herramientas (Añadir delante, Añadir detrás, Girar 180°, Borrar, Más pequeño, Más grande, Apertura automática), la tabla con los radios, el grosor, el vidrio, el diámetro y el aire de cada elemento y del diafragma, y a la derecha lo que calcula el motor: la focal del diseño y la de la cámara, el tiraje, el diafragma, el círculo de imagen y las curvas."><br>
+`o2c-lens-editor.png` · sin publicar · El editor de lente abierto sobre la doble Gauss del catálogo, flotando sobre la aplicación: el corte del motor con los seis elementos numerados y el primero elegido, las herramientas (*Añadir delante*, *Añadir detrás*, *Girar 180°*, *Borrar*, *Más pequeño*, *Más grande*, *Apertura automática*), la tabla con los radios, el grosor, el vidrio, el diámetro y el aire de cada elemento y del diafragma, y a la derecha lo que calcula el motor: la focal del diseño y la de la cámara, el tiraje, el diafragma, el círculo de imagen y las curvas. `tools/lens-editor-check.mjs --shots docs/ui`.
+
+<a id="c-o2c-lens-modified"></a><img src="ui/o2c-lens-modified.png" width="480" alt="La misma lente modificada: un elemento nuevo detrás del primero (siete elementos) y el delantero girado 180° (sus radios intercambiados y negados), comprobada por el motor y lista para aplicar: la focal del diseño más corta, otro tiraje y otra distorsión, y el corte al día."><br>
+`o2c-lens-modified.png` · sin publicar · La misma lente modificada: un elemento nuevo detrás del primero (siete elementos) y el delantero girado 180° (sus radios intercambiados y negados), comprobada por el motor y lista para aplicar: la focal del diseño más corta, otro tiraje y otra distorsión, y el corte al día. `tools/lens-editor-check.mjs --shots docs/ui`.
 
 #### F1 · Enfoque por punto y por objeto
 
@@ -703,6 +711,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`o2c-lens-editor.png`](#c-o2c-lens-editor) · Sin publicar · O2c
+- [`o2c-lens-modified.png`](#c-o2c-lens-modified) · Sin publicar · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · Sin publicar · O4
 - [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · Sin publicar · O4
 - [`o4-traced-more.png`](#c-o4-traced-more) · Sin publicar · O4
