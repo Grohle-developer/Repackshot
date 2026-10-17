@@ -139,7 +139,7 @@ tras cada *commit* (o el responsable).
    - Arreglos sueltos: PR #34, `tools/screenshot.mjs` con movimiento reducido. Después, PR #36 (`tools/render-window-check.mjs`, paso g, y las cuatro capturas de U5 regrabadas), fusionado por el usuario en `319614b`.
 4k. **Release v0.1.17** (17-10; PR de versión desde la rama de sesión, luego `release.yml` en `main` con `tag` = `v0.1.17` y `commit` = el merge). Entran, cada una por su PR:
    - **Arreglo de los botones de *Ajustes*** (*Descargas* y *Elegir carpeta…* cortados; aviso del usuario con captura): PR #37, `bdc905c`, con `tests/seg-clip-browser.test.ts`.
-   - **Sin rastro de EZ Packshot** (petición del usuario, 17-10: «quita todo rastro de toda la app de ezpackshot»): PR #38, fusionado por el usuario en `4cea2c3`. Ni el nombre, ni el enlace, ni *upstream*, ni las cabeceras de procedencia; los datos no cambian. El historial de git y las releases publicadas siguen nombrándolo (no se reescribe historia). **Regla para los agentes: no se menciona ni se lee `/home/user/EZPackshot`.**
+   - **Limpieza de procedencia** (petición del usuario, 17-10): PR #38, fusionado por el usuario en `4cea2c3`. Fuera las notas de procedencia de los datos del catálogo (nombre, enlace, *upstream*, cabeceras); los datos no cambian. El historial de git y las releases publicadas no se reescriben. **Regla para los agentes: no se menciona ese proyecto anterior ni se lee su checkout.**
    - **L7** (Sets y Luces, filtros, Sustituir / Ocultar / Añadir, miniaturas de un tamaño): PR #39, `c1e33f1`.
    - **U15** (flechas en todos los valores y deslizadores donde hay rango): PR #40, `66abfe1`.
    - **N2** (pase alfa, pases en archivo, lotes por estudio, ZIP, el arreglo de `ensureLoop`): PR #41, `3392432`.
