@@ -38,6 +38,17 @@ describe('interface strings', () => {
   it('English is the default', () => {
     expect(t('app.untitled')).toBe('Untitled');
   });
+
+  // H1: the English strings keep the British spelling the file uses (centre, colour, licence), and the Spanish ones
+  // carry the accent of the words they use (no unaccented word of a short list that always takes one).
+  it('English keeps one spelling (British: centre, colour), and Spanish carries its accents', () => {
+    expect(Object.entries(en).filter(([, v]) => /\bcolor|\bcenter/i.test(v))).toEqual([]);
+    const mustAccent = ['accion', 'opcion', 'seleccion', 'configuracion', 'informacion', 'numero', 'maximo', 'minimo', 'ultimo', 'tambien', 'codigo', 'pagina', 'camara', 'sesion', 'region', 'titulo', 'rapido', 'automatico', 'metodo', 'animacion', 'direccion', 'posicion'];
+    const hits = Object.entries(es).flatMap(([k, v]) =>
+      [...v.replace(/\{\w+\}/g, ' ').matchAll(/\p{L}+/gu)].filter((m) => mustAccent.includes(m[0].toLowerCase())).map((m) => `${k}: ${m[0]}`),
+    );
+    expect(hits).toEqual([]);
+  });
 });
 
 describe('names shown for model objects', () => {

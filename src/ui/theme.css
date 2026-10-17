@@ -102,6 +102,8 @@
   :root:not([data-motion='full']) *::after {
     transition: none !important;
     animation: none !important;
+    /* Smooth scrolling is motion too (the plugin strip of the render window). */
+    scroll-behavior: auto !important;
   }
 }
 :root[data-motion='reduce'] {
@@ -112,6 +114,7 @@
 :root[data-motion='reduce'] *::after {
   transition: none !important;
   animation: none !important;
+  scroll-behavior: auto !important;
 }
 
 /* Focus always visible: also after a click, not only with the keyboard. */
