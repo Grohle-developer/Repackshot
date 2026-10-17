@@ -1409,6 +1409,8 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_SECTION, 4);
         // L5: the IES lights.
         assert_eq!(rt_features() & rt_core::FEATURE_IES, 8);
+        // K3: the interior cameras (projection, exterior factor, instances hidden to the camera).
+        assert_eq!(rt_features() & rt_core::FEATURE_CAMERAS, 16);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.

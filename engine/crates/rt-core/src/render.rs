@@ -108,7 +108,7 @@ pub fn camera_sample_filtered(
     let Some(lens) = camera
         .lens
         .as_ref()
-        .filter(|l| !camera.ortho && !l.filters().is_empty())
+        .filter(|l| camera.through_lens() && !l.filters().is_empty())
     else {
         let (ray, screen, weight) = camera_sample_weighted(scene, sampler, x, y);
         return (ray, screen, weight, None);
@@ -134,7 +134,7 @@ pub type CameraSample = (Ray, (f32, f32), Rgb, Option<crate::optics::FilterPath>
 
 /// True when the camera's samples are traced through a lens in batches ([`camera_samples`]).
 pub fn camera_batches(scene: &Scene) -> bool {
-    !scene.camera.ortho
+    scene.camera.through_lens()
         && scene
             .camera
             .lens
@@ -630,6 +630,9 @@ mod ambient_tests;
 
 #[cfg(test)]
 mod section_tests;
+
+#[cfg(test)]
+mod k3_tests;
 
 #[cfg(test)]
 mod tests {

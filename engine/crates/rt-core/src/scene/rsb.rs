@@ -14,13 +14,16 @@
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
 //! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||` E6
-//! and E9, `||||||` M2b) and are
+//! and E9, `||||||` M2b, `|||||||` E10, `||||||||` K3) and are
 //! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
-//! writer always writes them):
+//! writer always writes them, but those marked "only when set", which it adds only when one of them
+//! is not its default):
 //!
 //! ```text
 //! CAMR  60 B  f32 position[3] target[3] up[3]; f32 focal_mm sensor_mm fstop focus_dist;
 //!             u32 ortho_flag; f32 ortho_width
+//!             |||||||| u32 projection (0); f32 fov_x_deg (360) fov_y_deg (180) exterior (1)
+//!                                                                  (K3, 76 B; only when set)
 //! MESH  var.  u32 vertex_count index_count; f32 positions[3n] normals[3n]; u32 indices[m];
 //!             u32 material_id                      (n = vertex_count, m = index_count)
 //!             |||||| u32 uv_sets (0 to 2); f32 uv[2n] per set, v up            (M2b)
@@ -53,7 +56,8 @@
 //!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //!             ||||||| u32 adaptive (0); f32 noise_threshold (0)    (E10, 72 B; only when set)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
-//!             u32 material_id; u32 flags (1 one-sided, 2 not cut by the section view)
+//!             u32 material_id; u32 flags (1 one-sided, 2 not cut by the section view,
+//!             4 hidden to the camera: K3)
 //! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
 //!             u32 variant seed                                              (E6, new)
 //! LENS  72 B  u32 blades; f32 roundness rotation_deg; u32 profile; f32 profile_param
@@ -149,6 +153,14 @@
 //! studio around the model (a set's backdrop, floor and cards, which the page marks only while a
 //! section cuts): the plane neither removes nor caps it.
 //!
+//! **Hidden to the camera** (K3). An instance with `INST.flags` bit 2 (`4`,
+//! [`crate::geometry::INSTANCE_NO_CAMERA`]) is not seen by camera rays, nor by the rays that continue
+//! them straight through cut-outs and thin walls, nor in the exact passes; every other ray sees it:
+//! it reflects, refracts, casts its shadows, stops photons and sends its light (the ceiling of a
+//! plan view: out of the picture, and the room still lit by it). A cap of the section view on such
+//! an instance is hidden with it. Unknown bits are kept and ignored, so an engine of before K3
+//! shows the instance.
+//!
 //! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
 //! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the
 //! implicit instances, refer to them), so a host that changes the camera, the image size, the
@@ -168,7 +180,18 @@
 //! * `CAMR.ortho_flag` non-zero: orthographic camera `ortho_width` wide (no depth of field);
 //!   otherwise a thin lens of `focal_mm` on a sensor `sensor_mm` wide along the longer image
 //!   side, aperture `focal_mm / fstop` (`fstop` 0: pinhole), focused at `focus_dist`. Box pixel
-//!   filter.
+//!   filter. **K3** appends the projection: **0** that camera (also what a file without the
+//!   fields means, and any unknown value), **1** an equirectangular panorama (the longitude
+//!   `(u − ½)·fov_x_deg` from the view axis towards the right across the width, the latitude
+//!   `(½ − v)·fov_y_deg` towards `up` across the height; 360 × 180 is the whole sphere, more wraps
+//!   around and over the poles), **2** an equidistant fisheye (the angle from the axis is
+//!   `fov_x_deg` across the width per unit of distance from the centre, the same per pixel in both
+//!   directions; beyond 180° a sample sees nothing and weighs black); a panoramic camera is a pinhole at
+//!   `position` and reads neither `ortho_flag`, the focal length, the sensor, the aperture nor
+//!   `LENS`. Then `exterior` (≥ 0): the factor of the environment a camera ray sees when it escapes,
+//!   also through cut-outs and thin walls (the background, when it is the environment): 1 changes
+//!   nothing. The fields of view must be positive and at most 3600. The writer adds the four only
+//!   when one is not its default, so a file of before K3 keeps its bytes.
 //! * `MATL.kind`: **0 principled** (Lambert diffuse of `base_color * (1 - metallic) *
 //!   (1 - transmission)`; GGX specular with height-correlated Smith masking, roughness² as the GGX
 //!   width, Schlick Fresnel with `F0 = ((ior - 1) / (ior + 1))²` for the dielectric and
@@ -310,7 +333,7 @@
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
     Instance, Lens, LensParams, Light, LightKind, Material, MaterialTextures, Mesh, PixelFootprint,
-    RenderSettings, Scene, SectionPlane, SkyModel, TextureImage, Transform, NO_BITMAP,
+    Projection, RenderSettings, Scene, SectionPlane, SkyModel, TextureImage, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::ies::IesProfile;
@@ -353,6 +376,9 @@ pub const TAG_IMGS: [u8; 4] = *b"IMGS";
 pub const TAG_PROG: [u8; 4] = *b"PROG";
 /// Section tag of the section view's plane (Q1).
 pub const TAG_SECT: [u8; 4] = *b"SECT";
+
+/// Widest field of view of a panoramic camera, degrees (`CAMR.fov_x_deg`, `fov_y_deg`; K3).
+pub const MAX_FOV_DEG: f32 = 3600.0;
 
 /// `SECT.flags` bit 0: the cut solids are capped.
 pub const SECTION_CAP: u32 = 1;
@@ -504,12 +530,24 @@ fn parse_camera(r: &mut Reader) -> Result<Camera, RsbError> {
         ortho: r.u32()? != 0,
         ortho_width: r.f32()?,
         lens: None,
+        // K3: the projection and the exterior factor, when the section goes on.
+        projection: Projection::from_u32(r.opt_u32(0)?),
+        fov_x_deg: r.opt_f32(360.0)?,
+        fov_y_deg: r.opt_f32(180.0)?,
+        exterior: r.opt_f32(1.0)?,
     };
     if camera.focal_mm <= 0.0 || camera.sensor_mm <= 0.0 {
         return Err(r.invalid("focal_mm and sensor_mm must be positive"));
     }
     if camera.fstop < 0.0 || camera.focus_dist < 0.0 || camera.ortho_width < 0.0 {
         return Err(r.invalid("fstop, focus_dist and ortho_width must not be negative"));
+    }
+    let field = |v: f32| v > 0.0 && v <= MAX_FOV_DEG;
+    if !field(camera.fov_x_deg) || !field(camera.fov_y_deg) {
+        return Err(r.invalid("fov_x_deg and fov_y_deg must be positive and at most 3600"));
+    }
+    if camera.exterior < 0.0 {
+        return Err(r.invalid("exterior must not be negative"));
     }
     Ok(camera)
 }
@@ -1405,6 +1443,17 @@ impl Scene {
             w.f32(c.focus_dist);
             w.u32(u32::from(c.ortho));
             w.f32(c.ortho_width);
+            // K3: only when set, so the files of before keep their bytes.
+            if c.projection != Projection::Standard
+                || c.fov_x_deg != 360.0
+                || c.fov_y_deg != 180.0
+                || c.exterior != 1.0
+            {
+                w.u32(c.projection.to_u32());
+                w.f32(c.fov_x_deg);
+                w.f32(c.fov_y_deg);
+                w.f32(c.exterior);
+            }
         });
         if let Some(lens) = &self.camera.lens {
             w.section(TAG_LENS, |w| {
@@ -1782,6 +1831,7 @@ mod tests {
                 ortho: true,
                 ortho_width: 320.0,
                 lens: None,
+                ..Camera::default()
             },
             materials: vec![
                 Material::default(),

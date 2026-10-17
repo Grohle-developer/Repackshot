@@ -258,6 +258,18 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/l5.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/l5.rsb" --expect "$expected" --passes
+          # K3: the interior cameras on a room of boxes: its plan from above (orthographic, the ceiling hidden
+          # to the camera by the INST flag, the ground at half by the exterior factor of CAMR), an
+          # equirectangular panorama from inside (the sky through a thin pane at 40 %) and an equidistant
+          # fisheye of 300° (corners that see nothing), each alone and with the passes interleaved.
+          for view in plan panorama fisheye; do
+            cargo run --release -p rt-cli -- --write-k3-$view-example "$RUNNER_TEMP/k3-$view.rsb"
+            key=$(echo "$view" | tr a-z A-Z)
+            expected=$(sed -n "s/.*PINNED_K3_${key}_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-core/src/render/k3_tests.rs | tr -d _)
+            test -n "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/k3-$view.rsb" --expect "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/k3-$view.rsb" --expect "$expected" --passes
+          done
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .
