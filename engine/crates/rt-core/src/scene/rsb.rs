@@ -52,7 +52,7 @@
 //!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //!             ||||||| u32 adaptive (0); f32 noise_threshold (0)    (E10, 72 B; only when set)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
-//!             u32 material_id; u32 flags (1 one-sided)
+//!             u32 material_id; u32 flags (1 one-sided, 2 not cut by the section view)
 //! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
 //!             u32 variant seed                                              (E6, new)
 //! LENS  72 B  u32 blades; f32 roundness rotation_deg; u32 profile; f32 profile_param
@@ -142,6 +142,9 @@
 //! may not be zero (it is normalised, unless it is already unit to rounding), unknown flag bits are
 //! ignored. A file without `SECT` is the whole model, byte for byte as before Q1; the writer adds
 //! the section only when the scene has one. An update replaces it (a file without `SECT` has none).
+//! An instance with `INST.flags` bit 1 (`2`, [`crate::geometry::INSTANCE_NO_SECTION`]) is the
+//! studio around the model (a set's backdrop, floor and cards, which the page marks only while a
+//! section cuts): the plane neither removes nor caps it.
 //!
 //! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
 //! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the

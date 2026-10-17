@@ -16,6 +16,10 @@
 // **The plane.** One shared `THREE.Plane` set in three.js space by `setPlane`; every material of the model carries it
 // in `clippingPlanes` all the time, and without a section it is far away, so the shaders never change when the section
 // goes on or off. The floor, the effects and the overlays do not carry it: they are not the model.
+//
+// **The studio is not cut.** The pieces of a set (backdrop, floor, cards: `partIsExempt`) are not the model, and the
+// engine does not cut them (`INSTANCE_NO_SECTION`): while a section cuts, they draw with a copy of their material that
+// carries no plane (`unclipped`), the pick and the box selection take them whole, and they have no cap.
 
 import * as THREE from 'three';
 import type { MaterialInstance } from '../core/materials';
@@ -50,6 +54,10 @@ export class SectionPreview {
   private readonly fallback = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
   /** Materials that draw the model for other purposes (the outline's masks, depth) and show both sides while cutting. */
   private readonly twoSided: THREE.Material[] = [];
+  /** The materials of the studio's pieces while a section cuts: no plane, by `part|material`. */
+  private readonly studio = new Map<string, THREE.MeshPhysicalMaterial>();
+  /** What `removed` found for a mesh, with what it depended on. */
+  private readonly goneCache = new WeakMap<THREE.Mesh, { key: string; gone: boolean }>();
   private cutKey = '';
 
   /** True while a section cuts the model. */
@@ -121,6 +129,41 @@ export class SectionPreview {
       }
     }
     return was !== this.cutKey;
+  }
+
+  /**
+   * The material a piece of the studio draws with while a section cuts: `base` (the part's own, or its knotted copy)
+   * seen through a copy that carries no clipping plane. `key` names the copy; `used` collects the keys in use for
+   * `pruneStudio`. Not its userData: the texture state of `base` (live textures, which a copy would serialise) stays
+   * with it, and the copy runs its shader patch.
+   */
+  unclipped(key: string, base: THREE.MeshPhysicalMaterial, used: Set<string>): THREE.MeshPhysicalMaterial {
+    used.add(key);
+    const userData = base.userData;
+    base.userData = {};
+    let m = this.studio.get(key);
+    if (m) m.copy(base);
+    else {
+      m = base.clone();
+      this.studio.set(key, m);
+    }
+    base.userData = userData;
+    m.clippingPlanes = null;
+    m.clipShadows = false;
+    m.side = THREE.FrontSide;
+    m.onBeforeCompile = (shader, renderer) => base.onBeforeCompile(shader, renderer);
+    m.customProgramCacheKey = () => `${base.customProgramCacheKey()}|studio`;
+    m.needsUpdate = true;
+    return m;
+  }
+
+  /** Drops the copies of the studio's materials that are not in `used`. */
+  pruneStudio(used: ReadonlySet<string>): void {
+    for (const [key, m] of this.studio) {
+      if (used.has(key)) continue;
+      m.dispose();
+      this.studio.delete(key);
+    }
   }
 
   /** Signed distance of a three.js point from the plane: positive on the removed side. */
@@ -209,7 +252,8 @@ export class SectionPreview {
    */
   firstKept(hits: readonly THREE.Intersection[], ray: THREE.Ray): SectionPick | null {
     if (!this.on) return hits[0] ? { hit: hits[0], cap: null } : null;
-    const kept = hits.find((h) => this.side(h.point) <= 0);
+    // The studio is whole: a hit on it counts on whichever side of the plane it is.
+    const kept = hits.find((h) => h.object.userData.sectionExempt || this.side(h.point) <= 0);
     if (!kept) return null;
     if (!kept.object.userData.cap) return { hit: kept, cap: null };
     // The back of a closed solid, met first on the kept side. A ray that starts on the kept side (inside the solid)
@@ -220,18 +264,52 @@ export class SectionPreview {
     return { hit: kept, cap: { point: ray.at(t, new THREE.Vector3()), normal: this.normal.value.clone() } };
   }
 
-  /** True when a mesh's box lies wholly on the removed side: the part is gone from the view. */
-  removed(obj: THREE.Mesh): boolean {
-    if (!this.on) return false;
+  /**
+   * True when a mesh is gone from the view: its box lies wholly on the removed side. `exact` also looks at the
+   * vertices when the box is cut (a curved band whose box reaches over the plane is gone all the same): the first
+   * vertex on the kept side ends the look, so only a part that is gone wholly is read to the end.
+   */
+  removed(obj: THREE.Mesh, exact = false): boolean {
+    if (!this.on || obj.userData.sectionExempt) return false;
     const g = obj.geometry;
     if (!g.boundingBox) g.computeBoundingBox();
     const box = g.boundingBox;
     if (!box) return false;
-    obj.updateWorldMatrix(true, false);
+    // The part's matrix from its own chain (not the cached `matrixWorld`, which is a frame behind after a change and
+    // before the first frame): the model root's basis change is a matrix set by hand.
+    const world = new THREE.Matrix4();
+    for (let o: THREE.Object3D | null = obj; o; o = o.parent) {
+      if (o.matrixAutoUpdate) o.updateMatrix();
+      world.premultiply(o.matrix);
+    }
+    // The answer for this plane, this geometry and this place is the same until one of them changes.
+    const key = `${this.cutKey}|${exact}|${g.uuid}|${world.elements.join(',')}`;
+    const known = this.goneCache.get(obj);
+    if (known?.key === key) return known.gone;
+    const gone = this.isGone(g, box, world, exact);
+    this.goneCache.set(obj, { key, gone });
+    return gone;
+  }
+
+  private isGone(g: THREE.BufferGeometry, box: THREE.Box3, world: THREE.Matrix4, exact: boolean): boolean {
     const corner = new THREE.Vector3();
-    for (let i = 0; i < 8; i++) {
-      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).applyMatrix4(obj.matrixWorld);
-      if (this.side(corner) <= 0) return false;
+    let gone = true;
+    for (let i = 0; i < 8 && gone; i++) {
+      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).applyMatrix4(world);
+      if (this.side(corner) <= 0) gone = false;
+    }
+    if (gone || !exact) return gone;
+    const position = g.getAttribute('position');
+    if (!position || position.count === 0) return false;
+    // side(v) = n · (W v) − d = (Wᵀ n) · v + n · t − d.
+    const e = world.elements;
+    const n = this.normal.value;
+    const ax = n.x * e[0] + n.y * e[1] + n.z * e[2];
+    const ay = n.x * e[4] + n.y * e[5] + n.z * e[6];
+    const az = n.x * e[8] + n.y * e[9] + n.z * e[10];
+    const c = n.x * e[12] + n.y * e[13] + n.z * e[14] - this.distance;
+    for (let i = 0; i < position.count; i++) {
+      if (ax * position.getX(i) + ay * position.getY(i) + az * position.getZ(i) + c <= 0) return false;
     }
     return true;
   }
@@ -241,6 +319,8 @@ export class SectionPreview {
     this.caps.clear();
     for (const e of this.capMaterials.values()) e.material.dispose();
     this.capMaterials.clear();
+    for (const m of this.studio.values()) m.dispose();
+    this.studio.clear();
     this.fallback.dispose();
   }
 }

@@ -2656,7 +2656,6 @@ const TABLE = {
     'Fast draws a glass cap as see-through glass; Full and Render refract through it.',
     'Rápido dibuja la tapa de un vidrio como vidrio transparente; Completo y Render refractan a su través.',
   ],
-  'section.noEngine': ['This engine does not cut sections: Full and Render show the whole model.', 'Este motor no corta secciones: Completo y Render muestran la pieza entera.'],
   'section.pickFirst': ['Section: click the first point · Esc cancels', 'Sección: haz clic en el primer punto · Esc cancela'],
   'section.pickSecond': ['Section: click the second point · Esc cancels', 'Sección: haz clic en el segundo punto · Esc cancela'],
   'section.pickAxis': ['Section: click on the model to cut across {axis} · Esc cancels', 'Sección: haz clic en la pieza para cortar según {axis} · Esc cancela'],

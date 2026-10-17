@@ -185,3 +185,53 @@ fn an_update_without_meshes_sets_or_clears_the_section_and_keeps_the_meshes() {
         .trace(&r)
         .is_some_and(|h| h.triangle != CAP_TRIANGLE));
 }
+
+#[test]
+fn an_instance_flagged_as_studio_is_not_cut_after_a_trip_through_a_file() {
+    // The model box and a floor slab under it that the page flags as studio.
+    let mut scene = Scene {
+        materials: vec![Material::default()],
+        geometry: Geometry::new(
+            vec![
+                faceted_box(Vec3::splat(-50.0), Vec3::splat(50.0), true),
+                faceted_box(
+                    Vec3::new(-500.0, -500.0, -60.0),
+                    Vec3::new(500.0, 500.0, -50.0),
+                    true,
+                ),
+            ],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance {
+                    flags: INSTANCE_NO_SECTION,
+                    ..Instance::new(1, Transform::IDENTITY, 0)
+                },
+            ],
+        )
+        .unwrap(),
+        section: SectionPlane::new(Vec3::new(1.0, 0.0, 0.0), 0.0, true),
+        ..Scene::default()
+    };
+    scene.apply_section();
+    let bytes = scene.to_rsb();
+    let read = Scene::from_rsb(&bytes).expect("reads");
+    assert_eq!(read.geometry.instances()[1].flags, INSTANCE_NO_SECTION);
+    assert_eq!(read.to_rsb(), bytes);
+    // Down over the removed half: the box is gone, the studio floor (instance 1) is not; only
+    // the box is capped.
+    let down = Ray::new(Vec3::new(25.0, 0.0, 300.0), Vec3::new(0.0, 0.0, -1.0));
+    for s in [&scene, &read] {
+        let hit = s.geometry.trace(&down).expect("the floor");
+        assert_eq!(hit.instance, 1);
+        assert_eq!(s.geometry.capped_instances(), vec![0]);
+    }
+    // An update that sends the instances again keeps it (the flags are the instances').
+    let mut updated = Scene::from_rsb(&bytes).unwrap();
+    let update = without_meshes(&bytes);
+    updated.update_from_rsb(&update).expect("updates");
+    assert_eq!(
+        updated.geometry.trace(&down).map(|h| h.instance),
+        Some(1),
+        "still studio after an update"
+    );
+}

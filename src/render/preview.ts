@@ -26,7 +26,7 @@ import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
 import { areaLightRadiance, pointLightIntensity, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { ancestors, partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { ancestors, isSetPiece, partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type Glyph, type ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
@@ -743,10 +743,12 @@ export class PreviewEngine implements RenderEngine {
     const wasCutting = this.section.active;
     const wasCapping = this.section.capping;
     const cut = resolveSection(state.section, pose?.sectionOffsetMm ?? 0);
-    this.section.setPlane(cut ? { normal: toThree(cut.normal), distance: cut.distance, cap: cut.cap } : null);
+    const planeMoved = this.section.setPlane(cut ? { normal: toThree(cut.normal), distance: cut.distance, cap: cut.cap } : null);
     if (this.section.active !== wasCutting) {
       // Both sides of every material while it cuts (an open mesh shows its inside), the front otherwise.
       for (const m of [this.fallbackMaterial, ...this.materials.values(), ...this.knotMaterials.values()]) this.section.sided(m);
+      // The studio's pieces take the material that carries no plane while it cuts, their own again after.
+      this.assignMaterials(state);
     }
     if (full || nodesChanged || matsChanged || this.section.capping !== wasCapping) this.section.syncCaps(state, this.objects);
     // Lights and environment follow the playhead only when a clip moves them.
@@ -776,7 +778,7 @@ export class PreviewEngine implements RenderEngine {
     // The interface may hand the gizmo new ids before this sync: place it again with the state that has them. A
     // light's or a camera's gizmo follows the light (and the product it is placed around) and the camera.
     const objectsMoved = full || nodesChanged || state.studio !== prev.studio || state.camera !== prev.camera || state.scene.partSizeMm !== prev.scene.partSizeMm || state.render.width !== prev.render.width || state.render.height !== prev.render.height;
-    if (this.gizmoSpec && (full || nodesChanged || state.selection !== prev.selection || (this.gizmoSpec.object && objectsMoved))) this.placeGizmo();
+    if (this.gizmoSpec && (full || nodesChanged || planeMoved || state.selection !== prev.selection || (this.gizmoSpec.object && objectsMoved))) this.placeGizmo();
     if (objectsMoved || state.selection !== prev.selection) this.syncGlyphs();
     this.needsRender = true;
   }
@@ -884,6 +886,8 @@ export class PreviewEngine implements RenderEngine {
       this.applyTransform(obj, node.transform.position, node.transform.rotation, node.transform.scale);
       obj.visible = node.visible;
       obj.name = node.name;
+      // Q1: the pieces of a set are the studio, which a section does not cut.
+      obj.userData.sectionExempt = isSetPiece(node);
       if (obj instanceof THREE.Mesh) {
         const g = this.geometryFor(node);
         if (g && obj.geometry !== g) obj.geometry = g;
@@ -914,17 +918,22 @@ export class PreviewEngine implements RenderEngine {
 
   private assignMaterials(state: ProjectState): void {
     const used = new Set<string>();
+    const studio = new Set<string>();
     for (const [id, obj] of this.objects) {
       if (!(obj instanceof THREE.Mesh)) continue;
       const node = state.scene.nodes[id];
       const ids = obj.geometry.userData.materialIds as (string | null)[] | undefined;
+      const free = this.section.active && isSetPiece(node);
       const get = (m: string | null | undefined) => {
         const base = m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial;
         const knots = m ? partKnots(state, id, m) : null;
-        return knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
+        const own = knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
+        // Q1: while a section cuts, the studio draws with a material that carries no clipping plane.
+        return free ? this.section.unclipped(`${id}|${m ?? ''}`, own, studio) : own;
       };
       obj.material = ids ? ids.map((m, i) => get(i === 0 ? node.material : m)) : get(node.material);
     }
+    this.section.pruneStudio(studio);
     for (const [key, m] of this.knotMaterials) {
       if (used.has(key)) continue;
       m.dispose();
@@ -1620,7 +1629,9 @@ export class PreviewEngine implements RenderEngine {
       this.needsRender = true;
       return;
     }
-    const ids = s && spec ? movableTargets(s, spec.ids) : [];
+    let ids = s && spec ? movableTargets(s, spec.ids) : [];
+    // Q1: a selection that the section has taken away wholly has nothing to move: no gizmo.
+    if (ids.length > 0 && this.selectionRemoved(ids)) ids = [];
     const frame = s && spec && ids.length > 0 ? selectionFrame(s, ids, spec.space) : null;
     const first = s && ids[0] ? s.scene.nodes[ids[0]] : undefined;
     // A light also gets the aim handle: a line from it to its target.
@@ -1628,6 +1639,25 @@ export class PreviewEngine implements RenderEngine {
     this.gizmo.place(frame, aim);
     if (!frame) this.gizmo.setHover(null);
     this.needsRender = true;
+  }
+
+  /** Q1: true when every part under `ids` lies wholly on the removed side of the section (and there is one). */
+  private selectionRemoved(ids: readonly NodeId[]): boolean {
+    if (!this.section.active) return false;
+    let any = false;
+    for (const id of ids) {
+      const root = this.objects.get(id);
+      if (!root) continue;
+      let all = true;
+      root.traverse((o) => {
+        if (o instanceof THREE.Mesh && !o.userData.cap) {
+          any = true;
+          if (!this.section.removed(o, true)) all = false;
+        }
+      });
+      if (!all) return false;
+    }
+    return any;
   }
 
   // ------------------------------------------------------------------ lights and cameras (L4)
@@ -2009,7 +2039,7 @@ export class PreviewEngine implements RenderEngine {
       mvp: (id) => {
         const obj = this.objects.get(id);
         // Q1: a part the section cuts away entirely is not there to select.
-        if (!(obj instanceof THREE.Mesh) || this.section.removed(obj)) return null;
+        if (!(obj instanceof THREE.Mesh) || this.section.removed(obj, true)) return null;
         obj.updateWorldMatrix(true, false);
         return new THREE.Matrix4().multiplyMatrices(viewProj, obj.matrixWorld).elements.slice();
       },

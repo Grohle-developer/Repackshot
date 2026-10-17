@@ -6,13 +6,17 @@
 import { describe, expect, it } from 'vitest';
 import { amountUnit, canSplit, clipProgress, defaultAmount, evaluate, playheadPose, splitClip, TARGET_MOVES, type MotionClip } from '../src/core/animation';
 import { cameraPosition } from '../src/core/camera';
-import { productBounds } from '../src/core/scene';
+import { allParts, isSetPiece, productBounds } from '../src/core/scene';
 import { boxCenter } from '../src/core/math';
 import {
   cleanSection,
   defaultSection,
   flippedSection,
   normalizeSection,
+  openPartsCut,
+  partIsCapped,
+  partIsExempt,
+  partsCutBy,
   resolveSection,
   sectionAt,
   sectionFromClick,
@@ -313,5 +317,32 @@ describe('the move in words', () => {
       expect(move.amountLabel![l].length).toBeGreaterThan(0);
     }
     for (const key of Object.keys(STRINGS.en).filter((k) => k.startsWith('say.SECTION'))) expect(STRINGS.es[key as keyof typeof STRINGS.es], key).toBeTruthy();
+  });
+});
+
+describe('the studio around the product', () => {
+  const studio = (state: ProjectState) => allParts(state).filter((id) => isSetPiece(state.scene.nodes[id]));
+  const model = (state: ProjectState) => allParts(state).filter((id) => !isSetPiece(state.scene.nodes[id]));
+  const withSet = () => reduce(exampleState(), { type: 'studio/setSetup', key: 'HIGH_KEY_WHITE' });
+
+  it('is the pieces of a set: the backdrop and the floor are exempt, the parts of the model are not', () => {
+    const s = withSet();
+    expect(studio(s).length).toBeGreaterThanOrEqual(2);
+    for (const id of studio(s)) expect(partIsExempt(s, id), s.scene.nodes[id].name).toBe(true);
+    for (const id of model(s)) expect(partIsExempt(s, id), s.scene.nodes[id].name).toBe(false);
+    // No cap for the studio, whatever its mesh is.
+    for (const id of studio(s)) expect(partIsCapped(s, id)).toBe(false);
+  });
+
+  it('is never among the parts a plane cuts, nor among the open meshes the inspector warns about', () => {
+    const s = withSet();
+    // A plane through the middle of everything: the model is cut, the backdrop and the floor are not.
+    const p = defaultSection(s);
+    const cut = partsCutBy(s, p);
+    expect(cut.length).toBeGreaterThan(0);
+    for (const id of studio(s)) expect(cut).not.toContain(id);
+    for (const id of openPartsCut(s, p)) expect(partIsExempt(s, id)).toBe(false);
+    // The same plane on a project without a set cuts the same parts of the model.
+    expect(partsCutBy(exampleState(), p).length).toBe(cut.length);
   });
 });

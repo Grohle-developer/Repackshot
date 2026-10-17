@@ -8,11 +8,14 @@
 // REMOVED. What stays is `normal · (p − point) <= offset`, where `offset` is what the animation adds (the SECTION
 // clips, along the normal), zero at rest. The engine reads it as `SECT` (io/rsb.ts: `normal · p = distance`), the
 // Fast preview as a clipping plane of three.js (render/preview.ts), the same plane in both.
+//
+// The plane cuts the model, not the studio around it: the pieces of a set (backdrop, floor, cards, `isSetPiece`) are
+// never cut or capped (`partIsExempt`); the engine gets them as instances flagged `INSTANCE_NO_SECTION`.
 
 import { cameraBasis, cameraPosition } from './camera';
 import { add, boxCenter, cross, dot, isEmptyBox, length, normalize, scale, sub, type Vec3 } from './math';
 import { getMesh } from './meshes';
-import { allParts, effectiveVisible, partWorldBounds, productBounds, type NodeId } from './scene';
+import { allParts, effectiveVisible, isSetPiece, partWorldBounds, productBounds, type NodeId } from './scene';
 import { isClosedSolid } from './solid';
 import type { Action, ActionBase, ProjectState } from './store';
 import { viewedCamera, type ViewObject } from './view-objects';
@@ -140,13 +143,21 @@ export function sectionAt(state: ProjectState, offsetMm = 0): ResolvedSection | 
 // ------------------------------------------------------------------ what it cuts
 
 /**
+ * True for the studio around the product (a set's backdrop, floor and cards, core/scene.ts `isSetPiece`): the section
+ * does not cut it. The engine takes it as a flag of the instance, the preview keeps it out of the clipping plane.
+ */
+export function partIsExempt(state: ProjectState, id: NodeId): boolean {
+  return isSetPiece(state.scene.nodes[id]);
+}
+
+/**
  * True when the section would cap this part: a closed solid (core/solid.ts) with a material that has an inside. The
  * engine and the Fast preview both cap exactly these. A part with a material per face is open to the engine (it sees
  * each face group as a sheet of its own), and a thin-walled glass has no inside.
  */
 export function partIsCapped(state: ProjectState, id: NodeId): boolean {
   const node = state.scene.nodes[id];
-  if (!node || node.kind !== 'PART' || !node.mesh) return false;
+  if (!node || node.kind !== 'PART' || !node.mesh || isSetPiece(node)) return false;
   if (node.faceMaterials?.length) return false;
   const inst = node.material ? state.materials[node.material] : undefined;
   if (inst && inst.family === 'GLASS' && inst.params.walls === 'THIN') return false;
@@ -159,7 +170,7 @@ export function partsCutBy(state: ProjectState, p: Pick<SectionPlane, 'point' | 
   const cache = new Map();
   const d = dot(p.normal, p.point);
   return allParts(state).filter((id) => {
-    if (!effectiveVisible(state, id) || !state.scene.nodes[id].mesh) return false;
+    if (!effectiveVisible(state, id) || !state.scene.nodes[id].mesh || partIsExempt(state, id)) return false;
     const b = partWorldBounds(state, id, cache);
     if (isEmptyBox(b)) return false;
     // The corner of the box nearest to the removed side, and the farthest.

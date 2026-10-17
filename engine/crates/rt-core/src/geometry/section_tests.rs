@@ -386,3 +386,257 @@ fn the_batches_and_every_instruction_set_answer_the_same() {
     }
     assert!(caps > 0 && caps < rays.len());
 }
+
+/// A 100 mm model box at the origin (cut), a ball and a floor slab that are studio
+/// ([`INSTANCE_NO_SECTION`]); the plane removes `x > 0`.
+fn model_and_studio(cap: bool) -> Geometry {
+    let meshes = vec![
+        faceted_box(Vec3::splat(-50.0), Vec3::splat(50.0), true),
+        crate::example::icosphere(Vec3::new(300.0, 0.0, 0.0), 60.0, 3),
+        faceted_box(
+            Vec3::new(-600.0, -600.0, -70.0),
+            Vec3::new(600.0, 600.0, -60.0),
+            true,
+        ),
+    ];
+    let studio = |mesh| Instance {
+        flags: INSTANCE_NO_SECTION,
+        ..Instance::new(mesh, Transform::IDENTITY, 0)
+    };
+    let mut g = Geometry::new(
+        meshes,
+        vec![
+            Instance::new(0, Transform::IDENTITY, 0),
+            studio(1),
+            studio(2),
+        ],
+    )
+    .unwrap();
+    g.set_section(Some(plane(Vec3::new(1.0, 0.0, 0.0), 0.0, cap)), &[]);
+    g
+}
+
+#[test]
+fn the_studio_is_seen_on_the_removed_side_and_the_model_is_not() {
+    let g = model_and_studio(true);
+    // Straight down on the removed side, over the cut box and then over the floor: the box is
+    // gone and the floor (an exempt slab) is there, top face at z = -60.
+    let hit = g
+        .trace(&Ray::new(Vec3::new(25.0, 0.0, 200.0), DOWN))
+        .expect("the floor");
+    assert_eq!(hit.instance, 2);
+    assert!(!is_cap(&hit) && (hit.t - 260.0).abs() < 1.0e-3, "{hit:?}");
+    // On the kept side the model is still there.
+    let hit = g
+        .trace(&Ray::new(Vec3::new(-25.0, 0.0, 200.0), DOWN))
+        .unwrap();
+    assert_eq!(hit.instance, 0);
+    assert!((hit.t - 150.0).abs() < 1.0e-3);
+    // The ball, wholly on the removed side, is a ball: from the side, from the removed side.
+    let hit = g
+        .trace(&ray(Vec3::new(600.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0)))
+        .unwrap();
+    assert_eq!(hit.instance, 1);
+    assert!((hit.t - 240.0).abs() < 1.0, "{hit:?}");
+    // A ray that crosses the plane inside the box still finds the cap there, and a ray that has
+    // the floor ahead on the kept side finds the floor.
+    let hit = g
+        .trace(&ray(Vec3::new(40.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, -0.1)))
+        .unwrap();
+    assert!(is_cap(&hit) && hit.instance == 0, "{hit:?}");
+    let hit = g
+        .trace(&ray(
+            Vec3::new(-500.0, 0.0, 100.0),
+            Vec3::new(0.0, 0.0, -1.0),
+        ))
+        .unwrap();
+    assert_eq!(hit.instance, 2);
+    // Coming from the removed side, over the model, into the kept side with the floor in the
+    // way on the removed side first: the floor, not the cap of the model behind it.
+    let hit = g
+        .trace(&ray(
+            Vec3::new(60.0, 0.0, -50.0),
+            Vec3::new(-1.0, 0.0, -0.4),
+        ))
+        .unwrap();
+    assert_eq!(hit.instance, 2, "{hit:?}");
+}
+
+#[test]
+fn the_studio_is_not_capped_and_casts_its_shadow_from_the_removed_side() {
+    // A studio box that the plane goes through is whole: no cap, both halves there.
+    let mut g = Geometry::new(
+        vec![faceted_box(Vec3::splat(-50.0), Vec3::splat(50.0), true)],
+        vec![Instance {
+            flags: INSTANCE_NO_SECTION,
+            ..Instance::new(0, Transform::IDENTITY, 0)
+        }],
+    )
+    .unwrap();
+    g.set_section(Some(plane(Vec3::new(1.0, 0.0, 0.0), 0.0, true)), &[]);
+    assert!(g.capped_instances().is_empty());
+    let hit = g
+        .trace(&Ray::new(Vec3::new(25.0, 0.0, 200.0), DOWN))
+        .unwrap();
+    assert!(!is_cap(&hit) && (hit.t - 150.0).abs() < 1.0e-3, "{hit:?}");
+    let hit = g
+        .trace(&ray(Vec3::new(300.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0)))
+        .unwrap();
+    assert!(!is_cap(&hit) && (hit.t - 250.0).abs() < 1.0e-3, "{hit:?}");
+    // The shadow rays: the ball blocks a ray over the removed side, the cut box does not.
+    let g = model_and_studio(true);
+    let toward_ball = ray(Vec3::new(-100.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+    // From the box's left face, through the box (cut, so open to the plane) and on to the ball.
+    assert!(g.occluded(&toward_ball));
+    // Between the plane and the ball: only the ball (studio) is in the way.
+    assert!(g.occluded(&ray(Vec3::new(100.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0))));
+    // Over the ball there is nothing, and the cut box does not shade the floor behind it.
+    assert!(!g.occluded(&ray(Vec3::new(100.0, 0.0, 200.0), Vec3::new(1.0, 0.0, 1.0))));
+    let mut to_floor = ray(Vec3::new(25.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+    to_floor.t_max = 60.0;
+    assert!(!g.occluded(&to_floor), "the removed box does not block");
+    to_floor.t_max = 90.0;
+    assert!(g.occluded(&to_floor), "the floor slab does");
+}
+
+/// What a query of `model` alone with the section, and of `studio` alone without it, find
+/// together: the nearest of the two (the model's cap rule never sees the studio, which is
+/// disjoint from the model).
+#[test]
+fn the_studio_and_the_model_together_are_the_nearest_of_each_alone() {
+    for cap in [true, false] {
+        let g = model_and_studio(cap);
+        let meshes = |i: &[usize]| -> Vec<Mesh> {
+            let all = [
+                faceted_box(Vec3::splat(-50.0), Vec3::splat(50.0), true),
+                crate::example::icosphere(Vec3::new(300.0, 0.0, 0.0), 60.0, 3),
+                faceted_box(
+                    Vec3::new(-600.0, -600.0, -70.0),
+                    Vec3::new(600.0, 600.0, -60.0),
+                    true,
+                ),
+            ];
+            i.iter().map(|&k| all[k].clone()).collect()
+        };
+        let mut model = Geometry::from_meshes(meshes(&[0]));
+        model.set_section(Some(plane(Vec3::new(1.0, 0.0, 0.0), 0.0, cap)), &[]);
+        let studio = Geometry::from_meshes(meshes(&[1, 2]));
+        let mut rng = crate::rng::Pcg32::seeded(11, 3);
+        let (mut studio_wins, mut model_wins, mut caps) = (0, 0, 0);
+        for _ in 0..3000 {
+            let o = Vec3::new(
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+            ) * 1200.0;
+            // Aimed at the neighbourhood of the model, so that many of them meet it.
+            let aim = Vec3::new(
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+            ) * 160.0;
+            let d = aim - o;
+            let r = Ray::new(o, d.normalize());
+            let m = model.trace(&r);
+            let s = studio.trace(&r);
+            let want = match (m, s) {
+                (Some(m), Some(s)) if s.t < m.t => Some((1 + s.instance, s.triangle, s.t)),
+                (Some(m), _) => Some((0, m.triangle, m.t)),
+                (None, Some(s)) => Some((1 + s.instance, s.triangle, s.t)),
+                (None, None) => None,
+            };
+            let got = g.trace(&r).map(|h| (h.instance, h.triangle, h.t));
+            match (want, got) {
+                (None, None) => {}
+                (Some(w), Some(h)) => {
+                    assert_eq!((w.0, w.1), (h.0, h.1), "{r:?}");
+                    assert!((w.2 - h.2).abs() <= 1.0e-3 * w.2.max(1.0), "{r:?}");
+                    studio_wins += usize::from(w.0 > 0);
+                    model_wins += usize::from(w.0 == 0);
+                    caps += usize::from(w.1 == CAP_TRIANGLE);
+                }
+                other => panic!("{other:?} for {r:?}"),
+            }
+            assert_eq!(
+                g.occluded(&r),
+                want.is_some(),
+                "an unbounded shadow ray is blocked by what a trace finds: {r:?}"
+            );
+        }
+        assert!(
+            studio_wins > 300 && model_wins > 100,
+            "{studio_wins} {model_wins}"
+        );
+        assert_eq!(caps > 0, cap, "{caps}");
+    }
+}
+
+#[test]
+fn the_studio_answers_alike_in_every_instruction_set_and_batch() {
+    let g = model_and_studio(true);
+    let mut rng = crate::rng::Pcg32::seeded(2, 8);
+    let rays: Vec<Ray> = (0..400)
+        .map(|_| {
+            let o = Vec3::new(
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+            ) * 1000.0;
+            let d = Vec3::new(
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+                rng.next_f32() - 0.5,
+            );
+            Ray::new(o, d.normalize())
+        })
+        .collect();
+    let mut batch = vec![None; rays.len()];
+    g.trace_batch_with(&rays, &mut batch, Isa::Scalar);
+    for (i, r) in rays.iter().enumerate() {
+        let one = g.trace_with(r, Isa::Scalar);
+        assert_eq!(one, g.trace(r));
+        assert_eq!(one, batch[i]);
+        assert_eq!(one.is_some(), g.occluded_with(r, Isa::Scalar));
+    }
+}
+
+#[test]
+fn a_scene_where_everything_is_studio_is_a_scene_without_a_section() {
+    let meshes = vec![
+        faceted_box(Vec3::splat(-50.0), Vec3::splat(50.0), true),
+        crate::example::icosphere(Vec3::new(120.0, 0.0, 0.0), 40.0, 3),
+    ];
+    let instances: Vec<Instance> = (0..2)
+        .map(|k| Instance {
+            flags: INSTANCE_NO_SECTION,
+            ..Instance::new(k, Transform::IDENTITY, 0)
+        })
+        .collect();
+    let mut cut = Geometry::new(meshes.clone(), instances.clone()).unwrap();
+    cut.set_section(Some(plane(Vec3::new(0.3, 0.2, 1.0), 5.0, true)), &[]);
+    let whole = Geometry::new(
+        meshes,
+        instances
+            .iter()
+            .map(|i| Instance { flags: 0, ..*i })
+            .collect(),
+    )
+    .unwrap();
+    assert!(cut.capped_instances().is_empty());
+    let mut rng = crate::rng::Pcg32::seeded(4, 4);
+    for _ in 0..500 {
+        let o = Vec3::new(
+            rng.next_f32() - 0.5,
+            rng.next_f32() - 0.5,
+            rng.next_f32() - 0.5,
+        ) * 600.0;
+        let d = Vec3::new(
+            rng.next_f32() - 0.5,
+            rng.next_f32() - 0.5,
+            rng.next_f32() - 0.5,
+        );
+        let r = Ray::new(o, d.normalize());
+        assert_eq!(cut.trace(&r), whole.trace(&r), "{r:?}");
+        assert_eq!(cut.occluded(&r), whole.occluded(&r), "{r:?}");
+    }
+}

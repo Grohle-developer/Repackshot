@@ -53,6 +53,10 @@ use std::fmt;
 /// Instance flag: back faces (as wound in the mesh) are not hit.
 pub const INSTANCE_ONE_SIDED: u32 = 1;
 
+/// Instance flag: the section view (Q1) does not cut this instance, neither removes nor caps it:
+/// the studio around the product (a set's backdrop, floor and cards), not the model.
+pub const INSTANCE_NO_SECTION: u32 = 2;
+
 /// Largest number of instances in one [`Geometry`] (particle sets included).
 pub const MAX_INSTANCES: usize = MAX_LEAF_FIRST;
 

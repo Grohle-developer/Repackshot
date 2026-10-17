@@ -6,7 +6,9 @@
 // label's magenta), and away from the borders of the regions the two pictures must agree on almost every pixel.
 // Lighting and shading differ between the two (that is not compared); where the cut is, may not. Two controls move the
 // engine's plane (by 15 mm, past the core, and to the other side) and the agreement must collapse; without the caps,
-// the cut is no longer one flat surface in either picture.
+// the cut is no longer one flat surface in either picture. A last comparison puts a floor under the bottle as a piece
+// of a set (violet): the studio is not the model, so in both pictures the floor is whole under the cut bottle, and the
+// same floor as a plain part (the control) is cut in both.
 //
 // Skipped without Chromium (REPACKSHOT_CHROMIUM, /opt/pw-browsers) or without rt.wasm (npm run engine:build).
 
@@ -39,9 +41,9 @@ const W = 300;
 const H = 220;
 const SAMPLES = 32;
 
-/** The classes: 1 the body's red, 2 the cap's green, 3 the collar's blue, 4 the base's yellow, 5 the label's magenta, 6 the core's cyan. */
-type Klass = 0 | 1 | 2 | 3 | 4 | 5 | 6;
-const NAMES = ['other', 'body', 'cap', 'collar', 'base', 'label', 'core'];
+/** The classes: 1 the body's red, 2 the cap's green, 3 the collar's blue, 4 the base's yellow, 5 the label's magenta, 6 the core's cyan, 7 the floor's violet. */
+type Klass = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+const NAMES = ['other', 'body', 'cap', 'collar', 'base', 'label', 'core', 'floor'];
 const ALL = [1, 2, 3, 4, 5, 6] as const;
 
 /** Class of a display colour (0..1): by hue, so that the shading of each picture does not matter. */
@@ -57,8 +59,9 @@ function klass(r: number, g: number, b: number): Klass {
   if (hue >= 30 && hue < 75) return 4;
   if (hue >= 90 && hue < 160) return 2;
   if (hue >= 165 && hue < 205) return 6;
-  if (hue >= 205 && hue < 260) return 3;
-  if (hue >= 280 && hue < 335) return 5;
+  if (hue >= 205 && hue < 250) return 3;
+  if (hue >= 250 && hue < 288) return 7;
+  if (hue >= 288 && hue < 335) return 5;
   return 0;
 }
 
@@ -168,6 +171,7 @@ function dump(name: string, c: Uint8Array): void {
     [230, 200, 40],
     [220, 40, 200],
     [40, 200, 210],
+    [150, 60, 230],
   ];
   const body = new Uint8Array(W * H * 3);
   for (let i = 0; i < W * H; i++) body.set(colours[c[i]], 3 * i);
@@ -177,6 +181,14 @@ function dump(name: string, c: Uint8Array): void {
 function dumpRgba(name: string, rgba: ArrayLike<number>): void {
   const body = new Uint8Array(W * H * 3);
   for (let i = 0; i < W * H; i++) body.set([rgba[4 * i], rgba[4 * i + 1], rgba[4 * i + 2]], 3 * i);
+  writePpm(name, body);
+}
+
+/** The engine's picture (the linear sums of `samples` samples) as a display picture, for the eye. */
+function dumpSums(name: string, sum: Float32Array, samples: number): void {
+  const enc = (v: number) => (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055);
+  const body = new Uint8Array(W * H * 3);
+  for (let i = 0; i < W * H; i++) for (let k = 0; k < 3; k++) body[3 * i + k] = Math.round(255 * Math.min(1, Math.max(0, enc(sum[4 * i + k] / samples))));
   writePpm(name, body);
 }
 
@@ -190,6 +202,9 @@ run('the cut and its caps land in Full where Fast draws them (Q1, regions)', () 
   /** The luminance (display, 0..1) of what the preview drew, capped and open. */
   let fastCappedLuma: Float32Array = new Float32Array(0);
   let fastOpenLuma: Float32Array = new Float32Array(0);
+  /** The preview's pictures with a floor under the bottle: a piece of a set (whole), and a plain part (cut). */
+  let fastStudio: Uint8Array = new Uint8Array(0);
+  let fastPlainFloor: Uint8Array = new Uint8Array(0);
   /** What was measured (out/q1-regions.json). */
   const results: Record<string, unknown> = { width: W, height: H, samples: SAMPLES };
 
@@ -216,6 +231,13 @@ run('the cut and its caps land in Full where Fast draws them (Q1, regions)', () 
         fastOpenLuma = lumaOf8(got.rgba);
       }
     }
+    for (const studio of ['whole', 'cut'] as const) {
+      const got = (await page.evaluate(([w, h, st]) => window.runSection!(w, h, true, st), [W, H, studio] as const)) as { rgba: number[]; tries: number };
+      dumpRgba(`fast-floor-${studio}-raw`, got.rgba);
+      expect(got.tries, 'the preview settled').toBeGreaterThan(0);
+      if (studio === 'whole') fastStudio = classesOf8(got.rgba);
+      else fastPlainFloor = classesOf8(got.rgba);
+    }
     expect(errors).toEqual([]);
   }, 300000);
 
@@ -227,12 +249,12 @@ run('the cut and its caps land in Full where Fast draws them (Q1, regions)', () 
   });
 
   /** The engine's picture of the scene, as classes (and its luminance, for what needs it). */
-  async function fullBoth(opts: Parameters<typeof sectionScene>[2] = {}): Promise<{ classes: Uint8Array; luma: Float32Array }> {
+  async function fullBoth(opts: Parameters<typeof sectionScene>[2] = {}): Promise<{ classes: Uint8Array; luma: Float32Array; sum: Float32Array }> {
     const state = sectionScene(W, H, opts);
     const rsb = writeRsb(projectScene(state, { width: W, height: H, maxSamples: SAMPLES, maxSeconds: 0, textures: true }).scene);
     const rt = await loadRt();
     const { image } = renderWithPasses(rt, rsb, W, H, SAMPLES, 0);
-    return { classes: classesOfSums(image.sum, SAMPLES), luma: lumaOfSums(image.sum, SAMPLES) };
+    return { classes: classesOfSums(image.sum, SAMPLES), luma: lumaOfSums(image.sum, SAMPLES), sum: image.sum };
   }
   const full = async (opts: Parameters<typeof sectionScene>[2] = {}): Promise<Uint8Array> => (await fullBoth(opts)).classes;
 
@@ -295,5 +317,72 @@ run('the cut and its caps land in Full where Fast draws them (Q1, regions)', () 
     // Flipped, the camera is on the kept side: the whole front shows, no cut at all.
     expect(count(flipped, 6)).toBeLessThan(30);
     expect(f.share).toBeLessThan(0.5);
+  }, 300000);
+
+  it('the move gizmo and the box selection take what the cut leaves and not a part it has taken away wholly', async () => {
+    const page = await browser.newPage();
+    const url = server.resolvedUrls!.local[0];
+    await page.goto(`${url}tests/browser/section.html`);
+    await page.waitForFunction(() => window.sectionReady === true, null, { timeout: 120000 });
+    const got = await page.evaluate(([w, h]) => window.runGizmo!(w, h), [W, H] as const);
+    results.gizmo = got;
+    await page.close();
+    // The label is a band on the camera's side: the plane takes all of it. The body and the cap are cut, not gone.
+    expect(got.cut).toEqual({ label: false, body: true, cap: true });
+    // Without the section every part has its gizmo.
+    expect(got.whole).toEqual({ label: true, body: true, cap: true });
+    // The box selection reaches the same parts.
+    expect(got.boxCut).toEqual({ label: false, body: true, cap: true });
+    expect(got.boxWhole).toEqual({ label: true, body: true, cap: true });
+  }, 300000);
+
+  it('the studio is whole under the cut bottle in both pictures, and the same floor as a plain part is cut in both', async () => {
+    const wholeBoth = await fullBoth({ studio: 'whole' });
+    const plainBoth = await fullBoth({ studio: 'cut' });
+    dumpSums('full-floor-whole-raw', wholeBoth.sum, SAMPLES);
+    dumpSums('full-floor-cut-raw', plainBoth.sum, SAMPLES);
+    const whole = wholeBoth.classes;
+    const plain = plainBoth.classes;
+    dump('fast-floor-whole', fastStudio);
+    dump('full-floor-whole', whole);
+    dump('fast-floor-cut', fastPlainFloor);
+    dump('full-floor-cut', plain);
+    // The rows at the bottom of the frame are the floor near the camera, which the plane (it removes the camera's half)
+    // would take if it cut the floor.
+    const near = (c: Uint8Array): number => {
+      let floor = 0;
+      let all = 0;
+      for (let y = Math.floor(H * 0.88); y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          all++;
+          if (c[y * W + x] === 7) floor++;
+        }
+      }
+      return floor / all;
+    };
+    const caps = [1, 2, 3, 6];
+    const cutOfModel = agreement(fastStudio, whole, caps);
+    results.studio = {
+      floorPixels: { fast: count(fastStudio, 7), full: count(whole, 7), fastCut: count(fastPlainFloor, 7), fullCut: count(plain, 7) },
+      floorIoU: overlap(fastStudio, whole, [7]).iou,
+      floorIoUCut: overlap(fastPlainFloor, plain, [7]).iou,
+      nearFloorShare: { fast: near(fastStudio), full: near(whole), fastCut: near(fastPlainFloor), fullCut: near(plain) },
+      cutOfModel: { share: cutOfModel.share, sectionsIoU: overlap(fastStudio, whole, caps).iou },
+      againstTheControl: overlap(fastStudio, plain, [7]).iou,
+    };
+    // Whole: the floor fills the bottom of the frame in both, and the two agree on where it is.
+    expect(near(fastStudio)).toBeGreaterThan(0.8);
+    expect(near(whole)).toBeGreaterThan(0.8);
+    expect(overlap(fastStudio, whole, [7]).iou).toBeGreaterThan(0.9);
+    // The bottle is cut as before, floor or no floor.
+    expect(overlap(fastStudio, whole, caps).iou).toBeGreaterThan(0.9);
+    expect(cutOfModel.share).toBeGreaterThan(0.9);
+    // The plain part is a part of the model: the plane takes its near half in both, and they agree on that too.
+    expect(near(fastPlainFloor)).toBeLessThan(0.05);
+    expect(near(plain)).toBeLessThan(0.05);
+    expect(overlap(fastPlainFloor, plain, [7]).iou).toBeGreaterThan(0.85);
+    // And the two floors are not the same picture (each picture against the other's control).
+    expect(overlap(fastStudio, plain, [7]).iou).toBeLessThan(0.7);
+    expect(overlap(fastPlainFloor, whole, [7]).iou).toBeLessThan(0.7);
   }, 300000);
 });

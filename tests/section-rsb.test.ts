@@ -8,7 +8,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { evaluate } from '../src/core/animation';
 import { sectionOf, type SectionPlane } from '../src/core/section';
-import { defaultCamera, defaultEnvironment, defaultFloor, defaultRender, projectScene, SECT_BYTES, SECTION_CAP, writeRsb, type RsbScene } from '../src/io/rsb';
+import { allParts, isSetPiece } from '../src/core/scene';
+import { reduce } from '../src/core/store';
+import { defaultCamera, defaultEnvironment, defaultFloor, defaultRender, INSTANCE_NO_SECTION, projectScene, SECT_BYTES, SECTION_CAP, writeRsb, type RsbScene } from '../src/io/rsb';
 import { apply, exampleState } from './helpers';
 import { readRsb, sections } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
@@ -80,6 +82,27 @@ describe('SECT: the engine layout', () => {
     expect(sections(update).some((x) => x.tag === 'MESH')).toBe(false);
     // The plane is the same object the helper makes (a click or a line, flipped, switched on).
     expect(sectionOf({ point: [1, 2, 3], normal: [0, 1, 0] }).enabled).toBe(true);
+  });
+});
+
+describe('the studio and the section in the RSB', () => {
+  const withSet = () => reduce(exampleState(), { type: 'studio/setSetup', key: 'HIGH_KEY_WHITE' });
+
+  it('flags the instances of the set’s pieces as not cut, and only while a plane cuts', () => {
+    const s = withSet();
+    const flags = (state: typeof s) => projectScene(state, view).scene.instances!.map((i) => i.flags);
+    const parts = allParts(s).filter((id) => s.scene.nodes[id].mesh);
+    const studio = parts.map((id) => isSetPiece(s.scene.nodes[id]));
+    expect(studio.filter(Boolean).length).toBeGreaterThanOrEqual(2);
+    const cut = flags(apply(s, { type: 'section/set', plane: plane() }));
+    expect(cut).toHaveLength(studio.length);
+    cut.forEach((f, i) => expect(f, `instance ${i}`).toBe(studio[i] ? INSTANCE_NO_SECTION : 0));
+    // No plane, or a plane that is off: the instances are the bytes of before Q1.
+    expect(flags(s).every((f) => f === 0)).toBe(true);
+    expect(flags(apply(s, { type: 'section/set', plane: plane({ enabled: false }) })).every((f) => f === 0)).toBe(true);
+    const plain = writeRsb(projectScene(s, view).scene);
+    const off = writeRsb(projectScene(apply(s, { type: 'section/set', plane: plane({ enabled: false }) }), view).scene);
+    expect(Array.from(off)).toEqual(Array.from(plain));
   });
 });
 

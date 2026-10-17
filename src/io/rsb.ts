@@ -12,7 +12,7 @@
 // after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
 import { playheadPose, type Pose } from '../core/animation';
-import { resolveSection } from '../core/section';
+import { partIsExempt, resolveSection } from '../core/section';
 import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
 import { instanceFromPreset } from '../core/materials';
 import type { EffectMaterial } from '../data/effects';
@@ -69,6 +69,8 @@ export const TAG_LENS = 'LENS';
 export const TAG_FXAM = 'FXAM';
 /** Q1: the section view's plane (written after the FXAM sections; absent without a section). */
 export const TAG_SECT = 'SECT';
+/** `INST.flags` bit 1: the section view does not cut this instance (the studio, not the model). Written only with a section. */
+export const INSTANCE_NO_SECTION = 2;
 /** `SECT.flags` bit 0: the cut solids are capped. */
 export const SECTION_CAP = 1;
 /** Bytes of a `SECT` payload: `u32 flags; f32 normal[3] distance`. */
@@ -1827,6 +1829,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     return i;
   };
 
+  // Q1: the cutting plane where the animation has put it, for an engine that cuts (every one this version ships).
+  const cutting = resolveSection(state.section, pose?.sectionOffsetMm ?? 0);
+
   const meshes: RsbMesh[] = [];
   const meshKeys: string[] = [];
   const meshIndex = new Map<string, number>();
@@ -1850,7 +1855,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
         meshIndex.set(part.key, mi);
         meshKeys.push(part.key);
       }
-      instances.push({ mesh: mi, transform: rows, materialId, flags: 0 });
+      // Q1: the studio around the product (a set's backdrop, floor and cards) is not cut by the section.
+      instances.push({ mesh: mi, transform: rows, materialId, flags: cutting && partIsExempt(state, id) ? INSTANCE_NO_SECTION : 0 });
       passInstances.push({ node: id, material: part.material, materialId: materialId + 1 });
       // Automatic caustics: where the glass and polished metal are (E5b-1).
       if (view.caustics?.mode === 'AUTO') {
@@ -1885,8 +1891,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     effects.push(effectFxam(state, e, materialId, cap));
   }
 
-  // Q1: the cutting plane where the animation has put it, for an engine that cuts (every one this version ships).
-  const cutting = resolveSection(state.section, pose?.sectionOffsetMm ?? 0);
+  // Q1: the cutting plane, as it goes to the engine (`cutting`, resolved before the instances).
   const section: RsbSection | null = cutting ? { normal: [cutting.normal[0], cutting.normal[1], cutting.normal[2]], distance: cutting.distance, cap: cutting.cap } : null;
 
   const env = state.environment;

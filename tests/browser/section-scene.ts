@@ -9,6 +9,9 @@
 //   label (an open band)    magenta   on the front, wholly on the removed side: gone
 //   core (a closed solid)   cyan      a cylinder hidden inside the body: the cut shows its section as a disc in the
 //                                     red one (the surface met first after the plane is the core's, not the body's)
+//   floor (a set's piece)   violet    with `studio`: a plane under the bottle that the section does not cut (the studio is
+//                                     not the model). `studio: 'cut'` is the control: the same plane without the mark of a
+//                                     set's piece, which the section cuts like any part.
 //
 // Built the same way in the page and in Node.
 
@@ -27,13 +30,14 @@ export const SECTION_COLOURS = {
   base: [0.9, 0.78, 0.12],
   label: [0.85, 0.1, 0.75],
   core: [0.08, 0.7, 0.75],
+  floor: [0.25, 0.1, 0.95],
 } as const;
 
 /** Radius and height of the core, mm: it sits on the bottle's axis inside the body (the body's wall is 31 mm out). */
 export const CORE = { radius: 12, height: 50, from: 24 } as const;
 
 /** The bottle with flat matte colours, the reference camera pulled in, and the cut. */
-export function sectionScene(width: number, height: number, opts: { offsetMm?: number; flip?: boolean; cap?: boolean } = {}): ProjectState {
+export function sectionScene(width: number, height: number, opts: { offsetMm?: number; flip?: boolean; cap?: boolean; studio?: 'whole' | 'cut' } = {}): ProjectState {
   const payload = buildExample();
   for (const key of ['body', 'cap', 'collar', 'base', 'label'] as const) {
     const id = `m_${key}`;
@@ -64,6 +68,29 @@ export function sectionScene(width: number, height: number, opts: { offsetMm?: n
     material: 'm_core',
     smooth: true,
   };
+  if (opts.studio) {
+    // The floor: a plane 800 mm across, 0.4 mm above the engine's shadow-catching floor (which hides what is under z = 0),
+    // a piece of a set (or, for the control, a plain part).
+    const plane = generatePrimitive({ kind: 'PLANE', params: { width: 800, depth: 800 } });
+    const floor = instanceFromPreset('m_floor', 'WHITE_STUDIO', 121)!;
+    floor.params = { ...floor.params, baseColor: [...SECTION_COLOURS.floor, 1], roughness: 1, coat: 0, metallic: 0 };
+    payload.materials.m_floor = floor;
+    payload.roots = [...payload.roots, 'floor'];
+    payload.nodes.floor = {
+      id: 'floor',
+      name: 'floor',
+      kind: 'PART',
+      parent: null,
+      children: [],
+      transform: { position: [0, 0, 0.4], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      visible: true,
+      locked: false,
+      mesh: registerMesh('q1:floor', plane.data),
+      material: 'm_floor',
+      smooth: true,
+      ...(opts.studio === 'whole' ? { setPiece: { kind: 'FLOOR' as const, index: 0 } } : {}),
+    };
+  }
   let s = reduce(createInitialState(), { type: 'scene/addModel', payload, replace: true });
   s = reduce(s, { type: 'render/set', patch: { width, height } });
   s = reduce(s, { type: 'camera/set', id: s.camera.active, patch: { azimuth: -40, elevation: 12, distance: 380, target: [0, 0, 60], focalMm: 60, fstop: 0 } });

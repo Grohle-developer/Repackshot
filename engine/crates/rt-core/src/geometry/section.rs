@@ -28,12 +28,20 @@
 //! are not capped: the former show their inside, the latter have none. The decision is made on
 //! meshes and nothing else, so it is the same for every ray, thread and architecture.
 //!
+//! **The studio is not cut.** An instance with [`super::INSTANCE_NO_SECTION`] (the page flags the
+//! pieces of a set: backdrop, floor, cards) is the room the model is in, not the model: the plane
+//! neither removes nor caps it, and it keeps lighting, shadowing and being seen from both sides
+//! of the plane. A ray looks for it on the removed side too: it walks the removed part of its
+//! range surface by surface, past the cut model (which is not there) until it meets an exempt
+//! instance, at most [`MAX_SKIPS`] surfaces deep (deeper, the rest of the removed part shows
+//! nothing). A scene without exempt instances never takes that path.
+//!
 //! Two limits, both rare: a ray with a finite `t_max` that enters the kept side inside a solid
 //! and ends before leaving it finds no cap (the next surface is beyond its end), and an emissive
 //! mesh sampled as a light still lights from its removed part.
 
 use super::solid::Solid;
-use super::{Geometry, Hit, RayClass, RayHit};
+use super::{Geometry, Hit, RayClass, RayHit, INSTANCE_NO_SECTION};
 use crate::math::{Aabb, Ray, Vec3};
 use crate::simd::Isa;
 
@@ -82,7 +90,12 @@ impl SectionPlane {
     }
 }
 
-/// A plane and what the geometry works out of it once: how each instance is capped.
+/// Most surfaces of the cut model a ray steps over, on the removed side, looking for an exempt
+/// instance behind them.
+const MAX_SKIPS: usize = 48;
+
+/// A plane and what the geometry works out of it once: how each instance is capped, and which
+/// ones it does not touch.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Section {
     plane: SectionPlane,
@@ -90,6 +103,11 @@ pub(super) struct Section {
     caps: Vec<Solid>,
     /// The union of the world boxes of the capped instances, grown a little (empty: no cap).
     cap_bounds: Aabb,
+    /// Per instance: the section does not cut it ([`INSTANCE_NO_SECTION`]). Empty when no
+    /// instance is exempt.
+    exempt: Vec<bool>,
+    /// The world box of every exempt instance, grown a little.
+    exempt_boxes: Vec<Aabb>,
 }
 
 /// Where a ray is on the kept side.
@@ -169,10 +187,22 @@ impl Geometry {
         self.section = plane.map(|plane| {
             let mut caps = Vec::with_capacity(self.instances.len());
             let mut cap_bounds = Aabb::EMPTY;
+            let mut exempt = Vec::new();
+            let mut exempt_boxes = Vec::new();
             for (i, instance) in self.instances.iter().enumerate() {
                 let mesh = self.meshes.get(instance.mesh as usize);
-                let wanted = plane.cap && capped.get(i).copied().unwrap_or(true);
                 let live = self.prepared.get(i).is_some_and(|p| p.active);
+                let is_exempt = instance.flags & INSTANCE_NO_SECTION != 0;
+                if is_exempt && live {
+                    if let Some(m) = mesh {
+                        if exempt.is_empty() {
+                            exempt = vec![false; self.instances.len()];
+                        }
+                        exempt[i] = true;
+                        exempt_boxes.push(grown(super::instance_bounds(m, &instance.transform)));
+                    }
+                }
+                let wanted = plane.cap && !is_exempt && capped.get(i).copied().unwrap_or(true);
                 let solid = match mesh {
                     Some(m) if wanted && live => m.solid(),
                     _ => Solid::Open,
@@ -187,6 +217,8 @@ impl Geometry {
                 plane,
                 caps,
                 cap_bounds,
+                exempt,
+                exempt_boxes,
             }
         });
     }
@@ -216,15 +248,20 @@ impl Geometry {
         class: RayClass,
     ) -> Option<RayHit> {
         match section.span(ray) {
-            Span::Removed => None,
+            Span::Removed => self.exempt_in(section, ray, ray.t_min, ray.t_max, isa, class),
             Span::Whole => self.trace_raw(ray, isa, class),
             Span::Leaves(t) => {
                 // The part of the ray on the kept side; a cap only where nothing else is met
-                // first, looked for beyond the plane.
+                // first, looked for beyond the plane; then the studio on the removed side.
                 self.trace_raw(&limited(ray, ray.t_min, t), isa, class)
                     .or_else(|| self.cap_beyond(section, ray, t, isa))
+                    .or_else(|| self.exempt_in(section, ray, t, ray.t_max, isa, class))
             }
             Span::Enters(t) => {
+                // The studio on the removed side is nearer than anything on the kept one.
+                if let Some(hit) = self.exempt_in(section, ray, ray.t_min, t, isa, class) {
+                    return Some(hit);
+                }
                 let beyond = limited(ray, t, ray.t_max);
                 let nearest = self.trace_raw(&beyond, isa, class);
                 if section.plane.cap && section.may_cap(ray.at(t)) {
@@ -255,15 +292,83 @@ impl Geometry {
         class: RayClass,
     ) -> bool {
         match section.span(ray) {
-            Span::Removed => false,
+            Span::Removed => self
+                .exempt_in(section, ray, ray.t_min, ray.t_max, isa, class)
+                .is_some(),
             Span::Whole => self.occluded_raw(ray, isa, class),
             Span::Leaves(t) => {
                 self.occluded_raw(&limited(ray, ray.t_min, t), isa, class)
                     || self.cap_beyond(section, ray, t, isa).is_some()
+                    || self
+                        .exempt_in(section, ray, t, ray.t_max, isa, class)
+                        .is_some()
             }
             // The cap of a ray that enters is at the start of what it can hit anyway.
-            Span::Enters(t) => self.occluded_raw(&limited(ray, t, ray.t_max), isa, class),
+            Span::Enters(t) => {
+                self.occluded_raw(&limited(ray, t, ray.t_max), isa, class)
+                    || self
+                        .exempt_in(section, ray, ray.t_min, t, isa, class)
+                        .is_some()
+            }
         }
+    }
+
+    /// The nearest hit of `ray` on an exempt instance ([`INSTANCE_NO_SECTION`]) within
+    /// `[from, to]`, which is the removed part of its range: the cut model is not there, so the
+    /// search steps over its surfaces. Looks only inside the world box of each exempt instance
+    /// (a floor is a thin slab: the ray's passage through it is short and holds little else).
+    fn exempt_in(
+        &self,
+        section: &Section,
+        ray: &Ray,
+        from: f32,
+        to: f32,
+        isa: Isa,
+        class: RayClass,
+    ) -> Option<RayHit> {
+        if section.exempt_boxes.is_empty() || from.is_nan() || to.is_nan() || from > to {
+            return None;
+        }
+        let inv_dir = ray.dir.recip();
+        let mut best: Option<RayHit> = None;
+        for boxed in &section.exempt_boxes {
+            let end = best.map_or(to, |h| h.t.min(to));
+            let Some((near, far)) = boxed.intersect(&limited(ray, from, end), inv_dir) else {
+                continue;
+            };
+            if let Some(hit) = self.first_exempt(section, ray, near, far.min(end), isa, class) {
+                if best.is_none_or(|b| hit.t < b.t) {
+                    best = Some(hit);
+                }
+            }
+        }
+        best
+    }
+
+    /// The first exempt instance `ray` meets within `[near, far]`, stepping over the surfaces of
+    /// the others (at most [`MAX_SKIPS`]).
+    fn first_exempt(
+        &self,
+        section: &Section,
+        ray: &Ray,
+        near: f32,
+        far: f32,
+        isa: Isa,
+        class: RayClass,
+    ) -> Option<RayHit> {
+        let mut t = near;
+        for _ in 0..MAX_SKIPS {
+            let hit = self.trace_raw(&limited(ray, t, far), isa, class)?;
+            if section.exempt.get(hit.instance as usize).copied() == Some(true) {
+                return Some(hit);
+            }
+            // Strictly past the surface just stepped over.
+            t = f32::from_bits(hit.t.max(0.0).to_bits() + 1);
+            if t > far {
+                return None;
+            }
+        }
+        None
     }
 
     /// The cap at `t`, where `ray` leaves the kept side without having hit anything: there when

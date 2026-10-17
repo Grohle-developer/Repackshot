@@ -13,7 +13,7 @@ pub use crate::optics::{Lens, LensParams};
 
 pub use crate::geometry::{
     Geometry, GeometryError, Hit, Instance, Mesh, MeshError, ParticleSet, PixelFootprint, RayHit,
-    SectionPlane, Solid, Transform, CAP_TRIANGLE, INSTANCE_ONE_SIDED,
+    SectionPlane, Solid, Transform, CAP_TRIANGLE, INSTANCE_NO_SECTION, INSTANCE_ONE_SIDED,
 };
 pub use crate::texture::{MaterialTextures, TextureImage};
 pub use rsb::RsbError;
