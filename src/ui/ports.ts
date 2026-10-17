@@ -20,6 +20,7 @@ import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat, R
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { MotionHint } from '../core/motion-hint';
+import type { FocusPlaneHint } from '../core/focus-plane';
 import type { ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
@@ -145,6 +146,8 @@ export interface ViewportPort {
    * arc, a move's arrow, an explode's vectors, a spin's axis) as lines in model space; null clears it.
    */
   setMotionHint?(hint: MotionHint | null): void;
+  /** O4: the plane of sharp focus of a tilted lens, drawn translucent in the overlay's ink (null clears it). */
+  setFocusPlane?(hint: FocusPlaneHint | null): void;
   /** L4: where a light or a camera is on the canvas now (CSS pixels), or null; the viewport writes it for checks. */
   objectAt?(obj: ViewObject): { x: number; y: number } | null;
   /** The gizmo handle under a point (and highlights it), or null. */
