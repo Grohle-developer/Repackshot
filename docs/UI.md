@@ -966,7 +966,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    auxiliar, de dónde sale (*Del material (Metal): 7 800 kg/m³*, *Sin
    material: 1 000 kg/m³ (agua)* o *Densidad propia*, con el botón *Usar
    la del material*). **Rozamiento** (0–2) y **Rebote** (0–1),
-   arrastrables. Con un grupo o un modelo, el interruptor **Como piezas**
+   con deslizador y valor (U15). Con un grupo o un modelo, el interruptor **Como piezas**
    y su nota. Una nota dice que la masa es la densidad por el volumen de
    la envolvente convexa, y el botón **Dejar caer**. Cada cambio es una
    acción del *store* y un arrastre una sola entrada de deshacer
@@ -1007,7 +1007,8 @@ vatios (W/m² en el sol) con el equivalente en lúmenes (lux en el sol) en
 auxiliar y lo que significan los vatios, *visible en reflejos*, *visible a
 cámara*, *proyecta sombra*, encendido; botones *Colocar por reflejo*,
 *Colocar sobre superficie*, *Mirar a través*, *Duplicar*, *Eliminar* (fase
-L4).
+L4). Acimut, elevación, giro, dispersión, cono, transición y disco del sol
+van con deslizador y valor (U15, §4.4).
 
 **Pestaña *Míos*** en cada catálogo (materiales, montajes de luz, tipos de
 producto, estudios): lo guardado por el usuario, con miniatura, renombrar
@@ -1377,7 +1378,7 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   carpeta se muestra por su nombre); donde no exista, el selector dice
   *Este navegador solo permite descargar* y se usa *Descargas*. En el
   escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
-- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR, **TIFF** (8, 16
+- **Formato**: PNG (8 o 16 bits), JPEG (calidad, deslizador con su campo), EXR, **TIFF** (8, 16
   o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
   el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
   dice por qué); *Pases* (alfa, profundidad, normales, id de pieza)
@@ -1435,8 +1436,8 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
 
 - **Terminar por**: segmento **Muestras · Tiempo · Ruido**. *Muestras*: campo con
   atajos *Borrador 64 · Previa 256 · Final 1024* y valor libre. *Tiempo*:
-  campo `hh:mm:ss`. En *Avanzado*, la opción *Lo que llegue antes* con
-  los dos campos. **Ruido** (E10): el campo *Ruido* (0,5–5 %, por defecto
+  campo `hh:mm:ss` con sus flechas (un minuto por paso, §4.4). En *Avanzado*, la opción *Lo que llegue antes* con
+  los dos campos. **Ruido** (E10): el deslizador *Ruido* con su campo (U15; 0,5–5 %, por defecto
   1 %, en décimas: *1,5 %*), con la nota *Cada píxel termina por debajo de este ruido
   (el error relativo de su media): las muestras van a las partes ruidosas,
   nunca más que Muestras*, y el campo de *Muestras* debajo, a la vista, como tope; el
@@ -1471,7 +1472,7 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
   parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
   del medidor, U11, y el render final usa siempre el filtro completo),
-  con su **Intensidad** debajo (fase U11b; 0–100 %, por defecto 100 %, oculta
+  con su **Intensidad** debajo (fase U11b; deslizador con su campo desde U15; 0–100 %, por defecto 100 %, oculta
   con la reducción *Apagada*): la imagen entregada es la mezcla
   `ruidosa × (1 − s) + filtrada × s`, por canal y en luz lineal, hecha en el
   motor; vale a la vez para el render y para el visor *Completo* (un solo
@@ -1844,7 +1845,8 @@ título del grupo en versalitas auxiliares:
 **Columna derecha**: título de la sección, una frase de qué se ajusta
 ahí y las filas en bloques con un subtítulo y una línea fina entre
 bloques. Cada fila: nombre, una línea auxiliar si hace falta, y el
-control a la derecha (segmento, interruptor, campo numérico de §4.4,
+control a la derecha (segmento, interruptor, campo numérico de §4.4 o,
+para los porcentajes con rango natural, deslizador con su campo,
 desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
@@ -2233,6 +2235,65 @@ Un único componente `NumberField`: valor con unidad (mm, °, K, f/, EV, s),
 grueso), flechas ↑↓ ±1 paso, doble clic para escribir, Enter confirma,
 `Esc` restaura. Deslizadores siempre acompañados del campo. Ningún valor
 se aplica a medias: un arrastre genera una sola entrada de deshacer.
+
+**Flechas de paso** (fase U15). Todo campo numérico lleva en su extremo
+derecho, dentro del marco, dos botones apilados **▲ ▼** (los *chevron* de
+1,5 px del juego de iconos, en `ink-2`; en `ink-0` con un fondo `soft` al
+pasar el ratón). Un clic sube o baja un paso; con `Shift`, una décima de
+paso, y con `Ctrl`/`⌘`, diez pasos, igual que el arrastre y las flechas del
+teclado. **Mantenido**, repite: el primer paso al pulsar, el segundo a los
+400 ms y luego uno cada 50 ms (`STEP_REPEAT_DELAY_MS`, `STEP_REPEAT_MS`);
+`Shift` o `Ctrl` pulsados durante la repetición cambian el paso de los
+siguientes. **Una pulsación, por larga que sea, es un solo gesto y una sola
+entrada de deshacer**, como un arrastre, y avisa a `onHold`/`onRelease` al
+empezar y al soltar (lo costoso, la vista previa de la IA, espera a que se
+suelte). El valor se queda en su mínimo y su máximo, y la flecha que ya no
+puede moverlo se apaga; al llegar ahí la repetición para, y la pulsación
+sigue acabando donde se suelte el botón, dentro o fuera de él. Un campo
+deshabilitado apaga las dos (también el que una fila deshabilita:
+*próximamente* en Ajustes, los términos de la proporción, los mandos de la
+lente fina con una lente trazada; `setDisabled`). Las flechas **no son
+paradas de tabulación** ni toman el foco: lo tiene el *spinbutton*, que
+sigue con el teclado; se llaman *Aumentar* y *Disminuir* (`strings.ts`)
+para las ayudas técnicas, y un clic sin puntero (el de un lector de
+pantalla) es un paso. No arrastran el campo ni abren la edición con doble
+clic; si se estaba escribiendo un valor, una pulsación lo toma primero y
+sube o baja desde él. Ocupan la altura del campo (26 px, una línea) sin
+hacer crecer la fila; nada se anima con *Reducir movimiento*.
+
+**Variante compacta** ◆ Fable. Un campo con etiqueta en línea (la X, Y, Z
+de un triplete, U y V, H y V) y el campo de un deslizador llevan un par
+más fino (10 px en lugar de 14) y un margen más justo, para que el valor
+conserve el sitio que tenía antes de las flechas (en un triplete de
+102 px, 47 px de valor). Es la propuesta por defecto; la alternativa,
+flechas que solo salen al pasar el ratón o con el foco, mueve el valor o
+tapa la unidad, y queda para Fable.
+
+**Deslizador o campo: la regla** (U15). Un valor con un **rango natural
+acotado** —un factor de 0 a 1, un porcentaje, un ángulo en un rango fijo,
+una opacidad— es un **deslizador con su campo y sus flechas al lado**
+(`slider()`). Una **magnitud física o sin tope** —una distancia en mm, un
+tamaño, una potencia, una temperatura de color, una cuenta, un tiempo, una
+semilla— se queda en **campo con flechas**. No se convierte lo que dejaría
+la fila apretada o rota: los campos de dos en dos o de tres en tres con
+etiqueta en línea (el acimut y la elevación de las luces del estudio, las
+asas de la curva) y lo que reescala la ventana bajo el pulgar (*Tamaño de
+la interfaz* y *Tamaño del texto*) siguen siendo campos. Lo que se
+convirtió en U15 (◆ Fable confirma la lista): en el inspector, *Rozamiento*
+y *Rebote* (físicas), *Giro* del bokeh, *Inclinación* y *Eje de la
+inclinación* (óptica avanzada), el *Ángulo* de un filtro, el *Ángulo de
+suavizado* de la pieza, el *Ángulo* de un patrón circular, el *Giro* de una
+textura y de una etiqueta, y en un foco propio *Acimut*, *Elevación*,
+*Giro*, *Dispersión*, *Ángulo de cono*, *Transición* y *Disco del sol*; en
+la ventana de render, la *Calidad* del JPEG, el *Ruido* de *Terminar por
+ruido* y la *Intensidad* de la reducción de ruido; en Ajustes, *Velocidad
+de órbita*, *Velocidad de zoom*, *Tamaño del gizmo* e *Intervención por
+defecto*. La línea de tiempo no tenía ninguno que convertir (tiempos,
+cuentas y las asas). La *Distancia de enfoque* de la cámara no se toca aquí
+(la reconstruye la fase F1). El **campo de tiempo** de la ventana de render
+(`hh:mm:ss`) es ya un `NumberField` de segundos, con sus flechas (un
+minuto por paso; `Shift`, 6 s; `Ctrl`, 10 min) y que se escribe como hora,
+`mm:ss` o segundos.
 
 ### 4.5 · Deshacer todo
 

@@ -5,8 +5,17 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- **Flechas de paso en todos los valores**: cada campo numérico lleva a su derecha dos flechas apiladas **▲ ▼**. Un clic sube o baja un paso (con `Shift`, una décima; con `Ctrl`, diez), y mantenidas repiten tras una pausa; una pulsación, por larga que sea, es una sola entrada de deshacer. La flecha que llega al mínimo o al máximo se apaga, y un campo deshabilitado apaga las dos. No son paradas de tabulación: el campo sigue con el teclado, el arrastre y la escritura de siempre. En los tripletes X, Y, Z y en el campo de un deslizador el par es más fino, y el valor conserva el sitio que tenía (U15).
+- **Deslizadores donde convienen**: un valor con un rango natural (un factor de 0 a 1, un porcentaje, un ángulo en un rango fijo) pasa a deslizador con su campo y sus flechas al lado: *Rozamiento* y *Rebote*; *Giro* del bokeh, *Inclinación* y *Eje de la inclinación*; el *Ángulo* de un filtro y de un patrón circular; el *Ángulo de suavizado*; el *Giro* de una textura y de una etiqueta; en un foco propio *Acimut*, *Elevación*, *Giro*, *Dispersión*, *Ángulo de cono*, *Transición* y *Disco del sol*; en la ventana de render la *Calidad* del JPEG, el *Ruido* y la *Intensidad* de la reducción de ruido; en Ajustes *Velocidad de órbita*, *Velocidad de zoom*, *Tamaño del gizmo* e *Intervención por defecto*. Las distancias, tamaños, potencias, cuentas y tiempos siguen siendo campos (U15).
+- El campo **Tiempo** de la ventana de render (`hh:mm:ss`) es ahora un campo numérico como los demás: se arrastra, tiene sus flechas (un minuto por paso) y se escribe como hora, `mm:ss` o segundos (U15).
+- Los mandos de la lente fina que se apagan con una lente trazada (*Intensidad del perfil*, *Ojo de gato*, *Inclinación*, *Eje de la inclinación*) ya no se pueden arrastrar mientras están apagados (U15).
+
 ### Herramientas
 
+- `tools/number-fields-check.mjs`: las flechas en todos los campos de la pantalla inicial, un clic y una pulsación mantenida sobre *Focal* (un paso, una entrada de deshacer cada uno), los ángulos de un foco propio y las velocidades de *Preferencias* como deslizadores; capturas `docs/ui/u15-light-fields.png`, `u15-part-triplets.png` y `u15-settings-sliders.png` (U15).
+- `tools/doctor-engine-check.mjs` escribe el tiempo del render en el campo numérico nuevo (U15).
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
 
 ## v0.1.16 — 2026-10-17
