@@ -141,8 +141,12 @@ pub struct DenoiseInput<'a> {
     pub origin_y: u32,
     /// Rows in the slices.
     pub rows: u32,
-    /// Samples summed into every pixel.
+    /// Samples summed into every pixel (with adaptive sampling, E10: the sums are rescaled to as
+    /// many, [`rt_core::adaptive::rescale`], and `counts` holds each pixel's own).
     pub samples: u32,
+    /// E10: the samples each pixel really has (1 per pixel), which its variance is divided by;
+    /// empty: `samples` for every pixel, as before.
+    pub counts: &'a [f32],
     /// Sums of premultiplied radiance and coverage, RGBA (4 per pixel).
     pub sums: &'a [f32],
     /// Sums of the squared luminance of the samples (1 per pixel, `Film::lum2`).
@@ -197,6 +201,7 @@ impl<'a> DenoiseInput<'a> {
             origin_y: 0,
             rows: passes.height,
             samples,
+            counts: &[],
             sums,
             lum2,
             albedo: &passes.albedo,
@@ -205,6 +210,15 @@ impl<'a> DenoiseInput<'a> {
             part_id: &passes.part_id,
             material_id: &passes.material_id,
         };
+        input.check()?;
+        Ok(input)
+    }
+
+    /// E10: this input with each pixel's own sample count (`counts`, one per pixel of the input,
+    /// or empty for none): the sums and squared sums stay those of [`DenoiseInput::samples`]
+    /// samples, and a pixel's variance is divided by its own count instead.
+    pub fn with_counts(&self, counts: &'a [f32]) -> Result<DenoiseInput<'a>, DenoiseError> {
+        let input = DenoiseInput { counts, ..*self };
         input.check()?;
         Ok(input)
     }
@@ -236,6 +250,7 @@ impl<'a> DenoiseInput<'a> {
             origin_y: lo,
             rows: hi - lo,
             sums: &self.sums[cut(4, self.sums.len())],
+            counts: &self.counts[cut(1, self.counts.len())],
             lum2: &self.lum2[cut(1, self.lum2.len())],
             albedo: &self.albedo[cut(3, self.albedo.len())],
             normal: &self.normal[cut(3, self.normal.len())],
@@ -264,6 +279,9 @@ impl<'a> DenoiseInput<'a> {
             if len != want {
                 return Err(DenoiseError::Shape(what));
             }
+        }
+        if !self.counts.is_empty() && self.counts.len() != n {
+            return Err(DenoiseError::Shape("counts"));
         }
         Ok(n)
     }
@@ -500,10 +518,16 @@ fn filter_band(input: &DenoiseInput, n: usize, preset: Preset) -> Vec<f32> {
             divisor[p * 3 + k] = d;
             light[p * 3 + k] = c[k] / d;
         }
-        if samples >= MIN_SAMPLES_FOR_VARIANCE {
+        // E10: a pixel of an adaptive image has its own count: its variance is divided by it.
+        let own = input.counts.get(p).copied();
+        let enough = own.map_or(samples >= MIN_SAMPLES_FOR_VARIANCE, |n| {
+            n >= MIN_SAMPLES_FOR_VARIANCE as f32
+        });
+        if enough {
             let l = luminance(c[0], c[1], c[2]);
             let m2 = input.lum2[p] * inv;
-            let v = (m2 - l * l).max(0.0) / (samples - 1) as f32;
+            let dof = own.map_or((samples - 1) as f32, |n| n - 1.0);
+            let v = (m2 - l * l).max(0.0) / dof;
             let ld = luminance(divisor[p * 3], divisor[p * 3 + 1], divisor[p * 3 + 2]);
             var[p] = v / (ld * ld);
         }
@@ -549,7 +573,15 @@ fn filter_band(input: &DenoiseInput, n: usize, preset: Preset) -> Vec<f32> {
             }
         }
     }
-    if samples < MIN_SAMPLES_FOR_VARIANCE {
+    let few = |p: usize| {
+        input
+            .counts
+            .get(p)
+            .map_or(samples < MIN_SAMPLES_FOR_VARIANCE, |&n| {
+                n < MIN_SAMPLES_FOR_VARIANCE as f32
+            })
+    };
+    if (0..n).any(few) {
         // Too few samples for a pixel's own variance: the spread of its neighbours on the same
         // surface (7 × 7 with the full filter, normal and depth weights).
         let r = preset.variance_radius as i32;
@@ -557,7 +589,7 @@ fn filter_band(input: &DenoiseInput, n: usize, preset: Preset) -> Vec<f32> {
             for x in 0..w {
                 let p = y * w + x;
                 let g = guides[p];
-                if !g.foreground() {
+                if !g.foreground() || !few(p) {
                     continue;
                 }
                 let (mut sw, mut m1, mut m2) = (0.0f32, 0.0f32, 0.0f32);

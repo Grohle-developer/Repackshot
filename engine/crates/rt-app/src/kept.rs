@@ -431,6 +431,7 @@ mod tests {
                 sums: Arc::new((0..w * h * 4).map(|i| i as f32 + id as f32).collect()),
                 noisy: None,
                 version: 3,
+                adaptive: None,
             },
             passes: Arc::new(passes),
             look: Look {

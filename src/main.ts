@@ -41,7 +41,7 @@ import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
 import { buildExample } from './core/example';
-import { needsLinearSums } from './core/render';
+import { adaptiveOf, DEFAULT_NOISE_THRESHOLD, needsLinearSums } from './core/render';
 import { encodeDng, encodeExr, encodeImage, encodePixels, encodePng16, encodeTiff } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
@@ -791,10 +791,12 @@ const services: AppServices = {
       ...(req.camera ? { camera: req.camera } : {}),
       ...(req.time !== undefined ? { time: req.time } : {}),
       ...(req.advanced ? { advanced: req.advanced } : {}),
+      // E10: Finish by Noise samples adaptively to its threshold.
+      ...adaptiveOf({ finishBy: req.finishBy, noiseThreshold: req.noiseThreshold ?? DEFAULT_NOISE_THRESHOLD }),
       ...(kept ? { passes: AI_GUARD_PASSES, passesInLauncher: true } : {}),
       // U14: the queue's live view of the job (its box and cadence are the queue's).
       ...(req.frameBox && req.onFrame ? { frameBox: req.frameBox, onFrame: req.onFrame } : {}),
-      onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds),
+      onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds, p.adaptive),
     });
     // The file in the job's format from the 8-bit pixels and, for 16 bits, EXR, the 32-bit TIFF and DNG, the linear sums.
     const encode = async (data: Uint8ClampedArray, sum: Float32Array | undefined): Promise<{ file: Blob; display: Blob | null }> => {

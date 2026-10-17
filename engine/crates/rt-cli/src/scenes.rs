@@ -206,6 +206,8 @@ fn settings(size: (u32, u32), max_depth: u32, exposure_ev: f32) -> RenderSetting
         denoise_strength: 1.0,
         pixel_filter: 0,
         edge_supersample: 1,
+        adaptive: 0,
+        noise_threshold: 0.0,
     }
 }
 

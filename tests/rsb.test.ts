@@ -150,7 +150,7 @@ function engineExample(): RsbScene {
     ],
     environment: { ...defaultEnvironment(), kind: ENV_STUDIO, floor: 0.05, horizon: 0.12, zenith: 0.3, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: 0 },
     floor: defaultFloor(),
-    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 },
+    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1, adaptive: 0, noiseThreshold: 0 },
     bitmaps: [],
   };
 }
@@ -196,7 +196,7 @@ function fullScene(): RsbScene {
       skyModel: 1,
     },
     floor: { mode: 2, z: -12.5, color: [0.4, 0.5, 0.6] },
-    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101, denoise: 3, causticPhotons: 4096, causticRadius: 2.5, denoiseStrength: 0.25, pixelFilter: 3, edgeSupersample: 4 },
+    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101, denoise: 3, causticPhotons: 4096, causticRadius: 2.5, denoiseStrength: 0.25, pixelFilter: 3, edgeSupersample: 4, adaptive: 1, noiseThreshold: 0.02 },
     // A raw plate (an odd number of bytes: padded) and the bytes of a file.
     bitmaps: [
       { format: 0, width: 3, height: 1, data: new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90]) },
@@ -227,7 +227,7 @@ describe('RSB writer: byte parity with rt-core', () => {
     const s = sections(bytes);
     expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 100, 76, 84, 20, 64, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 100, 76, 84, 20, 72, 60]);
     // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
     expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.

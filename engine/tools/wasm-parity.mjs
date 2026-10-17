@@ -9,6 +9,7 @@
 //        [--passes] [--expect-passes 0x...,0x...,0x...,0x...,0x...,0x...]
 //        [--denoise] [--expect-denoised 0x12345678]
 //        [--particles] [--expect-particles 0x12345678]
+//        [--adaptive] [--expect-adaptive 0x12345678]
 //
 // The render mirrors the native test exactly: 32-pixel tiles row by row, samples 0..n of each
 // tile from `rt_render_tile`, accumulated per pixel in sample order in f32 (Math.fround), then
@@ -36,6 +37,13 @@
 // a scene has the native hash too (`PINNED_AMBIENT_4SPP`): the module evaluates the particles
 // when it loads the scene.
 //
+// `--adaptive` (E10) renders the scene adaptively as its RSB asks (`RNDR.adaptive`, `RNDR.noise_threshold`, at most
+// `RNDR.max_samples` per pixel; `rt --write-e10-example`): the first round, every 32-pixel tile through
+// `rt_render_tile_rgba`, then rounds of the blocks the module's own decision (`rt_adaptive_decide`) chooses, through
+// `rt_render_block_rgba` with the photon map of the round's iteration, every block's samples added in index order in
+// f32; each pixel divided by its own count. The hash must equal `--expect-adaptive` (`PINNED_E10_ADAPTIVE` of
+// crates/rt-core/src/adaptive/tests.rs), and the pixels' fewest and most samples are printed.
+//
 // `--denoise` (E5b-1) also denoises the image as the page's pool does: RGBA tiles
 // (`rt_render_tile_rgba`), the squared luminance of every sample summed in f32 next to them (the
 // page's rule, src/render/tiles.ts), the guide passes, then `rt_denoise` over three bands of rows,
@@ -54,6 +62,8 @@ let denoise = false;
 let expectDenoised = null;
 let particles = false;
 let expectParticles = null;
+let adaptive = false;
+let expectAdaptive = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--samples') samples = Number(args[++i]);
   else if (args[i] === '--expect') expect = Number.parseInt(args[++i], 16) >>> 0;
@@ -67,7 +77,11 @@ for (let i = 0; i < args.length; i++) {
     particles = true;
     expectParticles = Number.parseInt(args[++i], 16) >>> 0;
   }
-  else if (args[i] === '--expect-denoised') {
+  else if (args[i] === '--adaptive') adaptive = true;
+  else if (args[i] === '--expect-adaptive') {
+    adaptive = true;
+    expectAdaptive = Number.parseInt(args[++i], 16) >>> 0;
+  } else if (args[i] === '--expect-denoised') {
     denoise = true;
     expectDenoised = Number.parseInt(args[++i], 16) >>> 0;
   } else positional.push(args[i]);
@@ -89,6 +103,7 @@ const rsb = new Uint8Array(await readFile(rsbPath));
 const view = new DataView(rsb.buffer, rsb.byteOffset, rsb.byteLength);
 let width = 0;
 let height = 0;
+let rndr = null;
 const effects = [];
 for (let pos = 8 + view.getUint32(4, true); pos + 8 <= rsb.length; ) {
   const tag = String.fromCharCode(...rsb.subarray(pos, pos + 4));
@@ -96,6 +111,7 @@ for (let pos = 8 + view.getUint32(4, true); pos + 8 <= rsb.length; ) {
   if (tag === 'RNDR') {
     width = view.getUint32(pos + 8, true);
     height = view.getUint32(pos + 12, true);
+    rndr = new DataView(rsb.buffer, rsb.byteOffset + pos + 8, len);
   }
   if (tag === 'FXAM') effects.push(rsb.slice(pos + 8, pos + 8 + len));
   pos += 8 + len;
@@ -150,6 +166,124 @@ if (particles) {
 }
 
 const TILE = 32;
+if (adaptive) {
+  for (const name of ['rt_adaptive_decide', 'rt_render_block_rgba', 'rt_render_tile_rgba']) {
+    if (typeof rt[name] !== 'function') {
+      console.error(`wasm-parity: this rt_wasm.wasm has no adaptive sampling (${name})`);
+      process.exit(1);
+    }
+  }
+  // The RSB's budget: at most max_samples per pixel, the exposure (the floor of the error) and the noise target.
+  const cap = rndr.getUint32(8, true);
+  const ev = rndr.getFloat32(20, true);
+  const target = rndr.byteLength >= 72 ? rndr.getFloat32(68, true) : 0;
+  const BLOCK = 8;
+  const cols = Math.ceil(width / BLOCK);
+  const rows = Math.ceil(height / BLOCK);
+  const blocks = cols * rows;
+  const counts = new Uint32Array(blocks);
+  const active = new Uint8Array(blocks).fill(1);
+  const sum = new Float32Array(width * height * 4);
+  const sq = new Float32Array(width * height);
+  const f32 = Math.fround;
+  const [R, G, B] = [f32(0.2126), f32(0.7152), f32(0.0722)];
+  const outPtr = rt.rt_alloc(TILE * TILE * 4 * 4);
+  // Adds one sample of the rectangle (its RGBA at `outPtr`) to the sums, in f32, as the page's accumulator does.
+  const add = (x0, y0, w, h) => {
+    const px = new Float32Array(rt.memory.buffer, outPtr, w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = (y0 + y) * width + x0 + x;
+        const q = (y * w + x) * 4;
+        for (let c = 0; c < 4; c++) sum[p * 4 + c] = f32(sum[p * 4 + c] + px[q + c]);
+        const l = f32(f32(f32(R * px[q]) + f32(G * px[q + 1])) + f32(B * px[q + 2]));
+        sq[p] = f32(sq[p] + f32(l * l));
+      }
+    }
+  };
+  let round = cap > 0 ? Math.min(16, cap) : 16;
+  let iteration = 0;
+  let warm = true;
+  let rounds = 0;
+  const quota = (b) => (!active[b] ? 0 : cap > 0 ? Math.min(round, Math.max(0, cap - counts[b])) : round);
+  const t0 = performance.now();
+  for (;;) {
+    // The whole round in one pass (where a round is cut changes no pixel).
+    if (warm) {
+      for (let ty = 0; ty < height; ty += TILE) {
+        for (let tx = 0; tx < width; tx += TILE) {
+          const w = Math.min(TILE, width - tx);
+          const h = Math.min(TILE, height - ty);
+          for (let s = 0; s < round; s++) {
+            const status = rt.rt_render_tile_rgba(handle, tx, ty, w, h, iteration + s, outPtr);
+            if (status !== 0) throw new Error(`rt_render_tile_rgba returned ${status}`);
+            add(tx, ty, w, h);
+          }
+        }
+      }
+    } else {
+      for (let b = 0; b < blocks; b++) {
+        const q = quota(b);
+        if (q === 0) continue;
+        const x = (b % cols) * BLOCK;
+        const y = Math.floor(b / cols) * BLOCK;
+        const w = Math.min(BLOCK, width - x);
+        const h = Math.min(BLOCK, height - y);
+        for (let s = 0; s < q; s++) {
+          const status = rt.rt_render_block_rgba(handle, x, y, w, h, counts[b] + s, iteration + s, outPtr);
+          if (status !== 0) throw new Error(`rt_render_block_rgba returned ${status}`);
+          add(x, y, w, h);
+        }
+      }
+    }
+    // The round is over: its samples count, and the module decides the next one.
+    for (let b = 0; b < blocks; b++) counts[b] += quota(b);
+    iteration += round;
+    rounds++;
+    const planes = [new Uint8Array(counts.buffer), new Uint8Array(sum.buffer), new Uint8Array(sq.buffer)];
+    const ptrs = planes.map((p) => {
+      const ptr = rt.rt_alloc(p.byteLength);
+      new Uint8Array(rt.memory.buffer, ptr, p.byteLength).set(p);
+      return ptr;
+    });
+    const activePtr = rt.rt_alloc(blocks);
+    const decisionPtr = rt.rt_alloc(24);
+    const status = rt.rt_adaptive_decide(width, height, ev, target, cap, ptrs[0], ptrs[1], ptrs[2], activePtr, decisionPtr);
+    if (status !== 0) throw new Error(`rt_adaptive_decide returned ${status}`);
+    active.set(new Uint8Array(rt.memory.buffer, activePtr, blocks));
+    round = new DataView(rt.memory.buffer, decisionPtr, 24).getUint32(0, true);
+    planes.forEach((p, i) => rt.rt_free(ptrs[i], p.byteLength));
+    rt.rt_free(activePtr, blocks);
+    rt.rt_free(decisionPtr, 24);
+    warm = false;
+    if (round === 0) break;
+  }
+  const seconds = (performance.now() - t0) / 1000;
+  // Each pixel divided by its own count, as `Film::resolve` does: the sum times the f32 reciprocal.
+  const resolved = new Float32Array(width * height * 3);
+  let lo = Infinity;
+  let hi = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x;
+      const n = counts[Math.floor(y / BLOCK) * cols + Math.floor(x / BLOCK)];
+      lo = Math.min(lo, n);
+      hi = Math.max(hi, n);
+      const inv = f32(1 / n);
+      for (let c = 0; c < 3; c++) resolved[p * 3 + c] = f32(sum[p * 4 + c] * inv);
+    }
+  }
+  const bytes = new Uint8Array(resolved.buffer);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193) >>> 0;
+  const hex = `0x${h.toString(16).padStart(8, '0')}`;
+  console.log(`adaptive: ${width}x${height}, ${rounds} rounds, ${lo}..${hi} spp in ${seconds.toFixed(2)} s, hash ${hex}`);
+  if (expectAdaptive !== null && h !== expectAdaptive) {
+    console.error(`wasm-parity: the adaptive image's hash ${hex} differs from the native one 0x${expectAdaptive.toString(16).padStart(8, '0')}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
 const acc = new Float32Array(width * height * 3);
 const out = rt.rt_alloc(TILE * TILE * 3 * 4);
 // The passes (PASS_KEYS order): albedo sums, then the exact planes of every pixel.

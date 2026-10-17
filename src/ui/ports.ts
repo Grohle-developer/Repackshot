@@ -14,7 +14,7 @@ import type { MaterialInstance } from '../core/materials';
 import type { Program } from '../core/material-program';
 import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { RenderPasses } from '../core/passes';
-import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
+import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat, RenderProgress } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { MotionHint } from '../core/motion-hint';
@@ -91,6 +91,11 @@ export interface EngineStatus {
   pixelFilter?: PixelFilterFields;
   /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
   msaa?: { samples: number; max: number };
+  /**
+   * Path tracer (E10): the view samples adaptively: its pixels' fewest and most samples, the noise of its noisiest block
+   * at the last decision (-1 before it) and the seconds to the target from its last pass (-1: unknown).
+   */
+  adaptive?: { min: number; max: number; noise: number; eta: number };
 }
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
@@ -279,9 +284,11 @@ export interface FrameRequest {
   /** A frame of an animation: the instant rendered (the camera track's camera). */
   time?: number;
   advanced?: AdvancedSettings;
+  /** E10, Finish by Noise: its threshold, percent (core/render.ts `adaptiveOf` makes it the engine's). */
+  noiseThreshold?: number;
   signal?: AbortSignal;
-  /** 0..1, the samples every pixel has so far, and seconds. */
-  onProgress?: (progress: number, samples: number, seconds: number) => void;
+  /** 0..1, the samples every pixel has so far, and seconds; E10, an adaptive render: the engine's numbers of it. */
+  onProgress?: (progress: number, samples: number, seconds: number, adaptive?: RenderProgress['adaptive']) => void;
   /**
    * The AI step follows (X3c): render the guard's passes too and let the desktop launcher keep them with the linear
    * image by the render's id (AI-POST.md §7.3), for the `RENDER` source. Ignored where there is no launcher.

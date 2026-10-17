@@ -2731,7 +2731,7 @@ S4a). Lo que se decidió al resolver:
   (b) y (c) (*furnace*, medios, prismas) no se mueven en cuatro cifras: sus
   escenas tienen una luz o solo el entorno.
 
-## E10 · Muestreo adaptativo y terminar por ruido — **Opus**
+## E10 · Muestreo adaptativo y terminar por ruido — **Opus** — hecha (el criterio de error, no: decisión **Fable** pendiente)
 
 **Qué.** Reparto de muestras por píxel según la varianza (`Film::lum2`),
 determinista: tras cada pasada entera (todas las teselas, todos los
@@ -2756,6 +2756,145 @@ al final; sin él todo es como antes (*hashes* intactos).
 de vidrio y clave sola), el relMSE del adaptativo a igual tiempo es ≤
 0,6 × el uniforme (medido y en el PR); determinismo 1/4/16 hilos y
 teselas de dos tamaños; con el *flag* apagado, `0x223515c3` intacto.
+
+**Hecho.**
+
+- **Motor** (`rt_core::adaptive`, §5.2 duodecies de `ARCHITECTURE.md`):
+  rondas. La primera da 16 muestras a todos con el renderizador de
+  baldosas de siempre; al acabar cada ronda la imagen entera decide la
+  siguiente: error relativo de la media por píxel,
+  `sqrt((E[l²] − E[l]²) / (n − 1)) / (max(media, 0) + ε)` de las sumas y
+  `Film::lum2`, `ε` el 1 % del blanco de pantalla a la exposición de la
+  escena, suavizado 3 × 3 dentro de la imagen, el mayor de cada bloque de
+  8 × 8; candidatos, los bloques por encima del objetivo (`RNDR.noise_threshold`;
+  sin él, cualquiera) y por debajo del tope de muestras; la ronda va a los
+  candidatos en o por encima de la mediana de sus errores; sin candidatos,
+  convergido. Una ronda dura 16 × `clamp(bloques / (4 × activos), 1, 16)`
+  muestras, nunca más que las del bloque activo con menos. Un bloque sin
+  ronda conserva su media: cada píxel es la media de sus muestras `0..n`
+  en orden. Todo `f32` en un orden fijo. `RNDR` gana `adaptive` (bit 0) y
+  `noise_threshold` (72 B, escritos solo cuando se piden: sin ellos la
+  sección es la de E11 byte a byte). `render::render_block` (un rectángulo
+  de una baldosa, con su máscara de bordes y el mapa de fotones que se le
+  dé: en una pasada la muestra `j` de todos los bloques activos usa el mapa
+  `iteración + hecho + j`), `Film::cut`; el *denoise* recibe el conteo de
+  cada píxel (`DenoiseInput::with_counts`: sumas y `lum2` reescaladas a las
+  muestras del que más tiene, la varianza dividida por su propio `n − 1`).
+- **Anfitriones**: `rt` (`--adaptive`, `--noise P`, `--write-e10-example`,
+  `--adaptive-noise`), el lanzador (finales y visor; trama de 68 bytes con
+  `FLAG_ADAPTIVE`, el mínimo y el máximo de muestras, el ruido del bloque
+  peor y los segundos que espera hasta el objetivo; las sumas reescaladas,
+  así que `Frame::fitted` y la página las leen como siempre) y el pool de
+  la web (`src/render/adaptive.ts`, el puerto bit a bit de la decisión;
+  `Accumulator` por bloques, el mensaje `blocks` y `rt_render_block_rgba` en
+  los *workers*, `runAdaptive` en `render/schedule.ts`). Tras la primera
+  ronda los hilos (o *workers*) se reparten los bloques activos de todas
+  las baldosas uno a uno: la imagen no depende de quién hizo qué.
+  `rt_adaptive_decide` expone la decisión del motor para
+  `tools/wasm-parity.mjs --adaptive` y su bloque de CI.
+- **Interfaz**: *Calidad ▸ Terminar por* gana *Ruido* (0,5–5 %, 1 % por
+  defecto, con su nota y el campo de *Muestras* como tope); la estimación
+  sale de la última pasada del visor *Completo* que muestrea al mismo
+  umbral (lo que lleva más lo que el motor dice que le falta, escalado a
+  los píxeles de la salida), y sin ella dice de dónde saldrá; el medidor
+  dice *Adaptativo · 16–212 muestras* con los números del motor; la vista
+  en vivo, el ruido frente al objetivo y lo que el motor espera; la cola,
+  su progreso por ese tiempo. Cadenas `es`/`en`, cromo acromático.
+  Capturas `docs/ui/render-window-noise.png` y `docs/ui/meter-adaptive.png`
+  (`tools/noise-check.mjs`, que comprueba también el segmento, el campo, la
+  nota, el medidor y la estimación en los dos idiomas).
+- **Tests**: el error por píxel y la decisión (media imagen ruidosa, un
+  solo bloque ruidoso, el tope, el objetivo, convergencia); el reparto del
+  trabajo cubre exactamente los bloques activos con baldosas de 8, 13, 32 y
+  64; cada píxel es bit a bit la media uniforme de sus `n` muestras;
+  `PINNED_E10_ADAPTIVE` = `0x264b4106` (la escena de E10, de 16 a 48
+  muestras por píxel) igual con baldosas de 32, 24 (en orden inverso) y 13
+  (barajadas), pasadas de 16, 5 y 3, por `rt` con 1, 4 y 16 hilos, por el
+  lanzador (final y visor) con 1, 4 y 16 hilos, en WASI escalar y SIMD, por
+  el `rt.wasm` real escalar y SIMD (CI) y por el código de la página;
+  `PINNED_E10_DECISIONS` = `0xb492454a` (seis decisiones de una imagen
+  sintética) por el motor y por el puerto; un render por tiempo para entre
+  pasadas y uno por ruido acaba limpio (rt y lanzador); el *denoise* con
+  conteos pesa cada píxel por los suyos; los fotogramas adaptativos del
+  lanzador caben en la vista en vivo pasada a pasada (U14) y llevan sus
+  números de ida y vuelta; RSB con y sin los campos (`rt-core` y
+  `src/io/rsb.ts`, fixture `tests/fixtures/e10.rsb`); la página con
+  *workers* falsos (*Render* por ruido, el visor adaptativo) y con el
+  `rt.wasm` real. Con el *flag* apagado ningún *hash* fijado se movió:
+  `0x223515c3` es hoy `PINNED_EXAMPLE_4SPP` = `0x75ba4cb4` (lo movieron E9
+  y E12) y sigue. Dos tests eran más permisivos que la realidad y se
+  arreglaron: el del lanzador por ruido fallaba (ruido 0,2036 sobre un
+  objetivo de 0,2) porque al converger salía sin publicar la última
+  decisión; el de la página con *workers* falsos daba `mín = máx` porque
+  el ruido falso era igual en toda la imagen (ahora varía por zonas).
+
+*La medida* (`rt --adaptive-noise <dir> --size 480x360 --max-seconds 20
+--samples 4096 --rounds 3 --threads 4`, `crates/rt-cli/src/adaptive_noise.rs`):
+las dos escenas de la hoja de E5b-1 (la receta *clave sola* sobre la pieza
+de ejemplo y el frasco de vidrio a contraluz) a 480 × 360; la referencia,
+dos renders uniformes de 4096 muestras (semillas 1000 y 2000; el primero,
+349 s en la clave sola y 425 s en el frasco), cuyo propio relMSE (la mitad del de una contra otra: 3,6·10⁻⁶ en la
+clave sola, 4,7·10⁻⁵ en el frasco) se resta; tres rondas (semillas 1–3) de
+un render uniforme de 20 s, uno adaptativo de 20 s y uno adaptativo hasta
+los mismos rayos que el uniforme, sin objetivo de ruido (las muestras solo
+cambian de sitio), 4 hilos, en esta máquina de 4 núcleos con otros agentes
+a la vez (carga media 8). relMSE de E5b-1 (valores a 8 como mucho,
+`(x − r)² / (r² + 0,01)`), media de las tres rondas, menos el de la
+referencia:
+
+| Escena | Uniforme | Adaptativo, mismo tiempo | Adaptativo, mismos rayos | Muestras (unif. · adapt.) |
+| --- | --- | --- | --- | --- |
+| Clave sola | 1,451·10⁻⁴ | 1,220·10⁻⁴ (**0,841 ×**) | 1,069·10⁻⁴ (0,737 ×) | 143–175 · 16–272 |
+| Frasco de vidrio | 1,706·10⁻³ | 1,415·10⁻³ (**0,829 ×**) | 1,125·10⁻³ (0,659 ×) | 159–175 · 16–224 |
+
+A igual tiempo el adaptativo traza menos rayos (un 5 % menos en la clave
+sola, un 16 % menos en el frasco: sus muestras van al vidrio, de caminos
+más largos y más caros por rayo, y cada pasada espera a su último bloque);
+a igual número de rayos tarda un 2 % y un 18 % más.
+
+**No encajó.**
+
+- **El criterio no se cumple**: 0,84 × y 0,83 × a igual tiempo (0,74 × y
+  0,66 × a igual número de rayos), no ≤ 0,6 ×. No es el coste del
+  mecanismo (con un hilo, el adaptativo hace un 2–4 % menos de rayos por
+  segundo que el uniforme): es el reparto. La regla del contrato (la
+  ronda a los bloques por encima de la mediana del error) lleva todos los
+  bloques al mismo error relativo, y eso gana sobre todo lo que tarda el
+  uniforme en limpiar los bloques más ruidosos; con las dos referencias,
+  el reparto **óptimo** por bloques de 8 × 8 (muestras proporcionales a la
+  desviación de cada bloque, a igual número de muestras y coste igual por
+  muestra) daría 0,476 × en la clave sola y 0,383 × en el frasco: el
+  0,6 × solo cabe muy cerca del óptimo y sin que las muestras del vidrio
+  cuesten más. Medidas sin mejora fuera del ruido de la medida: ordenar
+  por `error × √n` (lo que una muestra más quita) en vez de por error,
+  rondas de longitud propia por bloque, el error medio del bloque en vez
+  del mayor, `ε` del 10 %, objetivos del 1 y el 2 %. Se queda la regla del
+  contrato; si se cambia el criterio, la regla o se acepta así lo decide
+  el líder (**Fable**, regla 11). Los números de otra máquina sin carga
+  pueden ser algo mejores a igual tiempo (las barreras por pasada cuestan
+  más con los núcleos ocupados por otros); el de igual número de rayos no
+  depende de la carga.
+- **Decide por rondas, no tras cada pasada**: una decisión solo al final
+  de una ronda entera (que dura una o más pasadas), así que cortarla en
+  pasadas por tiempo, por el carril del *denoise* en directo o por el
+  tamaño de pasada del anfitrión no cambia un píxel, y la ronda crece
+  cuando quedan pocos bloques activos (si no, cada ronda de pocos bloques
+  sería una barrera para todos los hilos).
+- **Los pases exactos y el albedo salen de la primera ronda** (las 16
+  muestras de todos): el albedo es la media de esas, no de las `n` de cada
+  píxel; los pases de rayo central no dependen de las muestras.
+- **El contrato no dice qué `ε` ni qué error del bloque**: `ε` es el 1 % del
+  blanco de pantalla a la exposición de la escena (para que el negro no
+  cuente como ruidoso) y el bloque toma el mayor de sus píxeles (el
+  suavizado 3 × 3 ya quita el ruido del propio estimador).
+- **La estimación de *Ruido* sale del visor, no de «la pasada anterior» de
+  un render que aún no existe**: de la última pasada del visor *Completo*
+  que muestrea al mismo umbral (solo entonces el visor muestrea
+  adaptativamente: cuando sigue las muestras de la salida, a escala 1);
+  durante el render, de lo que el motor espera. *Terminar por ruido* llega
+  al lanzador como `finish=samples`: el tope son las muestras y el
+  objetivo del RSB lo acaba antes.
+- `engine/README.md` está en inglés, como el resto de ese archivo.
 
 ## Materiales y sets con efecto — decisión **Fable** (tras v0.1.5)
 
@@ -10150,6 +10289,11 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
   absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
   con el tamaño manual.
+- **E10**: el adaptativo da 0,83–0,84× el relMSE del uniforme a igual
+  tiempo contra el ≤ 0,6× del criterio; el reparto ideal por bloques de 8×8
+  llegaría a 0,48× y 0,38× a igual número de muestras. Aceptarlo, cambiar el
+  criterio o cambiar la regla de reparto (el contrato del brief: el cuantil
+  50 % del error, bajando). Está solo detrás de *Terminar por ruido*.
 - **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b; el
   párrafo de S4b dice cómo lo facilita).
 - **S4b** (hoja `out/ambient-sheet.html` de esa fase, regenerable con
