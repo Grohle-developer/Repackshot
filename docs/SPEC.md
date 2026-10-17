@@ -1051,8 +1051,9 @@ en el visor*). **Vistas**: tres cuartos, frontal, lateral, cenital,
 trasera. **Enfocar con clic**: el punto picado fija la distancia de
 enfoque.
 
-**Óptica (O1, lente fina mejorada).** `CameraState.optics` (opcional;
-una cámara sin él, como todas las anteriores a O1, es la lente fina de
+**Óptica (O1, la lente simple; hasta O4 se llamaba *lente fina*, y el
+proyecto la sigue guardando como `thin`).** `CameraState.optics` (opcional;
+una cámara sin él, como todas las anteriores a O1, es la lente simple de
 siempre y el motor la renderiza bit a bit igual): el **tipo de bokeh**
 elegido (`bokeh`, `variant`, claves de `src/data/bokeh.json`; vuelve a
 `null` en cuanto se mueve un mando del desenfoque a mano) y sus
@@ -1073,9 +1074,40 @@ gato recorta el haz hacia las esquinas y las oscurece (es el viñeteo
 una de tres bandas (decisión 3) sin mover el plano de enfoque. Los tipos
 que necesitan la lente trazada (cometa de coma, respiración de foco,
 aberración esférica variable) ponen su lente del catálogo en la cámara
-(O2) y el de difracción espera a la óptica de ondas. Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
+(O2; desde O4 la interfaz no los ofrece como bokeh, son lentes de *Lente
+trazada*) y el de difracción espera a la óptica de ondas. **El bokeh y la
+óptica avanzada son de la lente simple (O4)**: ningún tipo de bokeh se
+aplica a una cámara con lente trazada ni la saca de ella
+(`opticsForBokeh` devuelve `null`; la orden que usan todos los caminos,
+`applyBokeh`, avisa y no toca la cámara). Cambiar de modelo de lente no
+borra nada: el tipo de bokeh, sus parámetros y la inclinación de la lente
+simple se quedan en `optics` mientras la cámara lleva la lente trazada y
+vuelven tal cual (`opticsWithLensModel`).
+
+**Inclinación (O4).** Cada modelo tiene la suya: la lente simple,
+`tiltDeg` y `tiltAxisDeg`; la trazada, `tracedTiltDeg` y
+`tracedTiltAxisDeg` (opcionales; sin ellos, 0). Así una cámara trazada
+de antes de O4 con una inclinación de la lente simple guardada (el motor
+la ignoraba con lente trazada) no empieza a inclinarse. Las dos dan **el
+mismo plano de enfoque** para los mismos números: por la regla de la
+bisagra de la lente simple (por el punto de enfoque, a `focusDistance` a
+lo largo de la vista, con normal `f·forward + u·sin α·b`); la lente
+trazada se gira lo que haga falta para que su propio plano sea ese (ver
+`ARCHITECTURE.md` §5.2 quindecies) y, lejos del centro, su curvatura de
+campo lo dobla como dobla el de la lente derecha. La interfaz lee el par
+como una cantidad (0° a 12°) y la dirección de la imagen hacia la que se
+aleja el plano (`recedeOf`/`tiltFromRecede` de `src/core/focus-plane.ts`;
+a 0° de eje y signo positivo, el plano se tumba hacia el suelo y se aleja
+hacia arriba). **Por dos puntos**: de los planos que pasan por dos puntos,
+el menos inclinado (su normal es la vista hecha perpendicular a la recta
+de los dos); con tres, el plano de los tres; la regla de la bisagra se
+invierte exacta y da la inclinación, su eje y la distancia de enfoque, o
+el motivo de que no haya (el mismo punto, puntos en línea con la vista,
+detrás de la cámara, más de 12°). Un adaptador anamórfico (con cilindros)
+no se inclina. El **descentramiento** es de la cámara, sea cual sea la
+lente (O2 ya movía el encuadre de una trazada con él). Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
 y en `rt-core/src/optics`. El pase `coc` (X2) sigue siendo el de la
-lente fina redonda y sin inclinar, sea cual sea la óptica. El modo
+lente simple redonda y sin inclinar, sea cual sea la óptica. El modo
 Rápido no dibuja profundidad de campo; del resto solo muestra el
 descentramiento (el encuadre).
 
@@ -1107,7 +1139,7 @@ tiene filtros (como no tiene lente). El modo Rápido dibuja una
 aproximación en imagen con los mismos núcleos y el medidor lo dice.
 
 **Lente trazada (O2).** `CameraOptics.traced` (opcional; sin él o `null`,
-la lente fina, y los proyectos anteriores no cambian ni un byte): una
+la lente simple, y los proyectos anteriores no cambian ni un byte): una
 lente del catálogo `src/data/lenses.json` (16 prescripciones de patentes
 caducadas y libros, nombres genéricos, claves estables) que el motor traza
 superficie a superficie. El proyecto guarda la **clave** y lo que la
@@ -1122,10 +1154,10 @@ focal de la cámara y se enfoca a su distancia de enfoque; el f/ de la
 cámara nunca es más abierto que el de la lente. Con ella, el iris
 (láminas, redondez, giro, obstrucción) va en el diafragma de la lente y
 la aberración cromática y el remolino de la óptica son sus ajustes no
-físicos; el perfil de la pupila, el ojo de gato, la compresión anamórfica
-y la inclinación de la lente fina no se aplican (la lente hace su propia
-pupila, su ojo de gato y sus flecos; la inclinación, próximamente); el
-descentramiento sí. Un adaptador anamórfico desestira la imagen por la
+físicos; el perfil de la pupila, el ojo de gato y la compresión anamórfica
+de la lente simple no se aplican (la lente hace su propia pupila, su ojo de
+gato y sus flecos), y desde O4 la inclinación es la suya (`tracedTiltDeg`,
+arriba); el descentramiento sí. Un adaptador anamórfico desestira la imagen por la
 compresión que traza a ese foco. Lo que la interfaz enseña de la lente lo
 calcula el motor (regla 10): focal a infinito y al foco, tiraje, f/ en uso
 y T-stop, elementos y grupos, longitud, pupila de entrada, la compresión

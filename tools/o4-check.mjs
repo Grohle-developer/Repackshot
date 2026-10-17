@@ -15,12 +15,12 @@
 //   traced      Traced lens hides the Bokeh and the Advanced optics; its More options has the tilt and the shift;
 //   tracedTilt  a preset tilts the traced lens (one undo entry), the engine says the angle the lens takes, and the
 //               simple lens's tilt stays as it was;
-//   back        Simple lens brings back its bokeh and its tilt;
-//   full        Full mode renders the traced tilt (the engine's image changes against the untilted one).
+//   back        Simple lens brings back its bokeh and its tilt.
 //
 // Screenshots (English, dark, reduced motion, device scale 1): o4-simple-optics.png (Advanced optics of the simple
-// lens), o4-traced-more.png (the traced lens's More options), o4-tilt-overlay.png (the viewport with the plane through
-// two points) and o4-traced-tilt.png (Full mode through the tilted traced lens). Results: out/o4-check.json.
+// lens, tilted 7° so that the plane lies back like the floor), o4-traced-more.png (the traced lens's More options), o4-tilt-overlay.png (the viewport with the plane through
+// two points, then tilted further). The traced tilt's render, docs/ui/o4-traced-tilt.png, is the composite of
+// `rt --tilt-sheet` (rt-cli/src/tilt_sheet.rs). Results: out/o4-check.json.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -161,7 +161,6 @@ try {
   const modelText = await page.locator('[data-optics="cameraLens"] .seg button[aria-pressed="true"]').textContent();
   await openSection(page, 'cameraOptics');
   check('simple', modelText === 'Simple lens' && (await visible(page, '[data-optics="cameraBokeh"]')) && (await visible(page, '[data-optics="cameraOptics"] [data-tilt-dial]')) && (await visible(page, '[data-optics="cameraOptics"] [data-action="tilt.pick"]')) && (await visible(page, '[data-optics="cameraOptics"] [aria-label="Horizontal shift"]')), { modelText });
-  await shotOf(page, '[data-optics="cameraOptics"]', 'o4-simple-optics.png', 1000);
 
   // --- pick: the plane through two points --------------------------------------------------------------------------
   const pts = await productPoints(page);
@@ -197,6 +196,8 @@ try {
   check('overlay', flag === '1' && Buffer.compare(plain, drawn) !== 0, { flag });
   await page.screenshot({ path: join(SHOTS, 'o4-tilt-overlay.png'), clip: await vp.boundingBox() });
   await page.locator('[data-optics="cameraOptics"] [data-tilt-show]').click();
+  // The simple lens's Advanced optics with that tilt: the plane runs up, like the floor.
+  await shotOf(page, '[data-optics="cameraOptics"]', 'o4-simple-optics.png', 1000);
   const simpleTilt = {
     amount: await page.locator('[data-optics="cameraOptics"] [data-tilt-amount] [role="spinbutton"]').getAttribute('aria-valuenow'),
     recede: await page.locator('[data-optics="cameraOptics"] [data-tilt-dial]').getAttribute('aria-valuenow'),

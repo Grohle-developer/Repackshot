@@ -108,7 +108,8 @@ src/
     ies.ts                  perfiles fotométricos IES (L5): el lector del formato LM-63 (puerto del de `rt_core::ies`, con el mismo fichero de conformidad), la intensidad y el flujo del perfil, el foco que lo aproxima en Rápido y las curvas del gráfico polar
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
-    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2)
+    optics.ts               la óptica de una cámara más allá de la lente simple (O1; se llamaba lente fina hasta O4): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2); los dos modelos de lente (`lensModelOf`, `opticsWithLensModel`: cambiar no borra nada), el bokeh solo de la lente simple (`bokehApplies`) y la inclinación de cada modelo (`tiltOf`, `withTilt`, O4)
+    focus-plane.ts          el plano de enfoque de una lente inclinada (O4): la regla de la bisagra del motor, la inclinación que lo pone por dos o tres puntos (`solveTilt`), su lectura como cantidad y dirección hacia la que se aleja (`recedeOf`), y lo que dibuja el visor (`focusPlaneHint`)
     traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
@@ -200,6 +201,7 @@ src/
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
     doctor-facts.ts         lo que sabe el Doctor del motor (D1): `engineFactsFrom` (estado de la interfaz y `status()` del visor a `EngineFacts`) e `installDoctorFacts`, que se lo entrega cuando cambia (`doctor/refresh`, también tras deshacer y rehacer)
     section-commands.ts     los comandos de la vista en sección (Q1): encender, cambiar de lado, armar el siguiente clic del visor y lo que hace
+    lens-commands.ts        los comandos del modelo de lente, el bokeh y la inclinación (O4): `setLensModel`, `applyBokeh` (por donde pasa todo bokeh: con una lente trazada avisa y no toca la cámara), el plano por dos puntos (`armTiltPick`, `finishTiltPick`: una entrada de deshacer) y el texto de su aviso
     lens-peek.ts            lo que decide la ventana de una lente (O2b), sin DOM: a qué cámara se pregunta al motor y la caché de respuestas por lente y por lo que los números dependen de (`lensPeekCache`, una por puerto), cuándo se abre y se cierra (`createPeekController`, 300 ms de reposo) y lo que dice cada tarjeta (`peekCard`: nada que el motor no haya dicho, regla 10)
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
@@ -211,9 +213,10 @@ src/
       viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
-      insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
+      insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1), solo con la lente simple (O4)
+      insp-tilt.ts          el bloque Inclinación y desplazamiento (O4), el mismo en Óptica avanzada y en Más opciones: cantidad, dial y atajos de la dirección, Por dos puntos…, Ver el plano, desplazamiento
       insp-filters.ts       Cámara ▸ Filtros: la pila de filtros de efecto de la lente (O3a)
-      insp-traced.ts        Cámara ▸ Lente (O2): lente fina o trazada, carácter, lente, fuente, objetivo detrás, tratamiento, hueco variable, láminas; los números, las curvas y el corte del motor; Avanzado (no físico); Guardar lente como…
+      insp-traced.ts        Cámara ▸ Lente (O2): lente simple o trazada, carácter, lente, fuente, objetivo detrás, tratamiento, hueco variable, láminas; los números, las curvas y el corte del motor; Más opciones (O4: la inclinación y el desplazamiento, el resto del diafragma, lo no físico); Guardar lente como…
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
       insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
       insp-section.ts       inspector ▸ Escena ▸ Sección: interruptor, eje, dos modos de clic, punto y normal, cambiar de lado, tapar (Q1)
@@ -717,7 +720,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   points` 4, 6 u 8, 0 es 6), escritos solo cuando hay alguno: una `LENS`
   sin filtros es la de O1 byte a byte, y una sección de O1 se lee sin
   filtros. Un valor fuera de rango hace inválido el fichero. Un RSB sin
-  `LENS` es la lente fina de siempre, bit a bit (los *hash* del ejemplo,
+  `LENS` es la lente simple de siempre, bit a bit (los *hash* del ejemplo,
   E5, E5c, E5b-1 y los pases no se movieron); una `LENS` neutra también.
   La interfaz la escribe solo para una cámara con óptica no neutra
   (`src/io/rsb.ts` `lensToRsb`): las imágenes de `public/assets/aperture/`
@@ -727,7 +730,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   sensor de 36 mm, sea cual sea la parte del visor que cubra la imagen.
   **O2** añade, tras los huecos de los filtros (que entonces se escriben
   siempre, vacíos si no hay filtros), la **prescripción** de una lente
-  trazada: `u32 surface_count` (0: la lente fina de O1; hasta 64), y con
+  trazada: `u32 surface_count` (0: la lente simple de O1; hasta 64), y con
   superficies `u32 stop focus_mode` (0 unidad, 1 interno, 2 flotante,
   3 anamórfico: el adaptador delante de su objetivo, que enfoca como una
   unidad mientras el hueco listado del adaptador lleva el meridiano
@@ -809,7 +812,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   celda, las partículas cuya caja (ensanchada como la ven los rayos de
   cámara, y en trozos a lo largo de su eje si es una cápsula larga)
   proyecta en ella; un rayo de cámara que sale del centro (estenopeica) o
-  del disco de la apertura (lente fina: el rectángulo de cada partícula
+  del disco de la apertura (lente simple: el rectángulo de cada partícula
   crece con el círculo de confusión `R |1/z − 1/z_f|` en su peor
   profundidad y el rayo busca la celda de su punto en el plano de foco)
   prueba las de su celda en lugar de recorrer la BVH: el mismo impacto
@@ -1050,7 +1053,7 @@ que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
   comprueba con tres puntos). Un rayo principal que no corta ese plano
   por delante enfoca al infinito.
 - Lo que no cambia: el pase `coc` (`passes::coc_diameter`) sigue siendo
-  el de la lente fina redonda y sin inclinar; la cámara ortográfica
+  el de la lente simple redonda y sin inclinar; la cámara ortográfica
   ignora `LENS`; el muestreo de luces, BSDF y recortes no ve nada nuevo.
 - *Hash* fijado de la escena O1 (`example::o1_scene`, todas las
   perillas a la vez y una textura de anillos): `PINNED_O1_LENS_4SPP` =
@@ -1992,7 +1995,7 @@ por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
   siguen al aumento) y *anamórfico* (`FOCUS_ANAMORPHIC`: el objetivo como
   una unidad y el hueco más ancho del adaptador, por bisección, lleva el
   meridiano horizontal al mismo foco). La posición de la cámara es la
-  pupila de entrada paraxial a infinito (la perspectiva de la lente fina);
+  pupila de entrada paraxial a infinito (la perspectiva de la lente simple);
   el diafragma da el f/ pedido, nunca más abierto que la lente (y el del
   catálogo se abre hasta el f/ más rápido declarado). Las semiaperturas que
   la fuente no da salen de un rayo marginal y uno principal paraxiales y se
@@ -2024,7 +2027,7 @@ por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
   rayos centrales de los pases (`TracedLens::chief`) usan el mismo punto
   del sensor que las muestras. Un anamórfico se desestira por la
   compresión que traza a su foco; una lente sin cilindros, por nada (la
-  compresión de la lente fina no le aplica).
+  compresión de la lente simple no le aplica).
 - **Lo que el motor dice** (`LensInfo`, `rt_scene_lens_info` de `rt_wasm`
   y `POST /api/lens/info` del lanzador, el mismo JSON): focal a infinito y
   al foco, **escala de imagen** cerca del eje (`h = k tan θ`, con los
@@ -2055,7 +2058,7 @@ por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
   antes del mapa), `glyphAt` y `objectAt` (por `profileShown`, el mapa al
   revés por bisección), la selección por caja (`Projection.shown` en
   `core/box-select.ts`) y el pase de ids de las caras (cada píxel de la
-  pantalla lee el de su fuente). Sin perfil (lente fina, o antes de que el
+  pantalla lee el de su fuente). Sin perfil (lente simple, o antes de que el
   motor diga sus números) el mapa es la identidad. El perfil es el de la
   cámara por la que se mira: al mirar a través de una luz o de otra cámara
   (L4) no se aplica el de la cámara activa.
@@ -2067,7 +2070,7 @@ por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
   y 16 hilos. Las escenas sin lente trazada no se mueven.
 - **Coste** (`rt --lens-cost`, un hilo, la más rápida de tres vueltas): en
   lotes, la muestra de cámara por la doble Gauss cuesta 0,25 µs (0,71 µs
-  una a una; 0,19 µs la de la lente fina): en el ejemplo a 1024 muestras es
+  una a una; 0,19 µs la de la lente simple): en el ejemplo a 1024 muestras es
   el 13,7 % del render (antes de los lotes, el 29,1 %), por debajo del 25 %
   de la regla de coste.
 
@@ -2496,6 +2499,88 @@ con el perfil del *downlight* y un punto cálido con el *wall washer* girado
 sobre su eje; 160 × 120), igual en cada ruta SIMD, en `rt` con 1, 4 y 16 hilos,
 en WASI y en el `rt.wasm` real (CI y `tests/ies-engine.test.ts`); ningún hash
 anterior se movió.
+
+### 5.2 quindecies · La lente trazada inclinada (O4, `rt_core::optics::traced::tilt`)
+
+Desde O4 `tilt_deg` y `tilt_axis_deg` de `LENS` también valen con una
+prescripción (el formato no cambia; antes el motor los ignoraba con lente
+trazada, y la página escribe la inclinación propia de la trazada,
+`tracedTiltDeg`, no la de la lente simple: una cámara trazada antigua no
+empieza a inclinarse). **Una `LENS` con `tilt_deg = 0` no entra nunca en
+el código nuevo**: no se mueve ningún *hash* fijado.
+
+- **El giro.** La lente gira respecto al sensor alrededor de la posición
+  de la cámara (su pupila de entrada a infinito: la perspectiva no se
+  mueve), sobre el eje del plano del sensor a `tilt_axis_deg` de la
+  derecha y en el mismo sentido que la lente simple (`forward` pasa a
+  `forward cos α' + b sin α'`). El sensor sigue de frente a la vista de la
+  cámara y se coloca donde la lente forma la imagen del **punto de
+  enfoque** (`focus_dist` a lo largo de la vista): ese punto queda en el
+  centro del encuadre y nítido, y el encuadre no gira.
+- **El ángulo.** `α'` no es el `α` pedido: se resuelve para que el plano
+  de enfoque de la lente (el conjugado del plano del sensor por su óptica
+  paraxial; una colineación lleva un plano a un plano: Scheimpflug y la
+  regla de la bisagra de una lente gruesa, Merklinger 1993 y Kingslake
+  1992, cap. 4) se incline **igual que el de la lente simple** de la misma
+  inclinación, focal y distancia de enfoque (normal
+  `f·forward + u·sin α·b`). Para cada `α'` la lente se enfoca al objeto
+  `u cos α'` a lo largo de su eje (el mismo enfoque de O2, unidad, interno,
+  flotante, ahora en `focus_state`), y la transferencia paraxial del primer
+  vértice al último (`Abcd`) da la imagen del punto de enfoque y el
+  conjugado de tres puntos del sensor; 40 pasos de bisección sobre `α'`
+  entre 0 y 60°. Así la inclinación significa el mismo plano con las dos
+  lentes, y el dibujo del plano y el plano por dos puntos de la interfaz
+  valen para ambas (`src/core/focus-plane.ts`). El motor dice el ángulo
+  que toma la lente (`LensInfo.tilt_deg`, `"tiltDeg"` en el JSON solo con
+  inclinación).
+- **El reenfoque con rayos reales.** La imagen paraxial del punto de
+  enfoque no ve la curvatura de campo de la lente donde la inclinación pone
+  ese punto (a `f tan α'` del eje): el centro del sensor se mueve a lo
+  largo de su normal, con cuatro pasos de secante, hasta que los rayos
+  reales del centro (dos pares, a un quinto del haz a cada lado del rayo
+  principal en los dos meridianos; su encuentro se calcula como recta en la
+  profundidad, sin la cancelación de dos rayos casi paralelos en `f32`) se
+  cruzan a `focus_dist`. El ángulo se queda: lejos del centro, la
+  curvatura de campo y el astigmatismo de la lente doblan el plano como
+  doblan el de la lente derecha (es su carácter; los tests lo miden).
+- **Las muestras.** Un sensor inclinado ve el plano trasero por otros
+  rectángulos que uno derecho, y ya no solo por la altura de imagen: los
+  límites se trazan en una rejilla de 9 × 9 posiciones del sensor
+  (`TILT_GRID`, 24 × 24 en el plano trasero en las tres bandas, una celda
+  de margen, como en O2) y una muestra toma la unión de los cuatro nodos de
+  alrededor (sin girar al acimut). El rayo principal de cada nodo sale de
+  ocho pasos de Newton sobre el punto del diafragma; los rayos centrales
+  de los pases y de la selección lo interpolan. El peso de una muestra es
+  `A |cos θ_trasero|³ |cos θ_sensor| / Z²` sobre el normalizador del eje
+  de la lente derecha, el coseno del sensor medido contra su normal
+  inclinada (con el sensor derecho es el `A cos⁴θ / Z²` de O2). El rayo
+  sale en el marco de la lente y se gira al de la cámara alrededor de la
+  pupila. Los lotes de O2 (`sample_setup` y `sample_finish`) pasan por lo
+  mismo: los mismos bits que una a una. Las semiaperturas derivadas se
+  ensanchan también para el desplazamiento del centro del sensor.
+- **Lo que no.** Una lente con cilindros (el adaptador anamórfico) rechaza
+  la inclinación (*a traced lens with cylinders does not tilt*; la
+  interfaz no la escribe y lo dice); una lente cuya luz sale hacia `−z`
+  también. Sin `unsafe`, solo `+ − × ÷ sqrt` y `fmath::sin_cos`: la misma
+  escena da los mismos píxeles en cualquier plataforma y con cualquier
+  número de hilos.
+- **El descentramiento** de una lente trazada ya movía el sensor en O2
+  (`Lens::shifted` antes de `traced_film`); con inclinación se mide desde
+  el centro del sensor inclinado.
+
+*Hash* fijado de la escena O4 (`example::o4_scene`: la escena O2 con la
+doble Gauss inclinada 6° sobre el eje horizontal y desplazada 2 mm a la
+derecha y 3 mm abajo; `rt --write-o4-example`, `tests/fixtures/o4.rsb`):
+`PINNED_O4_TRACED_TILT_4SPP` = `0x0b2fc327` en escalar, SSE2 y AVX2, en el
+`rt_wasm.wasm` real por el código de la página (`tests/lens-o4.test.ts`) y
+en CI (`tools/wasm-parity.mjs`, con y sin pases), y 1, 4 y 16 hilos
+(`rt-cli/tests/example.rs`). La hoja `rt --tilt-sheet <dir>`
+(`rt-cli/src/tilt_sheet.rs`) pinta luces sobre un suelo que se aleja, con
+la lente simple y con la doble Gauss trazada, derechas y con la
+inclinación que tumba el plano sobre el suelo (`sin α = f cos β / h`), y
+su composición 2 × 2. No hay bit nuevo en `rt_features`: la página
+escribe la inclinación de la trazada igual con un motor anterior, que la
+ignora.
 
 ### 5.3 · En el navegador: workers
 
@@ -3135,10 +3220,11 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Luces IES (L5) | `ies::tests`, `light::tests`, `integrator::tests` y `scene::rsb::tests` de rt-core, `render::tests` (fijado L5), `rt-cli/tests/example.rs` (1, 4 y 16 hilos), `tests/ies.test.ts` (con `tests/fixtures/ies/conformance.json`, que escriben las pruebas del motor), `ies-lights`, `ies-switch`, `ies-engine` (con el `rt.wasm` real); `tools/ies-check.mjs` | Los dos perfiles escritos a mano: la intensidad que muestrea el motor a 0°, 30° y 60° es la del archivo (pruebas de muestreo y de la imagen de un suelo, a 1e-4 del pico, y la interpolación entre nodos y la orientación de φ); el flujo contra el caso cerrado (isótropo `4π c`, 1000 cos² con 1° de paso a 1e-4, contra una cuadratura numérica de la propia función); las simetrías (un mismo reparto escrito como cuadrante, bilateral y completo da lo mismo en cada dirección y en flujo); 68 archivos (sanos y mal formados: cortados, cuentas de más y de menos, negativos, ángulos, TILT, tipos A y B) con lo que hace el motor, que el lector de la página repite con los mismos mensajes; RSB con el perfil una vez por cada distinto y `LGHT` de 80 B, los bytes de antes sin luces IES y `l5.rsb` byte a byte con el escritor de la página; selección por punto y estática; el interruptor `FEATURE_IES` del *pool* y del lanzador; el mismo fijado con 1, 4 y 16 hilos y en el `rt.wasm` real; proyecto, estudio, montaje y biblioteca; Playwright con Chromium en *Rápido* y *Completo* (menú, archivo, gráfico polar, multiplicador, cambiar perfil, archivo rechazado). Nueve mutaciones del motor, todas detectadas |
-| Ambiente (S4a, S4b) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests`, `geometry::tests`, `geometry::particles::grid_tests`, `bsdf::forward::tests` e `integrator::particle_tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %). En S4b, además: la rejilla de pantalla da los impactos de la fuerza bruta (estenopeica y lente fina, las tres formas, partículas en el plano de la cámara); el lóbulo hacia delante integra 1 con g como coseno medio, se muestrea con su densidad, el horno blanco de su BSDF y de una mota da 1, y la NEE sola, el BSDF solo y el MIS coinciden (1 %); los caminos tras un lóbulo ancho no ven una gota sin sombra (bit a bit) y la cruzan con la transmitancia de la sombra, la cámara la sigue viendo refractar, y la regla de las gotas lisas no cambia la media |
+| Ambiente (S4a, S4b) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests`, `geometry::tests`, `geometry::particles::grid_tests`, `bsdf::forward::tests` e `integrator::particle_tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %). En S4b, además: la rejilla de pantalla da los impactos de la fuerza bruta (estenopeica y lente simple, las tres formas, partículas en el plano de la cámara); el lóbulo hacia delante integra 1 con g como coseno medio, se muestrea con su densidad, el horno blanco de su BSDF y de una mota da 1, y la NEE sola, el BSDF solo y el MIS coinciden (1 %); los caminos tras un lóbulo ancho no ven una gota sin sombra (bit a bit) y la cruzan con la transmitancia de la sombra, la cámara la sigue viendo refractar, y la regla de las gotas lisas no cambia la media |
 | Vista en sección (Q1) | `tests/section.test.ts`, `solid.test.ts`, `section-rsb.test.ts` (con el `rt.wasm` real), `section-full-browser.test.ts` (Chromium y `rt.wasm`); `geometry::section_tests`, `integrator::section_tests`, `scene::section_rsb_tests` y `render::section_tests` de rt-core, `rt-cli/tests/example.rs`; `tools/section-check.mjs` | El plano desde un clic y cada eje, desde dos puntos y desde números; las acciones por el *store* (deshacer, gestos, nada para lo que no cambia), guardar y abrir; `SECTION` interpolado con la curva del clip, sumando, partido y repetido; `SECT` byte a byte frente a `rt --write-q1-example` y dónde la pone el escritor; en el motor, el rayo ignora el lado quitado y no deja que bloquee una sombra, una caja cortada por la mitad se tapa con el área de su sección y su color, las mallas abiertas y las de pared fina no, el vidrio cortado refracta por su tapa como un vidrio macizo que acabara ahí, el estudio (referencia: modelo solo + estudio solo = lo más cercano de los dos, con tapa y sin ella), el *hash* fijado en cada ISA y con 1, 4 y 16 hilos y en wasm; la comparación por regiones del criterio (botella cortada, acuerdo por píxel 1,000 y IoU de las secciones 0,963, controles que se caen, el suelo del set entero en los dos y cortado como pieza corriente) y el cardán y la selección en caja sin lo quitado |
-| Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
-| Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente fina no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente fina y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
+| Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente simple bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
+| Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente simple no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente simple y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
+| Lentes simple y trazada, inclinación (O4) | `optics::traced_tests` (los de la inclinación y el desplazamiento), `render` (`PINNED_O4_TRACED_TILT_4SPP`) y `tilt_sheet` de rt-cli, `rt-cli/tests/example.rs`, `rt-app/tests/parity.rs`, `tests/lens-o4.test.ts`, `tests/lens-modes-browser.test.ts`, `tools/o4-check.mjs`, `tools/lens-check.mjs` | Con la lente trazada inclinada, el centro nítido a la distancia de enfoque (1,5 %), la pendiente del plano a 4 mm del centro igual a la de la lente simple más la curvatura de campo de la lente derecha a esas alturas (3,5 % en la doble Gauss y la macro, 20 % en el tele y el triplete), los nueve puntos de la macro sobre el plano (2,5 %); el encuadre sobre el punto de enfoque; el desplazamiento mueve el eje sus milímetros, derecha o inclinada; inclinación 0 bit a bit la lente derecha, con cualquier eje, y sin `tiltDeg` en el JSON; lotes con los bits de las muestras solas y la luz del centro (6 %); una lente con cilindros la rechaza; *hash* de O4 en SIMD, wasm (por la página y en CI) y 1/4/16 hilos; en la página: *Lente simple* en los dos idiomas y ninguna cadena dice *lente fina*, los valores guardados sin cambiar y un proyecto anterior de ida y vuelta, ninguna inclinación de lente simple aplicada a una trazada, ningún tipo de bokeh aplicado a una cámara trazada por ningún camino (falla con el arreglo quitado), volver a la lente simple con su bokeh y su óptica avanzada, el plano por dos y tres puntos exacto, la lectura en dirección, el dibujo sobre el plano, el plano por dos puntos como una entrada de deshacer en los dos modelos; en Chromium, las secciones de cada modelo, el dial como una entrada por arrastre y nada recortado en inglés y en español |
 | Ventana de la lente (O2b) | `tests/lens-peek.test.ts` (con el `rt.wasm` real), `tests/lens-peek-browser.test.ts`, `tools/lens-hover-check.mjs` | A qué cámara se pregunta y que la lente puesta es la cámara tal cual; la caché (una pregunta por lente, compartida la que está en vuelo, otra al cambiar focal, foco, f/, encuadre o ajustes, la negativa se guarda y «sin motor» y el fallo no, acotada); el reposo de 300 ms (cruzar la lista no abre nada), cerrar al salir, con Esc y al elegir, y no reabrir hasta que vuelve el puntero; las tarjetas con solo los números del motor (cargando, sin motor y negada, sin números ni dibujo; es y en); la colocación dentro de la ventana; los números de lentes que no están en la cámara contra los del motor real. En Chromium, sobre la sección de verdad: abre junto a la lista y junto al chip con el nombre, la fuente, el dibujo y los números de esa lente, no toma foco ni puntero, el teclado la abre y la mueve de lente en lente, y elegir pone la lente. Con la aplicación y el motor reales: los números de la ventana son los de la sección al poner la lente, y volver a pasar no vuelve a preguntar al módulo |
 | Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
 | Texturas en el motor (M2b) | `texture::tests` de rt-core (con `tests/fixtures/texture-mapping.json`, que `tests/texture-mapping.test.ts` fija contra `core/textures.ts`), `render::tests` y `passes_tests` (fijados M2B), `rt-cli/tests/example.rs` y `rt-app` (hilos); `tests/textures-engine.test.ts` (con el `rt.wasm` real), `tests/textures-full-browser.test.ts` | Las cinco proyecciones y las etiquetas en 858 puntos del fixture (±2·10⁻⁵ relativo), gradientes contra diferencias finitas, *mipmaps* en lineal, nivel de detalle y huella de la cámara, marco del mapa de normales, recorte y cobertura también en las sombras, etiquetas en orden con su borde; ida y vuelta RSB, ficheros viejos y `m2b.rsb` byte a byte con el escritor de la página; el mismo fijado con 1, 4 y 16 hilos y en cada ruta SIMD; comparación por regiones con *Rápido* en Chromium (≥ 97 % de los píxeles asentados, control movido una casilla < 15 %; etiqueta con intersección sobre unión > 0,9) |
