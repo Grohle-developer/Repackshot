@@ -494,11 +494,15 @@ export function validateItem(v: unknown, path = 'item'): LibraryItem {
   }
 }
 
-/** A lens of one's own (O2): a traced lens of the catalogue by its key, its iris and artistic knobs in range. */
+/** A lens of one's own (O2): a traced lens of the catalogue by its key (O2c: or its edited elements), its iris and artistic knobs in range. */
 function lensPayload(v: unknown, path: string): LensPayload {
   const o = obj(v, path);
-  const traced = normalizeTracedLens(obj(o.traced, `${path}.traced`));
+  const raw = obj(o.traced, `${path}.traced`);
+  const traced = normalizeTracedLens(raw);
   if (!traced) fail(`${path}.traced.key`, 'is not a lens of the catalogue');
+  // O2c: a lens whose elements were edited carries them; ones that cannot be read refuse the item (never a silent
+  // catalogue lens in their place).
+  if (raw.edited !== undefined && !traced!.edited) fail(`${path}.traced.edited`, 'is not an edited lens (its surfaces, its stop and its focus)');
   const blades = num(o.blades, `${path}.blades`, 0, OPTICS_LIMITS.blades.max);
   return {
     traced: traced!,

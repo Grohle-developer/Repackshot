@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 150 archivos: 148 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 152 archivos: 150 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,11 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 19 versiones, 16 con capturas nuevas; las capturas se reparten en 52 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 19 versiones, 16 con capturas nuevas; las capturas se reparten en 53 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-El estudio de un lote que viaja con el proyecto (N2b) y el interruptor de la focal, *Mantener el tamaño de lo enfocado* (C2), y los nodos *Madera* y *Tela* del editor de material (M3c), que regraban, sin cambiar de sitio, `m3b-wood.png` y `m3b-graphs.png` (M3b).
+El estudio de un lote que viaja con el proyecto (N2b), el interruptor de la focal, *Mantener el tamaño de lo enfocado* (C2), el editor de elementos de la lente trazada (O2c) y los nodos *Madera* y *Tela* del editor de material (M3c), que regraban, sin cambiar de sitio, `m3b-wood.png` y `m3b-graphs.png` (M3b).
 
 #### N2b · El estudio viaja con el proyecto
 
@@ -37,6 +37,14 @@ El estudio de un lote que viaja con el proyecto (N2b) y el interruptor de la foc
 
 <a id="c-c2-focal-switch"></a><img src="ui/c2-focal-switch.png" width="339" alt="El bloque Cámara del inspector con el interruptor nuevo debajo de la focal (85 mm): Mantener el tamaño de lo enfocado, encendido, y su línea auxiliar: encendido, al cambiar la focal la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño y cambia la perspectiva; apagado, la cámara se queda y cambia el encuadre."><br>
 `c2-focal-switch.png` · `bbf3c6b` · El bloque *Cámara* del inspector con el interruptor nuevo debajo de la focal (85 mm): *Mantener el tamaño de lo enfocado*, encendido, y su línea auxiliar, que dice lo que hace encendido (la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño; cambia la perspectiva) y lo que hace apagado (la cámara se queda y cambia el encuadre). `tools/focal-check.mjs --shots docs/ui`.
+
+#### O2c · Editor de elementos de la lente
+
+<a id="c-o2c-lens-editor"></a><img src="ui/o2c-lens-editor.png" width="480" alt="El editor de lente abierto sobre la doble Gauss del catálogo, flotando sobre la aplicación: el corte del motor con los seis elementos numerados y el primero elegido, las herramientas (Añadir delante, Añadir detrás, Girar 180°, Borrar, Más pequeño, Más grande, Apertura automática), la tabla con los radios, el grosor, el vidrio, el diámetro y el aire de cada elemento y del diafragma, y a la derecha lo que calcula el motor: la focal del diseño y la de la cámara, el tiraje, el diafragma, el círculo de imagen y las curvas."><br>
+`o2c-lens-editor.png` · `5187dd7` · El editor de lente abierto sobre la doble Gauss del catálogo, flotando sobre la aplicación: el corte del motor con los seis elementos numerados y el primero elegido, las herramientas (*Añadir delante*, *Añadir detrás*, *Girar 180°*, *Borrar*, *Más pequeño*, *Más grande*, *Apertura automática*), la tabla con los radios, el grosor, el vidrio, el diámetro y el aire de cada elemento y del diafragma, y a la derecha lo que calcula el motor: la focal del diseño y la de la cámara, el tiraje, el diafragma, el círculo de imagen y las curvas. `tools/lens-editor-check.mjs --shots docs/ui`.
+
+<a id="c-o2c-lens-modified"></a><img src="ui/o2c-lens-modified.png" width="480" alt="La misma lente modificada: un elemento nuevo detrás del primero (siete elementos) y el delantero girado 180° (sus radios intercambiados y negados), comprobada por el motor y lista para aplicar: la focal del diseño más corta, otro tiraje y otra distorsión, y el corte al día."><br>
+`o2c-lens-modified.png` · `5187dd7` · La misma lente modificada: un elemento nuevo detrás del primero (siete elementos) y el delantero girado 180° (sus radios intercambiados y negados), comprobada por el motor y lista para aplicar: la focal del diseño más corta, otro tiraje y otra distorsión, y el corte al día. `tools/lens-editor-check.mjs --shots docs/ui`.
 
 #### M3c · Nodos Madera y Tela
 
@@ -723,6 +731,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`o2c-lens-editor.png`](#c-o2c-lens-editor) · Sin publicar · O2c
+- [`o2c-lens-modified.png`](#c-o2c-lens-modified) · Sin publicar · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
 - [`o4-tilt-overlay.png`](#c-o4-tilt-overlay) · v0.1.18 · O4
 - [`o4-traced-more.png`](#c-o4-traced-more) · v0.1.18 · O4

@@ -50,7 +50,8 @@ export type PeekAnswer = { state: 'ready'; info: EngineLensInfo } | { state: 're
  */
 export function peekCamera(cam: CameraState, key: string): CameraState {
   const o = opticsOf(cam);
-  if (tracedOf(o)?.key === key) return cam;
+  // O2c: a lens whose elements were edited is not the catalogue lens of its key: the entry shows the catalogue's.
+  if (tracedOf(o)?.key === key && !tracedOf(o)?.edited) return cam;
   return { ...cam, optics: { ...o, traced: newTracedLens(key), bokeh: null, variant: null } };
 }
 

@@ -1252,3 +1252,36 @@ fn every_catalogue_lens_without_cylinders_tilts_and_says_by_how_much() {
     }
     assert!(checked >= 28, "{checked}");
 }
+
+#[test]
+fn the_lens_information_tells_the_focal_length_of_the_design_before_the_scale() {
+    // O2c: the lens editor shows the prescription's own dimensions; the engine tells its focal
+    // length as written (in its green band: within half a percent of the research's d-line
+    // value), the same bits whatever the camera's focal length, and the JSON carries it.
+    let lenses = catalogue();
+    let mut checked = 0;
+    for (key, l) in &lenses {
+        let Some(efl) = l.get("reported").get("eflMm").num() else {
+            continue;
+        };
+        if key == "catadioptric_mirror" {
+            continue;
+        }
+        let mut first: Option<f32> = None;
+        for focal in [35.0f32, 50.0, 135.0] {
+            let lens = traced(key, focal, 8.0, 3000.0);
+            let info = lens.info();
+            let design = f64::from(info.design_efl_mm);
+            assert!(
+                (design - efl).abs() / efl < 5.0e-3,
+                "{key} at {focal} mm: design focal length {design} against {efl}"
+            );
+            assert!((info.efl_mm - focal).abs() / focal < 1.0e-3, "{key}");
+            assert!(info.to_json().contains("\"designEflMm\":"), "{key}");
+            let bits = *first.get_or_insert(info.design_efl_mm);
+            assert_eq!(bits.to_bits(), info.design_efl_mm.to_bits(), "{key}");
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 14);
+}

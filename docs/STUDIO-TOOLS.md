@@ -136,6 +136,17 @@ dibujado desde la prescripción. **Guardar lente como…** a la biblioteca
 propia (U4), con la prescripción y los ajustes; cambiar de lente nunca
 toca la resolución de salida.
 
+**Hecho en O2 y O2c** (era la fase O5 de la tabla del `ROADMAP.md`). O2 hizo
+el selector por carácter, el corte en SVG, los ajustes no físicos marcados y
+*Guardar lente como…*; O2c, el **editor de los elementos** (`UI.md` §2.11):
+radios, grosor, vidrio, tamaño y aire de cada elemento, añadir, borrar y
+girar 180°, sobre una copia que el motor comprueba antes de ponerla en la
+cámara. Donde O2c se aparta de este párrafo: la lente propia guarda la
+prescripción **solo si se editaron sus elementos** (si no, la clave del
+catálogo y los ajustes, como decidió O2); el tamaño de un elemento es su
+apertura libre; las medidas son las del diseño, que el motor escala a la
+focal de la cámara.
+
 **Hecho en O1.** El modo 1 entero en `rt-core/src/optics` (sección RSB
 `LENS`, opcional, después de `CAMR`): diafragma redondo, de 3 a 18
 láminas rectas o curvas con giro, o máscara por CDF 2D; texturas de

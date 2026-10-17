@@ -1307,6 +1307,36 @@ misma distorsión, y un clic (enfocar con clic, seleccionar, la caja, el
 *gizmo*) cae en lo que está bajo el cursor: el mismo mapa al revés. Cambiar de
 lente no toca la resolución de salida.
 
+**Lente editada (O2c).** Los **elementos** de una lente trazada se editan en
+el editor de lente (`UI.md` §2.11): sus radios, su grosor, su vidrio, su
+apertura libre (el tamaño) y el aire hasta el siguiente; se añade un
+elemento donde se elige, se borra uno y se gira uno 180° (sus radios se
+intercambian y cambian de signo; un grupo cementado gira entero). La lente
+del catálogo no se toca: `TracedLens.edited` (opcional; sin él, la lente del
+catálogo, y los proyectos anteriores no cambian ni un byte) guarda la
+**prescripción editada** —las superficies a la escala del diseño, con las
+mismas convenciones que `lenses.json` (radio, distancia al siguiente,
+vidrio por `nd` y `vd`, semiapertura o `null` para la del motor, el
+diafragma por su papel), su **nombre** y su **enfoque** (el de la lente con
+sus huecos móviles seguidos a través de las ediciones; si una edición quita
+uno, la lente enfoca moviéndose entera)— y la `key` sigue nombrando la lente
+de la que salió (su diafragma y su fuente). El motor la escala a la focal de
+la cámara como a una del catálogo. Se editan las lentes que solo refractan:
+el adaptador anamórfico (cilindros) y la de espejo no. Mientras se edita, la
+copia es `CameraState.lensDraft` (opcional): cada edición es una entrada de
+deshacer y la lente de la cámara no cambia hasta que se **aplica**, y solo se
+aplica una lente que el motor ha comprobado: con hueco de aire negativo, un
+vidrio sin grosor, superficies que se cruzan o elementos que chocan dentro de
+las aperturas dadas, una apertura más ancha que su esfera, sin imagen real,
+sin luz por el eje o con la imagen dentro de la lente, el editor dice por qué
+y la lente se puede seguir editando. Un archivo con unos `edited` que no se
+leen abre la lente del catálogo; una copia que no se lee se descarta. La
+lista de vidrios son los de las prescripciones del catálogo (índice y número
+de Abbe en la línea d), sin nombres de fabricante. Lo que la interfaz enseña
+de la lente editada es del motor (regla 10), y además la **focal del
+diseño** (`designEflMm`: la de la prescripción tal como está escrita, antes
+de escalarla) y el círculo de imagen que sale de su luz hacia la esquina.
+
 **Cámara de interiores (K3).** `CameraState.projection` es
 `PERSPECTIVE`, `ORTHOGRAPHIC`, `EQUIRECTANGULAR` (panorámica 2:1, 360° ×
 180° sobre la imagen entera) o `FISHEYE` (equidistante, `fisheyeFovDeg`
@@ -1690,7 +1720,9 @@ entre proyectos: materiales (*Guardar material como…*), montajes de luz
 (*Guardar montaje como…*), tipos de producto (*Guardar como tipo de
 producto*: el estudio actual como preset), estudios y lentes (*Guardar
 lente como…*, O2: la lente trazada de la cámara con su iris y sus ajustes
-no físicos, la prescripción por su clave del catálogo). Aparece como pestaña
+no físicos, la prescripción por su clave del catálogo; O2c: una lente
+editada, con su prescripción editada y su nombre, también desde el editor de
+lente con *Guardar en la biblioteca…*). Aparece como pestaña
 *Míos* en cada catálogo, con miniaturas renderizadas por el producto, se
 persiste en el navegador y se exporta e importa como un archivo JSON para
 llevarla a otra máquina. Los presets de fábrica no se editan: editar uno

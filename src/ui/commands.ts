@@ -12,6 +12,7 @@ import { aiImagesOf, aiVariantsOf } from '../core/results';
 import { activeCamera, type CameraId, type CameraState, type FocusMode } from '../core/camera';
 import { playheadPose } from '../core/animation';
 import { opticsOf } from '../core/optics';
+import type { TracedLens } from '../core/traced-lens';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import {
   applyImportOptions,
@@ -2267,10 +2268,11 @@ export async function saveProductTypeToLibrary(ctx: Ctx, name: string): Promise<
 }
 
 /** Save lens as… (O2): the camera's traced lens, its iris and artistic knobs, as a lens of one's own. */
-export function saveLensToLibrary(ctx: Ctx, camId: CameraId, name: string): void {
+export function saveLensToLibrary(ctx: Ctx, camId: CameraId, name: string, traced?: TracedLens): void {
   const cam = ctx.store.get().camera.cameras[camId];
   if (!cam || !cleanName(name)) return;
-  commitItem(ctx, (lib) => fromCameraLens(lib, cam.optics, name));
+  // O2c: the lens editor saves the lens it has (checked by the engine), with the camera's iris and knobs.
+  commitItem(ctx, (lib) => fromCameraLens(lib, traced ? { ...opticsOf(cam), traced } : cam.optics, name));
 }
 
 /** Puts a lens of one's own on camera `camId` (one undo entry). */

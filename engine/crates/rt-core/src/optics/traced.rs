@@ -187,6 +187,10 @@ pub struct Surface {
 pub struct LensInfo {
     /// Paraxial focal length at infinity focus, mm (the camera's `focal_mm`).
     pub efl_mm: f32,
+    /// O2c: the paraxial focal length of the prescription as written, before it is scaled to
+    /// `efl_mm`, mm: what an edit of its elements changes (the lens editor shows the design's
+    /// dimensions; `efl_mm / design_efl_mm` is the scale the camera puts on it).
+    pub design_efl_mm: f32,
     /// Back focal distance at infinity, from the rear vertex, mm.
     pub bfl_mm: f32,
     /// Focal length at the focus distance (breathing), mm.
@@ -511,6 +515,8 @@ struct Built {
     surfaces: Vec<Surface>,
     stop: usize,
     efl: f32,
+    /// The prescription's own focal length, before the scale.
+    design_efl: f32,
     moving: Vec<MovingGap>,
 }
 
@@ -788,6 +794,7 @@ fn build(p: &Prescription, lens: &super::LensParams, focal_mm: f32) -> Result<Bu
         surfaces,
         stop,
         efl: focal_mm,
+        design_efl: efl,
         moving,
     })
 }
@@ -931,6 +938,7 @@ fn prepare(
         surfaces: base,
         stop,
         efl,
+        design_efl,
         moving,
     } = built;
     let n = base.len();
@@ -1064,6 +1072,7 @@ fn prepare(
         squeeze: 0.0,
         info: LensInfo {
             efl_mm: efl,
+            design_efl_mm: design_efl,
             bfl_mm: infinity.0,
             efl_focused_mm: efl_focused,
             image_scale_mm: efl_focused,
@@ -2038,8 +2047,9 @@ impl LensInfo {
             format!("[{}]", items.join(","))
         };
         format!(
-            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"imageScaleMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{}{},\"section\":{}}}",
+            "{{\"traced\":true,\"eflMm\":{},\"designEflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"imageScaleMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{}{},\"section\":{}}}",
             json_number(self.efl_mm),
+            json_number(self.design_efl_mm),
             json_number(self.bfl_mm),
             json_number(self.efl_focused_mm),
             json_number(self.image_scale_mm),
@@ -2127,6 +2137,7 @@ impl TracedLens {
             squeeze: 0.0,
             info: LensInfo {
                 efl_mm: 0.0,
+                design_efl_mm: 0.0,
                 bfl_mm: 0.0,
                 efl_focused_mm: 0.0,
                 image_scale_mm: 0.0,
