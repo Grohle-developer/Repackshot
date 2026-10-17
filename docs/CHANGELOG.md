@@ -5,6 +5,16 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Cámara
+
+- **Enfocar con clic cae en el píxel exacto** de la vista exacta: el clic toma el rayo principal que el motor traza por ese píxel (con la pose del cabezal, la cámara mirada a través con su propio cuadro, la distorsión de una lente trazada) y lo que toca, por las dos caras; la distancia que lo pone nítido es la del motor (la profundidad; con inclinación, el plano de la bisagra que pasa por el punto; con una lente trazada, donde el detalle fino tiene más contraste, que abierta cae a milímetros del plano paraxial). Medido en un damero inclinado con 135 mm a f/1,4: la banda nítida pasa por el clic (F1).
+- **Tres modos de enfoque por cámara**: *Distancia* (como antes), *Punto* (un punto de una pieza que el enfoque sigue al orbitar, al acercarse, al mover la pieza, en la línea de tiempo, en la cola y en los lotes) y *Objeto* (una pieza, un grupo o el modelo, por su centro). En el inspector de la cámara, con la distancia como un deslizador logarítmico junto a su valor; en el menú de una pieza, *Mantener enfocado*; en la paleta, cuatro órdenes. El visor marca el punto de la cámara seleccionada. Si la pieza del punto o el objeto se borran, la cámara vuelve a su última distancia y lo avisa. Los proyectos y las cámaras de antes se abren por distancia (F1).
+- Arreglado: el visor *Completo* de una cámara mirada a través usaba el cuadro de la cámara activa (una de 9:16 enfocaba hasta 35 mm fuera en la esquina); una lente trazada en el visor *Completo* se trazaba para el sensor del visor y no era la del render; el enfoque elegido con clic no seguía a la cámara al orbitar ni al acercarse; y el clic no veía la cara trasera de una superficie de una sola cara que el motor sí renderiza (F1).
+
+### Motor
+
+- `rt.wasm` exporta `rt_scene_pick` (el rayo principal de un punto de la imagen y lo que toca) y `rt_scene_focus_at` (la distancia que enfoca un punto); `LENS` admite al final `frame_sensor_mm`. Ningún *hash* de render fijado cambia; los picos de las escenas de O1 y O2 quedan fijados y comprobados en `rt.wasm` en CI (F1).
+
 ### Herramientas
 
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.

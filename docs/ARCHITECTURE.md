@@ -108,6 +108,7 @@ src/
     ies.ts                  perfiles fotométricos IES (L5): el lector del formato LM-63 (puerto del de `rt_core::ies`, con el mismo fichero de conformidad), la intensidad y el flujo del perfil, el foco que lo aproxima en Rápido y las curvas del gráfico polar
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
+    focus.ts                el enfoque de una cámara (F1): por distancia, por punto (anclado a su pieza) y por objeto; la distancia que pone un punto en foco con la regla del motor (`focusDistanceFor`: la profundidad, la bisagra de una inclinación), la que resuelve cada cámara en cada pose (`resolvedFocusDistance`, `focusDistanceAt`), el solucionador exacto del motor para una lente trazada (`setFocusSolver`), el paso del *store* (`syncFocus`) y el rango del deslizador
     optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2)
     traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
@@ -161,6 +162,7 @@ src/
     lens-filter-image.ts    los filtros de efecto de la lente en imagen (O3a): los núcleos en píxeles y su convolución en TS, la referencia del pase WebGL
     lens-filter-pass.ts     el pase WebGL de esos núcleos en el modo Rápido (objetivo lineal de medio flotante, gaussianas a tamaño reducido, rayas a media resolución; cada parte con su color); con una lente trazada, su distorsión y su viñeteo (O2)
     lens-info.ts            lo que el motor calcula de una lente trazada (O2): `rt_scene_lens_info` de rt.wasm en el hilo de la página
+    focus-pick.ts           enfocar con clic con el motor (F1): `rt_scene_pick` (el rayo principal de un píxel de la vista) y `rt_scene_focus_at` (la distancia que pone un punto en foco; la de una lente trazada, de sus rayos) de rt.wasm en el hilo de la página, con detección de las exportaciones; el solucionador de `core/focus.ts`
     lens-profile.ts         la tabla del visor Rápido de una lente trazada (O2): la escala de imagen, la distorsión y la iluminación relativa del motor; y el mapa de la pantalla a la imagen sin distorsionar, una vez en TypeScript y en GLSL con los mismos números: lo dibujan el pase de pantalla, el contorno y los superpuestos, y lo invierten el pico, el gizmo, los glifos y la selección por caja
     graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
@@ -524,7 +526,7 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), programas de material (M3b, `program`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_scene_pick` y `rt_scene_focus_at` (F1: el rayo principal de un punto de la imagen, lo que toca y la distancia que lo enfoca; la página las detecta por su nombre, sin bit de `rt_features`), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -716,7 +718,10 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   `f32 grade` 0 a 2, `tint[3]` (ceros: el del tipo), `angle_deg`; `u32
   points` 4, 6 u 8, 0 es 6), escritos solo cuando hay alguno: una `LENS`
   sin filtros es la de O1 byte a byte, y una sección de O1 se lee sin
-  filtros. Un valor fuera de rango hace inválido el fichero. Un RSB sin
+  filtros. **F1** puede añadir tras la prescripción de O2 un `f32
+  frame_sensor_mm`: el sensor del cuadro de salida cuando el de `CAMR`
+  abarca más (la imagen del visor), del que la lente trazada saca lo que es
+  de la esquina del cuadro (§5.2 quindecies); sin él, el de `CAMR`. Un valor fuera de rango hace inválido el fichero. Un RSB sin
   `LENS` es la lente fina de siempre, bit a bit (los *hash* del ejemplo,
   E5, E5c, E5b-1 y los pases no se movieron); una `LENS` neutra también.
   La interfaz la escribe solo para una cámara con óptica no neutra
@@ -2496,6 +2501,94 @@ con el perfil del *downlight* y un punto cálido con el *wall washer* girado
 sobre su eje; 160 × 120), igual en cada ruta SIMD, en `rt` con 1, 4 y 16 hilos,
 en WASI y en el `rt.wasm` real (CI y `tests/ies-engine.test.ts`); ningún hash
 anterior se movió.
+
+### 5.2 quindecies · Enfocar con clic y el enfoque que sigue (F1, `rt_core::focus`)
+
+El clic de *Enfocar con clic* tiene que caer en el píxel exacto de la vista
+exacta, y lo que se enfoca tiene que salir nítido en la imagen del motor. Por
+eso las dos preguntas las contesta el motor, sin repetir su cámara en
+TypeScript:
+
+- **El rayo.** `rt_scene_pick(handle, u, v, out)` escribe 14 `f32` del punto
+  `(u, v)` de la imagen (0 a 1, `v` hacia abajo; el centro de un píxel es
+  `(x + 0,5) / ancho`): el **rayo principal** (origen y dirección, el de
+  `Camera::generate_ray` con el punto `(0, 0)` de la pupila, el de los pases
+  exactos, `render::centre_ray`), y si la escena tiene geometría lo que toca
+  primero (`Scene::pick`: solo las piezas, cortadas por la sección, las dos
+  caras de cada triángulo, vidrio y recortes incluidos) con su `t`, su punto,
+  su instancia, su profundidad y la distancia que lo enfoca (NaN donde no hay).
+  La página le da una escena **de solo la cámara** (`io/rsb.ts`
+  `focusPickRsb`: la cámara de la vista como la escribe `projectScene` para el
+  visor Completo, con la pose del cabezal, la cámara mirada a través con su
+  propio cuadro y la imagen del visor alrededor del cuadro) y lanza el rayo
+  contra la geometría de la vista previa por las dos caras
+  (`PreviewEngine.pickAlong`). Cualquier proyección que tenga el motor (la
+  lente fina con su descentramiento, la trazada con su distorsión y su
+  respiración, la ortográfica, y las que vengan) sirve así sin más. Una
+  lente trazada **respira** (su campo cambia con el enfoque), así que lo que
+  muestra el píxel se mueve un poco cuando el enfoque llega a él: el pico se
+  repite con la cámara ya enfocada en lo que tocó el anterior hasta que el
+  punto no se mueve más de una micra (`render/focus-pick.ts`
+  `settledFocusPick`; cada vuelta reduce el paso por lo que respira, unas
+  centésimas, y a la cuarta está quieto). Sin eso, abierta, el clic en la
+  esquina quedaba 0,9 mm de profundidad fuera en una superficie a 45°. Una
+  cámara cuyos rayos no dependen del enfoque (lente fina, inclinación) toca
+  el mismo punto en el segundo pico y para.
+- **El enfoque.** `rt_scene_focus_at(handle, x, y, z)` devuelve la distancia
+  de enfoque que pone en foco el punto del mundo (`Camera::focus_distance_to`):
+  su profundidad a lo largo del eje (la lente fina, que enfoca un plano
+  perpendicular al eje); con inclinación, la distancia cuyo plano de la regla
+  de la bisagra pasa por el punto, `u (f − sin α (p · b)) = f z`; con una lente
+  trazada, la que pone en el punto su **mejor foco**, donde el detalle fino
+  que ve el punto del sensor tiene más contraste
+  (`TracedLens::film_position_through`, Newton sobre el rayo principal;
+  `TracedLens::best_focus`: una rejilla de 32 × 32 muestras de cámara por
+  banda sobre el rectángulo de la pupila que pasa la luz desde *ese* punto del
+  sensor, buscado allí mismo y no en las franjas precalculadas del render, para
+  que el visor, con su sensor mayor, y el render resuelvan lo mismo; pesadas
+  por su peso y por su parte de la luminancia; a lo largo del rayo, entre donde
+  los rayos cruzan el principal, la distancia de más modulación de patrones de
+  10 y 5 pares de líneas por milímetro del cuadro de 36 mm (`FOCUS_LP_MM`; la
+  media de las dos frecuencias y de dos direcciones, medida la frecuencia desde
+  la pupila de entrada), el máximo más cercano a los mínimos cuadrados (un
+  barrido de 48 pasos, cuesta arriba desde ahí, y secciones áureas: con una sola
+  frecuencia, cerca del borde un lóbulo lateral, la resolución espuria, quedaba
+  por encima de un lóbulo principal débil y el enfoque salía 43 mm fuera), por
+  la secante desde la paraxial con la lente enfocada de nuevo en cada intento
+  (como mucho seis, guardando el mejor), hasta 2·10⁻⁵ de la profundidad. El primer criterio fue
+  el **círculo de menor confusión** (los mínimos cuadrados de las muestras), y
+  no sirve: abierta, la aberración esférica extiende un halo que los mínimos
+  cuadrados siguen, y el render quedaba blando en el clic (la doble Gauss
+  rápida a f/1,4 con 135 mm a 600 mm tiene su menor confusión a 601,5 mm y su
+  contraste a 607–610 mm, donde el render es nítido; un test lo comprueba con
+  las muestras de cámara del propio render a través del foco). Medido: abierta,
+  una lente trazada pone su mejor foco a milímetros del plano paraxial, varias
+  profundidades de campo; resolverlo cuesta de 0,4 a 0,6 s en `rt.wasm` con la
+  máquina cargada.
+- **`frame_sensor_mm`** (al final de `LENS`, tras la prescripción, opcional):
+  el sensor del cuadro de salida a lo largo de su lado largo cuando el de la
+  cámara abarca más (la imagen del visor). La lente trazada saca de él lo que
+  es de la esquina del cuadro (las semiaperturas que la fuente no da, la altura
+  contra la que mide su distorsión y su viñeteo artísticos, dónde mide su
+  compresión), y no del sensor del visor: antes, el visor Completo de una lente
+  con distorsión no era el render (2,3 mm frente a 1,0 mm en la esquina con
+  distorsión +1). La página lo escribe solo para el visor; sin él, los bytes y
+  la imagen de antes.
+- **La interfaz** detecta las dos exportaciones por su nombre
+  (`render/focus-pick.ts` `hasFocusExports`; sin bit nuevo de `rt_features`,
+  porque no cambian lo que se lee del RSB): sin `rt.wasm`, o con uno de antes,
+  el pico de la vista previa y la distancia paraxial. El solucionador de
+  `core/focus.ts` (`setFocusSolver`) es el de `rt.wasm` en el hilo de la
+  página para la cámara del cuadro (`lensInfoRsb`), con las últimas 64
+  respuestas guardadas; los fotogramas de un gesto (`SceneView.focusFast`)
+  usan la última diferencia con la paraxial para esa lente en vez de
+  resolver otra vez. En el escritorio la página lleva su `rt.wasm`, el mismo
+  `rt-core` que renderiza el lanzador.
+- **Lo que no cambia.** Nada de esto toca el render: ningún *hash* fijado se
+  movió. `focus::tests` fija los 20 picos de una rejilla de la escena de O1
+  (descentramiento e inclinación) y de la de O2 (lente trazada, con su enfoque
+  resuelto), `PINNED_FOCUS_PICK_O1` y `PINNED_FOCUS_PICK_O2`, los mismos bits
+  en nativo y en el `rt.wasm` real (`tools/wasm-parity.mjs --pick`, en CI).
 
 ### 5.3 · En el navegador: workers
 
