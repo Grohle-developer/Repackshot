@@ -13,7 +13,9 @@ import { QUALITY_KEYS, QUALITY_PRESETS } from '../data/quality';
 import { SCENE_TYPE_KEYS, sceneTypeEntry, type SceneTypeDefaults } from '../data/scene-types';
 import type { SceneType } from '../data/types';
 import { CAUSTICS_MODES, DENOISE_MODES } from './caustics';
+import { typeLightsUntouched, type CustomSetup, type LightInstance } from './lighting';
 import { FINISH_BYS } from './render';
+import { applySet, setOf } from './sets';
 import type { ActionBase, ProjectState } from './store';
 
 export type SceneTypeAction = { type: 'scene/setType'; sceneType: SceneType } & ActionBase;
@@ -146,6 +148,70 @@ const staticSlots: readonly Slot[] = [
   },
 ];
 
+/**
+ * C1: what putting a light recipe in force changes, as one value: the setup, its lights (the decoration's pool kept
+ * among them), whether they were edited, the dome's strength and the exposure.
+ */
+interface Lighting {
+  setup: string;
+  /** Absent when the studio has no such field (a project of before). */
+  custom?: CustomSetup | null;
+  lights: LightInstance[];
+  modified: boolean;
+  strength: number;
+  exposureEv: number;
+}
+
+const lightingOf = (s: ProjectState): Lighting => ({
+  setup: s.studio.lightSetup,
+  ...(s.studio.customSetup !== undefined ? { custom: s.studio.customSetup } : {}),
+  lights: s.studio.lights,
+  modified: s.studio.modified,
+  strength: s.environment.strength,
+  exposureEv: s.image.exposureEv,
+});
+
+function withLighting(s: ProjectState, v: Json): ProjectState {
+  const l = v as unknown as Lighting;
+  const { customSetup: _was, ...studio } = s.studio;
+  return {
+    ...s,
+    studio: { ...studio, lightSetup: l.setup, ...(l.custom !== undefined ? { customSetup: l.custom } : {}), lights: l.lights, modified: l.modified },
+    environment: { ...s.environment, strength: l.strength },
+    image: { ...s.image, exposureEv: l.exposureEv },
+  };
+}
+
+const validLighting = (v: unknown): v is Json =>
+  isObject(v) &&
+  typeof v.setup === 'string' &&
+  (v.custom === undefined || v.custom === null || isObject(v.custom)) &&
+  Array.isArray(v.lights) &&
+  v.lights.every((l) => isObject(l) && typeof l.id === 'string') &&
+  typeof v.modified === 'boolean' &&
+  isNum(v.strength) &&
+  isNum(v.exposureEv);
+
+/**
+ * C1: the type's light recipe (`SceneTypeDefaults.lightSetup`, the Interior's midday window), as choosing it in the
+ * catalogue does, over the product type's own lights when they are untouched and nothing else. A set's decoration in
+ * the scene is kept (the recipe has none of its own, as when it is added keeping the lights there were): taking it away
+ * would make going back a matter of putting parts back in the scene, which a slot does not hold.
+ */
+const lightingSlot: Slot = {
+  key: 'studio.lighting',
+  read: (s) => lightingOf(s) as unknown as Json,
+  write: withLighting,
+  target: (s, d, base) => {
+    const set = d.lightSetup === undefined ? undefined : setOf(d.lightSetup);
+    if (!set) return undefined;
+    const from = withLighting(s, base);
+    if (!typeLightsUntouched(from)) return undefined;
+    return lightingOf(applySet(from, set, {}, false, true)) as unknown as Json;
+  },
+  valid: validLighting,
+};
+
 const FOCAL = 'camera.focal:';
 /** K3: the straight verticals of a camera. */
 const VERTICALS = 'camera.verticals:';
@@ -195,7 +261,7 @@ function verticalsSlot(id: string): Slot {
 function slotsFor(cameras: Iterable<string>, memory: TypeMemory): Slot[] {
   const ids = new Set(cameras);
   for (const k of Object.keys(memory)) for (const prefix of CAMERA_PREFIXES) if (k.startsWith(prefix)) ids.add(k.slice(prefix.length));
-  return [...staticSlots, ...[...ids].flatMap((id) => [cameraSlot(id), verticalsSlot(id)])];
+  return [...staticSlots, lightingSlot, ...[...ids].flatMap((id) => [cameraSlot(id), verticalsSlot(id)])];
 }
 
 /**

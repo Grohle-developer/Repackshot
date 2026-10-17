@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { SCENE_TYPES, sceneTypeEntry } from '../src/data/scene-types';
+import { typeLightsUntouched } from '../src/core/lighting';
 import { applySceneType, normalizeSceneType, normalizeTypeBase, qualityForSamples } from '../src/core/scene-type';
 import { createStore, reduce, type ProjectState } from '../src/core/store';
 import { loadProject, parseProject, serializeProject } from '../src/io/project';
@@ -62,6 +63,8 @@ describe('the scene type', () => {
     expect(s.render).toMatchObject({ maxSamples: 512, quality: 'CUSTOM', finishBy: 'NOISE' });
     expect(s.render.advanced.denoise).toBe('BOTH');
     expect(cam(s)).toMatchObject({ focalMm: 28, lens: null });
+    // C1: the starting light recipe, the midday window.
+    expect(s.studio.lightSetup).toBe('INT_WINDOW_NOON');
     // What the column does not name is where it was.
     expect(s.environment.background).toBe('GRADIENT');
     expect(s.environment.groundShadow).toBe(0.8);
@@ -198,13 +201,86 @@ describe('the scene type', () => {
     const start = handmade();
     for (const t of ['INTERIOR', 'CATALOGUE'] as const) {
       const s = switchTo(start, t);
-      expect(s.studio.lights).toBe(start.studio.lights);
-      expect(s.studio.lightSetup).toBe(start.studio.lightSetup);
+      // C1: Interior puts its light recipe in force over the type's own lights (below); Catalogue has none.
+      if (t === 'CATALOGUE') {
+        expect(s.studio.lights).toBe(start.studio.lights);
+        expect(s.studio.lightSetup).toBe(start.studio.lightSetup);
+      }
       expect(s.scene.nodes).toBe(start.scene.nodes);
       expect(s.materials).toBe(start.materials);
       expect(s.animation).toBe(start.animation);
       expect(Object.keys(s.render.advanced).sort()).toEqual(Object.keys(start.render.advanced).sort());
     }
+  });
+});
+
+describe('the starting light recipe of Interior (C1)', () => {
+  const lightsOf = (s: ProjectState) => ({ setup: s.studio.lightSetup, lights: s.studio.lights, modified: s.studio.modified, strength: s.environment.strength, exposureEv: s.image.exposureEv });
+
+  it('over the product type’s own untouched lights, Interior puts the midday window in force, as choosing it does', () => {
+    const start = exampleState();
+    expect(typeLightsUntouched(start)).toBe(true);
+    const s = switchTo(start, 'INTERIOR');
+    // The same lights, dome strength and exposure as choosing the recipe in the catalogue.
+    const chosen = reduce(start, { type: 'studio/setSetup', key: 'INT_WINDOW_NOON' });
+    expect(lightsOf(s)).toEqual(lightsOf(chosen));
+    expect(s.studio.lights.map((l) => l.type)).toContain('SUN');
+    expect(s.studio.modified).toBe(false);
+    expect(s.scene.typeBase?.['studio.lighting']).toBeDefined();
+  });
+
+  it('going back to Product leaves the lights, the setup, the dome and the exposure as they were', () => {
+    for (const start of [exampleState(), handmade()]) {
+      const back = switchTo(switchTo(start, 'INTERIOR'), 'PRODUCT');
+      expect(lightsOf(back)).toEqual(lightsOf(start));
+      expect(back.studio.lights).toBe(start.studio.lights);
+      expect(same(back)).toEqual(same(start));
+    }
+  });
+
+  it('a setup the person chose, or lights they touched, are theirs: Interior leaves them, and going back too', () => {
+    const chosen = reduce(exampleState(), { type: 'studio/setSetup', key: 'REMBRANDT' });
+    const edited = reduce(exampleState(), { type: 'studio/setLight', id: 'l1', patch: { power: 12 } });
+    const added = reduce(exampleState(), { type: 'studio/addLight', kind: 'POINT' });
+    for (const start of [chosen, edited, added]) {
+      expect(typeLightsUntouched(start)).toBe(false);
+      const s = switchTo(start, 'INTERIOR');
+      expect(lightsOf(s)).toEqual(lightsOf(start));
+      expect(s.scene.typeBase?.['studio.lighting']).toBeUndefined();
+      expect(same(switchTo(s, 'PRODUCT'))).toEqual(same(start));
+    }
+  });
+
+  it('a recipe light the person touched in Interior stays when going back', () => {
+    let s = switchTo(exampleState(), 'INTERIOR');
+    s = reduce(s, { type: 'studio/setLight', id: s.studio.lights[0].id, patch: { power: 3 } });
+    const touched = s.studio.lights;
+    const back = switchTo(s, 'PRODUCT');
+    expect(back.studio.lightSetup).toBe('INT_WINDOW_NOON');
+    expect(back.studio.lights).toBe(touched);
+    expect(back.scene.typeBase).toBeUndefined();
+  });
+
+  it('is undone in one step with the rest of the type', () => {
+    const store = createStore(exampleState());
+    const before = store.get();
+    store.dispatch({ type: 'scene/setType', sceneType: 'INTERIOR', label: 'Scene type' });
+    expect(store.get().studio.lightSetup).toBe('INT_WINDOW_NOON');
+    store.undo();
+    expect(same(store.get())).toEqual(same(before));
+  });
+
+  it('keeps the decoration of a product type that is a set, and puts it back as it was', () => {
+    // GENERIC is the set GRADIENT_POOL: with a product in the scene its pool's spot is part of the scene.
+    const dressed = reduce(exampleState(), { type: 'studio/fitSet' });
+    const pool = dressed.studio.lights.filter((l) => l.setPiece);
+    expect(pool.length).toBeGreaterThan(0);
+    expect(typeLightsUntouched(dressed)).toBe(true);
+    const s = switchTo(dressed, 'INTERIOR');
+    expect(s.studio.lightSetup).toBe('INT_WINDOW_NOON');
+    expect(s.studio.lights.filter((l) => l.setPiece)).toEqual(pool);
+    expect(s.scene.nodes).toBe(dressed.scene.nodes);
+    expect(same(switchTo(s, 'PRODUCT'))).toEqual(same(dressed));
   });
 });
 
@@ -255,6 +331,7 @@ describe('the scene type in the project file', () => {
       'camera.focal:cam9': { base: { focalMm: 'wide', lens: null }, applied: { focalMm: 28, lens: null } },
       'render.future': { base: 1, applied: 2 },
       'render.caustics': 'OFF',
+      'studio.lighting': { base: { setup: 'PRESET', lights: 'none', modified: false, strength: 0.6, exposureEv: 0 }, applied: { setup: 'INT_WINDOW_NOON', lights: [], modified: false, strength: 0.15, exposureEv: 0.2 } },
     };
     expect(normalizeTypeBase(raw, state)).toEqual({
       'render.maxBounces': { base: null, applied: 16 },

@@ -59,7 +59,7 @@ import {
   type LensItem,
 } from '../core/library';
 import { IES_MAX_BYTES, iesTextOf, parseIes, type IesError } from '../core/ies';
-import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
+import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, typeLightsUntouched, type NewLightKind } from '../core/lighting';
 import { resolvePreset } from '../core/rig';
 import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
 import { PREVIOUS_LIGHTS, previousLights, type PreviousLights } from '../core/previous-lights';
@@ -1879,12 +1879,14 @@ function keptLightNames(ctx: Ctx): Record<string, string> {
 
 /**
  * Choosing a setup or a set (L7). With lights in the scene, what happens to them: the choice remembered in Settings
- * (`light.previous`), or a question with Replace, Hide and Add (and Remember my choice). Without lights, or choosing
- * the setup in force again, it is put in force as it always was.
+ * (`light.previous`), or a question with Replace, Hide and Add (and Remember my choice). Without lights, choosing
+ * the setup in force again, or (C1) over the product type's own lights untouched (`typeLightsUntouched`: nothing of
+ * the person's to keep), it is put in force as it always was: the lights there are are replaced, whatever was
+ * remembered.
  */
 export function requestSetup(ctx: Ctx, key: string): ConfirmSpec | null {
   const s = ctx.store.get();
-  if (previousLights(s).length === 0 || s.studio.lightSetup === key) {
+  if (previousLights(s).length === 0 || s.studio.lightSetup === key || typeLightsUntouched(s)) {
     chooseSetup(ctx, key);
     return null;
   }
