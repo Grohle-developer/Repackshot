@@ -1127,7 +1127,7 @@ mismo plano de enfoque** para los mismos números: por la regla de la
 bisagra de la lente simple (por el punto de enfoque, a `focusDistance` a
 lo largo de la vista, con normal `f·forward + u·sin α·b`); la lente
 trazada se gira lo que haga falta para que su propio plano sea ese (ver
-`ARCHITECTURE.md` §5.2 quindecies) y, lejos del centro, su curvatura de
+`ARCHITECTURE.md` §5.2 sedecies) y, lejos del centro, su curvatura de
 campo lo dobla como dobla el de la lente derecha. La interfaz lee el par
 como una cantidad (0° a 12°) y la dirección de la imagen hacia la que se
 aleja el plano (`recedeOf`/`tiltFromRecede` de `src/core/focus-plane.ts`;
@@ -1203,12 +1203,57 @@ misma distorsión, y un clic (enfocar con clic, seleccionar, la caja, el
 *gizmo*) cae en lo que está bajo el cursor: el mismo mapa al revés. Cambiar de
 lente no toca la resolución de salida.
 
+**Cámara de interiores (K3).** `CameraState.projection` es
+`PERSPECTIVE`, `ORTHOGRAPHIC`, `EQUIRECTANGULAR` (panorámica 2:1, 360° ×
+180° sobre la imagen entera) o `FISHEYE` (equidistante, `fisheyeFovDeg`
+de 60° a 360° sobre la diagonal de la imagen, 180° por defecto); un
+proyecto con una clave desconocida abre en perspectiva. Las dos
+panorámicas parten de la posición de la cámara y de su marco
+(acimut y elevación): el centro de la imagen mira al objetivo y la vista
+previa las dibuja desde las seis caras de un cubo con el mismo mapa que
+el motor. **Vistas** nuevas: *Alzado* (ortográfica a 0° de elevación) y
+*Planta* (ortográfica desde arriba, 89,9°). **Verticales rectas**
+(`straightVerticals`, apagable): se renderiza la cámara nivelada en la
+misma posición y el mismo acimut, con el *shift* vertical que deja el
+objetivo donde estaba (−f · tan inclinación, sumado al *shift* de la
+óptica de O1), hasta 30° de inclinación; más allá de 30° la parte de
+más se queda como inclinación (`VERTICALS_MAX_TILT_DEG`). En una
+ortográfica no hace falta y en un *fisheye* las verticales son curvas: no
+se aplica; una equirectangular se renderiza nivelada, sin *shift*.
+**Altura de ojo** (`camera/eyeHeight`): sube o baja la cámara hasta esa
+altura sobre el suelo (Z del mundo) y la deja mirando al mismo objetivo;
+presets *De pie* 1,5 m y *Sentado*
+1,1 m. **Ópticas de interior** (`camera/interiorLens`): 24, 28 y 35 mm
+(`src/data/interior-camera.ts`). Una cámara bloqueada no se mueve con
+ninguna de las dos acciones. Una pieza con **Visible a cámara**
+apagado (`SceneNode.cameraHidden`, heredado por los hijos) no la ve la
+cámara (ni los pases, ni las tapas de sección, ni el picado) pero sigue
+dando sombra, rebotes y reflejos: la planta sin techo y con la luz del
+techo.
+
 ### 3.6 · Imagen
 
 Exposición en EV, transformada de vista (`STANDARD`, `FILMIC`, `AGX`),
 halo (umbral, tamaño, mezcla), nitidez, saturación, contraste, viñeta.
 Se aplican en este orden fijo sobre la imagen lineal: halo → nitidez →
 color → viñeta → transformada. Con todo a cero, la imagen no cambia.
+
+**Exposición como pase (K3).** `image.exposureMode` es `MANUAL` (el de
+siempre, la exposición son `exposureEv` paradas) o `AUTO`: el pase de
+exposición mide la imagen lineal en la página (`core/image-passes.ts`,
+determinista: luminancia en `f32`, logaritmo en base 2, se descarta el
+10 % más oscuro y el 5 % más claro, la media se lleva al gris del 18 %,
+±16 paradas, redondeada a la centésima) y `exposureEv` es entonces la
+compensación *Brillo (EV)* sobre lo medido. La medida se rehace cuando
+las muestras se duplican y, en un render final, sobre las sumas antes del
+*denoise*. Los **presets** *Día luminoso* (EV₁₀₀ 7) y *Tarde de lámparas*
+(EV₁₀₀ 5) ponen la exposición a mano: `exposureEv = log2(683 / 1,2) − EV₁₀₀`.
+El **multiplicador de exterior** (`environment.exterior`, 0,05 … 1, 1 por
+defecto y sin escribir) multiplica el entorno que ve el rayo de cámara
+(también a través de vidrio fino y de recortes) y el fondo del
+atrapasombras, y no la luz que ese entorno da a la habitación. Los pases
+que aplica la página son `exposure` y `curve` (la transformada); el resto
+sigue igual.
 
 ### 3.7 · Animación, al estilo KeyShot
 
@@ -1420,8 +1465,10 @@ plantilla, carpeta de destino (en el navegador, *Descargas* o una
 carpeta elegida con el acceso al sistema de archivos donde exista),
 formato (PNG 8/16 bits, JPEG con calidad, EXR lineal, TIFF de 8/16 bits
 sRGB o 32 bits lineal, RAW DNG lineal), fondo
-transparente (no en JPEG ni en DNG), pases (fase posterior: alfa, profundidad, normales, id de
-pieza), cámara (una o todas), tamaño en píxeles con su tamaño de
+transparente (no en JPEG ni en DNG), **pases** (N2: alfa, profundidad, normales, id de
+pieza, uno por archivo junto a la imagen, en PNG de 16 bits o EXR), cámara (una o todas),
+**estudio** (N2: la escena como está, uno de los guardados o todos), si los archivos de lo que se
+manda a la cola van en un solo **ZIP** (N2), tamaño en píxeles con su tamaño de
 impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
 archivo), **terminar por** muestras, por tiempo (o lo que llegue antes,
 en avanzado) o **por ruido** (E10: con muestreo adaptativo, cuando el error
@@ -1438,7 +1485,8 @@ fechas de creación, inicio y fin, los ids de sus resultados, el error si
 lo hubo y el fotograma en curso. *Todas las cámaras* se expande en un
 trabajo por cámara al entrar en la cola; una animación es un solo
 trabajo. Editar la cola es deshacible; el progreso no. La cola ejecuta en serie, con progreso, pausa, reordenar y
-cancelación, **siempre con el motor completo**. Cada resultado guarda la
+cancelación (*Detener* el trabajo en curso, que acaba *Cancelado* y deja que siga el
+siguiente; *Quitar* uno que espera, que no toca a los demás), **siempre con el motor completo**. Cada resultado guarda la
 imagen del motor y, si hubo post-procesado, también la de la IA, para
 compararlas con un divisor deslizable. El trabajo en curso se puede **ver en
 vivo** (U14; `UI.md` §2.5 y §2.8): elegido en la cola, su imagen tal como el
@@ -1447,6 +1495,37 @@ dice el motor, como mucho dos veces por segundo y solo mientras se mira (el
 motor no hace ninguna mientras nadie la mira); un trabajo en espera dice que no
 ha empezado, y uno terminado abre su resultado. La vista en vivo es estado de la
 interfaz, no del proyecto: ni se guarda ni se deshace.
+
+**Pases, lotes y ZIP** (N2). Un trabajo de imagen puede pedir, además de la
+imagen, los **pases** de objetos que el motor renderiza con ella (`RNDR.passes`,
+`ARCHITECTURE.md` §5.2): **alfa** (la cobertura de los objetos de 0 a 1, con los
+bordes suavizados como la imagen; el suelo del estudio, el fondo y el entorno valen 0),
+**profundidad** (la distancia a lo largo del eje de la vista), **normales** (en el
+espacio del mundo, Z arriba) e **id de pieza** (el número de instancia que el motor da
+a cada pieza, con una leyenda `.json` de quién es quién). Cada pase es un archivo junto
+a la imagen con su nombre más `_alpha`, `_depth`, `_normal` o `_partId`, en **PNG de 16 bits** (gris, o RGB las normales; la profundidad
+normalizada a 0 = fondo y 65535 = lo más cercano, con el rango en el archivo) o en
+**EXR** (32 bits flotantes, los valores tal cual, `+Infinity` donde no hay nada). Un
+fondo transparente de la imagen no cambia los pases. Una animación no escribe pases.
+
+El **estudio** del trabajo es la escena como está, uno de los **estudios
+guardados** (la pestaña *Estudios*; los de un proyecto antiguo, también) o *todos*:
+el estudio se pone sobre una **copia** del proyecto y esa copia es lo que se renderiza,
+con la cámara del trabajo (el estudio no le quita su vista); el proyecto abierto no se
+toca. *Todas las cámaras* × *Todos los estudios* es un **lote**: un trabajo por cámara
+y estudio (primero por cámara), con el nombre de la plantilla (`{project}_{camera}_{studio}`,
+cuyas fichas dicen *Proyecto*, *Cámara* y *Estudio*, da cuatro archivos distintos en un 2 × 2;
+`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un estudio que ya no
+está guardado hace fallar su trabajo, con el motivo, y la cola sigue. Un trabajo con
+estudio no pasa por la IA (sus pases se dibujan del proyecto abierto).
+
+Con **ZIP**, los archivos de los trabajos que una orden *Render* o *+ Añadir a la cola*
+metió en la cola (imágenes, pases, leyendas) no se guardan uno a uno: se acumulan y, al
+acabar el último trabajo del grupo (terminado, fallido, detenido o quitado), se escribe
+**un solo ZIP** (método *store*, escritor propio, `Proyecto_0001-0004.zip`) en el
+destino; si el ZIP no se pudiera crear, los archivos se guardan uno a uno, así que nunca
+se pierde una imagen. Un grupo cuya cola se pausa espera en memoria; cerrar la página lo
+pierde.
 
 **Plugins** (P6; `ARCHITECTURE.md` §9). Herramientas de otros programas que
 trabajan sobre un **resultado terminado**: se instalan en *Ajustes ▸ Plugins*
@@ -1509,7 +1588,8 @@ los proyectos anteriores abren como *Producto*); una **habitación** paramétric
 ciclorama); **ventanas que iluminan solas** (portales automáticos, vidrio
 fino, vista exterior en un plano con paralaje); **cámara de interiores**
 (verticales rectas, altura de ojo, panorámica, alzados y planta,
-exposición automática, recorrido); Doctor de interiores (siete chequeos de escena, K1; el resto, con el
+exposición automática, recorrido; hecho en K3 salvo el recorrido, §3.5 y
+§3.6); Doctor de interiores (siete chequeos de escena, K1; el resto, con el
 motor); grupos de luz
 ajustables tras el render; entregables de mobiliario (silos con alfa y
 cotas, variantes, 360). Las decisiones, las fuentes y las fases están en

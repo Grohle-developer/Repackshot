@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { cameraBasis, cameraPosition, makeCamera, type CameraState } from '../src/core/camera';
+import { renderedCamera, verticalsOf } from '../src/core/interior-camera';
 import { focusPlaneHint, focusPlaneOf, isTiltSolution, planeDistance, recedeOf, solveTilt, tiltFromRecede, type TiltSolution } from '../src/core/focus-plane';
 import { add, cross, dot, normalize, scale, sub, type Vec3 } from '../src/core/math';
 import { bokehApplies, canTilt, lensModelOf, normalizeOptics, OPTICS_NEUTRAL, opticsForBokeh, opticsOf, opticsWithLensModel, tiltOf, withTilt, type CameraOptics } from '../src/core/optics';
@@ -277,6 +278,67 @@ describe('the plane through two points, in the viewport (one undo entry)', () =>
     // Pressing the button again puts the pick down.
     armTiltPick(ctx, camId);
     expect(ctx.ui.get().pickMode).toBeNull();
+  });
+});
+
+describe('with the straight verticals of K3 (the camera rendered level, its lens shifted)', () => {
+  // The engine's camera as the RSB writes it: the hinge rule from its own position, target, up and LENS, without
+  // core/focus-plane.ts, which must agree with it.
+  const enginePlane = (cam: CameraState) => {
+    const rc = cameraToRsb(cam, 640, 480, 640, 480);
+    const pos: Vec3 = [rc.position[0], rc.position[1], rc.position[2]];
+    const forward = normalize(sub([rc.target[0], rc.target[1], rc.target[2]], pos));
+    const right = normalize(cross(forward, [rc.up[0], rc.up[1], rc.up[2]]));
+    const up = cross(right, forward);
+    const lens = rc.lens!;
+    const ax = (lens.tiltAxisDeg * Math.PI) / 180;
+    const a = add(scale(right, Math.cos(ax)), scale(up, Math.sin(ax)));
+    const b = cross(forward, a);
+    const u = rc.focusDist;
+    const normal = normalize(add(scale(forward, cam.focalMm), scale(b, u * Math.sin((lens.tiltDeg * Math.PI) / 180))));
+    return { plane: { point: add(pos, scale(forward, u)), normal }, lens, right };
+  };
+
+  for (const model of ['thin', 'traced'] as const) {
+    it(`adds its shift to the hand-set one, and the two-point plane is the engine’s, with the ${model === 'thin' ? 'simple' : 'traced'} lens`, () => {
+      const optics = model === 'traced' ? { ...traced(), shiftXMm: 1, shiftYMm: 2, tracedTiltDeg: 3 } : { ...OPTICS_NEUTRAL, shiftXMm: 1, shiftYMm: 2, tiltDeg: 3 };
+      const { ctx, camId } = context(optics);
+      ctx.store.dispatch({ type: 'camera/set', id: camId, patch: { elevation: 12, straightVerticals: true } });
+      const cam0 = ctx.store.get().camera.cameras[camId];
+      const v = verticalsOf(cam0)!;
+      expect(v.shiftYMm).toBeLessThan(-1);
+      // The shift: the verticals' on top of the hand-set one, in the LENS of either model; the tilt the model's own.
+      const before = enginePlane(cam0);
+      expect(before.lens.shiftXMm).toBeCloseTo(1, 9);
+      expect(before.lens.shiftYMm).toBeCloseTo(2 + v.shiftYMm, 9);
+      expect(before.lens.tiltDeg).toBe(3);
+      // The plane drawn is the engine's plane.
+      const drawn = focusPlaneOf(cam0);
+      expect(dot(drawn.normal, before.plane.normal)).toBeCloseTo(1, 9);
+      expect(Math.abs(planeDistance(drawn, before.plane.point))).toBeLessThan(1e-6);
+      // Two points picked: both sharp in what the engine renders.
+      const level = renderedCamera(cam0);
+      const a = pointAt(level, 0, -0.6, level.focusDistance * 0.85);
+      const b = pointAt(level, 0.3, 0.6, level.focusDistance * 1.2);
+      armTiltPick(ctx, camId);
+      finishTiltPick(ctx, a);
+      finishTiltPick(ctx, b);
+      const cam = ctx.store.get().camera.cameras[camId];
+      const after = enginePlane(cam);
+      expect(Math.abs(planeDistance(after.plane, a))).toBeLessThan(1e-6 * level.focusDistance);
+      expect(Math.abs(planeDistance(after.plane, b))).toBeLessThan(1e-6 * level.focusDistance);
+      expect(after.lens.shiftYMm).toBeCloseTo(2 + v.shiftYMm, 9);
+      expect(cam.straightVerticals).toBe(true);
+    });
+  }
+
+  it('draws no plane for a panorama, which has no lens', () => {
+    const s = exampleState();
+    const id = s.camera.active;
+    for (const projection of ['EQUIRECTANGULAR', 'FISHEYE'] as const) {
+      const c = { ...s.camera.cameras[id], projection, optics: withTilt(OPTICS_NEUTRAL, 6, 0) };
+      expect(focusPlaneHint({ ...s, camera: { ...s.camera, cameras: { ...s.camera.cameras, [id]: c } } }, id)).toBeNull();
+    }
   });
 });
 

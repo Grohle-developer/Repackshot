@@ -9,7 +9,7 @@ import { IES_MAX_BYTES, parseIes } from '../core/ies';
 import type { IesRef, LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
 import { normaliseAspect } from '../core/aspect';
-import type { CameraState } from '../core/camera';
+import { CAMERA_PROJECTIONS, type CameraState } from '../core/camera';
 import {
   COLLECTION,
   LIBRARY_FORMAT,
@@ -363,7 +363,7 @@ function camera(v: unknown, path: string): CameraState {
     focalMm: num(o.focalMm, `${path}.focalMm`, 4, 2000),
     fstop: num(o.fstop, `${path}.fstop`, 0.5, 64),
     focusDistance: num(o.focusDistance, `${path}.focusDistance`, 0, 1e9),
-    projection: oneOf(o.projection, `${path}.projection`, ['PERSPECTIVE', 'ORTHOGRAPHIC'] as const),
+    projection: oneOf(o.projection, `${path}.projection`, CAMERA_PROJECTIONS),
     orthoWidth: num(o.orthoWidth, `${path}.orthoWidth`, 0, 1e9),
     clipStart: num(o.clipStart, `${path}.clipStart`, 0, 1e9),
     clipEnd: num(o.clipEnd, `${path}.clipEnd`, 0, 1e9),
@@ -371,6 +371,9 @@ function camera(v: unknown, path: string): CameraState {
     lens: o.lens === null ? null : str(o.lens, `${path}.lens`, 64),
     // U13: a studio saved before the camera carried its ratio has none (16:9, as every camera was).
     aspect: normaliseAspect(o.aspect),
+    // K3: the fisheye's field and the straight verticals, when the camera has them.
+    ...(o.fisheyeFovDeg !== undefined ? { fisheyeFovDeg: num(o.fisheyeFovDeg, `${path}.fisheyeFovDeg`, 1, 3600) } : {}),
+    ...(o.straightVerticals === true ? { straightVerticals: true } : {}),
   };
 }
 

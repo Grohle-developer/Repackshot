@@ -56,7 +56,7 @@ import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset }
 import { fitFactor } from '../core/live-frame';
 import { LivePicture } from './live-frame';
 import type { ProjectState } from '../core/store';
-import { readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
+import { readsCameras, readsIes, readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
 import { abortError, adaptiveProgress, budgetLimits, budgetOf, budgetProgress, runAdaptive, runPasses, type PassBudget } from './schedule';
@@ -66,6 +66,7 @@ import type { ViewportLimit } from '../core/settings';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
 import { ScanCache, scanFrame } from './frame-scan';
+import { autoExposure, ExposureMeter, meterExposure } from '../core/image-passes';
 
 /** How an image is framed and sampled (io/rsb.ts `SceneView`; main.ts connects the two). */
 export interface TracerView {
@@ -100,6 +101,8 @@ export interface TracerView {
   programs?: boolean;
   /** L5: the engine renders the IES lights (render/engine.ts `readsIes`): they go as such, not as the spot light that stands for them. */
   ies?: boolean;
+  /** K3: the engine reads the interior cameras (render/engine.ts `readsCameras`): panoramas, the exterior factor, parts hidden to the camera. */
+  cameras?: boolean;
 }
 
 export interface BuiltScene {
@@ -115,8 +118,11 @@ export interface BuiltScene {
  */
 export interface SceneSource {
   build(state: ProjectState, view: TracerView): BuiltScene;
-  /** Exposure and `RNDR.tonemap` the image is converted with. */
-  tone(state: ProjectState): { exposureEv: number; tonemap: number };
+  /**
+   * Exposure and `RNDR.tonemap` the image is converted with. K3: with `auto` the exposure is metered from the image
+   * (core/image-passes.ts) and `exposureEv` is the compensation over it.
+   */
+  tone(state: ProjectState): { exposureEv: number; tonemap: number; auto?: boolean };
 }
 
 /** Why Full is or is not available. */
@@ -569,6 +575,8 @@ export class PathTracerEngine implements RenderEngine {
   /** D1: the project the accumulation was started from, and what the Doctor reads of it (made when its samples double). */
   private accState: ProjectState | null = null;
   private readonly scans = new ScanCache();
+  /** K3: the automatic exposure of the viewport. */
+  private readonly meter = new ExposureMeter();
   /** E5b-1, U11: the guide passes of the viewport's image (at full resolution). */
   private accGuides: PassAccumulator | null = null;
   /** U11: the live denoise switch, as the project says (the Viewport part of Advanced ▸ Denoise). */
@@ -962,6 +970,8 @@ export class PathTracerEngine implements RenderEngine {
       ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
       // L5: the IES lights, when this engine renders them.
       ...(readsIes(this.pool.features) ? { ies: true } : {}),
+      // K3: the interior cameras, when this engine reads them.
+      ...(readsCameras(this.pool.features) ? { cameras: true } : {}),
     };
   }
 
@@ -1216,10 +1226,21 @@ export class PathTracerEngine implements RenderEngine {
     this.pendingSince = 0;
   }
 
+  /**
+   * K3: the automatic exposure of the view, metered from the accumulation on screen when it is complete and whenever
+   * its samples have doubled (core/image-passes.ts `ExposureMeter`); the last reading while a new image fills in.
+   */
+  meteredExposure(): number | null {
+    const acc = this.acc;
+    if (acc && this.accScale === 1 && acc.complete) return this.meter.read(acc, acc.minSamples, () => meterExposure(acc));
+    return this.meter.last;
+  }
+
   private displayCurve(): DisplayCurve {
     const tone = this.source.tone(this.state!);
-    if (!this.curve || this.curve.ev !== tone.exposureEv || this.curve.curve !== tone.tonemap) {
-      this.curve = new DisplayCurve(tone.exposureEv, tone.tonemap);
+    const ev = tone.auto ? tone.exposureEv + (this.meteredExposure() ?? 0) : tone.exposureEv;
+    if (!this.curve || this.curve.ev !== ev || this.curve.curve !== tone.tonemap) {
+      this.curve = new DisplayCurve(ev, tone.tonemap);
       if (this.acc && this.accScale === 1) for (const t of this.acc.tiles) if (this.acc.samples[t.index] > 0) this.dirty.add(t.index);
       this.presentAll = true;
     }
@@ -1305,7 +1326,10 @@ export class PathTracerEngine implements RenderEngine {
     const wantKey = this.wantKey();
     // D1: what the Doctor reads of the accumulation (the raw sums: the denoised image is shown from other ones).
     const scan = full && acc.complete && this.accState ? this.scans.get(acc, acc.minSamples, () => scanFrame(acc, this.accState!)) : null;
+    // K3: the automatic exposure's reading, for the meter.
+    const metered = this.state && autoExposure(this.state.image) ? { meteredEv: this.meteredExposure() } : {};
     return {
+      ...metered,
       samples,
       seconds: full && this.genStart ? (end - this.genStart) / 1000 : 0,
       converged,
@@ -1389,6 +1413,8 @@ export class PathTracerEngine implements RenderEngine {
         ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
         // L5: the IES lights, when this engine renders them.
         ...(readsIes(this.pool.features) ? { ies: true } : {}),
+        // K3: the interior cameras, when this engine reads them.
+        ...(readsCameras(this.pool.features) ? { cameras: true } : {}),
       };
       // E5b-1: a denoised render also renders the guide passes and sums the squared luminance. U11b: at a strength
       // of 0 it is not denoised at all (the image is the noisy one).
@@ -1426,13 +1452,14 @@ export class PathTracerEngine implements RenderEngine {
       // over the tiles that came back since the last one are done again. Nothing is made while it wants none.
       let liveCurve: DisplayCurve | null = null;
       let livePic: LivePicture | null = null;
+      const liveMeter = new ExposureMeter();
       const live = () => {
         const box = opts.frameBox?.();
         if (!box || !opts.onFrame) return;
-        if (!liveCurve) {
-          const tone = this.source.tone(state);
-          liveCurve = new DisplayCurve(tone.exposureEv, tone.tonemap);
-        }
+        // K3: an automatic exposure is metered from the accumulation as it doubles its samples.
+        const tone = this.source.tone(state);
+        const ev = tone.auto ? tone.exposureEv + (acc.complete ? (liveMeter.read(acc, acc.minSamples, () => meterExposure(acc)) ?? 0) : 0) : tone.exposureEv;
+        if (!liveCurve || liveCurve.ev !== ev) liveCurve = new DisplayCurve(ev, tone.tonemap);
         const k = fitFactor(acc.width, acc.height, box);
         // E10: an adaptive accumulation counts its samples per block.
         if (livePic?.k !== k) livePic = new LivePicture(acc.width, acc.height, k, acc.adaptive ? BLOCK : TILE);
@@ -1445,6 +1472,7 @@ export class PathTracerEngine implements RenderEngine {
         if (b) acc.addBlock(r.index, b.x, b.y, b.w, b.h, r.first, r.count, r.data);
         else acc.add(r.index, r.first, r.count, r.data);
         if (passes && r.albedo) passes.addAlbedo(r.index, r.first, r.count, r.albedo);
+        if (passes && r.alpha) passes.addAlpha(r.index, r.first, r.count, r.alpha);
         if (passes && r.exact) passes.setExact(r.index, r.exact);
         const now = performance.now();
         if (now - lastReport > 100) {
@@ -1490,7 +1518,7 @@ export class PathTracerEngine implements RenderEngine {
             },
           });
       done = result.samples;
-      const tone = this.source.tone(state);
+      const tone0f = this.source.tone(state);
       // E10: an adaptive image goes on as sums rescaled to its most samples (what the files, the display and the denoiser
       // read as sums of `done` samples), every pixel's own count for the denoiser.
       const sums = adaptive ? rescaledSums(acc.sum, acc.width, acc.height, acc.blockSamples, done) : acc.sum;
@@ -1510,6 +1538,10 @@ export class PathTracerEngine implements RenderEngine {
           denoised = true;
         }
       }
+      // K3: an automatic exposure is metered from the finished sums before the denoise (the same for the denoised image
+      // and the one without), so the same render gives the same exposure.
+      const metered = tone0f.auto && done > 0 ? meterExposure({ width: opts.width, height: opts.height, sum: sums, samplesAt: () => done }) : null;
+      const tone = { exposureEv: tone0f.exposureEv + (metered ?? 0), tonemap: tone0f.tonemap };
       // The workers convert slices of a copy; the sums stay here when they are wanted.
       const data = await this.pool.tonemap(image, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
       const noisy =

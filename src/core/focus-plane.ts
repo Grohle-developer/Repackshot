@@ -21,6 +21,7 @@
 // `(tiltDeg, tiltAxisDeg)`, which a camera keeps as it always did.
 
 import { activeCamera, cameraBasis, cameraPosition, type CameraId, type CameraState } from './camera';
+import { renderedCamera, verticalsOf } from './interior-camera';
 import { add, boxCenter, boxRadius, cross, dot, isEmptyBox, length, normalize, scale, sub, type Vec3 } from './math';
 import { OPTICS_LIMITS, opticsOf, tiltOf } from './optics';
 import { productBounds } from './scene';
@@ -41,8 +42,13 @@ function tiltFrame(cam: CameraState, axisDeg: number): { forward: Vec3; right: V
   return { forward, right, up, a, b: cross(forward, a) };
 }
 
-/** The plane of sharp focus of `cam` for the tilt `tiltDeg` about the axis `axisDeg` (by default its lens's own). */
-export function focusPlaneOf(cam: CameraState, tilt?: { deg: number; axisDeg: number }): Plane {
+/**
+ * The plane of sharp focus of `cam` for the tilt `tiltDeg` about the axis `axisDeg` (by default its lens's own). It is
+ * the plane of the camera as rendered (K3 `renderedCamera`): with straight verticals the lens is level, and its tilt
+ * and focus distance are the rendered camera's (the tilt is about the same axes, which a level camera keeps).
+ */
+export function focusPlaneOf(cam0: CameraState, tilt?: { deg: number; axisDeg: number }): Plane {
+  const cam = renderedCamera(cam0);
   const t = tilt ?? tiltOf(opticsOf(cam));
   const { forward, b } = tiltFrame(cam, t.axisDeg);
   const u = cam.focusDistance;
@@ -75,7 +81,12 @@ export function isTiltSolution(r: TiltSolution | TiltRefusal): r is TiltSolution
  * plane; three: the plane through them), within the lens's limits (OPTICS_LIMITS.tiltDeg), or why there is none.
  * The axis comes out between −90° and 90° (the tilt's sign says which way); with no tilt it is `cam`'s own.
  */
-export function solveTilt(cam: CameraState, points: readonly (readonly number[])[]): TiltSolution | TiltRefusal {
+export function solveTilt(cam0: CameraState, points: readonly (readonly number[])[]): TiltSolution | TiltRefusal {
+  // Solved for the camera as rendered (straight verticals, K3); its focus distance is the stored one's times
+  // cos(corrected tilt), so the stored one comes back over that cosine (as `focusDistanceFor` does).
+  const cam = renderedCamera(cam0);
+  const v0 = verticalsOf(cam0);
+  const back = v0 ? 1 / Math.cos(v0.correctedDeg * DEG) : 1;
   const { forward, right, up } = cameraBasis(cam.azimuth, cam.elevation);
   const pos = cameraPosition(cam);
   const [p1, p2, p3] = points;
@@ -101,7 +112,7 @@ export function solveTilt(cam: CameraState, points: readonly (readonly number[])
   const v = sub(n, scale(forward, along));
   const lean = length(v);
   const own = tiltOf(opticsOf(cam));
-  if (lean < 1e-9) return { tiltDeg: 0, axisDeg: own.axisDeg, focusDistance: u };
+  if (lean < 1e-9) return { tiltDeg: 0, axisDeg: own.axisDeg, focusDistance: u * back };
   const sin = (cam.focalMm * lean) / (along * u);
   const neededDeg = sin >= 1 ? 90 : Math.asin(sin) / DEG;
   if (neededDeg > OPTICS_LIMITS.tiltDeg.max + 1e-9) return { reason: 'steep', neededDeg };
@@ -116,7 +127,7 @@ export function solveTilt(cam: CameraState, points: readonly (readonly number[])
     axisDeg += 180;
     tiltDeg = -tiltDeg;
   }
-  return { tiltDeg, axisDeg, focusDistance: u };
+  return { tiltDeg, axisDeg, focusDistance: u * back };
 }
 
 /** An angle in [0, 360). */
@@ -161,13 +172,15 @@ const GRID = 6;
 /**
  * The hint of camera `camId`'s plane (the active camera's by default) around the product: a square on the plane, twice
  * the product's radius and a little more on a side, centred where the product's centre falls on it, its sides along
- * the camera's right laid on the plane and across it. Null for an orthographic camera (it has no lens).
+ * the camera's right laid on the plane and across it. Null for a camera with no lens: orthographic, or a panorama (K3).
+ * With straight verticals, the rendered camera's plane and frame (K3 `renderedCamera`).
  */
 export function focusPlaneHint(state: ProjectState, camId?: CameraId | null, picked: readonly Vec3[] = []): FocusPlaneHint | null {
-  const cam = (camId ? state.camera.cameras[camId] : undefined) ?? activeCamera(state);
-  if (!cam || cam.projection === 'ORTHOGRAPHIC') return null;
+  const cam0 = (camId ? state.camera.cameras[camId] : undefined) ?? activeCamera(state);
+  if (!cam0 || cam0.projection !== 'PERSPECTIVE') return null;
+  const cam = renderedCamera(cam0);
   const t = tiltOf(opticsOf(cam));
-  const plane = focusPlaneOf(cam, t);
+  const plane = focusPlaneOf(cam0, t);
   const box = productBounds(state, true);
   const centre0 = isEmptyBox(box) ? plane.point : boxCenter(box);
   const r = isEmptyBox(box) ? 0.25 * cam.focusDistance : Math.max(1, boxRadius(box));

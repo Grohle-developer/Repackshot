@@ -7,6 +7,7 @@
 //   node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm \
 //        /tmp/example.rsb [--samples 4] [--expect 0x12345678] \
 //        [--passes] [--expect-passes 0x...,0x...,0x...,0x...,0x...,0x...]
+//        [--alpha] [--expect-alpha 0x12345678]
 //        [--denoise] [--expect-denoised 0x12345678]
 //        [--particles] [--expect-particles 0x12345678]
 //        [--adaptive] [--expect-adaptive 0x12345678]
@@ -20,6 +21,11 @@
 // albedo summed like the image. The image's hash must not change, and each plane's FNV-1a (in the
 // order of PASS_KEYS) must equal `--expect-passes` (`PINNED_PASS_*` of
 // crates/rt-core/src/render/passes_tests.rs).
+//
+// `--alpha` (N2) renders the alpha pass: after every sample `rt_render_tile_alpha` gives the coverage of that sample, summed in
+// sample order in f32 and divided by the f32 reciprocal of the count, like the film; the plane's FNV-1a must equal
+// `--expect-alpha` (`PINNED_PASS_ALPHA`, or `PINNED_E5_PASS_ALPHA`, of crates/rt-core/src/render/passes_tests.rs). It is a
+// pass of its own so the six hashes of `--expect-passes` stay what X2 pinned.
 //
 // A scene with caustic photons (E5b-1, `RNDR.caustic_photons`, `rt --write-e5b-example`) renders
 // them inside the module: each worker traces the photon map of a sample itself, and the image must
@@ -58,6 +64,8 @@ let samples = 4;
 let expect = null;
 let passes = false;
 let expectPasses = null;
+let alpha = false;
+let expectAlpha = null;
 let denoise = false;
 let expectDenoised = null;
 let particles = false;
@@ -68,6 +76,11 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--samples') samples = Number(args[++i]);
   else if (args[i] === '--expect') expect = Number.parseInt(args[++i], 16) >>> 0;
   else if (args[i] === '--passes') passes = true;
+  else if (args[i] === '--alpha') alpha = true;
+  else if (args[i] === '--expect-alpha') {
+    alpha = true;
+    expectAlpha = Number.parseInt(args[++i], 16) >>> 0;
+  }
   else if (args[i] === '--expect-passes') {
     passes = true;
     expectPasses = args[++i].split(',').map((h) => Number.parseInt(h, 16) >>> 0);
@@ -301,6 +314,12 @@ const lum2 = denoise ? new Float32Array(width * height) : null;
 const f = Math.fround;
 const [LR, LG, LB] = [f(0.2126), f(0.7152), f(0.0722)];
 const rgbaOut = denoise ? rt.rt_alloc(TILE * TILE * 4 * 4) : 0;
+if (alpha && typeof rt.rt_render_tile_alpha !== 'function') {
+  console.error('wasm-parity: this rt_wasm.wasm has no alpha pass (rt_render_tile_alpha)');
+  process.exit(1);
+}
+const coverageSum = alpha ? new Float32Array(width * height) : null;
+const alphaOut = alpha ? rt.rt_alloc(TILE * TILE * 4) : 0;
 const planes = passes ? KEYS.map((_, k) => new Uint32Array(width * height * CHANNELS[k])) : null;
 const exactOut = passes ? rt.rt_alloc(TILE * TILE * 7 * 4) : 0;
 const albedoOut = passes ? rt.rt_alloc(TILE * TILE * 3 * 4) : 0;
@@ -362,6 +381,20 @@ for (let ty = 0; ty < height; ty += TILE) {
           }
         }
       }
+      if (alpha) {
+        const a = rt.rt_render_tile_alpha(handle, tx, ty, w, h, s, alphaOut);
+        if (a !== 0) {
+          console.error(`wasm-parity: rt_render_tile_alpha returned ${a}`);
+          process.exit(1);
+        }
+        const cover = new Float32Array(rt.memory.buffer, alphaOut, w * h);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = (ty + y) * width + tx + x;
+            coverageSum[i] = Math.fround(coverageSum[i] + cover[y * w + x]);
+          }
+        }
+      }
       // Re-create the view each time: memory may have grown (and detached the old buffer).
       const tile = new Float32Array(rt.memory.buffer, out, w * h * 3);
       for (let y = 0; y < h; y++) {
@@ -418,6 +451,18 @@ if (passes) {
       console.error(`wasm-parity: the passes ${wrong.join(', ')} differ from the native ones (${expectPasses.map(hex32).join(', ')})`);
       process.exit(1);
     }
+  }
+}
+
+if (alpha) {
+  // The coverage divided like the image: the sum times the f32 reciprocal of the samples.
+  const cover = new Float32Array(coverageSum.length);
+  for (let i = 0; i < cover.length; i++) cover[i] = Math.fround(coverageSum[i] * inv);
+  const ah = fnv1a(cover);
+  console.log(`alpha: ${hex32(ah)}`);
+  if (expectAlpha !== null && ah !== expectAlpha) {
+    console.error(`wasm-parity: the alpha pass ${hex32(ah)} differs from the native one ${hex32(expectAlpha)}`);
+    process.exit(1);
   }
 }
 

@@ -597,6 +597,8 @@ struct NearestInstances<'a, B> {
     ray: &'a Ray,
     world: PreparedRay,
     best: Best,
+    /// K3: a camera query, which steps over the instances hidden to the camera.
+    camera: bool,
     backend: PhantomData<B>,
 }
 
@@ -613,6 +615,9 @@ impl<B: Backend> Leaves for NearestInstances<'_, B> {
             let Some((instance, mesh, prepared)) = self.geometry.tlas_instance(slot) else {
                 continue;
             };
+            if self.camera && prepared.camera_hidden {
+                continue;
+            }
             let local = prepared.prepare(self.ray, &self.world);
             mesh_nearest::<B>(mesh, &local, prepared.cull, instance, &mut self.best, stack);
         }
@@ -626,6 +631,8 @@ struct AnyInstance<'a, B> {
     ray: &'a Ray,
     world: PreparedRay,
     t_max: f32,
+    /// K3: a camera query, which steps over the instances hidden to the camera.
+    camera: bool,
     backend: PhantomData<B>,
 }
 
@@ -640,6 +647,9 @@ impl<B: Backend> Leaves for AnyInstance<'_, B> {
         let (first, count) = leaf_range(reference);
         for slot in first..first + count {
             if let Some((_, mesh, prepared)) = self.geometry.tlas_instance(slot) {
+                if self.camera && prepared.camera_hidden {
+                    continue;
+                }
                 let local = prepared.prepare(self.ray, &self.world);
                 if mesh_any::<B>(mesh, &local, prepared.cull, stack) {
                     return true;
@@ -667,6 +677,7 @@ fn nearest<B: Backend>(
         ray,
         world: r,
         best: Best::new(r.t_max),
+        camera: class == RayClass::Camera,
         backend: PhantomData,
     };
     let tlas = geometry.tlas();
@@ -738,6 +749,7 @@ fn any<B: Backend>(geometry: &Geometry, ray: &Ray, class: RayClass, stack: &mut 
         ray,
         world: r,
         t_max: r.t_max,
+        camera: class == RayClass::Camera,
         backend: PhantomData,
     };
     let tlas = geometry.tlas();
@@ -884,6 +896,9 @@ pub(crate) fn brute_force(
         let Some((mesh, prepared)) = geometry.instance_parts(instance) else {
             continue;
         };
+        if class == RayClass::Camera && prepared.camera_hidden {
+            continue;
+        }
         let local = PreparedRay::new(&prepared.local_ray(ray));
         for triangle in 0..mesh.triangle_count() {
             let Some([a, b, c]) = mesh.triangle(triangle) else {

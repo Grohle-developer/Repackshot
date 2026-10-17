@@ -16,7 +16,7 @@
 use rt_core::caustics::PhotonMap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
-use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
+use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_ALPHA, PASS_EXACT};
 use rt_core::pixel_filter::EdgeMask;
 use rt_core::render::{
     render_block, render_tile_albedo_edges, render_tile_edges, render_tile_exact, TileRect,
@@ -444,6 +444,33 @@ pub fn render_tile_albedo_sample(
             Isa::detect(),
         );
         film.albedo
+    })
+}
+
+/// The coverage of sample `sample_index` of the pixel rectangle `(x, y, w, h)` (N2, the `alpha`
+/// pass): `w * h` floats, 1 where that sample's camera ray met a surface of an instance and 0
+/// where it met anything else (the mean of its sub-samples for an edge pixel). The host sums the
+/// samples in index order in `f32` and divides like the image.
+pub fn render_tile_alpha_sample(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+) -> Result<Vec<f32>, u32> {
+    with_tile(handle, w, h, |loaded| {
+        let mut film = PassFilm::region(x, y, w, h, PASS_ALPHA);
+        let edges = loaded.edge_mask(TileRect { x, y, w, h });
+        render_tile_albedo_edges(
+            &loaded.scene,
+            &loaded.prepared,
+            &edges,
+            sample_index,
+            &mut film,
+            Isa::detect(),
+        );
+        film.alpha
     })
 }
 
@@ -916,7 +943,7 @@ mod tests {
 
     #[test]
     fn passes_through_the_c_api_are_the_engines() {
-        use rt_core::passes::{Passes, PASS_ALL};
+        use rt_core::passes::{Passes, PASS_ALL, PASS_X2};
         let _guard = serial();
         let mut scene = rt_core::example::scene();
         scene.render.width = 70;
@@ -927,13 +954,13 @@ mod tests {
         // What a host does: per 32-pixel tile, the exact planes once and the albedo of samples
         // 0..3, summed in f32 in sample order and divided like `Film::resolve`.
         let samples = 3u32;
-        let mut reference = Passes::new(70, 45, PASS_ALL);
+        let mut reference = Passes::new(70, 45, PASS_X2);
         let mut planes: Vec<(TileRect, Vec<u8>, Vec<f32>)> = Vec::new();
         for tile in rt_core::render::tile_grid(70, 45, 32) {
             let TileRect { x, y, w, h } = tile;
             let out = rt_alloc(w * h * 7 * 4);
             // SAFETY: `out` has room for 7 words per pixel (normal 3, depth, two ids, coc).
-            let status = unsafe { rt_render_tile_passes(handle, x, y, w, h, PASS_ALL, out) };
+            let status = unsafe { rt_render_tile_passes(handle, x, y, w, h, PASS_X2, out) };
             assert_eq!(status, STATUS_OK);
             let exact = read_floats_as_bytes(out, (w * h * 7 * 4) as usize);
             // SAFETY: `out` came from `rt_alloc(w * h * 28)`.
@@ -952,7 +979,7 @@ mod tests {
             unsafe { rt_free(one, w * h * 3 * 4) };
             let inv = 1.0 / samples as f32;
             planes.push((tile, exact, sum.iter().map(|v| v * inv).collect()));
-            let mut film = PassFilm::region(x, y, w, h, PASS_ALL);
+            let mut film = PassFilm::region(x, y, w, h, PASS_X2);
             render_tile_exact(&scene, &prepared, tile, &mut film, Isa::detect());
             for s in 0..samples {
                 render_tile_albedo(&scene, &prepared, tile, s, &mut film, Isa::detect());
@@ -960,7 +987,7 @@ mod tests {
             reference.copy_region(x, y, &film.resolve());
         }
         // Assemble the host's planes the same way and compare bit for bit.
-        let mut got = Passes::new(70, 45, PASS_ALL);
+        let mut got = Passes::new(70, 45, PASS_X2);
         for (tile, exact, albedo) in planes {
             let n = (tile.w * tile.h) as usize;
             let word = |i: usize| u32::from_le_bytes(exact[i * 4..i * 4 + 4].try_into().unwrap());
@@ -973,13 +1000,14 @@ mod tests {
             let region = Passes {
                 width: tile.w,
                 height: tile.h,
-                mask: PASS_ALL,
+                mask: PASS_X2,
                 albedo,
                 normal: floats(0, n * 3),
                 depth: floats(n * 3, n),
                 part_id: ids(n * 4),
                 material_id: ids(n * 5),
                 coc: floats(n * 6, n),
+                alpha: Vec::new(),
             };
             got.copy_region(tile.x, tile.y, &region);
         }
@@ -1025,6 +1053,78 @@ mod tests {
                 STATUS_NULL_POINTER
             );
         }
+        scene_free(handle);
+    }
+
+    #[test]
+    fn the_alpha_pass_through_the_c_api_is_the_engines() {
+        use rt_core::passes::{Passes, PASS_ALPHA};
+        let _guard = serial();
+        let mut scene = rt_core::example::scene();
+        scene.render.width = 70;
+        scene.render.height = 45;
+        let handle = scene_load(&scene.to_rsb());
+        assert_ne!(handle, 0);
+        let prepared = Prepared::new(&scene);
+        // What a host does: per tile, the coverage of samples 0..3 summed in f32 in sample order
+        // and divided by the f32 reciprocal of the count, like the film.
+        let samples = 3u32;
+        let mut reference = Passes::new(70, 45, PASS_ALPHA);
+        let mut got = vec![0.0f32; 70 * 45];
+        for tile in rt_core::render::tile_grid(70, 45, 32) {
+            let TileRect { x, y, w, h } = tile;
+            let mut sum = vec![0.0f32; (w * h) as usize];
+            let one = rt_alloc(w * h * 4);
+            for s in 0..samples {
+                // SAFETY: `one` has room for `w * h` floats.
+                let status = unsafe { rt_render_tile_alpha(handle, x, y, w, h, s, one.cast()) };
+                assert_eq!(status, STATUS_OK);
+                for (a, b) in sum.iter_mut().zip(read_floats(one, (w * h) as usize)) {
+                    *a += b;
+                }
+            }
+            // SAFETY: `one` came from `rt_alloc(w * h * 4)`.
+            unsafe { rt_free(one, w * h * 4) };
+            let inv = 1.0 / samples as f32;
+            for ly in 0..h {
+                for lx in 0..w {
+                    got[((y + ly) * 70 + x + lx) as usize] = sum[(ly * w + lx) as usize] * inv;
+                }
+            }
+            let mut film = PassFilm::region(x, y, w, h, PASS_ALPHA);
+            for s in 0..samples {
+                render_tile_albedo(&scene, &prepared, tile, s, &mut film, Isa::detect());
+            }
+            reference.copy_region(x, y, &film.resolve());
+        }
+        assert_eq!(got, reference.alpha);
+        assert!(got.contains(&0.0) && got.contains(&1.0));
+        assert!(got.iter().any(|&a| a > 0.0 && a < 1.0), "soft edges");
+        // Bad arguments are the usual statuses; beyond the image's edge it is background.
+        assert_eq!(
+            render_tile_alpha_sample(0, 0, 0, 4, 4, 0),
+            Err(STATUS_BAD_HANDLE)
+        );
+        assert_eq!(
+            render_tile_alpha_sample(handle, 0, 0, 4096, 4096, 0),
+            Err(STATUS_BAD_TILE)
+        );
+        assert_eq!(
+            render_tile_alpha_sample(handle, 68, 0, 4, 1, 0).unwrap()[2..],
+            [0.0; 2]
+        );
+        // SAFETY: a null pointer is explicitly handled.
+        unsafe {
+            assert_eq!(
+                rt_render_tile_alpha(handle, 0, 0, 4, 4, 0, std::ptr::null_mut()),
+                STATUS_NULL_POINTER
+            );
+        }
+        // The exact-pass export ignores the alpha bit: it has no plane there.
+        assert_eq!(
+            render_tile_passes(handle, 0, 0, 4, 4, PASS_ALPHA),
+            Ok(Vec::new())
+        );
         scene_free(handle);
     }
 
@@ -1409,6 +1509,8 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_SECTION, 4);
         // L5: the IES lights.
         assert_eq!(rt_features() & rt_core::FEATURE_IES, 8);
+        // K3: the interior cameras (projection, exterior factor, instances hidden to the camera).
+        assert_eq!(rt_features() & rt_core::FEATURE_CAMERAS, 16);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.

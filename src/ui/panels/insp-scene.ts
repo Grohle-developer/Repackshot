@@ -7,7 +7,11 @@ import { SCENE_TYPES } from '../../data/scene-types';
 import { STUDIO_PRESETS } from '../../data/studios';
 import type { LightSetup } from '../../data/types';
 import type { UiState } from '../ui-state';
-import { activeCamera, type CameraId, type CameraState } from '../../core/camera';
+import { activeCamera, CAMERA_PROJECTIONS, type CameraId, type CameraProjection, type CameraState } from '../../core/camera';
+import { EXPOSURE_PRESETS, EXTERIOR_MAX, EXTERIOR_MIN, FISHEYE_FOV_MAX, FISHEYE_FOV_MIN, VERTICALS_MAX_TILT_DEG } from '../../data/interior-camera';
+import { EYE_HEIGHT_PRESETS, exteriorOf, eyeHeightOf, INTERIOR_LENSES, verticalsOf } from '../../core/interior-camera';
+import { fisheyeFov } from '../../core/panorama';
+import { autoExposure, presetExposure } from '../../core/image-passes';
 import { itemsOf, type LightSetupItem, type ProductTypeItem } from '../../core/library';
 import { libraryKey, lightShares, lightIrradiance, presetRefOf } from '../../core/lighting';
 import { resolvePreset } from '../../core/rig';
@@ -593,14 +597,15 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   const focus = lengthField({ value: cam0.focusDistance, min: 1, max: 1e6, step: 1, ariaLabel: t('camera.focus'), onChange: (v, g) => set({ focusDistance: v }, 'camera.focus', g) });
   const focusBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('camera.focusClick'), 'data-tip': t('camera.focusClick'), onclick: () => ui.set({ pickMode: ui.get().pickMode?.kind === 'focus' ? null : { kind: 'focus' } }) }, icon('focus'));
   scope.watch((_s, u) => u.pickMode?.kind === 'focus', (on) => focusBtn.setAttribute('aria-pressed', String(on)));
-  const proj = segmented(
-    [
-      { value: 'PERSPECTIVE' as const, label: t('viewport.perspective') },
-      { value: 'ORTHOGRAPHIC' as const, label: t('viewport.ortho') },
-    ],
+  // K3: the four projections; the equirectangular panorama takes the 2:1 frame with it (one undo step).
+  const proj = select(
+    CAMERA_PROJECTIONS.map((p) => ({ value: p, label: t(dyn(`camera.projection.${p}`)) })),
     cam0.projection,
-    (v) => set({ projection: v }, v === 'PERSPECTIVE' ? 'viewport.perspective' : 'viewport.ortho'),
-    { full: true, ariaLabel: t('camera.projection') },
+    (v) => {
+      const projection = v as CameraProjection;
+      set({ projection, ...(projection === 'EQUIRECTANGULAR' ? { aspect: { preset: '2:1', w: 2, h: 1 } } : {}) }, dyn(`camera.projection.${projection}`));
+    },
+    t('camera.projection'),
   );
   scope.watch(
     (s) => s.camera.cameras[camId()],
@@ -613,6 +618,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
       proj.set(c.projection);
     },
   );
+  const interior = interiorCameraFields(ctx, scope, camId);
   return h(
     'div',
     { class: 'stack', 'data-guide': 'camera' },
@@ -622,6 +628,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     field(t('camera.focus'), focus.el, focusBtn),
     h('div', { class: 'note' }, t('camera.dofNote')),
     field(t('camera.projection'), proj.el),
+    interior,
     aspectRows(ctx, scope, camId),
     opticsFields(ctx, scope, camId),
     h(
@@ -634,6 +641,65 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
       h('button', { type: 'button', class: 'btn', style: 'flex:1', onclick: () => cmd.newCamera(ctx) }, icon('plus', 14), t('camera.saveAs')),
     ),
   );
+}
+
+/**
+ * K3 (INTERIORS.md §3.4): the interior camera's fields under the projection: the fisheye's field, the straight verticals
+ * (perspective and the equirectangular panorama), the eye height with its presets and the interior lenses. Every change
+ * is one undo step.
+ */
+function interiorCameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
+  const { store } = ctx;
+  const camOf = () => store.get().camera.cameras[camId()] ?? activeCamera(store.get());
+  const c0 = camOf();
+  const set = (patch: Partial<CameraState>, what: StringKey, gesture?: string) =>
+    store.dispatch({ type: 'camera/set', id: camId(), patch, gesture, label: cmd.editLabel('camera', what) });
+  const fov = numberField({ value: fisheyeFov(c0), min: FISHEYE_FOV_MIN, max: FISHEYE_FOV_MAX, step: 1, digits: 0, unit: '°', ariaLabel: t('camera.fisheyeFov'), onChange: (v, g) => set({ fisheyeFovDeg: v }, 'camera.fisheyeFov', g) });
+  const fovRow = h('div', { class: 'stack' }, field(t('camera.fisheyeFov'), fov.el), h('div', { class: 'note' }, t('camera.fisheyeFovAux')), h('div', { class: 'note' }, t('camera.fisheyeNote')));
+  const panoNote = h('div', { class: 'note' }, t('camera.panoramaNote'));
+  const verticals = toggle(c0.straightVerticals === true, (v) => set({ straightVerticals: v }, 'camera.verticals'), t('camera.verticals'));
+  verticals.el.setAttribute('data-tip', t('camera.verticalsAux', { max: VERTICALS_MAX_TILT_DEG }));
+  const verticalsNote = h('div', { class: 'note', 'data-verticals': '' });
+  const verticalsRow = h('div', { class: 'stack' }, field(t('camera.verticals'), verticals.el), verticalsNote);
+  const eye = lengthField({ value: eyeHeightOf(c0), min: 1, max: 1e6, step: 10, ariaLabel: t('camera.eyeHeight'), onChange: (v, g) => store.dispatch({ type: 'camera/eyeHeight', id: camId(), heightMm: v, gesture: g, label: cmd.editLabel('camera', 'camera.eyeHeight') }) });
+  eye.el.setAttribute('data-tip', t('camera.eyeHeightAux'));
+  const eyePresets = h(
+    'div',
+    { class: 'chips' },
+    ...EYE_HEIGHT_PRESETS.map((p) =>
+      h('button', { type: 'button', class: 'chip', 'data-eye': p.key, onclick: () => store.dispatch({ type: 'camera/eyeHeight', id: camId(), heightMm: p.heightMm, label: L('undo.eyeHeight', { name: p.label }) }) }, `${lbl(p.label)} · ${formatNumber(p.heightMm / 1000, getLang(), 1)} m`),
+    ),
+  );
+  const eyeRow = h('div', { class: 'stack' }, field(t('camera.eyeHeight'), eye.el), eyePresets);
+  const lenses = h(
+    'div',
+    { class: 'chips', role: 'group', 'aria-label': t('camera.interiorLenses') },
+    ...INTERIOR_LENSES.map((l) =>
+      h('button', { type: 'button', class: 'chip', 'data-lens': l.key, onclick: () => store.dispatch({ type: 'camera/interiorLens', id: camId(), key: l.key, label: L('undo.lens', { name: `${l.focalMm} mm` }) }) }, t('camera.interiorLensAux', { focal: l.focalMm })),
+    ),
+  );
+  const lensRow = h('div', { class: 'stack' }, h('div', { class: 'field-label' }, t('camera.interiorLenses')), lenses);
+  scope.watch(
+    (s) => s.camera.cameras[camId()],
+    (c) => {
+      if (!c) return;
+      fov.set(fisheyeFov(c));
+      verticals.set(c.straightVerticals === true);
+      eye.set(Math.round(eyeHeightOf(c)));
+      const perspective = c.projection === 'PERSPECTIVE';
+      fovRow.style.display = c.projection === 'FISHEYE' ? '' : 'none';
+      panoNote.style.display = c.projection === 'EQUIRECTANGULAR' ? '' : 'none';
+      verticalsRow.style.display = perspective || c.projection === 'EQUIRECTANGULAR' ? '' : 'none';
+      lensRow.style.display = perspective ? '' : 'none';
+      eyeRow.style.display = c.projection === 'ORTHOGRAPHIC' ? 'none' : '';
+      for (const b of lenses.children) (b as HTMLElement).setAttribute('aria-pressed', String(INTERIOR_LENSES.find((l) => l.key === (b as HTMLElement).dataset.lens)?.focalMm === c.focalMm));
+      // What the straight verticals do now: the shift for the tilt, from the camera's numbers (rule 10).
+      const v = verticalsOf(c);
+      verticalsNote.style.display = c.straightVerticals ? '' : 'none';
+      verticalsNote.textContent = !v ? t('camera.verticalsLevel') : c.projection === 'EQUIRECTANGULAR' ? t('camera.verticalsPano') : t('camera.verticalsShift', { mm: formatNumber(v.shiftYMm, getLang(), 1), deg: formatNumber(v.correctedDeg, getLang(), 1) });
+    },
+  );
+  return h('div', { class: 'stack', 'data-guide': 'interior-camera' }, fovRow, panoNote, verticalsRow, eyeRow, lensRow);
 }
 
 function cameraSection(ctx: Ctx, scope: Scope): HTMLElement {
@@ -670,6 +736,59 @@ function imageSection(ctx: Ctx, scope: Scope): HTMLElement {
   const set = (patch: Partial<ImageState>, what: StringKey, gesture?: string) =>
     store.dispatch({ type: 'image/set', patch, gesture, label: cmd.editLabel('image', what) });
   const exposure = slider({ value: i0.exposureEv, min: -5, max: 5, step: 0.05, unit: 'EV', ariaLabel: t('image.exposure'), onChange: (v, g) => set({ exposureEv: v }, 'image.exposure', g) });
+  // K3: the exposure pass, by hand or metered from the image (the dial is then its compensation), its presets and the
+  // exterior factor of the camera ray (environment.exterior: it reaches the render, not only the image).
+  const mode = segmented(
+    (['MANUAL', 'AUTO'] as const).map((v) => ({ value: v, label: t(dyn(`image.exposure${v}`)) })),
+    autoExposure(i0) ? 'AUTO' : 'MANUAL',
+    (v) => set(v === 'AUTO' ? { exposureMode: 'AUTO', exposureEv: 0 } : { exposureMode: undefined }, 'image.exposureMode'),
+    { full: true, ariaLabel: t('image.exposureMode') },
+  );
+  const exposureLabel = h('div', { class: 'field-label' }, t('image.exposure'));
+  const metered = h('div', { class: 'note', 'data-metered': '' });
+  const presets = h(
+    'div',
+    { class: 'chips', role: 'group', 'aria-label': t('image.presets') },
+    ...EXPOSURE_PRESETS.map((p) =>
+      h(
+        'button',
+        { type: 'button', class: 'chip', 'data-exposure-preset': p.key, 'data-tip': t('image.presetAux', { ev: p.ev100 }), onclick: () => store.dispatch({ type: 'image/set', patch: { exposureMode: undefined, exposureEv: presetExposure(p.key) ?? 0 }, label: L('undo.exposurePreset', { name: p.label }) }) },
+        t('image.preset', { name: lbl(p.label), ev: p.ev100 }),
+      ),
+    ),
+  );
+  const exterior = slider({
+    value: exteriorOf(store.get().environment.exterior),
+    min: EXTERIOR_MIN,
+    max: EXTERIOR_MAX,
+    step: 0.01,
+    ariaLabel: t('image.exterior'),
+    onChange: (v, g) => store.dispatch({ type: 'env/set', patch: { exterior: v >= EXTERIOR_MAX ? undefined : v }, gesture: g, label: cmd.editLabel('image', 'image.exterior') }),
+  });
+  exterior.el.setAttribute('data-tip', t('image.exteriorAux'));
+  const port = ctx.services.viewport;
+  const showMetered = () => {
+    const img = store.get().image;
+    metered.style.display = autoExposure(img) ? '' : 'none';
+    if (!autoExposure(img)) return;
+    const ev = port ? port.status().meteredEv : undefined;
+    metered.textContent = typeof ev === 'number' ? t('image.metered', { ev: `${ev >= 0 ? '+' : ''}${formatNumber(ev, getLang(), 2)}` }) : t('image.meteredNone');
+  };
+  if (port) {
+    let last = 0;
+    scope.onDispose(
+      port.onFrame(() => {
+        const now = performance.now();
+        if (now - last < 500) return;
+        last = now;
+        showMetered();
+      }),
+    );
+  }
+  scope.watch(
+    (s) => s.environment.exterior,
+    (k) => exterior.set(exteriorOf(k)),
+  );
   const vt = segmented(
     (['STANDARD', 'FILMIC', 'AGX'] as const).map((v) => ({ value: v, label: t(dyn(`vt.${v}`)) })),
     i0.viewTransform,
@@ -685,6 +804,10 @@ function imageSection(ctx: Ctx, scope: Scope): HTMLElement {
     (s) => s.image,
     (img) => {
       exposure.set(img.exposureEv);
+      mode.set(autoExposure(img) ? 'AUTO' : 'MANUAL');
+      exposureLabel.textContent = autoExposure(img) ? t('image.brightness') : t('image.exposure');
+      exposureLabel.setAttribute('data-tip', autoExposure(img) ? t('image.brightnessAux') : '');
+      showMetered();
       vt.set(img.viewTransform);
       for (const p of post) p.ctrl.set(img[p.k]);
     },
@@ -692,7 +815,13 @@ function imageSection(ctx: Ctx, scope: Scope): HTMLElement {
   const body = h(
     'div',
     { class: 'stack' },
-    field(t('image.exposure'), exposure.el),
+    field(t('image.exposureMode'), mode.el),
+    exposureLabel,
+    exposure.el,
+    metered,
+    h('div', { class: 'field-label' }, t('image.presets')),
+    presets,
+    field(t('image.exterior'), exterior.el),
     field(t('image.viewTransform'), vt.el),
     ...post.map((p) => field(t(dyn(`image.${p.k}`)), p.ctrl.el)),
     h('div', { class: 'note' }, t('image.postSoon')),

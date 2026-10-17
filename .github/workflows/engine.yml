@@ -113,7 +113,7 @@ jobs:
 
       - name: WebAssembly parity with native (the real module in Node)
         run: |
-          # The pinned hashes of the six passes of a scene (X2), in the order of PASS_KEYS.
+          # The pinned hashes of the six passes of a scene (X2), in the order of the first six PASS_KEYS (the alpha, N2, is the seventh and has its own pin).
           pinned_passes() {
             for k in ALBEDO NORMAL DEPTH PART_ID MATERIAL_ID COC; do
               sed -n "s/.*PINNED_${1}PASS_${k}: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-core/src/render/passes_tests.rs | tr -d _
@@ -127,6 +127,11 @@ jobs:
           # The image alone, then with every pass interleaved (it must keep its hash).
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected" --expect-passes "$passes"
+          # N2: the alpha pass (the coverage of the objects, a plane of its own: the six above stay what X2 pinned), with the
+          # six interleaved and alone, against the native plane.
+          alpha=$(sed -n 's/.*PINNED_PASS_ALPHA: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/passes_tests.rs | tr -d _)
+          test -n "$alpha"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected" --expect-passes "$passes" --expect-alpha "0x$alpha"
           # E5: glass, cut-outs, anisotropy, an HDRI read from its RGBE bytes, a background image.
           cargo run --release -p rt-cli -- --write-e5-example "$RUNNER_TEMP/e5.rsb"
           expected=$(sed -n 's/.*PINNED_E5_HDRI_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
@@ -134,6 +139,10 @@ jobs:
           passes=$(pinned_passes "E5_")
           test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5.rsb" --expect "$expected" --expect-passes "$passes"
+          # N2: the alpha plane of the E5 scene (glass and a cut-out card count as objects).
+          alpha=$(sed -n 's/.*PINNED_E5_PASS_ALPHA: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/passes_tests.rs | tr -d _)
+          test -n "$alpha"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5.rsb" --expect "$expected" --expect-alpha "0x$alpha"
           # E5c: the E5 sky scene under the physical sky (the table of rt-core/src/sky_table.rs),
           # alone and with the passes interleaved (the image keeps its hash).
           cargo run --release -p rt-cli -- --write-e5c-example "$RUNNER_TEMP/e5c.rsb"
@@ -266,13 +275,25 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/l5.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/l5.rsb" --expect "$expected" --passes
+          # K3: the interior cameras on a room of boxes: its plan from above (orthographic, the ceiling hidden
+          # to the camera by the INST flag, the ground at half by the exterior factor of CAMR), an
+          # equirectangular panorama from inside (the sky through a thin pane at 40 %) and an equidistant
+          # fisheye of 300° (corners that see nothing), each alone and with the passes interleaved.
+          for view in plan panorama fisheye; do
+            cargo run --release -p rt-cli -- --write-k3-$view-example "$RUNNER_TEMP/k3-$view.rsb"
+            key=$(echo "$view" | tr a-z A-Z)
+            expected=$(sed -n "s/.*PINNED_K3_${key}_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-core/src/render/k3_tests.rs | tr -d _)
+            test -n "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/k3-$view.rsb" --expect "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/k3-$view.rsb" --expect "$expected" --passes
+          done
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:

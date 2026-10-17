@@ -89,6 +89,17 @@ const staticSlots: readonly Slot[] = [
     valid: (v): v is boolean => typeof v === 'boolean',
   },
   {
+    // K3: the automatic exposure (absent on a project of before: by hand).
+    key: 'image.exposureMode',
+    read: (s) => s.image.exposureMode ?? 'MANUAL',
+    write: (s, v) => {
+      const { exposureMode: _mode, ...image } = s.image;
+      return { ...s, image: v === 'AUTO' ? { ...image, exposureMode: 'AUTO' } : image };
+    },
+    target: (_s, d) => (d.autoExposure ? 'AUTO' : undefined),
+    valid: oneOf(['MANUAL', 'AUTO'] as const),
+  },
+  {
     key: 'image.viewTransform',
     read: (s) => s.image.viewTransform,
     write: (s, v) => ({ ...s, image: { ...s.image, viewTransform: v as ProjectState['image']['viewTransform'] } }),
@@ -136,6 +147,9 @@ const staticSlots: readonly Slot[] = [
 ];
 
 const FOCAL = 'camera.focal:';
+/** K3: the straight verticals of a camera. */
+const VERTICALS = 'camera.verticals:';
+const CAMERA_PREFIXES = [FOCAL, VERTICALS] as const;
 
 /** One slot per camera: the focal length and the lens preset it came from. A locked camera is the person's, as it is. */
 function cameraSlot(id: string): Slot {
@@ -158,11 +172,30 @@ function cameraSlot(id: string): Slot {
   };
 }
 
-/** The slots of a project: the fixed ones and one per camera, the cameras the memory remembers included. */
+/** K3: one slot per camera for its straight verticals (absent on a camera of before: off). */
+function verticalsSlot(id: string): Slot {
+  return {
+    key: `${VERTICALS}${id}`,
+    read: (s) => {
+      const cam = s.camera.cameras[id];
+      return cam && !cam.locked ? cam.straightVerticals === true : undefined;
+    },
+    write: (s, v) => {
+      const cam = s.camera.cameras[id];
+      if (!cam) return s;
+      const { straightVerticals: _was, ...rest } = cam;
+      return { ...s, camera: { ...s.camera, cameras: { ...s.camera.cameras, [id]: v === true ? { ...rest, straightVerticals: true } : rest } } };
+    },
+    target: (_s, d) => d.straightVerticals,
+    valid: (v): v is boolean => typeof v === 'boolean',
+  };
+}
+
+/** The slots of a project: the fixed ones and those of each camera, the cameras the memory remembers included. */
 function slotsFor(cameras: Iterable<string>, memory: TypeMemory): Slot[] {
   const ids = new Set(cameras);
-  for (const k of Object.keys(memory)) if (k.startsWith(FOCAL)) ids.add(k.slice(FOCAL.length));
-  return [...staticSlots, ...[...ids].map(cameraSlot)];
+  for (const k of Object.keys(memory)) for (const prefix of CAMERA_PREFIXES) if (k.startsWith(prefix)) ids.add(k.slice(prefix.length));
+  return [...staticSlots, ...[...ids].flatMap((id) => [cameraSlot(id), verticalsSlot(id)])];
 }
 
 /**

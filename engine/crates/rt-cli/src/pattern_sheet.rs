@@ -229,6 +229,7 @@ pub fn sheet_scene(
             ortho: false,
             ortho_width: 0.0,
             lens: None,
+            ..Camera::default()
         },
         materials: vec![material.clone()],
         geometry: Geometry::new(
@@ -299,6 +300,7 @@ pub fn top_scene(
         ortho: true,
         ortho_width: width,
         lens: None,
+        ..Camera::default()
     };
     scene
 }

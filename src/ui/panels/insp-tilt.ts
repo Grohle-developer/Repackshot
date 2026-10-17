@@ -5,8 +5,9 @@
 // the sensor. The amount and the direction are a photographer's reading of the stored `(tilt, axis)` of the lens model
 // in use (core/focus-plane.ts `recedeOf`); every change goes through the store, one undo entry per drag.
 //
-// The shift is the camera's whichever lens it has (optics.shiftXMm / shiftYMm): a tool that solves it, as one that
-// straightens the verticals, sets those two fields and these rows follow.
+// The shift is the camera's whichever lens it has (optics.shiftXMm / shiftYMm). The straight verticals of K3 add their
+// own on top of it when the camera is rendered (core/interior-camera.ts `renderedCamera`), never into these fields; the
+// plane drawn and the two-point pick are the rendered camera's (core/focus-plane.ts).
 
 import type { CameraId, CameraState } from '../../core/camera';
 import { recedeOf, tiltFromRecede } from '../../core/focus-plane';

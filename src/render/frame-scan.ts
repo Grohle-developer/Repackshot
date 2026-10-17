@@ -15,6 +15,7 @@
 // The numbers are the Doctor's proposal (ROADMAP D1, pending a decision on what counts as a firefly).
 
 import { STOP_BINS, STOPS_FROM, type FrameScan } from '../core/doctor-engine';
+import { meterExposure } from '../core/image-passes';
 import type { ProjectState } from '../core/store';
 
 /** Fewest samples of every pixel before the accumulation is read: a younger image is noise and reads like fireflies. */
@@ -103,7 +104,8 @@ export function scanFrame(src: ScanSource, basis: ProjectState, opts: { denoised
     }
     fireflies = { pixels, peak };
   }
-  return { basis, width, height, samples: Number.isFinite(fewest) ? fewest : 0, fireflies, stops };
+  // K3: the automatic exposure of the same sums (core/image-passes.ts), for the checks that read the exposure.
+  return { basis, width, height, samples: Number.isFinite(fewest) ? fewest : 0, fireflies, stops, metered: meterExposure(src) };
 }
 
 /**

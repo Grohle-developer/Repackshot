@@ -178,6 +178,14 @@ decisiones escritas (datos, contratos, revisión), no código.
   con *muxers* propios y el Doctor `output` conectado; un proyecto de U1
   reproduce lo mismo; 2907 tests web y 1098 del motor (sin tocar) — **Opus**.
 
+- **N2** · Cola, pases y lotes: el pase **alfa** (el séptimo, `RNDR.passes` bit 6,
+  `rt_render_tile_alpha`, con *hash* propios y los seis de X2 sin moverse), los pases
+  *Alfa*, *Profundidad*, *Normales* e *Id de pieza* como archivos junto a la imagen
+  (EXR o PNG de 16 bits), el **lote cámaras × estudios** con la plantilla de nombre, el
+  **ZIP propio** de la cola (método *store*, sin dependencias) y la prueba de que
+  detener el segundo deja el tercero; un fallo antiguo de la cola corregido;
+  3005 tests web, 1112 del motor y 46 mutantes muertos — **Sonnet**.
+
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
 
@@ -5152,7 +5160,7 @@ paridad wasm.
   bokeh visible con lente trazada, `applyBokeh` de tres tipos sin cambiar
   de lente, y la vuelta con la burbuja marcada.
 - **Inclinación de la lente trazada, en el motor**
-  (`rt-core/src/optics/traced/tilt.rs`, ARCHITECTURE §5.2 quindecies). La
+  (`rt-core/src/optics/traced/tilt.rs`, ARCHITECTURE §5.2 sedecies). La
   lente gira respecto al sensor alrededor de la posición de la cámara (su
   pupila de entrada), el sensor queda de frente a la vista donde la lente
   forma la imagen del punto de enfoque (el encuadre no gira y el centro
@@ -5203,8 +5211,13 @@ paridad wasm.
   Rápido y en Completo, mientras el puntero o el foco están en el bloque,
   mientras se eligen los puntos y siempre con *Ver el plano*
   (`ViewportPort.setFocusPlane`). El **desplazamiento** queda en el mismo
-  bloque y es de la cámara (los campos de siempre): la herramienta de K3
-  para enderezar verticales escribe esos dos campos y el bloque la sigue.
+  bloque y es de la cámara (los campos de siempre). Con las *Verticales
+  rectas* de K3 (llegadas al fusionar) su desplazamiento se suma al de estos
+  campos al renderizar, con la lente simple y con la trazada, y el plano
+  dibujado y *Por dos puntos* usan la cámara nivelada que se renderiza
+  (`renderedCamera`; la distancia de enfoque vuelve dividida por el coseno
+  de lo corregido, como el foco por clic de K3): test que falla sin ello.
+  Con una panorámica no se dibuja plano (no tiene lente).
   Con el adaptador anamórfico el bloque dice que no se inclina. En *Más
   opciones*, además, el resto del diafragma (*Redondez*, *Giro*,
   *Obstrucción*), que una lente trazada usa y que ya no se veía al
@@ -5219,9 +5232,10 @@ paridad wasm.
   `lens-section.png`, `camera-bokeh.png` y `camera-optics.png` regrabadas.
 
 **Qué no encajó.** (1) **El id O4 ya estaba** en la tabla de fases de
-óptica de `STUDIO-TOOLS` (más abajo: *O4 · Flare con fantasmas, estrella
-de difracción…*). Se usa O4 para esta fase, como pide el encargo, y la
-tabla no se toca: hay que renumerar una de las dos ◆. (2) **Qué significa
+óptica de `STUDIO-TOOLS` (más abajo), para una fase planeada y sin
+empezar: *Flare con fantasmas, estrella de difracción…*. Esta fase se
+queda con O4 y aquella pasa a **O6**, el siguiente libre (O5 es el editor
+de lentes de la misma tabla). (2) **Qué significa
 la inclinación de una lente trazada.** Se eligió que el mismo número dé el
 mismo plano que la lente simple (la lente real gira el ángulo que haga
 falta, y el motor lo dice), para que el dibujo del plano y los dos puntos
@@ -5249,8 +5263,9 @@ falta: el mismo plano (test); lo guardado antes no se toca hasta que se
 edita. (9) **Coordinación**: *Por dos puntos* escribe la distancia de
 enfoque, que es su resultado (F1, que trae el foco por clic y sus modos,
 tendrá que decidir si pasa por sus modos al fusionar); no se tocó el clic de
-enfoque ni su rayo. K3: *Enderezar verticales* no está; su desplazamiento
-son los campos `shiftXMm`/`shiftYMm` de siempre, en el bloque. (10) El modo
+enfoque ni su rayo. K3: sus verticales rectas no escriben los campos
+`shiftXMm`/`shiftYMm`, suman su desplazamiento al renderizar; los dos se
+componen (arriba). (10) El modo
 Rápido sigue sin desenfoque: el plano dibujado es lo que lo sustituye
 mientras se ajusta. (11) El límite de 12° es el de la lente simple de O1
 para las dos (un descentrable real llega a unos 8,5°) ◆.
@@ -7150,7 +7165,7 @@ ignoradas), como antes.
   ← →) desde el árbol; se oculta a las ayudas técnicas. Si se quiere un control
   propio para el cabezal, va fuera del árbol (otra estructura del cajón).
 
-## N2 · Cola, pases y lotes — **Sonnet**
+## N2 · Cola, pases y lotes — **Sonnet** — hecha
 
 **Qué.** Cola de render con progreso y cancelación sobre `render()` del
 motor; pases alfa, profundidad, normales e id de pieza como salidas
@@ -7163,6 +7178,136 @@ dependencia: el formato *store* de ZIP es trivial).
 
 **Criterio.** Tests de nombre de archivo y de cola (orden, cancelar el
 segundo deja el tercero); un lote de 2 × 2 produce 4 imágenes.
+
+**Hecho.** La auditoría de abajo dice qué había (la cola, su cancelación, los seis
+pases del motor y el lote por cámaras venían de U5, U14, X2 y E4) y qué faltaba; N2
+construyó solo lo que faltaba:
+
+- **Motor: el pase alfa** (`rt_core::passes`, el séptimo, bit 6 de `RNDR.passes`, sin
+  cambiar el tamaño de la sección ni mover un *hash*): la cobertura de objetos de cada
+  píxel, de 0 a 1; se muestrea como el albedo (comparte con él el rayo de cámara de cada
+  muestra, así que los bordes salen suavizados igual que la imagen) y se divide por el
+  recíproco del número de muestras, bit a bit como `Film::resolve`. `PASS_EXACT` sigue
+  siendo `0b111110` y `PASS_X2` (los seis de antes) es lo que fijan los *hash* de X2.
+  `rt_render_tile_alpha` en `rt.wasm` (sin bit de `rt_features` nuevo), el pool de la
+  página y el `RPP1` del lanzador lo llevan, y el lector del `RPP1` ya no tiene un brazo
+  que se habría tragado un plano nuevo.
+- **Pases como archivos**: *Alfa*, *Profundidad*, *Normales* e *Id de pieza* junto a la
+  imagen, en EXR de 32 bits (por defecto) o PNG de 16 bits (`encodeExrPlanes`,
+  `encodePngWords`, `core/pass-files.ts`, `io/passes.ts`), con la leyenda de piezas
+  (`<nombre>_partId.json`) y el rango de la profundidad en un trozo `tEXt`.
+- **Lote cámaras × estudios**: *Estudio* en la ventana (la escena como está, uno guardado,
+  o todos); con *Todas las cámaras*, 2 × 2 son cuatro trabajos, cámara por cámara, cada uno
+  con su cámara y su estudio y con el nombre de la plantilla; aviso de nombres repetidos.
+- **ZIP propio** (`io/zip.ts`, método *store*, CRC-32, nombres UTF-8, sin ZIP64) y el grupo de
+  ZIP de la cola: una orden *Render* es un solo archivo al acabar el último trabajo, con
+  alternativa de archivos sueltos si no se puede armar.
+- **Cola**: la prueba que faltaba (*Detener* el segundo deja el tercero) y un fallo antiguo
+  de `ensureLoop` (ver abajo).
+
+Números. Web: `npm run qa` en verde (tipos, interfaz y 177 archivos de prueba con 3005 tests y 6 omitidos, tras fusionar `main`; antes de la fase eran 168 archivos y 2902 tests). Motor: `cargo test --workspace --release` 1112 tests y `npm run engine:test` 1106 (depuración), sin fallos; en WebAssembly (WASI) 588 de `rt-core`, escalar y con simd128; `cargo fmt`, `clippy -D warnings` (también para Windows), `cargo check` para aarch64 y riscv64, y el `rt.wasm` real igual al nativo en cada bloque de paridad de `engine.yml`. Con la máquina muy cargada, `ai_post::retries_lower_the_strength_…` (una espera por muestreo) falló en dos pasadas completas y pasa sola (9 de 9): no toca nada de esta fase. Pruebas nuevas: `tests/batch.test.ts` (28),
+`tests/zip.test.ts` (10), `tests/pass-files.test.ts` (17), 6 en
+`tests/passes-engine.test.ts` y, en el motor, las del alfa en `passes_tests.rs` (cobertura,
+suelo y fondo, igual a la película con fondo transparente bit a bit, con otros pases y con
+otros mosaicos, panel de luz, con muestras de borde, igual en escalar, SSE2 y AVX2), en
+`rt-wasm` (`the_alpha_pass_through_the_c_api_is_the_engines`) y en `rt-app` (`RPP1` con
+máscara 127). **Hashes nuevos** fijados: `PINNED_PASS_ALPHA = 0xd4eaac78` (ejemplo) y
+`PINNED_E5_PASS_ALPHA = 0xef9ead68` (E5), iguales en el `rt.wasm` real
+(`wasm-parity.mjs --expect-alpha`, en `engine.yml`) y en WASI escalar y simd128; **ninguno
+de los anteriores se movió** (albedo `0x43571da9`, normales `0x0aabfd24`, profundidad
+`0x25f8dd11`, ids `0xccd3d6c7`, círculo `0xdf87494c`, ni los de las imágenes). Cada prueba
+nueva se comprobó con una mutación: 46 mutantes (38 en la página, uno en la cola y 7 en
+el motor), todos muertos; dos enseñaron algo: dividir entre el número de muestras en vez de
+multiplicar por su recíproco sobrevivía hasta que se probó con 7 muestras, y un mutante
+colgaba las pruebas (era el fallo de `ensureLoop`). `tools/batch-check.mjs` (Chromium y el `rt.wasm`
+real): un lote 2 × 2 con tres pases en un ZIP de 20 archivos que `unzip` y `fflate` aceptan,
+los EXR leídos por la especificación, los PNG de 16 bits, y *Detener* el segundo deja el
+tercero. Capturas `batch-window.png` y `batch-queue.png`.
+
+**Auditoría al empezar** (sobre `main` en v0.1.16, punto por punto del
+brief y del criterio; U5, U14, X2 y X4 ya habían construido una parte):
+
+| Punto | Estado al empezar | De qué fase | Qué hizo N2 |
+| --- | --- | --- | --- |
+| Cola de render con orden y progreso, sobre `render()` del motor | Hecho | U5 (cajón, reordenar, editar, duplicar, pausar, terminados), U14 (vista en vivo), E4 (el trazador) | Nada que rehacer |
+| Cancelación | Hecho | U5: *Detener* el trabajo en curso (acaba *Cancelado* y sigue el siguiente), *Quitar* uno en espera, *Pausar* | Nada que rehacer; la prueba |
+| Pases de profundidad, normales e id de pieza como salida del integrador, con máscara en `RNDR` | Hecho en el motor | X2 (`RNDR.passes`, `rt_core::passes`, seis pases con hashes fijados), X4 (los dibuja three.js para la IA) | Nada que rehacer en el motor; solo los leen la guarda de la IA y el *denoise*: ningún pase llega a un archivo |
+| Pase alfa | Falta (solo existía el alfa de la imagen con fondo transparente) | — | El séptimo pase, `alpha`, bit 6 de la máscara: sin cambiar el tamaño de `RNDR` ni mover un *hash* |
+| Los pases como archivos: PNG de 16 bits o EXR | Falta (escritores de la imagen sí: PNG 8/16 bits, EXR, TIFF, DNG) | U5, U12 | `encodePngWords` y `encodeExrPlanes`, los números de cada pase y sus nombres |
+| Pases elegibles en la ventana de render | Falta (una fila *próximamente*) | U5 | Fichas y formato |
+| Lote por cámaras | Hecho | U5 (*Todas las cámaras*, un trabajo por cámara con su proporción) | — |
+| Lote por estudios | Falta (los estudios guardados no eran un eje de la cola) | U4 (los estudios de la biblioteca), L6 | El estudio como eje: `studio` en los ajustes y en el trabajo |
+| Nombre por plantilla con proyecto, cámara y estudio | Hecho en lo que importa | U5 (`{project}`, `{camera}`, `{studio}`, `{date}`, `{n}`: las claves en inglés, las fichas en es y en) | `{studio}` pasa a ser el estudio guardado del trabajo (era el nombre del tipo de producto); aviso de nombres repetidos |
+| Descarga en ZIP propio | Falta (un escritor de ZIP solo en `tests/zip.ts` para los archivos de prueba, y fflate para *leer* el 3MF) | — | `io/zip.ts` y el grupo de ZIP de la cola |
+| Criterio: pruebas de nombre y de cola en orden | Parcial: el orden y detener el primero | U5 (`tests/render-queue.test.ts`) | `tests/batch.test.ts` |
+| Criterio: cancelar el segundo deja el tercero | Falta | — | Dos pruebas (detenerlo y quitarlo) y el mismo caso en Chromium |
+| Criterio: un lote de 2 × 2 produce 4 imágenes | Falta | — | Prueba con la cola, el ZIP leído por fflate y `tools/batch-check.mjs` |
+| E8, lotes nativos (`rt` lee proyectos) | Falta | — | No se construye aquí (se solapa; sigue en su fase) |
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- **Las fichas del nombre** son `{project}`, `{camera}`, `{studio}`, `{date}` y
+  `{n}` (el modelo de U5, con las claves en inglés y las fichas con su etiqueta
+  en cada idioma), no `{proyecto}_{camara}_{estudio}` como dice el encargo: se
+  mantiene lo que hay, que ya hace lo que pide (en español la ficha dice *Proyecto*,
+  *Cámara*, *Estudio*). No hay alias en español dentro de la plantilla.
+- **`{studio}` cambia de significado en los lotes**: era el nombre del tipo de producto
+  (*Joyería*) y ahora, en un trabajo con estudio guardado, es el nombre de ese estudio;
+  sin él (todo lo de antes) sigue siendo el tipo de producto.
+- ◆ **Qué es el alfa.** El encargo pedía un pase «alfa» sin más. Se construyó como
+  **máscara de objetos**: cada muestra cuenta si su rayo de cámara encuentra una
+  superficie de una instancia; el suelo del estudio (visible o atrapasombras), el
+  entorno, el fondo y los paneles de luz visibles valen 0, y los recortes y el vidrio
+  cuentan como superficie, como en todos los pases de X2. No es, por tanto, el alfa de la
+  imagen con *Fondo transparente* cuando hay un atrapasombras (ahí el alfa es la
+  sombra) ni en lo que el camino ve a través del vidrio; donde solo hay objetos opacos y
+  fondo, es el alfa de la película bit a bit (test). Decidir si el suelo entra en la
+  máscara, y si los recortes con textura de alfa deben dar cobertura parcial (hoy no).
+- ◆ **Qué pases se ofrecen**: los cuatro del encargo. El motor renderiza también el albedo, el
+  id de material y el círculo de confusión (los de la IA): se podrían ofrecer con el mismo
+  cauce, y el id de material necesitaría su leyenda.
+- ◆ **Cómo se escriben los números.** Formato por defecto de los pases, **EXR** (la
+  profundidad y las normales son flotantes); en PNG de 16 bits, la profundidad es un mapa de
+  z con **lo cercano blanco**, 0 el fondo y el rango de distancias en un trozo `tEXt`; las
+  normales, `n × ½ + ½` (el fondo, el gris medio); los ids, el número de instancia con el
+  suelo en 65535 y un tope de 65534 piezas. Todo eso es preparado, no decidido: son
+  elecciones fotográficas y de convención.
+- ◆ **El ZIP**: apagado por defecto (hoy cada archivo se descarga aparte, como siempre), un
+  grupo es lo que mete **una** orden *Render* o *+ Añadir a la cola*, y se llama
+  `Proyecto_0001-0004.zip` (con los números de render). Decidir si un lote a *Descargas*
+  debería ir empaquetado por defecto, y el nombre.
+- ◆ **El orden de un lote** es cámara por cámara (cada cámara en todos los estudios), el de
+  las plantillas `{camera}_{studio}`; el otro orden (estudio por estudio) es igual de
+  defendible.
+- **El estudio no mueve la cámara.** `studio/restore` sí pone la cámara del estudio (su
+  vista y su óptica); un lote la conserva (la del trabajo), porque si no, 2 cámaras × 2
+  estudios serían 2 imágenes. Una `restoreStudio` con `{ camera: false }`, pura, hace las dos cosas.
+- **Los estudios del lote son los guardados**: los de la pestaña *Estudios* (biblioteca, del
+  navegador o de la carpeta de datos del escritorio) y los que un proyecto antiguo guardaba
+  dentro. Un trabajo guarda el id y el nombre, no el estudio: abierto en otro equipo sin
+  ese estudio falla con el motivo. ◆ Si el estudio debería viajar con el proyecto.
+- **Un trabajo con estudio no pasa por la IA** (sus pases se dibujan del proyecto abierto en
+  el modo Rápido); lo dice un aviso y se guarda la imagen del motor. Los plugins de trabajos
+  guardan aparte, fuera del ZIP.
+- **Los pases son para imágenes**: una animación no los escribe (ni lleva estudio), y con
+  *Terminar por ruido* el alfa, como el albedo, lleva las muestras de la primera ronda.
+- **El ZIP se arma en memoria** y se escribe al acabar el último trabajo del grupo: cerrar la
+  página antes lo pierde (los resultados de la imagen están en el historial), no hay ZIP64 y
+  un lote enorme de EXR de 32 bits puede no caber. Un grupo que se pausa espera en memoria.
+- **Cancelar**: ya estaba; faltaba la prueba. *Detener* (el que corre) y *Quitar* (uno en
+  espera) son los dos modos; un trabajo en espera no pasa a *Cancelado*, sale de la lista.
+- **El escritorio**: el lanzador renderiza el alfa y lo guarda en su `RPP1` (probado por la
+  API con 1 y 4 hilos, y el lector de la página con un archivo que escribe el lanzador),
+  pero `tools/batch-check.mjs` solo recorre la web: el lote en la ventana nativa no se
+  grabó. **E8** (lotes nativos de línea de órdenes) no se construye aquí.
+- **Cambios fuera del plan, de un bug que casi entra**: el lector del `RPP1` del lanzador
+  (`kept.rs`) tenía un brazo `_ =>` que habría guardado cualquier plano nuevo en el círculo de
+  confusión; ahora el alfa tiene el suyo y el archivo de prueba
+  `tests/fixtures/passes-3x2.rpp` lo incluye (sus seis primeros planos son los mismos bytes).
+- **Un fallo antiguo de la cola, encontrado al probar**: un *Iniciar* sin nada en espera
+  terminaba el bucle antes de su primer `await` y dejaba la promesa ya acabada como «el
+  bucle en marcha»; ningún *Iniciar* posterior arrancaba otro. Arreglado en `ensureLoop`
+  (la promesa se limpia sola al acabar) y con su prueba, que falla si vuelve el código viejo.
 
 ## D1 · Doctor de motor — **Sonnet** — hecha
 
@@ -8479,7 +8624,7 @@ oculta solo en cámara); la heurística marca el vidrio de un fixture de
 habitación importada y no marca un vaso; captura de la sala de ejemplo
 en la vista previa.
 
-## K3 · Cámara de interiores — **Opus**
+## K3 · Cámara de interiores — **Opus** — hecha
 
 **Qué.** `INTERIORS.md` §3.4: *shift* con cálculo automático
 (*verticales rectas*, apagable), altura de ojo con presets, ópticas de
@@ -8497,6 +8642,101 @@ de un cubo quedan paralelas en la proyección (±0,1 px a 1080p); la
 panorámica de la vista previa coincide con la del motor en seis
 direcciones de prueba; la planta no muestra el techo y la habitación
 sigue iluminada por él (comparación de medias); capturas.
+
+**Hecho.**
+
+*Motor.* Dos proyecciones nuevas en `rt_core::scene` (`Projection`, `Camera::panorama_dir`): la **equirectangular**
+(longitud y latitud sobre la imagen, 360° × 180° en 2:1) y el **ojo de pez equidistante** (`θ` proporcional a la distancia
+al centro, negro más allá de media vuelta), estenopeicas y desde la base de la cámara; la profundidad de los pases es la
+distancia, y las huellas de píxel de partículas, texturas y cáusticas toman el cono de la esfera. `CAMR` gana 16 bytes al
+final (`u32 projection; f32 fov_x_deg fov_y_deg exterior`) que **solo se escriben si alguno no es el de por defecto**: los
+archivos de antes conservan sus bytes y ningún *hash* se movió. **Visible a cámara** por instancia: `INST.flags` bit 2
+(`INSTANCE_NO_CAMERA`, valor 4, junto al bit 1 de `INSTANCE_NO_SECTION`); solo las consultas `RayClass::Camera` (rayos
+primarios y sus continuaciones rectas, pases, tapas de sección) se la saltan, en la BVH, en la fuerza bruta y en las
+tapas. El **multiplicador de exterior** (`CAMR.exterior`) multiplica el entorno que ve un rayo de cámara al escapar
+(también por paredes finas y recortes) y el fondo del atrapasombras. `rt_features` y `/api/info` suben el bit 4 (valor
+16, `FEATURE_CAMERAS`). Tres escenas de paridad sobre la habitación de cajas de `example::k3_room` (`rt
+--write-k3-plan-example`, `--write-k3-panorama-example`, `--write-k3-fisheye-example`, y sus `tests/fixtures/k3-*.rsb`):
+`PINNED_K3_PLAN_4SPP` = `0x6efb1e66`, `PINNED_K3_PANORAMA_4SPP` = `0x96de8d73`, `PINNED_K3_FISHEYE_4SPP` = `0x9b85a1b6`,
+iguales en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, en WASI escalar y `simd128`, en el `rt.wasm` real y (la
+panorámica) por la API del lanzador; un bloque de paridad K3 en `engine.yml`, imagen sola y con `--passes`.
+
+*Página.* `CameraState.projection` (`PERSPECTIVE · ORTHOGRAPHIC · EQUIRECTANGULAR · FISHEYE`) en la lista *Proyección* de la
+sección *Cámara*, `fisheyeFovDeg` (60°–360° en la diagonal del encuadre) y las vistas *Alzado* y *Planta* (ortográficas).
+**Verticales rectas** (`straightVerticals`, `core/interior-camera.ts`): se escribe la cámara nivelada en la misma
+posición y el mismo acimut, con el *shift* `−f · tan(inclinación)` sumado al de la óptica en el `LENS` de O1 que ya
+existía (como pidió O4: una herramienta que mueve el *shift*, sin reordenar la óptica); la vista previa pone la misma
+corrección en la proyección (`render/camera-projection.ts`, `P · Rx`), así que el picado, el contorno y el *gizmo* la
+siguen. **Altura de ojo** (`camera/eyeHeight`, presets *De pie* 1,5 m y *Sentado* 1,1 m) y **ópticas de interior**
+(`camera/interiorLens`, 24 · 28 · 35 mm), una entrada de deshacer cada una, nada con la cámara bloqueada. **Visible a
+cámara** en *Pieza* (`SceneNode.cameraHidden`, heredado, `scene/setCameraHidden`): bit 2 de `INST` para el motor; en
+Rápido, un material que no escribe color ni profundidad y sigue dando sombra, fuera del picado, de la caja, de los
+tintes y del pase de ids. **Panorámicas en Rápido** (`render/panorama-pass.ts`): la escena en las seis caras de un cubo
+(medio flotante, lineal) y el lienzo desde el cubo con `PANORAMA_GLSL`, el mismo mapa que el motor
+(`core/panorama.ts`), sobre el lienzo entero con el encuadre de salida dentro, como la imagen del visor Completo; el
+picado sigue el mapa. **Exposición como pase** del estado `image` (`core/image-passes.ts`): `exposureMode` *A mano ·
+Automática*; la automática mide en la página las sumas de la acumulación (luminancia `f32`, `log2` del motor, 10 % más
+oscuro y 5 % más claro fuera, media al gris del 18 %, ±16 EV, centésimas), y `exposureEv` pasa a ser la compensación
+*Brillo (EV)*; el visor la rehace cuando las muestras se duplican, y el render final mide sus sumas antes del
+*denoise*, en el *pool* y en el lanzador. Presets *Día luminoso · EV 7* y *Tarde de lámparas · EV 5* (exposición a mano,
+`log2(683/1,2) − EV₁₀₀`) y el deslizador *Exterior (rayo de cámara)* (`environment.exterior`, también en el fondo de
+Rápido). El tipo *Interior* enciende las verticales rectas y la exposición automática por el mecanismo de casillas de
+K1 (`image.exposureMode`, `camera.verticals:<id>`): volver de tipo deja el proyecto como estaba. Proyecto, biblioteca y
+estudio guardan y normalizan los campos nuevos; un proyecto de antes abre igual.
+
+*Criterio, en números.* **Verticales**: con la cámara inclinada 10° (28 mm, 1920 × 1080), las aristas verticales de un
+cubo de 600 mm quedan a **0 px** de paralelas en la proyección de la página y en la de Rápido, y a **0,0001 px** con los
+rayos del motor (`rt-core`, leyendo el archivo que escribe la página, `tests/fixtures/k3-verticals.rsb`); sin
+verticales rectas, 7,5 px (página) y 6,4 px (motor). Rápido y motor coinciden punto a punto a < 0,01 px; el objetivo
+sigue en el centro (< 10⁻⁶ px). **Panorámica**: en un cuarto cerrado de seis paredes de seis colores, las seis
+direcciones ±X ±Y ±Z de la equirectangular (y cinco del ojo de pez de 360°, y negro fuera del círculo de imagen) dan
+el color de su pared en el `rt.wasm` real y en Chromium, y el picado de Rápido coge esa pared. **Planta**: en la
+habitación de prueba, la media del suelo visto desde arriba con el techo oculto a cámara es **0,010220**; la misma
+habitación vista desde debajo del techo, **0,010220** (+0,0000 %); sin techo, 0,002109 (20,6 %), y el techo no aparece
+(0,000000 de lo que la cámara ve de él). En el navegador (`tools/k3-check.mjs`), la planta con el techo oculto cambia la
+imagen de Rápido y el visor Completo la muestra iluminada (media del visor 85 sobre 255; el umbral de la prueba es 12) con la exposición automática medida (+2,6 EV).
+
+*Pruebas.* `scene::camera_tests` y `render::k3_tests` de rt-core (mapas, CAMR de ida y vuelta e inválidos, verticales,
+las tres imágenes fijadas, medias de la planta, pases, clases de rayo con tapas, exterior exacto a la mitad, la
+habitación sin campos K3 igual que antes), `rt-cli/tests/example.rs` (1, 4 y 16 hilos, escribir los ejemplos),
+`rt-app/tests/parity.rs`; `tests/interior-camera.test.ts` (24: el criterio de verticales en página y Rápido, el
+límite, altura de ojo, ópticas, vistas, mapas, `CAMR` e `INST` byte a byte con `rt`, herencia, exterior, proyecto,
+`readsCameras`, *Interior* de ida y vuelta, el `rt.wasm` real con los tres fijados y las seis direcciones),
+`tests/image-passes.test.ts` (11: el medidor), `tests/panorama-browser.test.ts` (4, Chromium: seis y cinco direcciones,
+el círculo de imagen, una pared oculta a cámara ni se dibuja ni se pica) y una prueba del *pool* en
+`tests/pathtracer.test.ts`. **Mutaciones**: 28, todas detectadas. En el motor (8): la BVH que no se salta lo oculto a cámara, lo oculto para todos los rayos (también las sombras), la fuerza bruta que no se lo salta, la tapa de sección de una pieza oculta vista por la cámara, el signo de la longitud equirectangular, el ojo de pez sin ceguera más allá de media vuelta, el exterior sin aplicar y los campos de `CAMR` escritos siempre. En la página (20): el signo de la longitud en el mapa y en el GLSL, el círculo del ojo de pez en el GLSL, el signo del *shift*, la cámara que no se nivela, la proyección de Rápido sin girar, el bit de `INST` sin escribir y escrito para un motor que no lo lee, el exterior sin escribir, los campos de `CAMR` escritos siempre, la herencia de *Visible a cámara*, Rápido que dibuja y que pica una pieza oculta, los dos recortes del medidor, la suma en vez de la media de las muestras, el logaritmo de la media, el medidor progresivo que mide cada fotograma, el *pool* que no da la lectura y el preset contra el cero equivocado. Tres sobrevivieron a la primera pasada (el círculo del ojo de pez en el GLSL, lo oculto también para las sombras y la tapa oculta) y se reforzaron las pruebas hasta detectarlas: una esquina del lienzo fuera del círculo de imagen, un segmento de sombra que termina entre el techo y el suelo, y dos rayos a la altura de la tapa del techo, desde el lado quitado y desde dentro de la losa.
+
+*Capturas.* `docs/ui/k3-verticals.png` (la habitación en Completo con las verticales rectas y la sección *Cámara*),
+`k3-plan.png` (la planta en Completo con el techo oculto y la exposición automática en la barra de estado) y
+`k3-panorama.png` (la panorámica 2:1 en Completo), con sus versiones de Rápido en `-fast`; entradas en `GALERIA.md`
+bajo *Sin publicar*.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de **Fable** y queda propuesto, sin decidir):
+(1) **No hay recorrido WASD** con altura fija: lo cubre N3 (*Paseo de cámara*), con la especificación aplazada en `TODO.md` §3 (*Paseos a pie*).
+(2) **No hay nodo `ROOM`** (es K2): las pruebas y la comprobación del navegador usan una habitación de cajas y la
+visibilidad a cámara por pieza, que vale para cualquier geometría; la pared frontal oculta y el recorte cercano
+automático de `INTERIORS.md` §3.4 quedan para K2. (3) **El motor no renderiza la panorámica por franjas**: la renderiza
+entera, por baldosas como cualquier imagen; las franjas para tamaños grandes son de K6. (4) **El *shift* va en `LENS`,
+no en `CAMR`**: las verticales rectas mueven el *shift* de la óptica de O1 (lo que pidió O4); el motor no sabe de ellas.
+(5) **La curva es la transformada de vista**: *Low contrast*, el rodillo largo y ISO y obturador en *Avanzado* siguen sin
+hacer; el pase de curva es `RNDR.tonemap`. (6) **Interior no mueve la cámara a la altura de ojo**: hacerlo como una
+casilla más rompía el viaje de ida y vuelta de los chequeos del Doctor de interiores de K1 (que miden el encuadre); los
+presets están en *Cámara*. (7) En Rápido no se dibuja nada encima de una panorámica (contorno, *gizmo*, glifos), y el
+fondo degradado o de imagen se ve como color. (8) La planta es ortográfica a 89,9° (el tope de elevación de la cámara),
+no a 90°. (9) No se añadió al Doctor un chequeo de «cámara inclinada sin verticales rectas». (10) La exposición
+automática la mide la página: una escena exportada y renderizada con `rt` fuera de la aplicación lleva solo la
+compensación en `RNDR.exposure_ev`. (11) **Para F1** (picado exacto por el rayo primario del motor): una API de píxel →
+rayo tiene que servir a la ortográfica (origen en el plano de la imagen, dirección fija), a las dos panorámicas (el
+mapa de `Camera::panorama_dir` desde la posición, sin lente, y «nada» fuera del círculo del ojo de pez) y a las
+verticales rectas (la cámara que se renderiza, `renderedCamera`, no la de la órbita); `focusDistanceFor` ya da la
+distancia de enfoque con verticales rectas y no se usa hasta F1. ◆ (12) **Presets de altura de ojo** 1,5 y 1,1 m y
+**ópticas de interior** 24 · 28 · 35 mm (28 sin preset de lente: `INT_28` es solo una focal), tomados de §3.4. ◆ (13)
+**Medición de la exposición automática**: media logarítmica recortada (10 % abajo, 5 % arriba) al gris del 18 %, ±16 EV.
+◆ (14) **Presets de EV** 7 y 5 de §3.4 y su calibración `EV₁₀₀ = log2(683/1,2) − exposición` (que EV 0 del motor sea
+EV₁₀₀ ≈ 9,15). ◆ (15) **Multiplicador de exterior** 1 por defecto (sin efecto) y 0,05–1 de rango. ◆ (16) **Interior
+enciende las verticales rectas** por defecto (como dice §3.1), y hasta **30°** de inclinación corregida
+(`VERTICALS_MAX_TILT_DEG`). ◆ (17) El ojo de pez de 180° **en la diagonal** del encuadre (llena el encuadre; más ancho,
+se ve el círculo).
 
 ## K4 · Motor para interiores, conjunto mínimo — **Opus**
 
@@ -9277,13 +9517,17 @@ Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 2 (la DoF de E5b pasa a O1):
 
+*Renumerada:* el flare con fantasmas era **O4** en esta tabla y pasa a
+**O6**; O4 es ya la fase hecha *Lente simple y trazada: opciones de cada
+una*.
+
 | Fase | Responsable | Qué |
 | --- | --- | --- |
 | **A6** — hecha | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
 | **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
 | **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
 | **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
-| **O4** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
+| **O6** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
 | **O5** | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* |
 | **W1** | Opus | Evaluador de pines en el motor con muestreo por importancia; editor de pines; *Colocar brillo* |
 | **W2** | Sonnet | Biblioteca de 39 entornos (recetas, miniaturas, *hash*), exportar HDR/EXR, interiores horneados |
@@ -11722,9 +11966,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   el diafragma, la aberración cromática y el remolino compartidos por los
   dos modelos o uno por modelo; los tipos de bokeh de la lente trazada en
   la rejilla de la lente simple (apagados diciendo dónde, quitados, o el
-  clic que cambia de lente); el límite de 12° para las dos lentes; el
-  veredicto de la hoja `rt --tilt-sheet`; y renumerar O4 (esta fase) o la
-  O4 de la tabla de `STUDIO-TOOLS` (flare con fantasmas).
+  clic que cambia de lente); el límite de 12° para las dos lentes; y el
+  veredicto de la hoja `rt --tilt-sheet`.
 
 - **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
   de las flechas (hoy un par más fino, siempre visible, en los campos con

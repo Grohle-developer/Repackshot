@@ -96,6 +96,7 @@ pub(crate) fn camera(focal: f32, fstop: f32, focus: f32) -> Camera {
         ortho: false,
         ortho_width: 1000.0,
         lens: None,
+        ..Camera::default()
     }
 }
 

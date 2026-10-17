@@ -19,7 +19,9 @@ import type { EffectMaterial } from '../data/effects';
 import { flattenGraph } from '../core/material-preview';
 import { compileGraph, encodeProgram, OUTPUT_KEYS, type Program } from '../core/material-program';
 import type { MaterialGraph } from '../core/material-graph';
-import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
+import { activeCamera, cameraPosition, isPanoramic, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
+import { exteriorOf, renderedCamera } from '../core/interior-camera';
+import { panoramaFov, projectionCode } from '../core/panorama';
 import { kelvinToRgb } from '../core/light-math';
 import { iesBytesOf, iesProfileOf, iesSpot } from '../core/ies';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -39,7 +41,7 @@ import { lensFilterType } from '../data/lens-filters';
 import type { CoatingId, LensSurface } from '../data/lenses';
 import { composeLens, tracedLensTilts, type ComposedLens, type TracedLens } from '../core/traced-lens';
 import { polar, toWorldAzimuth } from '../core/light-math';
-import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { allParts, hiddenToCamera, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import { QUALITY_PRESETS } from '../data/quality';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
@@ -72,6 +74,8 @@ export const TAG_FXAM = 'FXAM';
 export const TAG_SECT = 'SECT';
 /** `INST.flags` bit 1: the section view does not cut this instance (the studio, not the model). Written only with a section. */
 export const INSTANCE_NO_SECTION = 2;
+/** `INST.flags` bit 2 (K3): the camera does not see this instance; everything else does (rt-core `INSTANCE_NO_CAMERA`). */
+export const INSTANCE_NO_CAMERA = 4;
 /** `SECT.flags` bit 0: the cut solids are capped. */
 export const SECTION_CAP = 1;
 /** Bytes of a `SECT` payload: `u32 flags; f32 normal[3] distance`. */
@@ -164,6 +168,16 @@ export interface RsbCamera {
   orthoWidth: number;
   /** O1: the LENS section (rt-core `optics::LensParams`); absent or null: none, the plain thin lens. */
   lens?: RsbLens | null;
+  /**
+   * K3, the end of CAMR (rt-core `Camera::projection`, `fov_x_deg`, `fov_y_deg`, `exterior`; core/panorama.ts): the
+   * projection (0 the camera of `ortho`, 1 equirectangular, 2 fisheye), its fields of view across the image's width and
+   * height in degrees, and the exterior factor of the camera ray. Absent: 0, 360, 180 and 1, and then the 16 bytes are
+   * not written, as before K3.
+   */
+  projection?: number;
+  fovXDeg?: number;
+  fovYDeg?: number;
+  exterior?: number;
 }
 
 /** `LENS.profile`. */
@@ -664,6 +678,13 @@ export interface WriteOptions {
 }
 
 const CAMR_BYTES = 60;
+/** K3: the projection, the two fields of view and the exterior factor after the 60 bytes of before. */
+const CAMR_K3_BYTES = 16;
+
+/** K3: true when a camera carries a K3 field that is not its default, and so writes the 76-byte CAMR. */
+export function writesCameraK3(c: RsbCamera): boolean {
+  return (c.projection ?? 0) !== 0 || (c.fovXDeg ?? 360) !== 360 || (c.fovYDeg ?? 180) !== 180 || (c.exterior ?? 1) !== 1;
+}
 /** LENS without its picture: 15 numbers before the picture's three words. */
 const LENS_BYTES = 72;
 /** MATL with E6's `bevel_mm` and E9's fields (the medium and the Abbe number). */
@@ -856,7 +877,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   for (const l of scene.lights) if (l.kind === LIGHT_IES && l.ies !== undefined && !profileTexts.includes(l.ies)) profileTexts.push(l.ies);
   const profiles = profileTexts.map(iesBytesOf);
   const written = scene.lights.filter((l) => l.kind !== LIGHT_IES || l.ies !== undefined);
-  let size = 8 + 8 + CAMR_BYTES + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
+  const camrBytes = CAMR_BYTES + (writesCameraK3(scene.camera) ? CAMR_K3_BYTES : 0);
+  let size = 8 + 8 + camrBytes + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
   for (const l of written) size += 8 + (l.kind === LIGHT_IES ? LGHT_IES_BYTES : LGHT_BYTES);
   for (const p of profiles) size += 8 + iespBytes(p);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
@@ -875,7 +897,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   w.u32(0); // header_len
 
   const c = scene.camera;
-  w.section(TAG_CAMR, CAMR_BYTES, () => {
+  w.section(TAG_CAMR, camrBytes, () => {
     w.vec(c.position);
     w.vec(c.target);
     w.vec(c.up);
@@ -885,6 +907,13 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.f32(c.focusDist);
     w.u32(c.ortho ? 1 : 0);
     w.f32(c.orthoWidth);
+    // K3: only when one is set, so a camera of before keeps its bytes.
+    if (camrBytes > CAMR_BYTES) {
+      w.u32(c.projection ?? 0);
+      w.f32(c.fovXDeg ?? 360);
+      w.f32(c.fovYDeg ?? 180);
+      w.f32(c.exterior ?? 1);
+    }
   });
   if (lens) {
     w.section(TAG_LENS, lensBytes(lens), () => {
@@ -1150,6 +1179,13 @@ export interface SceneView {
    * `readsIes`). Off by default: an IES light is the spot light that stands for it in Fast, which any engine reads.
    */
   ies?: boolean;
+  /**
+   * K3: write the interior cameras (the projection, the fields of view and the exterior factor at the end of CAMR, and
+   * the parts hidden to the camera as `INST.flags` bit 2) for an engine that reads them (render/engine.ts
+   * `readsCameras`). Off by default: an engine of before K3 shows every part and renders the standard camera, and the
+   * page writes what it reads.
+   */
+  cameras?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -1505,11 +1541,17 @@ export function patternToRsb(inst: MaterialInstance | null | undefined, _partSiz
  * The camera for an image of `width x height` pixels. Without `viewport` it is the output
  * frame: the 36 mm sensor on the longer side, as the engine assumes. With it, the image covers
  * the whole viewport and the output frame sits inset where the preview draws it, so the sensor
- * (and an orthographic width) grows by the viewport over the frame.
+ * (and an orthographic width, and a panorama's fields of view) grows by the viewport over the frame.
+ * K3: the camera rendered is `renderedCamera` (the straight verticals: level, with the lens shift
+ * that keeps the frame), and a panorama writes its projection and fields of view (core/panorama.ts).
  */
-export function cameraToRsb(cam: CameraState, outW: number, outH: number, width: number, height: number, viewport?: { viewW: number; viewH: number }): RsbCamera {
+export function cameraToRsb(cam0: CameraState, outW: number, outH: number, width: number, height: number, viewport?: { viewW: number; viewH: number }): RsbCamera {
+  const cam = renderedCamera(cam0);
   let sensorMm = SENSOR_MM;
   let orthoWidth = cam.orthoWidth;
+  // K3: the output frame inside the image, in the image's proportions (for a panorama's fields of view).
+  let frameW = width;
+  let frameH = height;
   if (viewport && viewport.viewW > 0 && viewport.viewH > 0) {
     const frame = outputFrameRect(viewport.viewW, viewport.viewH, outW, outH);
     const outAspect = outW > 0 && outH > 0 ? outW / outH : 16 / 9;
@@ -1518,9 +1560,13 @@ export function cameraToRsb(cam: CameraState, outW: number, outH: number, width:
     const mmPerPx = (mmPerCss * viewport.viewW) / Math.max(1, width);
     sensorMm = mmPerPx * Math.max(width, height);
     orthoWidth = (cam.orthoWidth * viewport.viewW) / frame.width;
+    frameW = (frame.width * width) / viewport.viewW;
+    frameH = (frame.height * height) / viewport.viewH;
   }
   const ortho = cam.projection === 'ORTHOGRAPHIC';
-  const lens = !ortho && cam.optics && !isNeutralOptics(cam.optics) ? lensToRsb(cam.optics, outW, outH) : null;
+  const panoramic = isPanoramic(cam.projection);
+  const lens = cam.projection === 'PERSPECTIVE' && cam.optics && !isNeutralOptics(cam.optics) ? lensToRsb(cam.optics, outW, outH) : null;
+  const fov = panoramic ? panoramaFov(cam, frameW, frameH, width, height) : null;
   return {
     position: cameraPosition(cam),
     target: [cam.target[0], cam.target[1], cam.target[2]],
@@ -1532,8 +1578,12 @@ export function cameraToRsb(cam: CameraState, outW: number, outH: number, width:
     ortho,
     orthoWidth: Math.max(1e-3, orthoWidth),
     ...(lens ? { lens } : {}),
+    ...(fov ? { projection: projectionCode(cam.projection), fovXDeg: Math.min(MAX_FOV_DEG, fov.x), fovYDeg: Math.min(MAX_FOV_DEG, fov.y) } : {}),
   };
 }
+
+/** Widest field of view the engine reads (`CAMR.fov_x_deg`, rt-core `MAX_FOV_DEG`). */
+export const MAX_FOV_DEG = 3600;
 
 /**
  * O2: the scene the engine reads to tell what it makes of a camera's traced lens (`rt_scene_lens_info`, the
@@ -1819,6 +1869,14 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   // The frame of a viewport image is the image of the camera on screen, with its ratio (U13).
   const frame = chosen.aspect;
   const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
+  // K3: the exterior factor of the camera ray, and the panorama, only for an engine that reads them.
+  const exterior = exteriorOf(state.environment.exterior);
+  if (view.cameras && exterior !== 1) camera.exterior = exterior;
+  if (!view.cameras) {
+    delete camera.projection;
+    delete camera.fovXDeg;
+    delete camera.fovYDeg;
+  }
 
   // Geometry: a mesh per distinct (mesh, shading, face groups), an instance per visible part.
   const nodes = state.scene.nodes;
@@ -1943,7 +2001,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
         meshKeys.push(part.key);
       }
       // Q1: the studio around the product (a set's backdrop, floor and cards) is not cut by the section.
-      instances.push({ mesh: mi, transform: rows, materialId, flags: cutting && partIsExempt(state, id) ? INSTANCE_NO_SECTION : 0 });
+      // K3: a part hidden to the camera, for an engine that reads it.
+      const flags = (cutting && partIsExempt(state, id) ? INSTANCE_NO_SECTION : 0) | (view.cameras && hiddenToCamera(state, id) ? INSTANCE_NO_CAMERA : 0);
+      instances.push({ mesh: mi, transform: rows, materialId, flags });
       passInstances.push({ node: id, material: part.material, materialId: materialId + 1 });
       // Automatic caustics: where the glass and polished metal are (E5b-1).
       if (view.caustics?.mode === 'AUTO') {

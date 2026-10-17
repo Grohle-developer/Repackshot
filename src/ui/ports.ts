@@ -15,6 +15,7 @@ import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
 import type { Program } from '../core/material-program';
 import type { FrameBox, LiveFrame } from '../core/live-frame';
+import type { PassesOutput } from '../core/pass-files';
 import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat, RenderProgress, VideoCodec } from '../core/render';
 import type { ResultMeta } from '../core/results';
@@ -82,6 +83,8 @@ export interface EngineStatus {
   pixels?: number;
   /** The desktop launcher's native engine renders (threads and SIMD path below). */
   native?: boolean;
+  /** K3: with the automatic exposure, what the engine's image metered (stops), null while nothing was metered. */
+  meteredEv?: number | null;
   threads?: number;
   isa?: string;
   /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */
@@ -288,6 +291,18 @@ export interface FrameRequest {
   dpi: number;
   /** An image job's camera. */
   camera?: CameraId;
+  /**
+   * N2: the project to render instead of the open one (the job's studio put on it, core/lighting.ts `restoreStudio`); the
+   * camera and the instant apply to it as to the open one. Absent: the open project.
+   */
+  state?: ProjectState;
+  /**
+   * N2: the passes to write next to the image (an image only), as 16-bit PNG or EXR; the files come back in `extras`,
+   * named from `imageName`.
+   */
+  passes?: PassesOutput;
+  /** N2: the name of the image this request writes: its companions (the pass files) are named from it. */
+  imageName?: string;
   /** A frame of an animation: the instant rendered (the camera track's camera). */
   time?: number;
   /** N1: the camera track's fade to a colour at that instant (core/animation.ts `shotFadeAt`): mixed into the file. */
@@ -362,6 +377,8 @@ export interface FrameResult {
   noisyFile?: Blob;
   /** How its file was converted from the render's light. */
   tone?: FrameTone;
+  /** N2: the files beside the image: the pass files and the part-id legend, each with its whole name. */
+  extras?: { name: string; blob: Blob }[];
 }
 
 // --- AI post-processing (phase X4, AI-POST.md §4, §7.3) ---------------------------------------------------------
@@ -422,6 +439,12 @@ export interface AiPort {
   materials(state: ProjectState, camera: CameraId | null): AiGuardMaterial[];
   /** The service takes the `RENDER` source: the desktop launcher kept the final render with its passes (X3c). */
   renderSource(): Promise<boolean>;
+}
+
+/** N2: our own ZIP (src/io/zip.ts), for the files of a batch; `ui` does not import `io`. */
+export interface ArchivePort {
+  /** A ZIP of the files, stored (not compressed), in the order given; repeated names are told apart. */
+  zip(entries: readonly { name: string; data: Blob }[]): Promise<Blob>;
 }
 
 /** The results history in the browser (src/io/results.ts). */
@@ -657,6 +680,8 @@ export interface AppServices {
   results: ResultsPort;
   /** Saving outputs. */
   files: FilesPort;
+  /** N2: packs the files of a batch into a ZIP (the render window's ZIP switch); absent, the switch is not offered. */
+  archive?: ArchivePort;
   /** The viewport as it is now, PNG. */
   captureViewport(): Promise<Blob | null>;
   /** The engine's scene file (RSB, what `rt` renders on the command line) for the output image. */

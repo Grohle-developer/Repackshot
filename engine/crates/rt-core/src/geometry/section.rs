@@ -252,9 +252,13 @@ impl Geometry {
             Span::Whole => self.trace_raw(ray, isa, class),
             Span::Leaves(t) => {
                 // The part of the ray on the kept side; a cap only where nothing else is met
-                // first, looked for beyond the plane; then the studio on the removed side.
+                // first, looked for beyond the plane (K3: a camera ray sees no cap of an instance
+                // hidden to the camera); then the studio on the removed side.
                 self.trace_raw(&limited(ray, ray.t_min, t), isa, class)
-                    .or_else(|| self.cap_beyond(section, ray, t, isa))
+                    .or_else(|| {
+                        self.cap_beyond(section, ray, t, isa)
+                            .filter(|h| !self.cap_hidden(class, h))
+                    })
                     .or_else(|| self.exempt_in(section, ray, t, ray.t_max, isa, class))
             }
             Span::Enters(t) => {
@@ -273,7 +277,8 @@ impl Geometry {
                         nearest
                     };
                     if let Some(hit) = next {
-                        if self.met_from_inside(section, ray, &hit) {
+                        if self.met_from_inside(section, ray, &hit) && !self.cap_hidden(class, &hit)
+                        {
                             return Some(cap(hit.instance, t));
                         }
                     }
@@ -281,6 +286,12 @@ impl Geometry {
                 nearest
             }
         }
+    }
+
+    /// K3: true when `hit` (on a cap, or on the surface that tells one) is of an instance a query of
+    /// `class` does not see: a camera query and an instance hidden to the camera.
+    fn cap_hidden(&self, class: RayClass, hit: &RayHit) -> bool {
+        class == RayClass::Camera && self.camera_hidden(hit.instance)
     }
 
     /// [`Geometry::occluded_class`] against the geometry with its section.
