@@ -3366,7 +3366,7 @@ recuerda tras recargar, la pregunta). `data.test.ts`, `sets.test.ts` y
   `library-setups.png` no tiene herramienta y queda marcada como superada.
 - La variante `large` de las miniaturas (L6) se quitó: nadie la usa.
 
-**◆ Para Fable** (regla 11; también en *Decisiones para Fable*):
+**◆ Para Fable** (regla 11; también en *Decisiones de criterio*):
 1. Que los montajes que cambian el entorno sin crear nada (las 7 recetas de
    *Interior*, los tres de sol) sean *Luces*, y que `PRESET` cambie de grupo con
    el tipo de producto.
@@ -10936,7 +10936,7 @@ verde; capturas.
   variante compacta deja el mismo sitio, no más. El test de disposición mide
   los valores de los estados que abre.
 - Los ◆ (la variante compacta, la lista de lo convertido y el ritmo de la
-  repetición) están en *Decisiones para Fable*.
+  repetición) están en *Decisiones de criterio*.
 
 ## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
 
@@ -11669,133 +11669,101 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   el render (coste medido); los terminados siguen abriendo el visor.
   **Hecha**: ver U14.
 
-### Decisiones para Fable (regla 11; datos en `TRIAGE.md`)
+### Decisiones de criterio (antes «Decisiones para Fable»)
 
-- **O2**: el veredicto de la hoja (`out/lens-sheet.html` de O2): qué
-  lentes dan ojo de gato, burbuja, cremoso y remolino; prescripciones y
-  diafragmas supuestos; constantes del adaptador anamórfico; focales de
-  los gráficos. Y el muestreo por máscara contra el ruido del bokeh trazado.
-- **2.1**: las tolerancias de la guarda de la IA (hoy ±4,6 % de luminancia y
-  ±1,8 % de color: casi invisible por diseño), con la comparación de X1
-  parte B.
-- **1.7**: qué mueve el interruptor de la focal (la cámara se acerca para
-  mantener el tamaño del objeto enfocado, o la cámara se queda y cambia el
-  encuadre) y cómo se ve en la cámara.
-- **6.1–6.3**: los sets de L6 dentro de *Estudios* con sus muestras
-  grandes, y sus luces como añadidos desactivables una a una sin tocar las
-  del estudio.
-- **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
-  absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
-  con el tamaño manual.
-- **E13** (MNEE; en la rama `wip/ccr-8df3f848/e13`, commit `385a4c9`, **sin
-  fusionar**): cumple el coste en la botella de E5 (1,09×) y deja la leche
-  dentro del 3 % de la referencia, pero no quita su grano (ruido 0,129 frente
-  a 0,124 con la regla de pared fina) ni mejora la cáustica del vaso de agua
-  (relMSE 0,52 frente a 0,49; el mapa de fotones da 0,29), y con vidrio curvo
-  cuesta 1,8–2× porque Newton resuelve pocos caminos (15 de 81 bajo una bola a
-  8 iteraciones). Con las cáusticas apagadas (los softbox) actuaría en casi
-  todo producto de vidrio, más lento y sin mejora visible, así que el
-  responsable no lo fusiona. Decidir: más iteraciones o semillas, cadenas de
-  cuatro superficies, dejar las cáusticas al mapa de fotones, cambiar
-  *Automático*, o fusionarlo apagado por defecto. Hoja en
-  `out/e13-sheet.html` de esa rama (regenerable con `rt --e13-sheet`).
-- **E10**: el adaptativo da 0,83–0,84× el relMSE del uniforme a igual
-  tiempo contra el ≤ 0,6× del criterio; el reparto ideal por bloques de 8×8
-  llegaría a 0,48× y 0,38× a igual número de muestras. Aceptarlo, cambiar el
-  criterio o cambiar la regla de reparto (el contrato del brief: el cuantil
-  50 % del error, bajando). Está solo detrás de *Terminar por ruido*.
-- **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b; el
-  párrafo de S4b dice cómo lo facilita).
-- **S4b** (hoja `out/ambient-sheet.html` de esa fase, regenerable con
-  `tools/ambient-sheet.mjs`): la parte del lóbulo hacia delante (propuesta
-  0,5; la hoja tiene 0,25, 0,75 y 1); el coste de la lluvia (1,63× contra el
-  1,3× del criterio, que no es la búsqueda sino la luz que la atraviesa):
-  aceptarlo, rastros más cortos o más escasos, o un modelo de gota más
-  barato para la cámara; el grano dentro de los rastros bajo la luz lateral;
-  y la regla de los caminos estrechos desde la cámara (las gotas refractan
-  también en ellos) frente a solo los rayos de cámara.
-- **1.5**: el editor de elementos de una lente (editar, mover, añadir,
-  girar 180°) sobre lo que O2 ya guarda como lente propia.
-- **1.6**: si se añaden nodos *Madera* y *Tela* con las recetas de E6 (M3b
-  no los trae; su párrafo dice cómo los facilita el intérprete), y si el
-  ejemplo de madera de los grafos tiene que parecerse a la familia *Madera*
-  (`docs/ui/m3b-wood.png`).
-- **M3b**: el `NORMAL_MAP` de M3a con el azul por debajo de 0,5 (los copos
-  de la pintura metalizada, la mitad de sus normales hacia dentro): cambiar
-  el nodo, el ejemplo o el motor (el párrafo de M3b, «no encajó» 8).
-- **4.2**: si el triaje se confirma con la escena del usuario, el recorte de
-  *fireflies* y el borde solo por luminancia del *denoise*.
-- **Q1** (los ◆ de su «no encajó»): dónde vive el control de la sección
-  (hoy en el inspector de Escena, no en la barra del visor); si la tapa de
-  un vidrio cortado refracta, como ahora en el motor, o es opaca del color
-  del vidrio, como opción para el fotógrafo; y si el estudio puede cortarse
-  alguna vez (hoy nunca, sin interruptor por pieza).
-- **K1** (los ◆ de su «no encajó», con las tablas de la propuesta): las
-  cifras de las siete recetas de interior (sol, paneles, partes, exposición
-  e intensidad del entorno), cuál es la de partida del tipo *Interior* (no
-  se eligió ninguna) y los umbrales del Doctor de interiores (escala de
-  100 mm a 30 m, óptica por debajo de 18 mm a 24 mm, altura de ojo de 0,3 a
-  2,2 m a 1,5 m, recorte cercano a la mitad de la distancia a la pared).
-- **D1** (los ◆ de su «no encajó»): si recortar con *Estándar* es un fallo
-  (los fondos blancos planos lo hacen) y si el arreglo es Filmic o AgX; los
-  umbrales de los *fireflies* (nivel 1, aislamiento ×4, parte 0,5, 16
-  muestras, 8 píxeles o 1e-5, recorte 10, que sesga); los del presupuesto
-  (suelo de 64 muestras, la mitad en *lo que llegue antes*, subir el tiempo
-  en vez de bajar muestras, 25 % de margen); y cuándo avisar del vídeo
-  (dormido hasta N1) y del *denoise*.
-- **N1** (los ◆ de su «no encajó»): el orden del asistente (hoy primero el
-  objetivo, como lo dejó N6); qué es un *Fundido* (la cantidad es la
-  opacidad final, y *aparecer* es el invertido; en el motor, cobertura
-  estocástica, y los emisores bajan); el polo del arco solar (fijo, detrás
-  del producto a 45°: latitud y norte); la forma del fundido a color
-  (centrado en el corte, como mucho medio plano, sin fundido al final); y
-  la calidad del vídeo (automática, unos 0,1 bits por píxel, sin alfa ni
-  sonido).
-- **L7** (los ◆ de su párrafo): que las recetas de *Interior* y los tres
-  montajes de sol (cambian el entorno, no crean nada) sean *Luces* y que
-  `PRESET` cambie de grupo con el tipo de producto; el tipo de producto solo
-  como filtro de *Sets* y solo por `StudioPreset.set` (falta una tabla de qué
-  sets sirven a cada tipo); el filtro *Sujeto*; que un set que entra sustituya
-  siempre la decoración del anterior y que *Luces* con *Ocultar* o *Añadir* la
-  deje; preguntar por defecto también con los focos sin tocar; los tres
-  tamaños de miniatura (4, 3 y 2 columnas, la pequeña sin etiqueta).
-- **H1** (pasada v0.1.16): los grises auxiliares `ink-2` e `ink-3` quedan
-  por debajo de 7:1 en 36 pares. Para llegar a 7:1 en todas las superficies
-  tendrían que ser `#434343` o más oscuros en claro y `#b5b5b5` o más
-  claros en oscuro, lo que aplana la jerarquía de grises. Decidir: subirlos,
-  limitar el texto auxiliar a `bg-0`, `bg-1` y *hover* (`#4e4e4e` /
-  `#afafaf`) o aceptar 4,5:1 para el texto secundario.
+**Desde el 17-10 las toma el responsable**, por indicación del usuario («toma tú las decisiones de fable»). Los agentes las siguen preparando y anotando con ◆, y no las toman por su cuenta (regla 11). Esta lista recoge lo decidido. Cada entrada dice si basta lo que hay o qué fase lo construye. Los datos de partida siguen en `TRIAGE.md` y en el párrafo de cada fase.
 
-- **U15** (los ◆ de su párrafo): el aspecto de la **variante compacta**
-  de las flechas (hoy un par más fino, siempre visible, en los campos con
-  etiqueta en línea y en el de un deslizador; la otra opción, flechas solo
-  al pasar el ratón o con el foco); la **lista de lo convertido a
-  deslizador** (`UI.md` §4.4: físicas, ángulos de la óptica, de los filtros,
-  del suavizado, de los patrones, de texturas y etiquetas y de un foco
-  propio; calidad JPEG, ruido e intensidad de la reducción de ruido;
-  velocidades, gizmo e intervención en Ajustes) y lo que se quedó en campo
-  (las luces del estudio, las asas, *Tamaño de la interfaz* y *del texto*);
-  y el ritmo de la repetición (400 ms y luego cada 50 ms).
-- **N2** (los ◆ de su «no encajó»): qué es el **alfa** (hoy una máscara de
-  objetos: el suelo, el fondo, el entorno y los paneles de luz visibles dan
-  0, y el vidrio y los recortes cuentan como superficie; abierto si el
-  suelo entra y si un recorte con textura da cobertura parcial); qué
-  **pases** se ofrecen (los cuatro pedidos; el albedo, el id de material y
-  el círculo de confusión ya existen en el motor); las **codificaciones**
-  (EXR de 32 bits por defecto; en PNG de 16 bits la profundidad casi
-  blanca con 0 para el fondo y el rango en un `tEXt`, las normales a
-  `n/2+½`, los ids con el suelo en 65535); el **ZIP** (apagado por
-  defecto, el grupo es lo que mete una orden, el nombre
-  `Proyecto_0001-0004.zip`, en memoria y sin ZIP64); el **orden del lote**
-  (cámara por cámara; estudio por estudio es igual de defendible); y si el
-  **estudio debe viajar con el proyecto**.
-- **K3** (los ◆ de su «no encajó»): las **alturas de ojo** (1,5 y 1,1 m);
-  las **ópticas de interior** (24, 28 y 35 mm); la **medida automática**
-  (media logarítmica recortada, 10 % oscuro y 5 % claro fuera, a gris del
-  18 %, ±16 EV); los presets de EV (7 y 5) y la calibración
-  EV100 = log2(683/1,2) − exposición; el **exterior** (1 por defecto, de
-  0,05 a 1); que *Interior* encienda las verticales rectas (corrigen hasta
-  30° de inclinación); y el campo del **ojo de pez** medido en la diagonal.
+**Fases que salen de aquí:**
+- **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR.
+- **C2** · Interruptor de la focal (1.7).
+- **M3c** · Nodos *Madera* y *Tela* (1.6).
+- **N2b** · El estudio viaja con el proyecto.
+- **O2c** · Editor de elementos de la lente (1.5).
+- El 1.2 entra en **S3**.
+
+- **O2** (la hoja de la lente trazada). Se acepta tal como está:
+  - qué lentes dan ojo de gato, burbuja, cremoso y remolino;
+  - las prescripciones y los diafragmas supuestos;
+  - las constantes del adaptador anamórfico;
+  - las focales de los gráficos;
+  - el muestreo por máscara.
+
+  Solo se revisa si un render real lo desmiente.
+- **2.1** (la guarda de la IA). El usuario dice que la fase de IA «no hace casi nada» (`TODO.md` §2.1), y la guarda es casi invisible por diseño. Por eso:
+  - se **doblan las tolerancias** de la guarda por defecto;
+  - la **intervención por defecto pasa de 30 a 50**.
+
+  Las dos siguen en *Ajustes*. **C1.**
+- **1.7** (el interruptor de la focal). Es un interruptor junto a la focal, *Mantener el tamaño de lo enfocado*:
+  - **apagado** (por defecto, como en una cámara): la cámara se queda y cambia el encuadre;
+  - **encendido**: la cámara se acerca o se aleja por su eje para que el plano enfocado conserve su tamaño en la imagen, es decir, cambia la perspectiva y no el tamaño.
+
+  El inspector dice cuál está activo. Es deshacible de una vez. **C2.**
+- **6.1–6.3** (los sets dentro de *Estudios*, sus luces desactivables). **Cerrado por L7.** Los sets son su propio grupo, y cada foco se enciende y apaga en la lista *Luces* sin tocar el resto.
+- **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC.
+- **E13** (MNEE). **No se fusiona.** Cuesta 1,8–2× con vidrio curvo y no mejora lo que se ve. Las cáusticas siguen en el mapa de fotones. La rama `wip/ccr-8df3f848/e13` se queda como referencia.
+- **E10** (el muestreo adaptativo). **Se acepta**, con 0,83× a igual tiempo: está solo detrás de *Terminar por ruido* y no empeora nada. La regla de reparto se revisa si un render real lo pide.
+- **1.2** (la gota y la mezcla de geometrías en *Ambiente*). **Sí.** Entra en **S3**, la fase de lluvia y polvo, que es la que ya toca esas geometrías.
+- **S4b** (las partículas de ambiente). Se acepta todo lo propuesto:
+  - el lóbulo hacia delante, a 0,5;
+  - el coste de la lluvia (1,63×), que solo se paga con lluvia;
+  - el grano en los rastros bajo luz lateral;
+  - la regla de los caminos estrechos, en los que las gotas también refractan.
+- **1.5** (el editor de elementos de una lente). **Sí**: editar, mover, añadir y girar 180°, sobre la lente propia que ya guarda O2. **O2c.**
+- **1.6** (nodos *Madera* y *Tela*). **Sí**, con las recetas de E6. El ejemplo de madera de los grafos tiene que parecerse a la familia *Madera* (`m3b-wood.png`). **M3c.**
+- **M3b** (`NORMAL_MAP` con el azul por debajo de 0,5). El nodo **no deja que una normal apunte hacia dentro**: la lleva al hemisferio de fuera. El ejemplo de los copos se rehace con normales hacia fuera. **C1**, con su test y, si cambia el motor, con los pines que se muevan explicados.
+- **4.2** (el recorte de *fireflies* y el borde del *denoise* solo por luminancia). **Se quedan como están** hasta tener la escena del usuario. Sin ella no hay con qué medir.
+- **Q1** (la sección):
+  - el control sigue en el inspector de *Escena*, y en la paleta;
+  - la tapa de un vidrio cortado **refracta**, como ahora, que es lo físico;
+  - el estudio **no se corta nunca**.
+- **K1** (las recetas de interior y el Doctor de interiores):
+  - se aceptan las cifras de las siete recetas;
+  - la **de partida del tipo *Interior* es *Ventana de mediodía***;
+  - se aceptan los umbrales del Doctor tal como se propusieron: escala de 100 mm a 30 m, óptica por debajo de 18 mm (aviso desde 24 mm), altura de ojo de 0,3 a 2,2 m (a 1,5 m), recorte cercano a la mitad de la distancia a la pared.
+
+  **C1** pone la receta de partida.
+- **D1** (el Doctor de motor):
+  - recortar con *Estándar* es un **aviso**, no un fallo, porque los fondos blancos planos lo buscan;
+  - el arreglo propone **AgX**;
+  - se aceptan los umbrales de los *fireflies* y del presupuesto;
+  - el aviso del vídeo se despierta, porque N1 ya está hecho;
+  - el del *denoise* sigue como está.
+
+  **C1.**
+- **N1** (la animación). Se acepta todo lo propuesto:
+  - el orden del asistente, primero el objetivo;
+  - qué es un *Fundido*;
+  - el polo del arco solar;
+  - la forma del fundido a color;
+  - la calidad automática del vídeo.
+- **L7** (*Sets* y *Luces*). Se acepta la clasificación, el filtro *Tipo de producto* solo en *Sets*, el filtro *Sujeto*, que un set nuevo sustituya la decoración y los tres tamaños de miniatura. Un cambio: **no se pregunta si los focos que hay son los del tipo de producto sin tocar**; se sustituyen sin más. **C1.**
+- **H1** (los grises auxiliares):
+  - se acepta **4,5:1** (WCAG AA) para el texto secundario;
+  - el texto principal sigue en 7:1;
+  - la jerarquía de grises no se aplana.
+
+  Si algún par del informe de H1 queda por debajo de 4,5:1, se sube ese par. **C1.**
+- **U15** (las flechas):
+  - la variante compacta, siempre visible (el usuario pidió flechas en todos los valores);
+  - la lista de lo convertido a deslizador, tal cual;
+  - la repetición, 400 ms y luego cada 50 ms.
+- **N2** (pases, lotes y ZIP). Se aceptan:
+  - el alfa como máscara de objetos, sin el suelo;
+  - los cuatro pases;
+  - las codificaciones;
+  - el ZIP apagado por defecto;
+  - el orden cámara por cámara.
+
+  Un recorte con textura dará cobertura parcial cuando el motor la tenga. Un cambio: **el estudio de un trabajo viaja con el proyecto**, guardado dentro, para que un proyecto abierto en otro equipo no falle sus trabajos. **N2b.**
+- **K3** (la cámara de interiores). Se acepta todo lo propuesto:
+  - las alturas de ojo, 1,5 y 1,1 m;
+  - las ópticas de interior, 24, 28 y 35 mm;
+  - la medida automática;
+  - los presets de EV 7 y 5, con su calibración;
+  - el exterior, de 0,05 a 1, con 1 por defecto;
+  - que *Interior* encienda las verticales rectas;
+  - el campo del ojo de pez, medido en la diagonal.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de

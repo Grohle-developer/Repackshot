@@ -79,8 +79,10 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
 10. **No se inventan números en la interfaz**: el medidor del visor pinta
     lo que el motor dice. Lo que no está hecho se marca *próximamente*.
 11. Las decisiones marcadas **Fable** en el roadmap (fotográficas, de
-    criterio visual, de arquitectura) no las toma otro modelo por su
-    cuenta: se preparan los datos y se deja anotado.
+    criterio visual, de arquitectura) no las toma un agente por su
+    cuenta: se preparan los datos, se anotan con ◆ y las decide el
+    responsable de la sesión (por indicación del usuario, 17-10), que
+    las apunta en *Decisiones de criterio* del `ROADMAP.md`.
 12. Cuando algo no encaje con los documentos, se anota en el PR y se sigue
     con lo que sí encaja; no se "arregla" el contrato por cuenta propia.
 
