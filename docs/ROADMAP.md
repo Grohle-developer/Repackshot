@@ -10289,6 +10289,18 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
   absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
   con el tamaño manual.
+- **E13** (MNEE; en la rama `wip/ccr-8df3f848/e13`, commit `385a4c9`, **sin
+  fusionar**): cumple el coste en la botella de E5 (1,09×) y deja la leche
+  dentro del 3 % de la referencia, pero no quita su grano (ruido 0,129 frente
+  a 0,124 con la regla de pared fina) ni mejora la cáustica del vaso de agua
+  (relMSE 0,52 frente a 0,49; el mapa de fotones da 0,29), y con vidrio curvo
+  cuesta 1,8–2× porque Newton resuelve pocos caminos (15 de 81 bajo una bola a
+  8 iteraciones). Con las cáusticas apagadas (los softbox) actuaría en casi
+  todo producto de vidrio, más lento y sin mejora visible, así que el
+  responsable no lo fusiona. Decidir: más iteraciones o semillas, cadenas de
+  cuatro superficies, dejar las cáusticas al mapa de fotones, cambiar
+  *Automático*, o fusionarlo apagado por defecto. Hoja en
+  `out/e13-sheet.html` de esa rama (regenerable con `rt --e13-sheet`).
 - **E10**: el adaptativo da 0,83–0,84× el relMSE del uniforme a igual
   tiempo contra el ≤ 0,6× del criterio; el reparto ideal por bloques de 8×8
   llegaría a 0,48× y 0,38× a igual número de muestras. Aceptarlo, cambiar el
