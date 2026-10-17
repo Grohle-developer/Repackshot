@@ -1678,9 +1678,9 @@ impl TracedLens {
     /// frame) and the distance `s` along it of the plane square to the ray where the camera
     /// samples of that position (a [`FOCUS_GRID`]² grid over the pupil in each band, weighed by
     /// the sample's weight and the band's share of the luminance; the artistic `swirl` as the
-    /// image has it) give fine detail its most contrast: the modulation of a pattern of
-    /// [`FOCUS_LP_MM`] line pairs per millimetre of the 36 mm frame, the mean of two directions
-    /// square to each other. Wide open, spherical aberration spreads a halo whose least squares
+    /// image has it) give fine detail its most contrast: the modulation of patterns of
+    /// [`FOCUS_LP_MM`] and half as many line pairs per millimetre of the 36 mm frame, the mean of
+    /// two directions square to each other, at the maximum nearest the least squares. Wide open, spherical aberration spreads a halo whose least squares
     /// (the circle of least confusion) sit millimetres from where the core is tightest and the
     /// image is sharp: the double Gauss at f/1.4, 135 mm, 600 mm away, has its least confusion at
     /// 601.5 mm and its contrast at 607–610 mm, where the render is sharp. The search spans where
@@ -1785,36 +1785,54 @@ impl TracedLens {
         let e1 = (e1 - dc * e1.dot(dc)).normalize();
         let e2 = dc.cross(e1);
         let film_nu = FOCUS_LP_MM * 36.0 * 0.6 / self.field.max(1.0e-3);
-        let nu = film_nu * self.info.image_scale_mm.abs() / s_rms;
+        // The object distance of the image scale: from the entrance pupil, where the camera is.
+        let reach = (oc + dc * s_rms - Vec3::new(0.0, 0.0, self.pupil_z)).length();
+        let nu = film_nu * self.info.image_scale_mm.abs() / reach.max(1.0e-3);
         let tau = 2.0 * std::f32::consts::PI * nu;
+        // The modulation at the frequency and at half of it (the mean): a smoother curve through
+        // focus than one frequency's, whose side lobes (spurious resolution) can stand above a
+        // weak main one in the corner of a lens wide open.
         let contrast = |s: f32| -> f32 {
-            let (mut c1, mut s1, mut c2, mut s2) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
-            for (a, b, w) in &rays {
-                let o = *a + *b * s;
-                let (si, co) = crate::fmath::sin_cos(tau * o.dot(e1));
-                c1 += *w * co;
-                s1 += *w * si;
-                let (si, co) = crate::fmath::sin_cos(tau * o.dot(e2));
-                c2 += *w * co;
-                s2 += *w * si;
+            let mut sum = 0.0f32;
+            for k in [tau, 0.5 * tau] {
+                let (mut c1, mut s1, mut c2, mut s2) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+                for (a, b, w) in &rays {
+                    let o = *a + *b * s;
+                    let (si, co) = crate::fmath::sin_cos(k * o.dot(e1));
+                    c1 += *w * co;
+                    s1 += *w * si;
+                    let (si, co) = crate::fmath::sin_cos(k * o.dot(e2));
+                    c2 += *w * co;
+                    s2 += *w * si;
+                }
+                sum += (c1 * c1 + s1 * s1).sqrt() + (c2 * c2 + s2 * s2).sqrt();
             }
-            0.5 * ((c1 * c1 + s1 * s1).sqrt() + (c2 * c2 + s2 * s2).sqrt()) / total
+            0.25 * sum / total
         };
-        // A scan over the stretch, then golden sections round its best step.
+        // A scan over the stretch; from the step of the least squares, uphill to the nearest
+        // maximum (the main lobe, not a side one further out); then golden sections round it.
         const STEPS: usize = 48;
         let step = (hi - lo) / STEPS as f32;
         if step.is_nan() || step <= 0.0 {
             return Some((oc, dc, s_rms));
         }
-        let mut best = (s_rms, contrast(s_rms));
-        for k in 0..=STEPS {
-            let s = lo + step * k as f32;
-            let m = contrast(s);
-            if m > best.1 {
-                best = (s, m);
+        let scan: Vec<f32> = (0..=STEPS)
+            .map(|k| contrast(lo + step * k as f32))
+            .collect();
+        let mut at = (((s_rms - lo) / step).round().max(0.0) as usize).min(STEPS);
+        loop {
+            let left = if at > 0 { scan[at - 1] } else { f32::MIN };
+            let right = if at < STEPS { scan[at + 1] } else { f32::MIN };
+            if right > scan[at] && right >= left {
+                at += 1;
+            } else if left > scan[at] {
+                at -= 1;
+            } else {
+                break;
             }
         }
-        let (mut a, mut b) = (best.0 - step, best.0 + step);
+        let best = lo + step * at as f32;
+        let (mut a, mut b) = (best - step, best + step);
         let g = 0.618_034f32;
         let (mut x1, mut x2) = (b - g * (b - a), a + g * (b - a));
         let (mut f1, mut f2) = (contrast(x1), contrast(x2));

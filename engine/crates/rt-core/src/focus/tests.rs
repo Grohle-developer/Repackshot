@@ -271,7 +271,7 @@ pub(crate) fn grid_picks(scene: &Scene) -> Vec<f32> {
 /// traced double Gauss, whose focus is solved), the same bits on every platform and in wasm.
 pub(crate) const PINNED_FOCUS_PICK_O1: u32 = 0x53a4_2182;
 /// See [`PINNED_FOCUS_PICK_O1`].
-pub(crate) const PINNED_FOCUS_PICK_O2: u32 = 0x1c68_f9ac;
+pub(crate) const PINNED_FOCUS_PICK_O2: u32 = 0xecc9_2038;
 
 #[test]
 fn the_picks_of_the_lens_scenes_have_pinned_hashes() {
@@ -391,13 +391,20 @@ fn the_viewport_and_the_render_solve_the_same_traced_focus() {
 
 /// What the render's own camera samples of image point `(u, v)` make of fine detail at `depth`:
 /// the light of `samples` samples ([`Camera::sample_ray`], the pixel sampler, luminance weights)
-/// where it crosses the plane square to the view axis at that depth, and the modulation of a
-/// pattern of `nu` cycles per millimetre there, across and up, and how widely it spreads about
-/// its centroid (RMS, mm).
-fn rendered_focus(camera: &Camera, aspect: f32, uv: (f32, f32), depth: f32, nu: f32) -> (f32, f32) {
+/// where it crosses the plane square to the view axis at that depth, and the modulation there of
+/// patterns of `nu` and `nu / 2` cycles per millimetre (the mean, across and up), and how widely
+/// it spreads about its centroid (RMS, mm).
+fn rendered_focus(
+    camera: &Camera,
+    aspect: f32,
+    uv: (f32, f32),
+    depth: f32,
+    nu: f32,
+    samples: u32,
+) -> (f32, f32) {
     let (forward, right, up) = camera.basis();
     let mut pts = Vec::new();
-    for i in 0..3000u32 {
+    for i in 0..samples {
         let sampler = crate::sampler::PixelSampler::new(11, 0, 0, i);
         let (ray, w) = camera.sample_ray(aspect, uv.0, uv.1, &sampler);
         let luma = 0.2126 * w.r + 0.7152 * w.g + 0.0722 * w.b;
@@ -410,8 +417,8 @@ fn rendered_focus(camera: &Camera, aspect: f32, uv: (f32, f32), depth: f32, nu: 
         pts.push((q.dot(right), q.dot(up), luma));
     }
     let total: f32 = pts.iter().map(|p| p.2).sum();
-    let tau = 2.0 * std::f32::consts::PI * nu;
-    let modulation = |axis: usize| {
+    let modulation = |nu: f32, axis: usize| {
+        let tau = 2.0 * std::f32::consts::PI * nu;
         let (mut c, mut s) = (0.0f32, 0.0f32);
         for p in &pts {
             let x = if axis == 0 { p.0 } else { p.1 };
@@ -420,6 +427,11 @@ fn rendered_focus(camera: &Camera, aspect: f32, uv: (f32, f32), depth: f32, nu: 
         }
         (c * c + s * s).sqrt() / total
     };
+    let contrast = 0.25
+        * (modulation(nu, 0)
+            + modulation(nu, 1)
+            + modulation(0.5 * nu, 0)
+            + modulation(0.5 * nu, 1));
     let cx = pts.iter().map(|p| p.0 * p.2).sum::<f32>() / total;
     let cy = pts.iter().map(|p| p.1 * p.2).sum::<f32>() / total;
     let rms = (pts
@@ -428,57 +440,80 @@ fn rendered_focus(camera: &Camera, aspect: f32, uv: (f32, f32), depth: f32, nu: 
         .sum::<f32>()
         / total)
         .sqrt();
-    (0.5 * (modulation(0) + modulation(1)), rms)
+    (contrast, rms)
 }
 
 #[test]
 fn a_traced_lens_wide_open_renders_sharpest_where_the_pick_focuses() {
-    // The render, not the solve: through focus, the camera's own samples of the centre of the
-    // image give fine detail at the point its most contrast at the distance the pick reports.
-    // Wide open (135 mm at f/1.4, 600 mm away) the double Gauss's least confusion (the least
-    // squares of its halo, what F1 first solved for) lies millimetres from there, and the render
-    // was soft at the click.
+    // The render, not the solve: through focus, the camera's own samples of an image point give
+    // fine detail at the point their most contrast at the distance the pick reports. The
+    // catalogue's fast double Gauss wide open (135 mm at f/1.4, 600 mm away): its least confusion
+    // (the least squares of its halo, what F1 first solved for) lies millimetres from there at the
+    // centre, and the render was soft at the click; near the top edge a side lobe of the contrast
+    // stood above its weak main one (the best focus is the maximum nearest the least squares).
     let mut scene = example::o2_scene();
+    scene.camera.lens = Some(
+        Lens::new(LensParams {
+            prescription: Some(crate::optics::traced_tests::catalogue_prescription(
+                "double_gauss_fast",
+            )),
+            ..LensParams::default()
+        })
+        .expect("valid"),
+    );
     scene.camera.focal_mm = 135.0;
     scene.camera.fstop = 1.4;
     scene.camera.focus_dist = 600.0;
     scene.camera.prepare_lens().expect("prepares");
     let aspect = scene.render.width as f32 / scene.render.height as f32;
     let (forward, _, _) = scene.camera.basis();
-    let depth = scene.camera.focus_dist;
-    let chief = scene.camera.generate_ray(aspect, 0.5, 0.5, (0.0, 0.0));
-    let point = chief.origin
-        + chief.dir
-            * ((depth - (chief.origin - scene.camera.position).dot(forward))
-                / chief.dir.dot(forward));
-    let focus = scene.camera.focus_distance_to(point).expect("a focus");
-    let nu = crate::optics::traced::FOCUS_LP_MM * scene.camera.focal_mm / depth;
-    let span = 0.02 * depth;
-    let (mut sharpest, mut least) = ((0.0f32, f32::MIN), (0.0f32, f32::MAX));
-    for k in -48..=48 {
-        let f = depth + span * k as f32 / 48.0;
-        let mut camera = scene.camera.clone();
-        camera.focus_dist = f;
-        camera.prepare_lens().expect("prepares");
-        let (m, rms) = rendered_focus(&camera, aspect, (0.5, 0.5), depth, nu);
-        if m > sharpest.1 {
-            sharpest = (f, m);
+    for (uv, depth, samples) in [((0.5, 0.5), 600.0f32, 3000), ((0.5, 0.12), 581.0, 6000)] {
+        let chief = scene.camera.generate_ray(aspect, uv.0, uv.1, (0.0, 0.0));
+        let point = chief.origin
+            + chief.dir
+                * ((depth - (chief.origin - scene.camera.position).dot(forward))
+                    / chief.dir.dot(forward));
+        let focus = scene.camera.focus_distance_to(point).expect("a focus");
+        let nu = crate::optics::traced::FOCUS_LP_MM * scene.camera.focal_mm / depth;
+        // Through focus, the render's contrast there; at the distance the pick reports it is at
+        // its best (within 3 % of the most, the curve is flat round its top), and wide open at the
+        // centre the least confusion's is well short of it.
+        let at = |f: f32| {
+            let mut camera = scene.camera.clone();
+            camera.focus_dist = f;
+            camera.prepare_lens().expect("prepares");
+            rendered_focus(&camera, aspect, uv, depth, nu, samples)
+        };
+        let (span, steps) = (0.03 * depth, 72);
+        let step = span / steps as f32;
+        let (mut sharpest, mut least) = ((0.0f32, f32::MIN), (0.0f32, f32::MAX, 0.0f32));
+        for k in -steps..=steps {
+            let f = depth + step * k as f32;
+            let (m, rms) = at(f);
+            if m > sharpest.1 {
+                sharpest = (f, m);
+            }
+            if rms < least.1 {
+                least = (f, rms, m);
+            }
         }
-        if rms < least.1 {
-            least = (f, rms);
+        let picked = at(focus).0;
+        assert!(
+            picked >= 0.97 * sharpest.1,
+            "{uv:?}: at the pick's {focus} mm the render's contrast is {picked}, at {} mm {} (least confusion {} mm)",
+            sharpest.0,
+            sharpest.1,
+            least.0
+        );
+        if uv == (0.5, 0.5) {
+            assert!(
+                least.2 < 0.85 * sharpest.1,
+                "at the least confusion ({} mm) the contrast is {}, the most {} at {} mm: the check tells nothing",
+                least.0,
+                least.2,
+                sharpest.1,
+                sharpest.0
+            );
         }
     }
-    let step = span / 48.0;
-    assert!(
-        (focus - sharpest.0).abs() <= 3.0 * step,
-        "the pick focuses at {focus} mm, the render is sharpest at {} mm (least confusion {} mm)",
-        sharpest.0,
-        least.0
-    );
-    assert!(
-        (least.0 - sharpest.0).abs() >= 6.0 * step,
-        "the least confusion ({} mm) is where the render is sharpest ({} mm): the check tells nothing",
-        least.0,
-        sharpest.0
-    );
 }

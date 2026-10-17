@@ -862,3 +862,12 @@ fn the_tiles_batched_camera_samples_are_the_samples_one_by_one() {
         }
     }
 }
+
+/// The LENS prescription of the catalogue lens `key` (F1's focus tests: the fast double Gauss).
+pub(crate) fn catalogue_prescription(key: &str) -> Prescription {
+    let (_, l) = catalogue()
+        .into_iter()
+        .find(|(k, _)| k == key)
+        .expect("in the catalogue");
+    prescription(&l)
+}

@@ -76,7 +76,7 @@ pub mod pupil;
 mod tests;
 pub mod traced;
 #[cfg(test)]
-mod traced_tests;
+pub(crate) mod traced_tests;
 
 use crate::color::Rgb;
 use crate::fmath;
@@ -430,8 +430,8 @@ impl Lens {
     /// object plane `focus_dist` in front of the entrance pupil), and wide open its spherical
     /// aberration and its field curvature put the sharpest image of that plane some depths of
     /// field away from it; this is found by the secant method from the paraxial answer, the lens
-    /// focused again for each try (at most four), to a fifty-thousandth of the depth. `None` when
-    /// the lens passes nothing there.
+    /// focused again for each try (at most six, the best kept), to a fifty-thousandth of the
+    /// depth. `None` when the lens passes nothing there.
     fn traced_focus_distance(
         &self,
         p: &Prescription,
@@ -462,14 +462,22 @@ impl Lens {
         if g0.abs() <= tol {
             return Some(f0);
         }
+        // The secant, keeping the best try (the best focus moves in steps of its search as the
+        // lens is focused again, so the error is not quite smooth; six tries at most).
+        let mut best = (f0, g0);
         let mut f1 = depth - g0;
-        for _ in 0..3 {
+        for _ in 0..5 {
             if !(f1 > 0.0 && f1.is_finite()) {
-                return None;
+                break;
             }
-            let g1 = error(f1)?;
+            let Some(g1) = error(f1) else {
+                break;
+            };
+            if g1.abs() < best.1.abs() {
+                best = (f1, g1);
+            }
             if g1.abs() <= tol {
-                return Some(f1);
+                break;
             }
             let slope = (g1 - g0) / (f1 - f0);
             let next = if slope.is_finite() && slope.abs() > 0.05 {
@@ -479,7 +487,7 @@ impl Lens {
             };
             (f0, g0, f1) = (f1, g1, next);
         }
-        (f1 > 0.0 && f1.is_finite()).then_some(f1)
+        Some(best.0)
     }
 
     /// The unit normal of the lens plane (where the pupil lies): `forward` turned by the tilt.
