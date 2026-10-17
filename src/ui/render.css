@@ -189,6 +189,17 @@
 .rw .num {
   width: 104px;
 }
+/* U15: a slider's field takes the slider's own column, not the window's usual field width; the slider itself a
+   comfortable track beside its row's note, or beside the format it belongs to. */
+.rw .slider .num {
+  width: 100%;
+}
+.rw-stack > .slider {
+  width: min(100%, 300px);
+}
+.rw-inline > .slider {
+  width: 220px;
+}
 .rw .select {
   width: auto;
   max-width: 100%;

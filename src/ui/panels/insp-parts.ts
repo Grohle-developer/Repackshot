@@ -524,7 +524,7 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
   const smoothAll = toggle(parts.every((p) => s0.scene.nodes[p].smooth !== false), (v) => store.dispatch({ type: 'scene/setSmooth', ids: target, smooth: v, label: L('undo.smooth', { target: targetLabel(store.get(), target) }) }), t('part.smooth'));
   scope.watch((s) => partsUnder(s, target).every((p) => s.scene.nodes[p]?.smooth !== false), (v) => smoothAll.set(v));
   const angleOf = (s: ProjectState) => s.scene.nodes[partsUnder(s, target)[0]]?.smoothAngle ?? SMOOTH_ANGLE_DEG;
-  const angle = numberField({ value: angleOf(s0), min: 0, max: 180, step: 1, digits: 1, unit: '°', ariaLabel: t('part.smoothAngle'), disabled: parts.length === 0, onChange: (v, g) => cmd.setSmoothAngle(ctx, v, g, target) });
+  const angle = slider({ value: angleOf(s0), min: 0, max: 180, step: 1, digits: 1, unit: '°', ariaLabel: t('part.smoothAngle'), disabled: parts.length === 0, onChange: (v, g) => cmd.setSmoothAngle(ctx, v, g, target) });
   scope.watch(angleOf, (v) => angle.set(v));
   const angleRow = h('div', { class: 'stack', style: 'gap:2px', 'data-field': 'smoothAngle' }, field(t('part.smoothAngle'), angle.el), h('div', { class: 'note', style: 'padding-left:112px' }, t('part.smoothAngleAux')));
 
@@ -615,7 +615,7 @@ function patternSection(ctx: Ctx, scope: Scope, id: NodeId): HTMLElement {
   });
   const space = segmented((['GLOBAL', 'LOCAL'] as const).map((k) => ({ value: k, label: t(dyn(`space.${k}`)) })), spec0.space, (k) => edit({ space: k }), { full: true, ariaLabel: t('pattern.space') });
   const axis = segmented(XYZ.map((a, i) => ({ value: String(i) as '0' | '1' | '2', label: a })), String(spec0.axis) as '0', (a) => edit({ axis: Number(a) as 0 | 1 | 2 }), { full: true, ariaLabel: t('pattern.axis') });
-  const angle = numberField({ value: spec0.angleDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('pattern.angle'), onChange: (v, g) => edit({ angleDeg: v }, g) });
+  const angle = slider({ value: spec0.angleDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('pattern.angle'), onChange: (v, g) => edit({ angleDeg: v }, g) });
   const center = vec3(spec0.center, XYZ, { step: 1, unit: 'mm', digits: 2 }, (i, v, g) => {
     const next: [number, number, number] = [...spec()!.center];
     next[i] = v;
@@ -744,6 +744,9 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
   const shapeRow = field(t('lightEdit.shape'), shape.el);
   const num = (key: 'size' | 'sizeY' | 'az' | 'el' | 'dist' | 'spread' | 'power' | 'angle' | 'roll', min: number, max: number, step: number, unit: string, digits: number, aria: string) =>
     numberField({ value: (l0[key] as number | undefined) ?? 0, min, max, step, unit, digits, ariaLabel: aria, onChange: (v, g) => set({ [key]: v }, g) });
+  // U15: the angles, each in a fixed range, are sliders with their field.
+  const angleSlider = (key: 'az' | 'el' | 'spread' | 'angle' | 'roll', min: number, max: number, step: number, digits: number, aria: string) =>
+    slider({ value: (l0[key] as number | undefined) ?? 0, min, max, step, unit: '°', digits, ariaLabel: aria, onChange: (v, g) => set({ [key]: v }, g) });
   const size = num('size', 0.01, 50, 0.05, '', 2, t('lightEdit.size'));
   const sizeY = num('sizeY', 0.01, 50, 0.05, '', 2, t('lightEdit.sizeY'));
   const sizeRow = field(t('lightEdit.size'), size.el);
@@ -752,18 +755,18 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
   // A point's or a spot's bulb, by its radius (the size is its diameter).
   const radius = numberField({ value: l0.size / 2, min: 0, max: 25, step: 0.005, digits: 3, ariaLabel: t('lightEdit.radius'), onChange: (v, g) => set({ size: v * 2 }, g) });
   const radiusRow = field(t('lightEdit.radius'), radius.el);
-  const az = num('az', -180, 180, 1, '°', 0, t('lightEdit.azimuth'));
-  const el = num('el', -89, 89, 1, '°', 0, t('lightEdit.elevation'));
+  const az = angleSlider('az', -180, 180, 1, 0, t('lightEdit.azimuth'));
+  const el = angleSlider('el', -89, 89, 1, 0, t('lightEdit.elevation'));
   const dist = num('dist', 0.1, 100, 0.05, '', 2, t('lightEdit.distance'));
-  const spread = num('spread', 1, 180, 1, '°', 0, t('lightEdit.spread'));
+  const spread = angleSlider('spread', 1, 180, 1, 0, t('lightEdit.spread'));
   const spreadRow = field(t('lightEdit.spread'), spread.el);
-  const cone = num('spread', 1, 179, 1, '°', 0, t('lightEdit.cone'));
+  const cone = angleSlider('spread', 1, 179, 1, 0, t('lightEdit.cone'));
   const coneRow = field(t('lightEdit.cone'), cone.el);
-  const blend = numberField({ value: Math.round((l0.blend ?? SPOT_DEFAULTS.blend) * 100), min: 0, max: 100, step: 1, unit: '%', ariaLabel: t('lightEdit.blend'), onChange: (v, g) => set({ blend: v / 100 }, g) });
+  const blend = slider({ value: Math.round((l0.blend ?? SPOT_DEFAULTS.blend) * 100), min: 0, max: 100, step: 1, unit: '%', ariaLabel: t('lightEdit.blend'), onChange: (v, g) => set({ blend: v / 100 }, g) });
   const blendRow = field(t('lightEdit.blend'), blend.el);
-  const sunAngle = num('angle', 0, 5, 0.05, '°', 2, t('lightEdit.sunAngle'));
+  const sunAngle = angleSlider('angle', 0, 5, 0.05, 2, t('lightEdit.sunAngle'));
   const sunRow = field(t('lightEdit.sunAngle'), sunAngle.el);
-  const roll = num('roll', -180, 180, 1, '°', 0, t('lightEdit.roll'));
+  const roll = angleSlider('roll', -180, 180, 1, 0, t('lightEdit.roll'));
   const rollRow = field(t('lightEdit.roll'), roll.el);
   // World coordinates (mm): moving keeps the light aimed where it was.
   const xyz = ([0, 1, 2] as const).map((k) =>

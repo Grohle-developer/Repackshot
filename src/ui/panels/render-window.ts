@@ -41,7 +41,7 @@ import { matchPrintPreset, pixelsFor, printLength, printPresetPixels, PRINT_PRES
 import { NAME_TOKENS, type NameToken } from '../../core/name-template';
 import * as cmd from '../commands';
 import { CAUSTICS_MODES, CAUSTICS_PRESETS, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseIn } from '../../core/caustics';
-import { numberField, segmented, select, timeField, toggle } from '../components/controls';
+import { numberField, segmented, select, slider, timeField, toggle } from '../components/controls';
 import { section } from '../components/section';
 import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
@@ -240,7 +240,8 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const bitsFixed = h('span', { class: 'aux' }, t('rw.bitsFloat', { n: 32 }));
   // One line about the format when it has something to say (the same text as the button's tooltip).
   const formatNote = h('div', { class: 'note' });
-  const jpegQ = numberField({ value: s0.jpegQuality, min: 1, max: 100, step: 1, fill: true, ariaLabel: t('rw.jpegQuality'), onChange: (v, g) => set({ jpegQuality: v }, g) });
+  // U15: the bounded values of the window (a quality, a percentage, a threshold) are sliders with their field.
+  const jpegQ = slider({ value: s0.jpegQuality, min: 1, max: 100, step: 1, ariaLabel: t('rw.jpegQuality'), onChange: (v, g) => set({ jpegQuality: v }, g) });
   const jpegBox = h('span', { class: 'rw-inline' }, h('span', { class: 'aux' }, t('rw.jpegQuality')), jpegQ.el);
   const transparent = toggle(s0.transparent, (v) => set({ transparent: v }), t('rw.transparent'));
   const transparentNote = h('span', { class: 'note' });
@@ -452,11 +453,11 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     (q) => set({ quality: q, maxSamples: QUALITY_PRESETS[q].samples }),
     { ariaLabel: t('rw.samples') },
   );
-  const time = timeField(s0.maxSeconds, (v) => set({ maxSeconds: v }), t('rw.time'));
+  const time = timeField(s0.maxSeconds, (v, g) => set({ maxSeconds: v }, g), t('rw.time'));
   const samplesRow = row(t('rw.samples'), h('div', { class: 'rw-inline' }, samples.el, tiers.el));
   const timeRow = row(t('rw.time'), h('div', { class: 'rw-inline' }, time.el, h('span', { class: 'aux' }, t('rw.timeTip'))));
   // E10: the noise every pixel ends under (percent, the relative error of its mean).
-  const noise = numberField({
+  const noise = slider({
     value: s0.noiseThreshold,
     min: NOISE_THRESHOLD_MIN,
     max: NOISE_THRESHOLD_MAX,
@@ -504,7 +505,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     { ariaLabel: t('rw.denoise') },
   );
   // U11b: how much of the denoised image, for the render and the Full viewport alike (one knob).
-  const strength = numberField({
+  const strength = slider({
     value: s0.advanced.denoiseStrength,
     min: 0,
     max: 100,

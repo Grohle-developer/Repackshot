@@ -155,7 +155,7 @@ function mappingBlock(ctx: Ctx, sc: Scope, matId: MaterialId): HTMLElement {
     { full: true, ariaLabel: t('texture.uvSet') },
   );
   const size = lengthField({ value: m0.sizeMm, min: 0.01, max: 1e6, step: 1, digits: 2, ariaLabel: t('texture.sizeMm'), onChange: (v, g) => set({ sizeMm: v }, g) });
-  const rot = numberField({ value: m0.rotationDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('texture.rotation'), onChange: (v, g) => set({ rotationDeg: v }, g) });
+  const rot = slider({ value: m0.rotationDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('texture.rotation'), onChange: (v, g) => set({ rotationDeg: v }, g) });
   const offU = numberField({ value: m0.offset[0], step: 0.01, digits: 3, label: 'U', ariaLabel: `${t('texture.offset')} U`, onChange: (v, g) => set({ offset: [v, cur()?.offset[1] ?? 0] }, g) });
   const offV = numberField({ value: m0.offset[1], step: 0.01, digits: 3, label: 'V', ariaLabel: `${t('texture.offset')} V`, onChange: (v, g) => set({ offset: [cur()?.offset[0] ?? 0, v] }, g) });
   const repU = numberField({ value: m0.repeat[0], min: 0.01, max: 1000, step: 0.05, digits: 2, label: 'U', ariaLabel: `${t('texture.repeat')} U`, onChange: (v, g) => set({ repeat: [v, cur()?.repeat[1] ?? 1] }, g) });
@@ -245,7 +245,7 @@ function labelRow(ctx: Ctx, sc: Scope, matId: MaterialId, label: TextureLabel, i
     icon('trash', 14),
   );
   const width = lengthField({ value: label.widthMm, min: 0.01, max: 1e6, step: 0.5, digits: 2, ariaLabel: t('label.width'), onChange: (v, g) => set({ widthMm: v }, g) });
-  const rot = numberField({ value: label.rotationDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('label.rotation'), onChange: (v, g) => set({ rotationDeg: v }, g) });
+  const rot = slider({ value: label.rotationDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('label.rotation'), onChange: (v, g) => set({ rotationDeg: v }, g) });
   const depth = lengthField({ value: label.depthMm, min: 0, max: 1e6, step: 0.5, digits: 2, ariaLabel: t('label.depth'), onChange: (v, g) => set({ depthMm: v }, g) });
   const rough = slider({ value: label.roughness, min: 0, max: 1, step: 0.01, ariaLabel: t('label.roughness'), onChange: (v, g) => set({ roughness: v }, g) });
   const coat = slider({ value: label.coat, min: 0, max: 1, step: 0.01, ariaLabel: t('label.coat'), onChange: (v, g) => set({ coat: v }, g) });
