@@ -22,9 +22,13 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 17 versiones, 14 con capturas nuevas; las capturas se reparten en 45 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 18 versiones, 15 con capturas nuevas; las capturas se reparten en 47 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
+
+Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.17).
+
+### v0.1.17 · 2026-10-17
 
 El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado.
 
@@ -106,7 +110,7 @@ Tipo de escena (Producto, Interior, Catálogo), el estilo de luz Interior con si
 #### K1 · Tipo de escena, luz de interior y Doctor de interiores
 
 <a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm."><br>
-`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en Sin publicar: Interior es un estilo del grupo Luces de L7)*
+`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en v0.1.17: Interior es un estilo del grupo Luces de L7)*
 
 #### D1 · Doctor de motor
 
@@ -249,7 +253,7 @@ Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector 
 #### L6 · Sets de estudio con criterio fotográfico
 
 <a id="c-sets-catalogue"></a><img src="ui/sets-catalogue.png" width="480" alt="El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas)."><br>
-`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas). *(regrabada en Sin publicar: el grupo Sets de L7, las miniaturas del tamaño de las demás)*
+`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas). *(regrabada en v0.1.17: el grupo Sets de L7, las miniaturas del tamaño de las demás)*
 
 #### P6 · Plugins, y el plugin de película (aintfilm)
 
@@ -542,7 +546,7 @@ La primera versión: interfaz, importadores, motor en Rust con modos Rápido y C
 `library-save.png` · `92db14a` · Guardar material como…: el cuadro para dar nombre al material del tapón y guardarlo en la biblioteca.
 
 <a id="c-library-setups"></a><img src="ui/library-setups.png" width="480" alt="Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca."><br>
-`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca. *(superada en Sin publicar: con L7, *Míos* es un valor del filtro Estilo del grupo Luces; ver `light-lights.png`)*
+`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca. *(superada en v0.1.17: con L7, *Míos* es un valor del filtro Estilo del grupo Luces; ver `light-lights.png`)*
 
 <a id="c-library-studios"></a><img src="ui/library-studios.png" width="480" alt="La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca."><br>
 `library-studios.png` · `92db14a` · La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca.
@@ -561,16 +565,16 @@ La primera versión: interfaz, importadores, motor en Rust con modos Rápido y C
 #### U5 · Ventana de render y visor de resultados
 
 <a id="c-render-window-image"></a><img src="ui/render-window-image.png" width="480" alt="La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras."><br>
-`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras. *(regrabada en Sin publicar)*
+`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras. *(regrabada en v0.1.17)*
 
 <a id="c-render-window-animation"></a><img src="ui/render-window-animation.png" width="480" alt="La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma."><br>
-`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma. *(regrabada en Sin publicar)*
+`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma. *(regrabada en v0.1.17)*
 
 <a id="c-queue-drawer"></a><img src="ui/queue-drawer.png" width="480" alt="El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados."><br>
-`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados. *(regrabada en Sin publicar)*
+`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados. *(regrabada en v0.1.17)*
 
 <a id="c-results-split"></a><img src="ui/results-split.png" width="480" alt="El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo."><br>
-`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo. *(regrabada en Sin publicar)*
+`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo. *(regrabada en v0.1.17)*
 
 #### I2 · STEP e IGES
 
@@ -609,8 +613,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) (v0.1.4): la interfaz entera con el visor en Completo: árbol de piezas, pedestal y fondo infinito, y el catálogo de montajes de luz.
 
-- [`u15-light-fields.png`](#c-u15-light-fields) · Sin publicar · U15
-- [`u15-part-triplets.png`](#c-u15-part-triplets) · Sin publicar · U15
+- [`u15-light-fields.png`](#c-u15-light-fields) · v0.1.17 · U15
+- [`u15-part-triplets.png`](#c-u15-part-triplets) · v0.1.17 · U15
 - [`primitives-add-menu.png`](#c-primitives-add-menu) · v0.1.4 · U9
 - [`primitives-base-box.png`](#c-primitives-base-box) · v0.1.4 · U9
 - [`primitives-pedestal.png`](#c-primitives-pedestal) · v0.1.4 · U9
@@ -655,10 +659,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`sets-catalogue.png`](#c-sets-catalogue) (v0.1.6): los sets de estudio con sus miniaturas y un set ya aplicado al frasco.
 
-- [`light-sets.png`](#c-light-sets) · Sin publicar · L7
-- [`light-lights.png`](#c-light-lights) · Sin publicar · L7
-- [`light-question.png`](#c-light-question) · Sin publicar · L7
-- [`light-thumb-sizes.png`](#c-light-thumb-sizes) · Sin publicar · L7
+- [`light-sets.png`](#c-light-sets) · v0.1.17 · L7
+- [`light-lights.png`](#c-light-lights) · v0.1.17 · L7
+- [`light-question.png`](#c-light-question) · v0.1.17 · L7
+- [`light-thumb-sizes.png`](#c-light-thumb-sizes) · v0.1.17 · L7
 - [`ies-light.png`](#c-ies-light) · v0.1.14 · L5
 - [`ies-light-full.png`](#c-ies-light-full) · v0.1.14 · L5
 - [`sets-catalogue.png`](#c-sets-catalogue) · v0.1.6 · L6 **← propuesta**
@@ -674,8 +678,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
-- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
-- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
+- [`k3-verticals.png`](#c-k3-verticals) · v0.1.17 · K3
+- [`k3-panorama.png`](#c-k3-panorama) · v0.1.17 · K3
 - [`lens-hover.png`](#c-lens-hover) · v0.1.8 · O2b
 - [`lens-hover-dark.png`](#c-lens-hover-dark) · v0.1.8 · O2b
 - [`lens-hover-chip.png`](#c-lens-hover-chip) · v0.1.8 · O2b
@@ -693,8 +697,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
 
-- [`batch-window.png`](#c-batch-window) · Sin publicar · N2
-- [`batch-queue.png`](#c-batch-queue) · Sin publicar · N2
+- [`batch-window.png`](#c-batch-window) · v0.1.17 · N2
+- [`batch-queue.png`](#c-batch-queue) · v0.1.17 · N2
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
 - [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
@@ -755,10 +759,10 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`scene-type-interior.png`](#c-scene-type-interior) (v0.1.15): el tipo de escena Interior con las siete recetas de luz de ventana, lámparas y hora azul.
 
-- [`k3-verticals.png`](#c-k3-verticals) · Sin publicar · K3
-- [`k3-plan.png`](#c-k3-plan) · Sin publicar · K3
-- [`k3-plan-fast.png`](#c-k3-plan-fast) · Sin publicar · K3
-- [`k3-panorama.png`](#c-k3-panorama) · Sin publicar · K3
+- [`k3-verticals.png`](#c-k3-verticals) · v0.1.17 · K3
+- [`k3-plan.png`](#c-k3-plan) · v0.1.17 · K3
+- [`k3-plan-fast.png`](#c-k3-plan-fast) · v0.1.17 · K3
+- [`k3-panorama.png`](#c-k3-panorama) · v0.1.17 · K3
 - [`scene-type-interior.png`](#c-scene-type-interior) · v0.1.15 · K1 **← propuesta**
 
 ### IA
@@ -792,7 +796,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`desktop-linux.png`](#c-desktop-linux) (v0.1.0): la aplicación de escritorio con el motor nativo (4 hilos, AVX2) en el visor Completo.
 
-- [`u15-settings-sliders.png`](#c-u15-settings-sliders) · Sin publicar · U15
+- [`u15-settings-sliders.png`](#c-u15-settings-sliders) · v0.1.17 · U15
 - [`settings-plugins.png`](#c-settings-plugins) · v0.1.6 · P6
 - [`render-plugins-film.png`](#c-render-plugins-film) · v0.1.6 · P6
 - [`update-install.png`](#c-update-install) · v0.1.6 · P5

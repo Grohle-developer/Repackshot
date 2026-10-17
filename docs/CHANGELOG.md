@@ -5,6 +5,8 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+## v0.1.17 — 2026-10-17
+
 ### Motor
 
 - Dos proyecciones nuevas de cámara: **panorámica equirectangular** (360° × 180° en una imagen 2:1) y **ojo de pez** equidistante (hasta 360°, negro fuera del círculo de imagen), al final de `CAMR`; un archivo sin ellas conserva sus bytes (K3).
@@ -38,10 +40,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **ZIP**: un interruptor empaqueta los archivos de lo que una orden *Render* o *+ Añadir a la cola* metió en la cola en un solo ZIP (escritor propio, sin comprimir, sin dependencias), que se descarga al acabar el último trabajo del grupo; si el ZIP no se pudiera crear, los archivos se guardan uno a uno (N2).
 - La cola enseña el estudio de cada trabajo junto a su cámara y *+3 pases · ZIP* al final del nombre; *Detener* el segundo de tres trabajos lo deja *Cancelado* y la cola sigue con el tercero (N2).
 - `{studio}` en el nombre es el estudio guardado del trabajo; sin él, el nombre del tipo de producto como antes. Un estudio que ya no está guardado hace fallar su trabajo con el motivo y la cola sigue (N2).
-- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 
 ### Herramientas
 
+- `tools/batch-check.mjs`: en Chromium con el `rt.wasm` real, un lote de 2 × 2 con alfa, profundidad e id de pieza en un ZIP de 20 archivos que `unzip` y un lector propio aceptan, los pases leídos por la especificación, los PNG de 16 bits, y cancelar el segundo de tres trabajos; capturas `docs/ui/batch-window.png` y `docs/ui/batch-queue.png` (N2).
 - `tools/light-catalogue-check.mjs` comprueba en el navegador los dos grupos, sus filtros, la pregunta y los tamaños, y hace las capturas de L7; `tools/sets-check.mjs` y `tools/scene-type-check.mjs` siguen la sección nueva (L7).
 - `tools/number-fields-check.mjs`: las flechas en todos los campos de la pantalla inicial, un clic y una pulsación mantenida sobre *Focal* (un paso, una entrada de deshacer cada uno), los ángulos de un foco propio y las velocidades de *Preferencias* como deslizadores; capturas `docs/ui/u15-light-fields.png`, `u15-part-triplets.png` y `u15-settings-sliders.png` (U15).
 - `tools/doctor-engine-check.mjs` escribe el tiempo del render en el campo numérico nuevo (U15).
