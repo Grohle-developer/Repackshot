@@ -642,7 +642,21 @@ export type DoctorCheckKey =
   /** S2: a dynamic part starts below the floor (not ported). */
   | 'physics'
   /** S4a: an ambient effect asks for more particles than its cap. */
-  | 'particles';
+  | 'particles'
+  | InteriorCheckKey;
+
+/**
+ * K1, the interior Doctor (INTERIORS.md §3.6): the scene checks that need no engine, evaluated only while the scene type
+ * is Interior (core/doctor-interior.ts).
+ */
+export type InteriorCheckKey =
+  | 'interiorScale'
+  | 'interiorOpening'
+  | 'interiorGlass'
+  | 'interiorLens'
+  | 'interiorEye'
+  | 'interiorClip'
+  | 'interiorNormals';
 
 /** Descriptor only: what the check looks for and what its one-click fix does. */
 export interface DoctorCheck {
