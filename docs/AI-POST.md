@@ -255,11 +255,13 @@ desgaste), luces y entorno, para el *prompt*.
    - **Regiones por id**: intervención por región, y límite de cambio de
      color por material (ΔE₀₀ medio y percentil 95; punto de partida 4 y 6,
      el doble del ≤ 2–3 del principio por la decisión 2.1 de C1, a calibrar
-     en X1).
+     en X1). Las tres tolerancias son las de *Ajustes ▸ Post-procesado IA ▸
+     Avanzado*: cada petición lleva las de ese momento, y la guarda (el
+     lanzador y el `post.wasm`) mide contra ellas.
 5. **Comprobación y retroceso**: medidas sobre el resultado —tamaño
    exacto; píxeles idénticos fuera de las regiones permitidas; coincidencia
-   de bordes en discontinuidades de id y normal (3 px en la guarda del
-   motor y 4 en *Ajustes*, el doble de 1,5 y 2 desde C1); SSIM sobre la
+   de bordes en discontinuidades de id y normal (4 px desde C1; eran 1,5 en
+   la guarda y 2 en *Ajustes*); SSIM sobre la
    banda alta; ΔE₀₀ por región; nitidez por mosaico frente al mapa de
    desenfoque (ni se emborrona lo enfocado ni se enfoca lo desenfocado)—.
    Si alguna falla, la intervención baja sola y se repite hasta que pasen

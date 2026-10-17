@@ -2075,7 +2075,8 @@ resolución de trabajo (lado largo 1024, 1536 o 2048, en mosaicos por
 encima), pasos, **intervención por defecto** (0–100, la de la ventana de
 render), semilla (*fija* o *nueva cada vez*), descargar el codificador de
 texto a RAM, y en *Avanzado* las tolerancias de la guarda
-(`AI-POST.md` §3.2; las de fábrica las fija X1). Un aviso en línea si el
+(`AI-POST.md` §3.2; las de fábrica las fija X1), que la guarda usa en cada
+petición (C1). Un aviso en línea si el
 modelo no cabe en la memoria detectada.
 
 **Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para

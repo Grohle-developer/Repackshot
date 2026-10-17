@@ -50,7 +50,7 @@ function controlOf(key: string): Control {
   return { kind: 'shift', mm: 23 };
 }
 
-interface Built {
+export interface Built {
   p: number[];
   n: number[];
   uv: number[];
@@ -69,7 +69,7 @@ function face(out: Built, corners: Vec3[], normal: Vec3, uv: [number, number][])
 }
 
 /** A box from `lo` to `hi` with UVs over each face (the front, y = lo.y, u along +x and v up), its UVs moved by `dv`. */
-function box(lo: Vec3, hi: Vec3, dv = 0): Built {
+export function box(lo: Vec3, hi: Vec3, dv = 0): Built {
   const m: Built = { p: [], n: [], uv: [], i: [] };
   const [x0, y0, z0] = lo;
   const [x1, y1, z1] = hi;
@@ -90,13 +90,13 @@ function box(lo: Vec3, hi: Vec3, dv = 0): Built {
 }
 
 /** The mesh of `m` with its coordinates moved by `d`. */
-function moved(m: Built, d: Vec3 = [0, 0, 0]): MeshData {
+export function moved(m: Built, d: Vec3 = [0, 0, 0]): MeshData {
   const p = m.p.map((x, k) => x + d[k % 3]);
   return { positions: Float32Array.from(p), normals: Float32Array.from(m.n), indices: Uint32Array.from(m.i), uvs: Float32Array.from(m.uv) };
 }
 
 /** The cylinder about Z (radius 30, 80 tall): smooth sides of 96 segments, flat caps. */
-function cylinder(): MeshData {
+export function cylinder(): MeshData {
   const seg = 96;
   const r = 30;
   const h = 80;
