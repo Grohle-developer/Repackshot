@@ -178,6 +178,25 @@ async function openSection(page) {
   await settle(page, 100);
 }
 
+/** Types a number into a field of the plane editor (double click, type, Enter). */
+async function typeInto(page, locator, value) {
+  await locator.dblclick();
+  await settle(page, 60);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type(String(value));
+  await page.keyboard.press('Enter');
+  await settle(page, 150);
+}
+
+/** Turns the plane to about 36 degrees from the view, so that the cap is seen as a tilted ellipse (the screenshots). */
+async function tiltPlane(page) {
+  const fields = page.locator(`${SECTION} [data-section-field="normal"] [role="spinbutton"]`);
+  await typeInto(page, fields.nth(0), -0.97);
+  await typeInto(page, fields.nth(1), -0.26);
+  await page.keyboard.press('Escape');
+  await settle(page, 300);
+}
+
 /** A point of the bottle's body under the viewport: fractions of the canvas box. */
 async function at(page, fx, fy) {
   const b = await canvas(page).boundingBox();
@@ -393,6 +412,7 @@ async function fullCheck(browser) {
   await openSection(page);
   await page.locator(`${SECTION} [data-section-switch]`).click();
   await page.waitForSelector(`${SECTION} [data-section="plane"]`);
+  await tiltPlane(page);
   await page.mouse.move(5, 500);
   await waitSamples(page, 64);
   const after = await viewportPixels(page);
@@ -411,6 +431,7 @@ async function shotCheck(browser) {
   await openSection(page);
   await page.locator(`${SECTION} [data-section-switch]`).click();
   await page.waitForSelector(`${SECTION} [data-section="plane"]`);
+  await tiltPlane(page);
   await page.mouse.move(5, 500);
   await settle(page, 1200);
   await page.screenshot({ path: join(SHOTS, 'section-fast.png') });

@@ -622,7 +622,41 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    contraluz (su lóbulo hacia delante, sin mando propio: lo trae el
    material del preset) y la lluvia y las burbujas no dejan cáusticas; los
    puntos de *Rápido* no cambian.
-5. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
+5. **Sección** (fase Q1) — La vista en sección (`SPEC.md` §3.1): un plano
+   que quita un lado de la pieza y tapa el corte. Va **plegada** por defecto,
+   con el **interruptor en la cabecera** (el primer encendido hace un plano
+   por el centro del producto, de cara a la cámara; *Sección activada*
+   es una entrada de deshacer). Dentro: **Cortar según**, segmentado *X · Y ·
+   Z · Superficie*; dos botones que arman el siguiente clic del visor,
+   **Clic en la pieza** (el plano pasa por el punto y es perpendicular al
+   eje elegido, o a la normal de la superficie; se quita el lado que mira
+   al espectador) y **Dos puntos** (dos clics: el plano contiene la línea
+   y la dirección de la vista, y se quita lo que queda a la izquierda de la
+   línea del primero al segundo); mientras uno está armado el visor lo dice
+   en la franja de arriba (*Sección: haz clic en la pieza para cortar según
+   Z · Esc cancela*), pulsar otra vez el botón o `Esc` lo baja, un clic que
+   no hace plano se avisa y se espera otro, y cualquier clic armado hace
+   **una** entrada (*Colocar el plano de sección*). Con plano hay **Punto**
+   y **Normal** en números (la normal se normaliza y una que no sea nada no
+   se toma), **Tapar el corte**, **Cambiar de lado** y **Quitar el plano**;
+   sin plano, una frase dice cómo hacer uno. Una nota enumera las piezas
+   cortadas que son mallas abiertas (el corte enseña su interior, sin
+   tapa), otra dice cómo animarlo (un movimiento *Sección* sobre el
+   Entorno en la línea de tiempo, §2.5) y otra que *Rápido* dibuja la tapa
+   de un vidrio como vidrio transparente y *Completo* y *Render*
+   refractan a su través. El fondo, el suelo y las tarjetas de un set no se
+   cortan. **Por qué aquí y no en la barra del visor**: es un objeto de la
+   escena, que se guarda con el proyecto, se anima y se ve en Completo y en
+   Render, como el entorno y el ambiente; las herramientas de la barra son
+   de navegación y transformación y no dejan nada en el proyecto. El
+   recorrido guiado (§4.7) no lista *Ambiente* ni *Sección*, y no gana paso.
+   La paleta (§3) tiene *Vista en sección: activar o desactivar* y *Vista en
+   sección: cambiar de lado*. Capturas: `docs/ui/section-fast.png` y
+   `docs/ui/section-full.png`; la comprobación en el navegador es
+   `tools/section-check.mjs` (orden de las secciones, cada camino de
+   ponerla, `Esc`, deshacer y rehacer, guardar y abrir, *Completo*, y el
+   cromo acromático en los dos temas).
+6. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
    su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
    (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
    cámara tiene su óptica y su posición. Preset de óptica (8
@@ -755,7 +789,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      aproximación; con filtros, el medidor del modo Rápido añade
      *Filtros: aproximación, el render lo hace el motor*.
      ![filtros](lens-filters.png)
-6. **Imagen** — Exposición (EV), transformada de vista (Estándar /
+7. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
 

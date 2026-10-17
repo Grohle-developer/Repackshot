@@ -55,7 +55,7 @@ export class SectionPreview {
   /** Materials that draw the model for other purposes (the outline's masks, depth) and show both sides while cutting. */
   private readonly twoSided: THREE.Material[] = [];
   /** The materials of the studio's pieces while a section cuts: no plane, by `part|material`. */
-  private readonly studio = new Map<string, THREE.MeshPhysicalMaterial>();
+  private readonly studio = new Map<string, { material: THREE.MeshPhysicalMaterial; version: number }>();
   /** What `removed` found for a mesh, with what it depended on. */
   private readonly goneCache = new WeakMap<THREE.Mesh, { key: string; gone: boolean }>();
   private cutKey = '';
@@ -141,27 +141,32 @@ export class SectionPreview {
     used.add(key);
     const userData = base.userData;
     base.userData = {};
-    let m = this.studio.get(key);
-    if (m) m.copy(base);
+    let entry = this.studio.get(key);
+    if (entry) entry.material.copy(base);
     else {
-      m = base.clone();
-      this.studio.set(key, m);
+      entry = { material: base.clone(), version: -1 };
+      this.studio.set(key, entry);
     }
     base.userData = userData;
+    const m = entry.material;
     m.clippingPlanes = null;
     m.clipShadows = false;
     m.side = THREE.FrontSide;
     m.onBeforeCompile = (shader, renderer) => base.onBeforeCompile(shader, renderer);
     m.customProgramCacheKey = () => `${base.customProgramCacheKey()}|studio`;
-    m.needsUpdate = true;
+    // A new program only when the original asked for one (a texture came or went), not at every colour it changes.
+    if (entry.version !== base.version) {
+      entry.version = base.version;
+      m.needsUpdate = true;
+    }
     return m;
   }
 
   /** Drops the copies of the studio's materials that are not in `used`. */
   pruneStudio(used: ReadonlySet<string>): void {
-    for (const [key, m] of this.studio) {
+    for (const [key, e] of this.studio) {
       if (used.has(key)) continue;
-      m.dispose();
+      e.material.dispose();
       this.studio.delete(key);
     }
   }
@@ -319,7 +324,7 @@ export class SectionPreview {
     this.caps.clear();
     for (const e of this.capMaterials.values()) e.material.dispose();
     this.capMaterials.clear();
-    for (const m of this.studio.values()) m.dispose();
+    for (const e of this.studio.values()) e.material.dispose();
     this.studio.clear();
     this.fallback.dispose();
   }
