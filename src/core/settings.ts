@@ -76,7 +76,6 @@ export interface Settings {
   'general.autosaveMinutes': number;
   'general.confirmClose': boolean;
 
-  'viewport.startMode': 'FAST' | 'FULL' | 'LAST';
   'viewport.mouse': 'LEFT' | 'ALT_LEFT' | 'MIDDLE';
   'viewport.invertZoom': boolean;
   /** Percent of the factory speed. */
@@ -189,7 +188,7 @@ export interface Layout {
   scaleLock: boolean;
   /** The viewport draws the glyphs of every light and saved camera (L4's Lights and cameras button). */
   showGlyphs: boolean;
-  /** The viewport mode last chosen (`viewport.startMode` LAST starts in it). */
+  /** The viewport mode last chosen. The viewport always starts in Fast whatever this says: Full renders at once, with or without a model. */
   viewportMode: 'FAST' | 'FULL';
   /** The section of the Settings window last opened. */
   settingsSection: SectionId;
@@ -235,7 +234,6 @@ export function defaultSettings(): Settings {
     'general.autosaveMinutes': 5,
     'general.confirmClose': true,
 
-    'viewport.startMode': 'LAST',
     'viewport.mouse': 'LEFT',
     'viewport.invertZoom': false,
     'viewport.orbitSpeed': 100,
@@ -413,7 +411,6 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('general.confirmClose', 'general', 'safety', toggle, kw('confirm, close, unsaved, quit, leave', 'confirmar, cerrar, sin guardar, salir'), { aux: true }),
 
   // Preferences ▸ Viewport and navigation
-  setting('viewport.startMode', 'preferences', 'viewport', choice(['FAST', 'FULL', 'LAST']), kw('viewport, mode, fast, full, start', 'visor, modo, rápido, completo, arranque')),
   setting('viewport.mouse', 'preferences', 'viewport', choice(['LEFT', 'ALT_LEFT', 'MIDDLE'], true), kw('mouse, orbit, button, alt, middle, navigation', 'ratón, orbitar, botón, alt, central, navegación'), { aux: true }),
   setting('viewport.invertZoom', 'preferences', 'viewport', toggle, kw('invert, zoom, wheel, scroll', 'invertir, zoom, rueda')),
   setting('viewport.orbitSpeed', 'preferences', 'viewport', num(25, 300, 5, '%'), kw('orbit, speed, rotate, sensitivity', 'órbita, velocidad, girar, sensibilidad')),
@@ -790,10 +787,12 @@ export function searchSettings(query: string, opts: { lang: Lang; label: (row: R
 
 // ------------------------------------------------------------------ what settings mean elsewhere
 
-/** The viewport mode to start in. */
-export function startViewportMode(s: Settings, last: 'FAST' | 'FULL'): 'FAST' | 'FULL' {
-  const m = s['viewport.startMode'];
-  return m === 'LAST' ? last : m;
+/**
+ * The viewport mode to start in: always Fast. Full starts the engine rendering at once, before any model is loaded, so
+ * neither a remembered Full nor a setting of the earlier versions starts there (`viewport.startMode` is dropped on read).
+ */
+export function startViewportMode(): 'FAST' {
+  return 'FAST';
 }
 
 /** The interface size and text size as CSS factors, and the attributes the stylesheets key on (UI.md §2.9). */

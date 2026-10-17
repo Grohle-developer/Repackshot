@@ -862,3 +862,384 @@ fn the_tiles_batched_camera_samples_are_the_samples_one_by_one() {
         }
     }
 }
+
+// --- O4: tilt and shift of a traced lens ----------------------------------------------------------
+
+/// A lens of the catalogue tilted by `tilt` degrees about the axis `axis` degrees from the
+/// camera's right, with the shift `shift` (mm), prepared for a 36 mm sensor.
+fn tilted(key: &str, focal: f32, fstop: f32, focus: f32, tilt: f32, axis: f32) -> TracedLens {
+    let lenses = catalogue();
+    let (_, l) = lenses
+        .iter()
+        .find(|(k, _)| k == key)
+        .expect("a catalogue lens");
+    let params = LensParams {
+        tilt_deg: tilt,
+        tilt_axis_deg: axis,
+        prescription: Some(prescription(l)),
+        ..LensParams::default()
+    };
+    TracedLens::new(
+        params.prescription.as_ref().unwrap(),
+        &params,
+        CameraOptics {
+            focal_mm: focal,
+            fstop,
+            focus_dist: focus,
+            sensor_mm: 36.0,
+        },
+    )
+    .unwrap_or_else(|e| panic!("{key}: {e}"))
+}
+
+/// The ray of `lens` from the sensor position `(x, y)` through the point `p` of its pupil (the
+/// camera's lens-like frame: x right, y up, z back, the camera position at `(0, 0, pupil_z)`).
+fn ray_of(lens: &TracedLens, x: f32, y: f32, p: (f32, f32)) -> (Vec3, Vec3) {
+    match lens.chief(x, y, p) {
+        Traced::Out { origin, dir } => (origin, dir),
+        Traced::Blocked => panic!("blocked at ({x}, {y}) through {p:?}"),
+    }
+}
+
+/// Where the rays of the sensor position `(x, y)` meet, as a distance along the chief ray from
+/// the camera position: the mean of the two meridians (a lens's astigmatism splits them).
+fn sharp_distance(lens: &TracedLens, x: f32, y: f32) -> f64 {
+    let pivot = [0.0, 0.0, f64::from(lens.pupil_z())];
+    let (_, chief) = ray_of(lens, x, y, (0.0, 0.0));
+    let w = [f64::from(chief.x), f64::from(chief.y), f64::from(chief.z)];
+    let mut sum = 0.0;
+    for (a, b) in [((0.12, 0.0), (-0.12, 0.0)), ((0.0, 0.12), (0.0, -0.12))] {
+        let (q, gap) = closest(ray_of(lens, x, y, a), ray_of(lens, x, y, b));
+        assert!(
+            gap < 1.5,
+            "the rays of ({x}, {y}) miss each other by {gap} mm"
+        );
+        sum += (0..3).map(|i| (q[i] - pivot[i]) * w[i]).sum::<f64>();
+    }
+    0.5 * sum
+}
+
+/// Where the simple lens's plane of sharp focus (the hinge rule: through the focus point, normal
+/// `f·forward + u·sin α·b`) meets the chief ray of `(x, y)`, as a distance from the camera position.
+fn simple_lens_distance(
+    lens: &TracedLens,
+    x: f32,
+    y: f32,
+    focal: f64,
+    focus: f64,
+    tilt: f64,
+    axis: f64,
+) -> f64 {
+    let (_, chief) = ray_of(lens, x, y, (0.0, 0.0));
+    let w = [f64::from(chief.x), f64::from(chief.y), f64::from(chief.z)];
+    let (sa, ca) = axis.to_radians().sin_cos();
+    // forward (0, 0, −1) × a (ca, sa, 0) = (sa, −ca, 0).
+    let b = [sa, -ca, 0.0];
+    let s = tilt.to_radians().sin();
+    let n = [b[0] * focus * s, b[1] * focus * s, -focal];
+    // The plane through forward·u: n·(t w − u forward) = 0.
+    let nw: f64 = (0..3).map(|i| n[i] * w[i]).sum();
+    focus * focal / nw
+}
+
+#[test]
+fn a_tilted_traced_lens_focuses_on_the_plane_of_the_simple_lens_of_the_same_tilt() {
+    // O4: the lens turns until its plane of sharp focus leans as the simple lens's of the same
+    // tilt, focal length and focus distance (paraxially), and the frame's centre is refocused with
+    // real rays. The real rays of the centre meet at the focus distance; those of two points either
+    // side of it across the tilt's axis meet where the simple lens's plane says plus what the
+    // lens's own field curvature does at the same heights on its film (measured on the upright
+    // lens): the tilt adds the plane, the lens keeps its character. The well-corrected macro lens
+    // hardly curves its field: all nine points of its frame lie on the plane.
+    for (key, focal, focus) in [
+        ("double_gauss_normal", 50.0f32, 1500.0f32),
+        ("telephoto_internal_focus", 85.0, 3000.0),
+        ("macro_floating", 60.0, 600.0),
+        ("triplet", 50.0, 2000.0),
+    ] {
+        for (tilt, axis) in [(5.0f32, 0.0f32), (-4.0, 90.0), (6.0, 30.0)] {
+            let lens = tilted(key, focal, 8.0, focus, tilt, axis);
+            let physical = lens.info().tilt_deg;
+            assert!(
+                physical.signum() == tilt.signum()
+                    && (physical / tilt) > 0.5
+                    && (physical / tilt) < 2.0,
+                "{key}: tilted by {physical}° for {tilt}°"
+            );
+            let plane = |x: f32, y: f32, t: f32| {
+                simple_lens_distance(
+                    &lens,
+                    x,
+                    y,
+                    f64::from(focal),
+                    f64::from(focus),
+                    f64::from(t),
+                    f64::from(axis),
+                )
+            };
+            let centre = sharp_distance(&lens, 0.0, 0.0);
+            assert!(
+                (centre - f64::from(focus)).abs() < 0.015 * f64::from(focus),
+                "{key}, tilt {tilt}° about {axis}°: the centre is sharp at {centre:.1} mm, not {focus}"
+            );
+            // Across the axis, 4 mm either side of the centre on the sensor.
+            let (sa, ca) = axis.to_radians().sin_cos();
+            let (px, py) = (-4.0 * sa, 4.0 * ca);
+            let got = sharp_distance(&lens, px, py) - sharp_distance(&lens, -px, -py);
+            let want = plane(px, py, tilt) - plane(-px, -py, tilt);
+            // The upright lens's own departure from its plane at the same heights on its film.
+            let up = traced(key, focal, 8.0, focus);
+            let dev = |x: f32, y: f32| {
+                let f = lens.film_at(x, y);
+                let (ux, uy) = (-f.x, -f.y);
+                sharp_distance(&up, ux, uy)
+                    - simple_lens_distance(
+                        &up,
+                        ux,
+                        uy,
+                        f64::from(focal),
+                        f64::from(focus),
+                        0.0,
+                        0.0,
+                    )
+            };
+            let curvature = dev(px, py) - dev(-px, -py);
+            // The well-corrected lenses within a few percent; the telephoto and the triplet, whose
+            // astigmatism off the axis this radial correction does not hold, within a fifth.
+            let tolerance = if matches!(key, "macro_floating" | "double_gauss_normal") {
+                0.035
+            } else {
+                0.2
+            };
+            let upright = plane(px, py, 0.0) - plane(-px, -py, 0.0);
+            assert!(
+                (got - want - curvature).abs() < tolerance * want.abs() && (want - upright).abs() > 0.05 * f64::from(focus),
+                "{key}, tilt {tilt}° about {axis}°: the plane rises {got:.1} mm across 8 mm of the sensor, the simple lens's {want:.1} mm and the lens's own curvature {curvature:.1} (upright {upright:.1})"
+            );
+            if key == "macro_floating" {
+                for (x, y) in [
+                    (-12.0f32, -8.0f32),
+                    (12.0, -8.0),
+                    (-12.0, 8.0),
+                    (12.0, 8.0),
+                    (0.0, 8.0),
+                    (0.0, -8.0),
+                    (12.0, 0.0),
+                    (-12.0, 0.0),
+                ] {
+                    let (got, want) = (sharp_distance(&lens, x, y), plane(x, y, tilt));
+                    assert!(
+                        (got - want).abs() < 0.025 * want,
+                        "{key}, tilt {tilt}° about {axis}°: ({x}, {y}) sharp at {got:.1} mm, the plane is at {want:.1} mm"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_tilted_traced_lens_keeps_the_frame_on_the_focus_point() {
+    // The sensor sits where the lens images the focus point: the frame's centre still looks at
+    // it, and the frame does not swing with the tilt.
+    for (tilt, axis) in [(8.0f32, 0.0f32), (-6.0, 90.0)] {
+        let lens = tilted("double_gauss_normal", 50.0, 4.0, 1500.0, tilt, axis);
+        let (o, d) = ray_of(&lens, 0.0, 0.0, (0.0, 0.0));
+        let p0 = Vec3::new(0.0, 0.0, lens.pupil_z() - 1500.0);
+        let to = p0 - o;
+        let miss = (to - d * to.dot(d)).length();
+        assert!(
+            miss < 2.0,
+            "tilt {tilt}°: the centre's chief ray passes {miss} mm from the focus point"
+        );
+        // A point of the frame looks where the upright lens's does, within a degree and a half.
+        let (_, a) = ray_of(&lens, 10.0, 6.0, (0.0, 0.0));
+        let (_, b) = ray_of(
+            &traced("double_gauss_normal", 50.0, 4.0, 1500.0),
+            10.0,
+            6.0,
+            (0.0, 0.0),
+        );
+        assert!(
+            a.dot(b) > (1.5f32).to_radians().cos(),
+            "tilt {tilt}°: {a:?} against {b:?}"
+        );
+    }
+}
+
+#[test]
+fn a_traced_shift_moves_the_frame_by_its_millimetres_on_the_sensor() {
+    // The shift is a sensor offset in the image plane: with a shift of (s_x, s_y) the point at
+    // infinity on the axis lies at −(s_x, s_y) from the frame's centre, upright or tilted (where
+    // the axis's point is the focus point), and the perspective does not change.
+    use crate::scene::Camera;
+    for (tilt, shift) in [
+        (0.0f32, (5.0f32, -3.0f32)),
+        (0.0, (0.0, 7.5)),
+        (6.0, (4.0, 2.0)),
+    ] {
+        let mut camera = Camera {
+            position: Vec3::new(0.0, -1500.0, 0.0),
+            target: Vec3::ZERO,
+            focal_mm: 50.0,
+            fstop: 4.0,
+            focus_dist: 1500.0,
+            lens: Some(
+                super::Lens::new(LensParams {
+                    shift_x_mm: shift.0,
+                    shift_y_mm: shift.1,
+                    tilt_deg: tilt,
+                    prescription: Some(crate::example::double_gauss()),
+                    ..LensParams::default()
+                })
+                .unwrap(),
+            ),
+            ..Camera::default()
+        };
+        camera.prepare_lens().unwrap();
+        let aspect = 4.0 / 3.0;
+        let (w, h) = (36.0f32, 27.0f32);
+        let (u, v) = (0.5 - shift.0 / w, 0.5 + shift.1 / h);
+        let ray = camera.generate_ray(aspect, u, v, (0.0, 0.0));
+        // The focus point (at infinity for the upright lens: along the view).
+        let target = Vec3::new(0.0, 0.0, 0.0);
+        let to = target - ray.origin;
+        let miss = (to - ray.dir * to.dot(ray.dir)).length();
+        assert!(
+            miss < 3.0,
+            "tilt {tilt}°, shift {shift:?}: the axis lands {miss} mm off"
+        );
+        // And one millimetre more of shift moves it one millimetre: the frame's other points too.
+        let ray0 = camera.generate_ray(aspect, 0.5, 0.5, (0.0, 0.0));
+        let to0 = target - ray0.origin;
+        let off = (to0 - ray0.dir * to0.dot(ray0.dir)).length();
+        if shift.0 != 0.0 || shift.1 != 0.0 {
+            assert!(off > 20.0, "the shift moved nothing ({off} mm)");
+        }
+    }
+}
+
+#[test]
+fn no_tilt_is_the_upright_lens_bit_for_bit() {
+    // A tilt of 0 is no tilt whatever its axis: the samples and the chief rays carry the same
+    // bits as a lens with neither.
+    let plain = traced("double_gauss_normal", 50.0, 2.8, 1500.0);
+    let axis = tilted("double_gauss_normal", 50.0, 2.8, 1500.0, 0.0, 37.0);
+    assert_eq!(plain, axis);
+    assert_eq!(plain.info().to_json(), axis.info().to_json());
+    assert!(!plain.info().to_json().contains("tiltDeg"));
+    assert!(tilted("double_gauss_normal", 50.0, 2.8, 1500.0, 3.0, 0.0)
+        .info()
+        .to_json()
+        .contains("\"tiltDeg\":"));
+}
+
+#[test]
+fn a_tilted_lens_batches_the_bits_of_its_samples_one_by_one_and_keeps_its_light() {
+    let mut rng = crate::rng::Pcg32::seeded(5, 3);
+    for (key, tilt, axis) in [
+        ("double_gauss_normal", 6.0f32, 0.0f32),
+        ("petzval_portrait", -5.0, 90.0),
+        ("telephoto_internal_focus", 4.0, 45.0),
+    ] {
+        let lens = tilted(key, 50.0, 0.0, 1500.0, tilt, axis);
+        for swirl in [0.0f32, 0.5] {
+            for n in [1usize, 5, LANES] {
+                for _ in 0..30 {
+                    let samples: Vec<BatchSample> = (0..n)
+                        .map(|_| BatchSample {
+                            x: 36.0 * rng.next_f32() - 18.0,
+                            y: 24.0 * rng.next_f32() - 12.0,
+                            u: (rng.next_f32(), rng.next_f32()),
+                            band: (rng.next_u32() % 3) as usize,
+                        })
+                        .collect();
+                    let batch = lens.sample_batch(&samples, swirl);
+                    for (k, s) in samples.iter().enumerate() {
+                        assert_eq!(
+                            sample_bits(batch[k]),
+                            sample_bits(lens.sample(s.x, s.y, s.u, s.band, swirl)),
+                            "{key}, lane {k} of {n}"
+                        );
+                    }
+                }
+            }
+        }
+        // Stopped down (wide open the beam of a point off the axis is clipped), the centre of the
+        // frame gets about the light of the upright lens's centre: the tilted sensor's cosine and
+        // the point off the lens's axis take a little.
+        let lens = tilted(key, 50.0, 5.6, 1500.0, tilt, axis);
+        let upright = traced(key, 50.0, 5.6, 1500.0);
+        let mean = |l: &TracedLens| {
+            let mut sum = 0.0f64;
+            let n = 64;
+            for j in 0..n {
+                for i in 0..n {
+                    let u = ((i as f32 + 0.5) / n as f32, (j as f32 + 0.5) / n as f32);
+                    sum += f64::from(l.sample(0.0, 0.0, u, 1, 0.0).1);
+                }
+            }
+            sum / f64::from(n * n)
+        };
+        let (a, b) = (mean(&lens), mean(&upright));
+        assert!((a / b - 1.0).abs() < 0.06, "{key}: {a} against {b} upright");
+    }
+}
+
+#[test]
+fn a_traced_lens_with_cylinders_refuses_a_tilt() {
+    let mut p = crate::example::double_gauss();
+    p.surfaces[0].kind = SURFACE_CYLINDER_Y;
+    let params = LensParams {
+        tilt_deg: 4.0,
+        prescription: Some(p),
+        ..LensParams::default()
+    };
+    let got = TracedLens::new(
+        params.prescription.as_ref().unwrap(),
+        &params,
+        CameraOptics {
+            focal_mm: 50.0,
+            fstop: 4.0,
+            focus_dist: 2000.0,
+            sensor_mm: 36.0,
+        },
+    );
+    assert_eq!(
+        got.err(),
+        Some("a traced lens with cylinders does not tilt")
+    );
+}
+
+#[test]
+fn every_catalogue_lens_without_cylinders_tilts_and_says_by_how_much() {
+    // O4: each lens of the catalogue that forms an image and has no cylinders prepares with a tilt
+    // either way about any axis, turns by a few degrees for the simple lens's 5°, and keeps its
+    // centre sharp at the focus distance; the anamorphic adapter (cylinders) is refused above.
+    let mut checked = 0;
+    for (key, json) in catalogue() {
+        let cylinders = json
+            .get("surfaces")
+            .arr()
+            .iter()
+            .any(|s| s.get("kind").str() == Some("cylinder"));
+        if key == "anamorphic_adapter_2x" || cylinders {
+            continue;
+        }
+        for (tilt, axis) in [(5.0f32, 0.0f32), (-5.0, 60.0)] {
+            let lens = tilted(&key, 50.0, 8.0, 2000.0, tilt, axis);
+            let deg = lens.info().tilt_deg;
+            assert!(
+                deg.signum() == tilt.signum() && deg.abs() > 1.0 && deg.abs() < 20.0,
+                "{key}: {deg}° for {tilt}°"
+            );
+            let centre = sharp_distance(&lens, 0.0, 0.0);
+            assert!(
+                (centre - 2000.0).abs() < 0.03 * 2000.0,
+                "{key}, tilt {tilt}° about {axis}°: the centre is sharp at {centre:.0} mm"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 28, "{checked}");
+}

@@ -1349,6 +1349,36 @@ mod tests {
     pub(crate) const PINNED_O2_TRACED_4SPP: u32 = 0x8f7d_0ef8;
 
     #[test]
+    fn the_o4_tilted_and_shifted_traced_lens_has_a_pinned_hash_on_every_platform() {
+        // O4 tilted the traced double Gauss against the sensor (the angle solved for the simple
+        // lens's plane, the centre refocused with real rays, the bounds on a grid of sensor
+        // positions) and shifted it. Through an RSB round trip (the preparation included);
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-o4-example`).
+        // Every hash above stays: a lens without a tilt never takes the new path.
+        let scene = crate::example::o4_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("O4 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(
+                hash,
+                PINNED_O4_TRACED_TILT_4SPP,
+                "O4 tilted traced lens on {}",
+                isa.name()
+            );
+        }
+        // Upright, the same scene is another image.
+        assert_ne!(
+            scene_4spp_hash(&crate::example::o2_scene(), Isa::detect()),
+            PINNED_O4_TRACED_TILT_4SPP
+        );
+    }
+
+    /// Pinned hash of the O4 example (the traced double Gauss tilted and shifted) at 4 samples
+    /// per pixel.
+    pub(crate) const PINNED_O4_TRACED_TILT_4SPP: u32 = 0x0b2f_c327;
+
+    #[test]
     fn the_l5_ies_scene_has_a_pinned_hash_on_every_platform() {
         // L5: the example lit by its panel at a fifth of its power and by two IES lights, a sphere
         // of the symmetric downlight profile (next-event estimation and MIS) and a warm point of

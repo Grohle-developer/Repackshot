@@ -43,6 +43,11 @@
 //!    about the horizontal axis tips the lens down: the focus plane leans back towards the floor.
 //!    A chief ray that does not meet the focus plane in front of the lens is focused at infinity.
 //!
+//! A traced lens (O2) takes the shift as a sensor offset too, and since O4 the tilt: the lens
+//! turns about the camera position until its own plane of sharp focus (the conjugate of the
+//! sensor plane) leans as this one does, with the frame's centre refocused on the focus point by
+//! real rays (`traced::tilt`).
+//!
 //! # Effect filters (O3a)
 //!
 //! A stack of up to three filters in front of the lens ([`filters`]: diffusion, glimmer, soft,
@@ -167,7 +172,10 @@ pub struct LensParams {
     /// O2: the traced lens (the section's trailing prescription); `None` is the enhanced thin
     /// lens. With it the iris (blades, roundness, rotation, obstruction) sits at the stop, the
     /// squeeze desqueezes the image, and `ca_amount` and `swirl` are its artistic overrides; the
-    /// thin-lens pupil, cat's eye, tilt and picture are not used.
+    /// thin-lens pupil, cat's eye and picture are not used. The shift moves the sensor (O2) and,
+    /// since O4, the tilt turns the traced lens against the sensor ([`traced`]'s `tilt` module:
+    /// the plane of sharp focus of the simple lens of the same tilt, through the real surfaces);
+    /// a lens with cylinders refuses a tilt.
     pub prescription: Option<Prescription>,
 }
 

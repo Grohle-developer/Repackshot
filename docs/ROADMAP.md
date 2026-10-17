@@ -3999,7 +3999,7 @@ azul como `2b − 1` sin la intensidad, y el color de un ruido pone la mitad de
 las normales hacia dentro de la superficie (el 49 % de los puntos de la placa);
 el motor las dobla hasta el borde del lado que mira, como los mapas de normales
 de M2b (salen oscuras), y three.js las ilumina con el mundo (salen claras).
-**Decisión para Fable** (regla 11/12, el contrato es de M3a): que
+**Decisión para Fable** (regla 11/12, el contrato es de M3a; decidida en *Decisiones de criterio* y hecha en C1): que
 `NORMAL_MAP` mezcle hacia la normal del mapa por la intensidad y la deje fuera
 (como el de Blender), o que el ejemplo pase el ruido por un rango con el azul
 cerca de 1, o que el motor refleje una normal de programa de espaldas en vez de
@@ -5082,6 +5082,217 @@ suavizado cae sobre la imagen, como el núcleo de la dorada. (12) El
 visor Rápido dibuja la nube del brillo como la gaussiana de la que sale
 (su promedio); el grano es del motor. (13) El *hash* de O3a se movió con
 el veredicto (`0x715dc88e` → `0x625d565d`); los demás, no. La mezcla con la rama de la sesión (E11, E12) lo movió otra vez, a `0x49938f3b`, y `o3a.rsb` creció a 9352 bytes con el `RNDR` de 64 B.
+
+## O4 · Lente simple y trazada: opciones de cada una — **Opus** — hecha
+
+**Petición del usuario** (dos mensajes, tal cual):
+
+> «aparte, el bokeh se elije con thin lens, y al seleccionarlo te saca si
+> estabas en traced lens. Lo que quiero es que sea simple lens en vez de
+> thin, y que el bokeh solo salga con simple lens.»
+
+> «bokeh y advanced optics son de thin lens, asique lo mismo que te dije
+> con bokeh, que solo aplique a simple lens, en traced no quiero estas
+> opciones. Quiero meter el tilt y shift en traces, en advanced (que
+> quiero llamarlo more options) y hacer que para ambos, advanced optics y
+> more options sea más intuitivo y fácil de usar el tilt.»
+
+**Qué.** (1) La *lente fina* pasa a llamarse **lente simple** en todo lo
+visible, con las claves y los valores guardados intactos. (2) El **bokeh**
+y la **óptica avanzada** son de la lente simple: con una lente trazada no
+se enseñan, ningún camino aplica un bokeh a una cámara trazada ni la saca
+de su lente (un aviso corto en su lugar), y volver a la lente simple
+recupera lo que tenía. (3) El *Avanzado* de la lente trazada se llama
+**Más opciones** y lleva **inclinación y desplazamiento** de la lente
+trazada, en el motor si cabe, desde la literatura óptica. (4) Una
+**inclinación fácil** en los dos: cantidad y dirección en vez de números de
+eje, el plano de enfoque dibujado en el visor, y el plano por dos puntos.
+*Enderezar verticales* no (es de K3): solo dejar el desplazamiento listo.
+(5) Documentación, capturas y (6) esta fase.
+
+**Depende de.** O1, O2, O2b.
+
+**Criterio.** El bug con su test, que falla al quitar el arreglo, por cada
+camino que lo tenía; las secciones de cada modelo y su vuelta; el cambio de
+nombre con los proyectos antiguos de ida y vuelta; la matemática del plano
+por puntos en TS y, en el motor, el plano por los puntos pedidos, el
+desplazamiento por lo esperado e inclinación y desplazamiento 0 bit a bit;
+un test en el navegador por modelo sin nada recortado; todos los *hash*
+fijados intactos y uno nuevo para la lente trazada inclinada, con su
+paridad wasm.
+
+**Hecho.**
+
+- **Lente simple.** `camera.lensThin` dice *Simple lens · Lente simple* (la
+  clave y el valor guardado `thin` no cambian; `lensModelOf` lo lee) y las
+  demás cadenas, la ayuda, el `bokehResetAux`, UI.md, SPEC.md y
+  ARCHITECTURE.md hablan de la lente simple (un test comprueba que ninguna
+  cadena de `strings.ts` dice *thin lens* ni *lente fina*). La fila *Modelo
+  de lente* pone su etiqueta encima y los dos botones a todo el ancho: el
+  test de recorte del navegador encontró que *Lente simple · Lente trazada*
+  no cabía al lado en español.
+- **El bokeh y la óptica avanzada, solo con la lente simple.** Con una
+  lente trazada las secciones *Bokeh* y *Óptica avanzada* no se pintan
+  (`display: none`, sin un solo mando visible). El bug tenía **dos
+  caminos**, los dos en `insp-lens.ts`: la casilla de un tipo y la lista de
+  *Variante*, que llamaban a `opticsForBokeh`, y esa función ponía
+  `traced: null` (vuelta a la lente simple). No había más: ni la paleta, ni
+  el menú de cámara, ni los parámetros de URL, ni un arrastre o una suelta
+  de un recurso de bokeh aplican un bokeh (los recursos de A6 son las
+  imágenes de la pupila, que solo nombra un tipo). Ahora `opticsForBokeh`
+  devuelve `null` con una lente trazada, para cualquier tipo, y todos los
+  caminos pasan por una orden, `applyBokeh` (`src/ui/lens-commands.ts`), que
+  con una lente trazada no toca la cámara y avisa *El bokeh es una opción de
+  la lente simple: esta cámara tiene una lente trazada, que hace el suyo*
+  (lo que use un arrastre o un menú futuro). Cambiar de modelo
+  (`opticsWithLensModel`, `setLensModel`) ya no borra el tipo de bokeh ni su
+  variante: el bokeh, sus parámetros y la inclinación de la lente simple se
+  quedan en `optics` y vuelven tal cual; cambiar de lente trazada tampoco lo
+  borra. Los tres tipos de la lente trazada (cometa de coma, respiración de
+  foco, aberración esférica variable) **no están en la rejilla** de la lente
+  simple: son de sus lentes en *Lente ▸ Lente trazada* (decidido, abajo; al
+  principio salían apagados diciendo dónde estaba su lente). Tests: `tests/lens-o4.test.ts` (cada tipo y cada variante
+  contra una cámara trazada; la orden con su aviso; la vuelta con el bokeh y
+  la óptica avanzada) y `tests/traced-lens.test.ts`, cuyo test de O2
+  esperaba justo el bug («un tipo de la lente fina devuelve la cámara a la
+  lente fina») y ahora espera lo contrario. Con `opticsForBokeh` y la guarda
+  de `applyBokeh` devueltas a lo de antes, fallan tres tests (comprobado).
+  En el navegador (`tests/lens-modes-browser.test.ts`): ninguna casilla de
+  bokeh visible con lente trazada, `applyBokeh` de tres tipos sin cambiar
+  de lente, y la vuelta con la burbuja marcada.
+- **Inclinación de la lente trazada, en el motor**
+  (`rt-core/src/optics/traced/tilt.rs`, ARCHITECTURE §5.2 sedecies). La
+  lente gira respecto al sensor alrededor de la posición de la cámara (su
+  pupila de entrada), el sensor queda de frente a la vista donde la lente
+  forma la imagen del punto de enfoque (el encuadre no gira y el centro
+  queda nítido), y el ángulo se resuelve con la óptica paraxial de la lente
+  (el conjugado del plano del sensor, `Abcd`, bisección) para que su plano
+  de enfoque se incline **como el de la lente simple** de la misma
+  inclinación (decidido); el centro se reenfoca con rayos reales (la curvatura de
+  campo donde la inclinación pone el punto de enfoque: sin eso el centro
+  quedaba hasta un 4,5 % lejos en el tele); los límites de la pupila se
+  trazan en 9 × 9 posiciones del sensor y el peso lleva el coseno del
+  sensor inclinado. El motor dice el ángulo que gira la lente (`tiltDeg`
+  en la información, la fila *Inclinación de la lente*: 5,95° para 6° en la
+  doble Gauss a 85 mm). Tests de `traced_tests`: el centro a la distancia
+  de enfoque (≤ 1,5 %) y la pendiente del plano igual a la de la lente
+  simple más la curvatura de campo de la lente derecha a las mismas alturas
+  (2 % en la doble Gauss, 0,1 % en la macro, hasta 15 % en el tele y el
+  triplete con eje oblicuo); los nueve puntos de la macro sobre el plano
+  (2,5 %); el encuadre sobre el punto de enfoque; cada lente del catálogo
+  sin cilindros se inclina en los dos sentidos; lotes con los bits de las
+  muestras solas; la luz del centro dentro del 6 %; inclinación 0 con
+  cualquier eje, la lente derecha bit a bit; el adaptador (cilindros) la
+  rechaza. **El desplazamiento** de una trazada ya existía en el motor
+  desde O2 (sensor desplazado antes de trazar): test nuevo de que mueve el
+  eje sus milímetros, derecha o inclinada. *Hash* nuevo
+  `PINNED_O4_TRACED_TILT_4SPP` = `0x0b2fc327` (`example::o4_scene`, la
+  doble Gauss a 6° y desplazada (2, −3) mm; `rt --write-o4-example`,
+  `tests/fixtures/o4.rsb`) en escalar, SSE2 y AVX2, en el `rt.wasm` real por
+  el código de la página y en CI con `tools/wasm-parity.mjs` (con y sin
+  pases), y 1/4/16 hilos. **Ningún otro *hash* se movió** (ejemplo, E5,
+  O1, O2, O3a y el resto: `cargo test --workspace` en verde). Sin bit nuevo
+  en `rt_features` (el 32 no se usa).
+- **La inclinación fácil** (`src/ui/panels/insp-tilt.ts`, el mismo bloque
+  en *Óptica avanzada* y en *Más opciones*; `src/core/focus-plane.ts`). La
+  pareja guardada (inclinación con signo y eje) se lee como **cantidad**
+  (deslizador de 0° a 12°) y **hacia dónde de la imagen se aleja el plano**:
+  un **dial** que se arrastra (un arrastre, una entrada de deshacer;
+  teclado y Mayús) con **cuatro atajos** (*como el suelo*, *como el techo*,
+  *como una pared* a cada lado) y el ángulo. **Por dos puntos…**: dos
+  clics en el producto ponen la inclinación **y la distancia de enfoque**
+  para que los dos salgan nítidos, en una entrada (*Inclinar el plano de
+  enfoque por dos puntos*): de los planos por los dos, el menos inclinado;
+  dos puntos a la misma profundidad solo enfocan; un segundo punto
+  imposible (más de 12°, en línea con la vista, detrás) avisa y espera. La
+  función resuelve también el plano por **tres** puntos (test), aunque el
+  visor solo pide dos (decidido: sin tercer punto por ahora). **El plano en el visor**: un cuadrado translúcido
+  con rejilla, en la tinta de la interfaz, alrededor del producto y en
+  perspectiva, con el punto de enfoque (y el primer punto elegido), en
+  Rápido y en Completo, mientras el puntero o el foco están en el bloque,
+  mientras se eligen los puntos y siempre con *Ver el plano*
+  (`ViewportPort.setFocusPlane`). El **desplazamiento** queda en el mismo
+  bloque y es de la cámara (los campos de siempre). Con las *Verticales
+  rectas* de K3 (llegadas al fusionar) su desplazamiento se suma al de estos
+  campos al renderizar, con la lente simple y con la trazada, y el plano
+  dibujado y *Por dos puntos* usan la cámara nivelada que se renderiza
+  (`renderedCamera`; la distancia de enfoque vuelve dividida por el coseno
+  de lo corregido, como el foco por clic de K3): test que falla sin ello.
+  Con una panorámica no se dibuja plano (no tiene lente).
+  Con el adaptador anamórfico el bloque dice que no se inclina. En *Más
+  opciones*, además, el resto del diafragma (*Redondez*, *Giro*,
+  *Obstrucción*), que una lente trazada usa y que ya no se veía al
+  esconder la óptica avanzada.
+- **Herramientas, capturas.** `tools/o4-check.mjs` (siete comprobaciones en
+  la aplicación construida, sus capturas `o4-simple-optics.png`,
+  `o4-traced-more.png` y `o4-tilt-overlay.png`), `rt --tilt-sheet <dir>`
+  (luces sobre un suelo con las dos lentes, derechas y tumbadas sobre el
+  suelo; su composición es `o4-traced-tilt.png`); `tools/lens-check.mjs` y
+  `tools/optics-check.mjs` al día (este contaba 16 casillas con miniatura,
+  como en O1: lo había dejado atrás O2), con `lens-editor.png`,
+  `lens-section.png`, `camera-bokeh.png` y `camera-optics.png` regrabadas.
+
+**Qué no encajó.** (1) **El id O4 ya estaba** en la tabla de fases de
+óptica de `STUDIO-TOOLS` (más abajo), para una fase planeada y sin
+empezar: *Flare con fantasmas, estrella de difracción…*. Esta fase se
+queda con O4 y aquella pasa a **O6**, el siguiente libre (O5 es el editor
+de lentes de la misma tabla). (2) **Qué significa
+la inclinación de una lente trazada.** Se eligió que el mismo número dé el
+mismo plano que la lente simple (la lente real gira el ángulo que haga
+falta, y el motor lo dice), para que el dibujo del plano y los dos puntos
+valgan con las dos lentes; la otra opción, que el número sea el giro físico
+de la lente y el plano salga de su óptica, hace falsa la cuenta de la
+interfaz con una lente trazada. (3) **Curvatura de campo.** Con una
+lente trazada el plano por dos puntos es exacto en el centro y paraxial
+fuera: un punto en la esquina de la doble Gauss a f/8 cae a un 3–10 % de
+profundidad del plano (en el triplete, mucho más: es su campo curvo, igual
+que derecha). Resolverlo con rayos reales pediría al motor el plano de una
+cámara (un puerto nuevo): pendiente para después de F1 (abajo). (4) **La inclinación de la lente trazada se
+guarda aparte** (`tracedTiltDeg`, `tracedTiltAxisDeg`): una cámara trazada
+de antes con una inclinación de la lente simple guardada (el motor la
+ignoraba) no empieza a inclinarse; el desplazamiento, en cambio, es uno
+solo para las dos lentes, porque el motor ya lo aplicaba a las dos. (5) **El
+diafragma y la aberración cromática y el remolino** son de la cámara, no de
+cada lente (el motor los usa con las dos y así se guardaban): tocarlos con
+una lente trazada deja el bokeh de la lente simple en *A medida*.
+(6) **Los tipos de bokeh de la lente trazada** en la rejilla: primero
+salían apagados diciendo dónde estaba su lente; con la decisión se quitan
+de la rejilla. (7) El plano del visor se dibuja encima de todo
+(como los glifos y el *gizmo*), sin cortarse con el producto. (8) El dial
+guarda, al tocarlo, la inclinación positiva y el eje girado 180° si hacía
+falta: el mismo plano (test); lo guardado antes no se toca hasta que se
+edita. (9) **Coordinación**: *Por dos puntos* escribe la distancia de
+enfoque, que es su resultado (F1, que trae el foco por clic y sus modos,
+tendrá que decidir si pasa por sus modos al fusionar); no se tocó el clic de
+enfoque ni su rayo. K3: sus verticales rectas no escriben los campos
+`shiftXMm`/`shiftYMm`, suman su desplazamiento al renderizar; los dos se
+componen (arriba). (10) El modo
+Rápido sigue sin desenfoque: el plano dibujado es lo que lo sustituye
+mientras se ajusta. (11) El límite de 12° es el de la lente simple de O1
+para las dos (un descentrable real llega a unos 8,5°).
+
+**Decidido** (por la dirección de la sesión, sobre los puntos que este
+párrafo dejaba abiertos):
+
+1. **Sin tercer punto por ahora**: *Por dos puntos* basta. El plano del
+   visor se queda como está (encima de todo, al pasar el puntero, al elegir
+   los puntos o siempre con *Ver el plano*). `solveTilt` sigue resolviendo
+   tres puntos (test), sin mando.
+2. **La inclinación de una lente trazada es «el mismo plano que la lente
+   simple»**, como está.
+3. **Con una lente trazada, *Por dos puntos* debe resolverse con rayos
+   reales.** Pendiente: F1 trae `Camera::focus_distance_to` con el mejor
+   foco trazado; cuando F1 esté en `main`, el plano por dos puntos de una
+   lente trazada pasará por él (no se construye en O4).
+4. **El diafragma, la aberración cromática y el remolino son compartidos**
+   por los dos modelos, como está.
+5. **Los tres tipos de bokeh de la lente trazada se quitan** de la rejilla
+   de la lente simple (la persona no quiere opciones de la trazada
+   mezcladas). Hecho: la rejilla tiene 17 tipos; lo comprueban
+   `tests/lens-modes-browser.test.ts`, `tools/lens-check.mjs` y
+   `tools/optics-check.mjs`, y `camera-bokeh.png` está regrabada.
+6. **El límite de 12° se queda.**
+7. **La hoja `rt --tilt-sheet` se acepta.**
 
 ## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 
@@ -9330,13 +9541,17 @@ Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 2 (la DoF de E5b pasa a O1):
 
+*Renumerada:* el flare con fantasmas era **O4** en esta tabla y pasa a
+**O6**; O4 es ya la fase hecha *Lente simple y trazada: opciones de cada
+una*.
+
 | Fase | Responsable | Qué |
 | --- | --- | --- |
 | **A6** — hecha | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
 | **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
 | **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
 | **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
-| **O4** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
+| **O6** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
 | **O5** | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* |
 | **W1** | Opus | Evaluador de pines en el motor con muestreo por importancia; editor de pines; *Colocar brillo* |
 | **W2** | Sonnet | Biblioteca de 39 entornos (recetas, miniaturas, *hash*), exportar HDR/EXR, interiores horneados |

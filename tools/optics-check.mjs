@@ -5,8 +5,8 @@
 //
 // Without --url it serves dist/ with `vite preview` on port 4191 and stops it at the end.
 //
-//   tiles      Camera ▸ Bokeh shows the 20 types: 16 with the engine's thumbnail, the 4 that need the traced lens or
-//              wave optics disabled and saying so;
+//   tiles      Camera ▸ Bokeh shows the 17 types of the simple lens: 16 with the engine's thumbnail and the one of wave
+//              optics disabled and saying so (O4, decided: the 3 of the traced lens are not in this grid);
 //   choose     a click on Soap bubble marks it, is one undo entry ("Camera: Bokeh type") and sets Advanced optics
 //              (Profile: Bright ring);
 //   knob       moving a knob by hand (Obstruction) unmarks the type and the note says Custom; one undo brings it back;
@@ -132,7 +132,7 @@ try {
   await settle(page, 600);
 
   const r0 = await read(page);
-  check('tiles', r0.tiles === 20 && r0.withImage === 16 && r0.disabled.length === 4 && r0.disabledTips.every((t) => /traced lens|wave optics/.test(t)), r0);
+  check('tiles', r0.tiles === 17 && r0.withImage === 16 && r0.disabled.length === 1 && r0.disabledTips.every((t) => /wave optics/.test(t)), r0);
 
   await page.locator('[data-section="camera"] [data-bokeh="bubble"]').click();
   await settle(page);

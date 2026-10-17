@@ -811,8 +811,15 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    ![verticales rectas](k3-verticals.png)
    Debajo (O1, `src/ui/panels/insp-lens.ts`), los desplegables de la óptica:
    - **Lente** (abierto; O2, `src/ui/panels/insp-traced.ts`): *Modelo de
-     lente* (*Lente fina · Lente trazada*). Con la lente fina, una nota dice
-     lo que es (una lente ideal). Con una trazada: *Carácter*, una fila de
+     lente* (*Lente simple · Lente trazada*; O4: la *lente fina* se llama
+     ahora **lente simple**, y el proyecto la sigue guardando como `thin`),
+     con la etiqueta encima y los dos botones a todo el ancho (en español
+     no cabían al lado). Con la lente simple, una nota dice lo que es (una
+     lente ideal, con el bokeh de los mandos de abajo). Cambiar de modelo
+     **no borra nada**: el bokeh elegido y la *Óptica avanzada* de la lente
+     simple se quedan en la cámara y vuelven tal cual al volver a ella; la
+     lente trazada entra como la de partida (la doble Gauss). Con una
+     trazada: *Carácter*, una fila de
      chips (*Clínica · Suave · Remolino · Vintage · Anamórfica · Macro · Gran
      angular · Tele · Míos*) que filtra la lista *Lente* (las lentes del
      catálogo de ese carácter, por su nombre genérico); *Míos* enseña las
@@ -836,7 +843,18 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      foco*; y dos curvas pequeñas, *Distorsión* y *Luz hacia la esquina*, con
      su valor en la esquina. Mientras el motor contesta dice *Preguntando al
      motor…*; sin motor, *El motor no está disponible aquí*; si no forma
-     imagen, lo dice. **Avanzado** (plegado), bajo **NO FÍSICO**:
+     imagen, lo dice; con la lente inclinada, una fila más, *Inclinación de
+     la lente*: el ángulo que el motor gira la lente para dar el plano
+     pedido. **Más opciones** (plegado; era *Avanzado*, O4): primero
+     **Inclinación y desplazamiento**, el mismo bloque que en la *Óptica
+     avanzada* de la lente simple (abajo), con la inclinación propia de la
+     lente trazada y una nota (*la lente trazada gira hasta que su plano es
+     el que tendría la lente simple; lejos del centro su propia curvatura de
+     campo lo dobla un poco*); con el adaptador anamórfico, que tiene
+     cilindros y no se inclina, el bloque dice eso en vez de los mandos;
+     luego **Diafragma** (*Redondez*, *Giro*, *Obstrucción*: los mismos
+     valores que la *Óptica avanzada*, ahora a mano también con una lente
+     trazada, que los usa en su diafragma) y, bajo **NO FÍSICO**,
      *Distorsión*, *Viñeteo*, *Carácter de la esférica*, *Respiración*,
      *Aberración cromática* y *Remolino*. **Guardar lente como…** pide un
      nombre en el sitio y la guarda en *Míos*. Dos notas: el modo Rápido
@@ -844,13 +862,14 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      *Lente trazada: distorsión y viñeteo aproximados, el render la traza*;
      el contorno, el *gizmo* y los glifos van con ella, y los clics, la caja
      y el *gizmo* cogen lo que se ve bajo el cursor),
-     y con una lente trazada el perfil, el ojo de gato, la compresión
-     anamórfica y la inclinación de la lente fina no se aplican (en *Óptica
-     avanzada* salen apagados con esa nota). Cada cambio es una entrada de
+     y con una lente trazada la lente hace su propia pupila, su ojo de gato,
+     su bokeh y sus flecos: **el Bokeh y la Óptica avanzada no salen** (son
+     de la lente simple, O4). Cada cambio es una entrada de
      deshacer (*Cámara: Modelo de lente*, *Cámara: Lente*, *Cámara:
      Tratamiento*…).
      ![editor de lente](lens-editor.png)
      ![lo que calcula el motor](lens-section.png)
+     ![más opciones de la lente trazada](o4-traced-more.png)
 
      **Ventana de los elementos** (O2b, `src/ui/components/lens-peek.ts`,
      la lógica en `src/ui/lens-peek.ts`): al dejar el puntero un momento
@@ -882,35 +901,80 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      recorta).
      ![ventana de una lente de la lista](lens-hover.png)
      ![ventana de las lentes de un carácter](lens-hover-chip.png)
-   - **Bokeh** (abierto): rejilla de 4 columnas con los 20 tipos de
-     `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
+   - **Bokeh** (abierto; **solo con la lente simple**, O4: con una lente
+     trazada no sale): rejilla de 4 columnas con los 17 tipos de la lente
+     simple de `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
      el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
      doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
      descripción del tipo va en el *tooltip* y, del elegido, en una nota.
      Los tres de la lente trazada (O2: cometa de coma, respiración de
-     foco, aberración esférica variable) tienen su miniatura renderizada
-     con su lente y la ponen en la cámara (lo dice el *tooltip*); el de
+     foco, aberración esférica variable) **no están en la rejilla** (O4:
+     son de sus lentes en *Lente ▸ Lente trazada*, y en las opciones de la
+     lente simple no se mezcla nada de la trazada); el de
      difracción sale apagado con *Próximamente* (*Necesita óptica de
-     ondas*). Un tipo
+     ondas*). Ningún camino aplica un bokeh a una cámara con lente trazada
+     ni la saca de ella: todos pasan por la orden `applyBokeh`
+     (`src/ui/lens-commands.ts`), que con una lente trazada no toca la
+     cámara y avisa *El bokeh es una opción de la lente simple: esta cámara
+     tiene una lente trazada, que hace el suyo*. Un tipo
      con variantes (polígono recto o curvo, obstrucción pequeña o
      grande, polvo, rayas o malla, las estrellas y el corazón, 7 o 19
      agujeros) muestra *Variante* y su miniatura en la casilla. Mover un
      mando a mano desmarca el tipo y la nota dice *A medida*. *Disco
-     sencillo* quita toda la óptica (la lente fina de siempre). Cada
+     sencillo* quita toda la óptica (la lente simple de siempre). Cada
      elección es una entrada de deshacer (*Cámara: Tipo de bokeh*).
      ![bokeh](camera-bokeh.png)
-   - **Óptica avanzada** (cerrado): *Láminas* (0 es *Diafragma redondo*,
+   - **Óptica avanzada** (cerrado; **solo con la lente simple**, O4):
+     *Láminas* (0 es *Diafragma redondo*,
      de 3 a 18), *Redondez*, *Giro*, *Perfil* y su *Intensidad*,
      *Obstrucción*, *Ojo de gato* (oscurece las esquinas como los bordes
      de una lente real; lo dice el *tooltip*), *Anamórfico* (*No · 1,33× ·
      2×*; la imagen sale ya desestirada, y el *tooltip* avisa de que el
-     bokeh ovalado concentra más luz al mismo diafragma), *Inclinación* y *Eje de la
-     inclinación* (Scheimpflug; a 0° el plano de enfoque se inclina hacia
-     el suelo), *Desplazamiento* H y V en mm (mueve el encuadre sin
-     cambiar la perspectiva; el modo Rápido lo muestra), y bajo la marca
+     bokeh ovalado concentra más luz al mismo diafragma), el bloque
+     **Inclinación y desplazamiento** y bajo la marca
      **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
      que todo esto se ve en el modo Completo y en el render.
      ![óptica avanzada](camera-optics.png)
+
+     **Inclinación y desplazamiento** (O4, `src/ui/panels/insp-tilt.ts`; el
+     mismo bloque en la *Óptica avanzada* de la lente simple y en *Más
+     opciones* de la trazada, cada modelo con su inclinación):
+     *Inclinación*, un deslizador de 0° a 12° (cuánto gira el plano de
+     enfoque alrededor del punto de enfoque; a 0° queda de frente);
+     *El plano se aleja hacia*: un **dial** (arrastrar la aguja; Mayús
+     ajusta de 15° en 15°; con el foco, las flechas giran 15° y Mayús +
+     flechas 1°), **cuatro atajos** (*Arriba: como el suelo*, *Abajo: como
+     el techo*, *Izquierda: como una pared a la derecha*, *Derecha: como una
+     pared a la izquierda*; con la inclinación a 0, un atajo la pone a 2°
+     hacia ese lado) y el ángulo en grados (0 derecha, 90 arriba). Es la
+     lectura de fotógrafo del par guardado (inclinación con signo y eje):
+     hacia dónde de la imagen se aleja el plano y cuánto, nunca un número
+     negativo. **Por dos puntos…**: arma el visor; el primer clic en el
+     producto (*Haz clic en el primer punto que tiene que salir nítido*) y
+     el segundo (*…el plano de enfoque pasará por los dos*) ajustan la
+     inclinación **y la distancia de enfoque** para que los dos salgan
+     nítidos, en **una sola entrada de deshacer** (*Inclinar el plano de
+     enfoque por dos puntos*): de los planos que pasan por los dos, el menos
+     inclinado (dos puntos a la misma profundidad solo enfocan). Si no hay
+     inclinación que llegue (más de 12°), los puntos están en línea con la
+     vista o el plano pasaría por detrás, un aviso lo dice y espera otro
+     segundo punto; Esc o volver a pulsar lo sueltan. *De frente* quita la
+     inclinación. **Ver el plano** dibuja el plano de enfoque en el visor:
+     un cuadrado translúcido con su rejilla y su contorno, en la tinta de
+     la interfaz (grises), alrededor del producto y en perspectiva (un
+     trapecio cuando el plano se tumba), con el punto de enfoque; sale
+     también mientras el puntero o el foco están en estos mandos y mientras
+     se eligen los dos puntos (con el primero marcado), en Rápido y en
+     Completo. *Desplazamiento* H y V en mm (mueve el encuadre sin cambiar
+     la perspectiva; el modo Rápido lo muestra) es de la cámara, sea cual
+     sea su lente; las *Verticales rectas* de K3 suman el suyo al
+     renderizar, sin escribir en estos campos, y el plano dibujado y *Por
+     dos puntos* son los de la cámara nivelada que se renderiza. Una nota recuerda que el modo
+     Rápido no desenfoca: el plano sale en el visor mientras se ajusta y el
+     modo Completo y el render enfocan en él. Cada cambio es una entrada de
+     deshacer (un arrastre del deslizador o del dial, uno solo).
+     ![óptica avanzada de la lente simple](o4-simple-optics.png)
+     ![el plano de enfoque en el visor](o4-tilt-overlay.png)
    - **Filtros** (cerrado si la cámara no tiene ninguno; O3a): la pila de
      filtros de efecto delante del objetivo, hasta tres, en orden. Sin
      ninguno dice *Sin filtros*. **Añadir filtro** pone una *Difusión
@@ -1669,7 +1733,7 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   vista previa (más lento)*, que parte del trazador con el presupuesto del
   trabajo. El fotograma y sus pases de `AI-POST.md` §7.4 (dibujados con
   three.js: ids de pieza y de material del propio RSB, profundidad, normales
-  en el mundo con Z arriba, albedo, círculo de confusión de la lente fina) se
+  en el mundo con Z arriba, albedo, círculo de confusión de la lente simple) se
   calculan una vez y se reutilizan mientras cambian solo los controles.
 - **De dónde sale** (X3c): en la aplicación de escritorio, de la tubería del
   lanzador (`src/io/ai-post.ts`): el interruptor puede encenderse cuando
@@ -1944,7 +2008,7 @@ título del grupo en versalitas auxiliares:
 | Grupo | Sección | Qué hay |
 | --- | --- | --- |
 | **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
-| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Luces* (L7): *Un montaje sobre focos* (*Preguntar* · *Sustituir* · *Ocultar* · *Añadir*), lo que hace un set o un montaje con los focos que hay; *Recordar mi elección* de la pregunta lo escribe aquí. *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
+| | **Preferencias** | *Visor y navegación* (el visor arranca siempre en *Rápido*): esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Luces* (L7): *Un montaje sobre focos* (*Preguntar* · *Sustituir* · *Ocultar* · *Añadir*), lo que hace un set o un montaje con los focos que hay; *Recordar mi elección* de la pregunta lo escribe aquí. *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
@@ -2363,8 +2427,7 @@ suelte). El valor se queda en su mínimo y su máximo, y la flecha que ya no
 puede moverlo se apaga; al llegar ahí la repetición para, y la pulsación
 sigue acabando donde se suelte el botón, dentro o fuera de él. Un campo
 deshabilitado apaga las dos (también el que una fila deshabilita:
-*próximamente* en Ajustes, los términos de la proporción, los mandos de la
-lente fina con una lente trazada; `setDisabled`). Las flechas **no son
+*próximamente* en Ajustes, los términos de la proporción; `setDisabled`). Las flechas **no son
 paradas de tabulación** ni toman el foco: lo tiene el *spinbutton*, que
 sigue con el teclado; se llaman *Aumentar* y *Disminuir* (`strings.ts`)
 para las ayudas técnicas, y un clic sin puntero (el de un lector de
