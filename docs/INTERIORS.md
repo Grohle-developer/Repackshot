@@ -133,6 +133,14 @@ proyecto: el ciclorama (K2), la exposición automática y el mando EV, la
 altura de ojo y las verticales rectas (K3), el rodillo largo y *Low contrast*,
 y las unidades mostradas (una preferencia de la aplicación).
 
+**Hecho en K3**: *Interior* enciende la **exposición automática** y las
+**verticales rectas** de la cámara activa, como dos casillas más del
+mismo mecanismo (`image.exposureMode` y `camera.verticals:<id>`), y
+volver de tipo las deja como estaban. La **altura de ojo no** se aplica
+al cambiar de tipo: mover la cámara a 1,5 m cambia el encuadre que los
+chequeos de K1 miden y el viaje de ida y vuelta de esos tests dejaba de
+cuadrar; queda como presets en el inspector (◆ Fable, `ROADMAP.md` K3).
+
 ### 3.2 · La habitación es un nodo
 
 Nodo `ROOM` paramétrico (fase K2), con lo mínimo que piden los flujos
@@ -185,6 +193,19 @@ un entorno completo.
   habitación.
 - **Recorrido** (*walkthrough*): WASD y ratón con altura fija, para
   encontrar el encuadre; se añade a la herramienta de vista.
+
+**Hecho en K3** (`ROADMAP.md`, con los números): verticales rectas
+(apagables, con el *shift* que sale de la inclinación escrito en el
+*shift* de la óptica de O1), presets de altura de ojo y de ópticas de
+interior, *Visible a cámara* por pieza (vista previa y RSB, bit
+`INSTANCE_NO_CAMERA`), alzado y planta ortográficos, panorámica
+equirectangular y *fisheye* (la vista previa por las seis caras de un
+cubo, el motor con proyecciones propias en `CAMR`), exposición automática
+con *Brillo (EV)* y presets, y el multiplicador de exterior en el rayo de
+cámara. **No** se hizo: el recorrido WASD (lo cubre N3), el render por
+franjas de la panorámica (es K6; el motor la renderiza entera), ISO y
+obturador en *Avanzado*, la pared frontal oculta y el recorte cercano
+automático (K2, con el nodo `ROOM`).
 
 ### 3.5 · Luz y materiales de mobiliario
 

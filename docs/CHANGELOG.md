@@ -5,9 +5,35 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- Dos proyecciones nuevas de cámara: **panorámica equirectangular** (360° × 180° en una imagen 2:1) y **ojo de pez** equidistante (hasta 360°, negro fuera del círculo de imagen), al final de `CAMR`; un archivo sin ellas conserva sus bytes (K3).
+- **Visible a cámara** por instancia (bit 2 de `INST.flags`, `INSTANCE_NO_CAMERA`): la cámara no ve la pieza y las sombras, los rebotes y los reflejos sí; es la planta con el techo que sigue dando luz (K3).
+- **Multiplicador de exterior** en el rayo de cámara: oscurece lo que la cámara ve del entorno, también por las ventanas, sin oscurecer la luz que entra (K3).
+- `rt_features` y `/api/info` dicen que el motor lee las cámaras de interiores (bit 4, `FEATURE_CAMERAS`); tres imágenes fijadas nuevas (planta, panorámica y ojo de pez), iguales en todas las rutas SIMD, con 1, 4 y 16 hilos, en WASI y en el `rt.wasm`; ninguna anterior se movió (K3).
+
+### Interfaz
+
+- **Verticales rectas** en la sección *Cámara*: la cámara se renderiza nivelada y la lente se desplaza para conservar el encuadre, con la nota del desplazamiento; el tipo *Interior* las enciende (K3).
+- **Altura de ojo** con los presets *De pie* 1,5 m y *Sentado* 1,1 m, y **ópticas de interior** 24, 28 y 35 mm (K3).
+- **Proyección**: *Perspectiva*, *Ortográfica*, *Panorámica 360° (2:1)* y *Ojo de pez*; las vistas *Alzado* y *Planta*; el modo Rápido dibuja las panorámicas desde las seis caras de un cubo con el mismo mapa que el motor (K3).
+- **Visible a cámara** en la sección *Pieza*, en Rápido y en Completo (K3).
+- **Exposición automática** en la sección *Imagen*, con el mando *Brillo (EV)*, la medida en una nota y en la barra de estado, los presets *Día luminoso · EV 7* y *Tarde de lámparas · EV 5* y el deslizador *Exterior (rayo de cámara)*; el tipo *Interior* la enciende (K3).
+
 ### Herramientas
 
+- `tools/k3-check.mjs`: la cámara de interiores en el navegador sobre una habitación de prueba (verticales rectas, planta con el techo oculto, panorámica, cromo acromático), con tres capturas nuevas (K3).
+
 - `tools/render-window-check.mjs` ya no se agota en su paso (g): cerraba el visor de resultados con una pausa fija, y un Esc que llegaba antes de que el visor abriera deseleccionaba el cuerpo; *Copper* pedía entonces *Sustituir todos* dentro de la paleta, que seguía abierta y se tragaba Ctrl+Mayús+Intro. Ahora espera al visor antes de cerrarlo, comprueba la selección y que la paleta se cierre, y si algo falla lo dice en segundos; las cuatro capturas de U5 se regrabaron con la interfaz de hoy, `render-window-animation.png` con el vídeo ya disponible.
+
+### Limitaciones conocidas de esta versión
+
+- No hay recorrido WASD con altura fija: queda para la fase de recorridos (N3) (K3).
+- La panorámica se renderiza entera, no por franjas: las franjas son de los entregables (K6) (K3).
+- En Rápido, nada se dibuja encima de una panorámica (contorno, *gizmo*, glifos) y la panorámica no lleva fondo degradado ni imagen de fondo: se ven como color (K3).
+- La exposición automática la mide la página: una escena exportada y renderizada con `rt` fuera de la aplicación lleva solo la compensación (K3).
+- La curva de la imagen es la transformada de vista; *Low contrast*, el rodillo largo, ISO y obturador siguen sin hacer (K3).
+- El tipo *Interior* no mueve la cámara a la altura de ojo; los presets están en la sección *Cámara* (K3).
 
 ## v0.1.16 — 2026-10-17
 

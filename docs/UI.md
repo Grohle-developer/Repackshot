@@ -736,6 +736,22 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    deshacer (*Cámara: Proporción*; arrastrar un término es un solo
    gesto). Cambiarla no recoloca la cámara: *Encuadrar* la ajusta a la
    nueva imagen.
+   **Cámara de interiores** (K3, `interiorCameraFields` en
+   `src/ui/panels/insp-scene.ts`): el interruptor Perspectiva / Ortográfica
+   es ahora la lista **Proyección** (*Perspectiva · Ortográfica ·
+   Panorámica 360° (2:1) · Ojo de pez*); con una panorámica, una nota dice
+   que el modo Rápido la dibuja con seis caras de cubo y que no se dibuja
+   nada encima, y el *ojo de pez* añade **Campo de visión** (60°–360° en la
+   diagonal del encuadre). **Verticales rectas** (interruptor; apagado salvo
+   en *Interior*) con su nota debajo: *Desplazamiento de −4,2 mm para 10° de
+   inclinación*, *La cámara está nivelada: nada que corregir* o, en una
+   panorámica, *La panorámica se renderiza nivelada*. **Altura de ojo**
+   (campo en mm) con los chips *De pie · 1,5 m* y *Sentado · 1,1 m*
+   (*Cámara: altura de ojo De pie*), y **Ópticas de interior**: chips *24 mm
+   · 28 mm · 35 mm*, el activo marcado. Todo es una entrada de deshacer; con
+   la cámara bloqueada, deshabilitado. Las vistas del visor ganan *Alzado* y
+   *Planta* (ortográficas).
+   ![verticales rectas](k3-verticals.png)
    Debajo (O1, `src/ui/panels/insp-lens.ts`), los desplegables de la óptica:
    - **Lente** (abierto; O2, `src/ui/panels/insp-traced.ts`): *Modelo de
      lente* (*Lente fina · Lente trazada*). Con la lente fina, una nota dice
@@ -856,6 +872,16 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
 7. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
+   K3: **Modo de exposición**, segmentado *A mano · Automática*; en
+   automática el campo pasa a llamarse **Brillo (EV)** (la compensación
+   sobre lo medido, 0 al encenderla) y una nota dice lo medido (*Medida de
+   la imagen del motor: +4,64 EV*, o *aún sin medir* hasta que el modo
+   Completo o el render dan imagen; la barra de estado lo repite).
+   **Presets de brillo**: chips *Día luminoso · EV 7* y *Tarde de lámparas ·
+   EV 5*, que ponen la exposición a mano (*Exposición: Día luminoso*).
+   **Exterior (rayo de cámara)**, deslizador 0,05–1 (1, sin efecto, por
+   defecto): oscurece lo que la cámara ve del entorno, también por las
+   ventanas, sin oscurecer la habitación.
 
 **Con una o varias piezas seleccionadas:**
 
@@ -949,7 +975,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    un deslizador por tipo (solo los de `WEAR_FAMILY_TYPES` para la familia
    actual) que despliega sus mandos al activarse. Escala, semilla, *variar
    por pieza*, y *Aplicar a toda la pieza*.
-4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
+4. **Pieza** — Nombre, visible, **visible a cámara** (K3: apagado, la
+   cámara no la ve y sigue dando luz, reflejos y sombra; *Ocultar Techo a la
+   cámara*; es lo que quita el techo de una planta), bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
    *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado. El
    bisel es del material (lo dice la nota bajo el campo: *Es del material.
@@ -1285,7 +1313,11 @@ Captura (`tools/queue-live-check.mjs`): `docs/ui/queue-live.png` y
 Luego: piezas · triángulos · motor y dispositivo · muestras y tiempo del
 visor y, en *Rápido* con algún efecto de *Ambiente* (S4a), *Partículas N
 de M* (las que dibuja de las que el motor evalúa) o, sin `rt.wasm`,
-*Partículas: solo las regiones (el motor no está compilado)*. A la
+*Partículas: solo las regiones (el motor no está compilado)*; con una
+cámara panorámica en *Rápido* (K3), *Panorámica: dibujada con seis caras de
+cubo, el render la traza*; con la exposición automática (K3), *Exposición
+automática +4,64 EV* (lo que mide la página de la imagen del motor) o
+*Exposición automática: aún sin medir*. A la
 derecha: idioma y versión.
 
 **Nota del motor de ejecución** (fase U10, solo escritorio): si al

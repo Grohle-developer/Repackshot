@@ -80,7 +80,8 @@ export function meterExposure(src: MeterSource): number | null {
   const mean = sum / (hi - lo);
   const ev = log2(f(AUTO_MIDDLE_GREY)) - mean;
   const clamped = Math.max(-AUTO_EV_LIMIT, Math.min(AUTO_EV_LIMIT, ev));
-  return Math.round(clamped / AUTO_EV_STEP) * AUTO_EV_STEP;
+  const steps = Math.round(1 / AUTO_EV_STEP);
+  return Math.round(clamped * steps) / steps;
 }
 
 /**

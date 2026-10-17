@@ -1137,12 +1137,57 @@ misma distorsión, y un clic (enfocar con clic, seleccionar, la caja, el
 *gizmo*) cae en lo que está bajo el cursor: el mismo mapa al revés. Cambiar de
 lente no toca la resolución de salida.
 
+**Cámara de interiores (K3).** `CameraState.projection` es
+`PERSPECTIVE`, `ORTHOGRAPHIC`, `EQUIRECTANGULAR` (panorámica 2:1, 360° ×
+180° sobre la imagen entera) o `FISHEYE` (equidistante, `fisheyeFovDeg`
+de 60° a 360° sobre la diagonal de la imagen, 180° por defecto); un
+proyecto con una clave desconocida abre en perspectiva. Las dos
+panorámicas parten de la posición de la cámara y de su marco
+(acimut y elevación): el centro de la imagen mira al objetivo y la vista
+previa las dibuja desde las seis caras de un cubo con el mismo mapa que
+el motor. **Vistas** nuevas: *Alzado* (ortográfica a 0° de elevación) y
+*Planta* (ortográfica desde arriba, 89,9°). **Verticales rectas**
+(`straightVerticals`, apagable): se renderiza la cámara nivelada en la
+misma posición y el mismo acimut, con el *shift* vertical que deja el
+objetivo donde estaba (−f · tan inclinación, sumado al *shift* de la
+óptica de O1), hasta 30° de inclinación; más allá de 30° la parte de
+más se queda como inclinación (`VERTICALS_MAX_TILT_DEG`). En una
+ortográfica no hace falta y en un *fisheye* las verticales son curvas: no
+se aplica; una equirectangular se renderiza nivelada, sin *shift*.
+**Altura de ojo** (`camera/eyeHeight`): sube o baja la cámara hasta esa
+altura sobre el suelo (Z del mundo) y la deja mirando al mismo objetivo;
+presets *De pie* 1,5 m y *Sentado*
+1,1 m. **Ópticas de interior** (`camera/interiorLens`): 24, 28 y 35 mm
+(`src/data/interior-camera.ts`). Una cámara bloqueada no se mueve con
+ninguna de las dos acciones. Una pieza con **Visible a cámara**
+apagado (`SceneNode.cameraHidden`, heredado por los hijos) no la ve la
+cámara (ni los pases, ni las tapas de sección, ni el picado) pero sigue
+dando sombra, rebotes y reflejos: la planta sin techo y con la luz del
+techo.
+
 ### 3.6 · Imagen
 
 Exposición en EV, transformada de vista (`STANDARD`, `FILMIC`, `AGX`),
 halo (umbral, tamaño, mezcla), nitidez, saturación, contraste, viñeta.
 Se aplican en este orden fijo sobre la imagen lineal: halo → nitidez →
 color → viñeta → transformada. Con todo a cero, la imagen no cambia.
+
+**Exposición como pase (K3).** `image.exposureMode` es `MANUAL` (el de
+siempre, la exposición son `exposureEv` paradas) o `AUTO`: el pase de
+exposición mide la imagen lineal en la página (`core/image-passes.ts`,
+determinista: luminancia en `f32`, logaritmo en base 2, se descarta el
+10 % más oscuro y el 5 % más claro, la media se lleva al gris del 18 %,
+±16 paradas, redondeada a la centésima) y `exposureEv` es entonces la
+compensación *Brillo (EV)* sobre lo medido. La medida se rehace cuando
+las muestras se duplican y, en un render final, sobre las sumas antes del
+*denoise*. Los **presets** *Día luminoso* (EV₁₀₀ 7) y *Tarde de lámparas*
+(EV₁₀₀ 5) ponen la exposición a mano: `exposureEv = log2(683 / 1,2) − EV₁₀₀`.
+El **multiplicador de exterior** (`environment.exterior`, 0,05 … 1, 1 por
+defecto y sin escribir) multiplica el entorno que ve el rayo de cámara
+(también a través de vidrio fino y de recortes) y el fondo del
+atrapasombras, y no la luz que ese entorno da a la habitación. Los pases
+que aplica la página son `exposure` y `curve` (la transformada); el resto
+sigue igual.
 
 ### 3.7 · Animación, al estilo KeyShot
 
@@ -1443,7 +1488,8 @@ los proyectos anteriores abren como *Producto*); una **habitación** paramétric
 ciclorama); **ventanas que iluminan solas** (portales automáticos, vidrio
 fino, vista exterior en un plano con paralaje); **cámara de interiores**
 (verticales rectas, altura de ojo, panorámica, alzados y planta,
-exposición automática, recorrido); Doctor de interiores (siete chequeos de escena, K1; el resto, con el
+exposición automática, recorrido; hecho en K3 salvo el recorrido, §3.5 y
+§3.6); Doctor de interiores (siete chequeos de escena, K1; el resto, con el
 motor); grupos de luz
 ajustables tras el render; entregables de mobiliario (silos con alfa y
 cotas, variantes, 360). Las decisiones, las fuentes y las fases están en

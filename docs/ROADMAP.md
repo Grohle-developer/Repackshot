@@ -8188,7 +8188,7 @@ oculta solo en cámara); la heurística marca el vidrio de un fixture de
 habitación importada y no marca un vaso; captura de la sala de ejemplo
 en la vista previa.
 
-## K3 · Cámara de interiores — **Opus**
+## K3 · Cámara de interiores — **Opus** — hecha
 
 **Qué.** `INTERIORS.md` §3.4: *shift* con cálculo automático
 (*verticales rectas*, apagable), altura de ojo con presets, ópticas de
@@ -8206,6 +8206,101 @@ de un cubo quedan paralelas en la proyección (±0,1 px a 1080p); la
 panorámica de la vista previa coincide con la del motor en seis
 direcciones de prueba; la planta no muestra el techo y la habitación
 sigue iluminada por él (comparación de medias); capturas.
+
+**Hecho.**
+
+*Motor.* Dos proyecciones nuevas en `rt_core::scene` (`Projection`, `Camera::panorama_dir`): la **equirectangular**
+(longitud y latitud sobre la imagen, 360° × 180° en 2:1) y el **ojo de pez equidistante** (`θ` proporcional a la distancia
+al centro, negro más allá de media vuelta), estenopeicas y desde la base de la cámara; la profundidad de los pases es la
+distancia, y las huellas de píxel de partículas, texturas y cáusticas toman el cono de la esfera. `CAMR` gana 16 bytes al
+final (`u32 projection; f32 fov_x_deg fov_y_deg exterior`) que **solo se escriben si alguno no es el de por defecto**: los
+archivos de antes conservan sus bytes y ningún *hash* se movió. **Visible a cámara** por instancia: `INST.flags` bit 2
+(`INSTANCE_NO_CAMERA`, valor 4, junto al bit 1 de `INSTANCE_NO_SECTION`); solo las consultas `RayClass::Camera` (rayos
+primarios y sus continuaciones rectas, pases, tapas de sección) se la saltan, en la BVH, en la fuerza bruta y en las
+tapas. El **multiplicador de exterior** (`CAMR.exterior`) multiplica el entorno que ve un rayo de cámara al escapar
+(también por paredes finas y recortes) y el fondo del atrapasombras. `rt_features` y `/api/info` suben el bit 4 (valor
+16, `FEATURE_CAMERAS`). Tres escenas de paridad sobre la habitación de cajas de `example::k3_room` (`rt
+--write-k3-plan-example`, `--write-k3-panorama-example`, `--write-k3-fisheye-example`, y sus `tests/fixtures/k3-*.rsb`):
+`PINNED_K3_PLAN_4SPP` = `0x6efb1e66`, `PINNED_K3_PANORAMA_4SPP` = `0x96de8d73`, `PINNED_K3_FISHEYE_4SPP` = `0x9b85a1b6`,
+iguales en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, en WASI escalar y `simd128`, en el `rt.wasm` real y (la
+panorámica) por la API del lanzador; un bloque de paridad K3 en `engine.yml`, imagen sola y con `--passes`.
+
+*Página.* `CameraState.projection` (`PERSPECTIVE · ORTHOGRAPHIC · EQUIRECTANGULAR · FISHEYE`) en la lista *Proyección* de la
+sección *Cámara*, `fisheyeFovDeg` (60°–360° en la diagonal del encuadre) y las vistas *Alzado* y *Planta* (ortográficas).
+**Verticales rectas** (`straightVerticals`, `core/interior-camera.ts`): se escribe la cámara nivelada en la misma
+posición y el mismo acimut, con el *shift* `−f · tan(inclinación)` sumado al de la óptica en el `LENS` de O1 que ya
+existía (como pidió O4: una herramienta que mueve el *shift*, sin reordenar la óptica); la vista previa pone la misma
+corrección en la proyección (`render/camera-projection.ts`, `P · Rx`), así que el picado, el contorno y el *gizmo* la
+siguen. **Altura de ojo** (`camera/eyeHeight`, presets *De pie* 1,5 m y *Sentado* 1,1 m) y **ópticas de interior**
+(`camera/interiorLens`, 24 · 28 · 35 mm), una entrada de deshacer cada una, nada con la cámara bloqueada. **Visible a
+cámara** en *Pieza* (`SceneNode.cameraHidden`, heredado, `scene/setCameraHidden`): bit 2 de `INST` para el motor; en
+Rápido, un material que no escribe color ni profundidad y sigue dando sombra, fuera del picado, de la caja, de los
+tintes y del pase de ids. **Panorámicas en Rápido** (`render/panorama-pass.ts`): la escena en las seis caras de un cubo
+(medio flotante, lineal) y el lienzo desde el cubo con `PANORAMA_GLSL`, el mismo mapa que el motor
+(`core/panorama.ts`), sobre el lienzo entero con el encuadre de salida dentro, como la imagen del visor Completo; el
+picado sigue el mapa. **Exposición como pase** del estado `image` (`core/image-passes.ts`): `exposureMode` *A mano ·
+Automática*; la automática mide en la página las sumas de la acumulación (luminancia `f32`, `log2` del motor, 10 % más
+oscuro y 5 % más claro fuera, media al gris del 18 %, ±16 EV, centésimas), y `exposureEv` pasa a ser la compensación
+*Brillo (EV)*; el visor la rehace cuando las muestras se duplican, y el render final mide sus sumas antes del
+*denoise*, en el *pool* y en el lanzador. Presets *Día luminoso · EV 7* y *Tarde de lámparas · EV 5* (exposición a mano,
+`log2(683/1,2) − EV₁₀₀`) y el deslizador *Exterior (rayo de cámara)* (`environment.exterior`, también en el fondo de
+Rápido). El tipo *Interior* enciende las verticales rectas y la exposición automática por el mecanismo de casillas de
+K1 (`image.exposureMode`, `camera.verticals:<id>`): volver de tipo deja el proyecto como estaba. Proyecto, biblioteca y
+estudio guardan y normalizan los campos nuevos; un proyecto de antes abre igual.
+
+*Criterio, en números.* **Verticales**: con la cámara inclinada 10° (28 mm, 1920 × 1080), las aristas verticales de un
+cubo de 600 mm quedan a **0 px** de paralelas en la proyección de la página y en la de Rápido, y a **0,0001 px** con los
+rayos del motor (`rt-core`, leyendo el archivo que escribe la página, `tests/fixtures/k3-verticals.rsb`); sin
+verticales rectas, 7,5 px (página) y 6,4 px (motor). Rápido y motor coinciden punto a punto a < 0,01 px; el objetivo
+sigue en el centro (< 10⁻⁶ px). **Panorámica**: en un cuarto cerrado de seis paredes de seis colores, las seis
+direcciones ±X ±Y ±Z de la equirectangular (y cinco del ojo de pez de 360°, y negro fuera del círculo de imagen) dan
+el color de su pared en el `rt.wasm` real y en Chromium, y el picado de Rápido coge esa pared. **Planta**: en la
+habitación de prueba, la media del suelo visto desde arriba con el techo oculto a cámara es **0,010220**; la misma
+habitación vista desde debajo del techo, **0,010220** (+0,0000 %); sin techo, 0,002109 (20,6 %), y el techo no aparece
+(0,000000 de lo que la cámara ve de él). En el navegador (`tools/k3-check.mjs`), la planta con el techo oculto cambia la
+imagen de Rápido y el visor Completo la muestra iluminada (media del visor 85 sobre 255; el umbral de la prueba es 12) con la exposición automática medida (+2,6 EV).
+
+*Pruebas.* `scene::camera_tests` y `render::k3_tests` de rt-core (mapas, CAMR de ida y vuelta e inválidos, verticales,
+las tres imágenes fijadas, medias de la planta, pases, clases de rayo con tapas, exterior exacto a la mitad, la
+habitación sin campos K3 igual que antes), `rt-cli/tests/example.rs` (1, 4 y 16 hilos, escribir los ejemplos),
+`rt-app/tests/parity.rs`; `tests/interior-camera.test.ts` (24: el criterio de verticales en página y Rápido, el
+límite, altura de ojo, ópticas, vistas, mapas, `CAMR` e `INST` byte a byte con `rt`, herencia, exterior, proyecto,
+`readsCameras`, *Interior* de ida y vuelta, el `rt.wasm` real con los tres fijados y las seis direcciones),
+`tests/image-passes.test.ts` (11: el medidor), `tests/panorama-browser.test.ts` (4, Chromium: seis y cinco direcciones,
+el círculo de imagen, una pared oculta a cámara ni se dibuja ni se pica) y una prueba del *pool* en
+`tests/pathtracer.test.ts`. **Mutaciones**: MUTACIONES_K3.
+
+*Capturas.* `docs/ui/k3-verticals.png` (la habitación en Completo con las verticales rectas y la sección *Cámara*),
+`k3-plan.png` (la planta en Completo con el techo oculto y la exposición automática en la barra de estado) y
+`k3-panorama.png` (la panorámica 2:1 en Completo), con sus versiones de Rápido en `-fast`; entradas en `GALERIA.md`
+bajo *Sin publicar*.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de **Fable** y queda propuesto, sin decidir):
+(1) **No hay recorrido WASD** con altura fija: lo cubre N3 (*Paseo de cámara*), con la especificación aplazada en `TODO.md` §3 (*Paseos a pie*).
+(2) **No hay nodo `ROOM`** (es K2): las pruebas y la comprobación del navegador usan una habitación de cajas y la
+visibilidad a cámara por pieza, que vale para cualquier geometría; la pared frontal oculta y el recorte cercano
+automático de `INTERIORS.md` §3.4 quedan para K2. (3) **El motor no renderiza la panorámica por franjas**: la renderiza
+entera, por baldosas como cualquier imagen; las franjas para tamaños grandes son de K6. (4) **El *shift* va en `LENS`,
+no en `CAMR`**: las verticales rectas mueven el *shift* de la óptica de O1 (lo que pidió O4); el motor no sabe de ellas.
+(5) **La curva es la transformada de vista**: *Low contrast*, el rodillo largo y ISO y obturador en *Avanzado* siguen sin
+hacer; el pase de curva es `RNDR.tonemap`. (6) **Interior no mueve la cámara a la altura de ojo**: hacerlo como una
+casilla más rompía el viaje de ida y vuelta de los chequeos del Doctor de interiores de K1 (que miden el encuadre); los
+presets están en *Cámara*. (7) En Rápido no se dibuja nada encima de una panorámica (contorno, *gizmo*, glifos), y el
+fondo degradado o de imagen se ve como color. (8) La planta es ortográfica a 89,9° (el tope de elevación de la cámara),
+no a 90°. (9) No se añadió al Doctor un chequeo de «cámara inclinada sin verticales rectas». (10) La exposición
+automática la mide la página: una escena exportada y renderizada con `rt` fuera de la aplicación lleva solo la
+compensación en `RNDR.exposure_ev`. (11) **Para F1** (picado exacto por el rayo primario del motor): una API de píxel →
+rayo tiene que servir a la ortográfica (origen en el plano de la imagen, dirección fija), a las dos panorámicas (el
+mapa de `Camera::panorama_dir` desde la posición, sin lente, y «nada» fuera del círculo del ojo de pez) y a las
+verticales rectas (la cámara que se renderiza, `renderedCamera`, no la de la órbita); `focusDistanceFor` ya da la
+distancia de enfoque con verticales rectas y no se usa hasta F1. ◆ (12) **Presets de altura de ojo** 1,5 y 1,1 m y
+**ópticas de interior** 24 · 28 · 35 mm (28 sin preset de lente: `INT_28` es solo una focal), tomados de §3.4. ◆ (13)
+**Medición de la exposición automática**: media logarítmica recortada (10 % abajo, 5 % arriba) al gris del 18 %, ±16 EV.
+◆ (14) **Presets de EV** 7 y 5 de §3.4 y su calibración `EV₁₀₀ = log2(683/1,2) − exposición` (que EV 0 del motor sea
+EV₁₀₀ ≈ 9,15). ◆ (15) **Multiplicador de exterior** 1 por defecto (sin efecto) y 0,05–1 de rango. ◆ (16) **Interior
+enciende las verticales rectas** por defecto (como dice §3.1), y hasta **30°** de inclinación corregida
+(`VERTICALS_MAX_TILT_DEG`). ◆ (17) El ojo de pez de 180° **en la diagonal** del encuadre (llena el encuadre; más ancho,
+se ve el círculo).
 
 ## K4 · Motor para interiores, conjunto mínimo — **Opus**
 

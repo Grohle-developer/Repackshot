@@ -21,7 +21,7 @@
 // Results: out/k3-check.json.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -91,6 +91,10 @@ async function open(browser, query) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('crash', () => {
+    errors.push('the page crashed');
+    console.error('the page crashed');
+  });
   page.on('console', (m) => {
     const text = m.text();
     if ((m.type() === 'error' && !text.startsWith('Failed to load resource')) || /Shader Error|WebGLProgram/.test(text)) errors.push(text);
@@ -278,6 +282,9 @@ async function planCheck(browser) {
   log.pixelsChanged = changed(roof, plan);
   ok(log.pixelsChanged > 5000, `the plan did not show what is under the ceiling: ${log.pixelsChanged}`, f);
   await page.screenshot({ path: join(SHOTS, 'k3-plan-fast.png') });
+  // Back to the scene (the breadcrumb deselects), so that the inspector shows the camera and the image again.
+  await page.locator('nav.crumbs button.crumb').first().click();
+  await settle(page, 400);
   if (existsSync(join(ROOT, 'dist', 'engine', 'rt.wasm'))) {
     await full(page, SAMPLES);
     log.samples = await meterSamples(page);
@@ -290,6 +297,9 @@ async function planCheck(browser) {
     log.meter = await page.locator('[data-meter="exposure"]').textContent();
     ok(/Auto exposure [+−-]?\d/.test(log.meter ?? ''), `the status bar says no reading: ${log.meter}`, f);
     await openSection(page, CAMERA);
+    await page.locator(`${CAMERA} select[aria-label="Projection"]`).scrollIntoViewIfNeeded();
+    await page.locator(`${CAMERA} .section-head`).first().scrollIntoViewIfNeeded();
+    await settle(page, 200);
     await page.screenshot({ path: join(SHOTS, 'k3-plan.png') });
   } else log.full = 'skipped: no rt.wasm';
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
@@ -376,7 +386,10 @@ try {
   if (only.includes('plan')) await planCheck(browser);
   if (only.includes('panorama')) await panoramaCheck(browser);
   if (only.includes('chrome')) await chromeCheck(browser);
-  writeFileSync(join(OUT, 'k3-check.json'), JSON.stringify(results, null, 2));
+  // A run of some of the checks (--only) keeps the others' last results.
+  const last = join(OUT, 'k3-check.json');
+  const kept = existsSync(last) ? JSON.parse(readFileSync(last, 'utf8')) : {};
+  writeFileSync(last, JSON.stringify({ ...kept, ...results }, null, 2));
   const all = Object.values(results).every((r) => r.ok);
   console.log(all ? 'all checks passed' : 'SOME CHECKS FAILED');
   process.exitCode = all ? 0 : 1;

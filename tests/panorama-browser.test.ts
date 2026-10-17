@@ -66,4 +66,18 @@ describe.skipIf(!executablePath)('the preview’s panoramas, in a browser', () =
       expect(r.picked, r.key).toBe(`w${r.key}`);
     }
   });
+
+  it('does not draw nor pick a wall hidden to the camera, and still draws the others', () => {
+    const [hiddenWall, other] = result.runs.hidden;
+    expect(hiddenWall.got, 'the hidden +X wall').toBe('');
+    expect(hiddenWall.picked).toBeNull();
+    expect(other.got).toBe(other.want);
+    expect(other.picked).toBe('w-X');
+  });
+
+  it('beyond half a turn from the fisheye’s axis shows black and picks nothing, as the engine does', () => {
+    expect(result.fisheyeCorner.inside).toBe(false);
+    expect(result.fisheyeCorner.got).toBe('');
+    expect(result.fisheyeCorner.picked).toBeNull();
+  });
 });

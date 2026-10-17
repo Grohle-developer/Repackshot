@@ -795,6 +795,30 @@ describe('the viewport of the pool', () => {
     expect(nativeTouchesImage(selected, after)).toBe(false);
   });
 
+  it('meters an automatic exposure from the view’s accumulation and says it; by hand, no reading (K3)', async () => {
+    const dom = installDom();
+    restore = dom.restore;
+    const { pool, workers } = await fakePool(1, 64);
+    workers.forEach((w) => (w.delay = 1));
+    const source: SceneSource = { build: viewSource().build, tone: (s) => ({ exposureEv: 0.25, tonemap: 2, auto: s.image.exposureMode === 'AUTO' }) };
+    const engine = new PathTracerEngine(pool, source, true);
+    engine.setViewportLimit({ by: 'SAMPLES', samples: 100000, seconds: 120 });
+    engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+    const manual = exampleState();
+    const auto = { ...manual, image: { ...manual.image, exposureMode: 'AUTO' as const } };
+    engine.sync(auto, null);
+    engine.resize(64, 32, 1);
+    engine.setActive(true);
+    await settle(engine, 30);
+    const ev = engine.meteredExposure();
+    expect(ev).not.toBeNull();
+    expect(Math.abs(ev!)).toBeLessThan(16);
+    expect(engine.status().meteredEv).toBe(ev);
+    engine.sync(manual, auto);
+    await settle(engine, 5);
+    expect(engine.status().meteredEv).toBeUndefined();
+  });
+
   it('Fast while a reduced-resolution frame is in flight does not keep Full from starting again', async () => {
     const { engine, workers } = await viewport(2, 64, 32);
     // A gesture: a reduced-resolution frame goes out and its tiles have not come back.

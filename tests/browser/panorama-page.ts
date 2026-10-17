@@ -4,14 +4,17 @@
 // (core/panorama.ts `panoramaPoint`) puts each world axis is returned, with the pick through that pixel.
 
 import { activeCamera, type CameraState } from '../../src/core/camera';
-import { panoramaFov, panoramaPoint } from '../../src/core/panorama';
+import { panoramaDirection, panoramaFov, panoramaPoint } from '../../src/core/panorama';
 import { outputFrameRect } from '../../src/core/camera';
+import { reduce } from '../../src/core/store';
 import { PreviewEngine } from '../../src/render/preview';
 import { cameraFrame, colourClass, panoramaRoom, ROOM_WALLS } from './panorama-scene';
 
 export interface PanoramaResult {
   /** Per projection, per wall: the class at the mapped pixel, the pixel, and the wall the pick through it finds. */
   runs: Record<string, { key: string; want: string; got: string; x: number; y: number; picked: string | null }[]>;
+  /** The fisheye's canvas corner, beyond half a turn from its axis: its class and the pick through it. */
+  fisheyeCorner: { got: string; picked: string | null; inside: boolean };
 }
 
 declare global {
@@ -26,8 +29,11 @@ const engine = new PreviewEngine();
 engine.mount(canvas);
 const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
 
-function run(width: number, height: number, patch: Partial<CameraState>, keys: readonly string[]): PanoramaResult['runs'][string] {
-  const s0 = panoramaRoom(patch);
+function run(width: number, height: number, patch: Partial<CameraState>, keys: readonly string[], hide?: string): PanoramaResult['runs'][string] {
+  const room = panoramaRoom(patch);
+  // A wall hidden to the camera (K3, Visible to camera off): drawn neither in colour nor in depth, nor picked.
+  const hidden = hide ? Object.values(room.scene.nodes).find((n) => n.name === hide)?.id : undefined;
+  const s0 = hidden ? reduce(room, { type: 'scene/setCameraHidden', ids: [hidden], hidden: true }) : room;
   const state = { ...s0, image: { ...s0.image, viewTransform: 'STANDARD' as const } };
   engine.sync(state, null);
   engine.resize(width, height, 1);
@@ -56,10 +62,25 @@ function run(width: number, height: number, patch: Partial<CameraState>, keys: r
   return out;
 }
 
-window.runPanorama = (width, height) => ({
-  runs: {
-    equirectangular: run(width, height, { projection: 'EQUIRECTANGULAR', azimuth: 30, aspect: { preset: '2:1', w: 2, h: 1 } }, ROOM_WALLS.map((w) => w.key)),
-    fisheye: run(width, height, { projection: 'FISHEYE', azimuth: 30, aspect: { preset: '3:2', w: 3, h: 2 }, fisheyeFovDeg: 360 }, ['+X', '-X', '+Y', '+Z', '-Z']),
-  },
-});
+/** The pixel (1, 1) of the last run: beyond the image circle of a fisheye of 360° over the frame, which the canvas is wider than. */
+function corner(width: number, height: number, patch: Partial<CameraState>): PanoramaResult['fisheyeCorner'] {
+  const buf = new Uint8Array(4);
+  gl.readPixels(1, height - 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  const hit = engine.pick(1.5, 1.5);
+  const cam = activeCamera(panoramaRoom(patch));
+  const frame = outputFrameRect(width, height, cam.aspect.w, cam.aspect.h);
+  const fov = panoramaFov(cam, frame.width, frame.height, width, height);
+  // Its direction by the page's map: none (beyond half a turn) is what the canvas must show, black and nothing picked.
+  const inside = panoramaDirection('FISHEYE', fov.x, fov.y, width / height, 1.5 / width, 1.5 / height) !== null;
+  return { got: colourClass(buf[0], buf[1], buf[2]), picked: hit ? hit.node : null, inside };
+}
+
+window.runPanorama = (width, height) => {
+  const equirectangular = run(width, height, { projection: 'EQUIRECTANGULAR', azimuth: 30, aspect: { preset: '2:1', w: 2, h: 1 } }, ROOM_WALLS.map((w) => w.key));
+  const eye: Partial<CameraState> = { projection: 'FISHEYE', azimuth: 30, aspect: { preset: '3:2', w: 3, h: 2 }, fisheyeFovDeg: 360 };
+  const fisheye = run(width, height, eye, ['+X', '-X', '+Y', '+Z', '-Z']);
+  const fisheyeCorner = corner(width, height, eye);
+  const hidden = run(width, height, { projection: 'EQUIRECTANGULAR', azimuth: 30, aspect: { preset: '2:1', w: 2, h: 1 } }, ['+X', '-X'], 'w+X');
+  return { runs: { equirectangular, fisheye, hidden }, fisheyeCorner };
+};
 window.panoramaReady = true;
