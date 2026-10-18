@@ -1643,6 +1643,10 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_WET_FLIGHT, 512);
         // S3f: the shapes of the drops on the parts.
         assert_eq!(rt_features() & rt_core::FEATURE_WET_SHAPES, 1024);
+        // S3e: the studio floor, the set's fine samples and the dust's motes.
+        assert_eq!(rt_features() & rt_core::FEATURE_WET_FLOOR, 2048);
+        assert_eq!(rt_features() & rt_core::FEATURE_WET_FINE, 4096);
+        assert_eq!(rt_features() & rt_core::FEATURE_WET_MOTES, 8192);
         // S7: the nested dielectrics.
         assert_eq!(rt_features() & rt_core::FEATURE_NESTED_DIELECTRICS, 16384);
         let ptr = rt_alloc(0);

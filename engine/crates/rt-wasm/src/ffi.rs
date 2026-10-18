@@ -925,6 +925,24 @@ pub extern "C" fn wpt_step(handle: u32, n: u32) -> u32 {
     }
 }
 
+/// S3e: simulates `n` fixed steps of the wet parts of `handle` together with the bodies of the
+/// physics world `world` (a `phys_new` handle), one after the other, the parts that move going
+/// where their bodies are (at most a minute per call). Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn wpt_step_with(handle: u32, world: u32, n: u32) -> u32 {
+    if crate::parts::step_with(handle, world, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// S3e: the wet parts of `handle` that move with a body (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn wpt_moving(handle: u32) -> u32 {
+    crate::parts::moving(handle).unwrap_or(0)
+}
+
 /// Steps simulated (0 for a bad handle).
 #[no_mangle]
 pub extern "C" fn wpt_steps(handle: u32) -> u32 {

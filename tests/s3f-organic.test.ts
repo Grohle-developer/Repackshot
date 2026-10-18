@@ -96,7 +96,7 @@ describe('S3f: the shapes of the drops in the record of a run', () => {
     const { shapes: _gone, ...before } = w.track();
     expect(isPartsTrack(before)).toBe(true);
     expect(partsFrame(before, 1)!.parts[0].drops[0].shape).toBeUndefined();
-    expect(wetPartsKey(new Uint8Array(4)).startsWith('wpt3:')).toBe(true);
+    expect(wetPartsKey(new Uint8Array(4)).startsWith('wpt4:')).toBe(true);
     expect(isRoundShape(ROUND_SHAPE) && !isRoundShape(SLIDING) && isValidShape(SLIDING) && SHAPE_FLOATS === 15).toBe(true);
   });
 });

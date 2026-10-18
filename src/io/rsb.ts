@@ -39,7 +39,8 @@ import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type Tex
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
 import { filtersOf, frontGlassOf, glassFromScene, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
 import { paneAxes, recordedGlass, type GlassFrame, type PaneAxes } from '../core/wet';
-import { partWeather, recordedParts, ROUND_SHAPE } from '../core/wet-parts';
+import { coarseWeather, partWeather, recordedParts, ROUND_SHAPE } from '../core/wet-parts';
+import { FLOOR_POROSITY } from '../data/wet-parts';
 import { posedLiquidMesh, renderedPriority } from '../core/liquid';
 import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
@@ -614,9 +615,31 @@ export interface RsbScene {
   wetParts?: RsbWetPart[];
   /** S3d: the drops in the air (WETF, after the WETP sections), for an engine with bit 9. */
   wetFalling?: RsbFallingDrop[];
+  /** S3e: the rain, dust and snow on the studio floor (WETG, after WETF), for an engine with bit 11. */
+  wetFloor?: RsbWetFloor;
   /** S7: each material's nested-dielectric priority (NEST), in MATL order; written only when one is above 0. */
   priorities?: number[];
 }
+
+/** S3e: the payload of a WETG section (rt-core `weather::FloorWeather`). */
+export interface RsbWetFloor {
+  nx: number;
+  ny: number;
+  x0: number;
+  y0: number;
+  cell: number;
+  z: number;
+  porosity: number;
+  /** Wet, dust and snow bytes of each cell, row after row. */
+  values: Uint8Array;
+}
+export const TAG_WETG = 'WETG';
+/** S3e: the header of a WETG payload, bytes (rt-core `weather::WETG_HEADER`). */
+export const WETG_HEADER = 32;
+/** S3e: a WETP whose resolutions take two bytes (rt-core `TAG_WTP2`). */
+export const TAG_WTP2 = 'WTP2';
+/** S3e: the tag of the motes tail (rt-core `weather::MOTE_TAG`). */
+export const WETP_MOTE_TAG = 'MOT1';
 
 /** S3d: a drop in the air of a WETF section (rt-core `weather::FallingDrop`). */
 export interface RsbFallingDrop {
@@ -636,8 +659,8 @@ export const TAG_WETF = 'WETF';
 export interface RsbWetPart {
   /** Its instance (the index among the instances the file means). */
   instance: number;
-  /** The resolution of each triangle of the instance's mesh. */
-  resolution: Uint8Array;
+  /** The resolution of each triangle of the instance's mesh (S3e: past 255, the section is a WTP2). */
+  resolution: Uint8Array | Uint16Array;
   /** Wet, dust and snow bytes of each sample. */
   values: Uint8Array;
   capAngleDeg: number;
@@ -649,6 +672,14 @@ export interface RsbWetPart {
    * shape tail of the section; absent: round caps, no tail.
    */
   shapes?: readonly (readonly number[])[];
+  /** S3e: the dust's motes (the motes tail: the grains' size, its variation, the seed of their places); absent: none. */
+  motes?: { sizeMm: number; sizeVar: number; seed: number };
+}
+
+/** S3e: true when a part's resolutions take two bytes (a WTP2 section). */
+export function wetpWide(p: Pick<RsbWetPart, 'resolution'>): boolean {
+  for (const r of p.resolution) if (r > 255) return true;
+  return false;
 }
 
 /** S3f: the tag of the shape tail of a WETP section (rt-core `weather::SHAPE_TAG`). */
@@ -660,8 +691,9 @@ export const TAG_WETP = 'WETP';
 
 /** The bytes of a WETP payload. */
 export function wetpBytes(p: RsbWetPart): number {
-  const tail = p.shapes && p.shapes.length > 0 ? 8 + 4 * 15 * p.shapes.length : 0;
-  return WETP_HEADER + Math.ceil(p.resolution.length / 4) * 4 + Math.ceil(p.values.length / 4) * 4 + 20 * p.drops.length + tail;
+  const tail = (p.shapes && p.shapes.length > 0 ? 8 + 4 * 15 * p.shapes.length : 0) + (p.motes ? 16 : 0);
+  const res = (wetpWide(p) ? 2 : 1) * p.resolution.length;
+  return WETP_HEADER + Math.ceil(res / 4) * 4 + Math.ceil(p.values.length / 4) * 4 + 20 * p.drops.length + tail;
 }
 
 /** Q1: the section view's plane, as `SECT` holds it (core/section.ts `resolveSection`). */
@@ -994,6 +1026,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   for (const p of wetParts) size += 8 + wetpBytes(p);
   const wetFalling = scene.wetFalling ?? [];
   if (wetFalling.length > 0) size += 8 + 4 + 20 * wetFalling.length;
+  const wetFloor = scene.wetFloor ?? null;
+  if (wetFloor) size += 8 + WETG_HEADER + Math.ceil(wetFloor.values.length / 4) * 4;
   for (const p of programs) size += 8 + 4 + p.bytes.length;
   if (section) size += 8 + SECT_BYTES;
   // S7: the priorities, only when one is above 0 (a scene without is the bytes of before).
@@ -1135,15 +1169,25 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   }
   // S3c: the rain, dust and snow on the instances, after them (rt_core `Scene::to_rsb`).
   for (const p of wetParts) {
-    w.section(TAG_WETP, wetpBytes(p), () => {
+    // S3e: two-byte resolutions in a WTP2 section of their own.
+    const wide = wetpWide(p);
+    w.section(wide ? TAG_WTP2 : TAG_WETP, wetpBytes(p), () => {
       w.u32(p.instance);
       w.u32(p.resolution.length);
       w.u32(p.values.length / 3);
       w.u32(p.drops.length);
       w.f32(p.capAngleDeg);
       w.f32(p.porosity);
-      w.raw(p.resolution);
-      w.pad((4 - (p.resolution.length % 4)) % 4);
+      if (wide) {
+        const r = new Uint8Array(2 * p.resolution.length);
+        const rv = new DataView(r.buffer);
+        p.resolution.forEach((x, i) => rv.setUint16(2 * i, x, true));
+        w.raw(r);
+        w.pad((4 - (r.length % 4)) % 4);
+      } else {
+        w.raw(Uint8Array.from(p.resolution));
+        w.pad((4 - (p.resolution.length % 4)) % 4);
+      }
       w.raw(p.values);
       w.pad((4 - (p.values.length % 4)) % 4);
       for (const d of p.drops) {
@@ -1157,6 +1201,13 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
         w.u32(p.shapes.length);
         for (const s of p.shapes) for (const v of s) w.f32(v);
       }
+      // S3e: the motes tail.
+      if (p.motes) {
+        w.raw(new TextEncoder().encode(WETP_MOTE_TAG));
+        w.f32(p.motes.sizeMm);
+        w.f32(p.motes.sizeVar);
+        w.u32(p.motes.seed);
+      }
     });
   }
   // S3d: the drops in the air, after them.
@@ -1168,6 +1219,21 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
         w.vec(d.position);
         w.f32(d.radius);
       }
+    });
+  }
+  // S3e: the studio floor's, after them.
+  if (wetFloor) {
+    w.section(TAG_WETG, WETG_HEADER + Math.ceil(wetFloor.values.length / 4) * 4, () => {
+      w.u32(wetFloor.nx);
+      w.u32(wetFloor.ny);
+      w.f32(wetFloor.x0);
+      w.f32(wetFloor.y0);
+      w.f32(wetFloor.cell);
+      w.f32(wetFloor.z);
+      w.f32(wetFloor.porosity);
+      w.u32(0);
+      w.raw(wetFloor.values);
+      w.pad((4 - (wetFloor.values.length % 4)) % 4);
     });
   }
   // An IES light without its profile is no light for the engine, and is not written (rt_core `Scene::to_rsb`).
@@ -1396,6 +1462,21 @@ export interface SceneView {
    * `readsWetShapes`); with `wetParts` only. Off by default: an engine of before would ignore it and draw round caps.
    */
   wetShapes?: boolean;
+  /**
+   * S3e: and the rain, dust and snow on the studio floor (the WETG section), for an engine with bit 11 (render/engine.ts
+   * `readsWetFloor`); with `wetParts` only. Off by default: an engine of before skips it and draws the floor dry.
+   */
+  wetFloor?: boolean;
+  /**
+   * S3e: and the set's fine samples as they are (two-byte resolutions: WTP2), for an engine with bit 12 (`readsWetFine`);
+   * with `wetParts` only. Off by default: the page writes them coarser, as a WETP of one-byte resolutions.
+   */
+  wetFine?: boolean;
+  /**
+   * S3e: and the dust's motes (the motes tail of WETP), for an engine with bit 13 (`readsWetMotes`); with `wetParts`
+   * only. Off by default: an engine of before ignores the tail and draws the layer alone.
+   */
+  wetMotes?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
   /**
@@ -2454,9 +2535,19 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       if (w.drops.length === 0 && w.values.every((v) => v === 0)) return;
       // S3f: with the shapes of its drops (round for a drop of a track of before), for an engine with bit 10.
       const shapes = view.wetShapes && w.drops.some((d) => d.shape) ? w.drops.map((d) => d.shape ?? ROUND_SHAPE) : undefined;
-      wetParts.push({ instance: i, resolution: w.resolution, values: w.values, capAngleDeg: tp.capAngleDeg, porosity: tp.porosity, drops: w.drops.map(({ triangle, position, radius }) => ({ triangle, position, radius })), ...(shapes ? { shapes } : {}) });
+      // S3e: the set's fine samples as they are for an engine with bit 12, coarser for one without; the dust's motes for
+      // an engine with bit 13, on a part with dust.
+      const fine = view.wetFine ? w : coarseWeather(w);
+      let dusty = false;
+      for (let k = 1; k < w.values.length && !dusty; k += 3) dusty = w.values[k] > 0;
+      const motes = view.wetMotes && recorded.track.motes && dusty ? recorded.track.motes : undefined;
+      wetParts.push({ instance: i, resolution: fine.resolution, values: fine.values, capAngleDeg: tp.capAngleDeg, porosity: tp.porosity, drops: w.drops.map(({ triangle, position, radius }) => ({ triangle, position, radius })), ...(shapes ? { shapes } : {}), ...(motes ? { motes: { ...motes } } : {}) });
     });
   }
+  // S3e: the studio floor of that frame, for an engine that draws it, when the floor is there.
+  const fl = recorded?.frame.floor;
+  const wetFloor: RsbWetFloor | null =
+    view.wetFloor && fl && state.studio.floor && fl.values.some((v) => v > 0) ? { nx: fl.nx, ny: fl.ny, x0: fl.x0, y0: fl.y0, cell: fl.cell, z: fl.z, porosity: FLOOR_POROSITY, values: fl.values } : null;
   // S3d: the drops in the air at that frame, each from the first instance of the part it left, for an engine that draws
   // them. Those of a part that is not drawn are left out, as its weather is.
   const wetFalling: RsbFallingDrop[] = [];
@@ -2476,7 +2567,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const priorities = view.nested ? materialOrder.map((key) => renderedPriority(state, key)) : [];
 
   return {
-    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}), ...(wetFalling.length > 0 ? { wetFalling } : {}), ...(priorities.some((p) => p > 0) ? { priorities } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}), ...(wetFalling.length > 0 ? { wetFalling } : {}), ...(wetFloor ? { wetFloor } : {}), ...(priorities.some((p) => p > 0) ? { priorities } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

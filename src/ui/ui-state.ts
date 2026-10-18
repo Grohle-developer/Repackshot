@@ -259,6 +259,16 @@ export interface EngineInfo {
    */
   wetShapes?: boolean;
   /**
+   * S3e: the engine draws the studio floor's rain, dust and snow (bit 11, render/engine.ts `readsWetFloor`): without it the
+   * render draws the floor dry, and the ambient section says so. Absent: not known.
+   */
+  wetFloor?: boolean;
+  /**
+   * S3e: the engine draws the dust's motes (bit 13, `readsWetMotes`): without it the render draws the dust's layer alone,
+   * and the ambient section says so. Absent: not known.
+   */
+  wetMotes?: boolean;
+  /**
    * S7: the engine resolves nested dielectrics (bit 14, render/engine.ts `readsNested`): without it the render draws a
    * liquid against air where it touches its glass, and the Liquid section says so. Absent: not known.
    */

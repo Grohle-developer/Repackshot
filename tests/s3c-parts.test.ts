@@ -235,9 +235,11 @@ describe('S3c: what the simulation is given', () => {
     expect(spec.sources[0].velocity[0]).toBeCloseTo(rain.wind[0] * 1000, 3);
     expect(spec.maxSamples).toBe(PARTS_MAX_SAMPLES);
     expect(spec.seed).toBe(rain.seed >>> 0);
-    // The parts the run moves stay out; with nothing left, nothing to wet.
-    expect(wetPartsSpec(s, new Set([parts[0]]))!.parts.map((p) => p.node)).toEqual(parts.slice(1));
-    expect(wetPartsSpec(s, new Set(parts))).toBeNull();
+    // S3e: the parts the run moves come with their body (S3c left them out).
+    const moved = wetPartsSpec(s, new Map([[parts[0], 0]]))!;
+    expect(moved.parts.map((p) => p.node)).toEqual(parts);
+    expect(moved.parts[0].body).toBe(0);
+    expect(moved.parts.slice(1).every((p) => p.body === undefined)).toBe(true);
   });
 
   it('a set’s pieces wet as a film', () => {
@@ -465,7 +467,7 @@ describe('S3c: the physics bar wets the parts', () => {
     expect(clip().parts!.frames).toBe(4);
   });
 
-  it('a Dynamic part moves in the run and is not wetted where it stood: the other parts are', async () => {
+  it('a Dynamic part moves in the run and gets wet where its body takes it (S3e: S3c left it out), the other parts stay', async () => {
     const { ctx, store, runs } = app();
     const part = allParts(store.get())[0];
     store.dispatch({ type: 'physics/set', ids: [part], patch: { role: 'DYNAMIC' } });
@@ -473,10 +475,12 @@ describe('S3c: the physics bar wets the parts', () => {
     await tick();
     expect(runs).toHaveLength(1);
     expect(runs[0].bodies).toBeGreaterThan(0);
-    const still = wetPartsSpec(store.get(), new Set([part]))!;
-    expect(still.parts.some((p) => p.node === part)).toBe(false);
-    expect(still.parts.length).toBe(wetPartsSpec(store.get())!.parts.length - 1);
-    expect(Array.from(runs[0].parts!)).toEqual(Array.from(wptBytes(still)));
+    const moving = wetPartsSpec(store.get(), new Map([[part, 0]]))!;
+    expect(moving.parts.find((p) => p.node === part)!.body).toBe(0);
+    expect(moving.parts.length).toBe(wetPartsSpec(store.get())!.parts.length);
+    expect(Array.from(runs[0].parts!)).toEqual(Array.from(wptBytes(moving)));
+    // Version 2 of WPT1, with the body of each part (0xffffffff for one that stays).
+    expect(new DataView(runs[0].parts!.buffer, runs[0].parts!.byteOffset).getUint32(4, true)).toBe(2);
     phys.stop(ctx);
     await tick();
   });

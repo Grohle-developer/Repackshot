@@ -62,6 +62,10 @@ USAGE:
     rt --write-s3d-flight-example <scene.rsb>
     rt --write-s3f-organic-example <scene.rsb>
     rt --write-s3f-strip <dir>
+    rt --write-s3e-example <scene.rsb>
+    rt --write-s3e-moving-example <scene.rsb>
+    rt --write-s3e-dust-example <scene.rsb>
+    rt --write-s3e-strip <dir>
     rt --write-s7-liquid-example <scene.rsb>
     rt --write-s3c-parts-spec <parts.wpt1>
     rt --write-lens-catalogue <file.json>
@@ -242,6 +246,22 @@ OPTIONS:
         --write-s3f-strip <dir>
                             write the frames of that scene for the strip of docs/ui (one RSB
                             file per frame, s3f-strip-<step>.rsb)
+        --write-s3e-example <f>
+                            S3e: write the parity scene of the studio floor (a bottle and a
+                            ledge that drips onto the wet floor under a side wind, a plate whose
+                            drops run down its side edge, a set card with fine samples, dust and
+                            its motes: WETG, WTP2 and the motes tail) as an RSB file
+        --write-s3e-moving-example <f>
+                            S3e: write the parity scene of a dynamic body that got wet as it
+                            fell (the drop scene's box under rain, two seconds) as an RSB file
+        --write-s3e-dust-example <f>
+                            S3e: write the parity scene of the dust on the set (a bottle on a
+                            large card after two minutes of dust: its fine samples in WTP2 and
+                            the motes tail) as an RSB file
+        --write-s3e-strip <dir>
+                            write the frames of the S3e captures of docs/ui (the falling box,
+                            the floor, the dust and its motes, the set's edge coarse and fine;
+                            one RSB file each, s3e-<name>.rsb)
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -415,6 +435,13 @@ pub enum S3Example {
     /// `rt_phys::example::s3f_organic_scene` (S3f): a pane whose drops grow, slide and gather each
     /// other, with their shapes.
     Organic,
+    /// `rt_phys::example::s3e_scene` (S3e): the studio floor wet and dusty under a side wind, a
+    /// drop run along a side edge, a set card with fine samples, the dust's motes.
+    Floor,
+    /// `rt_phys::example::moving_scene_at` (S3e): a dynamic body that got wet as it fell.
+    Moving,
+    /// `rt_phys::example::dust_scene_at` (S3e): the dust on the set, its fine samples and motes.
+    Dust,
     /// `rt_phys::liquid::example::s7_scene` (S7): water poured into a glass, nested by priority.
     Liquid,
 }
@@ -429,6 +456,9 @@ impl S3Example {
             S3Example::WetParts => rt_phys::example::s3c_wet_scene(),
             S3Example::Flight => rt_phys::example::s3d_flight_scene(),
             S3Example::Organic => rt_phys::example::s3f_organic_scene(),
+            S3Example::Floor => rt_phys::example::s3e_scene(),
+            S3Example::Moving => rt_phys::example::moving_scene_at(rt_phys::example::MOVING_STEPS),
+            S3Example::Dust => rt_phys::example::dust_scene_at(120, true),
             S3Example::Liquid => rt_phys::liquid::example::s7_scene(),
         }
     }
@@ -627,6 +657,12 @@ pub enum Command {
         /// The directory.
         dir: PathBuf,
     },
+    /// S3e: write the frames of the S3e captures (`rt_phys::example`), one RSB file each, into a
+    /// directory.
+    WriteS3eStrip {
+        /// The directory.
+        dir: PathBuf,
+    },
     /// S3b: write the spec of the parity pane (`rt_phys::example::wet_spec`) as a `WET1` file.
     WriteWetSpec {
         /// WET1 file to write.
@@ -758,6 +794,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_k3 = None;
     let mut write_s3 = None;
     let mut write_strip = None;
+    let mut write_s3e_strip = None;
     let mut write_wet = None;
     let mut write_parts = None;
     let mut write_e10 = None;
@@ -925,6 +962,16 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 write_s3 = Some((S3Example::Organic, PathBuf::from(value(&mut it, arg)?)))
             }
             "--write-s3f-strip" => write_strip = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-s3e-example" => {
+                write_s3 = Some((S3Example::Floor, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3e-moving-example" => {
+                write_s3 = Some((S3Example::Moving, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3e-dust-example" => {
+                write_s3 = Some((S3Example::Dust, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3e-strip" => write_s3e_strip = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-s7-liquid-example" => {
                 write_s3 = Some((S3Example::Liquid, PathBuf::from(value(&mut it, arg)?)))
             }
@@ -1131,6 +1178,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-s3f-strip takes no other option".into());
         }
         return Ok(Command::WriteS3fStrip { dir });
+    }
+    if let Some(dir) = write_s3e_strip {
+        if args.len() != 2 {
+            return Err("--write-s3e-strip takes no other option".into());
+        }
+        return Ok(Command::WriteS3eStrip { dir });
     }
     if let Some(path) = write_e10 {
         if args.len() != 2 {
@@ -1426,6 +1479,16 @@ pub fn run(command: Command) -> Result<(), String> {
             for steps in rt_phys::example::ORGANIC_STRIP_STEPS {
                 let path = dir.join(format!("s3f-strip-{steps}.rsb"));
                 let bytes = rt_phys::example::s3f_organic_scene_at(steps).to_rsb();
+                std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+                println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            }
+            Ok(())
+        }
+        Command::WriteS3eStrip { dir } => {
+            std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            for (name, scene) in rt_phys::example::s3e_strip() {
+                let path = dir.join(format!("s3e-{name}.rsb"));
+                let bytes = scene.to_rsb();
                 std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
                 println!("wrote {} ({} bytes)", path.display(), bytes.len());
             }

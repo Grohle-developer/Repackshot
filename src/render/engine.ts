@@ -137,6 +137,40 @@ export function readsWetShapes(features: number | undefined): boolean {
 }
 
 /**
+ * S3e: bit 11 of the engine's features (rt_core::FEATURE_WET_FLOOR): it draws the rain, dust and snow on the studio floor
+ * (the WETG section), so the page writes it (io/rsb.ts `SceneView.wetFloor`); an engine without the bit draws the floor dry.
+ */
+export const ENGINE_FEATURE_WET_FLOOR = 2048;
+
+/** True when an engine of `features` draws the weather of the studio floor (S3e). */
+export function readsWetFloor(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_WET_FLOOR) !== 0;
+}
+
+/**
+ * S3e: bit 12 of the engine's features (rt_core::FEATURE_WET_FINE): it reads the weather of a part whose triangles'
+ * resolutions take two bytes (WTP2: the set's fine samples), so the page writes them as they are
+ * (`SceneView.wetFine`); for an engine without the bit it writes them coarser, as a WETP.
+ */
+export const ENGINE_FEATURE_WET_FINE = 4096;
+
+/** True when an engine of `features` reads the set's fine samples (S3e). */
+export function readsWetFine(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_WET_FINE) !== 0;
+}
+
+/**
+ * S3e: bit 13 of the engine's features (rt_core::FEATURE_WET_MOTES): it draws the dust's motes (the motes tail of WETP),
+ * so the page writes it (`SceneView.wetMotes`); an engine without the bit draws the dust's layer alone.
+ */
+export const ENGINE_FEATURE_WET_MOTES = 8192;
+
+/** True when an engine of `features` draws the dust's motes (S3e). */
+export function readsWetMotes(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_WET_MOTES) !== 0;
+}
+
+/**
  * S7: bit 14 of the engine's features (rt_core::FEATURE_NESTED_DIELECTRICS): it resolves nested dielectrics by priority
  * (NEST): a liquid inside its glass meets the glass at the ratio of their indices. The page writes the priorities only
  * for it (io/rsb.ts `SceneView.nested`); an engine without it draws every clear solid against the air, and the Liquid

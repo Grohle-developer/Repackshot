@@ -1298,24 +1298,56 @@ pub fn radiance_weighted<T: Tracer>(
             break;
         }
 
+        // S3e: the material of the studio floor where rain, dust or snow lie on it.
+        let mut floor_material: Option<Material> = None;
         let surface = if t_floor < t_geometry {
-            if prepared.floor_mode == FloorMode::ShadowCatcher {
-                let (c, a) = shadow_catcher(
-                    scene,
-                    prepared,
-                    tracer,
-                    sampler,
-                    &ray,
-                    t_floor,
-                    screen,
-                    caustics.map(|(map, _)| map),
-                    rays,
-                );
-                return (sum + throughput * c, a * alpha_weight);
-            }
             let p = ray.at(t_floor);
-            let n = Vec3::new(0.0, 0.0, if ray.dir.z < 0.0 { 1.0 } else { -1.0 });
             let point = Vec3::new(p.x, p.y, prepared.floor_z);
+            let layers = prepared.weather.floor_layers(scene, point);
+            if prepared.floor_mode == FloorMode::ShadowCatcher {
+                // S3e: where dust and snow cover the catcher it shows them, and its water film
+                // reflects by Fresnel; the rest is the catcher (one choice by their shares).
+                if let Some((l, porosity)) = layers.filter(|_| cutouts < MAX_CUTOUTS) {
+                    let (cover, film) = crate::weather::catcher_shares(l, ray.dir.z);
+                    let u = sampler.get1(cutout_dim(bounce, cutouts));
+                    cutouts += 1;
+                    if u < cover {
+                        floor_material = Some(crate::weather::catcher_cover(l, porosity));
+                    } else if u < cover + film {
+                        floor_material = Some(crate::weather::catcher_film());
+                    }
+                }
+                if floor_material.is_none() {
+                    let (c, a) = shadow_catcher(
+                        scene,
+                        prepared,
+                        tracer,
+                        sampler,
+                        &ray,
+                        t_floor,
+                        screen,
+                        caustics.map(|(map, _)| map),
+                        rays,
+                    );
+                    // S3e: where its film wets it, the catcher darkens what is behind it as a wet
+                    // porous floor darkens (crate::weather::catcher_wet).
+                    let (c, a) = match layers {
+                        Some((l, porosity)) if l.wet > 0.0 => {
+                            let k = crate::weather::catcher_wet(l, porosity);
+                            if prepared.background == Background::Transparent {
+                                (c, 1.0 - (1.0 - a) * k)
+                            } else {
+                                (c * k, a)
+                            }
+                        }
+                        _ => (c, a),
+                    };
+                    return (sum + throughput * c, a * alpha_weight);
+                }
+            } else if let Some((l, porosity)) = layers {
+                floor_material = crate::weather::floor_material(scene.floor.color, l, porosity);
+            }
+            let n = Vec3::new(0.0, 0.0, if ray.dir.z < 0.0 { 1.0 } else { -1.0 });
             Surface {
                 point,
                 hit_point: point,
@@ -1463,6 +1495,8 @@ pub fn radiance_weighted<T: Tracer>(
                 .instance
                 .map(|(instance, _)| prepared.material(scene, instance)),
         };
+        // S3e: the studio floor under rain, dust or snow.
+        let material = material.or(floor_material.as_ref());
         let patterned = material.zip(surface.tint).map(|(m, t)| t.apply(m));
         let material = patterned.as_ref().or(material);
         // The program's material (M3b).

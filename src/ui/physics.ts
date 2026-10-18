@@ -15,8 +15,9 @@
 // stops only by Stop or its time (it keeps raining). Drop runs the bodies alone. Reset takes the glass clip away too.
 //
 // S3c: Start also wets the parts when some effect falls on them (its switch in Scene ▸ Ambient, core/wet-parts.ts): every
-// visible part that does not move in the run steps under the effects in the same worker, each frame's record grows a
-// PHYSICS clip of the scene (the parts track, the cache), and such a run too stops only by Stop or its time.
+// visible part steps under the effects in the same worker, each frame's record grows a PHYSICS clip of the scene (the
+// parts track, the cache), and such a run too stops only by Stop or its time. S3e: a part the run moves gets wet where
+// its body takes it (the worker steps the two together), and the studio floor gets wet too.
 //
 // S7: Start also runs the scene's liquids (core/liquid.ts: their LIQ1, every visible part the run does not move as their
 // containers): each frame's record grows a PHYSICS clip of each liquid part (the liquid track, the cache), its surface
@@ -117,6 +118,8 @@ interface PartsRun {
   parts: WetPartEntry[];
   writer: PartsTrackWriter | null;
   clip: string;
+  /** S3e: the dust's motes the track draws, or none. */
+  motes: { sizeMm: number; sizeVar: number; seed: number } | null;
 }
 
 /** S3b: the front glass of a run. */
@@ -256,7 +259,7 @@ function begin(session: Session, started: PhysicsStarted): void {
   const layout = started.parts ? parseLayout(started.parts.layout) : null;
   if (pr && started.parts && layout && layout.parts.length === pr.parts.length) {
     const meta = pr.parts.map((p, k) => ({ node: p.node, mesh: p.mesh, triangles: layout.parts[k].triangles, samples: layout.parts[k].samples, capAngleDeg: layout.parts[k].capAngleDeg, porosity: p.porosity }));
-    pr.writer = new PartsTrackWriter(session.fps, pr.key, meta, started.parts.layout);
+    pr.writer = new PartsTrackWriter(session.fps, pr.key, meta, started.parts.layout, pr.motes);
     pr.writer.push(started.parts.frame);
     pr.clip = nextIds('c', [...state.animation.clips.map((c) => c.id), ...session.clips.filter(Boolean), ...(g?.clip ? [g.clip] : [])], 1)[0];
     clips.push(partsClip(pr.clip, session.start, pr.writer.track()));
@@ -339,17 +342,21 @@ function glassRun(ctx: Ctx): GlassRun | 'NO_ENGINE' | null {
 }
 
 /**
- * S3c: the parts a Start wets: every visible part that the run does not move, when some effect falls on them, with the
- * bytes of the simulation (its WPT1) and their key; null when there is nothing to run.
+ * S3c: the parts a Start wets: every visible part, when some effect falls on them, with the bytes of the simulation (its
+ * WPT1) and their key; S3e: a part the run moves goes with its body (its index among the run's bodies, the PHY1 scene's
+ * dynamic ones), and the dust's motes come with the track. Null when there is nothing to run.
  */
 function partsRun(ctx: Ctx, spec: PhysicsSpec | null): PartsRun | null {
-  const moving = new Set((spec?.bodies ?? []).flatMap((b) => b.pieces.map((p) => p.part)));
+  const moving = new Map<NodeId, number>();
+  (spec?.bodies ?? []).forEach((b, i) => b.pieces.forEach((p) => moving.set(p.part, i)));
   const parts = wetPartsSpec(ctx.store.get(), moving);
   if (!parts) return null;
   const written = writtenParts(parts);
   if (written.length === 0) return null;
   const bytes = wptBytes(parts);
-  return { bytes, key: wetPartsKey(bytes), parts: written, writer: null, clip: '' };
+  const dust = parts.sources.find((s) => s.kind === 'DUST');
+  const motes = dust ? { sizeMm: dust.sizeMm, sizeVar: dust.sizeVar, seed: parts.seed } : null;
+  return { bytes, key: wetPartsKey(bytes), parts: written, writer: null, clip: '', motes };
 }
 
 /** S7: the liquids a Start runs: every visible liquid part the run does not move, with its LIQ1; null without one. */

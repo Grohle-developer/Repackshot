@@ -132,6 +132,20 @@ pub const FEATURE_WET_FLIGHT: u32 = 512;
 /// hangs stretched along gravity and pinching off). An engine without it ignores the tail and draws
 /// round caps, so the page writes none for it.
 pub const FEATURE_WET_SHAPES: u32 = 1024;
+/// Bit 11 of [`FEATURES`] (S3e): the engine draws the rain, dust and snow on the studio floor (`WETG`,
+/// [`weather::FloorWeather`]: the wet film, the dust and the snow over the floor of `FLOR`, and on a
+/// shadow catcher the dust and snow where they cover it and the film's reflection). An engine without
+/// it skips the section and draws the floor dry, so the page writes none for it.
+pub const FEATURE_WET_FLOOR: u32 = 2048;
+/// Bit 12 of [`FEATURES`] (S3e): the engine reads the weather of an instance whose triangles'
+/// resolutions take two bytes (`WTP2`: the set's fine samples). An engine without it skips the
+/// section (the part would be dry), so the page writes such a part as a `WETP` of one-byte
+/// resolutions for it, coarser.
+pub const FEATURE_WET_FINE: u32 = 4096;
+/// Bit 13 of [`FEATURES`] (S3e): the engine draws the dust's motes (the motes tail of `WETP` and
+/// `WTP2`, [`weather::motes_on`]: grains over the dust's layer where it is thick). An engine without
+/// it ignores the tail and draws the layer alone, so the page writes none for it.
+pub const FEATURE_WET_MOTES: u32 = 8192;
 /// Bit 14 of [`FEATURES`] (S7): the engine resolves nested dielectrics by priority (`NEST`,
 /// [`integrator::nested`]): a liquid inside its glass meets the glass at the ratio of their
 /// indices. An engine without it skips the section and traces every clear solid against the air,
@@ -153,6 +167,9 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_WET_PARTS
     | FEATURE_WET_FLIGHT
     | FEATURE_WET_SHAPES
+    | FEATURE_WET_FLOOR
+    | FEATURE_WET_FINE
+    | FEATURE_WET_MOTES
     | FEATURE_NESTED_DIELECTRICS;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
