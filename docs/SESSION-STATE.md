@@ -180,7 +180,7 @@ after each *commit* (or the lead does).
    - The first `release.yml` run (39110320054) failed in the *smoke test*: the `spawnSync` of `cargo run -p rt-cli` blocked Node's event loop for more than 30 s (since S3b `rt-cli` depends on `rt-phys`), and `fetch` reused a connection the server had already closed. Fix (PR #63): `packaging/smoke.mjs` builds the scene before starting the launcher.
    - **Next phase:** S3d (dripping and splashes through the air, dust motes, dynamic parts, the studio floor, finer samples in the set). From v0.1.22 on, the manual checklist goes in `docs/testing/windows-checklist.md` (from point 152), not in the notes.
 
-4p. **Release v0.1.22** (2026-10-18; version PR from the session branch, then `release.yml` on `main` with `tag` = `v0.1.22` and `commit` = the merge). Included, each through its PR, with their ◆ decided in *Judgement calls*:
+4p. **Release v0.1.22 published** (2026-10-18, version PR #69, `f29d3a6`; four *assets*; the images in the notes resolve). Included, each through its PR, with their ◆ decided in *Judgement calls*:
    - **S3d** (drips and splashes through the air, `WETF`; the meter; bit 9 `FEATURE_WET_FLIGHT`): PR #62, `8c8c9d2`.
    - **The smoke-test fix** (PR #63, `49b98a7`), the **English documentation** (PR #64, `3b3185a`) and **`release-notes.yml`** (PR #65, `2731d72`), which rewrote the notes of every published release in English.
    - **X6** (the AI controls with a measurable effect, the style as a grade, `MAX_STRENGTH` 0.6, the stored Full-engine example): PR #66, `a24b884`.
