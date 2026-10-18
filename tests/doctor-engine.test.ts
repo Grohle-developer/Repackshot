@@ -609,7 +609,7 @@ describe('caustics (fireflies)', () => {
   });
 });
 
-describe('C1: the decisions on the engine Doctor (docs/ROADMAP.md, Decisiones de criterio, D1)', () => {
+describe('C1: the decisions on the engine Doctor (docs/ROADMAP.md, Judgement calls, D1)', () => {
   it('Standard clipping is a warning and nothing more, and its fix proposes AgX in the catalogue and the sentence', () => {
     const r = rig();
     r.do({ type: 'image/set', patch: { viewTransform: 'STANDARD' } });

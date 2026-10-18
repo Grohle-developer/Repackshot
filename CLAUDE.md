@@ -1,109 +1,115 @@
-# Repackshot — punto de entrada para agentes y personas
+# Repackshot — entry point for agents and people
 
-Repackshot es un renderizador de producto al estilo KeyShot, de código
-disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
-escrito **desde cero en sala limpia**, que corre en el navegador: importa
-un modelo, asigna materiales, ilumina con un estudio y renderiza una
-imagen bonita, rápido. Sus pilares: tipos de producto, catálogo de
-montajes de luz por estilos, materiales con desgaste procedural, Doctor,
-selección por niveles, lenguaje de fotógrafo.
+Repackshot is a KeyShot-style product renderer, source-available and free
+for non-commercial use (PolyForm Noncommercial 1.0.0), written **from
+scratch in a clean room**, that runs in the browser: you import a model,
+assign materials, light it with a studio and render a good-looking image,
+fast. Its pillars: product types, a catalogue of light setups by style,
+materials with procedural wear, Doctor, tiered selection, photographer's
+language.
 
-## Lee esto en este orden
+## Read this in this order
 
-1. `README.md` — reglas de sala limpia. **Innegociables.**
-2. `docs/ROADMAP.md` — qué hay que hacer, en qué fase, y **qué modelo
-   ejecuta cada fase** (Fable decide; Opus construye; Sonnet porta y
-   mecaniza; Haiku hace las tareas de mantenimiento). Busca tu fase y
-   lee solo lo que necesita.
-3. `docs/SPEC.md` — qué hace el producto (comportamiento, modelo de datos).
-4. `docs/ARCHITECTURE.md` — stack, mapa de módulos, *store*, motores.
-5. `docs/UI.md` — la interfaz, control por control.
-6. `docs/INTERIORS.md` — interiores y mobiliario: decisión de integración,
-   fuentes y fases K1–K8. Solo si tu fase es una de esas.
-7. `docs/AI-POST.md` — post-procesado IA opcional: modelo, protecciones,
-   interfaz y fases X1–X5. Solo si tu fase es una de esas.
+1. `README.md` — clean-room rules. **Non-negotiable.**
+2. `docs/ROADMAP.md` — what has to be done, in which phase, and **which
+   model runs each phase** (Fable decides; Opus builds; Sonnet ports and
+   mechanises; Haiku does the maintenance tasks). Find your phase and read
+   only what it needs.
+3. `docs/SPEC.md` — what the product does (behaviour, data model).
+4. `docs/ARCHITECTURE.md` — stack, module map, *store*, engines.
+5. `docs/UI.md` — the interface, control by control.
+6. `docs/INTERIORS.md` — interiors and furniture: integration decision,
+   sources and phases K1–K8. Only if your phase is one of those.
+7. `docs/AI-POST.md` — optional AI post-processing: model, safeguards,
+   interface and phases X1–X5. Only if your phase is one of those.
 
-## Antes de tocar nada
+## Before touching anything
 
 ```bash
 npm ci
-npm run qa            # tipos + tests + build de la interfaz. Tiene que estar en verde.
-npm run engine:test   # cargo test del motor. También en verde.
-npm run screenshot    # deja out/screenshot.png con el Chromium local
+npm run qa            # types + tests + UI build. Must be green.
+npm run engine:test   # cargo test of the engine. Also green.
+npm run screenshot    # leaves out/screenshot.png using the local Chromium
 ```
 
-Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
-`cargo clippy --workspace --all-targets -- -D warnings` y
-`cargo build -p rt-wasm --target wasm32-unknown-unknown --release`, desde
-`engine/`.
+To touch the engine (`engine/`), also run, from `engine/`:
+`cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings` and
+`cargo build -p rt-wasm --target wasm32-unknown-unknown --release`.
 
-## Reglas de trabajo (no negociables)
+## Working rules (non-negotiable)
 
-1. **Sala limpia.** Nada derivado de binarios de KeyShot. Fuentes: literatura
-   pública, código abierto con licencia compatible, observación de caja
-   negra. Ni un nombre de archivo con "keyshot": el `.gitignore` lo
-   ignoraría en silencio.
-2. **Una fase del roadmap por PR**, con `npm run qa` en verde antes de
-   abrirlo y la fase marcada como hecha en `docs/ROADMAP.md` con un párrafo
-   de qué se hizo y qué no encajó con el plan; las capturas nuevas de la
-   fase, con su entrada en `docs/GALERIA.md` bajo *Sin publicar* (el PR de
-   la versión mueve ese bloque bajo la versión nueva).
-3. **Todo bug corregido lleva su test**, y se comprueba que el test falla
-   si se reintroduce el bug. Si un bug se escapó porque un test o un
-   *mock* era más permisivo que la realidad, se arregla también el test.
-4. **El cromo de la interfaz es acromático.** Blanco, negro y grises, en
-   los dos temas. El color solo está en el contenido (render, miniaturas).
-5. **Toda cadena de la interfaz existe en `es` y en `en`** en
-   `src/ui/strings.ts`. Inglés por defecto.
-6. **Toda mutación pasa por el *store*** (`src/core/store.ts`) y es
-   deshacible. `ui → core`, `render → core`, `io → core`; nunca al revés.
-7. **Claves de catálogo estables** (`src/data/`): se añade, no se renombra.
-8. **Licencia y dependencias**: el proyecto es **PolyForm Noncommercial
-   1.0.0** (`LICENSE`; resumen en el `README`): gratis para fines no
-   comerciales, ningún uso comercial sin licencia aparte del titular.
-   Por eso las dependencias de la interfaz solo pueden ser permisivas
-   (MIT/Apache/BSD/ISC/CC0), nunca copyleft (GPL, AGPL) ni no comerciales,
-   y llevan una línea en `docs/ARCHITECTURE.md` §1. Única excepción:
-   `occt-import-js` (LGPL-2.1) para STEP e IGES, aislada con las
-   condiciones de ese apartado. **En el motor, ninguna**:
-   `engine/` es Rust desde cero, solo `std`; nada de crates.io, nada
-   copiado de otros renderizadores. CI lo comprueba.
-8b. **El motor es portable y determinista**: sin APIs del sistema en
-   `rt-core`, sin `unsafe` fuera del módulo `simd`, del *shim* de wasm y
-   de `rt-app/src/platform/` (la ventana nativa: Win32 y WebView2),
-   `f32` en todo, y la misma escena con la misma semilla da los mismos
-   píxeles en cualquier arquitectura y con cualquier número de hilos.
-   `clippy -D warnings` y `cargo fmt` limpios.
-9. Código, identificadores y comentarios en **inglés**; documentación en
-   **español**; la interfaz en los dos idiomas.
-10. **No se inventan números en la interfaz**: el medidor del visor pinta
-    lo que el motor dice. Lo que no está hecho se marca *próximamente*.
-11. Las decisiones marcadas **Fable** en el roadmap (fotográficas, de
-    criterio visual, de arquitectura) no las toma un agente por su
-    cuenta: se preparan los datos, se anotan con ◆ y las decide el
-    responsable de la sesión (por indicación del usuario, 17-10), que
-    las apunta en *Decisiones de criterio* del `ROADMAP.md`.
-12. Cuando algo no encaje con los documentos, se anota en el PR y se sigue
-    con lo que sí encaja; no se "arregla" el contrato por cuenta propia.
+1. **Clean room.** Nothing derived from KeyShot binaries. Sources: public
+   literature, open source under a compatible licence, black-box
+   observation. Not even a file name with "keyshot": `.gitignore` would
+   silently ignore it.
+2. **One roadmap phase per PR**, with `npm run qa` green before opening it
+   and the phase marked as done in `docs/ROADMAP.md` with a paragraph on
+   what was done and what did not fit the plan; the phase's new
+   screenshots, each with its entry in `docs/GALERIA.md` under
+   *Unreleased* (the release PR moves that block under the new version).
+3. **Every bug fixed comes with its test**, and you check that the test
+   fails if the bug is reintroduced. If a bug slipped through because a
+   test or a *mock* was more permissive than reality, the test is fixed
+   too.
+4. **The interface chrome is achromatic.** White, black and greys, in both
+   themes. Colour appears only in the content (render, thumbnails).
+5. **Every interface string exists in `es` and in `en`** in
+   `src/ui/strings.ts`. English by default.
+6. **Every mutation goes through the *store*** (`src/core/store.ts`) and is
+   undoable. `ui → core`, `render → core`, `io → core`; never the other
+   way round.
+7. **Stable catalogue keys** (`src/data/`): you add, you do not rename.
+8. **Licence and dependencies**: the project is **PolyForm Noncommercial
+   1.0.0** (`LICENSE`; summary in the `README`): free for non-commercial
+   purposes, no commercial use without a separate licence from the holder.
+   For that reason, interface dependencies may only be permissive
+   (MIT/Apache/BSD/ISC/CC0), never copyleft (GPL, AGPL) or non-commercial,
+   and each carries a line in `docs/ARCHITECTURE.md` §1. The only
+   exception: `occt-import-js` (LGPL-2.1) for STEP and IGES, isolated
+   under the conditions of that section. **In the engine, none**:
+   `engine/` is Rust from scratch, only `std`; no crates.io, nothing
+   copied from other renderers. CI checks it.
+8b. **The engine is portable and deterministic**: no system APIs in
+   `rt-core`, no `unsafe` outside the `simd` module, the wasm shim and
+   `rt-app/src/platform/` (the native window: Win32 and WebView2), `f32`
+   everywhere, and the same scene with the same seed gives the same pixels
+   on any architecture and with any number of threads. `clippy -D warnings`
+   and `cargo fmt` clean.
+9. Code, identifiers, comments and **all documentation in English** (the
+   project is public). The interface is bilingual: every UI string exists
+   in `en` and `es` in `src/ui/strings.ts`, English by default.
+10. **No numbers are made up in the interface**: the viewport meter shows
+    what the engine says. What is not done is marked *coming soon*.
+11. Decisions marked **Fable** in the roadmap (photographic, visual
+    judgement, architecture) are not taken by an agent on its own: the
+    data is prepared, noted with ◆ and decided by the session lead (as
+    instructed by the owner, 2026-10-17), who records them in *Judgement
+    calls* in `ROADMAP.md`.
+12. When something does not fit the documents, note it in the PR and carry
+    on with what does fit; the contract is not "fixed" unilaterally.
+13. Release notes and public docs are written for the public, never
+    addressed to the owner; manual test checklists live in
+    `docs/testing/windows-checklist.md`, not in release notes.
 
-## Trampas conocidas
+## Known pitfalls
 
-- `npm run screenshot` captura el `dist/` (hay que hacer `npm run build`
-  antes) y usa `--use-gl=swiftshader`: la captura sale, pero lenta.
-- `src/main.ts` tiene que dejar `#app[data-ready="1"]` cuando la interfaz
-  ha pintado, o la captura se toma antes de tiempo.
-- three.js es Y-arriba y el modelo es Z-arriba: la conversión vive solo en
+- `npm run screenshot` captures `dist/` (run `npm run build` first) and
+  uses `--use-gl=swiftshader`: the capture works, but slowly.
+- `src/main.ts` must leave `#app[data-ready="1"]` once the interface has
+  painted, or the capture is taken too early.
+- three.js is Y-up and the model is Z-up: the conversion lives only in
   `src/render/preview.ts` (`toThree`).
-- `pkill -f "vite"` mata la propia shell que lo lanza. Usa
+- `pkill -f "vite"` kills the very shell that launches it. Use
   `pgrep -f "[v]ite"`.
-- En este entorno crates.io está bloqueado (403). No importa: el motor no
-  tiene dependencias. `rustup target add wasm32-unknown-unknown` sí
-  funciona.
-- Con varios agentes trabajando a la vez la máquina va muy cargada y
-  algún test lento (`io-rhino`) puede pasar del tiempo límite: repite con
-  `npx vitest run --maxWorkers=2` antes de dar nada por roto. Y `pgrep -f`
-  también encuentra tu propia shell si el patrón aparece en la orden: usa
-  `pgrep -x`.
-- `rt.wasm` no se sube al repositorio: `npm run engine:build` lo genera en
-  `public/engine/`; la interfaz tiene que arrancar sin él (solo con la
-  vista previa) y decirlo en el medidor.
+- In this environment crates.io is blocked (403). It does not matter: the
+  engine has no dependencies. `rustup target add wasm32-unknown-unknown`
+  does work.
+- With several agents working at once the machine is heavily loaded and a
+  slow test (`io-rhino`) may exceed the time limit: repeat with
+  `npx vitest run --maxWorkers=2` before assuming anything is broken. And
+  `pgrep -f` also finds your own shell if the pattern appears in the
+  command: use `pgrep -x`.
+- `rt.wasm` is not committed to the repository: `npm run engine:build`
+  generates it in `public/engine/`; the interface must start without it
+  (with the preview only) and say so in the meter.

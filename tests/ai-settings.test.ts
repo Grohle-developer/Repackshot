@@ -30,7 +30,7 @@ describe('the AI settings of a project', () => {
   });
 
   it('C1: the factory values are Intervention 50 and the guard’s tolerances doubled (ΔE₀₀ 4 and 6, edges 4 px)', () => {
-    // Decided in docs/ROADMAP.md (Decisiones de criterio, 2.1): the AI pass changed next to nothing at 30 and 2/3/2.
+    // Decided in docs/ROADMAP.md (Judgement calls, 2.1): the AI pass changed next to nothing at 30 and 2/3/2.
     expect(DEFAULT_AI_PIPELINE.intervention).toBe(50);
     const d = defaultSettings();
     expect(d['ai.intervention']).toBe(50);
