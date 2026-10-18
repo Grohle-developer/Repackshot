@@ -53,6 +53,8 @@ import { LensFilterPass } from './lens-filter-pass';
 import { lensProfileTable, PROFILE_GLSL, ProfileUniformSet, shownOfSource, sourceOfShown, type LensProfile, type ProfileView } from './lens-profile';
 import type { EngineLensInfo } from '../core/traced-lens';
 import { GraphBakes } from './graph-preview';
+import { familyBakeGraph, type MaterialGraph } from '../core/material-graph';
+import type { MaterialInstance } from '../core/materials';
 import type { GraphWorkers } from './graph-client';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
@@ -760,7 +762,7 @@ export class PreviewEngine implements RenderEngine {
     // N1: what the playhead fades and tints (the materials as the clips leave them, see-through copies for the parts).
     const fadesChanged = this.fades.update(state, pose);
     if (matsChanged) this.syncMaterials(state, prev);
-    if (matsChanged || fadesChanged) this.fades.applyMaterials(state, this.materials, pose, (m, inst) => this.textures.apply(m, inst));
+    if (matsChanged || fadesChanged) this.fades.applyMaterials(state, this.materials, pose, (m, inst, posed) => this.resetMaterial(m, inst, posed, state));
     if (nodesChanged) this.syncNodes(state, prev);
     if (nodesChanged || matsChanged || fadesChanged) this.assignMaterials(state);
     const anim = state.animation;
@@ -820,28 +822,49 @@ export class PreviewEngine implements RenderEngine {
 
   /** M3a: the workers that bake material graphs (main.ts gives them; without them a graph shows its means). */
   setGraphWorkers(w: GraphWorkers | null): void {
+    const had = this.graphs.hasWorkers();
     this.graphs.setWorkers(w);
+    // M3d: a family's wood is baked only with workers: given (or taken) after the first sync, its materials again.
+    if (had !== this.graphs.hasWorkers() && this.state) {
+      this.syncMaterials(this.state, null);
+      this.assignMaterials(this.state);
+      this.needsRender = true;
+    }
+  }
+
+  /**
+   * The graph the Fast preview bakes a material through, or null for one drawn from its parameters: its own graph in
+   * Nodes mode; M3d: for a wood of the family in Simple mode, the graph Simple → Nodes makes of it, so that it shows
+   * its rings, pores and knots as the Wood node does (by the same bake). Without graph workers the family's wood keeps
+   * its own drawing (its mean colour and its knots, E6), which is better than the means a bake would show.
+   */
+  private bakeGraph(inst: MaterialInstance | undefined): MaterialGraph | null {
+    if (!inst) return null;
+    return inst.graph ?? (this.graphs.hasWorkers() ? familyBakeGraph(inst) : null);
   }
 
   private syncMaterials(state: ProjectState, prev: ProjectState | null): void {
+    const baked = new Set<string>();
     for (const [id, inst] of Object.entries(state.materials)) {
       const m = this.materials.get(id);
+      const graph = this.bakeGraph(inst);
+      if (graph) baked.add(id);
       // A graph's maps are made for the parts that carry it: their meshes count too.
-      const graphParts = !!inst.graph && !!prev && prev.scene.nodes !== state.scene.nodes;
+      const graphParts = !!graph && !!prev && prev.scene.nodes !== state.scene.nodes;
       if (!m) {
-        const made = this.section.sided(this.section.clip(makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm)));
-        if (inst.graph) this.graphs.apply(made, inst, state);
+        const made = this.section.sided(this.section.clip(makeMaterial(graph ? null : inst, state.scene.partSizeMm)));
+        if (graph) this.graphs.apply(made, { ...inst, graph }, state);
         else this.textures.apply(made, inst);
         this.materials.set(id, made);
       } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm || graphParts) {
-        if (inst.graph) this.graphs.apply(m, inst, state);
+        if (graph) this.graphs.apply(m, { ...inst, graph }, state);
         else {
           applyMaterial(m, inst, state.scene.partSizeMm);
           this.textures.apply(m, inst);
         }
       }
     }
-    this.graphs.prune(new Set(Object.keys(state.materials).filter((id) => state.materials[id].graph)));
+    this.graphs.prune(baked);
     for (const [id, m] of this.materials) {
       if (!state.materials[id]) {
         m.dispose();
@@ -963,7 +986,8 @@ export class PreviewEngine implements RenderEngine {
       const opacity = this.fades.opacityOf(id);
       const get = (m: string | null | undefined) => {
         const base = m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial;
-        const knots = m ? partKnots(state, id, m) : null;
+        // M3d: a baked wood has its knots in its maps (the Wood node's, placed on the parts' box).
+        const knots = m && !this.bakeGraph(state.materials[m]) ? partKnots(state, id, m) : null;
         const own = knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
         // Q1: while a section cuts, the studio draws with a material that carries no clipping plane.
         const cut = free ? this.section.unclipped(`${id}|${m ?? ''}`, own, studio) : own;
@@ -982,6 +1006,21 @@ export class PreviewEngine implements RenderEngine {
       this.knotMaterials.delete(key);
       this.knotPrograms.delete(key);
     }
+  }
+
+  /**
+   * A material back to what it draws before a clip of the playhead tints or fades it (N1): `posed`, the instance as
+   * the clips leave it, from its parameters; M3d: a family's wood that Fast bakes, its bake again (a colour clip does
+   * not reach a wood: it has no base colour of its own).
+   */
+  private resetMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, posed: MaterialInstance, state: ProjectState): void {
+    const graph = this.bakeGraph(inst);
+    if (graph) {
+      this.graphs.apply(m, { ...inst, graph }, state);
+      return;
+    }
+    applyMaterial(m, posed, state.scene.partSizeMm);
+    this.textures.apply(m, inst);
   }
 
   /** K3: what a part hidden to the camera draws with: no colour and no depth, the side of `m` for its shadows. */

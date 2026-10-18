@@ -1,6 +1,7 @@
 // E6: the Fast preview's knots: the material of a part with knots darkens them (their place from core/knots.ts, as
 // the engine puts them), with their bark pocket, on the mean colour it shows. It draws no rings, so neither the flow
-// of the grain around the knots.
+// of the grain around the knots. M3d: only without graph workers; with them a family's wood is baked as the Wood node
+// is (render/graph-preview.ts), its knots in its maps.
 import * as THREE from 'three';
 import { MAX_KNOTS, type Knot, type WoodFrame } from '../core/knots';
 

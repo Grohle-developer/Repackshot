@@ -176,10 +176,12 @@ export function sphere(r = 50): MeshData {
 /**
  * M3c: a 100 mm sphere seen from the front in the flat white world, in the Wood family's oak (`FAMILY`), in the oak
  * converted to nodes by Simple → Nodes (`CONVERTED`), in the wood example of the graphs (`EXAMPLE`), or in the example
- * turned a quarter of a turn about its vertical axis (`TURNED`, the control: the same surface, the wood moved).
+ * turned a quarter of a turn about its vertical axis (`TURNED`, the control: the same surface, the wood moved). M3d:
+ * `preset` another wood of the catalogue (the knotty pine) for the family and its conversion; `faded`, a fade of the
+ * material on the timeline (N1, to 60 % opacity over 4 s) with the playhead halfway through it.
  */
-export function woodSphereScene(kind: 'FAMILY' | 'CONVERTED' | 'EXAMPLE' | 'TURNED', width: number, height: number): ProjectState {
-  const mat = instanceFromPreset('mPart', 'OAK', 120)!;
+export function woodSphereScene(kind: 'FAMILY' | 'CONVERTED' | 'EXAMPLE' | 'TURNED', width: number, height: number, preset = 'OAK', faded = false): ProjectState {
+  const mat = instanceFromPreset('mPart', preset, 120)!;
   const nodes: Record<NodeId, SceneNode> = {
     model: node('model', null, ['part'], [0, 0, 0]),
     part: node('part', 'model', [], [0, 0, 0], { mesh: registerMesh('m3c:sphere', sphere()), material: 'mPart', smooth: true }),
@@ -190,6 +192,10 @@ export function woodSphereScene(kind: 'FAMILY' | 'CONVERTED' | 'EXAMPLE' | 'TURN
   const material = part.material!;
   if (kind !== 'FAMILY') s = reduce(s, { type: 'graph/enable', material });
   if (kind === 'EXAMPLE' || kind === 'TURNED') s = reduce(s, { type: 'graph/set', material, graph: exampleGraph('WOOD_TWO_NOISES', null)! });
+  if (faded) {
+    s = reduce(s, { type: 'anim/addClip', clip: { target: { kind: 'MATERIAL', id: material }, move: 'FADE', shot: null, start: 0, duration: 4, amount: 60, easing: 'LINEAR' } });
+    s = reduce(s, { type: 'anim/playhead', t: 2 });
+  }
   s = reduce(s, { type: 'render/set', patch: { width, height } });
   s = reduce(s, { type: 'camera/set', id: s.camera.active, patch: { azimuth: 0, elevation: 0, distance: 300, target: [0, 0, 50], focalMm: 50, fstop: 0 } });
   return {

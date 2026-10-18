@@ -101,12 +101,21 @@ export class GraphBakes {
     this.workers = w;
   }
 
+  /** True when there are workers to bake with (M3d: without them a family's wood keeps its own Fast drawing). */
+  hasWorkers(): boolean {
+    return this.workers !== null;
+  }
+
   /** Bakes running or waiting. */
   busy(): number {
     return this.pending;
   }
 
-  /** Gives a preview material its graph: the maps it has (or its means while they come) and its own textures. */
+  /**
+   * Gives a preview material its graph: the maps it has (or its means while they come) and its own textures. M3d: a
+   * wood of the family comes here too, with the graph Simple → Nodes makes of it as its `graph` (core/material-graph.ts
+   * `familyBakeGraph`), and is baked as the Wood node is.
+   */
   apply(m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, state: ProjectState): void {
     const g = inst.graph!;
     const program = programOf(g);
