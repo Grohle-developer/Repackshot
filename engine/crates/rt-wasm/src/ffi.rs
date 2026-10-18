@@ -885,3 +885,90 @@ pub unsafe extern "C" fn wet_frame_copy(handle: u32, out: *mut u8) -> u32 {
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
     STATUS_OK
 }
+
+/// S3c: builds the wet parts of a scene from `WPT1` bytes (`rt_phys::wet_parts`). Returns its
+/// handle, or 0 after recording the error (`rt_scene_error_len`, `rt_scene_error_copy`).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn wpt_new(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("wpt_new: null pointer");
+        return 0;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::parts::new(bytes)
+}
+
+/// Forgets the wet parts. Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn wpt_free(handle: u32) -> u32 {
+    if crate::parts::free(handle) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Simulates `n` fixed steps of 1/240 s (at most a minute per call). Returns 0, or 1 for a bad
+/// handle.
+#[no_mangle]
+pub extern "C" fn wpt_step(handle: u32, n: u32) -> u32 {
+    if crate::parts::step(handle, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Steps simulated (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn wpt_steps(handle: u32) -> u32 {
+    crate::parts::steps(handle).unwrap_or(0)
+}
+
+/// The simulation's FNV-1a hash (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn wpt_hash(handle: u32) -> u32 {
+    crate::parts::hash(handle).unwrap_or(0)
+}
+
+/// Takes the layout of the samples (once per run: each triangle's resolution, the rates of dust
+/// and snow) and returns its length in bytes, `u32::MAX` for a bad handle; copy it with
+/// [`wpt_copy`].
+#[no_mangle]
+pub extern "C" fn wpt_layout(handle: u32) -> u32 {
+    crate::parts::layout(handle).unwrap_or(u32::MAX)
+}
+
+/// Takes the record of a frame (the drops, the samples wet and wiped and the drips since the last
+/// one; the next frame starts now) and returns its length in bytes, `u32::MAX` for a bad handle;
+/// copy it with [`wpt_copy`].
+#[no_mangle]
+pub extern "C" fn wpt_frame(handle: u32) -> u32 {
+    crate::parts::frame(handle).unwrap_or(u32::MAX)
+}
+
+/// Copies what [`wpt_layout`] or [`wpt_frame`] took last to `out`. Returns 0, 1 for a bad handle,
+/// 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to at least the length that call returned, writable.
+#[no_mangle]
+pub unsafe extern "C" fn wpt_copy(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(bytes) = crate::parts::out_bytes(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    // SAFETY: the caller promises room for the length the call returned, which is `bytes.len()`;
+    // `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}

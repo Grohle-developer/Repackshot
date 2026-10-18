@@ -78,9 +78,9 @@ pub const TRAIL_FILM_MM: f32 = 0.002;
 pub const REPOSE_SPREAD_DEG: f32 = 5.0;
 /// Most particles one source lands in one step (a mean past it is drawn in parts of at most
 /// [`POISSON_PART`] each, so the sum is still Poisson).
-const MAX_LANDINGS: u32 = 4096;
+pub(crate) const MAX_LANDINGS: u32 = 4096;
 /// Largest mean of one Poisson draw (`e^-λ` stays a normal `f32`).
-const POISSON_PART: f32 = 32.0;
+pub(crate) const POISSON_PART: f32 = 32.0;
 /// Side of the cells of the grid the motes are found in, mm (at least: a pane of more than
 /// [`MOTE_GRID_MAX`] cells per side gets wider cells).
 const MOTE_CELL_MM: f32 = 2.0;
@@ -301,7 +301,7 @@ pub fn critical_radius(advancing_deg: f32, receding_deg: f32, sin_alpha: f32) ->
 }
 
 /// `K(θ̄)` (a cap's volume over the cube of its contact radius) and `cos θ_R − cos θ_A`.
-fn cap_constants(advancing_deg: f32, receding_deg: f32) -> (f32, f32) {
+pub(crate) fn cap_constants(advancing_deg: f32, receding_deg: f32) -> (f32, f32) {
     let mean = (0.5 * (advancing_deg + receding_deg)).clamp(1.0, 179.0) * fmath::DEG_TO_RAD;
     let (s, c) = fmath::sin_cos(mean);
     let hysteresis = fmath::cos(receding_deg * fmath::DEG_TO_RAD)
@@ -310,7 +310,7 @@ fn cap_constants(advancing_deg: f32, receding_deg: f32) -> (f32, f32) {
 }
 
 /// The cube root of `v >= 0` with `fmath`.
-fn cbrt(v: f32) -> f32 {
+pub(crate) fn cbrt(v: f32) -> f32 {
     if v <= 0.0 {
         0.0
     } else {
@@ -320,7 +320,7 @@ fn cbrt(v: f32) -> f32 {
 
 /// A uniform number in `[0, 1)` from the top 24 bits of a hash.
 #[inline]
-fn unit(h: u64) -> f32 {
+pub(crate) fn unit(h: u64) -> f32 {
     (h >> 40) as f32 * (1.0 / 16_777_216.0)
 }
 
@@ -775,7 +775,7 @@ impl WetPane {
 
 /// A Poisson count of mean `lambda` (at most [`POISSON_PART`]) by inversion of its distribution at
 /// the uniform number `u`.
-fn poisson(lambda: f32, u: f32) -> u32 {
+pub(crate) fn poisson(lambda: f32, u: f32) -> u32 {
     if lambda <= 0.0 {
         return 0;
     }

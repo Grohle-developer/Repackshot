@@ -238,3 +238,149 @@ pub fn s3b_wet_scene() -> rt_core::scene::Scene {
     scene.set_glass_layout(params, pane.layout());
     scene
 }
+
+/// S3c: steps the wet parts of the parity scene are simulated for (five seconds).
+pub const PARTS_STEPS: u32 = 1200;
+/// S3c: the contact angles of water on plastic and metal and the soak of paint (the page's
+/// `src/data/wettability.ts`, families `PLASTIC`, `METAL` and `PAINT`: ◆ proposals), and the snow's
+/// angle of repose (its `SNOW_REPOSE_DEG`).
+pub const PLASTIC_ADVANCING_DEG: f32 = 90.0;
+/// See [`PLASTIC_ADVANCING_DEG`].
+pub const PLASTIC_RECEDING_DEG: f32 = 65.0;
+/// See [`PLASTIC_ADVANCING_DEG`].
+pub const METAL_ADVANCING_DEG: f32 = 80.0;
+/// See [`PLASTIC_ADVANCING_DEG`].
+pub const METAL_RECEDING_DEG: f32 = 50.0;
+/// See [`PLASTIC_ADVANCING_DEG`].
+pub const PAINT_ADVANCING_DEG: f32 = 85.0;
+/// See [`PLASTIC_ADVANCING_DEG`].
+pub const PAINT_RECEDING_DEG: f32 = 60.0;
+/// See [`PLASTIC_ADVANCING_DEG`].
+pub const SNOW_REPOSE_DEG: f32 = 50.0;
+
+/// A flat plate of `size_x` × `size_y` mm in the XY plane about the origin, facing +Z, `nx` × `ny`
+/// quads of two triangles each (counter-clockwise from above).
+pub fn plate_mesh(size_x: f32, size_y: f32, nx: u32, ny: u32) -> crate::wet_parts::PartsMesh {
+    let mut positions = Vec::new();
+    for j in 0..=ny {
+        for i in 0..=nx {
+            positions.push(Vec3::new(
+                size_x * (i as f32 / nx as f32 - 0.5),
+                size_y * (j as f32 / ny as f32 - 0.5),
+                0.0,
+            ));
+        }
+    }
+    let at = |i: u32, j: u32| j * (nx + 1) + i;
+    let mut indices = Vec::new();
+    for j in 0..ny {
+        for i in 0..nx {
+            let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+            indices.extend_from_slice(&[a, b, c, a, c, d]);
+        }
+    }
+    crate::wet_parts::PartsMesh { positions, indices }
+}
+
+/// A [`SceneMesh`] as a mesh of wet parts.
+pub fn parts_mesh(m: SceneMesh) -> crate::wet_parts::PartsMesh {
+    crate::wet_parts::PartsMesh {
+        positions: m.positions,
+        indices: m.indices,
+    }
+}
+
+/// S3c: the parity scene's parts: a glass bottle (a closed cylinder of 35 mm by 160 mm standing on
+/// the floor), a plastic plate tilted 45° beside it, a metal shelf tilted 20° above the plate (its
+/// drops run to its low edge and hang under it), and a painted floor card as a film; under the
+/// page's *Rain* driven by 1.5 m/s of wind, a *Dust cloud*'s dust and a light snow.
+pub fn parts_spec() -> crate::wet_parts::PartsSpec {
+    use crate::wet_parts::{PartsSource, PartsSourceKind, PartsSpec, WetPartSpec, PART_FILM};
+    let tilt = |deg: f32, t: Vec3| {
+        Transform::from_pose(
+            t,
+            Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), deg * fmath::DEG_TO_RAD),
+        )
+    };
+    let part = |mesh: u32, transform: Transform, adv: f32, rec: f32, flags: u32| WetPartSpec {
+        mesh,
+        transform,
+        advancing_deg: adv,
+        receding_deg: rec,
+        soak_mm_s: 0.0,
+        flags,
+    };
+    PartsSpec {
+        seed: 5,
+        cell_mm: 1.5,
+        max_samples: 200_000,
+        repose_deg: DUST_REPOSE_DEG,
+        snow_repose_deg: SNOW_REPOSE_DEG,
+        meshes: vec![
+            parts_mesh(cylinder_mesh(35.0, 160.0, 32)),
+            plate_mesh(120.0, 80.0, 12, 8),
+            parts_mesh(box_mesh(Vec3::new(40.0, 30.0, 2.0))),
+            plate_mesh(500.0, 500.0, 10, 10),
+        ],
+        parts: vec![
+            part(
+                0,
+                Transform::translation(Vec3::new(0.0, 0.0, 80.0)),
+                GLASS_ADVANCING_DEG,
+                GLASS_RECEDING_DEG,
+                0,
+            ),
+            part(
+                1,
+                tilt(45.0, Vec3::new(110.0, 0.0, 40.0)),
+                PLASTIC_ADVANCING_DEG,
+                PLASTIC_RECEDING_DEG,
+                0,
+            ),
+            part(
+                2,
+                tilt(20.0, Vec3::new(110.0, 10.0, 130.0)),
+                METAL_ADVANCING_DEG,
+                METAL_RECEDING_DEG,
+                0,
+            ),
+            part(
+                3,
+                Transform::translation(Vec3::new(0.0, 0.0, -0.5)),
+                PAINT_ADVANCING_DEG,
+                PAINT_RECEDING_DEG,
+                PART_FILM,
+            ),
+        ],
+        sources: vec![
+            PartsSource {
+                kind: PartsSourceKind::Drops,
+                density: 2.0e-5,
+                velocity: Vec3::new(1500.0, 0.0, -6500.0),
+                size_mm: 1.2,
+                size_var: 0.4,
+            },
+            PartsSource {
+                kind: PartsSourceKind::Dust,
+                density: 4.0e-3,
+                velocity: Vec3::new(200.0, 100.0, -150.0),
+                size_mm: 0.15,
+                size_var: 0.5,
+            },
+            PartsSource {
+                kind: PartsSourceKind::Snow,
+                density: 2.0e-6,
+                velocity: Vec3::new(300.0, 0.0, -1000.0),
+                size_mm: 3.0,
+                size_var: 0.5,
+            },
+        ],
+    }
+}
+
+/// The parts of [`parts_spec`] after [`PARTS_STEPS`].
+pub fn wet_parts() -> crate::wet_parts::WetParts {
+    let mut parts = crate::wet_parts::WetParts::new(parts_spec());
+    parts.step(PARTS_STEPS);
+    parts
+}

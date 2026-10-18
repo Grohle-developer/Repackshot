@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
+pub mod parts;
 pub mod phys;
 pub mod wet;
 
