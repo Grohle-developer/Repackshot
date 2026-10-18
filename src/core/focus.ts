@@ -6,8 +6,10 @@
 // - POINT: a point picked with a click, kept in the coordinates of the part it hit (`focusPoint`), so it moves with the
 //   part's transforms and animation; the focus distance is the one that puts that point in focus from the camera as it
 //   is at that moment.
-// - OBJECT: a part, a group or the model (`focusObject`); the point of it the focus follows is, for now, the centre of
-//   its bounds (decided: `OBJECT_FOCUS_POINT`, with the other two candidates written below and unused).
+// - OBJECT: a part, a group or the model (`focusObject`); the point of it the focus follows is the surface the camera
+//   sees at the centre of its outline on the image (decided: `OBJECT_FOCUS_POINT`, with the other two candidates written
+//   below and unused). The centre of its bounds, the first choice, lies inside a solid product: wide open, the face the
+//   camera sees was out of focus (owner's report, 2026-10-18, at f/1).
 //
 // "In focus" is the engine's rule (rt-core `focus`): the thin lens focuses the plane square to the view axis at the
 // focus distance, so a point's distance is its depth along the axis; a tilted lens (O1) focuses the plane of the hinge
@@ -67,7 +69,8 @@ export function anchorOf(state: ProjectState, node: NodeId, world: Vec3, pose?: 
 }
 
 /**
- * Which point of an object the focus follows (decided: the centre of its bounds; the other two are kept, unused):
+ * Which point of an object the focus follows (decided: the surface at the centre of its outline; the other two are
+ * kept, unused):
  * - `BOUNDS_CENTRE`: the centre of the box round the object's parts, as they are at that moment;
  * - `NEAREST`: the object's vertex nearest the camera along the view axis (its front);
  * - `SILHOUETTE`: the surface the camera sees at the centre of the object's outline on the image (the box round its
@@ -76,7 +79,7 @@ export function anchorOf(state: ProjectState, node: NodeId, world: Vec3, pose?: 
 export type ObjectFocusPoint = 'BOUNDS_CENTRE' | 'NEAREST' | 'SILHOUETTE';
 export const OBJECT_FOCUS_POINTS: readonly ObjectFocusPoint[] = ['BOUNDS_CENTRE', 'NEAREST', 'SILHOUETTE'];
 /** The point of an object the focus follows (decided). */
-export const OBJECT_FOCUS_POINT: ObjectFocusPoint = 'BOUNDS_CENTRE';
+export const OBJECT_FOCUS_POINT: ObjectFocusPoint = 'SILHOUETTE';
 
 /** The world positions of a part's vertices at a pose (none without its mesh data). */
 function* partVertices(state: ProjectState, part: NodeId, pose: Pose | null | undefined, cache: Map<NodeId, Mat4>): Generator<Vec3> {
@@ -118,9 +121,38 @@ function rayTriangle(o: Vec3, d: Vec3, a: Vec3, b: Vec3, c: Vec3): number | null
   return t > 1e-9 ? t : null;
 }
 
+/**
+ * The last points found, by scene: the store resolves the focus after every action that changes a camera or the scene
+ * (`syncFocus`), the inspector and the RSB ask again for the same state, and NEAREST and SILHOUETTE go through every
+ * vertex (and SILHOUETTE every triangle) of the object. Keyed by the scene's nodes, the pose and the camera's placement.
+ */
+const pointCache = new WeakMap<object, Map<string, Vec3 | null>>();
+const poseIds = new WeakMap<Pose, number>();
+let nextPoseId = 1;
+
 /** The world point of an object the camera's focus follows, by `how` (see ObjectFocusPoint); null when it has no parts. */
 export function objectFocusPoint(state: ProjectState, cam: CameraState, object: NodeId, pose?: Pose | null, how: ObjectFocusPoint = OBJECT_FOCUS_POINT): Vec3 | null {
   if (!state.scene.nodes[object]) return null;
+  if (how === 'BOUNDS_CENTRE') return computeObjectFocusPoint(state, cam, object, pose, how);
+  let byScene = pointCache.get(state.scene.nodes);
+  if (!byScene) pointCache.set(state.scene.nodes, (byScene = new Map()));
+  let poseId = 0;
+  if (pose) {
+    poseId = poseIds.get(pose) ?? 0;
+    if (!poseId) poseIds.set(pose, (poseId = nextPoseId++));
+  }
+  const key = `${poseId}|${object}|${how}|${cam.azimuth}|${cam.elevation}|${cam.distance}|${cam.target.join(',')}`;
+  if (byScene.has(key)) {
+    const hit = byScene.get(key)!;
+    return hit ? [hit[0], hit[1], hit[2]] : null;
+  }
+  const found = computeObjectFocusPoint(state, cam, object, pose, how);
+  if (byScene.size >= 32) byScene.delete(byScene.keys().next().value!);
+  byScene.set(key, found ? [found[0], found[1], found[2]] : null);
+  return found;
+}
+
+function computeObjectFocusPoint(state: ProjectState, cam: CameraState, object: NodeId, pose: Pose | null | undefined, how: ObjectFocusPoint): Vec3 | null {
   const box = posedBounds(state, object, pose);
   if (isEmptyBox(box)) return null;
   const centre = boxCenter(box);
