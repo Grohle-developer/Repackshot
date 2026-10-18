@@ -12969,7 +12969,7 @@ floor wet in *Fast* around the bottle.
   part getting wet is the drop scene's box, not a screenshot of the application.
 - **Under a set with its own floor the studio floor stays dry**: the set's floor
   and backdrop are parts, and they keep the rain off the studio floor beneath
-  them (the example's *Fragrance* set does); the browser check switches them off.
+  them (the example's set does); the browser check switches them off.
   *Fast*'s motes are checked in Node only (`tests/s3e-floor.test.ts`), not in the
   browser.
 - **At a macro framing a 2 mm sawtooth remains** along a shadow edge: the grid
