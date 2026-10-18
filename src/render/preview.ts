@@ -42,9 +42,9 @@ import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type G
 import type { ProjectState } from '../core/store';
 import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
 import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './gizmo';
-import { partKnots, type PartKnots } from '../core/knots';
+import { knotSpecOf, partKnots, type PartKnots } from '../core/knots';
 import { setKnots } from './knots';
-import { applyMaterial, makeMaterial } from './materials';
+import { applyFuzz, applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 import { SectionPreview } from './section-preview';
 import { FadePreview } from './fade-preview';
@@ -56,6 +56,9 @@ import { LensFilterPass } from './lens-filter-pass';
 import { lensProfileTable, PROFILE_GLSL, ProfileUniformSet, shownOfSource, sourceOfShown, type LensProfile, type ProfileView } from './lens-profile';
 import type { EngineLensInfo } from '../core/traced-lens';
 import { GraphBakes } from './graph-preview';
+import type { MaterialGraph } from '../core/material-graph';
+import { fastFamilyGraph, graphKnotSpec } from '../core/material-preview';
+import type { MaterialInstance } from '../core/materials';
 import type { GraphWorkers } from './graph-client';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
@@ -324,6 +327,8 @@ export class PreviewEngine implements RenderEngine {
   private readonly section = new SectionPreview();
   /** E6: a copy of a wood material per part that shows its knots (they lie where that part's box puts them). */
   private readonly knotMaterials = new Map<string, THREE.MeshPhysicalMaterial>();
+  /** M3e: the materials the last sync baked (a fabric of the family goes in and out of it with its parts' size). */
+  private bakedMaterials = new Set<string>();
   /** The program key each of them was last compiled with (its textures' and its knots'). */
   private readonly knotPrograms = new Map<string, string>();
   /** M2a: the image maps and labels of the materials (render/texture-preview.ts). */
@@ -331,7 +336,11 @@ export class PreviewEngine implements RenderEngine {
   /** M3a: the materials made of nodes, baked into maps by the graph workers (render/graph-preview.ts). */
   private readonly graphs = new GraphBakes(
     () => this.textures,
-    () => (this.needsRender = true),
+    // M3e: a bake changes its material; the copies with a part's knots on top are made of it again.
+    () => {
+      this.needsRender = true;
+      if (this.state) this.assignMaterials(this.state);
+    },
     // The canvas says how many bakes are under way (the browser checks wait for 0).
     (n) => this.renderer?.domElement && (this.renderer.domElement.dataset.graphBakes = String(n)),
   );
@@ -763,7 +772,7 @@ export class PreviewEngine implements RenderEngine {
     // N1: what the playhead fades and tints (the materials as the clips leave them, see-through copies for the parts).
     const fadesChanged = this.fades.update(state, pose);
     if (matsChanged) this.syncMaterials(state, prev);
-    if (matsChanged || fadesChanged) this.fades.applyMaterials(state, this.materials, pose, (m, inst) => this.textures.apply(m, inst));
+    if (matsChanged || fadesChanged) this.fades.applyMaterials(state, this.materials, pose, (m, inst, posed) => this.resetMaterial(m, inst, posed, state));
     if (nodesChanged) this.syncNodes(state, prev);
     if (nodesChanged || matsChanged || fadesChanged) this.assignMaterials(state);
     const anim = state.animation;
@@ -823,28 +832,76 @@ export class PreviewEngine implements RenderEngine {
 
   /** M3a: the workers that bake material graphs (main.ts gives them; without them a graph shows its means). */
   setGraphWorkers(w: GraphWorkers | null): void {
+    const had = this.graphs.hasWorkers();
     this.graphs.setWorkers(w);
+    // M3d: a family's wood is baked only with workers: given (or taken) after the first sync, its materials again.
+    if (had !== this.graphs.hasWorkers() && this.state) {
+      this.syncMaterials(this.state, null);
+      this.assignMaterials(this.state);
+      this.needsRender = true;
+    }
+  }
+
+  /**
+   * The graph the Fast preview bakes a material through, or null for one drawn from its parameters: its own graph in
+   * Nodes mode; M3d: for a wood of the family in Simple mode, the graph Simple → Nodes makes of it, so that it shows
+   * its rings, pores and knots as the Wood node does (by the same bake). Without graph workers the family's wood keeps
+   * its own drawing (its mean colour and its knots, E6), which is better than the means a bake would show. M3e: the
+   * knots are not in the bake but on top (`partKnotsOf`), and a fabric of the family is baked too where its threads
+   * span 2.5 texels of the bake or more.
+   */
+  private bakeGraph(inst: MaterialInstance | undefined, state: ProjectState): MaterialGraph | null {
+    if (!inst) return null;
+    // M3e: a fabric of the family too, when its threads read in the bake (core/material-preview.ts fastFamilyGraph).
+    return inst.graph ?? (this.graphs.hasWorkers() ? fastFamilyGraph(state, inst) : null);
+  }
+
+  /**
+   * Bakes `inst` through `graph` into `m`. M3e: a fabric of the family keeps its fuzz on top (three.js's sheen, as
+   * Simple mode draws it): the bake gives a Simple material without one.
+   */
+  private applyBake(m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, graph: MaterialGraph, state: ProjectState): void {
+    const fuzz = !inst.graph && inst.family === 'FABRIC' ? (x: THREE.MeshPhysicalMaterial) => applyFuzz(x, inst.params) : undefined;
+    this.graphs.apply(m, { ...inst, graph }, state, fuzz);
+  }
+
+  /**
+   * M3e: the knots part `node` shows on top of material `material` (E6's layer, render/knots.ts), where the engine
+   * puts them: a family's wood drawn from its parameters, its own (`knotSpecOf`); one the preview bakes (a family's
+   * wood or a Wood node), the knots of the wood its colour comes from (`graphKnotSpec`), which the bake leaves out.
+   */
+  private partKnotsOf(state: ProjectState, node: NodeId, material: string): PartKnots | null {
+    const inst = state.materials[material];
+    const graph = this.bakeGraph(inst, state);
+    const spec = graph ? graphKnotSpec(graph) : knotSpecOf(inst);
+    return spec ? partKnots(state, node, material, spec) : null;
   }
 
   private syncMaterials(state: ProjectState, prev: ProjectState | null): void {
+    const baked = new Set<string>();
     for (const [id, inst] of Object.entries(state.materials)) {
       const m = this.materials.get(id);
+      const graph = this.bakeGraph(inst, state);
+      if (graph) baked.add(id);
       // A graph's maps are made for the parts that carry it: their meshes count too.
-      const graphParts = !!inst.graph && !!prev && prev.scene.nodes !== state.scene.nodes;
+      const graphParts = !!graph && !!prev && prev.scene.nodes !== state.scene.nodes;
+      // M3e: a fabric of the family is baked or not by its parts' size: set again when that changes.
+      const flipped = this.bakedMaterials.has(id) !== !!graph;
       if (!m) {
-        const made = this.section.sided(this.section.clip(makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm)));
-        if (inst.graph) this.graphs.apply(made, inst, state);
+        const made = this.section.sided(this.section.clip(makeMaterial(graph ? null : inst, state.scene.partSizeMm)));
+        if (graph) this.applyBake(made, inst, graph, state);
         else this.textures.apply(made, inst);
         this.materials.set(id, made);
-      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm || graphParts) {
-        if (inst.graph) this.graphs.apply(m, inst, state);
+      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm || graphParts || flipped) {
+        if (graph) this.applyBake(m, inst, graph, state);
         else {
           applyMaterial(m, inst, state.scene.partSizeMm);
           this.textures.apply(m, inst);
         }
       }
     }
-    this.graphs.prune(new Set(Object.keys(state.materials).filter((id) => state.materials[id].graph)));
+    this.bakedMaterials = baked;
+    this.graphs.prune(baked);
     for (const [id, m] of this.materials) {
       if (!state.materials[id]) {
         m.dispose();
@@ -966,7 +1023,8 @@ export class PreviewEngine implements RenderEngine {
       const opacity = this.fades.opacityOf(id);
       const get = (m: string | null | undefined) => {
         const base = m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial;
-        const knots = m ? partKnots(state, id, m) : null;
+        // M3e: E6's knots on top, the bake's left out of its maps, so that they fall where Full puts them.
+        const knots = m ? this.partKnotsOf(state, id, m) : null;
         const own = knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
         // Q1: while a section cuts, the studio draws with a material that carries no clipping plane.
         const cut = free ? this.section.unclipped(`${id}|${m ?? ''}`, own, studio) : own;
@@ -985,6 +1043,21 @@ export class PreviewEngine implements RenderEngine {
       this.knotMaterials.delete(key);
       this.knotPrograms.delete(key);
     }
+  }
+
+  /**
+   * A material back to what it draws before a clip of the playhead tints or fades it (N1): `posed`, the instance as
+   * the clips leave it, from its parameters; M3d: a family's wood that Fast bakes, its bake again (a colour clip does
+   * not reach a wood: it has no base colour of its own).
+   */
+  private resetMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, posed: MaterialInstance, state: ProjectState): void {
+    const graph = this.bakeGraph(inst, state);
+    if (graph) {
+      this.applyBake(m, inst, graph, state);
+      return;
+    }
+    applyMaterial(m, posed, state.scene.partSizeMm);
+    this.textures.apply(m, inst);
   }
 
   /** K3: what a part hidden to the camera draws with: no colour and no depth, the side of `m` for its shadows. */
@@ -1025,8 +1098,9 @@ export class PreviewEngine implements RenderEngine {
     // A copy has its own planes (three.js clones them): the shared one again.
     this.section.sided(this.section.clip(m));
     setKnots(m, knots.frame, knots.knots, knots.darkness, base);
-    // A new texture configuration under the knots: a new program.
-    const program = m.customProgramCacheKey();
+    // A new texture configuration under the knots: a new program. M3e: and whatever made `base` compile again (a fade
+    // that turns it see-through: three.js's OPAQUE define), which `copy` does not carry.
+    const program = `${m.customProgramCacheKey()}|${base.version}`;
     if (this.knotPrograms.get(key) !== program) {
       this.knotPrograms.set(key, program);
       m.needsUpdate = true;

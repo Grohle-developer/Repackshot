@@ -1119,15 +1119,24 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
    ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
    (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
-   anillos*, variación, ruidos, *Poros*: lo pintan el modo Completo y los
-   renders, y su punto «·» y su ayuda lo dicen; la vista Rápida muestra el
-   color medio; *Nudos*, *Tamaño de los nudos* en mm, *Variación de
-   tamaño* y *Oscuridad de los nudos*, que la vista Rápida ya enseña
-   oscureciendo donde caen; en el bambú, el MDF y el ébano están
-   desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
-   tejido, *Hilos por cm* (2–200, físicos), relieve, pelusa: el tejido, su
-   densidad y su relieve los pintan el modo Completo y los renders, y la
-   vista Rápida muestra su color medio); emisor (tipo, temperatura,
+   anillos*, variación, ruidos, *Poros*, *Nudos*, *Tamaño de los nudos* en
+   mm, *Variación de tamaño* y *Oscuridad de los nudos*: desde M3d la
+   vista Rápida los enseña todos, horneados como los hornea el nodo
+   *Madera* —un corte por el frente de las piezas, proyectado en cada
+   cara—, y ya no llevan el punto «·»; desde M3e los nudos no van en el
+   horneado sino encima, en cada pieza donde los pone el modo Completo (la
+   capa de E6, también en un material de nodos con el nodo *Madera*); el
+   modo Completo y los renders pintan la madera en tres dimensiones; los
+   nudos, en el bambú, el MDF y el ébano, están desactivados y su ayuda
+   dice por qué); tela (dos colores de hilo, tipo de tejido, *Hilos por cm*
+   (2–200, físicos), relieve, pelusa: el tejido, su densidad y su relieve
+   los pintan el modo Completo y los renders, con su punto «·»; desde M3e
+   la vista Rápida también los teje, horneados por el nodo *Tela*, cuando
+   un hilo ocupa al menos 2,5 téxeles del horneado de 512² en las piezas
+   del material —un tejido grueso o una pieza pequeña: en una de 120 mm,
+   la lona, la malla, el carbono y el punto—, con la pelusa encima; si no,
+   muestra su color medio, sin muaré; la ayuda del punto «·» y la nota de
+   la familia lo dicen); emisor (tipo, temperatura,
    potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa

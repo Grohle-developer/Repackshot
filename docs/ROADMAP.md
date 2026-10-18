@@ -4266,6 +4266,302 @@ No encajó con el plan (lo marcado ◆ está decidido en *Decisiones de criterio
 10. El ejemplo cambia de nombre (*Madera con dos ruidos* → *Roble (nodo
     Madera)*), no de clave.
 
+## M3d · La madera de la familia en *Rápido* por el camino del nodo *Madera* — hecha
+
+**Qué** (M3c ◆3, decidido en *Decisiones de criterio*). Una madera de la
+familia *Madera*, en modo *Simple*, se ve en *Rápido* como la misma madera
+con el nodo *Madera*: la vista previa la hornea por el mismo camino que el
+nodo, para que la madera en escena se vea como en las esferas también en
+*Rápido* (la otra mitad del 1.6). En *Completo* y en los renders no cambia
+nada: M3c ya dejó la familia y el nodo byte a byte iguales.
+
+**Hecho.**
+
+- **Núcleo** (`core/material-graph.ts`). `familyBakeGraph(inst)`: el grafo
+  que da *Simple → Nodos* de una madera de la familia (`minimalGraph`: el
+  nodo *Madera* con los parámetros y la semilla de la familia, su color,
+  rugosidad, anisotropía y normal en la salida), guardado por instancia (el
+  *store* cambia la instancia cuando cambia el material, así el programa y
+  el horneado se hacen una vez); `null` para un material con grafo propio y
+  para las demás familias. `FAST_BAKED_FAMILIES` = `['WOOD']`: la tela no
+  (◆2). El estado del proyecto no cambia: el grafo solo lo ve la vista
+  previa; el escritor de la página, las miniaturas y el motor siguen con la
+  familia.
+- ***Rápido*** (`render/preview.ts`). `bakeGraph(inst)`: el grafo propio, o
+  con *workers* de horneado el de `familyBakeGraph`; `syncMaterials` da a
+  `GraphBakes` (`render/graph-preview.ts`, M3a) la instancia con ese grafo,
+  y el horneado es el del nodo: la misma `planBake` (el corte por el frente
+  de la pieza, en la caja de las piezas del material), la misma colocación
+  (`patternPlacements`: el marco de `wood_frame` y los nudos de
+  `core/knots.ts` con la caja como superficie), las dos pasadas (128² y
+  512²) y las mismas ranuras. Una madera horneada ya no lleva la capa de
+  nudos de E6 por pieza (`render/knots.ts`): sus nudos están en sus mapas;
+  sin eso salían dos veces. Sin *workers* (un navegador sin `Worker`) la
+  familia sigue como en E6, su color medio con los nudos, que es mejor que
+  las medias de un grafo sin hornear; si los *workers* llegan después de la
+  primera sincronización, los materiales se vuelven a poner.
+  `GraphBakes.hasWorkers()` lo dice.
+- **Línea de tiempo** (`render/fade-preview.ts`). Un clip de material
+  (*Fundido*, *Color de material*, N1) vuelve a poner el material desde su
+  instancia en cada fotograma: ahora lo hace la vista previa
+  (`resetMaterial`), y una madera horneada vuelve a su horneado (con la
+  opacidad del fundido encima) en vez de a su color medio, que es lo que
+  hacía `applyMaterial`. Un color no llega a una madera (no tiene color
+  base): como antes.
+- **Inspector.** Los mandos de la madera (densidad de anillos, escala,
+  contraste, variación, ruidos, poros) pasan a `preview: true` y pierden su
+  punto «·» y la ayuda *lo pintan el modo Completo y los renders; la vista
+  Rápida muestra el color medio*; el campo `engine` se les quita (queda
+  para el tejido de la tela). La nota de la familia (`material.flatNote`,
+  `es`/`en`) dice ahora que *Rápido* enseña los anillos, poros y nudos como
+  los hornea el nodo *Madera*, un corte por el frente de las piezas
+  proyectado en cada cara, y que *Completo* y los renders pintan la madera
+  como corre por la pieza. La de la tela, igual.
+- **Motor**: no se toca `engine/`; ningún fijado se mueve.
+
+**Tests** (cada uno falla sin lo que prueba).
+`tests/m3d-family-fast.test.ts` (5, sin navegador): el grafo de cada una
+de las 13 maderas del catálogo es el de `minimalGraph`, con su nodo
+*Madera*, uno por instancia (una instancia editada tiene el suyo, con el
+valor nuevo); ninguno para el algodón, el vaquero, el blanco de estudio, el
+vidrio ni una madera con grafo propio; para el roble y el pino, el programa
+(código y constantes), el plan y los mapas del horneado son **iguales** a
+los del material pasado a nodos con `graph/enable` (`toEqual` del
+resultado entero), con mapas de color y de normal; y `GraphBakes` lo dibuja
+con su mapa de color horneado (blanco debajo), no con su color medio.
+**Navegador** (`tests/wood-fast-browser.test.ts`, 3 y la captura; Chromium
+sin cabeza con SwiftShader y los *workers* de horneado de la aplicación,
+sin `rt.wasm`): la bola de 100 mm de M3c (`woodSphereScene`, ahora con la
+especie y un fundido opcionales; la página `programs-page.ts` la dibuja con
+`WOOD_SPHERE:<tipo>:<especie>[:FADED]` y con o sin *workers*) en el roble y
+en el pino nudoso, la familia y la familia pasada a nodos: **los mismos
+píxeles, 0 de 120 000 canales distintos** en los dos; el detalle fino (lo
+que se aparta cada píxel de la media de sus 7 × 7) es 5,61 en el roble y
+5,46 en el pino, y el control, la familia sin *workers* (lo que se veía
+antes de M3d), 0,20 y 0,58, con 19 550 y 19 720 canales distintos de los
+del nodo. Bajo un fundido de la línea de tiempo (el pino al 80 % y luego al
+75 % una vez llegados los horneados), sus anillos siguen (detalle 4,09).
+**Mutaciones** (puestas y quitadas a mano, cada una en rojo): la familia sin
+hornear en `bakeGraph` (el roble y el pino: 19 550 y 19 720 canales
+distintos); la capa de nudos de E6 encima del horneado (el pino: 21 025
+canales distintos; el roble, sin nudos, sigue en verde, como debe);
+`FAST_BAKED_FAMILIES` vacío (4 de los 5 tests sin navegador); y
+`resetMaterial` con el `applyMaterial` de antes (el fundido: detalle 0,07).
+Esta última sobrevivió a la primera versión del test, que usaba un clip de
+color: a una madera no le llega el color, la clave del fundido no cambiaba y
+el horneado, que llega después, tapaba el error; el test usa ahora un
+fundido y mueve la línea de tiempo cuando los horneados ya han llegado.
+
+**Puertas.** `npm run engine:build` y `npm run qa` en verde (3249 tests: 3216 pasan y 33 se saltan, entre ellos el de la captura de M3d, que solo corre con `REPACK_WRITE_CAPTURES=1`; con Chromium, los tres de `wood-fast-browser` corren y pasan, también solos).
+`engine/` no se toca.
+
+**Capturas** (en *Sin publicar* de `GALERIA.md`): la nueva
+`m3d-wood-fast.png`, que hace `tests/wood-fast-browser.test.ts` con
+`REPACK_WRITE_CAPTURES=1` y el `rt.wasm`: el roble (arriba) y el pino
+nudoso (abajo) de la familia en la bola, en *Rápido* antes de M3d (sin
+*workers*: color medio y nudos de E6), en *Rápido* ahora (el horneado del
+nodo *Madera*) y en *Completo*. Ninguna captura anterior enseña una madera
+de la familia en *Rápido* (las de madera son de *Completo* o del editor de
+nodos), así que ninguna se regraba.
+
+No encajó con el plan (lo marcado ◆ está decidido en *Decisiones de criterio*: los dos van a **M3e**):
+
+1. ◆ **Los nudos en *Rápido* cambian de sitio.** Antes los ponía la capa de
+   E6 por pieza, en 3D y con la prueba de la malla, donde los pone
+   *Completo*; ahora son los del horneado del nodo, colocados en la caja de
+   las piezas con la caja como superficie (M3c, «No encajó» 6) y vistos en
+   el corte por el plano y = 0 de la pieza, proyectado en las caras. En una
+   cara frontal plana (la placa, una caja) coinciden; en la bola de 100 mm
+   del pino, *Completo* tiene tres nudos pequeños (arriba a la izquierda,
+   abajo a la derecha, abajo) y el horneado dos grandes a los lados
+   (`m3d-wood-fast.png`, fila de abajo). Probé el corte por el frente de la
+   caja (y = mín.) en vez de y = 0: los nudos siguen en otro sitio (es la
+   colocación), y no lo dejo. Opciones: (a) como está, la familia igual que
+   el nodo; (b) la capa de E6 encima del horneado, para la familia y para el
+   nodo, con el horneado sin nudos: los nudos donde los pone *Completo* y
+   los anillos del horneado, y la familia sigue igual que el nodo; (c) la
+   lista de nudos del horneado sacada de `partKnots` (la prueba de la malla)
+   cuando el material está en una sola pieza, con el corte de siempre.
+2. ◆ **La tela no.** Es el mismo camino y en el código cuesta una entrada en
+   `FAST_BAKED_FAMILIES`, pero se ve peor: (i) el horneado da un material
+   *Simple* sin *sheen*, y la tela perdería en *Rápido* la pelusa que hoy
+   pinta (es el ◆1 de M3c, del lado de la familia); (ii) en 512² sobre una
+   pieza de 120 mm el téxel es de 0,23 mm y el hilo mide `10 / hilos por
+   cm` mm: el algodón tiene 1,07 téxeles por hilo, la sarga 1,19, el
+   terciopelo 1,42, el vaquero 1,78, el raso 0,43 y la microfibra 0,36
+   (seis de las doce telas, muaré o ruido); el lino 2,4, el fieltro 2,1, la
+   lona 3,0, la malla 5,3, el carbono 8,5 y el punto 10,7 sí se verían.
+   Opciones: (a) como está, el color medio y la pelusa; (b) hornear la tela
+   solo cuando sus hilos tengan al menos 2–3 téxeles, con el *sheen* de la
+   familia encima; (c) hornearla siempre.
+3. **Un fundido de material sobre un material de nodos** no se aplica en
+   *Rápido* (`fade-preview.ts` se salta los materiales con grafo desde N1);
+   sobre la familia horneada sí. Bajo un fundido de material, la familia y
+   el nodo se ven distintos en *Rápido*; fuera del plan, no lo toco.
+4. **Las piezas grandes**: el horneado es de 512² sobre la caja de las
+   piezas, así que los anillos del roble (3 mm) bajan de tres téxeles en una
+   pieza de más de unos 500 mm. Le pasa igual al nodo desde M3c.
+5. **Mientras llega el horneado**, la familia enseña las medias del grafo
+   (`flattenGraph`, a 0,01–0,02 del color medio de la familia: M3c, «No
+   encajó» 7) y no sus nudos, durante la primera pasada.
+6. **El corte de una sección** (Q1) sigue tapando la madera de la familia
+   con su color medio, y la de nodos con el blanco de un material sin
+   parámetros: las tapas no se hornean.
+
+## M3e · Los nudos de *Rápido* donde los pone *Completo* y la tela horneada cuando sus hilos se leen — hecha
+
+**Qué** (M3d ◆1 y ◆2, decididos en *Decisiones de criterio*, la opción
+(b) de cada uno). ◆1: una madera horneada en *Rápido* (la de la familia,
+M3d, y un material de nodos con el nodo *Madera*) se hornea sin nudos y la
+capa de nudos de E6, la de cada pieza con la prueba de su malla, la que
+coincide con *Completo*, los pinta encima; la familia y el nodo siguen
+dando los mismos píxeles. ◆2: la tela de la familia se hornea por el nodo
+*Tela* solo cuando un hilo ocupa al menos 2,5 téxeles del horneado de 512²
+en sus piezas, con su pelusa (*sheen*) encima; por debajo, como hasta ahora.
+
+**Hecho.**
+
+- **Los nudos fuera del horneado** (`core/material-preview.ts`).
+  `programKnots(p)`: la primera instrucción `WOOD` del programa (el color de
+  un nodo *Madera*) cuya receta pide nudos, con el índice de sus constantes
+  y sus nudos tal como los lee el motor (los `f32` de la receta).
+  `BakePlan.knotless`, nuevo y opcional: esa receta se coloca sin nudos
+  (`patternPlacements(p, box, knotless)`, y `bakeRows` se lo pasa).
+  `GraphBakes.apply` (`render/graph-preview.ts`) lo pone en el plan de
+  todo material que hornea *Rápido* en la escena; las esferas del editor,
+  la media del grafo y las notas de *Rápido* no lo usan y no cambian.
+- **Los nudos encima** (`render/preview.ts`). `partKnotsOf`: los nudos de
+  cada pieza son los de `partKnots` (`core/knots.ts`, que ahora acepta la
+  petición: la del nodo, `graphKnotSpec`, o la de la familia,
+  `knotSpecOf`) para todo material que se hornea, sea de la familia o de
+  nodos, y la capa de E6 (`render/knots.ts`) los oscurece sobre el
+  horneado. Como la familia horneada y su conversión tienen el mismo
+  programa, tienen los mismos nudos. Cuando llega un horneado, la vista
+  previa vuelve a asignar los materiales (la copia con nudos de cada pieza
+  se hace de nuevo del material ya horneado), y la copia se recompila cuando
+  su material de base se recompila (`base.version` en su clave): sin eso, un
+  fundido de material dejaba la copia opaca (el `OPAQUE` de three.js), un
+  fallo de E6 que sin *workers* ya estaba y que M3e habría extendido a toda
+  madera con nudos.
+- **La tela** (`core/material-preview.ts`). `FAST_BAKED_FAMILIES` =
+  `['WOOD', 'FABRIC']` (`core/material-graph.ts`; `familyBakeGraph` da
+  también el grafo del nodo *Tela*); `fabricThreadTexels(s, inst)`: la
+  separación de los hilos (`10 / threadCount` mm, la de la receta) entre el
+  téxel del plan con que se hornearía (`bakeTexelMm`: el lado del corte
+  por el frente de la caja de las piezas entre 512), en caché por
+  instancia, escena y tamaño; `fastFamilyGraph(s, inst)`: el grafo de la
+  familia para la madera, y para la tela solo con
+  `FABRIC_MIN_THREAD_TEXELS` = 2,5 o más. La vista previa lo usa en lugar
+  de `familyBakeGraph` y, cuando la tela cambia de lado al cambiar sus
+  piezas, la vuelve a poner. Al horneado, un material *Simple*, le pone
+  encima la pelusa de la familia: `applyFuzz` (`render/materials.ts`, la de
+  siempre sacada de `applyMaterial`) por el `finish` nuevo de
+  `GraphBakes.apply`, que corre tras cada dibujo del material (las medias
+  mientras llega y cada pasada).
+- **Inspector.** La nota de la familia (`material.flatNote`) dice que los
+  nudos van en cada pieza donde los pone *Completo* y que la tela se teje
+  en *Rápido* cuando un hilo ocupa 2,5 téxeles de su horneado, con la
+  pelusa encima; la ayuda del punto «·» de los mandos del tejido
+  (`material.fullOnly`, solo la usan ellos) dice lo mismo. Las dos en `es`
+  y `en`.
+- **Motor**: no se toca `engine/`; ningún fijado se mueve. *Completo* y
+  los renders no cambian (el escritor de la página no se toca).
+
+**Tests** (cada uno falla sin lo que prueba).
+`tests/m3e-fast-knots-fabric.test.ts` (6, sin navegador): los nudos del
+pino de la familia y del convertido son los mismos (`toEqual`), los de la
+familia por la receta en `f32` (a 10⁻⁶) y colocados en la pieza a menos de
+una micra de los de la familia; el roble no tiene; el mapa de color del
+pino horneado con `knotless` es **igual** al del pino sin nudos pedidos, y
+el de sin `knotless`, distinto; `GraphBakes` pide las dos pasadas del pino
+con `knotless` y las del roble sin él; los téxeles por hilo de las doce
+telas del catálogo en una pieza de 120 mm (los de M3d a 0,01) y las que se
+hornean (lona, carbono, punto y malla); el algodón horneado en una pieza de
+50 mm (2,56) y no en una de 52 (2,46); nada para una tela con grafo propio,
+la madera siempre; y la pelusa de la familia sigue en el material mientras
+llega el horneado y después de sus dos pasadas (sin `finish`, 0).
+`tests/m3d-family-fast.test.ts`, al día: `FAST_BAKED_FAMILIES` tiene la
+tela, y el algodón y el vaquero tienen su grafo con el nodo *Tela* (que se
+horneen o no lo dice `fastFamilyGraph`).
+**Navegador** (Chromium sin cabeza con SwiftShader y los *workers* de la
+aplicación, sin `rt.wasm`). En `tests/wood-fast-browser.test.ts`, «PINE:
+the knots in Fast fall where Full puts them»: en la bola de pino de M3d,
+los píxeles que la vista *Rápida* oscurece como nudos (más de 6 de 255 por
+debajo de la misma bola sin nudos pedidos, que fuera de los nudos da los
+mismos píxeles) contra los que cubren los nudos de `partKnots` (la lista
+del motor, proyectada por la cámara de la escena; a dos píxeles del borde,
+donde la malla facetada y la esfera se separan): solapamiento **0,977**
+(128 píxeles esperados, 131 medidos), los tres nudos visibles con su
+centro a **0,13, 0 y 0 píxeles** del esperado, y la bola del nodo, los
+mismos píxeles. En `tests/fabric-fast-browser.test.ts` (2 y la captura):
+el punto (12,8 téxeles por hilo en la bola de 100 mm) horneado, con
+detalle fino 2,45 contra 0,14 del de antes (18 216 canales distintos); el
+algodón (1,28), **0 canales distintos** del de antes; y el punto horneado
+con su pelusa y sin ella, 19 977 canales distintos y 2,1 de luminancia
+media más con ella.
+**Mutaciones** (puestas y quitadas a mano, cada una en rojo): el
+comportamiento de M3d (los nudos en el horneado y sin capa: solapamiento
+0,019, los centros a 23,7, 6,9 y 27,3 píxeles); los nudos en el horneado
+**y** encima (0,084); la vista previa sin volver a asignar los materiales
+al llegar el horneado (la copia con nudos se queda con las medias: 0,021);
+la copia con nudos sin `base.version` (el fundido de M3d: 0 canales
+distintos); `patternPlacements` sin `knotless` y `GraphBakes` sin ponerlo
+(sin navegador, uno cada una); la tela sin umbral (el algodón: 10 646
+canales distintos); y sin `finish` (la pelusa: 0 canales distintos, y el
+test sin navegador). Un test de un fundido de la pieza (no del material)
+sobre el pino horneado pasaba también sin volver a asignar los materiales,
+así que no se queda.
+
+**Puertas.** `npm run engine:build` y `npm run qa` en verde (3259 tests: 3225 pasan y 34 se saltan, entre ellos las dos capturas, la de M3d y la nueva, que solo corren con `REPACK_WRITE_CAPTURES=1`; con Chromium, los de `wood-fast-browser` y `fabric-fast-browser` corren y pasan, también solos con `--maxWorkers=2`).
+`engine/` no se toca.
+
+**Capturas** (en *Sin publicar* de `GALERIA.md`): `m3d-wood-fast.png`
+regrabada (la columna del medio, *Rápido* ahora: los nudos del pino donde
+los tiene *Completo*, a la derecha), y la nueva `m3e-fabric-fast.png`, que
+hace `tests/fabric-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1` y el
+`rt.wasm`: el punto, la lona y el algodón de la familia en la bola, en
+*Rápido* antes de M3e, en *Rápido* ahora y en *Completo*.
+
+No encajó con el plan (lo marcado ◆ está decidido en *Decisiones de criterio*):
+
+1. ◆ **El umbral deja fuera el lino y el fieltro.** El informe de M3d los
+   contaba entre las telas que se leen (2,4 y 2,1 téxeles por hilo en una
+   pieza de 120 mm, con «2–3 téxeles» de criterio), pero con 2,5 no se
+   hornean: en 120 mm se hornean la lona, la malla, el carbono y el punto.
+   En la bola de 100 mm el lino (2,84) y el fieltro (2,56) sí. Opciones:
+   (a) 2,5, como está decidido; (b) 2,0, que añade el lino y el fieltro en
+   120 mm (y deja fuera el vaquero, 1,78).
+2. ◆ **Cómo se ve un nudo encima.** La capa de E6 oscurece el nudo
+   (`knotDarkness` × 35 %, la bolsa de corteza un 50 % más) sobre lo que hay:
+   los anillos del horneado lo cruzan rectos, sin la testa del nudo (sus
+   anillos alrededor de la rama), sin su grieta, sin el flujo de la veta a
+   su alrededor y sin su rugosidad ni su cuenco, que el horneado traía (en
+   otro sitio) y *Completo* pinta. Bajo el mundo blanco de la prueba el
+   nudo es unos 20 de 255 más oscuro, menos que en *Completo*. Opciones:
+   (a) como está; (b) que la capa dibuje también la testa (unos anillos
+   concéntricos con la densidad del nudo) en el *shader*.
+3. **Un solo nudo de madera por material.** La capa pinta los nudos de la
+   primera instrucción `WOOD` que los pide; un grafo con dos nodos *Madera*
+   con nudos deja los del segundo en el horneado, colocados en la caja como
+   en M3d. Y la capa oscurece el color final del material: si el color del
+   nodo *Madera* pasa por una mezcla, el nudo oscurece también lo mezclado;
+   si solo llega su rugosidad, no hay capa y el nudo sigue en el horneado.
+4. **La familia y su conversión se separan en la tela.** La tela de la
+   familia horneada lleva su pelusa encima; la misma tela pasada a nodos no
+   (la *Pelusa* del nodo no llega a la salida: M3c ◆1, para M5). En la
+   madera siguen iguales.
+5. **El umbral es por material, no por pieza**: el horneado cubre la caja
+   de todas las piezas del material, así que una tela en una pieza pequeña
+   y en una grande se hornea en las dos o en ninguna, según la caja.
+6. **Las piezas que cambian sin tocar el material.** La vista previa
+   vuelve a poner los materiales solo cuando cambian los materiales (como
+   los horneados desde M3a): mover o escalar una pieza no rehace el
+   horneado ni cambia de lado una tela hasta que algo toca los materiales.
+7. **El punto «·» de los mandos del tejido** sigue (dice «lo pinta
+   *Completo*»), aunque *Rápido* teja las telas gruesas: su ayuda dice
+   cuándo. Quitarlo según la tela y sus piezas sería un mando que cambia
+   con la escena.
+
 ## M4 · Capa de realismo en el catálogo de materiales — **Opus**, veredicto **Fable** (tras E9, E6 y M2b)
 
 **Qué.** (1) **Motor**: Fresnel de conductor «*artist-friendly*» de
@@ -11381,7 +11677,7 @@ lado):
 - `tools/ambient-check.mjs` esperaba ocho tarjetas disponibles; ahora nueve.
   `docs/ui/ambient-gallery.png` no se ha regrabado (sigue con las once de S4a).
 
-**Para el veredicto** (regla 11, ◆):
+**Para el veredicto** (regla 11, ◆; decidido en *Decisiones de criterio*):
 1. ◆ La gota por defecto: largo 1,6 radios del cuerpo y punta de 0,15
    (`rt_sim::DROP_TAIL`, `DROP_TIP`), y la punta mínima de 0,05 radios fuera
    del cuerpo.
@@ -12738,10 +13034,12 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **C1** · Decisiones de criterio aplicadas: los cambios pequeños de esta lista, en un solo PR. **Hecha**: ver C1, abajo.
 - **C2** · Interruptor de la focal (1.7). **Hecha**: ver C2, abajo.
 - **M3c** · Nodos *Madera* y *Tela* (1.6). **Hecha**: ver M3c, tras M3b.
-- **M3d** · La madera de la familia en *Rápido* por el camino del nodo *Madera* (M3c ◆3).
+- **M3d** · La madera de la familia en *Rápido* por el camino del nodo *Madera* (M3c ◆3). **Hecha**: ver M3d, tras M3c.
+- **M3e** · Los nudos de *Rápido* donde los pone *Completo* y la tela horneada cuando sus hilos se leen (M3d ◆1 y ◆2). **Hecha**: ver M3e, tras M3d.
 - **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
 - El 1.2 entra en **S3**. (hecho en S3)
+- **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9).
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
   - qué lentes dan ojo de gato, burbuja, cremoso y remolino;
@@ -12832,6 +13130,9 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **C2** (interruptor de la focal). Se aceptan las seis tal como están: el interruptor va en cada cámara (viaja con ella al proyecto y a los estudios); una cámara bloqueada cambia la focal sin moverse; el objetivo de la órbita avanza por el eje cuando la cámara quedaría a menos de 0,1 × distancia × f′/f; las ópticas de interior pasan por el interruptor, los presets de lente siguen encuadrando el producto y los clips *ZOOM* no se mueven; la fila va debajo de *Focal*; con ortográfica o panorámica el interruptor sigue usable, no hace nada y lo dice. **Hecho en C2.**
 - **O2c** (editor de elementos de la lente). Se acepta tal como está: el elemento nuevo por defecto (radios ±4 f, 4 % de f de grosor, el vidrio de la lente simple del catálogo, tan ancho como el vecino más estrecho, centrado en el hueco), los márgenes (1 % de f de aire, 5 % delante y detrás, 1e-3 mm en los bordes), el paso del 10 % de *Más pequeño · Más grande* y el umbral del círculo de imagen (luz relativa 0,001). Un círculo que no cubre el encuadre **no impide aplicar** (el viñeteo fuerte es un aspecto que se puede querer, y el render lo enseña). La lente editada **conserva el recorrido del diafragma** de la del catálogo. **Hecho en O2c.**
 - **M3c** (nodos *Madera* y *Tela*). ◆1, la pelusa: se queda como está, una salida numérica de la *Tela* que se puede usar en el grafo; la entrada de pelusa de la salida de material (la 16 del programa) llega con **M5**, cuando el motor pinte la pelusa, no antes. ◆2, la tela bajo un bisel: se acepta como está (fuera del radio de bisel, los mismos bits que la familia; su propio fijado). ◆3, la madera de la familia en *Rápido*: **sí**, que se hornee por el mismo camino que el nodo, para que la madera en escena se vea como en las esferas también en *Rápido*: **M3d**. Lo demás (vista desde dentro, el bit de la normal, los nudos contra la caja en *Rápido*, el color medio, la semilla copiada al convertir), como está. **Hecho en M3c**, salvo M3d y lo que va a M5.
+- **M3d** (la madera de la familia en *Rápido*). Se acepta como está: la familia se hornea por el camino del nodo y da sus mismos píxeles. ◆1, los nudos: **(b)**, la capa de nudos de E6 (la de cada pieza, la que coincide con *Completo*) encima de un horneado sin nudos, para la familia y para el nodo; que los nudos de *Rápido* caigan donde los pone el render pesa más que el horneado los traiga. ◆2, la tela: **(b)**, se hornea solo cuando un hilo ocupa al menos 2,5 texels, con la pelusa (*sheen*) encima; por debajo se queda como hoy, sin moiré. Los dos, en **M3e**. **Hecho en M3d**, salvo M3e.
+- **M3e** (los nudos y la tela en *Rápido*). Se acepta como está. ◆1, el umbral: **se queda en 2,5 texels por hilo**; a 2 se roza el límite donde sale el moiré, y el lino y el fieltro sin hornear se leen bien en *Rápido*. ◆2, el nudo encima: **se queda el disco oscurecido**; *Rápido* es una vista previa, y la testa, la grieta y la veta alrededor salen en *Completo*. **Hecho en M3e.**
+- **S3** (la gota, la mezcla de formas y el cristal frontal; primera parte). Se aceptan ◆1–4, 6 y 8 tal como están: la gota de 1,6 radios con punta de 0,15; la punta detrás de la velocidad (la lágrima que pidió el usuario, aunque una gota real caiga casi redonda); la mezcla 1 : 1 : 1 : 2; el preset *Gotas de agua*; las cifras y los rangos del cristal; las motas que solo absorben. ◆5: **sí, la *Forma* sale de *Avanzado*** a los mandos visibles, porque el usuario la pidió y escondida no se encuentra; va en **S3b**. ◆7: **se queda la física**, sin un mando no físico que afile las gotas: con la lente y el diafragma que lo piden (angulares, diafragma cerrado, cristal lejos) se leen; se revisa con un render real del usuario. ◆9: *Rápido* no dibuja el cristal en esta parte; una aproximación (las gotas como discos) va en **S3b**. **Hecha la primera parte en S3**; el resto, S3b.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
