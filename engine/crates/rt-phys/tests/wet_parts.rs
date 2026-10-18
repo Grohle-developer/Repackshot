@@ -1191,7 +1191,7 @@ const PINNED_S3F_PARTS: u32 = 0x1c5a_82bb;
 /// Pinned hash of the S3f parity scene ([`rt_phys::example::s3f_organic_scene`]: the drops with
 /// their shapes in `WETP`) at 4 samples per pixel; `tools/wasm-parity.mjs` checks the module against
 /// it (`rt --write-s3f-organic-example`).
-const PINNED_S3F_ORGANIC_4SPP: u32 = 0xe043_68e1;
+const PINNED_S3F_ORGANIC_4SPP: u32 = 0xbfb0_b45a;
 
 fn part_of(adv: f32, rec: f32, transform: Transform) -> WetPartSpec {
     WetPartSpec {

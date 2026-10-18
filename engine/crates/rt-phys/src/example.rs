@@ -588,7 +588,7 @@ pub fn organic_parts() -> crate::wet_parts::WetParts {
 
 /// S3f: the organic parity scene at step `steps` of [`organic_parts`]: the pane in a dark glossy
 /// paint (its drops read as highlights and refractions) and the ceiling in clear glass, seen close
-/// by a 150 mm lens at f/11 from the front, aimed a little above the largest drop on the pane (the
+/// by a 250 mm lens at f/11 from the front, aimed a little above the largest drop on the pane (the
 /// one that slides, and what it gathered: its path above it), under one soft light; their weather
 /// with the shapes of the drops in `WETP` (bit 10) and the drops in the air in `WETF`.
 pub fn s3f_organic_scene_at(steps: u32) -> rt_core::scene::Scene {
@@ -612,10 +612,10 @@ pub fn s3f_organic_scene_at(steps: u32) -> rt_core::scene::Scene {
             _ => Some(d),
         });
     let at = largest.map_or(Vec3::new(0.0, 0.0, 130.0), |d| d.p);
-    let target = Vec3::new(at.x, 0.0, (at.z + 12.0).clamp(45.0, 155.0));
+    let target = Vec3::new(at.x, 0.0, (at.z + 8.0).clamp(40.0, 158.0));
     scene.camera.position = target + Vec3::new(-30.0, -330.0, 40.0);
     scene.camera.target = target;
-    scene.camera.focal_mm = 150.0;
+    scene.camera.focal_mm = 250.0;
     scene.camera.fstop = 11.0;
     scene.camera.focus_dist = (target - scene.camera.position).length();
     scene.floor.mode = FloorMode::None;

@@ -463,8 +463,9 @@ export class PartsTrackWriter {
   private readonly wiped = new Words();
   private readonly counts = new Words();
   private readonly falling = new Words();
-  /** S3f: the shape of each version. */
+  /** S3f: the shape of each version, and whether any record carried shapes (an engine of before writes none). */
   private readonly shapes = new Words();
+  private shaped = false;
   /** The version of each live drop (its index among the versions). */
   private readonly live = new Map<number, number>();
   private count = 0;
@@ -520,6 +521,7 @@ export class PartsTrackWriter {
         shapesAt = end + 1;
       }
     }
+    if (shapesAt >= 0) this.shaped = true;
     const close = (id: number) => {
       const v = this.live.get(id);
       if (v === undefined) return;
@@ -597,7 +599,7 @@ export class PartsTrackWriter {
       wiped: toBase64(this.wiped.data()),
       counts: toBase64(this.counts.data()),
       falling: toBase64(this.falling.data()),
-      shapes: toBase64(this.shapes.data()),
+      ...(this.shaped ? { shapes: toBase64(this.shapes.data()) } : {}),
     };
     return track;
   }
