@@ -1,2089 +1,2081 @@
-# Especificación de comportamiento
+# Behaviour specification
 
-Qué hace Repackshot, visto desde fuera, y el modelo de datos que lo
-sostiene. Es la **especificación de caja negra** que exigen las reglas de
-sala limpia del `README.md`: describe comportamientos y flujos de trabajo,
-nunca cómo los implementa ningún otro producto. Las ideas vienen del uso
-normal de renderizadores de producto comerciales (lo que hacen, no cómo).
-
----
-
-## 1 · Para quién y para qué
-
-Diseñadores de producto, fotógrafos de producto y estudios pequeños que
-necesitan **una imagen de catálogo o una animación corta de un objeto**
-con la menor fricción posible. Vienen de un CAD (STEP, glTF exportado),
-saben de fotografía y no tienen por qué saber de rendering. El criterio de
-éxito: *abrir, importar, elegir tipo de producto,
-pintar materiales, elegir luz, render*, en diez minutos y sin manual.
-
-El producto es una **aplicación web** (y más adelante de escritorio) que
-funciona sin conexión una vez cargada, no sube nada a ningún servidor y
-guarda proyectos en un archivo.
+What Repackshot does, seen from the outside, and the data model that
+supports it. It is the **black-box specification** required by the clean-room
+rules of `README.md`: it describes behaviours and workflows,
+never how any other product implements them. The ideas come from the normal use
+of commercial product renderers (what they do, not how).
 
 ---
 
-## 2 · El flujo de trabajo
+## 1 · Who it is for and what for
 
-**Modo estándar, por defecto.** La aplicación abre con todo ya puesto,
-como hace KeyShot: el estudio *Estándar* (tres puntos, cúpula de estudio,
-cámara de referencia, calidad de previa, HD) está construido antes de
-importar nada, y una pieza importada sin material recibe un material
-neutro por defecto. No hay que elegir nada para empezar a trabajar; los
-tipos de producto y el resto de presets son atajos encima de ese estado,
-no un requisito.
+Product designers, product photographers and small studios who
+need **a catalogue image or a short animation of an object**
+with as little friction as possible. They come from a CAD tool (STEP, exported glTF),
+know about photography and do not have to know about rendering. The
+success criterion: *open, import, choose a product type,
+paint materials, choose light, render*, in ten minutes and without a manual.
 
-1. **Importar o cargar el ejemplo.** Arrastrar un archivo (ver §6: glTF,
-   OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE, USD) o pulsar *Cargar
-   pieza de ejemplo*: una pieza procedural original, con varias partes
-   agrupadas, que sirve para ver un resultado terminado sin traer nada.
-   Al importar, una hoja de opciones en línea (unidades, eje arriba,
-   centrar, apoyar en el suelo, encuadrar, agrupar por, mantener
-   materiales, calidad de teselado) con valores por defecto que funcionan.
-2. **Tipo de escena, tipo de producto y estudio.** El **tipo de escena**
-   (*Producto · Interior · Catálogo*, K1) solo reescribe valores de partida
-   (entorno, rebotes, cáusticas, sombra de suelo, transformada, muestras
-   y focal; `INTERIORS.md` §3.1; *Interior*, también la receta de luz
-   *Ventana de mediodía* sobre los focos del tipo de producto sin tocar, C1)
-   y no quita ningún control; cambiar y volver
-   deja el proyecto como estaba salvo lo que se tocó. Elegir una de 16 categorías (joyería,
-   relojería, perfumería, cosmética, electrónica, electrodoméstico,
-   mobiliario interior y exterior, calzado, textil, packaging, automoción,
-   herramienta, óptica, médico, genérico). *Crear estudio* monta en un
-   clic: tamaño de referencia, focal, diafragma, exposición, fondo, suelo,
-   sombra, cáusticas, calidad, y un rig de focos adecuado a la
-   reflectancia típica de esa categoría.
-3. **Materiales.** Elegir el nivel (modelo, grupo, pieza, caras) y pulsar
-   o arrastrar un material del catálogo (86 presets en 7 categorías). Si
-   el objetivo ya tiene materiales distintos, se pregunta con inventario.
-   Editar parámetros con nombres de fotógrafo. Añadir desgaste.
-4. **Luz.** Elegir un montaje del catálogo (95 en 10 estilos: los 16 sets de
-   L6 primero y las 7 recetas de interior, K1, al final), en dos grupos (L7):
-   **Sets**, lo que monta algo además de los focos, y **Luces**, lo que solo
-   coloca focos, cada uno con sus filtros; por su miniatura e intención; la
-   exposición no cambia al cambiar de montaje (salvo en un set, que trae la
-   suya, y en las recetas de interior). Si ya hay focos, se elige qué pasa
-   con ellos: se sustituyen, se ocultan o se suman.
-   Afinar focos si se quiere; colocar un foco por reflejo apuntando a
-   dónde se quiere el brillo. **O montar la luz desde cero**: añadir
-   focos propios (área, punto, foco direccional, sol, y el perfil IES de una lámpara real),
-   moverlos y apuntarlos con el *gizmo*, y guardar el resultado como
-   montaje propio en la biblioteca.
-5. **Cámara e imagen.** Óptica, focal, diafragma, enfoque con clic,
-   encuadre, perspectiva u ortográfica; exposición, transformada de vista,
-   halo, viñeta. Guardar cámaras y estudios.
-6. **Render.** Calidad, resolución, presupuesto de muestras o tiempo,
-   formato; *Render* o *Añadir a la cola*. El visor tiene dos modos,
-   elegidos con un conmutador en la cabecera: **Rápido** (vista previa
-   rasterizada, inmediata, para editar luces, materiales y encuadre) y
-   **Completo** (el motor simulándolo todo en el visor, también al mover
-   la cámara, a menos resolución durante el gesto). *Render* usa siempre
-   el motor completo, esté el visor como esté: lleva la imagen a
-   resolución y calidad completas y la guarda.
-7. **Animación** (opcional). Planos y movimientos en lenguaje llano,
-   presets, línea de tiempo de bloques, vídeo.
-
-El **Doctor** vigila todo el rato y arregla con un clic lo que suele
-estropear un render: escala absurda, pieza bajo el suelo, suavizado,
-bisel de aristas, clipping de cámara, luces visibles, y, con el motor delante,
-*fireflies*, *denoise*, transformada de vista, formato de salida y presupuesto de tiempo.
+The product is a **web application** (and later a desktop one) that
+works offline once loaded, uploads nothing to any server and
+saves projects in a file.
 
 ---
 
-## 3 · Modelo de datos
+## 2 · The workflow
 
-### 3.1 · Escena
+**Standard mode, by default.** The application opens with everything already set,
+as KeyShot does: the *Standard* studio (three-point, studio dome,
+reference camera, preview quality, HD) is built before
+importing anything, and an imported part without a material receives a default
+neutral material. Nothing has to be chosen to start working; the
+product types and the rest of the presets are shortcuts on top of that state,
+not a requirement.
 
-Un **árbol** de nodos. Tipos: `MODEL` (raíz de una importación), `GROUP`
-(ensamblaje), `PART` (malla), `CAMERA`, `LIGHT`, `FLOOR` (las luces y las
-cámaras viven fuera del árbol, en `studio.lights` y `camera.cameras`: ver
-§3.4 y §3.5). Cada nodo:
-`id`, `name`, `parent`, `children`, `transform` (posición, rotación en
-grados, escala; local al padre), `visible`, `locked`. Una `PART` lleva
-además `mesh` (id de geometría: posiciones, normales, índices, uv
-opcional, y aristas vivas si el importador las trae), `material`
-(instancia) y `faceMaterials` opcional (rangos de triángulos → instancia,
-para el nivel *Caras*). Una `PART` hecha con *Añadir ▸ Primitiva* (fase
-U9) lleva además `primitive`: `{ kind, params }`, la forma (clave estable
-del catálogo `src/data/primitives.json`) y sus medidas en mm; su malla se
-genera de ahí (ver *Primitivas*, abajo).
+1. **Import or load the example.** Drag a file (see §5: glTF,
+   OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE, USD) or press *Load
+   example part*: an original procedural part, with several grouped
+   parts, which lets you see a finished result without bringing anything.
+   On import, an inline options sheet (units, up axis,
+   centre, rest on the floor, frame, group by, keep
+   materials, tessellation quality) with defaults that work.
+2. **Scene type, product type and studio.** The **scene type**
+   (*Product · Interior · Catalogue*, K1) only rewrites starting values
+   (environment, bounces, caustics, floor shadow, transform, samples
+   and focal length; `INTERIORS.md` §3.1; *Interior* also the *Midday window*
+   light recipe on top of the product type's lights, left untouched, C1)
+   and removes no control; switching and switching back
+   leaves the project as it was apart from what was touched. Choose one of 16 categories (jewellery,
+   watchmaking, fragrance, cosmetics, electronics, appliance,
+   indoor and outdoor furniture, footwear, textile, packaging, automotive,
+   tool, eyewear, medical, generic). *Create studio* sets up in one
+   click: reference size, focal length, aperture, exposure, background, floor,
+   shadow, caustics, quality, and a light rig suited to the
+   typical reflectance of that category.
+3. **Materials.** Choose the level (model, group, part, faces) and click
+   or drag a material from the catalogue (86 presets in 7 categories). If
+   the target already has different materials, an inventory is offered to ask.
+   Edit parameters with photographer's names. Add wear.
+4. **Light.** Choose a light setup from the catalogue (95 in 10 styles: the 16 sets of
+   L6 first and the 7 interior recipes, K1, at the end), in two groups (L7):
+   **Sets**, which build something besides the lights, and **Lights**, which only
+   place lights, each with its filters; by its thumbnail and intent; the
+   exposure does not change when the setup changes (except in a set, which brings its
+   own, and in the interior recipes). If there are already lights, the user chooses what happens
+   to them: they are replaced, hidden or added to.
+   Fine-tune lights if wanted; place a light by reflection, pointing at
+   where the highlight is wanted. **Or build the light from scratch**: add
+   own lights (area, point, spot, sun, and the IES profile of a real lamp),
+   move and aim them with the *gizmo*, and save the result as an own
+   light setup in the library.
+5. **Camera and image.** Optics, focal length, aperture, click-to-focus,
+   framing, perspective or orthographic; exposure, view transform,
+   glow, vignette. Save cameras and studios.
+6. **Render.** Quality, resolution, sample or time budget,
+   format; *Render* or *Add to queue*. The viewport has two modes,
+   chosen with a switch in the header: **Fast** (rasterized preview,
+   immediate, for editing lights, materials and framing) and
+   **Full** (the engine simulating everything in the viewport, also when moving
+   the camera, at lower resolution during the gesture). *Render* always uses
+   the full engine, whatever the viewport is set to: it takes the image to
+   full resolution and quality and saves it.
+7. **Animation** (optional). Shots and moves in plain language,
+   presets, block timeline, video.
 
-**Tamaño de la pieza** (`partSizeMm`): la mayor dimensión de la caja
-envolvente del modelo, detectada al importar y editable. Todo lo que
-tiene escala física se expresa en tamaños de pieza o se deriva de aquí:
-distancia de cámara, tamaño y distancia de focos, radio de bisel, escala
-del desgaste. La veta de la madera y la trama de la tela, no (E6, decisión
-del líder): sus anillos, poros, fibras e hilos tienen tamaño físico, el mismo
-en un joyero que en una mesa.
+The **Doctor** keeps watch all the time and fixes with one click what usually
+spoils a render: absurd scale, part below the floor, smoothing,
+edge bevel, camera clipping, visible lights, and, with the engine in front,
+*fireflies*, *denoise*, view transform, output format and time budget.
 
-**Apoyo en el suelo**: el punto más bajo de **todas** las mallas del
-objetivo (no de una sola) baja a `z = 0`. **Centrar**: el centro de la caja
-envolvente en XY a `(0, 0)`.
+---
 
-**Operaciones sobre piezas, al estilo KeyShot.** Sobre cualquier
-selección (modelo, grupo o pieza):
+## 3 · Data model
 
-- **Herramienta de mover**: *gizmo* en el visor con asas de traslación,
-  rotación y escala, ejes locales o globales, incrementos con `Shift`,
-  campos numéricos en el inspector (posición, rotación en grados, escala
-  con bloqueo proporcional), y *Restablecer transformación*.
-- **Pivote**: centro de la caja envolvente (por defecto), base de la caja,
-  origen del archivo, o un punto picado; *Establecer pivote*.
-- **Apoyar en el suelo** (el punto más bajo de todas las mallas de la
-  selección a `z = 0`), **Centrar** (centro XY a `0, 0`), **Centrar y
-  apoyar** en una acción.
-- **Ocultar / Mostrar / Aislar / Mostrar todo**, **Bloquear**,
-  **Renombrar**, **Eliminar**, **Encuadrar**, **Fijar como objetivo de
-  cámara** (la cámara mira a la selección).
-- **Duplicar** (copia independiente) y **Duplicar enlazado** (comparte
-  malla y material; cambiar uno cambia todos), **Agrupar / Desagrupar**,
-  **Mover a grupo**.
-- **Patrón**: lineal (n copias a distancia en un eje) y circular (n
-  copias alrededor de un eje), como instancias enlazadas, editable
-  después.
-- **Materiales**: *Desenlazar material* (la pieza pasa a tener su propia
-  copia), *Enlazar con…* (varias piezas comparten uno), *Copiar / Pegar
-  material*, *Seleccionar por material*.
-- **Geometría**: *Invertir normales*, *Suavizado* (ángulo), *Bisel de
-  aristas* (radio en mm, solo sombreado), *Separar por caras CAD* y
-  *Separar por material* (cada rango pasa a ser una pieza).
+### 3.1 · Scene
 
-- **Escalar** (fase U9): la herramienta *Escalar* (`S`), el mismo *gizmo*
-  con solo sus asas de escala, y *Clic derecho ▸ Escalar…*: uniforme (%),
-  por eje (X, Y, Z en %) o a medida (mm del ancho, fondo o alto, con la
-  proporción bloqueada), alrededor del pivote de la selección y en los
-  ejes de *Mover* (globales o locales); *Restablecer escala* devuelve a
-  cada nodo la escala con que entró en la escena, alrededor de su propio
-  pivote. A medida mide la selección por sus vértices proyectados sobre
-  esos ejes (`selectionExtents`).
+A **tree** of nodes. Types: `MODEL` (root of an import), `GROUP`
+(assembly), `PART` (mesh), `CAMERA`, `LIGHT`, `FLOOR` (lights and
+cameras live outside the tree, in `studio.lights` and `camera.cameras`: see
+§3.4 and §3.5). Each node has:
+`id`, `name`, `parent`, `children`, `transform` (position, rotation in
+degrees, scale; local to the parent), `visible`, `locked`. A `PART` also carries
+`mesh` (geometry id: positions, normals, indices, optional uv,
+and sharp edges if the importer brings them), `material`
+(instance) and an optional `faceMaterials` (triangle ranges → instance,
+for the *Faces* level). A `PART` made with *Add ▸ Primitive* (phase
+U9) also carries `primitive`: `{ kind, params }`, the shape (stable key
+of the `src/data/primitives.json` catalogue) and its measurements in mm; its mesh is generated from that (see *Primitives*, below).
 
-Todas son acciones del *store*, deshacibles, y las que tienen sentido en
-masa aplican a toda la selección.
+**Part size** (`partSizeMm`): the largest dimension of the model's
+bounding box, detected on import and editable. Everything that
+has physical scale is expressed in part sizes or derived from this:
+camera distance, size and distance of lights, bevel radius, wear
+scale. Wood grain and fabric weave are not (E6, the lead's decision):
+their rings, pores, fibres and threads have a physical size, the same
+on a jewellery box as on a table.
 
-**Primitivas** (fase U9, `src/core/primitives.ts` y
-`src/core/primitive-ops.ts`). Doce formas paramétricas, con claves
-estables: `BOX` (ancho, fondo, alto, radio de bisel y sus segmentos),
-`PLANE`, `DISC`, `CYLINDER`, `PEDESTAL` (cilindro con bisel arriba),
-`SPHERE`, `CONE`, `TORUS`, `CAPSULE`, `TUBE` (radio exterior e
-interior), `STEPS` (número de escalones, subiendo hacia +Y) y `SWEEP`
-(fondo infinito: un suelo que sube en curva hasta una pared en +Y).
+**Resting on the floor**: the lowest point of **all** the target's meshes (not of
+a single one) drops to `z = 0`. **Centre**: the centre of the bounding box
+in XY at `(0, 0)`.
 
-- **Geometría**: generada pura y determinista (la misma especificación da
-  los mismos bytes), en mm, Z arriba, centrada en su caja (su caja *es*
-  sus medidas: los ángulos múltiplos de 90° usan senos y cosenos exactos);
-  cerrada y estanca salvo el plano, el disco y el fondo infinito; normales
-  de la superficie dentro de cada cara lógica (una esfera es lisa con
-  cualquier número de segmentos) y triángulos orientados hacia ellas, hacia
-  fuera; UV en [0, 1] por cara y sin estirar (el lado largo llena el
-  cuadrado; un lateral de revolución da una vuelta en u, las tapas se
-  proyectan desde arriba, el fondo infinito se desenrolla de un tirón).
-  Cada **cara lógica** (la tapa, el lateral, el bisel, cada escalón…) es
-  un rango consecutivo de triángulos, guardado en `faceRanges`: el nivel
-  *Caras*, M1 y *Separar por caras CAD* las usan como caras CAD, y toda
-  arista entre dos de ellas es arista viva (`sharpEdges`), como en STEP.
-- **Medidas**: se acotan a lo que da una forma (un bisel no pasa de la
-  mitad del lado menor, ni del radio o el alto del pedestal; el tubo del
-  toro no pasa del radio; una cápsula es al menos tan alta como ancha; el
-  hueco del tubo es menor que el tubo; la curva del fondo infinito cabe en
-  su suelo y su pared), las longitudes a la diezmilésima de mm y los
-  segmentos enteros.
-- **Dónde nace** (`placePrimitive`): con producto (cualquier pieza que no
-  sea primitiva), el tamaño de la escena es su mayor dimensión. *Caja* y
-  *Pedestal* nacen como **base**: bajo el producto, en el suelo, con 1,4
-  veces su huella (los lados de la caja; el radio del pedestal sobre el
-  punto del producto más alejado de su eje vertical), un alto de 0,15
-  (caja) o 0,3 (pedestal) tamaños de producto y un bisel del 3 % de su
-  menor medida, y el producto sube hasta apoyarse encima, en la misma
-  acción (una entrada de deshacer); un producto bloqueado no sube. *Plano*
-  (3 veces el lado mayor de la huella) y *Disco* (1,4 veces la huella) se
-  tienden bajo el producto. El *Fondo infinito* se **ajusta a la cámara
-  activa** (`fitSweep`): girado en Z al acimut de la cámara (la pared de
-  cara a ella), centrado de lado en el producto, la pared a 1,75 veces el
-  fondo del producto detrás de su centro (más atrás si la curva llegaría
-  bajo el producto, y siempre detrás de los focos encendidos del montaje
-  que están detrás del producto: a 1,25 veces lo que cada uno está detrás
-  del centro más la mitad de su panel, para que el contraluz quepa entre
-  el producto y el papel; un sol no cuenta), el ancho 1,3 veces lo que el encuadre de salida abarca
-  donde toca el fondo, el alto 1,15 veces lo más alto que el encuadre
-  alcanza en la pared (y al menos 1,25 veces el producto), el suelo hasta
-  delante de lo más cercano que el encuadre ve de él, y una curva de 0,3
-  veces el alto; los rayos por el encuadre (la óptica, el sensor de 36 mm
-  y el formato de salida de la cámara; también ortográfica) caen todos
-  sobre él. `scene/fitPrimitive` (*Ajustar a la cámara*) lo rehace en una
-  entrada de deshacer. Los tres, a una
-  milésima del tamaño sobre el suelo del estudio, porque una superficie
-  sobre el suelo que hace de *shadow catcher* parpadearía entre los dos. El
-  resto se apoya en el suelo junto a lo que está de pie (a +X, a una
-  décima del tamaño), sin contar planos ni fondos. Sin producto, el tamaño
-  es el de pieza declarado: la primera en el origen (y entonces es el
-  producto: fija el tamaño de pieza y la cámara la encuadra), las
-  siguientes al lado. Todas llevan la instancia sin editar de *Blanco
-  estudio* del catálogo, compartida.
-- **Viva**: `scene/setPrimitive` regenera la malla con las medidas nuevas,
-  una acción y, en un arrastre, una entrada de deshacer; la pieza conserva
-  su apoyo (el centro de la base de su caja, en sus ejes, no se mueve), las
-  copias enlazadas cambian con ella, los materiales por caras y las caras
-  seleccionadas siguen a sus caras lógicas por nombre. `scene/convertPrimitive`
-  (*Convertir en malla*) la congela; *Invertir normales*, *Suavizado* y
-  *Separar* también la congelan, porque su malla ya no es la de sus medidas.
-- **La malla de una primitiva se llama** `prim:<dueño>:<FORMA>:<medidas>`:
-  nombra su contenido y su dueño (el nodo que la tuvo primero), así que
-  las copias enlazadas la comparten y una copia independiente tiene la
-  suya, aunque sus medidas coincidan.
-- **El producto, no el decorado**: el pivote del montaje de luces, el
-  encuadre de *Crear estudio*, el tamaño medido de la pieza (y el chequeo
-  de escala del Doctor) y el mapa de sombras de la vista previa miden el
-  producto (`productBounds`: las piezas que no son primitivas; si solo hay
-  primitivas, todas), para que un fondo infinito seis veces mayor no mueva
-  las luces ni cambie la escala. *Encuadrar todo* sigue siendo todo.
+**Operations on parts, KeyShot style.** On any
+selection (model, group or part):
 
-**Físicas** (fase S2, `src/core/physics.ts`; el simulador es el *crate*
-`rt-phys`, en un *worker*). Cada nodo puede llevar su sección *Físicas*
-(`physics`, opcional; sin ella valen los valores por defecto):
+- **Move tool**: *gizmo* in the viewport with translate,
+  rotate and scale handles, local or global axes, increments with `Shift`,
+  numeric fields in the inspector (position, rotation in degrees, scale
+  with proportional lock), and *Reset transform*.
+- **Pivot**: centre of the bounding box (default), base of the box,
+  file origin, or a picked point; *Set pivot*.
+- **Rest on the floor** (the lowest point of all the selection's meshes
+  at `z = 0`), **Centre** (XY centre at `0, 0`), **Centre and
+  rest** in one action.
+- **Hide / Show / Isolate / Show all**, **Lock**,
+  **Rename**, **Delete**, **Frame**, **Set as camera
+  target** (the camera looks at the selection).
+- **Duplicate** (independent copy) and **Duplicate linked** (shares
+  mesh and material; changing one changes all), **Group / Ungroup**,
+  **Move to group**.
+- **Pattern**: linear (n copies at a distance along an axis) and circular (n
+  copies around an axis), as linked instances, editable
+  afterwards.
+- **Materials**: *Unlink material* (the part gets its own
+  copy), *Link with…* (several parts share one), *Copy / Paste
+  material*, *Select by material*.
+- **Geometry**: *Flip normals*, *Smooth shading* (angle), *Edge
+  bevel* (radius in mm, shading only), *Separate by CAD faces* and
+  *Separate by material* (each range becomes a part).
 
-- **Papel** (`role`): *Estático* (por defecto: está, no se mueve y se
-  choca contra él) o *Dinámico* (cae y choca). *Tela* (S9) y *Líquido*
-  (S7) aparecen en el inspector como *próximamente*. Un grupo o un modelo
-  dinámico cae **como un cuerpo** (una envolvente de todas sus piezas) salvo que
-  tenga **Como piezas** (`asParts`), y entonces cada pieza cae por su
-  cuenta.
-- **Masa por densidad** (`density`, kg/m³): sin densidad propia, la de la
-  familia del material de la pieza (`DENSITY_BY_CATEGORY` en
-  `src/data/physics.ts`: metal 7 800, plástico 1 100, madera 700, tela
-  400, vidrio 2 500, emisivo 2 500, otro 1 000) o 1 000 sin material.
-  La masa es la densidad por el volumen de la forma de colisión.
-- **Rozamiento** de Coulomb (`friction`, 0–2, 0,5 por defecto; el mismo
-  para el estático y el dinámico) y **rebote** (`bounciness`, 0–1, 0,2).
-  Entre dos superficies, la media geométrica de los rozamientos y el
-  mayor de los rebotes; el suelo tiene 0,6 y 0,2.
+- **Scale** (phase U9): the *Scale* tool (`S`), the same *gizmo*
+  with only its scale handles, and *Right click ▸ Scale…*: uniform (%),
+  per axis (X, Y, Z in %) or to size (mm of width, depth or height, with the
+  proportion locked), around the selection's pivot and in the
+  axes of *Move* (global or local); *Reset scale* gives
+  each node back the scale it entered the scene with, around its own
+  pivot. To size measures the selection by its vertices projected onto
+  those axes (`selectionExtents`).
 
-**Qué se simula** (`physicsSpec`). Con *Dejar caer*, la selección (de
-cada rama, el nodo de más arriba); con *Iniciar*, los nodos cuyo papel es
-dinámico. Un nodo bloqueado no se mueve y una pieza
-oculta no está. Todo lo demás visible es estático, como malla de
-triángulos, y el suelo del estudio (`z = 0`) siempre está. Cada pieza
-dinámica choca con su **envolvente convexa** (*quickhull* propio, como
-mucho 128 vértices; si no se puede, su caja orientada) y una esfera
-reconocida como tal (todos sus vértices a la misma distancia del centro)
-choca como esfera exacta. La gravedad es −Z, 9,81 m/s², en mm. La
-simulación avanza a paso fijo de 1/240 s (4 subpasos), al ritmo del reloj
-como mucho y a unos pocos fotogramas (1/8 s) de lo que la interfaz ya ha
-recibido, así que en una máquina cargada va más despacio en vez de acabar
-sin que se vea; un cuerpo quieto durante
-0,5 s **duerme** y, con todos dormidos, la simulación se para sola; si no,
-a los 30 s simulados (S3b: con el cristal frontal alimentado por la escena,
-que sigue lloviendo, no se para sola; a los 120 s; S3c: igual con algún efecto
-sobre las piezas). La misma escena da las mismas poses en cualquier
-máquina (*hash* de las poses fijado en los tests, igual en nativo y en
-wasm y con cualquier número de hilos).
+All are *store* actions, undoable, and those that make sense in
+bulk apply to the whole selection.
 
-**Lo que hace en el proyecto.** Mientras corre, los nodos no cambian:
-cada uno tiene su clip `PHYSICS` (§3.7) que crece fotograma a fotograma y
-el cabezal lo sigue, así que el visor enseña la caída a través de la
-línea de tiempo. *Pausar* congela lo que el visor enseña (lo que el
-simulador manda mientras tanto espera a *Reanudar*); *Parar* confirma la
-pose que se ve; dormirse o el límite de tiempo confirman el último
-fotograma. Confirmar pone cada nodo donde acaba su clip (su escala no
-cambia; dentro de un grupo, en los ejes del grupo). Los clips, los papeles
-que da *Dejar caer* y las poses finales son **una** entrada de deshacer;
-*Reiniciar* quita los clips de la última simulación y devuelve los nodos a
-donde estaban antes, como otra entrada; deshacer mientras corre la
-abandona sin confirmar nada.
+**Primitives** (phase U9, `src/core/primitives.ts` and
+`src/core/primitive-ops.ts`). Twelve parametric shapes, with stable
+keys: `BOX` (width, depth, height, bevel radius and its segments),
+`PLANE`, `DISC`, `CYLINDER`, `PEDESTAL` (cylinder with a bevel on top),
+`SPHERE`, `CONE`, `TORUS`, `CAPSULE`, `TUBE` (outer and
+inner radius), `STEPS` (number of steps, rising towards +Y) and `SWEEP`
+(infinity sweep: a floor that curves up into a wall at +Y).
 
-**Lluvia, polvo y nieve sobre las piezas (S3c).** Un efecto de *Ambiente* con
-`wetParts` cae sobre las piezas cuando corre *Iniciar* (no *Dejar caer*): lo
-que deja cada uno lo dice `src/data/wet-parts.ts` `PARTS_FEED` (*Lluvia* y
-*Gotas de agua*, gotas; *Motas de polvo*, *Polen*, *Polvareda* y *Ceniza*,
-polvo; *Nieve*, nieve; las burbujas y el confeti, nada). Se mojan las piezas
-visibles que la simulación no mueve (una *Dinámica* se mojaría donde estaba),
-donde están al empezar, en mm del mundo, como mallas de triángulos
-(`engine/crates/rt-phys` `wet_parts`, en el *worker* de S2, con su formato
-`WPT1`); cada una con la **mojabilidad** de la familia de su material
-(`src/data/wettability.ts` `wettabilityFamilyOf`: la categoría *Metal*,
-*Plástico*, *Vidrio* —y un emisor, como vidrio—, *Madera* y *Tela* la suya; las
-demás, por su receta: metálica como metal, el resto como pintura; S3c añade
-madera, 85°/40°, y tela, 110°/40°, y lo que tarda un material poroso en beberse
-una gota y cuánto lo oscurece mojarse: papel 0,05 mm/s y 1, madera 0,01 y 0,6,
-tela 0,5 y 1). Las piezas de un **set** (fondo, suelo, tarjetas) no llevan gotas
-una a una: se mojan como **película**. Cada triángulo lleva una rejilla de
-muestras de 1 mm de lado como poco (que crece hasta caber en 150 000 muestras
-en total, de las que el set toma un tercio como mucho; una astilla, por su
-área). Por cada efecto, su densidad y su velocidad media (viento y caída, en
-los ejes del mundo): por una cara de normal `n` pasan `densidad × |v| ×
-máx(0, −v̂·n)` por mm² y s si nada de la escena está en medio aguas arriba.
-**Las gotas** se posan por Poisson en el plano tangente de su punto (el
-casquete de S3b con la normal de la malla) y, si llegan deprisa, **salpican**
-(Mundo, Sommerfeld y Tropea: `K = We^½ Re^¼ > 57,7`; hasta un 30 % de su agua como dos
-gotas más pequeñas lanzadas por la superficie); se **juntan**, se quedan
-**ancladas** por Furmidge y **resbalan** con la gravedad tangente de triángulo
-en triángulo (por un pliegue, a lo largo de él), con su rastro, que moja las
-muestras por donde pasa, se lleva su polvo y les quita agua; una gota que
-**cuelga** de una cara que mira hacia abajo **gotea** cuando su peso puede más
-que su línea de contacto (`ρ g V (ĝ·n) > 2π a γ sin θ̄`), y una que sale por
-una arista abierta gotea ahí. **S3d: por el aire.** Un goteo (desde el reposo,
-o a la velocidad con que resbalaba por la arista) y las gotas de una
-salpicadura (despegadas 30° de la superficie, a la velocidad que en una cara
-horizontal las lleva a su alcance) son esferas de su volumen que caen con la
-gravedad y el arrastre del aire (a lo sumo a su velocidad terminal: Atlas,
-Srivastava y Sekhon 1973) y se posan, en un paso posterior al que salieron,
-en la primera cara que encuentran por delante (pueden salpicar otra vez), o se
-van por debajo de la pieza más baja y del suelo del estudio; mientras caen están
-en los fotogramas, en el render (bit 9, la sección `WETF`) y en *Rápido*. Lo
-poroso se las bebe. **El polvo** se
-posa como un campo (`1 − e^(−k t)` desde la última vez que la lluvia lo limpió)
-y **la nieve** como una capa que crece y no resbala, los dos solo donde la cara
-es lo bastante plana (polvo, 35°; nieve, 50°; una rampa de ±5°) y a cielo
-abierto. Cada fotograma se graba en un clip `PHYSICS` de la **escena** (§3.7,
-`parts`: la caché), y el render y el modo Rápido leen el fotograma del cabezal:
-el motor recibe, por instancia de una pieza mojada, la sección `WETP` (lo mojado,
-el polvo y la nieve de cada muestra y las gotas), bit 8 de sus capacidades; a
-un motor sin él no se le manda, y el inspector avisa de que el render enseñará
-las piezas secas. S3d: las gotas en el aire van en una sección `WETF` de la
-escena (bit 9), cada una con la instancia de la pieza de la que salió; con el
-bit 8 y sin el 9 el inspector avisa de que los goteos y las salpicaduras solo se
-verán al posarse. En los pases de pieza y de material, una gota (en una pieza o
-en el aire) es su pieza. **Cómo se ve**: el agua de la película como una capa
-transparente casi lisa sobre el material (rugosidad 0,03) y lo poroso más
-oscuro; el polvo, un gris pardo mate encima (más oscuro mojado); la nieve, un
-blanco mate que cubre según su espesor (`1 − e^(−h / 0,5 mm)`); las gotas,
-casquetes de agua (índice 1,333) encima de la pieza; las del aire, esferas del
-mismo agua. Sin grabación, las piezas están secas.
+- **Geometry**: generated pure and deterministic (the same specification gives
+  the same bytes), in mm, Z up, centred in its box (its box *is*
+  its measurements: angles that are multiples of 90° use exact sines and cosines);
+  closed and watertight except the plane, the disc and the infinity sweep; surface
+  normals within each logical face (a sphere is smooth with
+  any number of segments) and triangles oriented towards them, facing
+  outwards; UV in [0, 1] per face and unstretched (the long side fills the
+  square; a revolution side wraps once in u, the caps are
+  projected from above, the infinity sweep is unrolled in one go).
+  Each **logical face** (the cap, the side, the bevel, each step…) is
+  a consecutive range of triangles, stored in `faceRanges`: the *Faces*
+  level, M1 and *Separate by CAD faces* use them as CAD faces, and every
+  edge between two of them is a sharp edge (`sharpEdges`), as in STEP.
+- **Measurements**: they are clamped to what a shape allows (a bevel does not exceed
+  half the shorter side, nor the radius or height of the pedestal; the torus tube
+  does not exceed the radius; a capsule is at least as tall as it is wide; the
+  tube's hole is smaller than the tube; the infinity sweep's curve fits in
+  its floor and its wall), lengths to the ten-thousandth of a mm and
+  integer segments.
+- **Where it is born** (`placePrimitive`): with a product (any part that is not
+  a primitive), the scene size is its largest dimension. *Box* and
+  *Pedestal* are born as a **base**: under the product, on the floor, with 1.4
+  times its footprint (the sides of the box; the pedestal's radius over the
+  product point farthest from its vertical axis), a height of 0.15
+  (box) or 0.3 (pedestal) product sizes and a bevel of 3 % of its
+  smallest measurement, and the product rises until it rests on top, in the same
+  action (one undo entry); a locked product does not rise. *Plane*
+  (3 times the larger side of the footprint) and *Disc* (1.4 times the footprint) are
+  laid under the product. The *Infinity sweep* is **fitted to the active
+  camera** (`fitSweep`): rotated in Z to the camera's azimuth (the wall
+  facing it), centred sideways on the product, the wall at 1.75 times the
+  product's depth behind its centre (further back if the curve would reach
+  under the product, and always behind the switched-on lights of the setup
+  that are behind the product: at 1.25 times what each one is behind the
+  centre plus half its panel, so that the backlight fits between
+  the product and the paper; a sun does not count), the width 1.3 times what the output framing covers
+  where it touches the background, the height 1.15 times the highest point the framing
+  reaches on the wall (and at least 1.25 times the product), the floor out to
+  in front of the nearest thing the framing sees of it, and a curve of 0.3
+  times the height; the rays through the framing (the optics, the 36 mm sensor
+  and the camera's output format; orthographic too) all land
+  on it. `scene/fitPrimitive` (*Fit to camera*) redoes it in one
+  undo entry. The three are placed a
+  thousandth of the size above the studio floor, because a surface
+  on the floor acting as a *shadow catcher* would flicker between the two. The
+  rest rest on the floor next to what is standing (at +X, at a
+  tenth of the size), not counting planes or sweeps. Without a product, the size
+  is that of the declared part: the first at the origin (and it then is the
+  product: it sets the part size and the camera frames it), the
+  following ones beside it. All carry the unedited instance of *Studio
+  white* from the catalogue, shared.
+- **Live**: `scene/setPrimitive` regenerates the mesh with the new measurements,
+  one action and, in a drag, one undo entry; the part keeps
+  its resting (the centre of its box's base, on its axes, does not move), linked
+  copies change with it, per-face materials and selected
+  faces follow their logical faces by name. `scene/convertPrimitive`
+  (*Convert to mesh*) freezes it; *Flip normals*, *Smooth shading* and
+  *Separate* also freeze it, because its mesh is no longer the one of its measurements.
+- **A primitive's mesh is named** `prim:<owner>:<SHAPE>:<measurements>`:
+  it names its content and its owner (the node that had it first), so
+  linked copies share it and an independent copy has its
+  own, even if their measurements coincide.
+- **The product, not the set dressing**: the pivot of the light setup, the
+  framing of *Create studio*, the part's measured size (and the Doctor's
+  scale check) and the preview's shadow map measure the
+  product (`productBounds`: the parts that are not primitives; if there are only
+  primitives, all of them), so that an infinity sweep six times larger does not move
+  the lights or change the scale. *Frame all* still means all.
 
-**Ambiente** (fase S4a, `src/core/effects.ts`, catálogo
-`src/data/effects.ts`). Partículas del aire **sin estado**: polvo en
-suspensión, polen, lluvia, nieve, polvareda, ceniza, burbujas que suben y
-confeti que cae. El proyecto guarda `effects: AmbientEffect[]` (0..n; un
-proyecto de antes de S4a abre con la lista vacía) y cada efecto es **un
-dato, no un montón de partículas**: sus parámetros, de los que el
-simulador del motor (`engine/crates/rt-sim`) saca cada partícula como
-función pura de (semilla, id, instante). Ni caché ni horneado.
+**Physics** (phase S2, `src/core/physics.ts`; the simulator is the `rt-phys`
+crate, in a *worker*). Each node may carry its *Physics* section
+(`physics`, optional; without it the default values apply):
 
-- **Campos**: `id` (`fx1`, `fx2`…), `preset` (clave estable del catálogo:
+- **Role** (`role`): *Static* (default: it is there, does not move and is
+  collided against) or *Dynamic* (falls and collides). *Fabric* (S9) and *Liquid*
+  (S7) appear in the inspector as *coming soon*. A dynamic group or model
+  falls **as one body** (an envelope of all its parts) unless it
+  has **As parts** (`asParts`), and then each part falls on its
+  own.
+- **Mass by density** (`density`, kg/m³): without its own density, that of the
+  family of the part's material (`DENSITY_BY_CATEGORY` in
+  `src/data/physics.ts`: metal 7,800, plastic 1,100, wood 700, fabric
+  400, glass 2,500, emissive 2,500, other 1,000) or 1,000 without a material.
+  The mass is the density times the volume of the collision shape.
+- Coulomb **friction** (`friction`, 0–2, 0.5 by default; the same
+  for static and dynamic) and **bounciness** (`bounciness`, 0–1, 0.2).
+  Between two surfaces, the geometric mean of the frictions and the
+  larger of the bounciness values; the floor has 0.6 and 0.2.
+
+**What is simulated** (`physicsSpec`). With *Drop*, the selection (of
+each branch, the topmost node); with *Start*, the nodes whose role is
+dynamic. A locked node does not move and a hidden
+part is not there. Everything else visible is static, as a
+triangle mesh, and the studio floor (`z = 0`) is always there. Each dynamic
+part collides with its **convex hull** (own *quickhull*, at
+most 128 vertices; if that is not possible, its oriented box) and a sphere
+recognized as such (all its vertices at the same distance from the centre)
+collides as an exact sphere. Gravity is −Z, 9.81 m/s², in mm. The
+simulation advances at a fixed step of 1/240 s (4 substeps), at the pace of the clock
+at most and a few frames (1/8 s) from what the interface has already
+received, so on a loaded machine it goes slower instead of finishing
+unseen; a body at rest for
+0.5 s **sleeps** and, with all asleep, the simulation stops by itself; otherwise,
+at 30 simulated seconds (S3b: with the front glass fed by the scene,
+which keeps raining, it does not stop by itself; at 120 s; S3c: the same with some effect
+on the parts). The same scene gives the same poses on any
+machine (pose *hash* pinned in the tests, the same native and in
+wasm and with any number of threads).
+
+**What it does in the project.** While it runs, the nodes do not change:
+each one has its `PHYSICS` clip (§3.7) that grows frame by frame and
+the playhead follows it, so the viewport shows the fall through the
+timeline. *Pause* freezes what the viewport shows (what the
+simulator sends in the meantime waits for *Resume*); *Stop* confirms the
+pose that is seen; falling asleep or the time limit confirm the last
+frame. Confirming puts each node where its clip ends (its scale does not
+change; inside a group, in the group's axes). The clips, the roles
+that *Drop* gives and the final poses are **one** undo entry;
+*Reset* removes the clips of the last simulation and returns the nodes to
+where they were before, as another entry; undoing while it runs
+abandons it without confirming anything.
+
+**Rain, dust and snow on the parts (S3c).** An *Ambient* effect with
+`wetParts` falls on the parts when *Start* runs (not *Drop*): what
+each one leaves is stated by `src/data/wet-parts.ts` `PARTS_FEED` (*Rain* and
+*Water drops*, drops; *Dust motes*, *Pollen*, *Dust cloud* and *Ash*,
+dust; *Snow*, snow; bubbles and confetti, nothing). The visible parts
+that the simulation does not move get wet (a *Dynamic* one would get wet where it was),
+where they are at the start, in world mm, as triangle meshes
+(`engine/crates/rt-phys` `wet_parts`, in the S2 *worker*, with its format
+`WPT1`); each one with the **wettability** of its material's family
+(`src/data/wettability.ts` `wettabilityFamilyOf`: the *Metal*,
+*Plastic*, *Glass* category —and an emitter, as glass—, *Wood* and *Fabric* have their own; the
+rest, by their recipe: metallic as metal, the rest as paint; S3c adds
+wood, 85°/40°, and fabric, 110°/40°, and how long a porous material takes to drink
+a drop and how much getting wet darkens it: paper 0.05 mm/s and 1, wood 0.01 and 0.6,
+fabric 0.5 and 1). The parts of a **set** (backdrop, floor, cards) do not carry drops
+one by one: they get wet as a **film**. Each triangle carries a grid of
+samples of at least 1 mm on a side (which grows until it fits in 150,000 samples
+in total, of which the set takes a third at most; a sliver, by its
+area). For each effect, its density and its mean velocity (wind and fall, in
+world axes): through a face of normal `n` pass `density × |v| ×
+max(0, −v̂·n)` per mm² and s if nothing in the scene is in between upstream.
+**The drops** settle by Poisson on the tangent plane of their point (the
+S3b cap with the mesh normal) and, if they arrive fast, **splash**
+(Mundo, Sommerfeld and Tropea: `K = We^½ Re^¼ > 57.7`; up to 30 % of their water as two
+smaller drops thrown off the surface); they **merge**, stay
+**pinned** by Furmidge and **slide** with the tangential gravity from triangle
+to triangle (along a crease, down it), with their trail, which wets
+the samples it passes over, carries off their dust and takes water from them; a drop that
+**hangs** from a face looking downwards **drips** when its weight overcomes
+its contact line (`ρ g V (ĝ·n) > 2π a γ sin θ̄`), and one that leaves through
+an open edge drips there. **S3d: through the air.** A drip (from rest,
+or at the speed it was sliding along the edge) and the drops of a
+splash (lifted 30° off the surface, at the speed that on a horizontal
+face carries them to their reach) are spheres of their volume that fall with
+gravity and air drag (at most at their terminal velocity: Atlas,
+Srivastava and Sekhon 1973) and settle, in a step after the one they left,
+on the first face they meet from the front (they may splash again), or
+leave below the lowest part and the studio floor; while they fall they are
+in the frames, in the render (bit 9, the `WETF` section) and in *Fast*. Porous
+material drinks them. **Dust** settles
+as a field (`1 − e^(−k t)` since the last time the rain cleaned it)
+and **snow** as a layer that grows and does not slide, both only where the face
+is flat enough (dust, 35°; snow, 50°; a ramp of ±5°) and in the
+open air. Each frame is recorded in a `PHYSICS` clip of the **scene** (§3.7,
+`parts`: the cache), and the render and Fast mode read the playhead's frame:
+the engine receives, per instance of a wet part, the `WETP` section (the wetness,
+dust and snow of each sample and the drops), bit 8 of its capabilities; an
+engine without it is not sent it, and the inspector warns that the render will show
+the parts dry. S3d: the drops in the air go in a `WETF` section of the
+scene (bit 9), each with the instance of the part it came from; with
+bit 8 and without bit 9 the inspector warns that drips and splashes will only
+show once they land. In the part and material passes, a drop (on a part or
+in the air) is its part. **How it looks**: the film's water as an almost smooth
+transparent layer over the material (roughness 0.03) and porous material
+darker; dust, a matte brownish grey on top (darker when wet); snow, a
+matte white that covers according to its thickness (`1 − e^(−h / 0.5 mm)`); drops,
+water caps (index 1.333) on top of the part; those in the air, spheres of the
+same water. Without a recording, the parts are dry.
+
+**Ambient** (phase S4a, `src/core/effects.ts`, catalogue
+`src/data/effects.ts`). **Stateless** air particles: suspended
+dust, pollen, rain, snow, dust cloud, ash, rising bubbles and
+falling confetti. The project stores `effects: AmbientEffect[]` (0..n; a
+project from before S4a opens with an empty list) and each effect is **a
+piece of data, not a heap of particles**: its parameters, from which the
+engine's simulator (`engine/crates/rt-sim`) derives each particle as a
+pure function of (seed, id, instant). No cache and no baking.
+
+- **Fields**: `id` (`fx1`, `fx2`…), `preset` (stable catalogue key:
   `DUST_MOTES`, `POLLEN`, `RAIN`, `SNOW`, `DUST_CLOUD`, `ASH`, `BUBBLES`,
-  `CONFETTI`, y desde S3 `WATER_DROPS`, *Gotas de agua*; `HAZE`,
-  `LIGHT_SHAFTS` y `GROUND_FOG` están en el catálogo
-  como *próximamente*, son volúmenes de S5), `name` (vacío: el del
-  preset), `enabled`; la cantidad (`amountMode` `DENSITY` con `density`
-  en partículas/m³ del volumen, o `COUNT` con `count`), `sizeMm` ±
-  `sizeVar`, `shape` (`SPHERE` punto/esfera, `DISC` copo, `CAPSULE`
-  estela y, desde S3, `DROP` gota: un cuerpo redondo y una punta que lo
-  sigue, contra la velocidad), desde S3 `shapeMix` (`on` y un peso por forma,
-  `SPHERE`, `DISC`, `CAPSULE`, `DROP`: encendida, cada partícula elige una en
-  proporción a los pesos y conserva la suya siempre; apagada, o sin ningún
-  peso, todas son `shape`), `dropTail` (largo de la gota, del centro del
-  cuerpo al de la punta, en radios del cuerpo, 0..16; 1,6) y `dropTip`
-  (radio de la punta entre el del cuerpo, 0..1; 0,15) y `shapeVar` (cuánto
-  más larga o más corta es cada gota y cada estela que las demás, 0..1; 0),
-  `energy` (m/s de nacimiento en dirección al azar, que se relaja
-  hacia la caída), `chaos` (fuerza de la turbulencia como fracción de su
-  escala), `turbulenceScaleMm`, `turbulenceSpeed` (m/s), `wind` (vector
-  en m/s, Z arriba), `fallSpeed` (velocidad terminal a 1 g, m/s) ±
-  `fallVar`, `gravity` (múltiplo de g; negativa sube), `spin` (vueltas/s
-  de un disco), `streak` (largo de la cápsula: lo recorrido en tantos
-  segundos), la región (`region`: `SCENE`, la caja del producto con
-  `marginMm`, o `BOX` con centro y tamaño; `band`: banda de alturas), la
-  nube (`cloud`: centro, radio en mm, suavidad 0..1; con ella, el volumen
-  es su esfera), el material (`material`: clave del catálogo de
-  materiales, o vacío y entonces `ownMaterial`, el del preset; desde S4b
-  `ownMaterial` lleva además `forward` y `forwardG`, la parte de lo que
-  dispersa cada partícula que va a un lóbulo hacia delante de
-  Henyey–Greenstein y su asimetría: 0,5 y 0,7 en el polvo, el polen y la
-  polvareda, 0 en los demás; solo con un material propio y opaco; un
-  efecto guardado antes de S4b toma el de su preset), `tintVar`
-  y `palette` (hasta 4 tintes), `time` (*Congelar en*, s), `camera`,
-  `reflections` y `shadows` (como en las luces), `cap` (tope propio; 0: el
-  del motor), `seed` y, desde S3c, `wetParts` (cae sobre las piezas cuando
-  corre la barra de físicas; solo se guarda encendido). Un efecto guardado antes de S3 abre con la gota y la
-  variación de su preset y la mezcla apagada. Un motor sin el bit 6 de sus
-  capacidades (S3) recibe una gota como esfera y una mezcla como la forma de
-  más peso.
-- **Acciones del *store***, todas deshacibles: `effect/add` (un preset
-  disponible; nace con los valores del preset, la región alrededor de la
-  escena con un margen de 0,75 tamaños de pieza y la semilla de su
-  número), `effect/remove`, `effect/set` (un parche; un arrastre es una
-  entrada, y un valor que ya tiene no cambia nada) y `effect/preset`
-  (toma los valores del preset nuevo y conserva dónde está, su instante,
-  su semilla, su tope y su nombre). Los valores se acotan al aplicarse.
-- **Cuántas partículas**: la densidad por el volumen en m³ (la región o la
-  esfera de la nube) o la cuenta, y como mucho el tope: el del efecto, y
-  nunca más que el del motor (*Ajustes ▸ Motor de renderizado ▸
-  Partículas por efecto*; automático: 100 000 en el navegador, 1 000 000
-  en nativo). El Doctor avisa (`particles`) cuando un efecto pide más que
-  su tope, y *Arreglar* baja la cantidad hasta él.
-- **Qué viaja al motor**: una sección `FXAM` por efecto encendido, tras
-  las luces, con los parámetros en unidades del motor (mm, mm/s; la región
-  ya recortada por la banda y nunca bajo el suelo) y un material propio
-  detrás de los de las piezas (su `materialId`). Un efecto apagado no
-  viaja. El motor evalúa las partículas al cargar la escena y construye su
-  BVH; los pases dan a una partícula el `partId` de su efecto y el
-  `materialId` del suyo.
-- **Vista previa**: el visor *Rápido* pinta hasta 50 000 partículas de
-  cada efecto, las que evalúa `rt_particles_eval` de `rt.wasm` (el mismo
-  simulador, en el hilo de la página); sin `rt.wasm` pinta la caja de la
-  región y el medidor lo dice. *Completo* y *Render* las pintan todas.
+  `CONFETTI`, and since S3 `WATER_DROPS`, *Water drops*; `HAZE`,
+  `LIGHT_SHAFTS` and `GROUND_FOG` are in the catalogue
+  as *coming soon*, they are S5 volumes), `name` (empty: the preset's),
+  `enabled`; the amount (`amountMode` `DENSITY` with `density`
+  in particles/m³ of the volume, or `COUNT` with `count`), `sizeMm` ±
+  `sizeVar`, `shape` (`SPHERE` point/sphere, `DISC` flake, `CAPSULE`
+  streak and, since S3, `DROP` drop: a round body and a tip that
+  follows it, against the velocity), since S3 `shapeMix` (`on` and a weight per shape,
+  `SPHERE`, `DISC`, `CAPSULE`, `DROP`: when on, each particle picks one in
+  proportion to the weights and always keeps its own; when off, or with no
+  weight, all are `shape`), `dropTail` (length of the drop, from the centre of the
+  body to that of the tip, in body radii, 0..16; 1.6) and `dropTip`
+  (radius of the tip over that of the body, 0..1; 0.15) and `shapeVar` (how much
+  longer or shorter each drop and each streak is than the others, 0..1; 0),
+  `energy` (m/s at birth in a random direction, which relaxes
+  towards the fall), `chaos` (strength of the turbulence as a fraction of its
+  scale), `turbulenceScaleMm`, `turbulenceSpeed` (m/s), `wind` (vector
+  in m/s, Z up), `fallSpeed` (terminal velocity at 1 g, m/s) ±
+  `fallVar`, `gravity` (multiple of g; negative rises), `spin` (turns/s
+  of a disc), `streak` (length of the capsule: what is travelled in that many
+  seconds), the region (`region`: `SCENE`, the product's box with
+  `marginMm`, or `BOX` with centre and size; `band`: height band), the
+  cloud (`cloud`: centre, radius in mm, softness 0..1; with it, the volume
+  is its sphere), the material (`material`: key of the material
+  catalogue, or empty and then `ownMaterial`, the preset's; since S4b
+  `ownMaterial` also carries `forward` and `forwardG`, the part of what
+  each particle scatters that goes into a forward Henyey–Greenstein
+  lobe and its asymmetry: 0.5 and 0.7 in dust, pollen and the
+  dust cloud, 0 in the others; only with an own, opaque material; an
+  effect saved before S4b takes its preset's), `tintVar`
+  and `palette` (up to 4 tints), `time` (*Freeze at*, s), `camera`,
+  `reflections` and `shadows` (as on lights), `cap` (own cap; 0: the
+  engine's), `seed` and, since S3c, `wetParts` (falls on the parts when
+  the physics bar runs; only stored when on). An effect saved before S3 opens with the drop and the
+  variation of its preset and the mix off. An engine without bit 6 of its
+  capabilities (S3) receives a drop as a sphere and a mix as the shape of
+  greatest weight.
+- ***Store* actions**, all undoable: `effect/add` (an available preset;
+  it is born with the preset's values, the region around the
+  scene with a margin of 0.75 part sizes and the seed of its
+  number), `effect/remove`, `effect/set` (a patch; a drag is one
+  entry, and a value it already has changes nothing) and `effect/preset`
+  (takes the values of the new preset and keeps where it is, its instant,
+  its seed, its cap and its name). Values are clamped when applied.
+- **How many particles**: the density times the volume in m³ (the region or the
+  cloud's sphere) or the count, and at most the cap: the effect's, and
+  never more than the engine's (*Settings ▸ Render engine ▸
+  Particles per effect*; automatic: 100,000 in the browser, 1,000,000
+  native). The Doctor warns (`particles`) when an effect asks for more than
+  its cap, and *Fix* lowers the amount to it.
+- **What travels to the engine**: an `FXAM` section per switched-on effect, after
+  the lights, with the parameters in engine units (mm, mm/s; the region
+  already clipped by the band and never below the floor) and an own material
+  after the parts' (its `materialId`). A switched-off effect does not
+  travel. The engine evaluates the particles when loading the scene and builds their
+  BVH; the passes give a particle the `partId` of its effect and the
+  `materialId` of its own.
+- **Preview**: the *Fast* viewport paints up to 50,000 particles of
+  each effect, the ones `rt_particles_eval` of `rt.wasm` evaluates (the same
+  simulator, on the page's thread); without `rt.wasm` it paints the region's box
+  and the meter says so. *Full* and *Render* paint them all.
 
-**Vista en sección (Q1).** Un plano que quita un lado de la pieza y tapa el
-corte, para enseñar cómo está hecho el producto por dentro.
+**Section view (Q1).** A plane that removes one side of the part and caps the
+cut, to show how the product is made on the inside.
 
-- **Dato**: `state.section`, a lo sumo **un plano** por proyecto (`null`
-  hasta que la persona hace uno): `enabled` (se corta o no; apagado, el plano
-  se conserva), `point` (mm, mundo, Z arriba), `normal` (unitaria, hacia el
-  lado que **se quita**) y `cap` (tapar el corte). Lo que queda es lo que
-  está del lado contrario a la normal. Se guarda en el proyecto: un archivo
-  anterior se abre sin plano, y uno con un plano roto lo abre sin él.
-- **Cómo se pone** (todo por el *store*, deshacible): **clic en la pieza + eje**
-  (*X*, *Y*, *Z* o *Superficie*: la normal de la superficie donde se hace
-  clic): el plano pasa por el punto y es perpendicular al eje, y se quita el
-  lado que mira al espectador; **dos puntos**: el plano contiene los dos
-  puntos y la dirección de la vista, y se quita lo que queda a la izquierda de
-  la línea del primero al segundo (el mismo punto dos veces, o dos uno detrás
-  del otro según la vista, no hacen plano y se vuelve a pedir el segundo);
-  **números**: el punto y la normal (la normal se convierte en vector unitario
-  y una que no sea nada no se toma). Además *Cambiar de lado*, *Tapar el
-  corte*, *Quitar el plano* y el interruptor, que sin plano hace el de por
-  defecto: por el centro del producto, de cara a la cámara, tapado. Acciones
-  `section/set`, `section/patch`, `section/enable`, `section/flip` y
-  `section/clear`; un arrastre de un número es una entrada de deshacer y lo
-  que no cambia nada no deja entrada.
-- **Qué se corta**: la pieza y todo lo que la persona haya puesto en la escena
-  (una base, un pedestal), no el **estudio**: el fondo, el suelo y las
-  tarjetas de un set (L6) son la sala, no el modelo, y se ven enteros a los
-  dos lados del plano. Los cortes de los **sólidos cerrados** (mallas sin
-  agujeros, con cada arista compartida por dos triángulos y las caras hacia
-  fuera) se tapan con el color liso de su material (sin textura ni dibujo);
-  una **malla abierta** no tiene dentro: el corte enseña su interior, y la
-  interfaz lo dice (con las piezas). Tampoco se tapan una pieza con un material
-  por cara ni un vidrio de pared fina.
-- **Qué hace en cada visor**: *Completo* y *Render* quitan el lado de la
-  normal para todos los rayos (cámara, reflejos, refracciones y sombras: lo
-  quitado ni se ve ni sombrea) y tapan como se ha dicho; un vidrio cortado
-  refracta por su tapa, como un vidrio macizo que acabara ahí. *Rápido* pinta
-  lo mismo con el plano de recorte de three.js y una tapa por pieza cerrada;
-  un vidrio cortado se ve transparente. La selección, la caja de selección y
-  el cardán no ven lo que el corte se ha llevado.
-- **Animación**: el movimiento `SECTION` (§3.7).
+- **Data**: `state.section`, at most **one plane** per project (`null`
+  until the person makes one): `enabled` (cut or not; when off, the plane
+  is kept), `point` (mm, world, Z up), `normal` (unit, towards the
+  side that **is removed**) and `cap` (cap the cut). What remains is what
+  is on the side opposite the normal. It is saved in the project: an earlier file
+  opens without a plane, and one with a broken plane opens it without.
+- **How it is placed** (all through the *store*, undoable): **click on the part + axis**
+  (*X*, *Y*, *Z* or *Surface*: the normal of the surface where the
+  click is made): the plane passes through the point and is perpendicular to the axis, and the
+  side facing the viewer is removed; **two points**: the plane contains the two
+  points and the view direction, and what is left of the
+  line from the first to the second is removed (the same point twice, or two points one behind
+  the other along the view, make no plane and the second is asked for again);
+  **numbers**: the point and the normal (the normal is converted to a unit vector
+  and one that is nothing is not taken). Also *Flip side*, *Cap the
+  cut*, *Remove the plane* and the switch, which without a plane makes the default
+  one: through the product's centre, facing the camera, capped. Actions
+  `section/set`, `section/patch`, `section/enable`, `section/flip` and
+  `section/clear`; dragging a number is one undo entry and what
+  changes nothing leaves no entry.
+- **What is cut**: the part and everything the person has put in the scene
+  (a base, a pedestal), not the **studio**: the backdrop, the floor and the
+  cards of a set (L6) are the room, not the model, and are seen whole on
+  both sides of the plane. The cuts of **closed solids** (meshes without
+  holes, with every edge shared by two triangles and the faces
+  outwards) are capped with the smooth colour of their material (no texture or pattern);
+  an **open mesh** has no inside: the cut shows its interior, and the
+  interface says so (with the parts). A part with a per-face material
+  and a thin-walled glass are not capped either.
+- **What it does in each viewport**: *Full* and *Render* remove the side of the
+  normal for all rays (camera, reflections, refractions and shadows: what is
+  removed is neither seen nor casts shade) and cap as described; a cut glass
+  refracts through its cap, like a solid glass that ended there. *Fast* paints
+  the same with three.js's clipping plane and a cap per closed part;
+  a cut glass looks transparent. The selection, the selection box and
+  the gizmo do not see what the cut has taken away.
+- **Animation**: the `SECTION` move (§3.7).
 
-### 3.2 · Selección por niveles
+### 3.2 · Selection by levels
 
-`level ∈ {MODEL, GROUP, PART, FACES}`, excluyentes. Un clic en el visor
-selecciona el ancestro del nivel elegido; `GROUP` sobre una pieza sin
-grupo selecciona la pieza. `FACES` guarda `{part, indices[]}`: una sola
-pieza y los índices de sus triángulos. La selección decide el objetivo
-de materiales, de *Apoyar*, *Centrar*, *Ocultar*, y del inspector. La
-selección es estado volátil: no se deshace y no marca el proyecto como
-modificado.
+`level ∈ {MODEL, GROUP, PART, FACES}`, mutually exclusive. A click in the viewport
+selects the ancestor of the chosen level; `GROUP` on a part without a
+group selects the part. `FACES` stores `{part, indices[]}`: a single
+part and the indices of its triangles. The selection decides the target
+of materials, of *Rest*, *Centre*, *Hide*, and of the inspector. The
+selection is volatile state: it is not undone and does not mark the project as
+modified.
 
-**Combinar con la selección que había** (el mismo vocabulario en un
-clic y en una caja): sustituir, **añadir**, **quitar**, y en un clic
-también **alternar** (meter o sacar). En el visor: sin tecla sustituye,
-`Shift` añade, `Ctrl/⌘` alterna, `Alt` quita; un clic en vacío limpia.
+**Combining with the previous selection** (the same vocabulary in a
+click and in a box): replace, **add**, **remove**, and in a click
+also **toggle** (put in or take out). In the viewport: no key replaces,
+`Shift` adds, `Ctrl/⌘` toggles, `Alt` removes; a click on empty space clears.
 
-**Caras por continuidad.** Un clic a nivel `FACES` coge una cara entera,
-no un triángulo (`src/core/faces.ts`):
+**Faces by continuity.** A click at `FACES` level takes a whole face,
+not a triangle (`src/core/faces.ts`):
 
-- En una pieza que viene de STEP o IGES, la **cara CAD** que contiene el
-  triángulo (`SceneNode.faceRanges`, rangos de triángulos): los rangos
-  ganan siempre.
-- En cualquier otra malla, la superficie que **continúa** desde el
-  triángulo picado: adyacencia por
-  **posición** de vértice (soldadura a `1e-5` de la diagonal de la malla,
-  no por índice, porque los teseladores duplican vértices en las
-  costuras); se cruza una arista si el diedro entre el triángulo que se
-  deja y el que se entra es menor que el ángulo de arista viva (30°) **y**
-  menor que 2,5 veces la curvatura propia de la cara (el menor diedro no
-  plano entre las aristas **que se podrían cruzar** del triángulo
-  picado; una cara plana no tiene, y se para en el primer redondeo; la
-  pared de un cilindro tiene uno constante y se coge entera, hasta las
-  tapas); las aristas que la malla marca como duras (`sharpEdges`) no se
-  cruzan nunca. El triángulo suelto (`Shift`) se coge sin crecer.
-- Límite conocido: un triángulo en el borde de una cara plana cuya única
-  arista que gira es un redondeo suave (unos pocos grados por paso) se
-  confunde con una faceta de cara curva y la cara sigue el redondeo; en
-  el interior de la misma cara no pasa, y con rangos CAD tampoco.
+- On a part that comes from STEP or IGES, the **CAD face** that contains the
+  triangle (`SceneNode.faceRanges`, triangle ranges): ranges
+  always win.
+- On any other mesh, the surface that **continues** from the picked
+  triangle: adjacency by vertex
+  **position** (welding at `1e-5` of the mesh diagonal,
+  not by index, because tessellators duplicate vertices at
+  seams); an edge is crossed if the dihedral between the triangle being
+  left and the one being entered is smaller than the sharp-edge angle (30°) **and**
+  smaller than 2.5 times the face's own curvature (the smallest non-flat
+  dihedral among the picked triangle's edges **that could be crossed**;
+  a flat face has none, and stops at the first rounding; the
+  wall of a cylinder has a constant one and is taken whole, up to the
+  caps); edges that the mesh marks as hard (`sharpEdges`) are never
+  crossed. The single triangle (`Shift`) is taken without growing.
+- Known limit: a triangle at the edge of a flat face whose only
+  turning edge is a soft rounding (a few degrees per step) is
+  confused with a facet of a curved face and the face follows the rounding; in
+  the interior of the same face it does not happen, nor with CAD ranges.
 
-**Selección por caja.** Un rectángulo arrastrado en pantalla coge, al
-nivel vigente, lo que queda **entero dentro** (*ventana*, arrastrando de
-izquierda a derecha) o lo que **toca** (*cruce*, de derecha a izquierda)
-(`src/core/box-select.ts`, todo en píxeles de pantalla y puro):
+**Box selection.** A rectangle dragged on screen takes, at the current
+level, what is **entirely inside** (*window*, dragging from
+left to right) or what it **touches** (*crossing*, from right to left)
+(`src/core/box-select.ts`, all in screen pixels and pure):
 
-- `MODEL`, `GROUP` y `PART`: cada nodo del nivel se prueba por la
-  geometría proyectada de sus piezas, primero la caja envolvente y luego
-  los triángulos recortados contra el plano cercano. Las piezas ocultas
-  no cuentan, y **no se mira qué tapa a qué**: una pieza detrás de otra
-  se coge también, como en cualquier CAD. Una ventana coge un grupo o un
-  modelo cuando **todas** sus piezas caben; un cruce cuando **alguna**
-  toca.
-- `FACES`: caras enteras (cara CAD o por continuidad) de **una** pieza
-  (la seleccionada o, si no hay, la que está en el centro de la caja) que
-  se **ven** en el rectángulo; con *Rayos X* también las ocultas, por
-  geometría. Una ventana coge una cara solo si todos sus triángulos
-  caben.
-- Se combina con la selección que había: sustituye, añade o quita. Un
-  arrastre de pocos píxeles es un clic, no una caja.
+- `MODEL`, `GROUP` and `PART`: each node of the level is tested by the
+  projected geometry of its parts, first the bounding box and then
+  the triangles clipped against the near plane. Hidden parts
+  do not count, and **what covers what is not looked at**: a part behind another
+  is taken too, as in any CAD. A window takes a group or a
+  model when **all** its parts fit; a crossing when **any**
+  touches.
+- `FACES`: whole faces (CAD or by continuity) of **one** part
+  (the selected one or, if none, the one at the centre of the box) that
+  are **seen** in the rectangle; with *X-ray* the hidden ones too, by
+  geometry. A window takes a face only if all its triangles
+  fit.
+- It combines with the previous selection: replaces, adds or removes. A
+  drag of a few pixels is a click, not a box.
 
-### 3.3 · Materiales
+### 3.3 · Materials
 
-Una **instancia** de material: `id`, `name`, `preset` (clave de origen o
-`null` si es propio), `family`, `category`, `params` (los del catálogo,
-todos editables), `wear` (los campos de desgaste), `textures` (las
-texturas de imagen y las etiquetas: abajo), `bevelRadiusMm` y, en modo
-*Nodos*, `graph` (un grafo de nodos: abajo).
+A material **instance**: `id`, `name`, `preset` (origin key or
+`null` if it is its own), `family`, `category`, `params` (those of the catalogue,
+all editable), `wear` (the wear fields), `textures` (the
+image textures and the labels: below), `bevelRadiusMm` and, in
+*Nodes* mode, `graph` (a node graph: below).
 
-**Texturas de imagen** (fase M2a, `src/core/textures.ts`). `textures`
-tiene seis **ranuras**, cada una vacía o con una imagen: `color`,
-`roughness`, `metal`, `normal`, `alpha` y `emission`; un **mapeado
-común** (`mapping`) y las **etiquetas** (`labels`). Cada ranura lleva la
-imagen (`ImageRef`: id, nombre, ancho y alto), su mapeado propio o `null`
-(usa el común), y cómo lee la imagen: `channel` (R, G, B, A o L,
-luminancia; las escalares —rugosidad, metal, alfa— leen un canal: glTF
-empaqueta la rugosidad en G y el metal en B), `invert` (1 − valor: un mapa
-de brillo como rugosidad), `strength` (normal: cuánto dobla la normal, el
-`scale` de glTF; emisión: el multiplicador de la radiancia), `height`
-(normal: es un mapa de alturas, de relieve, con `strength` en mm de
-relieve del blanco, y no uno de normales en espacio tangente), `cutout` y
-`cutoff` (alfa: recorte duro en el umbral, el `MASK` de glTF; sin él, el
-valor es una cobertura que mezcla) y `tint` (emisión: el color lineal que
-multiplica la imagen, el `emissiveFactor` de glTF). La imagen
-**multiplica** el valor del parámetro (color × color base, rugosidad ×
-rugosidad, metal × metal, alfa × opacidad), la regla de glTF, para que un
-material importado sea el del archivo; la emisión se **suma**: tinte ×
-imagen × intensidad, en radiancia (1 es blanco a exposición 0, como la
-película del motor). En un emisor (familia `EMISSIVE`) la ranura de color
-tiñe lo que emite.
+**Image textures** (phase M2a, `src/core/textures.ts`). `textures`
+has six **slots**, each empty or with an image: `color`,
+`roughness`, `metal`, `normal`, `alpha` and `emission`; a **common
+mapping** (`mapping`) and the **labels** (`labels`). Each slot carries the
+image (`ImageRef`: id, name, width and height), its own mapping or `null`
+(it uses the common one), and how it reads the image: `channel` (R, G, B, A or L,
+luminance; the scalar ones —roughness, metal, alpha— read one channel: glTF
+packs roughness in G and metal in B), `invert` (1 − value: a gloss map
+as roughness), `strength` (normal: how much it bends the normal, glTF's
+`scale`; emission: the radiance multiplier), `height`
+(normal: it is a height map, a relief map, with `strength` in mm of
+relief of white, and not a tangent-space normal map), `cutout` and
+`cutoff` (alpha: hard cutout at the threshold, glTF's `MASK`; without it, the
+value is a coverage that blends) and `tint` (emission: the linear colour that
+multiplies the image, glTF's `emissiveFactor`). The image
+**multiplies** the parameter's value (colour × base colour, roughness ×
+roughness, metal × metal, alpha × opacity), the glTF rule, so that an
+imported material is the file's; emission is **added**: tint ×
+image × intensity, in radiance (1 is white at exposure 0, like the
+engine's film). On an emitter (family `EMISSIVE`) the colour slot
+tints what it emits.
 
-El **mapeado**: `projection` (`UV`, `BOX` caja, `PLANAR` plana,
-`CYLINDRICAL` cilíndrica, `SPHERICAL` esférica), `axis` (X, Y, Z: el eje
-por el que mira la plana, el del cilindro, el de los polos), `uvSet` (UV:
-el primer juego de la malla o el segundo), `sizeMm`, `rotationDeg`,
-`offset`, `repeat` (en u y v) y `wrap` (fuera de la imagen: *repetir*,
-*estirar el borde* o *espejo*). Convenciones, que son el contrato con la
-vista previa y con el motor (M2b): las coordenadas de textura tienen **v
-hacia arriba** y (0, 0) es la esquina inferior izquierda de la imagen (el
-convenio de OBJ, FBX, Collada y USD; la v de glTF baja y su lector la da
-la vuelta); un téxel se lee en la columna `u·ancho` y la fila `(1 − v)·alto`
-de las filas desde arriba. Las proyecciones trabajan en el espacio propio
-de la pieza (sus coordenadas de malla, mm, Z arriba): la textura se mueve,
-gira y escala con la pieza, y un material compartido cae igual en cada
-pieza que lo lleva. *Plana* mira por su eje (Z desde arriba, Y desde
-delante, X desde +X); *Caja* mezcla las tres por |n|⁴ (una cara
-perpendicular a un eje toma solo ese eje, un bisel a 45° mitad y mitad) y
-vista desde fuera ninguna cara sale en espejo; *Cilíndrica* da una vuelta
-por repetición con el centro de la imagen delante (−Y para el eje Z);
-*Esférica* va de polo a polo. Después, el giro y la repetición:
-`uv = R(giro)·(c ⊙ repetición) + desplazamiento` (más ½ en las
-proyecciones, que centran la imagen en el origen de la pieza).
+The **mapping**: `projection` (`UV`, `BOX`, `PLANAR`,
+`CYLINDRICAL`, `SPHERICAL`), `axis` (X, Y, Z: the axis
+the planar one looks along, the cylinder's, the poles'), `uvSet` (UV:
+the mesh's first set or the second), `sizeMm`, `rotationDeg`,
+`offset`, `repeat` (in u and v) and `wrap` (outside the image: *repeat*,
+*stretch the edge* or *mirror*). Conventions, which are the contract with the
+preview and with the engine (M2b): texture coordinates have **v
+upwards** and (0, 0) is the bottom-left corner of the image (the
+convention of OBJ, FBX, Collada and USD; glTF's v goes down and its reader flips
+it); a texel is read at column `u·width` and row `(1 − v)·height`
+of the rows from the top. Projections work in the part's own space
+(its mesh coordinates, mm, Z up): the texture moves,
+rotates and scales with the part, and a shared material lands the same on each
+part that carries it. *Planar* looks along its axis (Z from above, Y from
+the front, X from +X); *Box* blends the three by |n|⁴ (a face
+perpendicular to an axis takes only that axis, a 45° bevel half and half) and
+seen from outside no face comes out mirrored; *Cylindrical* wraps once
+per repeat with the centre of the image in front (−Y for the Z axis);
+*Spherical* goes from pole to pole. Then, the rotation and the repeat:
+`uv = R(rotation)·(c ⊙ repeat) + offset` (plus ½ in the
+projections, which centre the image on the part's origin).
 
-**Por qué el tamaño va en mm y no en tamaños de pieza**: una textura de
-imagen es la foto de algo con tamaño propio (veta, tejido, carbono, una
-etiqueta) que no depende de la pieza; el material se comparte entre piezas
-de tamaños distintos y viaja en la biblioteca a otros productos, y debe
-caer igual en todos; el motor trabaja en mm. `sizeMm` es lo que ocupa una
-repetición de la imagen a lo ancho (su alto sigue a las proporciones de la
-imagen; en la cilíndrica es la circunferencia para la que está dibujada,
-que fija su alto). La primera imagen de un material sin ninguna pone
-`sizeMm` al tamaño de la pieza, para que se vea entera de una vez;
-*Ajustar a la pieza* lo vuelve a hacer con el lado mayor de las piezas que
-lo llevan; es una opción, y el tamaño escrito a mano son esos mismos
-milímetros. El procedural tampoco sigue a la pieza (decisión 5.1, C1): la
-veta de la madera y la trama de la tela tienen tamaño físico en mm, el mismo
-en un joyero que en una mesa (§3.1, E6), y el desgaste guarda su escala de
-referencia en metros (`wear.refSize`), que se fija con el tamaño de la
-pieza cuando se crea el material y no cambia si la pieza cambia.
+**Why the size is in mm and not in part sizes**: an image
+texture is the photo of something with a size of its own (grain, weave, carbon, a
+label) that does not depend on the part; the material is shared between parts
+of different sizes and travels in the library to other products, and must
+land the same on all of them; the engine works in mm. `sizeMm` is what one
+repeat of the image occupies across (its height follows the image's
+proportions; in the cylindrical one it is the circumference it is
+drawn for, which sets its height). The first image of a material that has none sets
+`sizeMm` to the part's size, so that it is seen whole at once;
+*Fit to part* does it again with the larger side of the parts that
+carry it; it is an option, and the size written by hand is those same
+millimetres. The procedural one does not follow the part either (decision 5.1, C1): wood
+grain and fabric weave have a physical size in mm, the same
+on a jewellery box as on a table (§3.1, E6), and wear keeps its reference
+scale in metres (`wear.refSize`), which is set from the part's size
+when the material is created and does not change if the part changes.
 
-**Etiquetas**: imágenes con alfa puestas sobre la pieza con una
-proyección plana desde la normal del punto donde se colocan: `origin`,
-`normal` y `uAxis` (la derecha de la imagen sin giro) en el espacio propio
-de la pieza, `widthMm` (el alto sigue a la imagen), `rotationDeg` (en
-torno a la normal, antihorario visto desde fuera), `depthMm` (hasta dónde
-llega delante y detrás de su plano; 0, la mitad de su lado mayor) y su
-acabado donde cubre: `roughness`, `coat` (barniz) y `relief` (cuánto
-sobresale el borde del papel). Cubre su rectángulo, a menos de su alcance
-de su plano y solo en las superficies que miran a su lado. Varias por
-material, en orden (cada una sobre las anteriores); como las proyecciones,
-viven en el espacio de la pieza: un material compartido las lleva en cada
-pieza (lo de KeyShot; para una pieza sola, *Convertir en material
-propio*).
+**Labels**: images with alpha placed on the part with a
+planar projection along the normal of the point where they are placed: `origin`,
+`normal` and `uAxis` (the right of the unrotated image) in the part's
+own space, `widthMm` (the height follows the image), `rotationDeg` (about
+the normal, counter-clockwise seen from outside), `depthMm` (how far
+it reaches in front of and behind its plane; 0, half its longer side) and its
+finish where it covers: `roughness`, `coat` (varnish) and `relief` (how much
+the paper edge stands proud). It covers its rectangle, within its reach
+of its plane and only on the surfaces facing its side. Several per
+material, in order (each over the previous ones); like the projections,
+they live in the part's space: a shared material carries them on each
+part (KeyShot's behaviour; for a single part, *Make it my own material*).
 
-Las **imágenes** viven en el registro (`core/images.ts`) como el archivo
-PNG o JPEG que eran, con un id que nombra su contenido (`tex:` y 16
-cifras de su SHA-256): la misma imagen en dos materiales, o importada dos
-veces, es una. Límites: 16 MB y 8192 píxeles de lado por imagen, 64 MB de
-texturas por proyecto. Toda edición de ranuras, mapeados y etiquetas es
-una acción del *store* (`texture/*`), deshacible (un arrastre, una
-entrada), y convierte el material en propio. La biblioteca guarda el
-mapeado, no las imágenes.
+The **images** live in the registry (`core/images.ts`) as the
+PNG or JPEG file they were, with an id that names their content (`tex:` and 16
+digits of their SHA-256): the same image in two materials, or imported twice,
+is one. Limits: 16 MB and 8192 pixels on a side per image, 64 MB of
+textures per project. Every edit of slots, mappings and labels is
+a *store* action (`texture/*`), undoable (a drag, one
+entry), and makes the material its own. The library stores the
+mapping, not the images.
 
-**En *Completo* y en *Render*** (fase M2b) el motor pinta las ranuras y las
-etiquetas en el mismo sitio que *Rápido*, con las mismas proyecciones, el
-mismo tamaño en mm y la misma composición (el motor dice que las lee y la
-interfaz se las manda con sus píxeles; un motor anterior no las recibe). Lo
-que cambia es lo que hace el trazador mejor que la vista previa, y está
-dicho: el filtrado es el del rayo (*mipmaps* por la huella de un cuarto de
-píxel, y el promedio de las muestras del píxel); dibuja todas las etiquetas,
-no las seis primeras; el recorte del alfa recorta también las sombras; el
-papel de una etiqueta es opaco (sobre vidrio no se ve a través de ella); un
-emisor cuya imagen cambia su luz se ve igual pero no se muestrea como luz
-(más ruido en lo que ilumina, ningún sesgo); y los fotones de las cáusticas
-ven el material sin texturas. El tamaño de una textura no sigue al del
-sólido (`TRIAGE.md` 5.1, decidido en C1): es en mm, como arriba, y
-*Ajustar a la pieza* lo ajusta cuando se pide.
+**In *Full* and in *Render*** (phase M2b) the engine paints the slots and
+labels in the same place as *Fast*, with the same projections, the
+same size in mm and the same composition (the engine says it reads them and the
+interface sends them with their pixels; an earlier engine does not receive them). What
+changes is what the tracer does better than the preview, and is
+stated: filtering is the ray's (*mipmaps* by the footprint of a quarter
+pixel, and the average of the pixel's samples); it draws all the labels,
+not the first six; alpha cutout also cuts shadows; the
+paper of a label is opaque (on glass you do not see through it); an
+emitter whose image changes its light looks the same but is not sampled as a light
+(more noise in what it lights, no bias); and caustic photons
+see the material without textures. A texture's size does not follow the solid's
+(`TRIAGE.md` 5.1, decided in C1): it is in mm, as above, and
+*Fit to part* adjusts it when asked.
 
-**Grafos de material** (fase M3a, `src/core/material-graph.ts`; el
-contrato con el motor en `ARCHITECTURE.md` §5.2 quater). Un material puede
-ser **Simple** (los parámetros de su familia) o **Nodos**: lleva entonces
-`graph`, un **grafo dirigido sin ciclos** de nodos del catálogo
-(`src/data/material-nodes.ts`, claves estables) y conexiones de una toma
-de salida a una toma de entrada. Uno de ellos, la **Salida de material**,
-recibe en cada punto lo que es el material allí: *color base, metal,
-rugosidad, anisotropía, barniz, rugosidad del barniz, transmisión, IOR,
-dispersión interna, emisión* (color) *e intensidad de emisión, opacidad,
-normal, relieve* (una altura en mm que dobla la normal) y *bisel* (un peso
-0–1 del radio de bisel del material, que sigue siendo uno: lo mira el
-Doctor); y como parámetros del material, no del punto, la *distancia de
-absorción* y las *paredes finas* (las del vidrio). Los demás nodos:
-*Textura de imagen* (un PNG o JPEG del registro, sRGB o datos, repetir,
-estirar o espejo; colores y alfa), *Mapeado* (las proyecciones de M2a,
-UV, plana, caja, cilíndrica, esférica, y además *Objeto*, las coordenadas
-3D de la pieza; tamaño en mm, giro, desplazamiento, repetición), *Ruido*
-(Perlin o símplex con escala, octavas, lacunaridad, rugosidad y semilla:
-valor de 0 a 1 y color), *Degradado* (lineal, cuadrático, suavizado,
-diagonal, esférico, radial), *Cuadros*, *Rayas* (anchura y suavidad),
-*Rampa de color* (hasta ocho paradas, lineal, suavizada o constante),
-*Mezcla* (mezcla, suma, producto, resta, trama, diferencia, aclarar,
-oscurecer, superponer), *Matemática* (suma, resta, producto, división,
-producto y suma, potencia, mínimo, máximo, mínimo y máximo suavizados,
-escalón suavizado, valor absoluto, menor y mayor que, parte entera y
-fraccionaria, seno), *Fresnel / peso de capa* (el Fresnel dieléctrico de
-un IOR y una rampa *de cara*), *Curvatura* (aristas y cavidades, que mide
-el motor), *Valor*, *Color*, *Separar* y *Combinar RGB*, *Invertir*,
-*Mapa de normales* (tangente o de la pieza) y *Relieve*. Y (M3c) los
-dibujos de las familias como nodos: *Madera* (la madera procedural de la
-familia *Madera*, E6: anillos con sus colores de primavera y verano,
-anillos por 100 mm y escala, contraste, variación, ondulación y ruido
-axial, ruido de color, poros en mm con su hondo y su banda, figura
-—anillos, tiras de bambú, moteado de DM, vetas de ébano— y nudos con su
-número, tamaño en mm, variación, oscuridad y semilla) y *Tela* (la tela de
-la familia *Tela*: urdimbre y trama, tejido, hilos por cm, relieve del
-tejido, torsión del hilo y pelusa). Los mismos parámetros, con las mismas
-claves y en las mismas unidades que la familia, dan el mismo dibujo; leen
-el punto de la pieza en mm (o lo que se les conecte) y la normal, y dan
-color, rugosidad (la de su entrada por la del dibujo), anisotropía (a lo
-largo de la veta; a través del hilo de encima), la normal doblada por su
-relieve y su altura en mm; la *Tela*, además, su *pelusa* (un número, que
-ni el motor ni la salida de material leen todavía). La madera se coloca en
-cada pieza como la de la familia: la médula a lo largo del lado más largo
-de la caja de la pieza, y los nudos en ella sin rozar su superficie.
+**Material graphs** (phase M3a, `src/core/material-graph.ts`; the
+contract with the engine in `ARCHITECTURE.md` §5.2 quater). A material can
+be **Simple** (the parameters of its family) or **Nodes**: it then carries
+`graph`, a **directed acyclic graph** of nodes from the catalogue
+(`src/data/material-nodes.ts`, stable keys) and connections from an output
+socket to an input socket. One of them, the **Material output**,
+receives at each point what the material is there: *base colour, metal,
+roughness, anisotropy, clear coat, coat roughness, transmission, IOR,
+subsurface, emission* (colour) *and emission strength, opacity,
+normal, bump height* (a height in mm that bends the normal) and *bevel* (a weight
+0–1 of the material's bevel radius, which remains a single one: the Doctor
+looks at it); and as parameters of the material, not of the point, the *absorption
+distance* and the *thin walls* (those of glass). The other nodes:
+*Image texture* (a PNG or JPEG from the registry, sRGB or data, repeat,
+clamp or mirror; colours and alpha), *Mapping* (the M2a projections,
+UV, planar, box, cylindrical, spherical, and also *Object*, the part's
+3D coordinates; size in mm, rotation, offset, repeat), *Noise*
+(Perlin or simplex with scale, octaves, lacunarity, roughness and seed:
+value from 0 to 1 and colour), *Gradient* (linear, quadratic, eased,
+diagonal, spherical, radial), *Checks*, *Stripes* (width and softness),
+*Colour ramp* (up to eight stops, linear, eased or constant),
+*Mix* (mix, add, multiply, subtract, screen, difference, lighten,
+darken, overlay), *Maths* (add, subtract, multiply, divide,
+multiply-add, power, minimum, maximum, smooth minimum and maximum,
+smoothstep, absolute value, less than and greater than, integer and
+fractional part, sine), *Fresnel / layer weight* (the dielectric Fresnel of
+an IOR and a *facing* ramp), *Curvature* (edges and cavities, which the
+engine measures), *Value*, *Colour*, *Separate RGB* and *Combine RGB*, *Invert*,
+*Normal map* (tangent or part space) and *Bump*. And (M3c) the
+patterns of the families as nodes: *Wood* (the procedural wood of the
+*Wood* family, E6: rings with their spring and summer colours,
+rings per 100 mm and scale, contrast, variation, wander and axial
+noise, colour noise, pores in mm with their depth and their band, figure
+—rings, bamboo strips, MDF speckle, ebony streaks— and knots with their
+number, size in mm, variation, darkness and seed) and *Fabric* (the fabric of
+the *Fabric* family: warp and weft, weave, threads per cm, weave relief, yarn twist
+and fuzz). The same parameters, with the same
+keys and in the same units as the family, give the same pattern; they read
+the part's point in mm (or whatever is connected to them) and the normal, and give
+colour, roughness (that of its input times that of the pattern), anisotropy (along
+the grain; across the thread on top), the normal bent by its
+relief and its height in mm; *Fabric* also gives its *fuzz* (a number, which
+neither the engine nor the material output reads yet). Wood is placed on
+each part like the family's: the pith along the longer side of
+the part's box, and the knots in it without grazing its surface.
 
-Las **tomas** tienen tipo: número, color, vector o normal (se dibujan con
-una forma por tipo: círculo, rombo, cuadrado, triángulo). Una conexión
-convierte sola un número en color o vector (las tres componentes iguales),
-un color en número (su luminancia Rec. 709) o en vector, un vector en
-número (la media) o en color, y una normal en vector; **una normal solo
-sale de una normal** (un color se convierte en normal con *Mapa de
-normales*), y se rechaza la conexión que cerraría un ciclo o que va de un
-nodo a sí mismo, diciendo por qué. Una entrada sin conexión lee su valor
-propio; las que no tienen leen una fuente del punto: la normal, las UV de
-la malla (la imagen) o las coordenadas de la pieza por cada 100 mm (los
-procedurales; el punto de la pieza en mm, los nodos *Madera* y *Tela*). Lo
-que no llega a la salida no cuenta.
+**Sockets** have a type: number, colour, vector or normal (drawn with
+a shape per type: circle, diamond, square, triangle). A connection
+converts a number into a colour or vector by itself (the three components equal),
+a colour into a number (its Rec. 709 luminance) or into a vector, a vector into a
+number (the mean) or into a colour, and a normal into a vector; **a normal only
+comes from a normal** (a colour is converted into a normal with *Normal
+map*), and a connection that would close a cycle or that goes from a
+node to itself is rejected, saying why. An unconnected input reads its own
+value; those that have none read a source from the point: the normal, the mesh's
+UVs (the image) or the part's coordinates per 100 mm (the
+procedurals; the part's point in mm, the *Wood* and *Fabric* nodes). What
+does not reach the output does not count.
 
-**Simple ↔ Nodos**: pasar a *Nodos* da el **grafo mínimo**, la salida sola
-con los valores del material (lo que el motor y la vista previa leen de
-sus parámetros), y deja los parámetros como estaban; una madera o una tela
-(M3c) da además su nodo *Madera* o *Tela* con los parámetros de la familia,
-conectado al color, la rugosidad, la anisotropía y la normal de la salida,
-así que el grafo pinta lo mismo que el material. Volver a *Simple* es
-inmediato cuando el grafo es mínimo (la salida sola, sin conexiones, con
-valores que una familia guarda exactamente: los del material, que vuelve
-tal cual, o los de un material simple, de vidrio o emisor) o es el nodo
-*Madera* o *Tela* conectado a la salida como lo deja el paso a *Nodos*
-(vuelve la familia con los valores del nodo, si su semilla es la del
-material); si no, pregunta, y al aceptar se queda con los valores propios
-de la salida. Las
-**texturas de M2a y las etiquetas** siguen siendo una capa sobre el
-material en los dos modos: en *Nodos* multiplican lo que da el grafo como
-multiplican los parámetros en *Simple*.
+**Simple ↔ Nodes**: switching to *Nodes* gives the **minimal graph**, the output alone
+with the material's values (what the engine and the preview read from
+its parameters), and leaves the parameters as they were; a wood or a fabric
+(M3c) also gives its *Wood* or *Fabric* node with the family's parameters,
+connected to the output's colour, roughness, anisotropy and normal,
+so the graph paints the same as the material. Going back to *Simple* is
+immediate when the graph is minimal (the output alone, without connections, with
+values that a family stores exactly: the material's own, which come back
+as they were, or those of a simple, glass or emitter material) or is the
+*Wood* or *Fabric* node connected to the output as the switch to *Nodes* leaves it
+(the family comes back with the node's values, if its seed is the material's);
+otherwise, it asks, and on accepting it keeps the output's own
+values. The
+**M2a textures and the labels** remain a layer over the
+material in both modes: in *Nodes* they multiply what the graph gives as
+parameters multiply in *Simple*.
 
-El grafo se guarda dentro del material (`graph`, con su `version`, 1);
-las imágenes de sus nodos de imagen viajan en el bloque de imágenes del
-proyecto, y la biblioteca guarda el grafo sin ellas. Toda edición (nodo,
-conexión, parámetro, valor, mover, duplicar, eliminar, un ejemplo) es una
-acción del *store* (`graph/*`), deshacible, una entrada cada una (un
-arrastre, una), y hace propio el material. Límites: 256 nodos, 512
-conexiones, y los del programa (2048 instrucciones, 256 registros de cada
-tipo, 16 imágenes): un grafo que los pasa no se compila y el editor lo
-dice. **Diez ejemplos** (`src/data/material-graphs.ts`): plástico con
-etiqueta, metal cepillado con arañazos, mármol, cuero, madera con dos
-ruidos, vidrio con suciedad por Fresnel, cuadros, pintura metalizada con
-copos, cerámica con esmalte y rayas.
+The graph is saved inside the material (`graph`, with its `version`, 1);
+the images of its image nodes travel in the project's image block,
+and the library stores the graph without them. Every edit (node,
+connection, parameter, value, move, duplicate, delete, an example) is a
+*store* action (`graph/*`), undoable, one entry each (a
+drag, one), and makes the material its own. Limits: 256 nodes, 512
+connections, and those of the program (2048 instructions, 256 registers of each
+type, 16 images): a graph that exceeds them is not compiled and the editor
+says so. **Ten examples** (`src/data/material-graphs.ts`): plastic with a
+label, brushed metal with scratches, marble, leather, wood with two
+noises, glass with Fresnel dirt, checks, metallic paint with
+flakes, glazed ceramic and stripes.
 
-**Cómo se ve.** En *Rápido*, el programa del grafo se evalúa en mapas de
-512 × 512 (color, rugosidad, metal, opacidad, normal, emisión) que la
-vista previa pinta por las ranuras de M2a: en el cuadrado UV si solo lee
-UV; en la superficie de su proyección (un plano, una cara de la caja, un
-cilindro, una esfera) si una sola proyección lo alimenta todo, y entonces
-es lo que da el grafo; si lee coordenadas 3D, en un corte por el frente de
-la pieza puesto como proyección de caja (un ruido 3D se ve como su corte).
-Lo que no cabe en mapas se aproxima o se omite, y el inspector y el editor
-lo dicen: Fresnel y *de cara* a 60° de la normal, la curvatura como 0, y
-las salidas sin ranura (barniz, transmisión, IOR…) con su valor medio. En
-*Completo* y en *Render* el motor ejecuta el grafo en cada punto (fase M3b):
-sus imágenes filtradas, Fresnel y *de cara* con la vista de verdad, la
-curvatura en las aristas vivas de la pieza, el peso del bisel, el recorte
-también en las sombras; la dispersión interna no se lee, y un emisor cuya
-emisión cambia por la superficie ilumina por los rayos que lo encuentran (no
-se muestrea como luz). Un motor anterior a M3b recibe el valor medio de cada
-salida sobre una esfera de muestras. Lo dicen el inspector y el editor.
+**How it looks.** In *Fast*, the graph's program is evaluated into
+512 × 512 maps (colour, roughness, metal, opacity, normal, emission) that the
+preview paints through the M2a slots: in the UV square if it only reads
+UV; on the surface of its projection (a plane, a face of the box, a
+cylinder, a sphere) if a single projection feeds everything, and then
+it is what the graph gives; if it reads 3D coordinates, in a slice through the front
+of the part set as a box projection (a 3D noise is seen as its slice).
+What does not fit in maps is approximated or omitted, and the inspector and the editor
+say so: Fresnel and *facing* at 60° from the normal, curvature as 0, and
+outputs without a slot (clear coat, transmission, IOR…) with their mean value. In
+*Full* and in *Render* the engine runs the graph at each point (phase M3b):
+its filtered images, Fresnel and *facing* with the real view, curvature
+on the part's sharp edges, the bevel weight, the cutout
+also in shadows; subsurface is not read, and an emitter whose
+emission changes across the surface lights through the rays that hit it (it is not
+sampled as a light). An engine earlier than M3b receives the mean value of each
+output over a sphere of samples. The inspector and the editor say so.
 
-**Bisel de aristas** (`bevelRadiusMm`, E6): radio en mm de un redondeo
-que el motor dibuja **solo en el sombreado** (la geometría no cambia):
-cerca de las aristas vivas de la malla (más de 20° entre caras, y los bordes
-abiertos), la normal gira como la de un redondeo circular de ese radio
-tangente a las dos caras, así que la arista coge luz en los reflejos y en la
-sombra como una arista redondeada de verdad. Vale para aristas convexas y
-cóncavas, esquinas (como una caja redondeada por una esfera) y aristas
-curvas; nunca cambia la normal a más de ese radio de una arista; donde una
-pieza es más fina que unos dos radios, el redondeo se ajusta a lo que cabe.
-Es del material (todas las familias salvo el emisor, que no tiene); una
-instancia nueva de un preset lleva el 0,25 % del tamaño de la pieza (el
-arreglo del Doctor). El modo *Completo* y los renders lo dibujan; la vista
-*Rápida* muestra las aristas vivas. Detalle técnico: `ARCHITECTURE.md`
+**Edge bevel** (`bevelRadiusMm`, E6): radius in mm of a rounding
+that the engine draws **in the shading only** (the geometry does not change):
+near the mesh's sharp edges (more than 20° between faces, and open
+borders), the normal turns like that of a circular rounding of that radius
+tangent to both faces, so the edge catches light in reflections and in
+shadow like a truly rounded edge. It works for convex and concave edges, corners (like a
+box rounded by a sphere) and curved edges; it never changes the normal further than that radius from an edge; where a
+part is thinner than about two radii, the rounding is adjusted to what fits.
+It belongs to the material (all families except the emitter, which has none); a new
+instance of a preset carries 0.25 % of the part's size (the
+Doctor's fix). *Full* mode and renders draw it; the *Fast*
+view shows the sharp edges. Technical detail: `ARCHITECTURE.md`
 §5.2 septies.
 
-Familias y lo que significan para el motor:
+Families and what they mean for the engine:
 
-| Familia | Modelo | Parámetros propios |
+| Family | Model | Own parameters |
 | --- | --- | --- |
-| `SIMPLE` | BSDF de principio físico: base, metal, rugosidad, barniz, anisotropía, subsuperficie, opacidad | — |
-| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta. Con `scatterMm` por encima de 0 (E9), el sólido está lleno de un medio dispersor: plástico translúcido, cera, jabón, leche, zumo; `scatterMm` es la distancia libre media en mm, `scatterColor` lo que conserva cada rebote de cada color (el albedo) y `scatterG` adónde va la luz en cada rebote (Henyey–Greenstein, de −0,9 hacia atrás a 0,9 hacia delante). El modo Completo hace el paseo aleatorio dentro de la pieza; el Rápido lo aproxima con un difuso translúcido. Con `abbe` por encima de 0 (E9c), el vidrio macizo sin medio separa la luz en colores (dispersión cromática): es su número de Abbe, cuanto menor, más separa (cristal 30–40, vidrio de ventana unos 60); el modo Completo refracta cada longitud de onda con su índice y el Rápido usa la dispersión de three.js | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`), `scatterMm` (0), `scatterColor` (blanco), `scatterG` (0), `abbe` (0) |
-| `WOOD` | veta procedural (E6): dos colores (primavera y verano) con el contraste de la especie, anillos por 100 mm (físicos) y su escala, variación y serpenteo de los anillos, ruido axial y de color, fibra, poros (anchura, profundidad, en anillo o difusos), la figura (anillos, tiras de bambú con sus haces y sus nodos, moteado de MDF, vetas de ébano) y los nudos de las maderas con anillos (cuántos por pieza, 0–12; diámetro en mm, 5–40, ± variación; oscuridad), colocados según la semilla del material. La vista *Rápida* la hornea por el mismo camino que el nodo *Madera* (M3d: el grafo que da *Simple → Nodos*, en un corte por el frente de las piezas proyectado en cada cara): sus anillos y poros, los mismos píxeles que la madera pasada a nodos; los nudos, desde M3e, no van en el horneado sino encima, en cada pieza donde los pone el motor (la madera pasada a nodos, igual); sin los *workers* de horneado, su color medio y dónde caen los nudos | `woodColor1/2`, `ringDensity`, `woodScale`, `ringContrast`, `poreSize`, `poreDepth`, `poreBand`, `woodFigure`, `knotCount`, `knotSize`, `knotSizeVar`, `knotDarkness`… |
-| `FABRIC` | trama procedural (E6): dos colores de hilo (urdimbre y trama), tejido (tafetán, sarga 2/2, sarga 3/1 de vaquero, raso, lona, punto, fieltro), hilos por cm (físicos, 2–200: los de cada tela del catálogo), relieve; pelusa (la vista *Rápida* la dibuja como *sheen*; el motor todavía no). La vista *Rápida* muestra el color medio del tejido, salvo, desde M3e, cuando un hilo (`10 / threadCount` mm) ocupa al menos 2,5 téxeles del horneado de 512² en las piezas del material: entonces lo hornea por el nodo *Tela* (el grafo de *Simple → Nodos*, como la madera de M3d), con la pelusa encima | `threadColor1/2`, `weave`, `threadCount`, `weaveDepth`, `fuzz` |
-| `EMISSIVE` | emisor: cuerpo negro a temperatura o color, potencia | `emitKind`, `temperature`, `emitPower` |
+| `SIMPLE` | Physically principled BSDF: base, metal, roughness, clear coat, anisotropy, subsurface, opacity | — |
+| `GLASS` | dielectric with transmission, IOR, roughness, absorption colour: the colour is what white light keeps after `absorptionMm` millimetres inside the part (0: surface tint); with `walls` `THIN`, a thin wall without an interior (sheet, bulb, visor modelled as a surface), which lets light through straight. With `scatterMm` above 0 (E9), the solid is filled with a scattering medium: translucent plastic, wax, soap, milk, juice; `scatterMm` is the mean free path in mm, `scatterColor` what each bounce keeps of each colour (the albedo) and `scatterG` where the light goes at each bounce (Henyey–Greenstein, from −0.9 backwards to 0.9 forwards). Full mode does the random walk inside the part; Fast approximates it with a translucent diffuse. With `abbe` above 0 (E9c), solid glass without a medium splits light into colours (chromatic dispersion): it is its Abbe number, the lower, the more it splits (crystal 30–40, window glass about 60); Full mode refracts each wavelength with its own index and Fast uses three.js's dispersion | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`), `scatterMm` (0), `scatterColor` (white), `scatterG` (0), `abbe` (0) |
+| `WOOD` | procedural grain (E6): two colours (spring and summer) with the species' contrast, rings per 100 mm (physical) and their scale, ring variation and meander, axial and colour noise, fibre, pores (width, depth, in rings or diffuse), the figure (rings, bamboo strips with their bundles and nodes, MDF speckle, ebony streaks) and the knots of woods with rings (how many per part, 0–12; diameter in mm, 5–40, ± variation; darkness), placed according to the material's seed. The *Fast* view bakes it by the same path as the *Wood* node (M3d: the graph that *Simple → Nodes* gives, in a slice through the front of the parts projected onto each face): its rings and pores, the same pixels as the wood turned into nodes; the knots, since M3e, are not in the bake but on top, on each part where the engine puts them (wood turned into nodes, the same); without the baking *workers*, its mean colour and where the knots fall | `woodColor1/2`, `ringDensity`, `woodScale`, `ringContrast`, `poreSize`, `poreDepth`, `poreBand`, `woodFigure`, `knotCount`, `knotSize`, `knotSizeVar`, `knotDarkness`… |
+| `FABRIC` | procedural weave (E6): two thread colours (warp and weft), weave (plain, 2/2 twill, 3/1 denim twill, satin, canvas, knit, felt), threads per cm (physical, 2–200: those of each fabric in the catalogue), relief; fuzz (the *Fast* view draws it as *sheen*; the engine not yet). The *Fast* view shows the weave's mean colour, except, since M3e, when a thread (`10 / threadCount` mm) takes up at least 2.5 texels of the 512² bake on the material's parts: then it bakes it through the *Fabric* node (the *Simple → Nodes* graph, like the M3d wood), with the fuzz on top | `threadColor1/2`, `weave`, `threadCount`, `weaveDepth`, `fuzz` |
+| `EMISSIVE` | emitter: blackbody at a temperature or colour, power | `emitKind`, `temperature`, `emitPower` |
 
-**Energía** (E9a): en el modo Completo los materiales no pierden luz con
-la rugosidad. Un metal blanco, un vidrio claro o un plástico blanco, con
-o sin barniz y con cualquier rugosidad, salen blancos en un entorno
-uniforme (±1 %): la luz que rebota varias veces entre las microfacetas
-vuelve, y la capa difusa recibe exactamente lo que el brillo no refleja.
-Con rugosidad 0, el metal y el vidrio no cambian; el plástico gana el
-8,6 % que antes perdía su capa difusa (ior 1,5).
+**Energy** (E9a): in Full mode materials do not lose light with
+roughness. A white metal, a clear glass or a white plastic, with
+or without clear coat and with any roughness, come out white in a uniform
+environment (±1 %): light that bounces several times between microfacets
+comes back, and the diffuse layer receives exactly what the gloss does not reflect.
+With roughness 0, metal and glass do not change; plastic gains the
+8.6 % that its diffuse layer used to lose (ior 1.5).
 
-**Desgaste**: ocho tipos (aristas, arañazos, huellas, polvo, suciedad en
-cavidades, pátina, micro-variación de rugosidad, abolladuras), cada uno
-con cantidad y mandos propios, un mando maestro, escala en tamaños de
-pieza, semilla y variación por pieza. Cada preset trae su física (el
-cobre toma cardenillo, el oro no). Nueve básicos de un clic. Los tipos
-que no tienen sentido en una familia no existen para ella.
+**Wear**: eight types (edges, scratches, fingerprints, dust, dirt in
+cavities, patina, roughness micro-variation, dents), each
+with its own amount and controls, a master control, scale in part
+sizes, seed and per-part variation. Each preset brings its physics (copper
+takes verdigris, gold does not). Nine one-click basics. Types
+that make no sense in a family do not exist for it.
 
-**Miniaturas**: una esfera con el material, renderizada por el propio
-producto y cacheada; nunca imágenes estáticas que mientan.
+**Thumbnails**: a sphere with the material, rendered by the product
+itself and cached; never static images that lie.
 
-**Asignar, y arrastrar un material** (`material/assign`, una sola acción
-y una entrada de deshacer, también cuando el destino son varias piezas):
+**Assigning, and dragging a material** (`material/assign`, a single action
+and one undo entry, also when the target is several parts):
 
-- **Destino**: nodos a cualquier nivel (la acción llega a todas las
-  piezas que cuelgan de ellos) o **caras** de una pieza (triángulos, a
-  través de `faceMaterials`). Un clic en una miniatura asigna a la
-  selección; soltarla sobre algo asigna a lo que **seleccionaría un clic
-  ahí** al nivel vigente (pieza, ensamblaje, modelo o la cara entera bajo
-  el cursor), o a la fila del árbol y todo lo que cuelga de ella
+- **Target**: nodes at any level (the action reaches all the
+  parts that hang from them) or **faces** of a part (triangles, through
+  `faceMaterials`). A click on a thumbnail assigns to the
+  selection; dropping it on something assigns to what **a click there would
+  select** at the current level (part, assembly, model or the whole face under
+  the cursor), or to the tree row and everything that hangs from it
   (`src/core/material-drop.ts`).
-- **Origen y qué se asigna**: un preset del catálogo o un elemento de
-  *Míos* entra con la **instancia que la escena ya tiene** (se crea si no
-  hay; la misma que da un clic, así que soltar y hacer clic dejan el
-  mismo proyecto); una instancia (la esfera del material de la selección)
-  **enlaza** el destino con esa instancia, que comparte con las piezas
-  que ya la llevan; con **copia** (`Alt` al soltar), sea cual sea el
-  origen, el destino recibe una instancia **propia**, que no comparte con
-  ninguna pieza de fuera: editarla no cambia nada más.
-- **Modo**: `REPLACE` sustituye lo que había y `KEEP` solo rellena donde
-  no hay material; si el destino lleva materiales distintos, la interfaz
-  pregunta antes (`UI.md` §4.1) y no se asigna hasta que se contesta.
-- **Sin cambios no hay entrada**: asignar lo que el destino ya lleva
-  devuelve el mismo estado (ninguna entrada de deshacer). Las instancias
-  que quedan sin uso se podan como siempre.
+- **Source and what is assigned**: a catalogue preset or an element of
+  *Mine* enters with the **instance the scene already has** (created if there is
+  none; the same one a click gives, so dropping and clicking leave the
+  same project); an instance (the sphere of the selection's material)
+  **links** the target to that instance, which it shares with the parts
+  that already carry it; with **copy** (`Alt` on drop), whatever the
+  source, the target receives an instance **of its own**, shared with
+  no part outside: editing it changes nothing else.
+- **Mode**: `REPLACE` replaces what was there and `KEEP` only fills in where there is
+  no material; if the target carries different materials, the interface
+  asks first (`UI.md` §4.1) and nothing is assigned until it is answered.
+- **No changes, no entry**: assigning what the target already carries
+  returns the same state (no undo entry). Instances
+  left unused are pruned as usual.
 
-### 3.4 · Luz
+### 3.4 · Light
 
-El **rig activo** es una lista de focos resueltos (`LightInstance`:
-rol, tipo, forma, tamaño, acimut y elevación relativos a cámara,
-distancia, dispersión, color, potencia, visible en reflejos, visible a
-cámara, encendido). Sale de `studioRig(tipo)` o `setupRig(tipo, montaje)`
-y se puede editar foco a foco; editarlo marca `modified`. Cambiar de
-tipo de producto lo reconstruye; cambiar de montaje, según qué se elija
-para los focos que hay (L7, abajo).
+The **active rig** is a list of resolved lights (`LightInstance`:
+role, type, shape, size, azimuth and elevation relative to the camera,
+distance, spread, colour, power, visible in reflections, visible to
+camera, on). It comes from `studioRig(type)` or `setupRig(type, setup)`
+and can be edited light by light; editing it sets `modified`. Changing the
+product type rebuilds it; changing the light setup, according to what is chosen
+for the lights that are there (L7, below).
 
-**Normalización**: la irradiancia total de un montaje aplicado se iguala a
-la del rig del tipo de producto. Cambiar de montaje no cambia la
-exposición.
+**Normalisation**: the total irradiance of an applied setup is made equal to
+that of the product type's rig. Changing the setup does not change the
+exposure.
 
-**Sets** (fase L6). Un montaje puede ser un **set**: luces más lo que el
-producto refleja y donde se apoya. `LightSetup` gana campos opcionales
-(los 72 montajes anteriores no tienen ninguno y resuelven exactamente al
-mismo rig que antes): `backdrop` (`FLAT` color de fondo; `GRADIENT` dos
-colores, arriba y abajo del encuadre, que el motor recibe como imagen de
-fondo generada y estirada; `SWEEP` el fondo infinito de U9 en papel mate
-del color, que recibe luz y sombra), `pool` (el charco de luz en el fondo
-detrás del producto: `az`, `el`, `cone`, `share`, kelvin o color), `floor`
-(`CATCHER` el atrapasombras; `MATTE` mate de un color; `GLOSSY` y `MIRROR`
-un material del catálogo bajo el producto, con su `roughness` si la
-lleva), `cards` (tarjetas: planos de *Tarjeta blanca*, *Tarjeta negra* o
-aluminio cepillado como tarjeta plateada, con `az`, `el`, `dist`, `size`,
-`sizeY` y giro, de cara al producto), `exposureEv` (desvío sobre la
-exposición base del tipo de producto), `envStrength` (la cúpula mientras
-el set manda), `camera` (`el`, `focalMm`: sugerida, no se aplica sola),
-`hero` (el objeto de su miniatura), `why` (la razón fotográfica, dos
-frases, en la ayuda de su miniatura) y `caustics`. Los 16 sets son el
-estilo `SETS`, el primero del catálogo.
+**Sets** (phase L6). A light setup can be a **set**: lights plus what the
+product reflects and what it rests on. `LightSetup` gains optional fields
+(the 72 earlier setups have none and resolve to exactly the same
+rig as before): `backdrop` (`FLAT` background colour; `GRADIENT` two
+colours, top and bottom of the framing, which the engine receives as a generated and stretched
+background image; `SWEEP` the U9 infinity sweep in matte paper
+of the colour, which receives light and shadow), `pool` (the pool of light on the backdrop
+behind the product: `az`, `el`, `cone`, `share`, kelvin or colour), `floor`
+(`CATCHER` the shadow catcher; `MATTE` matte of one colour; `GLOSSY` and `MIRROR`
+a catalogue material under the product, with its `roughness` if it
+has one), `cards` (cards: planes of *White card*, *Black card* or
+brushed aluminium as a silver card, with `az`, `el`, `dist`, `size`,
+`sizeY` and rotation, facing the product), `exposureEv` (offset from the
+product type's base exposure), `envStrength` (the dome while
+the set is in charge), `camera` (`el`, `focalMm`: suggested, not applied by itself),
+`hero` (the object of its thumbnail), `why` (the photographic reason, two
+sentences, in the help of its thumbnail) and `caustics`. The 16 sets are the
+`SETS` style, the first of the catalogue.
 
-- **Aplicar un set** (`studio/setSetup` con su clave) es una sola entrada
-  de deshacer: sus focos (normalizados como los de cualquier montaje; el
-  charco se lleva su `share` del nivel y las luces se reparten el resto),
-  su aspecto (fondo, cúpula, exposición base del tipo más el desvío; suelo
-  y sombra encendidos) y su **decoración**: primero el barrido (si el
-  fondo es `SWEEP`, o si es `FLAT` o `GRADIENT` con charco, que necesita
-  una pared donde caer), ajustado a la cámara activa como el de U9; luego
-  el suelo; luego las tarjetas; luego el charco. Una escena sin nada del
-  usuario recibe los focos y el aspecto; la decoración llega con el
-  producto (`studio/fitSet`, que la interfaz pide al cargar el ejemplo y al
-  importar, en la misma entrada de deshacer).
-- **El suelo.** Mate sobre un barrido es el propio barrido. Brillante o
-  espejo sobre un barrido es la cara *suelo* del barrido en ese material
-  (sin costura); si además hay charco, una lámina sobre el barrido que se
-  para al 55 % del camino hasta donde cae el charco (el charco cae en papel
-  y la lámina lo refleja). Sin barrido, un plano del tamaño del suelo que
-  vería el barrido de esa cámara, con el fondo (color o degradado) detrás
-  de su borde, a través del atrapasombras. El suelo **brillante** es
-  acrílico con una ligera bruma (`roughness` 0,12: emborrona un poco lo que
-  refleja, no es un espejo); el **espejo** es un espejo. *Contraluz líquido*
-  lleva su lámina a 0,2: el reflejo del contraluz es un resplandor suave.
-- **Las tiras en un suelo brillante.** En los sets de suelo `GLOSSY` o
-  `MIRROR`, la imagen especular de cada tira (un panel que se refleja, al
-  menos cuatro veces más largo que ancho) en el plano del suelo, vista con
-  la cámara del set (o la de referencia a 85 mm), cae detrás de la huella
-  del producto o fuera del encuadre: un test lo comprueba con tres formas
-  de producto y dos proporciones; la regla de diseño, si no, es subir la
-  tira de 10° en 10° a distancia 3.
-- **El charco** cae donde la cámara ve el fondo justo por encima del
-  producto: su rayo por lo alto de la caja del producto, en su lado más
-  lejano, sobre el barrido. Así es un halo que asoma detrás del producto a
-  cualquier altura de cámara. El foco se apunta desde detrás del producto
-  (el `az` y `el` del set, a 0,75 tamaños de pieza del pivote) y se pone en
-  esa línea tan cerca del papel que su luz, que cae con el ángulo y la
-  distancia (a la mitad a 37,5° de su eje), dibuja un charco tan ancho como
-  el cono del set lo dibujaría a 2,5 tamaños de pieza (`POOL_THROW`). Su
-  cono es de 150° y suave desde el eje: el charco no tiene borde. Su
-  potencia hace que en su centro llegue su `share` del nivel medido a esa
-  distancia y de frente al papel (compensa hasta 72° de incidencia). No se
-  ve a cámara ni en reflejos.
-- **Las tarjetas** miran al pivote, con el ancho paralelo al suelo; una
-  que atravesaría el suelo se sube sin girarla hasta apoyarse en él. Por
-  construcción quedan **fuera del encuadre**: un test lo comprueba para
-  cada tarjeta con la focal de los 16 tipos de producto, tres formas de
-  producto, tres proporciones de salida y la cámara del set.
-- **Decoración del set.** Cada pieza lleva `setPiece` (`CARD`, `BACKDROP`,
-  `FLOOR`; el charco, en su foco) y es decoración: no cuenta para el
-  tamaño de pieza, el pivote del rig ni *Encuadrar* sin selección, y el
-  Doctor no la mira. Aplicar otro montaje la sustituye (las piezas del
-  usuario, primitivas incluidas, no se tocan); un montaje que no es un set
-  la quita y devuelve el fondo, la cúpula y la exposición del tipo de
-  producto; **Restablecer montaje** la quita y devuelve los focos del set
-  como eran; *Crear estudio* con un set en vigor lo vuelve a poner,
-  ajustado al nuevo encuadre. Elegir el set otra vez la devuelve.
-- **Usar la cámara del set** (`studio/useSetCamera`): la elevación y la
-  focal que sugiere, el producto encuadrado de nuevo y el barrido, el
-  suelo y el charco ajustados a la nueva vista (las tarjetas no se
-  mueven); una entrada de deshacer; no hace nada con la cámara bloqueada.
-- **Los tipos de producto son sets.** 15 de los 16 tipos de producto son un
-  set (`StudioPreset.set`, `PRESET_SETS`): sus focos son los del set, al
-  nivel de irradiancia que tenía el tipo (los montajes que se normalizan a
-  él no cambian), y con su rig propio (el montaje *El del tipo de
-  producto*, `PRESET`, que es el de *Crear estudio*) traen también la
-  decoración y el aspecto del set; el desvío de exposición del set está
-  sumado a la `exposure` del tipo, y cualquier otro montaje parte de la
-  exposición de antes (`baseExposure`, `setupExposure`). El suelo y la
-  sombra son los del tipo. *Mobiliario exterior* conserva su sol: no es un
+- **Applying a set** (`studio/setSetup` with its key) is a single undo entry:
+  its lights (normalised like those of any setup; the
+  pool takes its `share` of the level and the lights split the rest),
+  its look (backdrop, dome, the type's base exposure plus the offset; floor
+  and shadow on) and its **dressing**: first the sweep (if the
+  backdrop is `SWEEP`, or if it is `FLAT` or `GRADIENT` with a pool, which needs
+  a wall to fall on), fitted to the active camera like the U9 one; then
+  the floor; then the cards; then the pool. A scene with nothing of the
+  user's receives the lights and the look; the dressing arrives with the
+  product (`studio/fitSet`, which the interface requests when loading the example and on
+  import, in the same undo entry).
+- **The floor.** Matte on a sweep is the sweep itself. Glossy or
+  mirror on a sweep is the sweep's *floor* face in that material
+  (seamless); if there is also a pool, a sheet over the sweep that
+  stops at 55 % of the way to where the pool falls (the pool falls on paper
+  and the sheet reflects it). Without a sweep, a plane the size of the floor that the
+  sweep of that camera would see, with the background (colour or gradient) behind
+  its edge, through the shadow catcher. The **glossy** floor is
+  acrylic with a slight haze (`roughness` 0.12: it blurs what it
+  reflects a little, it is not a mirror); the **mirror** is a mirror. *Backlit liquid*
+  carries its sheet at 0.2: the backlight's reflection is a soft glow.
+- **Strips on a glossy floor.** In sets with a `GLOSSY` or
+  `MIRROR` floor, the specular image of each strip (a reflected panel at
+  least four times longer than wide) in the floor plane, seen with
+  the set's camera (or the reference one at 85 mm), falls behind the product's
+  footprint or outside the framing: a test checks it with three product
+  shapes and two proportions; the design rule, otherwise, is to raise the
+  strip in steps of 10° at distance 3.
+- **The pool** falls where the camera sees the backdrop just above the
+  product: its ray through the top of the product's box, on its farthest side,
+  over the sweep. That makes a halo that peeks out behind the product at
+  any camera height. The light is aimed from behind the product
+  (the set's `az` and `el`, at 0.75 part sizes from the pivot) and placed on
+  that line so close to the paper that its light, which falls off with angle and
+  distance (to half at 37.5° from its axis), draws a pool as wide as
+  the set's cone would draw it at 2.5 part sizes (`POOL_THROW`). Its
+  cone is 150° and soft from the axis: the pool has no edge. Its
+  power makes its `share` of the level arrive at its centre, measured at that
+  distance and facing the paper (it compensates up to 72° of incidence). It is not
+  seen by the camera or in reflections.
+- **The cards** face the pivot, with the width parallel to the floor; one
+  that would go through the floor is raised without rotating until it rests on it. By
+  construction they stay **outside the framing**: a test checks it for
+  each card with the focal length of the 16 product types, three product
+  shapes, three output proportions and the set's camera.
+- **Set dressing.** Each piece carries `setPiece` (`CARD`, `BACKDROP`,
+  `FLOOR`; the pool, in its light) and is dressing: it does not count for the
+  part size, the rig's pivot or *Frame* without a selection, and the
+  Doctor does not look at it. Applying another setup replaces it (the
+  user's pieces, primitives included, are not touched); a setup that is not a set
+  removes it and gives back the product type's backdrop, dome and exposure;
+  **Reset setup** removes it and gives back the set's lights as
+  they were; *Create studio* with a set in force puts it back,
+  fitted to the new framing. Choosing the set again brings it back.
+- **Use the set's camera** (`studio/useSetCamera`): the elevation and
+  focal length it suggests, the product framed again and the sweep, the
+  floor and the pool fitted to the new view (the cards do not
+  move); one undo entry; it does nothing with the camera locked.
+- **Product types are sets.** 15 of the 16 product types are a
+  set (`StudioPreset.set`, `PRESET_SETS`): their lights are the set's, at the
+  irradiance level the type had (setups that normalise to
+  it do not change), and with their own rig (the setup *The product type's*,
+  `PRESET`, which is the one of *Create studio*) they also bring the
+  set's dressing and look; the set's exposure offset is
+  added to the type's `exposure`, and any other setup starts from the
+  exposure from before (`baseExposure`, `setupExposure`). The floor and
+  shadow are the type's. *Outdoor furniture* keeps its sun: it is not a
   set.
 
-**Sets y Luces** (fase L7). El catálogo se ve en dos grupos, sin que cambie
-ninguna clave, estilo ni orden (`core/setup-groups.ts`): **Sets**, las entradas
-que al aplicarlas ponen decoración en la escena (`hasDecoration`: fondo, suelo,
-charco o tarjetas), y **Luces**, las demás (solo focos; pueden elegir mundo,
-exposición e intensidad del entorno, como las recetas de interior y los tres
-montajes de sol, pero no visten nada). `PRESET` es del grupo del tipo de
-producto en vigor: *Sets* si el tipo es un set (15 de 16), *Luces* con
-*Mobiliario exterior*. Con un tipo que es set: 17 *Sets* y 78 *Luces*; con
-*Mobiliario exterior*, 16 y 79 (un test lo fija y comprueba, aplicando cada
-entrada, que la que es *Set* deja decoración y la de *Luces* no). Filtros, que
-se combinan (Y) como los de las recetas de un plugin (P6b): *Sets* por **tipo
-de producto** (los tipos cuyo `StudioPreset.set` es ese set, y `PRESET` por el
-tipo en vigor) y por **sujeto** (`hero`); *Luces* por **estilo**. La entrada en
-vigor que los filtros dejan fuera se sigue enseñando, marcada.
+**Sets and Lights** (phase L7). The catalogue is seen in two groups, without changing
+any key, style or order (`core/setup-groups.ts`): **Sets**, the entries
+that when applied put dressing in the scene (`hasDecoration`: backdrop, floor,
+pool or cards), and **Lights**, the rest (lights only; they may choose world,
+exposure and environment intensity, like the interior recipes and the three
+sun setups, but dress nothing). `PRESET` belongs to the group of the product
+type in force: *Sets* if the type is a set (15 of 16), *Lights* with
+*Outdoor furniture*. With a type that is a set: 17 *Sets* and 78 *Lights*; with
+*Outdoor furniture*, 16 and 79 (a test pins it and checks, applying each
+entry, that a *Set* leaves dressing and a *Lights* one does not). Filters, which
+combine (AND) like the filters of a plugin's recipes (P6b): *Sets* by **product
+type** (the types whose `StudioPreset.set` is that set, and `PRESET` by the type in
+force) and by **subject** (`hero`); *Lights* by **style**. The entry in
+force that the filters leave out is still shown, marked.
 
-**Los focos que hay** (L7). `studio/setSetup` y `studio/applySetup` llevan
-`previous` (`REPLACE`, `HIDE`, `ADD`; `core/previous-lights.ts`) y
-`keptNames`. *Sustituir* (o ninguno) es lo de siempre. *Ocultar* y *Añadir*,
-con focos que no son decoración (`previousLights`), los conservan después de
-los del montaje nuevo: con su `id` (un clip de animación o la selección que los
-apunta sigue valiendo; un foco nuevo con un `id` ocupado toma otro), `own`
-(no son del montaje: *Restablecer montaje* los quita) y un nombre que dice de
-dónde vienen; *Ocultar* los deja con `enabled: false`, el interruptor de la
-lista *Luces*, que ya existía (el formato del proyecto no cambia y los
-proyectos de antes se abren igual), y *Añadir* como estaban. `modified` queda
-puesto. Un **set** que entra sustituye la decoración del anterior sea cual sea
-la elección (una escena tiene un set); un montaje de **Luces** con *Ocultar* o
-*Añadir* deja la decoración, el foco del charco y el aspecto del set como
-estaban, y una receta de interior pone su aspecto encima. Una sola entrada de
-deshacer, con la elección en su nombre. La interfaz pregunta salvo que el
-ajuste `light.previous` (*Preguntar* por defecto) recuerde una respuesta; no
-pregunta sin focos ni al elegir otra vez el montaje en vigor.
+**The lights that are there** (L7). `studio/setSetup` and `studio/applySetup` carry
+`previous` (`REPLACE`, `HIDE`, `ADD`; `core/previous-lights.ts`) and
+`keptNames`. *Replace* (or none) is as always. *Hide* and *Add*,
+with lights that are not dressing (`previousLights`), keep them after
+those of the new setup: with their `id` (an animation clip or the selection that
+points at them stays valid; a new light with a taken `id` takes another), `own`
+(they are not the setup's: *Reset setup* removes them) and a name that says
+where they come from; *Hide* leaves them with `enabled: false`, the switch of the
+*Lights* list, which already existed (the project format does not change and
+earlier projects open the same), and *Add* as they were. `modified` stays
+set. A **set** that comes in replaces the previous one's dressing whatever the
+choice (a scene has one set); a **Lights** setup with *Hide* or *Add* leaves the
+dressing, the pool light and the set's look as they were, and an interior recipe puts its
+look on top. One undo entry, with the choice in its name. The interface asks unless
+the `light.previous` setting (*Ask* by default) remembers an answer; it does not
+ask without lights or when choosing the setup in force again.
 
-**Recetas de interior** (fase K1, estilo `INTERIOR`, el último del catálogo).
-Siete montajes (*Ventana de mañana*, *de mediodía*, *de tarde*, *Nublado*,
-*Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*; claves
+**Interior recipes** (phase K1, `INTERIOR` style, the last of the catalogue).
+Seven setups (*Morning window*, *Midday*, *Afternoon*, *Overcast*,
+*Night lamps*, *Blue hour*, *White studio room*; keys
 `INT_WINDOW_MORNING`, `INT_WINDOW_NOON`, `INT_WINDOW_AFTERNOON`,
-`INT_OVERCAST`, `INT_NIGHT_LAMPS`, `INT_BLUE_HOUR`, `INT_WHITE_ROOM`) que son
-sets **sin decoración**: eligen su mundo (`SKY` con un foco de sol que coloca el
-sol del cielo, o `STUDIO`) y traen `exposureEv` y `envStrength`, pero no
-`backdrop`, `floor`, `pool` ni `cards` (`hasDecoration`), así que dejan el
-suelo, la sombra de contacto y el fondo como los tenía la escena y, al dejarlos
-por otro montaje, no restauran un fondo que no pusieron. Sus focos se
-normalizan al nivel del tipo de producto como los de cualquier montaje; una
-receta que mezcla un sol con paneles lleva *shares* en la escala de
-`specIrradiance` (un sol cuenta su irradiancia y un panel sus vatios sobre
-4π d²). Sus cifras son una propuesta pendiente de decisión (`ROADMAP.md` K1).
+`INT_OVERCAST`, `INT_NIGHT_LAMPS`, `INT_BLUE_HOUR`, `INT_WHITE_ROOM`) that are
+sets **without dressing**: they choose their world (`SKY` with a sun light that places the
+sky's sun, or `STUDIO`) and bring `exposureEv` and `envStrength`, but not
+`backdrop`, `floor`, `pool` or `cards` (`hasDecoration`), so they leave the
+floor, contact shadow and background as the scene had them and, when leaving them
+for another setup, do not restore a background they did not put. Their lights are
+normalised to the product type's level like those of any setup; a recipe
+that mixes a sun with panels carries *shares* on the scale of
+`specIrradiance` (a sun counts its irradiance and a panel its watts over
+4π d²). Their figures are a proposal pending a decision (`ROADMAP.md` K1).
 
-**Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
-pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
-*Añadir ▸* del menú de la cabecera, desde el clic derecho del visor en vacío y
-desde la paleta: **Área** (rectángulo, disco o esfera, con tamaño), **Punto**
-(radio), **Foco direccional** (ángulo de cono y transición), **Sol** (ángulo
-del disco) e **IES…** (un archivo de perfil fotométrico, fase L5: ver *Luces
-IES*, abajo). Claves estables: `RECTANGLE`, `DISK`, `SPHERE`, `POINT`,
-`SPOT`, `SUN` (`NEW_LIGHT_KINDS`) e `IES` (tipo de luz, que necesita su
-archivo: nace de `studio/addIesLight`). Un foco nuevo nace **delante y arriba de la pieza** tal
-como la ve la cámara activa (25° a su derecha, 40° de elevación, 50° el sol,
-a dos tamaños de pieza del pivote), encendido, **seleccionado** y con la
-**irradiancia media** de los focos encendidos (un sol, π veces esa media: ver
-*Unidades*), así que la imagen no salta. Es una sola entrada de deshacer.
+**Own lights, KeyShot style** (phase L4). Besides the setups, **lights can be
+added** from the *Lights* tab (*+ Add light ▸*), from
+*Add ▸* in the header menu, from the viewport's right click on empty space and
+from the palette: **Area** (rectangle, disc or sphere, with size), **Point**
+(radius), **Spot** (cone angle and transition), **Sun** (disc
+angle) and **IES…** (a photometric profile file, phase L5: see *IES lights*,
+below). Stable keys: `RECTANGLE`, `DISK`, `SPHERE`, `POINT`,
+`SPOT`, `SUN` (`NEW_LIGHT_KINDS`) and `IES` (a light type, which needs its
+file: it is born from `studio/addIesLight`). A new light is born **in front of and above the part** as
+the active camera sees it (25° to its right, 40° elevation, 50° for the sun,
+at two part sizes from the pivot), switched on, **selected** and with the
+**mean irradiance** of the switched-on lights (a sun, π times that mean: see
+*Units*), so the image does not jump. It is a single undo entry.
 
-- **Dónde vive.** Cada foco es un `LightInstance` de `studio.lights` (los del
-  montaje y los propios en la misma lista, `own: true` en los propios), no
-  un nodo del árbol: es la lista que ya leen la vista previa, el motor, la
-  animación, el Doctor, los estudios y la biblioteca, así que un foco propio
-  se anima, se guarda en un estudio y entra en *Guardar montaje como…* sin
-  nada más. Su **transformación propia** es su posición alrededor del pivote
-  del montaje (`az`, `el`, `dist` en tamaños de pieza, como un foco de
-  receta), su **objetivo** `aim` (en tamaños de pieza desde el pivote;
-  ausente, el pivote: donde apuntan todos los focos de los montajes) y su
-  **giro** `roll` (grados alrededor de su eje; 0, los lados del panel
-  paralelos al suelo). Todo en tamaños de pieza: el foco sigue al producto y
-  vale para un anillo y para un sofá.
-- **Se mueve y se apunta** con el *gizmo* de *Mover* (ver *Luces y cámaras
-  en el visor*, abajo), con los campos del inspector (acimut, elevación y
-  distancia; o X, Y, Z en mm, que lo mueven sin cambiar a dónde apunta), con
-  **Apuntar a…** (el centro del producto, un punto picado, el centro de una
-  pieza picada; y, desde el menú contextual de una pieza, *Apuntar un foco
-  aquí ▸*), **por reflejo** o **sobre una superficie** (clic en una pieza: el
-  foco queda sobre ese punto a lo largo de la normal, a la distancia a la
-  que estaba de su objetivo, y apunta a él).
-- **Propiedades**: nombre (por defecto, el rol si es del montaje o el tipo si
-  es propio, numerado), tipo, forma, tamaño (ancho y alto; diámetro de la
-  esfera; radio del punto y del foco), dispersión (área), ángulo de cono y
-  transición en % del semiángulo (foco), disco del sol, giro, temperatura de
-  color o color, **potencia en vatios** con su **equivalente en lúmenes** (o
-  lux para el sol) en auxiliar, *visible en reflejos*, *visible a cámara*,
-  ***proyecta sombra*** (sin ella el motor no traza sus rayos de sombra) y
-  encendido. *Duplicar* (una copia propia, 15° al lado, seleccionada) y
-  *Eliminar* valen para los focos del montaje y los propios.
-- **Unidades.** Las de los montajes (vatios a tamaño de pieza 1, en el
-  sentido de Cycles; W/m² para el sol). Para los tipos nuevos, que no tiene
-  ninguna receta, **un punto o un foco de P W es tan brillante en su eje como
-  un panel de P W de cara al producto a la misma distancia**: flujo
-  isótropo `π · P · S²` para el motor (S, el tamaño de pieza en metros) e
-  intensidad `P · S² / 4` (S en mm) para la vista previa; un foco
-  direccional es el punto que sería sin su cono (su eje no cambia de brillo
-  con el cono). Así la medida con que se normalizan los montajes
-  (`specIrradiance`) es la misma fracción, 1/π, de lo que llega para paneles,
-  puntos y focos, y un montaje que los mezcla conserva su equilibrio. Una
-  esfera de área es un punto con tamaño. Los **lúmenes** son el flujo que se
-  le da al motor (estrechado por la dispersión de un panel; la parte de su
-  cono en un foco) por 683 lm/W y por la luminancia del color: la convención
-  de los renderizadores en RGB, no la eficacia de una lámpara.
-- **Guardar montaje como…** guarda los focos encendidos (con su tipo, forma,
-  objetivo, giro, transición y sombra) en la biblioteca; aplicado a otro
-  tipo de producto se normaliza como los del catálogo: la irradiancia total
-  es la de ese tipo y cada foco conserva su parte. **Restablecer al montaje**
-  quita los focos propios y devuelve los del montaje como eran.
+- **Where it lives.** Each light is a `LightInstance` of `studio.lights` (those of the
+  setup and the user's own in the same list, `own: true` on the own ones), not
+  a tree node: it is the list that the preview, the engine, the
+  animation, the Doctor, the studios and the library already read, so an own light
+  can be animated, saved in a studio and enters *Save setup as…* with
+  nothing more. Its **own transform** is its position around the setup's pivot
+  (`az`, `el`, `dist` in part sizes, like a recipe light), its **target** `aim` (in part sizes from the pivot;
+  absent, the pivot: where all the setups' lights aim) and its
+  **roll** `roll` (degrees about its axis; 0, the panel's sides
+  parallel to the floor). All in part sizes: the light follows the product and
+  works for a ring and for a sofa.
+- **It is moved and aimed** with the *Move* *gizmo* (see *Lights and cameras
+  in the viewport*, below), with the inspector fields (azimuth, elevation and
+  distance; or X, Y, Z in mm, which move it without changing where it aims), with
+  **Aim at…** (the product's centre, a picked point, the centre of a picked
+  part; and, from a part's context menu, *Aim a light
+  here ▸*), **by reflection** or **onto a surface** (click on a part: the
+  light ends up on that point along the normal, at the distance
+  it was from its target, and aims at it).
+- **Properties**: name (by default, the role if it belongs to the setup or the type if
+  it is its own, numbered), type, shape, size (width and height; diameter of the
+  sphere; radius of the point and the spot), spread (area), cone angle and
+  transition in % of the half-angle (spot), sun disc, roll, colour
+  temperature or colour, **power in watts** with its **equivalent in lumens** (or
+  lux for the sun) as an auxiliary line, *visible in reflections*, *visible to camera*,
+  ***casts shadow*** (without it the engine does not trace its shadow rays) and
+  on. *Duplicate* (an own copy, 15° to the side, selected) and
+  *Delete* work for the setup's lights and the own ones.
+- **Units.** Those of the setups (watts at part size 1, in the
+  Cycles sense; W/m² for the sun). For the new types, which no recipe
+  has, **a point or a spot of P W is as bright on its axis as
+  a panel of P W facing the product at the same distance**: isotropic
+  flux `π · P · S²` for the engine (S, the part size in metres) and
+  intensity `P · S² / 4` (S in mm) for the preview; a spot
+  is the point it would be without its cone (its axis does not change brightness
+  with the cone). Thus the measure used to normalise setups
+  (`specIrradiance`) is the same fraction, 1/π, of what arrives for panels,
+  points and spots, and a setup that mixes them keeps its balance. An area
+  sphere is a point with a size. The **lumens** are the flux given to
+  the engine (narrowed by a panel's spread; the part of its
+  cone for a spot) times 683 lm/W and times the colour's luminance: the
+  convention of RGB renderers, not the efficacy of a lamp.
+- **Save setup as…** saves the switched-on lights (with their type, shape,
+  target, roll, transition and shadow) to the library; applied to another
+  product type it is normalised like those of the catalogue: the total irradiance
+  is that of that type and each light keeps its share. **Reset to setup**
+  removes the own lights and gives back the setup's as they were.
 
-Cualquier pieza con material emisor también ilumina.
+Any part with an emissive material also lights.
 
-**Luces IES** (fase L5). *+ Añadir luz ▸ IES…* abre un archivo `.ies` (el
-formato de texto público de IES LM-63: lo que publican los fabricantes de
-luminarias con la intensidad en cada dirección; también se puede soltar un
-`.ies` sobre la ventana) y crea un foco de tipo `IES` delante y arriba de la
-pieza, encendido, seleccionado y con la irradiancia media de los focos
-encendidos, como el punto nuevo: una entrada de deshacer. **No se entrega
-ningún perfil de fabricante**: cada persona trae los suyos (los dos de las
-pruebas, `tests/fixtures/ies/`, están escritos a mano y no son la medida de
-ninguna luminaria). Un archivo que el lector no acepta no añade nada y dice
-por qué en un aviso: se lee la fotometría **tipo C** con `TILT=NONE`; el tipo
-B o A y `TILT=INCLUDE` se rechazan con su mensaje («exporta el perfil como
-tipo C», «con TILT=NONE»), y también lo cortado, las cuentas que no casan,
-los ángulos que no crecen y las candelas negativas.
+**IES lights** (phase L5). *+ Add light ▸ IES…* opens an `.ies` file (the public
+text format of IES LM-63: what luminaire manufacturers publish with the
+intensity in each direction; an `.ies` can also be dropped onto the window)
+and creates a light of type `IES` in front of and above the
+part, switched on, selected and with the mean irradiance of the
+switched-on lights, like the new point: one undo entry. **No manufacturer
+profile is shipped**: each person brings their own (the two used in the tests,
+`tests/fixtures/ies/`, are written by hand and are not the measurement of
+any luminaire). A file the reader does not accept adds nothing and says
+why in a notice: **type C** photometry with `TILT=NONE` is read; type
+B or A and `TILT=INCLUDE` are rejected with their message (“export the profile as
+type C”, “with TILT=NONE”), and so are truncated files, counts that do not match,
+angles that do not increase and negative candelas.
 
-- **Qué da el archivo y qué da la luz.** El perfil da la **forma** (la
-  intensidad relativa en cada dirección, interpolada bilinealmente entre sus
-  ángulos y con las simetrías del archivo: redondo, cuatro cuadrantes,
-  bilateral o completo) y la luz da el **nivel**: es tan brillante en la
-  dirección más brillante del perfil como un punto de la misma potencia. Los
-  lúmenes y el multiplicador que dice el archivo no cuentan (un perfil
-  escrito para 500 lm y otro para 5000 dan la misma luz), así que cambiar un
-  punto por una luz IES no mueve la exposición. Los **lúmenes** que enseña el
-  inspector son el flujo de su punto por la parte de la esfera que el perfil
-  llena (un haz estrecho da pocos lúmenes).
-- **Se orienta** como un foco: su eje (ángulo vertical 0° del perfil) va a su
-  objetivo, y el **giro** (ángulo horizontal 0°) gira el patrón alrededor del
-  eje; se mueve, se apunta, se duplica y se elimina como cualquier foco, y
-  puede ser una esfera de radio pequeño (se ve a cámara y en reflejos, con el
-  patrón del perfil) o un punto.
-- **El inspector** enseña el **nombre del perfil** (la descripción de la
-  luminaria del archivo, o el nombre del archivo), un **gráfico polar** de
-  su intensidad dibujado desde el archivo (los planos C0–C180, continuo, y
-  C90–C270, discontinuo, con el eje hacia abajo; uno solo si el perfil es
-  redondo), el pico, el ángulo del haz y la simetría, **Cambiar…** (otro
-  archivo para la misma luz, que conserva su sitio y su nivel) y un
-  **multiplicador** (× 1 es el nivel con que entró la luz; en lugar de los
-  vatios, que cambian con el tipo de producto al aplicar un montaje). El tipo
-  se puede pasar a *Punto* o *Foco* y volver: el perfil se queda en la luz.
-- **Rápido lo aproxima** (y la nota del inspector lo dice): un foco con la
-  intensidad del eje y un cono sacado del ángulo en que el perfil cae a la
-  mitad; *Completo* y el render usan el archivo entero.
-- **El perfil viaja** en el proyecto (`.repack`: el texto del archivo va en la
-  luz, y el proyecto se abre en otro equipo sin él), en los estudios, en un
-  montaje guardado con *Guardar montaje como…* y en la biblioteca. Un perfil
-  dañado, o que el lector rechaza, se quita al abrir y la luz es un punto.
+- **What the file gives and what the light gives.** The profile gives the **shape** (the
+  relative intensity in each direction, interpolated bilinearly between its
+  angles and with the file's symmetries: round, four quadrants,
+  bilateral or full) and the light gives the **level**: it is as bright in the
+  brightest direction of the profile as a point of the same power. The
+  lumens and the multiplier the file states do not count (a profile
+  written for 500 lm and another for 5000 give the same light), so swapping a
+  point for an IES light does not move the exposure. The **lumens** the
+  inspector shows are the flux of its point times the part of the sphere that the profile
+  fills (a narrow beam gives few lumens).
+- **It is oriented** like a spot: its axis (vertical angle 0° of the profile) goes to its
+  target, and the **roll** (horizontal angle 0°) turns the pattern about the
+  axis; it is moved, aimed, duplicated and deleted like any light, and
+  can be a sphere of small radius (seen by the camera and in reflections, with the
+  profile's pattern) or a point.
+- **The inspector** shows the **profile name** (the luminaire description from the file,
+  or the file name), a **polar plot** of its intensity drawn from the file (the
+  planes C0–C180, solid, and C90–C270, dashed, with the axis pointing down; one only if the profile is
+  round), the peak, the beam angle and the symmetry, **Change…** (another
+  file for the same light, which keeps its place and its level) and a
+  **multiplier** (× 1 is the level the light came in with; instead of the
+  watts, which change with the product type when applying a setup). The type
+  can be switched to *Point* or *Spot* and back: the profile stays on the light.
+- **Fast approximates it** (and the inspector note says so): a spot with the
+  axis intensity and a cone taken from the angle at which the profile falls to
+  half; *Full* and the render use the whole file.
+- **The profile travels** in the project (`.repack`: the file's text goes in the
+  light, and the project opens on another machine without it), in the studios, in a
+  setup saved with *Save setup as…* and in the library. A damaged profile,
+  or one the reader rejects, is removed on opening and the light is a point.
 
-**Luces y cámaras en el visor** (ampliación de L4). Las luces y las
-**cámaras guardadas** (no la activa, que es la vista) se dibujan como
-**glifos acromáticos** en la tinta del tema: el contorno del panel (rectángulo
-o elipse, con una marca hacia donde ilumina), la esfera, el punto (con una
-estrella pequeña), el cono del foco (con el cono interior donde empieza la
-transición), la flecha del sol y la pirámide de la cámara (con un triángulo
-que dice dónde está arriba). Se dibujan sobre todo, discontinuos, y el
-seleccionado continuo; nunca salen en un render. El botón **Luces y cámaras**
-de la barra de vista los muestra todos **mientras se trabaja con ellos**: con
-la pestaña *Luces* o *Cámaras* abierta, con una luz o una cámara
-seleccionada o mirando a través de una; si no (con *Piezas* y la pieza
-seleccionada), ninguno, para que el contorno de un panel del montaje que
-cruza el producto (el principal suele estar entre la cámara y la pieza) no
-se lea como parte de él. Apagado, solo el del objeto seleccionado. Un **clic**
-en un glifo (a 6 px de una de sus líneas) selecciona su luz o su cámara (una
-a la vez; `Ctrl/⌘` o `Alt` la quita), por encima de la pieza que haya
-detrás; un **doble clic** mira a través; el **clic derecho** abre *Mirar a
-través*, *Duplicar*, *Apuntar a…* y *Eliminar* (o *Activar* en una cámara).
-Con una luz o una cámara seleccionada, *Mover* pone sobre ella el *gizmo*
-sin los cubos de escala: **mover** la lleva sin cambiar a dónde apunta,
-**girar** gira alrededor de ella a dónde apunta (y el giro de un panel
-alrededor de su eje), y el **asa de apuntar** (la línea a su objetivo) mueve
-el objetivo de la luz o el de la cámara; en ejes globales o los suyos
-(derecha, arriba, atrás), con los incrementos de `Shift`. Un arrastre es una
-entrada de deshacer, y mover una cámara guardada no mueve la activa. Una
-cámara bloqueada no tiene *gizmo*. La caja de selección (U7) y *Escalar*
-(U9) no ven los glifos: la caja selecciona piezas al nivel vigente y el
-tamaño de un foco se cambia en el inspector.
+**Lights and cameras in the viewport** (extension of L4). Lights and
+**saved cameras** (not the active one, which is the view) are drawn as
+**achromatic glyphs** in the theme's ink: the panel outline (rectangle
+or ellipse, with a mark towards where it lights), the sphere, the point (with a
+small star), the spot cone (with the inner cone where the transition starts), the
+sun's arrow and the camera pyramid (with a triangle
+saying where up is). They are drawn over everything, dashed, and the
+selected one solid; they never appear in a render. The **Lights and cameras**
+button of the view bar shows them all **while working with them**: with the
+*Lights* or *Cameras* tab open, with a light or a camera
+selected or looking through one; otherwise (with *Parts* and the part
+selected), none, so that the outline of a setup panel
+that crosses the product (the main one is usually between the camera and the part) is not
+read as part of it. When off, only that of the selected object. A **click**
+on a glyph (within 6 px of one of its lines) selects its light or camera (one
+at a time; `Ctrl/⌘` or `Alt` removes it), above any part
+behind it; a **double click** looks through; the **right click** opens *Look
+through*, *Duplicate*, *Aim at…* and *Delete* (or *Activate* on a camera).
+With a light or a camera selected, *Move* puts the *gizmo* on it
+without the scale cubes: **move** carries it without changing where it aims,
+**rotate** turns it around where it aims (and a panel's roll
+about its axis), and the **aim handle** (the line to its target) moves
+the light's or the camera's target; in global axes or its own
+(right, up, back), with `Shift` increments. A drag is one
+undo entry, and moving a saved camera does not move the active one. A
+locked camera has no *gizmo*. The selection box (U7) and *Scale*
+(U9) do not see the glyphs: the box selects parts at the current level and the
+size of a light is changed in the inspector.
 
-**Mirar a través** de la luz o la cámara seleccionada (botón de la barra de
-vista y del inspector, `Ctrl/⌘ ⇧ L`, doble clic en su glifo): el visor mira
-desde ella, en *Rápido* y en *Completo*. Una luz se ve desde su posición
-hacia su objetivo, con la óptica de la cámara activa; un foco direccional
-ajusta la focal para que su cono llene el lado corto del encuadre (lo que se
-ve es lo que ilumina). **Orbitar, Desplazar y Zoom mueven ese objeto**: la
-luz va a donde está la vista y apunta a donde mira, la cámara toma la vista;
-el gesto entero es una entrada de deshacer y la cámara activa no se mueve.
-**Respeta *Bloquear cámara***: una cámara bloqueada se ve pero no se mueve
-(el aviso lo dice). `Esc` o el botón vuelven a la cámara activa, tal como
-estaba.
+**Look through** the selected light or camera (button in the view bar and
+in the inspector, `Ctrl/⌘ ⇧ L`, double click on its glyph): the viewport looks
+from it, in *Fast* and in *Full*. A light is seen from its position
+towards its target, with the active camera's optics; a spot
+adjusts the focal length so that its cone fills the short side of the framing (what is
+seen is what it lights). **Orbit, Pan and Zoom move that object**: the
+light goes where the view is and aims where it looks, the camera takes the view;
+the whole gesture is one undo entry and the active camera does not move.
+**It respects *Lock camera***: a locked camera is seen but does not move
+(the notice says so). `Esc` or the button go back to the active camera, just as
+it was.
 
-**Colocar por reflejo**: dado un punto de la pieza y su normal, el foco
-seleccionado se coloca en la dirección reflejada del rayo de cámara, a su
-distancia actual. Es la forma natural de "quiero el brillo aquí".
+**Place by reflection**: given a point on the part and its normal, the selected
+light is placed in the reflected direction of the camera ray, at its current
+distance. It is the natural way of saying "I want the highlight here".
 
-**Entorno**: `STUDIO` (cúpula procedural: gris 0.12 en el suelo, 0.45 en
-el horizonte, 0.85 en el cenit; ilumina y se refleja, no necesita ningún
-archivo), `SKY` (sol y cielo procedurales a partir del foco de tipo sol),
-`FLAT` (color liso), `HDRI` (archivo del usuario, con rotación e
-intensidad). Lo que ilumina y lo que ve la cámara se separan: el fondo
-puede ser el entorno, un color, un degradado de dos colores (L6),
-transparente o una imagen, sin cambiar la luz.
+**Environment**: `STUDIO` (procedural dome: grey 0.12 on the floor, 0.45 at
+the horizon, 0.85 at the zenith; it lights and is reflected, needs no
+file), `SKY` (procedural sun and sky from the sun-type light),
+`FLAT` (plain colour), `HDRI` (user file, with rotation and
+intensity). What lights and what the camera sees are separate: the background
+can be the environment, a colour, a two-colour gradient (L6),
+transparent or an image, without changing the light.
 
-`EnvironmentState` (E5) guarda además `hdri` y `backplate` (`ImageRef`:
-id, nombre, ancho y alto; los bytes viven en el registro de imágenes,
-como las mallas, y el proyecto los lleva dentro), `backplateFit`
-(`FILL` · `FIT` · `STRETCH`: la imagen cubre el encuadre recortándose,
-cabe entera con el color alrededor, o se estira), `skyTurbidity` (bruma
-del cielo, 3 por defecto: 2 muy limpio, 6 brumoso) y `skySun` (`az`,
-`el`: el sol del cielo cuando el montaje no tiene foco de sol, relativo a
-la cámara como un foco; -55°, 55° por defecto). Con un foco de sol
-encendido en el montaje, ese foco coloca el sol del cielo. `skyModel`
-(E5c) elige el modelo: `PHYSICAL` (por defecto, también para los
-proyectos guardados antes de que existiera), nuestro cielo físico: la
-forma funcional de Hošek y Wilkie (2012) con coeficientes ajustados por
-nosotros a nuestra propia simulación de la atmósfera; o `CLASSIC`, el de
-Preetham (1999) de E5. Los dos se escalan para que una superficie
-horizontal reciba la misma luz que con la cúpula de los mismos valores;
-solo de día (el sol, a 0° como mínimo en el físico y a 1° en el clásico). Un `HDRI` sin archivo cargado ilumina con la
-cúpula; una imagen de fondo sin archivo muestra el color. Un panel con `camera = true` se pinta como **campo claro en el
-fondo** (disco suave centrado en el encuadre), nunca como un rectángulo
-visible con bordes.
+`EnvironmentState` (E5) also stores `hdri` and `backplate` (`ImageRef`:
+id, name, width and height; the bytes live in the image registry,
+like meshes, and the project carries them inside), `backplateFit`
+(`FILL` · `FIT` · `STRETCH`: the image covers the framing by cropping,
+fits whole with the colour around it, or is stretched), `skyTurbidity` (sky
+haze, 3 by default: 2 very clean, 6 hazy) and `skySun` (`az`,
+`el`: the sky's sun when the setup has no sun light, relative to
+the camera like a light; −55°, 55° by default). With a sun light
+switched on in the setup, that light places the sky's sun. `skyModel`
+(E5c) chooses the model: `PHYSICAL` (default, also for
+projects saved before it existed), our physical sky: the
+functional form of Hošek and Wilkie (2012) with coefficients fitted by
+us to our own simulation of the atmosphere; or `CLASSIC`, the Preetham
+(1999) one from E5. Both are scaled so that a horizontal surface
+receives the same light as with the dome of the same values;
+daytime only (the sun, at 0° minimum in the physical one and at 1° in the classic one). An `HDRI` without a loaded file lights with the
+dome; a background image without a file shows the colour. A panel with `camera = true` is painted as a **light field in the
+background** (soft disc centred in the framing), never as a visible
+rectangle with edges.
 
-### 3.5 · Cámara
+### 3.5 · Camera
 
-`CameraState`: nombre, posición y objetivo (o acimut, elevación y
-distancia alrededor del objetivo), focal en mm sobre sensor de 36 mm,
-diafragma, distancia de enfoque, perspectiva u ortográfica (con ancho
-ortográfico), clipping, `locked`. Cámara de referencia: acimut −35°,
-elevación 22° (tres cuartos), distancia derivada de la focal y el tamaño
-de pieza para que encaje con un margen del 10 %.
+`CameraState`: name, position and target (or azimuth, elevation and
+distance around the target), focal length in mm on a 36 mm sensor,
+aperture, focus distance, perspective or orthographic (with orthographic
+width), clipping, `locked`. Reference camera: azimuth −35°,
+elevation 22° (three-quarter), distance derived from the focal length and part
+size so that it fits with a 10 % margin.
 
-**Proporción de la imagen** (U13). Cada cámara lleva la suya,
-`CameraState.aspect: { preset, w, h }`, con `preset` una clave estable de
+**Image aspect ratio** (U13). Each camera carries its own,
+`CameraState.aspect: { preset, w, h }`, with `preset` a stable key of
 `src/data/aspects.ts` (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`,
-`21:9`, `2:1`, `65:24` panorámica) o `CUSTOM` con `w : h` libres (la
-razón queda entre 1 : 512 y 512 : 1, la de los tamaños más extremos que
-admite la ventana de render, 16 × 8192 y 8192 × 16). Es el ancho sobre el alto de la imagen que esa cámara
-toma: una cámara nueva es 16:9; *Nueva desde la vista actual* y duplicar
-copian la de la origen; `camera/set` la cambia (deshacible) y la lee como
-cualquier campo (`normaliseAspect`: una clave conocida trae sus términos,
-algo que no puede serlo se descarta). La **fuente única** es la cámara:
+`21:9`, `2:1`, `65:24` panoramic) or `CUSTOM` with free `w : h` (the
+ratio stays between 1 : 512 and 512 : 1, that of the most extreme sizes the
+render window admits, 16 × 8192 and 8192 × 16). It is the width over the height of the image that camera
+takes: a new camera is 16:9; *New from current view* and duplicating
+copy the origin's; `camera/set` changes it (undoable) and reads it like
+any field (`normaliseAspect`: a known key brings its terms,
+something that cannot be one is discarded). The **single source** is the camera:
 
-- el **marco del visor** es el de la cámara que se ve (la activa o la que se
-  mira a través), con su proporción;
-- el **tamaño en píxeles de una imagen** conserva el ancho y toma el alto
-  de la proporción de la cámara activa (`syncOutputSize`, en cada acción,
-  también al cambiar de cámara activa, al deshacer y al abrir un proyecto).
-  Si se teclea un tamaño que rompe esa proporción (los dos lados a la vez,
-  o uno con el candado abierto) es la cámara la que lo recibe, en la misma
-  acción: el preset de la lista si el tamaño es exactamente uno
-  (`aspectForSize`), si no `CUSTOM` con esos píxeles como `w : h`;
-- una **animación** tiene un solo tamaño de salida, el de la ventana de
-  render, que no sigue a la cámara; el Doctor avisa (`aspect`) cuando la
-  cámara de un plano tiene otra proporción;
-- un trabajo de la cola para una cámara con otra proporción que la de la
-  ventana sale con el mismo ancho y el alto de esa cámara.
+- the **viewport frame** is that of the camera being seen (the active one or the one
+  being looked through), with its proportion;
+- the **size in pixels of an image** keeps the width and takes the height
+  from the active camera's proportion (`syncOutputSize`, on every action,
+  also when changing the active camera, on undo and when opening a project).
+  If a size is typed that breaks that proportion (both sides at once,
+  or one with the lock open) the camera receives it, in the same
+  action: the list preset if the size is exactly one
+  (`aspectForSize`), otherwise `CUSTOM` with those pixels as `w : h`;
+- an **animation** has a single output size, that of the render
+  window, which does not follow the camera; the Doctor warns (`aspect`) when the
+  camera of a shot has another proportion;
+- a queue job for a camera with a different proportion from the window's
+  comes out with the same width and the height of that camera.
 
-Un proyecto guardado antes no tiene `aspect` en sus cámaras: cada una toma
-la proporción del tamaño de render guardado (el preset que cuadra con una
-tolerancia del 0,5 %, si no `CUSTOM` con esos píxeles), y el tamaño guardado
-no se toca. Recolocar la cámara al cambiar la proporción no se hace
-solo: *Encuadrar* la ajusta a la imagen nueva.
+A project saved earlier has no `aspect` on its cameras: each takes
+the proportion of the saved render size (the preset that fits within a
+tolerance of 0.5 %, otherwise `CUSTOM` with those pixels), and the saved size
+is not touched. Repositioning the camera when the proportion changes is not done
+by itself: *Frame* adjusts it to the new image.
 
-**Encuadrar**: ajusta la distancia (o el ancho ortográfico) para que la
-caja envolvente de la selección (o de todo) quepa con margen, sin mover
-la orientación. Las **cámaras guardadas** se ven en el visor como pirámides,
-se mueven con el *gizmo* (la posición sin cambiar su objetivo, el giro, el
-asa de su objetivo) y se **mira a través** de ellas (§3.4, *Luces y cámaras
-en el visor*). **Vistas**: tres cuartos, frontal, lateral, cenital,
-trasera.
+**Frame**: adjusts the distance (or the orthographic width) so that the
+bounding box of the selection (or of everything) fits with a margin, without moving
+the orientation. **Saved cameras** are seen in the viewport as pyramids,
+are moved with the *gizmo* (the position without changing its target, the roll, the
+handle of its target) and can be **looked through** (§3.4, *Lights and cameras
+in the viewport*). **Views**: three-quarter, front, side, top,
+back.
 
-**Enfoque** (F1, `core/focus.ts`). Cada cámara elige cómo enfoca,
-`CameraState.focusMode`: `DISTANCE` (la distancia tecleada,
-`focusDistance`, como siempre; una cámara, un proyecto, una cámara guardada
-o un estudio de la biblioteca de antes de F1 no tienen el campo y se leen
-así), `POINT` (un punto picado con un clic, `focusPoint: { node, point }`,
-guardado **en las coordenadas de la pieza que tocó**, de modo que sigue a
-sus transformaciones y a su animación) u `OBJECT` (una pieza, un grupo o el
-modelo, `focusObject`, al nivel de selección con el que se eligió; el punto
-que se sigue es el **centro de su caja** (decidido; las otras dos
-candidatas, el vértice más cercano a lo largo del eje y la superficie que se
-ve en el centro de su silueta, están escritas en `objectFocusPoint` y sin usar). En
-`POINT` y `OBJECT` la distancia de enfoque **se calcula** desde la cámara tal
-como está en cada momento y el punto donde está en ese momento: al navegar,
-al mirar a través, en cada fotograma de una animación, en la ventana de
-render, en la cola y en los lotes (`resolvedFocusDistance`, y
-`focusDistanceAt(estado, cámara, t)` como enganche para quien renderice un
-instante); el RSB sigue llevando una distancia por fotograma. El *store*
-guarda en `focusDistance` la que sale en reposo (`syncFocus`, tras cada
-acción que cambia una cámara o la escena), y es a la que la cámara vuelve
-si se borra la pieza del punto o el objeto: pasa a `DISTANCE` en la misma
-acción (deshacer lo devuelve todo) y la interfaz lo avisa. Un clip
-`FOCUS` (un cambio de foco) tira desde la distancia que sigue. **"En
-foco" es la regla del motor** (`rt-core` `focus`): la lente fina enfoca el
-plano perpendicular al eje de la vista, así que la distancia de un punto es
-su profundidad a lo largo del eje; con inclinación (O1) es la distancia
-cuyo plano de la regla de la bisagra pasa por el punto; una lente trazada
-(O2) se enfoca paraxialmente, pero abierta su aberración esférica y la
-curvatura de campo ponen su imagen más nítida a milímetros de ese plano, y
-el motor resuelve la distancia con sus propios rayos (donde el detalle fino
-que ve el punto del sensor tiene más contraste, `rt_scene_focus_at`:
-10 y 5 pares de líneas por milímetro del cuadro de 36 mm, decidido); sin `rt.wasm`
-se usa la paraxial. Una panorámica (K3) no tiene profundidad de campo: su
-distancia es la del punto; con verticales rectas cuenta la cámara nivelada
-que se renderiza. Una lente trazada respira, así que el clic se asienta:
-se repite con la cámara ya enfocada hasta que el píxel muestra el mismo
-punto. **Enfocar con clic** pica el píxel exacto en
-la vista exacta: el rayo principal del motor para ese píxel (la cámara
-mirada a través con su propio cuadro, la pose del cabezal, la imagen del
-visor alrededor del cuadro, la lente con su distorsión y su respiración),
-lanzado contra la geometría del visor por las dos caras de cada triángulo
-(como las ve el motor) y con la sección; la cámara que lo recibe es la que
-se ve (la mirada a través, la del plano del cabezal, o la activa).
+**Focus** (F1, `core/focus.ts`). Each camera chooses how it focuses,
+`CameraState.focusMode`: `DISTANCE` (the typed distance,
+`focusDistance`, as always; a camera, a project, a saved camera
+or a library studio from before F1 do not have the field and are read
+that way), `POINT` (a point picked with a click, `focusPoint: { node, point }`,
+stored **in the coordinates of the part it touched**, so that it follows
+its transforms and its animation) or `OBJECT` (a part, a group or the
+model, `focusObject`, at the selection level it was chosen with; the point
+that is followed is the **centre of its box** (decided; the other two
+candidates, the vertex nearest along the axis and the surface seen at
+the centre of its silhouette, are written in `objectFocusPoint` and unused). In
+`POINT` and `OBJECT` the focus distance **is computed** from the camera as
+it is at each moment and the point where it is at that moment: when navigating,
+when looking through, at each frame of an animation, in the render
+window, in the queue and in batches (`resolvedFocusDistance`, and
+`focusDistanceAt(state, camera, t)` as a hook for whoever renders an
+instant); the RSB still carries one distance per frame. The *store*
+keeps in `focusDistance` the one that comes out at rest (`syncFocus`, after each
+action that changes a camera or the scene), and it is the one the camera goes back to
+if the point's part or the object is deleted: it goes to `DISTANCE` in the same
+action (undoing returns everything) and the interface warns of it. A `FOCUS`
+clip (a focus change) pulls from the distance that follows. **"In
+focus" is the engine's rule** (`rt-core` `focus`): the thin lens focuses the
+plane perpendicular to the view axis, so a point's distance is
+its depth along the axis; with tilt (O1) it is the distance
+whose plane of the hinge rule passes through the point; a traced lens
+(O2) is focused paraxially, but wide open its spherical aberration and field
+curvature put its sharpest image millimetres from that plane,
+and the engine resolves the distance with its own rays (where the fine detail
+that the sensor point sees has the most contrast, `rt_scene_focus_at`:
+10 and 5 line pairs per millimetre of the 36 mm frame, decided); without `rt.wasm`
+the paraxial one is used. A panorama (K3) has no depth of field: its
+distance is the point's; with straight verticals the levelled camera
+that is rendered counts. A traced lens breathes, so the click settles:
+it is repeated with the camera already focused until the pixel shows the same
+point. **Focus with a click** picks the exact pixel in
+the exact view: the engine's principal ray for that pixel (the camera
+looked through with its own frame, the playhead's pose, the viewport image
+around the frame, the lens with its distortion and its breathing),
+cast against the viewport geometry through both faces of each triangle
+(as the engine sees them) and with the section; the camera that receives it is the one that
+is seen (the one looked through, the playhead shot's, or the active one).
 
-**Focal y tamaño de lo enfocado** (C2, `core/focal.ts`). Cada cámara lleva
-el interruptor *Mantener el tamaño de lo enfocado*,
-`CameraState.keepFocusSize` (opcional: una cámara, un proyecto o un
-estudio de la biblioteca de antes de C2 no lo tienen y se leen apagado; al
-abrir, cualquier valor que no sea `true` es apagado). La focal cambia con
-`camera/focal` (el campo del inspector: un paso de las flechas, un arrastre
-o un valor tecleado, cada uno una entrada de deshacer) o con una óptica de
-interior (`camera/interiorLens`), y pasa por él:
+**Focal length and size of what is in focus** (C2, `core/focal.ts`). Each camera carries
+the switch *Keep the size of what is in focus*,
+`CameraState.keepFocusSize` (optional: a camera, a project or a
+library studio from before C2 does not have it and is read as off; on
+opening, any value other than `true` is off). The focal length changes with
+`camera/focal` (the inspector field: an arrow step, a drag
+or a typed value, each one an undo entry) or with an
+interior lens (`camera/interiorLens`), and goes through it:
 
-- **apagado** (por defecto, como en una cámara): la cámara se queda donde
-  está y cambia el encuadre;
-- **encendido**: la cámara se mueve por su eje para que el plano enfocado
-  conserve su tamaño en la imagen. Un punto a la profundidad *z* sale *f/z*
-  veces su tamaño, así que el plano a la distancia *D* lo conserva si pasa a
-  *D·f′/f*: la cámara avanza *D − D·f′/f* (retrocede si la focal crece) y la
-  distancia de enfoque y la de órbita bajan lo mismo. *D* es la de F1 en
-  reposo: la tecleada en *Distancia*; en *Punto* y *Objeto*, la que pone en
-  foco el punto que se sigue (`focusDistanceFor`: su profundidad; con
-  inclinación, donde el plano de la bisagra que pasa por él corta el eje;
-  con verticales rectas se mide por el eje propio de la cámara, que es por el
-  que se mueve, y la cámara nivelada que se renderiza conserva el tamaño y
-  el sitio del plano). El **objetivo de órbita** se queda donde está
-  mientras la cámara quede delante de él a más de una décima de la
-  distancia de órbita escalada por la misma razón; si no, avanza por el eje
-  delante de la cámara (nunca queda detrás). El plano lejano de recorte se
-  queda donde estaba en el mundo.
+- **off** (default, as on a camera): the camera stays where
+  it is and the framing changes;
+- **on**: the camera moves along its axis so that the focused plane
+  keeps its size in the image. A point at depth *z* comes out *f/z*
+  times its size, so the plane at distance *D* keeps it if it becomes
+  *D·f′/f*: the camera advances *D − D·f′/f* (moves back if the focal length grows) and the
+  focus distance and the orbit distance drop by the same amount. *D* is the F1 one at
+  rest: the one typed in *Distance*; in *Point* and *Object*, the one that puts
+  the point being followed in focus (`focusDistanceFor`: its depth; with
+  tilt, where the hinge plane that passes through it cuts the axis;
+  with straight verticals it is measured along the camera's own axis, which is the one it
+  moves along, and the levelled camera that is rendered keeps the size and
+  the place of the plane). The **orbit target** stays where it is
+  as long as the camera stays in front of it by more than a tenth of the
+  orbit distance scaled by the same ratio; otherwise, it advances along the axis
+  in front of the camera (it is never left behind). The far clipping plane stays
+  where it was in the world.
 
-No mueve nada con la cámara **bloqueada** (la focal cambia como apagado), ni
-con la **ortográfica** ni las **panorámicas**, cuyo encuadre no depende de la
-focal (el ancho, el campo de visión). Elegir un **preset de óptica**
-(`camera/lens`) sigue encuadrando la pieza como antes; los clips `ZOOM` de
-una animación cambian la focal sin mover la cámara. *Nueva desde la vista
-actual* y duplicar copian el interruptor.
+It moves nothing with the camera **locked** (the focal length changes as if off), nor
+with the **orthographic** one or the **panoramas**, whose framing does not depend on the
+focal length (the width, the field of view). Choosing an **optics preset**
+(`camera/lens`) still frames the part as before; the `ZOOM` clips of
+an animation change the focal length without moving the camera. *New from current
+view* and duplicating copy the switch.
 
-**Óptica (O1, la lente simple; hasta O4 se llamaba *lente fina*, y el
-proyecto la sigue guardando como `thin`).** `CameraState.optics` (opcional;
-una cámara sin él, como todas las anteriores a O1, es la lente simple de
-siempre y el motor la renderiza bit a bit igual): el **tipo de bokeh**
-elegido (`bokeh`, `variant`, claves de `src/data/bokeh.json`; vuelve a
-`null` en cuanto se mueve un mando del desenfoque a mano) y sus
-parámetros, que son los de `BokehThin`: láminas (0 redondo, 3 a 18) con
-redondez y giro, máscara (sustituye al diafragma) y textura de pupila
-(multiplica; los anillos de cebolla con su amplitud), perfil de la
-pupila (uniforme, centro brillante, anillo brillante, apodizada) con su
-intensidad, obstrucción central, ojo de gato, compresión anamórfica
-(1, 1,33 o 2; la imagen sale ya desestirada: solo el desenfoque es
-ovalado) y, marcados *no físico*, aberración cromática y remolino; más
-**descentramiento** (mm sobre el sensor, horizontal y vertical: mueve el
-encuadre sin cambiar la perspectiva) e **inclinación** (grados y eje en
-el plano del sensor: el plano de enfoque gira por Scheimpflug alrededor
-del punto de enfoque del eje). Elegir un tipo cambia solo los mandos del
-desenfoque; la inclinación y el descentramiento se quedan. El ojo de
-gato recorta el haz hacia las esquinas y las oscurece (es el viñeteo
-óptico que lo acompaña); la aberración cromática pinta cada muestra en
-una de tres bandas (decisión 3) sin mover el plano de enfoque. Los tipos
-que necesitan la lente trazada (cometa de coma, respiración de foco,
-aberración esférica variable) ponen su lente del catálogo en la cámara
-(O2; desde O4 la rejilla de bokeh no los enseña, son lentes de *Lente
-trazada*) y el de difracción espera a la óptica de ondas. **El bokeh y la
-óptica avanzada son de la lente simple (O4)**: ningún tipo de bokeh se
-aplica a una cámara con lente trazada ni la saca de ella
-(`opticsForBokeh` devuelve `null`; la orden que usan todos los caminos,
-`applyBokeh`, avisa y no toca la cámara). Cambiar de modelo de lente no
-borra nada: el tipo de bokeh, sus parámetros y la inclinación de la lente
-simple se quedan en `optics` mientras la cámara lleva la lente trazada y
-vuelven tal cual (`opticsWithLensModel`).
+**Optics (O1, the simple lens; until O4 it was called the *thin lens*, and the
+project still stores it as `thin`).** `CameraState.optics` (optional;
+a camera without it, like all those before O1, is the usual simple lens
+and the engine renders it bit for bit the same): the chosen **bokeh type**
+(`bokeh`, `variant`, keys of `src/data/bokeh.json`; it goes back to
+`null` as soon as a blur control is moved by hand) and its
+parameters, which are those of `BokehThin`: blades (0 round, 3 to 18) with
+roundness and rotation, mask (replaces the diaphragm) and pupil texture
+(multiplies; the onion rings with their amplitude), pupil
+profile (uniform, bright centre, bright ring, apodized) with its
+intensity, central obstruction, cat's eye, anamorphic squeeze
+(1, 1.33 or 2; the image comes out already desqueezed: only the blur
+is oval) and, marked *non-physical*, chromatic aberration and swirl; plus
+**shift** (mm on the sensor, horizontal and vertical: it moves the
+framing without changing the perspective) and **tilt** (degrees and axis in
+the sensor plane: the plane of focus rotates by Scheimpflug around
+the axis's focus point). Choosing a type only changes the blur
+controls; the tilt and the shift stay. The cat's
+eye clips the beam towards the corners and darkens them (it is the optical
+vignetting that goes with it); chromatic aberration paints each sample in
+one of three bands (decision 3) without moving the plane of focus. The types
+that need the traced lens (coma comet, focus breathing,
+variable spherical aberration) put their catalogue lens on the camera
+(O2; since O4 the bokeh grid does not show them, they are *Traced
+lens* lenses) and the diffraction one waits for wave optics. **Bokeh and
+advanced optics belong to the simple lens (O4)**: no bokeh type is
+applied to a camera with a traced lens nor takes it out of it
+(`opticsForBokeh` returns `null`; the command all paths use,
+`applyBokeh`, warns and does not touch the camera). Changing the lens model does not
+delete anything: the bokeh type, its parameters and the simple lens's tilt
+stay in `optics` while the camera carries the traced lens and
+come back as they were (`opticsWithLensModel`).
 
-**Inclinación (O4).** Cada modelo tiene la suya: la lente simple,
-`tiltDeg` y `tiltAxisDeg`; la trazada, `tracedTiltDeg` y
-`tracedTiltAxisDeg` (opcionales; sin ellos, 0). Así una cámara trazada
-de antes de O4 con una inclinación de la lente simple guardada (el motor
-la ignoraba con lente trazada) no empieza a inclinarse. Las dos dan **el
-mismo plano de enfoque** para los mismos números: por la regla de la
-bisagra de la lente simple (por el punto de enfoque, a `focusDistance` a
-lo largo de la vista, con normal `f·forward + u·sin α·b`); la lente
-trazada se gira lo que haga falta para que su propio plano sea ese (ver
-`ARCHITECTURE.md` §5.2 sedecies) y, lejos del centro, su curvatura de
-campo lo dobla como dobla el de la lente derecha. La interfaz lee el par
-como una cantidad (0° a 12°) y la dirección de la imagen hacia la que se
-aleja el plano (`recedeOf`/`tiltFromRecede` de `src/core/focus-plane.ts`;
-a 0° de eje y signo positivo, el plano se tumba hacia el suelo y se aleja
-hacia arriba). **Por dos puntos**: de los planos que pasan por dos puntos,
-el menos inclinado (su normal es la vista hecha perpendicular a la recta
-de los dos); con tres, el plano de los tres; la regla de la bisagra se
-invierte exacta y da la inclinación, su eje y la distancia de enfoque, o
-el motivo de que no haya (el mismo punto, puntos en línea con la vista,
-detrás de la cámara, más de 12°). Un adaptador anamórfico (con cilindros)
-no se inclina. El **descentramiento** es de la cámara, sea cual sea la
-lente (O2 ya movía el encuadre de una trazada con él). Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
-y en `rt-core/src/optics`. El pase `coc` (X2) sigue siendo el de la
-lente simple redonda y sin inclinar, sea cual sea la óptica. El modo
-Rápido no dibuja profundidad de campo; del resto solo muestra el
-descentramiento (el encuadre).
+**Tilt (O4).** Each model has its own: the simple lens,
+`tiltDeg` and `tiltAxisDeg`; the traced one, `tracedTiltDeg` and
+`tracedTiltAxisDeg` (optional; without them, 0). That way a traced camera
+from before O4 with a saved simple-lens tilt (the engine
+ignored it with a traced lens) does not start tilting. Both give **the
+same plane of focus** for the same numbers: by the hinge rule of the
+simple lens (through the focus point, at `focusDistance` along
+the view, with normal `f·forward + u·sin α·b`); the traced lens
+is rotated as much as needed so that its own plane is that one (see
+`ARCHITECTURE.md` §5.2 sedecies) and, away from the centre, its field
+curvature bends it as that of the straight lens does. The interface reads the pair
+as one quantity (0° to 12°) and the image direction towards which the plane
+recedes (`recedeOf`/`tiltFromRecede` of `src/core/focus-plane.ts`;
+at 0° axis and positive sign, the plane lies down towards the floor and recedes
+upwards). **By two points**: of the planes that pass through two points,
+the least tilted (its normal is the view made perpendicular to the line
+through the two); with three, the plane of the three; the hinge rule
+is inverted exactly and gives the tilt, its axis and the focus distance, or
+the reason why there is none (the same point, points in line with the view,
+behind the camera, more than 12°). An anamorphic adapter (with cylinders)
+does not tilt. The **shift** belongs to the camera, whatever the
+lens (O2 already moved the framing of a traced one with it). What the engine does is in `ARCHITECTURE.md` (`LENS` section)
+and in `rt-core/src/optics`. The `coc` pass (X2) is still that of the
+round, untilted simple lens, whatever the optics. Fast mode
+does not draw depth of field; of the rest it only shows the
+shift (the framing).
 
-**Filtros de efecto (O3a).** `CameraOptics.filters` (opcional; sin él,
-ninguno, y los proyectos anteriores no cambian ni un byte): una pila de
-hasta tres filtros delante del objetivo, en orden. Cada uno tiene su
-**tipo** (`src/data/lens-filters.ts`, claves estables y nombres
-genéricos, nunca de una marca: *Difusión blanca*, *Difusión negra*,
-*Difusión dorada*, *Brillo*, *Suavizado*, *Red*, *Estrella*, *Rayas*), su
-**grado** (1/8, 1/4, 1/2, 1 o 2, como los filtros reales) y, según el
-tipo, su **tinte** (dorada, red y rayas; `null` es el propio del tipo),
-sus **puntas** (estrella: 4, 6 u 8) y su **ángulo** (estrella, rayas y
-los ejes de la red). El motor dispersa el rayo de cámara en la muestra de
-pupila: con la probabilidad `s` del grado lo desvía según la PSF angular
-del filtro y si no lo deja seguir, de modo que la imagen es
-`(1 − s)·I + s·a·(I ⊗ K_T)` (`a`, lo que dejan pasar las partículas: 1
-salvo la difusión negra; el tinte `T`, de luminancia 1, solo en las
-partes anchas de la PSF: la cola de la difusión, que es el halo, y las
-rayas; el núcleo estrecho, que cae sobre la imagen, y los destellos del
-brillo quedan neutros); así el halo lleva el bokeh y el enfoque de la
-lente, y una luz fuera del encuadre vela la imagen. El grado decide `s`
-y, en la estrella y la red, el largo de sus rayas (en ángulo: en un
-85 mm, la estrella llega a un cuarto del medio cuadro a 1/4, al 60 % a 1
-y al borde a 2, con el mismo brillo junto a la luz; la cruz de la red,
-como mucho al 15 % del ancho a 2). El brillo es una nube fija de
-destellos finos alrededor de cada luz. Un filtro de grado 0 no hace nada. Elegir un tipo de
-bokeh o *Disco sencillo* no quita los filtros. Una cámara ortográfica no
-tiene filtros (como no tiene lente). El modo Rápido dibuja una
-aproximación en imagen con los mismos núcleos y el medidor lo dice.
+**Effect filters (O3a).** `CameraOptics.filters` (optional; without it,
+none, and earlier projects do not change by a byte): a stack of
+up to three filters in front of the lens, in order. Each one has its
+**type** (`src/data/lens-filters.ts`, stable keys and generic names,
+never a brand's: *White diffusion*, *Black diffusion*,
+*Gold diffusion*, *Glimmer*, *Soft*, *Net*, *Star*, *Streaks*), its
+**grade** (1/8, 1/4, 1/2, 1 or 2, like real filters) and, depending on the
+type, its **tint** (gold, net and streaks; `null` is the type's own),
+its **points** (star: 4, 6 or 8) and its **angle** (star, streaks and
+the net's axes). The engine scatters the camera ray in the pupil sample: with the probability
+`s` of the grade it deflects it according to the filter's angular PSF and otherwise
+lets it continue, so that the image is
+`(1 − s)·I + s·a·(I ⊗ K_T)` (`a`, what the particles let through: 1
+except for black diffusion; the tint `T`, of luminance 1, only in the
+wide parts of the PSF: the tail of the diffusion, which is the halo, and the
+streaks; the narrow core, which falls on the image, and the glimmer's
+sparkles stay neutral); so the halo carries the lens's bokeh and focus,
+and a light outside the framing veils the image. The grade decides `s`
+and, in the star and the net, the length of their streaks (in angle: on an
+85 mm, the star reaches a quarter of the half frame at 1/4, 60 % at 1
+and the edge at 2, with the same brightness next to the light; the net's cross,
+at most 15 % of the width at 2). Glimmer is a fixed cloud of
+fine sparkles around each light. A grade-0 filter does nothing. Choosing a bokeh
+type or *Plain disc* does not remove the filters. An orthographic camera has no
+filters (as it has no lens). Fast mode draws an
+approximation in image space with the same kernels and the meter says so.
 
-**Cristal frontal (S3).** `CameraOptics.frontGlass` (opcional; sin él, o
-apagado, o sin gotas ni polvo, ninguno, y los proyectos anteriores no cambian
-ni un byte): una lámina delante del objetivo con gotas de agua y polvo encima,
-como una lente bajo la lluvia. Guarda `on`, `drops` (la parte del cristal que
-cubren las gotas antes de juntarse, 0..0,9), `dropSizeMm` (el diámetro medio
-de la huella de una gota, 0,2..10 mm), `dust` (la parte que cubren las motas,
-0..0,5), `seed` y `distanceMm` (desde el centro del objetivo; 0, automática:
-donde está el elemento frontal; hasta 200 mm, un cristal o una ventana delante
-de la cámara). Lo demás de la lámina (el ángulo de contacto del agua, la
-dispersión de los tamaños, el tamaño y la opacidad de las motas) son los
-valores fijos de `src/data/front-glass.ts`. El motor traza el cristal como
-geometría real delante de la lente (`rt_core::optics::glass`): cada gota
-refracta como la lente que es (a través de un objetivo enfocado lejos, un
-disco blando con la escena del revés dentro y el borde oscuro), las que se
-tocan se juntan en una con su volumen sumado y el polvo son motas oscuras y
-suaves; sin nada encima, la imagen es la de sin cristal, bit a bit. Las gotas
-están en el cristal, no en el encuadre: cambiar la focal o el tamaño de la
-imagen no las mueve. Solo los modos Completo y Render lo trazan, y solo un
-motor con el bit 6 de sus capacidades; una cámara panorámica no tiene
-elemento frontal y no lo usa. Se guarda con cada cámara, en el proyecto y en
-los estudios.
+**Front glass (S3).** `CameraOptics.frontGlass` (optional; without it, or
+off, or without drops or dust, none, and earlier projects do not change
+by a byte): a sheet in front of the lens with water drops and dust on it,
+like a lens in the rain. It stores `on`, `drops` (the part of the glass that
+the drops cover before merging, 0..0.9), `dropSizeMm` (the mean diameter
+of a drop's footprint, 0.2..10 mm), `dust` (the part covered by motes,
+0..0.5), `seed` and `distanceMm` (from the centre of the lens; 0, automatic:
+where the front element is; up to 200 mm, a glass or a window in front of
+the camera). The rest of the sheet (the water's contact angle, the
+spread of the sizes, the size and opacity of the motes) are the
+fixed values of `src/data/front-glass.ts`. The engine traces the glass as real
+geometry in front of the lens (`rt_core::optics::glass`): each drop
+refracts like the lens it is (through a lens focused far away, a
+soft disc with the scene upside down inside and a dark edge), those that
+touch merge into one with their volume added and the dust is dark, soft
+motes; with nothing on it, the image is that of no glass, bit for bit. The drops
+are on the glass, not in the framing: changing the focal length or the image size
+does not move them. Only the Full and Render modes trace it, and only an
+engine with bit 6 of its capabilities; a panoramic camera has no
+front element and does not use it. It is stored with each camera, in the project and in
+the studios.
 
-**Cristal frontal alimentado por la escena (S3b).** `frontGlass.source`
-(opcional; sin él, `MANUAL`, las gotas y el polvo de los mandos, como en S3):
-`SCENE` hace que las gotas y el polvo vengan de los efectos de *Ambiente* que
-caen en el cristal (`src/data/front-glass.ts` `GLASS_FEED`: *Lluvia* y *Gotas
-de agua* mojan; *Motas de polvo*, *Polen*, *Polvareda* y *Ceniza* echan polvo;
-la nieve, las burbujas y el confeti no dejan nada) tal como los simula la barra
-de físicas (`engine/crates/rt-phys` `wet`, en el *worker* de S2). El motor dice
-dónde está el cristal y qué cuadrado de él cruzan los rayos del render
-(`rt_scene_glass`); la página le da, en los ejes del cristal (derecha, arriba y
-hacia fuera, los de la cámara), la gravedad y por cada efecto su densidad (las
-partículas que pide entre el volumen que llenan) y su velocidad media (su
-viento y su caída), su tamaño, los ángulos de avance y de retroceso del agua
-sobre vidrio (`src/data/wettability.ts`, una tabla por familia: vidrio,
-plástico, metal, papel, pintura) y el ángulo de reposo del polvo (35°). En el
-cristal llegan las partículas que cruzan su cara de fuera (`densidad × máx(0,
-−v·n)` por mm² y s: una cámara que mira hacia abajo bajo una lluvia vertical
-no se moja; un viento que sopla hacia ella, sí), por un sorteo de Poisson por
-paso de 1/240 s. **Las gotas** son casquetes de su volumen al ángulo medio,
-**se juntan** por volumen en su centro de masas, se quedan **ancladas** hasta
-el radio crítico de Furmidge (`ρ g V sin α = γ 2a (cos θ_R − cos θ_A)`) y
-**resbalan** por encima según el *arriba* de la cámara, dejando un **rastro**
-(una película de 2 µm del ancho de la gota cuya agua pierden) que **limpia el
-polvo** por donde pasa; una gota que sale del cristal se va. **El polvo** se
-queda donde la cara mira hacia arriba por debajo del ángulo de reposo (una
-rampa suave de ±5°). Cada fotograma de la simulación se graba en un clip
-`PHYSICS` de la cámara (§3.7, `glass`: la caché), y el render y el modo Rápido
-leen el fotograma del cabezal: el motor recibe el cristal gota a gota (el final
-de `GLAS`, bit 7 de sus capacidades; a un motor sin él no se le manda, porque
-lo dibujaría limpio). Sin grabación, el cristal está seco. Las gotas que caen y
-resbalan por las piezas, el polvo que se asienta en ellas y la nieve son de
+**Front glass fed by the scene (S3b).** `frontGlass.source`
+(optional; without it, `MANUAL`, the drops and dust from the controls, as in S3):
+`SCENE` makes the drops and dust come from the *Ambient* effects that
+fall on the glass (`src/data/front-glass.ts` `GLASS_FEED`: *Rain* and *Water
+drops* wet it; *Dust motes*, *Pollen*, *Dust cloud* and *Ash* throw dust;
+snow, bubbles and confetti leave nothing) as simulated by the physics
+bar (`engine/crates/rt-phys` `wet`, in the S2 *worker*). The engine says
+where the glass is and what square of it the render's rays cross
+(`rt_scene_glass`); the page gives it, in the glass's axes (right, up and
+outwards, those of the camera), the gravity and for each effect its density (the
+particles it asks for divided by the volume they fill) and its mean velocity (its
+wind and its fall), its size, the advancing and receding angles of water
+on glass (`src/data/wettability.ts`, a table per family: glass,
+plastic, metal, paper, paint) and the dust's angle of repose (35°). On the
+glass arrive the particles that cross its outer face (`density × max(0,
+−v·n)` per mm² and s: a camera looking down in a vertical rain
+does not get wet; a wind blowing towards it does), by a Poisson draw per
+step of 1/240 s. **The drops** are caps of their volume at the mean angle,
+**merge** by volume at their centre of mass, stay **pinned** up to
+Furmidge's critical radius (`ρ g V sin α = γ 2a (cos θ_R − cos θ_A)`) and
+**slide** down according to the camera's *up*, leaving a **trail**
+(a 2 µm film the width of the drop, whose water they lose) that **cleans
+the dust** where it passes; a drop that leaves the glass is gone. **The dust** stays
+where the face looks upwards below the angle of repose (a soft
+ramp of ±5°). Each frame of the simulation is recorded in a
+`PHYSICS` clip of the camera (§3.7, `glass`: the cache), and the render and Fast mode
+read the playhead's frame: the engine receives the glass drop by drop (the end
+of `GLAS`, bit 7 of its capabilities; an engine without it is not sent it, because
+it would draw it clean). Without a recording, the glass is dry. Drops that fall and
+slide over the parts, dust that settles on them and snow belong to
 S3c.
 
-**El cristal en Rápido (S3b).** El modo Rápido dibuja una aproximación del
-cristal con las gotas y las motas que coloca el motor (a mano, `rt_scene_glass`;
-de la escena, el fotograma grabado): cada punto de la imagen recoge la luz de
-un disco del cristal, el cono de la apertura cortado por él (radio
-`(f / N / 2) |1 − d / s|`); la parte de ese disco bajo las gotas toma la imagen
-desenfocada (atenuada por las dos caras del agua), la parte bajo su borde (donde
-un rayo a lo largo del eje vuelve por reflexión total, desde `1 / (n sin θ)` del
-radio) es oscura, y la parte bajo el polvo, por su opacidad, la oscurece: las
-gotas son discos suaves de borde oscuro y el polvo un tinte o unas motas. La
-escena del revés dentro de cada gota no se dibuja. El medidor dice que es una
-aproximación de las N gotas y M motas del motor.
+**The glass in Fast (S3b).** Fast mode draws an approximation of the
+glass with the drops and motes that the engine places (by hand, `rt_scene_glass`;
+from the scene, the recorded frame): each point of the image gathers the light from
+a disc of the glass, the aperture cone cut by it (radius
+`(f / N / 2) |1 − d / s|`); the part of that disc under the drops takes the
+blurred image (attenuated by the two faces of the water), the part under their edge (where
+a ray along the axis returns by total reflection, from `1 / (n sin θ)` of the
+radius) is dark, and the part under the dust, by its opacity, darkens it: drops
+are soft discs with a dark edge and dust a tint or some motes. The
+scene upside down inside each drop is not drawn. The meter says it is an
+approximation of the engine's N drops and M motes.
 
-**Lente trazada (O2).** `CameraOptics.traced` (opcional; sin él o `null`,
-la lente simple, y los proyectos anteriores no cambian ni un byte): una
-lente del catálogo `src/data/lenses.json` (16 prescripciones de patentes
-caducadas y libros, nombres genéricos, claves estables) que el motor traza
-superficie a superficie. El proyecto guarda la **clave** y lo que la
-persona cambió, nunca una copia de las superficies: el **tratamiento** de
-las superficies aire–vidrio (`null`: el de la lente; sin tratar, monocapa,
-multicapa), el **hueco variable** de la lente blanda (`null`: el del
-diseño), el **objetivo detrás** de un adaptador (`null`: la doble Gauss
-normal) y cuatro ajustes **no físicos** (distorsión −1 barril … 1 cojín,
-viñeteo 0 … 1, carácter de la esférica −1 subcorregida … 1
-sobrecorregida, respiración −1 nada … 1 el doble). La lente se escala a la
-focal de la cámara y se enfoca a su distancia de enfoque; el f/ de la
-cámara nunca es más abierto que el de la lente. Con ella, el iris
-(láminas, redondez, giro, obstrucción) va en el diafragma de la lente y
-la aberración cromática y el remolino de la óptica son sus ajustes no
-físicos; el perfil de la pupila, el ojo de gato y la compresión anamórfica
-de la lente simple no se aplican (la lente hace su propia pupila, su ojo de
-gato y sus flecos), y desde O4 la inclinación es la suya (`tracedTiltDeg`,
-arriba); el descentramiento sí. Un adaptador anamórfico desestira la imagen por la
-compresión que traza a ese foco. Lo que la interfaz enseña de la lente lo
-calcula el motor (regla 10): focal a infinito y al foco, tiraje, f/ en uso
-y T-stop, elementos y grupos, longitud, pupila de entrada, la compresión
-de un anamórfico, la distorsión y la luz hacia la esquina, y el corte. El
-modo Rápido aplica la distorsión y el viñeteo del motor como aproximación
-y el medidor lo dice; Completo y el render trazan la lente. Lo que se dibuja
-encima (el contorno de la selección, el *gizmo*, los glifos) sigue esa
-misma distorsión, y un clic (enfocar con clic, seleccionar, la caja, el
-*gizmo*) cae en lo que está bajo el cursor: el mismo mapa al revés. Cambiar de
-lente no toca la resolución de salida.
+**Traced lens (O2).** `CameraOptics.traced` (optional; without it or `null`,
+the simple lens, and earlier projects do not change by a byte): a
+lens from the `src/data/lenses.json` catalogue (16 prescriptions from expired
+patents and books, generic names, stable keys) that the engine traces
+surface by surface. The project stores the **key** and what the
+person changed, never a copy of the surfaces: the **coating** of
+the air–glass surfaces (`null`: the lens's own; uncoated, single layer,
+multilayer), the soft lens's **variable gap** (`null`: the
+design's), the **lens behind** an adapter (`null`: the normal
+double Gauss) and four **non-physical** adjustments (distortion −1 barrel … 1 pincushion,
+vignetting 0 … 1, spherical character −1 undercorrected … 1
+overcorrected, breathing −1 none … 1 double). The lens is scaled to the
+camera's focal length and focused at its focus distance; the camera's f/
+is never wider than the lens's. With it, the iris
+(blades, roundness, rotation, obstruction) goes in the lens's diaphragm and
+the optics' chromatic aberration and swirl are its non-physical
+adjustments; the simple lens's pupil profile, cat's eye and anamorphic squeeze
+do not apply (the lens makes its own pupil, its own cat's eye and its own
+fringes), and since O4 the tilt is its own (`tracedTiltDeg`,
+above); the shift does. An anamorphic adapter desqueezes the image by the
+squeeze it traces at that focus. What the interface shows of the lens is
+computed by the engine (rule 10): focal length at infinity and at the focus, back focus, f/ in use
+and T-stop, elements and groups, length, entrance pupil, the squeeze
+of an anamorphic, the distortion and the light towards the corner, and the section. Fast
+mode applies the engine's distortion and vignetting as an approximation
+and the meter says so; Full and the render trace the lens. What is drawn
+on top (the selection outline, the *gizmo*, the glyphs) follows that
+same distortion, and a click (click to focus, select, the box, the
+*gizmo*) lands on what is under the cursor: the same map in reverse. Changing
+lens does not touch the output resolution.
 
-**Lente editada (O2c).** Los **elementos** de una lente trazada se editan en
-el editor de lente (`UI.md` §2.11): sus radios, su grosor, su vidrio, su
-apertura libre (el tamaño) y el aire hasta el siguiente; se añade un
-elemento donde se elige, se borra uno y se gira uno 180° (sus radios se
-intercambian y cambian de signo; un grupo cementado gira entero). La lente
-del catálogo no se toca: `TracedLens.edited` (opcional; sin él, la lente del
-catálogo, y los proyectos anteriores no cambian ni un byte) guarda la
-**prescripción editada** —las superficies a la escala del diseño, con las
-mismas convenciones que `lenses.json` (radio, distancia al siguiente,
-vidrio por `nd` y `vd`, semiapertura o `null` para la del motor, el
-diafragma por su papel), su **nombre** y su **enfoque** (el de la lente con
-sus huecos móviles seguidos a través de las ediciones; si una edición quita
-uno, la lente enfoca moviéndose entera)— y la `key` sigue nombrando la lente
-de la que salió (su diafragma y su fuente). El motor la escala a la focal de
-la cámara como a una del catálogo. Se editan las lentes que solo refractan:
-el adaptador anamórfico (cilindros) y la de espejo no. Mientras se edita, la
-copia es `CameraState.lensDraft` (opcional): cada edición es una entrada de
-deshacer y la lente de la cámara no cambia hasta que se **aplica**, y solo se
-aplica una lente que el motor ha comprobado: con hueco de aire negativo, un
-vidrio sin grosor, superficies que se cruzan o elementos que chocan dentro de
-las aperturas dadas, una apertura más ancha que su esfera, sin imagen real,
-sin luz por el eje o con la imagen dentro de la lente, el editor dice por qué
-y la lente se puede seguir editando. Un archivo con unos `edited` que no se
-leen abre la lente del catálogo; una copia que no se lee se descarta. La
-lista de vidrios son los de las prescripciones del catálogo (índice y número
-de Abbe en la línea d), sin nombres de fabricante. Lo que la interfaz enseña
-de la lente editada es del motor (regla 10), y además la **focal del
-diseño** (`designEflMm`: la de la prescripción tal como está escrita, antes
-de escalarla) y el círculo de imagen que sale de su luz hacia la esquina.
+**Edited lens (O2c).** The **elements** of a traced lens are edited in
+the lens editor (`UI.md` §2.11): their radii, their thickness, their glass, their clear
+aperture (the size) and the air up to the next one; an element is added
+where chosen, one is deleted and one is flipped 180° (its radii are
+swapped and change sign; a cemented group turns whole). The catalogue lens
+is not touched: `TracedLens.edited` (optional; without it, the catalogue
+lens, and earlier projects do not change by a byte) stores the
+**edited prescription** —the surfaces at the design's scale, with the
+same conventions as `lenses.json` (radius, distance to the next one,
+glass by `nd` and `vd`, semi-aperture or `null` for the engine's, the
+diaphragm by its role), its **name** and its **focus** (that of the lens with
+its moving gaps tracked through the edits; if an edit removes
+one, the lens focuses by moving as a whole)— and the `key` still names the lens
+it came from (its diaphragm and its source). The engine scales it to the
+camera's focal length like a catalogue one. Lenses that only refract are edited:
+the anamorphic adapter (cylinders) and the mirror one are not. While being edited, the
+copy is `CameraState.lensDraft` (optional): each edit is an undo
+entry and the camera's lens does not change until it is **applied**, and only
+a lens that the engine has checked is applied: with a negative air gap, a
+glass without thickness, surfaces that cross or elements that collide within
+the given apertures, an aperture wider than its sphere, without a real image,
+without light along the axis or with the image inside the lens, the editor says why
+and the lens can still be edited. A file with `edited` data that cannot
+be read opens the catalogue lens; a copy that cannot be read is discarded. The
+list of glasses is those of the catalogue prescriptions (index and Abbe
+number at the d line), without manufacturer names. What the interface shows
+of the edited lens is the engine's (rule 10), plus the **design
+focal length** (`designEflMm`: that of the prescription as written, before
+scaling it) and the image circle that comes out of its light towards the corner.
 
-**Cámara de interiores (K3).** `CameraState.projection` es
-`PERSPECTIVE`, `ORTHOGRAPHIC`, `EQUIRECTANGULAR` (panorámica 2:1, 360° ×
-180° sobre la imagen entera) o `FISHEYE` (equidistante, `fisheyeFovDeg`
-de 60° a 360° sobre la diagonal de la imagen, 180° por defecto); un
-proyecto con una clave desconocida abre en perspectiva. Las dos
-panorámicas parten de la posición de la cámara y de su marco
-(acimut y elevación): el centro de la imagen mira al objetivo y la vista
-previa las dibuja desde las seis caras de un cubo con el mismo mapa que
-el motor. **Vistas** nuevas: *Alzado* (ortográfica a 0° de elevación) y
-*Planta* (ortográfica desde arriba, 89,9°). **Verticales rectas**
-(`straightVerticals`, apagable): se renderiza la cámara nivelada en la
-misma posición y el mismo acimut, con el *shift* vertical que deja el
-objetivo donde estaba (−f · tan inclinación, sumado al *shift* de la
-óptica de O1), hasta 30° de inclinación; más allá de 30° la parte de
-más se queda como inclinación (`VERTICALS_MAX_TILT_DEG`). En una
-ortográfica no hace falta y en un *fisheye* las verticales son curvas: no
-se aplica; una equirectangular se renderiza nivelada, sin *shift*.
-**Altura de ojo** (`camera/eyeHeight`): sube o baja la cámara hasta esa
-altura sobre el suelo (Z del mundo) y la deja mirando al mismo objetivo;
-presets *De pie* 1,5 m y *Sentado*
-1,1 m. **Ópticas de interior** (`camera/interiorLens`): 24, 28 y 35 mm
-(`src/data/interior-camera.ts`). Una cámara bloqueada no se mueve con
-ninguna de las dos acciones. Una pieza con **Visible a cámara**
-apagado (`SceneNode.cameraHidden`, heredado por los hijos) no la ve la
-cámara (ni los pases, ni las tapas de sección, ni el picado) pero sigue
-dando sombra, rebotes y reflejos: la planta sin techo y con la luz del
-techo.
+**Interiors camera (K3).** `CameraState.projection` is
+`PERSPECTIVE`, `ORTHOGRAPHIC`, `EQUIRECTANGULAR` (2:1 panorama, 360° ×
+180° over the whole image) or `FISHEYE` (equidistant, `fisheyeFovDeg`
+from 60° to 360° over the image diagonal, 180° by default); a
+project with an unknown key opens in perspective. Both
+panoramas start from the camera's position and its frame
+(azimuth and elevation): the centre of the image looks at the target and the preview
+draws them from the six faces of a cube with the same map as
+the engine. New **views**: *Elevation* (orthographic at 0° elevation) and
+*Plan* (orthographic from above, 89.9°). **Straight verticals**
+(`straightVerticals`, can be turned off): the levelled camera is rendered at the
+same position and the same azimuth, with the vertical *shift* that leaves the
+target where it was (−f · tan tilt, added to the
+*shift* of the O1 optics), up to 30° of tilt; beyond 30° the excess
+stays as tilt (`VERTICALS_MAX_TILT_DEG`). On an
+orthographic camera it is not needed and in a *fisheye* the verticals are curved: it
+does not apply; an equirectangular is rendered levelled, without *shift*.
+**Eye height** (`camera/eyeHeight`): raises or lowers the camera to that
+height above the floor (world Z) and leaves it looking at the same target;
+presets *Standing* 1.5 m and *Seated*
+1.1 m. **Interior lenses** (`camera/interiorLens`): 24, 28 and 35 mm
+(`src/data/interior-camera.ts`). A locked camera does not move with
+either of the two actions. A part with **Visible to camera**
+off (`SceneNode.cameraHidden`, inherited by children) is not seen by the
+camera (nor by the passes, nor by the section caps, nor by picking) but still
+gives shadow, bounces and reflections: the plan without a ceiling and with the
+ceiling light.
 
-### 3.6 · Imagen
+### 3.6 · Image
 
-Exposición en EV, transformada de vista (`STANDARD`, `FILMIC`, `AGX`),
-halo (umbral, tamaño, mezcla), nitidez, saturación, contraste, viñeta.
-Se aplican en este orden fijo sobre la imagen lineal: halo → nitidez →
-color → viñeta → transformada. Con todo a cero, la imagen no cambia.
+Exposure in EV, view transform (`STANDARD`, `FILMIC`, `AGX`),
+glow (threshold, size, mix), sharpening, saturation, contrast, vignette.
+They are applied in this fixed order on the linear image: glow → sharpening →
+colour → vignette → transform. With everything at zero, the image does not change.
 
-**Exposición como pase (K3).** `image.exposureMode` es `MANUAL` (el de
-siempre, la exposición son `exposureEv` paradas) o `AUTO`: el pase de
-exposición mide la imagen lineal en la página (`core/image-passes.ts`,
-determinista: luminancia en `f32`, logaritmo en base 2, se descarta el
-10 % más oscuro y el 5 % más claro, la media se lleva al gris del 18 %,
-±16 paradas, redondeada a la centésima) y `exposureEv` es entonces la
-compensación *Brillo (EV)* sobre lo medido. La medida se rehace cuando
-las muestras se duplican y, en un render final, sobre las sumas antes del
-*denoise*. Los **presets** *Día luminoso* (EV₁₀₀ 7) y *Tarde de lámparas*
-(EV₁₀₀ 5) ponen la exposición a mano: `exposureEv = log2(683 / 1,2) − EV₁₀₀`.
-El **multiplicador de exterior** (`environment.exterior`, 0,05 … 1, 1 por
-defecto y sin escribir) multiplica el entorno que ve el rayo de cámara
-(también a través de vidrio fino y de recortes) y el fondo del
-atrapasombras, y no la luz que ese entorno da a la habitación. Los pases
-que aplica la página son `exposure` y `curve` (la transformada); el resto
-sigue igual.
+**Exposure as a pass (K3).** `image.exposureMode` is `MANUAL` (the usual,
+the exposure is `exposureEv` stops) or `AUTO`: the exposure pass
+measures the linear image on the page (`core/image-passes.ts`,
+deterministic: luminance in `f32`, base-2 logarithm, the darkest
+10 % and the lightest 5 % are discarded, the mean is brought to the 18 % grey,
+±16 stops, rounded to the hundredth) and `exposureEv` is then the
+*Brightness (EV)* compensation on top of what was measured. The measurement is redone when
+the samples double and, in a final render, on the sums before the
+*denoise*. The *Bright day* (EV₁₀₀ 7) and *Evening lamps*
+(EV₁₀₀ 5) **presets** set the exposure by hand: `exposureEv = log2(683 / 1.2) − EV₁₀₀`.
+The **exterior multiplier** (`environment.exterior`, 0.05 … 1, 1 by
+default and not written) multiplies the environment that the camera ray sees
+(also through thin glass and cutouts) and the shadow catcher's background, and not the light
+that environment gives the room. The passes
+that the page applies are `exposure` and `curve` (the transform); the rest
+stays the same.
 
-### 3.7 · Animación, al estilo KeyShot
+### 3.7 · Animation, KeyShot style
 
-El modelo sigue el de KeyShot, visto desde fuera: **no hay fotogramas
-clave que editar a mano**; cada animación es una **barra** con un
-objetivo, un tipo, unos parámetros, un inicio, una duración y una curva
-de tiempo, y todas conviven en **una sola línea de tiempo** con una pista
-por objetivo. Lo que en la primera versión eran "planos" es la **pista
-de cámara**: cada tramo dice qué cámara está activa (un *cambio de
-cámara* es un evento más de la pista).
+The model follows KeyShot's, seen from the outside: **there are no keyframes
+to edit by hand**; each animation is a **bar** with a
+target, a type, parameters, a start, a duration and a time
+curve, and all of them live together in **a single timeline** with one track
+per target. What in the first version were "shots" is the **camera
+track**: each segment says which camera is active (a *camera
+cut* is one more event of the track).
 
-**Tipos de animación** (`MOVE_KINDS`; las claves existentes se mantienen
-y se añaden las que faltan), agrupados como los agrupa el asistente:
+**Animation types** (`MOVE_KINDS`; existing keys are kept
+and the missing ones are added), grouped as the wizard groups them:
 
-| Grupo | Tipo | Qué hace |
+| Group | Type | What it does |
 | --- | --- | --- |
-| Piezas | **Plato giratorio** (`SPIN` sobre el modelo) | El modelo entero gira sobre su eje vertical |
-| | **Rotación** (`SPIN`, `TUMBLE` y eje libre) | Una pieza o grupo gira sobre un eje alrededor de un **pivote** (N1, `MotionClip.pivot`): su propio origen (sin pivote, como antes), el **centro de otra pieza** o grupo (una tapa sobre su bisagra) o **un punto** en mm. El eje es el propio del objetivo: Z en el giro (`SPIN`), X en el vuelco (`TUMBLE`); el eje libre (cualquier dirección) es de una fase posterior. Con pivote, el objetivo recorre un arco a distancia constante de él |
-| | **Traslación** (`MOVE`, `TRACK`) | Se desplaza una distancia en un eje, local o global |
-| | **Escala** (`SCALE`) | Cambia de tamaño por un factor |
-| | **Fundido** (`FADE`, N1) | La opacidad baja hasta la **opacidad final** (la cantidad, 0–100 %; por defecto 0 %, desaparece); **invertido**, aparece desde ella. Los fundidos de un nodo y de sus grupos se multiplican; en el motor, una pieza que se funde es un recorte estocástico de esa cobertura (con su sombra), un emisor baja su emisión, y a 0 % la pieza no está |
-| | **Despiece** (`EXPLODE`) | Las piezas del modelo o de un grupo se separan: lineal, radial, esférico o por niveles, con excepciones (ver abajo) |
-| | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
-| | **Simulación** (`PHYSICS`, S2) | La caída grabada de una simulación (§3.1, *Físicas*); no se crea desde el asistente: la crea cada simulación |
-| Cámara | **Órbita** (`ORBIT`) | Gira alrededor del objetivo, grados |
-| | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
-| | **Zoom** (`ZOOM`) | Cambia la focal, mm |
-| | **Travelling** (`DOLLY`) | Se acerca o aleja, % de la distancia |
-| | **Panorámica** (`PAN`, N1) | Gira sobre sí misma, sin moverse, grados (positivo: hacia su derecha): su objetivo da la vuelta alrededor de su posición. El *barrido rápido* de la biblioteca de movimientos (`camera-moves.json`, A6) sigue siendo una órbita rápida con curva fuerte alrededor del producto; una variante con `PAN` junto a él queda pendiente |
-| | **Enfoque** (`FOCUS`) | Cambia la distancia de enfoque |
-| | **Cambio de cámara** (evento de la pista de cámara) | Pasa a otra cámara en ese instante, con corte o fundido |
-| | **Recorrido** (`PATH`, reservado en N1) | Sigue una curva por puntos. La clave está en el catálogo; nada lo crea ni lo reproduce todavía, y el asistente no lo ofrece |
-| | **Paseo** (`WALK`) | La cámara camina por una trayectoria a altura de ojos, con o sin simulación de pasos (ver abajo) |
-| Luz y entorno | **Barrido de luz** (`HDRI`) | Gira el entorno |
-| | **Intensidad** (`INTENSITY`), **Color** (`TINT`) | De un foco |
-| | **Arco solar** (`SUN_ARC`, N1, con el cielo de E5) | El sol recorre su arco del día: gira alrededor del **polo celeste** (hacia el oeste, 15° por hora; la cantidad son grados de ese giro), así que conserva su ángulo al polo y 360° es un día entero. Mueve el primer foco solar del montaje que alumbra; sin él, el sol propio del cielo. El polo está detrás del producto, a 45° de altura (`SUN_POLE_AZ`, `SUN_LATITUDE`), en el marco de los focos (relativo a la cámara) |
-| | **Sección** (`SECTION`, Q1, sobre la escena como `HDRI`) | El plano de la vista en sección se desplaza a lo largo de su normal, en tamaños de pieza: cantidad negativa, corta más adentro (por defecto −0,5); positiva, descubre. Suma con otros clips `SECTION` y se parte sin salto; no hace nada sin plano o con el plano apagado |
-| Materiales | **Color de material** (`MATERIAL_COLOR`, N1), **Fundido de material** (`FADE` sobre el material) | Sobre un **material** (objetivo `MATERIAL`) y con él todas las piezas que lo llevan: su color base pasa al del clip (`color`, desde el que dejaron los clips anteriores) o su opacidad baja como en un fundido. Un material de nodos (M3a) se funde pero no cambia de color (su aspecto sale de su grafo) |
+| Parts | **Turntable** (`SPIN` on the model) | The whole model turns about its vertical axis |
+| | **Rotation** (`SPIN`, `TUMBLE` and free axis) | A part or group turns about an axis around a **pivot** (N1, `MotionClip.pivot`): its own origin (without a pivot, as before), the **centre of another part** or group (a lid on its hinge) or **a point** in mm. The axis is the target's own: Z in the spin (`SPIN`), X in the tumble (`TUMBLE`); the free axis (any direction) belongs to a later phase. With a pivot, the target describes an arc at constant distance from it |
+| | **Translation** (`MOVE`, `TRACK`) | Moves a distance along an axis, local or global |
+| | **Scale** (`SCALE`) | Changes size by a factor |
+| | **Fade** (`FADE`, N1) | Opacity drops to the **final opacity** (the amount, 0–100 %; 0 % by default, it disappears); **inverted**, it appears from it. The fades of a node and of its groups are multiplied; in the engine, a part that fades is a stochastic cutout of that coverage (with its shadow), an emitter lowers its emission, and at 0 % the part is not there |
+| | **Explode** (`EXPLODE`) | The parts of the model or of a group separate: linear, radial, spherical or by levels, with exceptions (see below) |
+| | **Visibility** (`VISIBILITY`) | Appears or disappears |
+| | **Simulation** (`PHYSICS`, S2) | The recorded fall of a simulation (§3.1, *Physics*); it is not created from the wizard: each simulation creates it |
+| Camera | **Orbit** (`ORBIT`) | Turns around the target, degrees |
+| | **Rise** (`RISE`) | Goes up or down in an arc, degrees |
+| | **Zoom** (`ZOOM`) | Changes the focal length, mm |
+| | **Push** (`DOLLY`) | Moves closer or away, % of the distance |
+| | **Pan** (`PAN`, N1) | Turns on itself, without moving, degrees (positive: to its right): its target goes around its position. The library's *whip pan* (`camera-moves.json`, A6) is still a fast orbit with a strong curve around the product; a variant with `PAN` next to it is pending |
+| | **Focus** (`FOCUS`) | Changes the focus distance |
+| | **Camera cut** (event of the camera track) | Switches to another camera at that instant, with a cut or a fade |
+| | **Path** (`PATH`, reserved in N1) | Follows a curve through points. The key is in the catalogue; nothing creates or plays it yet, and the wizard does not offer it |
+| | **Walk** (`WALK`) | The camera walks along a path at eye height, with or without footstep simulation (see below) |
+| Light and environment | **Light sweep** (`HDRI`) | Rotates the environment |
+| | **Intensity** (`INTENSITY`), **Colour** (`TINT`) | Of a light |
+| | **Sun arc** (`SUN_ARC`, N1, with the E5 sky) | The sun traces its arc of the day: it turns around the **celestial pole** (towards the west, 15° per hour; the amount is degrees of that turn), so it keeps its angle to the pole and 360° is a whole day. It moves the first sun light of the setup that is lit; without one, the sky's own sun. The pole is behind the product, at 45° height (`SUN_POLE_AZ`, `SUN_LATITUDE`), in the frame of the lights (relative to the camera) |
+| | **Section** (`SECTION`, Q1, on the scene like `HDRI`) | The section view's plane moves along its normal, in part sizes: a negative amount cuts deeper (default −0.5); a positive one uncovers. It adds up with other `SECTION` clips and is split without a jump; it does nothing without a plane or with the plane off |
+| Materials | **Material colour** (`MATERIAL_COLOR`, N1), **Material fade** (`FADE` on the material) | On a **material** (target `MATERIAL`) and with it all the parts that carry it: its base colour goes to the clip's (`color`, from the one the previous clips left) or its opacity drops as in a fade. A node material (M3a) fades but does not change colour (its look comes from its graph) |
 
-**Paseo (`WALK`)**, pensado para mobiliario e interiores: crea la
-trayectoria de la cámara por ti. La trayectoria se traza en el visor con
-la herramienta *Trazar paseo* (clic en el suelo para cada punto, `⏎`
-para terminar; los puntos se arrastran después) o se genera con un clic:
-*Paseo alrededor de la selección* (un arco a altura de ojos que rodea la
-pieza a la distancia de encuadre) y, con la habitación de K2, *Recorrido
-de la sala* (entra por la puerta y recorre el espacio libre). La curva es
-suave (Catmull–Rom centrípeta) y se recorre a **velocidad constante**
-(1,2 m/s por defecto, editable), con arranque y parada suaves. Parámetros:
-**altura de ojos** (1,5 m de pie, 1,1 m sentado, o libre), **mirada**
-(*hacia delante*, *hacia un objetivo* —una pieza o un punto—, o *por
-puntos*, con giro suavizado), y el interruptor **Simular pasos**: añade
-el movimiento de una persona que camina —cadencia (1,8 pasos/s), balanceo
-vertical (2,5 cm), balanceo lateral (1 cm), leve inclinación (0,5°)—
-sincronizado con la distancia recorrida, que se apaga al pararse. Sin
-simulación, la cámara se desliza como en un *travelling* de cine. Todo es
-una función determinista del tiempo, como el resto de animaciones.
+**Walk (`WALK`)**, designed for furniture and interiors: it creates the
+camera path for you. The path is traced in the viewport with
+the *Draw walk* tool (click on the floor for each point, `⏎`
+to finish; the points are dragged afterwards) or generated with a click:
+*Walk around the selection* (an arc at eye height that circles the
+part at the framing distance) and, with the K2 room, *Room
+tour* (enters through the door and covers the free space). The curve is
+smooth (centripetal Catmull–Rom) and is travelled at **constant speed**
+(1.2 m/s by default, editable), with soft start and stop. Parameters:
+**eye height** (1.5 m standing, 1.1 m seated, or free), **gaze**
+(*forward*, *towards a target* —a part or a point—, or *by
+points*, with smoothed rotation), and the **Simulate steps** switch: it adds
+the movement of a person walking —cadence (1.8 steps/s), vertical
+sway (2.5 cm), lateral sway (1 cm), slight tilt (0.5°)—
+synchronized with the distance travelled, which switches off when stopping. Without
+simulation, the camera glides as in a cinema *dolly*. Everything is
+a deterministic function of time, like the rest of the animations.
 
-**Despiece (`EXPLODE`)**, configurable (N6). Las herramientas CAD con
-vista explosionada coinciden en tres geometrías y en el orden por
-jerarquía (documentación pública de Onshape, Fusion 360, SolidWorks
-Composer e Inventor; observación de caja negra, ningún código); el
-despiece las toma así (`src/core/explode.ts`, claves de `EXPLODE_MODES`):
+**Explode (`EXPLODE`)**, configurable (N6). CAD tools
+with an exploded view agree on three geometries and on hierarchical order
+(public documentation of Onshape, Fusion 360, SolidWorks
+Composer and Inventor; black-box observation, no code); the explode
+takes them as follows (`src/core/explode.ts`, keys of `EXPLODE_MODES`):
 
-| Geometría | Clave | Qué hace |
+| Geometry | Key | What it does |
 | --- | --- | --- |
-| **Lineal** | `LINEAR` | A lo largo de un eje (Z vertical, X o Y horizontal, o una dirección propia). *Separar*: cada pieza se aleja del plano central por su lado. *Apilar*: todas en el mismo sentido, repartidas en su orden a lo largo del eje; la primera se queda y la última recorre toda la distancia (el despiece clásico de un envase: cuerpo, rosca, tapón) |
-| **Radial** | `CYLINDRICAL` | Alejándose de un **eje** que pasa por el centro, en perpendicular a él; lo que está en el eje no se mueve |
-| **Esférica** | `SPHERICAL` (y su sinónimo `RADIAL`) | Alejándose de un **punto**, el centro, en todas direcciones |
+| **Linear** | `LINEAR` | Along an axis (vertical Z, horizontal X or Y, or a custom direction). *Separate*: each part moves away from the central plane on its own side. *Stack*: all in the same direction, spread in their order along the axis; the first stays and the last travels the whole distance (the classic explode of a container: body, thread, cap) |
+| **Radial** | `CYLINDRICAL` | Moving away from an **axis** that passes through the centre, perpendicular to it; what is on the axis does not move |
+| **Spherical** | `SPHERICAL` (and its synonym `RADIAL`) | Moving away from a **point**, the centre, in all directions |
 
-y, combinable con cualquiera de las tres, la **jerarquía**: *piezas*
-(cada pieza por su cuenta), *un nivel* (los hijos del objetivo como
-bloques: un grupo se mueve entero) o *todos los niveles* (primero los
-bloques y luego, por etapas, las piezas dentro de cada grupo, que se
-separan del centro de su grupo y en proporción a su tamaño).
+and, combinable with any of the three, the **hierarchy**: *parts*
+(each part on its own), *one level* (the target's children as
+blocks: a group moves whole) or *all levels* (first the
+blocks and then, in stages, the parts inside each group, which
+separate from their group's centre and in proportion to their size).
 
-Parámetros (`MotionClip.explode`): **distancia** (la cantidad de la
-animación: × tamaño del modelo o mm), **reparto** (*igual*: cada pieza
-recorre la distancia; *por distancia*: cuanto más lejos del centro más se
-aleja, y la más lejana recorre la distancia), **proporcional al tamaño de
-la pieza** (la mayor recorre toda la distancia, las demás en proporción),
-**centro** (el del conjunto, una pieza elegida, el pivote del objetivo o
-un punto propio), **eje o dirección**, **orden** (*a la vez*,
-*escalonado por distancia* —la más lejana primero— o *por profundidad*
-—lo que cuelga del modelo antes que lo que está dentro de grupos—, con un
-**solape** de 0 % —una tras otra— a 100 % —a la vez—, que también encadena
-las etapas de *todos los niveles*), **velocidad** (la duración),
-**suavidad** (un solo mando de 0 % a 100 % que va de *lineal* a *suave* y
-a *muy suave* de `EASING_KINDS`, mezclándolas en medio, y escribe en la
-curva la más cercana), **excepciones** (piezas fijas; se llenan desde la
-selección o con *Fijar en el despiece* del menú contextual; fijar un grupo
-fija sus piezas), **conservar la orientación** (apagado, cada pieza se
-inclina un poco —hasta 20°— al alejarse), **invertir** (montaje: empieza
-separado y acaba montado) y el **objetivo**, el modelo entero o un grupo.
-Las piezas de un set (L6) no se despiezan nunca.
+Parameters (`MotionClip.explode`): **distance** (the animation's
+amount: × model size or mm), **spread** (*equal*: each part
+travels the distance; *by distance*: the farther from the centre the more it
+moves away, and the farthest travels the distance), **proportional to the part's
+size** (the largest travels the whole distance, the others in proportion),
+**centre** (the assembly's, a chosen part, the target's pivot or
+a custom point), **axis or direction**, **order** (*all at once*,
+*staggered by distance* —the farthest first— or *by depth*
+—what hangs from the model before what is inside groups—, with an
+**overlap** from 0 % —one after another— to 100 % —at once—, which also chains
+the stages of *all levels*), **speed** (the duration),
+**smoothness** (a single control from 0 % to 100 % that goes from *linear* to *smooth*
+and to *very smooth* of `EASING_KINDS`, blending them in between, and writes the nearest
+into the curve), **exceptions** (pinned parts; they are filled from the
+selection or with *Pin in the exploded view* in the context menu; pinning a group
+pins its parts), **keep orientation** (off, each part
+tilts a little —up to 20°— as it moves away), **invert** (assembly: starts
+separated and ends assembled) and the **target**, the whole model or a group.
+The parts of a set (L6) are never exploded.
 
-Las claves de antes siguen valiendo: `RADIAL` es la **esférica** (lo que
-siempre significó: «cada pieza sale hacia fuera desde el centro»),
-`AXIS_X/Y/Z` son lineal *separar* en ese eje y `CUSTOM` (una dirección
-por pieza, no construida) se lee como la esférica. Un despiece sin
-parámetros —todos los guardados antes de N6— es el de entonces: esférico,
-cada pieza la misma distancia, desde el centro del modelo, a la vez; se
-lee exactamente igual (`tests/fixtures/explode-legacy.json`). La radial
-nueva usa la clave `CYLINDRICAL`, que ya estaba en el catálogo con ese
-sentido («salen en abanico sin subir ni bajar»).
-**Simulación (`PHYSICS`, fase S2).** **Toda simulación se graba sola**:
-al empezar, cada cuerpo que cae recibe un clip `PHYSICS` sobre su nodo,
-que empieza en el cabezal (redondeado a un fotograma) y crece mientras
-corre; se queda donde la simulación se para y *Reiniciar* lo quita
-(deshacible). No hay un paso aparte de grabar: la foto fija usa el
-fotograma del cabezal y la animación ya tiene la simulación. El clip lleva
-una **pista horneada** (`track`: fps del proyecto, número de fotogramas y,
-por fotograma, la posición local en mm y la rotación como cuaternión,
-`f32` *little endian* en base64, 7 números por fotograma) y un **ancla**
-(`anchor`: la posición y la rotación del nodo a las que la pista se
-refiere; al confirmar, donde la simulación lo dejó). Al reproducir, la
-posición se interpola linealmente entre fotogramas y la rotación por el
-arco corto; antes de su inicio el nodo tiene el primer fotograma y
-después el último. Si el nodo se mueve o gira después, la caída entera va
-con él (la pista por el cambio desde el ancla); su escala es la suya.
-Estirar la barra la ralentiza; se repite y se invierte con el mismo
-tiempo que cualquier otra (invertida, la caída va hacia atrás: las piezas
-suben desde el reposo); no tiene cantidad ni curva de tiempo, no se parte
-y *Animar…* no la ofrece. Las demás animaciones del mismo nodo se suman
-encima. Con el cabezal en 0, sin reproducir y sin clips invertidos, la
-escena se enseña como se edita (N1, N6), **salvo los nodos
-que una simulación grabada sostiene**, que enseñan su fotograma también
-ahí (una caída desde 0 empieza en 0, y la pose editada ya es la final);
-mientras un nodo está así, el *gizmo* no aparece sobre él.
-**El cristal frontal (S3b).** Una simulación que lleva el cristal frontal de
-la cámara activa alimentado por la escena le da un clip `PHYSICS` a la
-**cámara** (`target` *Cámara*, todos los planos), en la misma entrada de
-deshacer: no mueve la cámara, dice qué fotograma de su cristal se ve en cada
-instante (el más cercano; las gotas no se interpolan), también en 0 sin
-reproducir. Lleva la **pista del cristal** (`glass`: la cámara, los fps y los
-fotogramas, la **clave** de la simulación —el FNV-1a de sus bytes `WET1` y la
-versión del formato—, el ángulo de contacto con que se dibujan sus gotas, las
-gotas de cada fotograma y cada mota con el fotograma en que llegó y en el que
-se fue, `f32` y `u32` *little endian* en base64): es la caché que se guarda con
-el proyecto. Una simulación con la misma clave da los mismos fotogramas, bit a
-bit; el inspector avisa cuando la escena ya no da la clave grabada. Una pista
-que no se lee se quita al abrir, como la de un nodo.
-**Las piezas (S3c).** Una simulación con algún efecto sobre las piezas da un
-clip `PHYSICS` a la **escena** (`target` *Escena*), en la misma entrada de
-deshacer: no mueve nada, dice qué fotograma enseñan las piezas (el más cercano),
-también en 0 sin reproducir. Lleva la **pista de las piezas** (`parts`: los fps
-y los fotogramas, la **clave** —el FNV-1a de sus bytes `WPT1` y la versión del
-formato—, cada pieza con su malla, sus triángulos, sus muestras, el ángulo de
-sus gotas y su porosidad, la disposición de las muestras que dio el motor, cada
-gota con los fotogramas en que fue como era, el fotograma en que se mojó cada
-muestra y en los que la lluvia la limpió, las gotas y goteos de cada
-fotograma y, desde S3d, las gotas en el aire de cada fotograma —la pieza de la
-que salió cada una, su centro y su radio—, en base64; la versión 2 del formato,
-y una pista de S3c, sin ellas, se sigue leyendo): la caché. Una pieza cuya malla ya no es la grabada se
-queda seca. Una pista que no se lee se quita al abrir.
+The earlier keys remain valid: `RADIAL` is the **spherical** (what it
+always meant: “each part goes outwards from the centre”),
+`AXIS_X/Y/Z` are linear *separate* on that axis and `CUSTOM` (one direction
+per part, not built) is read as the spherical. An explode without
+parameters —all those saved before N6— is the one from then: spherical,
+each part the same distance, from the model's centre, all at once; it is
+read exactly the same (`tests/fixtures/explode-legacy.json`). The new radial
+uses the key `CYLINDRICAL`, which was already in the catalogue with that
+meaning (“they fan out without going up or down”).
+**Simulation (`PHYSICS`, phase S2).** **Every simulation records itself**:
+at the start, each falling body receives a `PHYSICS` clip on its node,
+which starts at the playhead (rounded to a frame) and grows while
+it runs; it stays where the simulation stops and *Reset* removes it
+(undoable). There is no separate record step: the still uses
+the playhead's frame and the animation already has the simulation. The clip carries a
+**baked track** (`track`: the project's fps, number of frames and,
+per frame, the local position in mm and the rotation as a quaternion,
+`f32` *little endian* in base64, 7 numbers per frame) and an **anchor**
+(`anchor`: the position and rotation of the node that the track
+refers to; on confirming, where the simulation left it). On playback, the
+position is interpolated linearly between frames and the rotation along the
+short arc; before its start the node has the first frame and
+after it the last. If the node is moved or turned afterwards, the whole fall goes
+with it (the track by the change from the anchor); its scale is its own.
+Stretching the bar slows it down; it repeats and inverts with the same
+timing as any other (inverted, the fall goes backwards: the parts
+rise from rest); it has no amount or time curve, is not split
+and *Animate…* does not offer it. The other animations of the same node are added
+on top. With the playhead at 0, not playing and without inverted clips, the
+scene is shown as it is edited (N1, N6), **except the nodes
+that a recorded simulation holds**, which show their frame there
+too (a fall from 0 starts at 0, and the edited pose is already the final one);
+while a node is like this, the *gizmo* does not appear on it.
+**The front glass (S3b).** A simulation that carries the active camera's
+front glass fed by the scene gives a `PHYSICS` clip to the
+**camera** (`target` *Camera*, all shots), in the same undo
+entry: it does not move the camera, it says which frame of its glass is seen at each
+instant (the nearest; drops are not interpolated), also at 0 without
+playing. It carries the **glass track** (`glass`: the camera, the fps and the
+frames, the simulation's **key** —the FNV-1a of its `WET1` bytes and the
+format version—, the contact angle with which its drops are drawn, the
+drops of each frame and each mote with the frame it arrived in and the one it
+left in, `f32` and `u32` *little endian* in base64): it is the cache that is saved with
+the project. A simulation with the same key gives the same frames, bit for
+bit; the inspector warns when the scene no longer gives the recorded key. A track
+that cannot be read is removed on opening, like a node's.
+**The parts (S3c).** A simulation with some effect on the parts gives a
+`PHYSICS` clip to the **scene** (`target` *Scene*), in the same undo
+entry: it moves nothing, it says which frame the parts show (the nearest),
+also at 0 without playing. It carries the **parts track** (`parts`: the fps
+and the frames, the **key** —the FNV-1a of its `WPT1` bytes and the format
+version—, each part with its mesh, its triangles, its samples, the angle of
+its drops and its porosity, the layout of the samples that the engine gave, each
+drop with the frames in which it was as it was, the frame in which each
+sample got wet and those in which the rain cleaned it, the drops and drips of each
+frame and, since S3d, the drops in the air of each frame —the part each one
+came from, its centre and its radius—, in base64; version 2 of the format,
+and an S3c track, without them, is still read): the cache. A part whose mesh is no longer the recorded one
+stays dry. A track that cannot be read is removed on opening.
 
-**Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
-cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
-eje, pivote, local o global; los del despiece, arriba), inicio y duración
-en segundos, **curva de tiempo** (`EASING_KINDS`: lineal, suave, entrada,
-salida, fuerte, y **personalizada**, N1, `CUSTOM`: una Bézier cúbica de (0, 0)
-a (1, 1) con **dos asas** (`MotionClip.curve`, x1, y1, x2, y2; las x dentro de
-0..1, para que nunca vuelva atrás en el tiempo, y las y entre −0,25 y 1,25, un
-poco de rebote), resuelta por Newton con bisección cuando la curva se pone
-vertical (`core/curve.ts`); o la **suavidad**, un mando sobre las tres
-simétricas), **invertida** (sí/no:
-se reproduce al revés y, antes de empezar, guarda su estado final) y
-**repetir** (n veces seguidas: la barra dura n veces su duración). Su frase en lenguaje llano ("La cámara orbita 90°
-durante 4 s, suave") es su nombre por defecto y su representación en la
-interfaz; también aparece **bajo su objetivo en el árbol de la escena**,
-como hace KeyShot (N1: bajo su pieza o grupo, y las del modelo bajo el
-modelo; las de cámara, focos, entorno y materiales, solo en la línea de
-tiempo).
+**An animation** (`MotionClip`): name, target (part, group, model,
+camera, light, environment, material), type, type parameters (amount,
+axis, pivot, local or global; those of the explode, above), start and duration
+in seconds, **time curve** (`EASING_KINDS`: linear, smooth, ease in,
+ease out, strong, and **custom**, N1, `CUSTOM`: a cubic Bézier from (0, 0)
+to (1, 1) with **two handles** (`MotionClip.curve`, x1, y1, x2, y2; the x within
+0..1, so that it never goes back in time, and the y between −0.25 and 1.25, a
+little overshoot), solved by Newton with bisection when the curve goes
+vertical (`core/curve.ts`); or the **smoothness**, a control over the three
+symmetric ones), **inverted** (yes/no:
+it plays backwards and, before starting, holds its final state) and
+**repeat** (n times in a row: the bar lasts n times its duration). Its plain-language sentence (“The camera orbits 90°
+for 4 s, smooth”) is its default name and its representation in the
+interface; it also appears **under its target in the scene tree**,
+as KeyShot does (N1: under its part or group, and those of the model under the
+model; those of cameras, lights, environment and materials only in the
+timeline).
 
-**Evaluación**: `evaluate(state, t)` devuelve las transformaciones y
-parámetros en el instante `t` aplicando cada animación activa con su
-curva y componiendo por objetivo (las rotaciones se componen en el
-orden de inicio); es una función pura que la vista previa usa para
-reproducir y el motor para renderizar fotograma a fotograma. Dos
-animaciones del mismo tipo sobre el mismo objetivo y tiempo se suman si
-son traslaciones o rotaciones y se marcan en la interfaz si no pueden
-convivir; nunca se silencian.
+**Evaluation**: `evaluate(state, t)` returns the transforms and
+parameters at instant `t` by applying each active animation with its
+curve and composing per target (rotations are composed in
+start order); it is a pure function that the preview uses to
+play and the engine to render frame by frame. Two
+animations of the same type on the same target and time are added if
+they are translations or rotations and are marked in the interface if they cannot
+coexist; they are never silenced.
 
-**La línea de tiempo** (N6) tiene **tres zonas** para que quede claro
-**qué** se anima y **cómo**: a la izquierda el **árbol de lo animado**
-(una fila por objetivo —la pista de cámara primero, luego el modelo, sus
-grupos y piezas, los focos y el entorno— con sus animaciones anidadas,
-cada una con su icono y su frase corta); en el centro **cuándo** (la
-regla en segundos y fotogramas, el cabezal y una barra por animación,
-que se arrastra y se estira con **imán** a los bordes de las otras
-barras, al cabezal y a los segundos enteros); a la derecha **cómo** (las
-propiedades de la animación elegida bajo una cabecera de una línea:
-«Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»). Elegir una animación
-resalta su objetivo en el visor y dibuja su pista (el arco de la órbita,
-la flecha del desplazamiento, los vectores del despiece, el eje del
-giro); elegir una pieza en la escena marca las filas de lo que la mueve.
-El árbol y las barras no conocen los tipos: leen la frase y el objetivo,
-y un tipo nuevo (la simulación física que se graba en la línea de
-tiempo) se dibuja igual.
+**The timeline** (N6) has **three zones** so that it is clear
+**what** is animated and **how**: on the left the **tree of what is animated**
+(one row per target —the camera track first, then the model, its
+groups and parts, the lights and the environment— with its animations nested,
+each with its icon and short sentence); in the centre **when** (the
+ruler in seconds and frames, the playhead and one bar per animation,
+dragged and stretched with a **magnet** to the edges of the other
+bars, to the playhead and to whole seconds); on the right **how** (the
+properties of the chosen animation under a one-line header:
+“Cap · Spherical explode · 1.5 × size · 0–3 s”). Choosing an animation
+highlights its target in the viewport and draws its track (the orbit's arc,
+the translation's arrow, the explode's vectors, the spin's axis); choosing a part in the scene marks the rows of what moves it.
+The tree and the bars do not know the types: they read the sentence and the target,
+and a new type (the physics simulation recorded on the
+timeline) is drawn the same way.
 
-**Reproducción**: la línea de tiempo tiene cabezal, fps (24, 25, 30, 60),
-duración total (la del último evento), reproducir, pausar, ir al
-principio y al final, bucle, y **vista previa rápida** (la vista previa
-rasterizada) o **previa renderizada** (el motor a pocas muestras por
-fotograma, fase posterior).
+**Playback**: the timeline has a playhead, fps (24, 25, 30, 60),
+total duration (that of the last event), play, pause, go to the
+start and to the end, loop, and **quick preview** (the rasterized
+preview) or **rendered preview** (the engine at a few samples per
+frame, a later phase).
 
-**Fundidos** entre cámaras (N1): cada plano dice cómo se entra en él
-(`Shot.transition`): **corte** (sin campo, como todos los de antes) o
-**fundido a color**, negro o blanco, de una duración (0,04–10 s, 0,5 s por
-defecto) centrada en el corte: la imagen va al color en la primera mitad,
-la cámara cambia debajo y la imagen vuelve en la segunda, con la curva
-suave y nunca más larga que la mitad de cualquiera de los dos planos; en el
-primer plano, la animación empieza en el color y la imagen aparece
-(`shotFadeAt`). El motor renderiza el plano tal cual y el fotograma se
-mezcla con el color después (en los valores de la imagen, o en luz lineal
-en los formatos lineales); el visor lo enseña encima del encuadre mientras
-se reproduce o el cabezal no está en 0. El fundido **cruzado** (dos cámaras
-a la vez) queda para una fase posterior.
+**Fades** between cameras (N1): each shot says how it is entered
+(`Shot.transition`): **cut** (no field, like all the earlier ones) or
+**fade to colour**, black or white, of a duration (0.04–10 s, 0.5 s by
+default) centred on the cut: the image goes to the colour in the first half,
+the camera changes underneath and the image comes back in the second, with the smooth
+curve and never longer than half of either of the two shots; in the
+first shot, the animation starts at the colour and the image appears
+(`shotFadeAt`). The engine renders the shot as it is and the frame is
+mixed with the colour afterwards (in the image values, or in linear light in
+linear formats); the viewport shows it over the framing while
+it plays or the playhead is not at 0. The **cross** fade (two cameras
+at once) is left for a later phase.
 
-**Salida**: en la barra de render, el modo **Animación** añade rango de
-fotogramas (todo, o de–a), fps, y salida como **vídeo** (N1: WebM con
-VP9, o VP8 donde VP9 no está, o MP4 con H.264, codificado en la página con
-WebCodecs y escrito por nuestros *muxers*; solo lo que este sistema
-codifica, preguntado en tiempo de ejecución) o como **secuencia de
-fotogramas** (PNG o JPEG con numeración, siempre disponible), con el
-presupuesto de muestras o tiempo **por fotograma** y la estimación del
-total; el trabajo entra en la cola como cualquier otro y un vídeo es **un
-archivo**. Un vídeo tiene tamaño par (4:2:0).
+**Output**: in the render bar, the **Animation** mode adds a frame range
+(all, or from–to), fps, and output as **video** (N1: WebM with
+VP9, or VP8 where VP9 is not available, or MP4 with H.264, encoded in the page with
+WebCodecs and written by our *muxers*; only what this system
+encodes, asked at run time) or as a **frame
+sequence** (PNG or JPEG with numbering, always available), with the
+sample or time budget **per frame** and the estimate of the
+total; the job enters the queue like any other and a video is **one
+file**. A video has an even size (4:2:0).
 
 ### 3.8 · Render
 
-Se configura en la **ventana de render** (`UI.md` §2.7), al estilo de la
-de KeyShot, y no en la barra inferior. Un **trabajo de render**
-(`RenderJob`) guarda: modo (*imagen* o *animación*), nombre como
-plantilla, carpeta de destino (en el navegador, *Descargas* o una
-carpeta elegida con el acceso al sistema de archivos donde exista),
-formato (PNG 8/16 bits, JPEG con calidad, EXR lineal, TIFF de 8/16 bits
-sRGB o 32 bits lineal, RAW DNG lineal), fondo
-transparente (no en JPEG ni en DNG), **pases** (N2: alfa, profundidad, normales, id de
-pieza, uno por archivo junto a la imagen, en PNG de 16 bits o EXR), cámara (una o todas),
-**estudio** (N2: la escena como está, uno de los guardados o todos), si los archivos de lo que se
-manda a la cola van en un solo **ZIP** (N2), tamaño en píxeles con su tamaño de
-impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
-archivo), **terminar por** muestras, por tiempo (o lo que llegue antes,
-en avanzado) o **por ruido** (E10: con muestreo adaptativo, cuando el error
-relativo de la media de cada píxel queda por debajo de un umbral del 0,5 al
-5 %, el 1 % por defecto, con las muestras como tope; las muestras van donde
-está el ruido, por bloques de 8 × 8, y cada píxel sigue siendo la media de
-sus propias muestras), ajustes avanzados del motor, en animación el rango, los fps
-y la salida (vídeo MP4/WebM o secuencia de fotogramas), y el
-**post-procesado IA** con sus ajustes (`AI-POST.md`). *Render* pone el
-trabajo el primero de la **cola** y lo arranca; *+ Añadir a la cola* lo
-pone al final. En el estado, `render` guarda los ajustes de la ventana
-y la cola; cada trabajo lleva su copia de los ajustes, estado, progreso,
-fechas de creación, inicio y fin, los ids de sus resultados, el error si
-lo hubo y el fotograma en curso. *Todas las cámaras* se expande en un
-trabajo por cámara al entrar en la cola; una animación es un solo
-trabajo. Editar la cola es deshacible; el progreso no. La cola ejecuta en serie, con progreso, pausa, reordenar y
-cancelación (*Detener* el trabajo en curso, que acaba *Cancelado* y deja que siga el
-siguiente; *Quitar* uno que espera, que no toca a los demás), **siempre con el motor completo**. Cada resultado guarda la
-imagen del motor y, si hubo post-procesado, también la de la IA, para
-compararlas con un divisor deslizable. El trabajo en curso se puede **ver en
-vivo** (U14; `UI.md` §2.5 y §2.8): elegido en la cola, su imagen tal como el
-motor la acumula, reducida a lo que cabe y con las muestras y los segundos que
-dice el motor, como mucho dos veces por segundo y solo mientras se mira (el
-motor no hace ninguna mientras nadie la mira); un trabajo en espera dice que no
-ha empezado, y uno terminado abre su resultado. La vista en vivo es estado de la
-interfaz, no del proyecto: ni se guarda ni se deshace.
+It is configured in the **render window** (`UI.md` §2.7), in the style of
+KeyShot's, and not in the bottom bar. A **render job**
+(`RenderJob`) stores: mode (*image* or *animation*), name as
+template, destination folder (in the browser, *Downloads* or a
+folder chosen with file-system access where it exists),
+format (PNG 8/16 bit, JPEG with quality, linear EXR, TIFF 8/16 bit
+sRGB or 32-bit linear, linear RAW DNG), transparent
+background (not in JPEG or DNG), **passes** (N2: alpha, depth, normals, part
+id, one per file next to the image, in 16-bit PNG or EXR), camera (one or all),
+**studio** (N2: the scene as it is, one of the saved ones or all), whether the files of what is
+sent to the queue go in a single **ZIP** (N2), size in pixels with its print
+size and **DPI** (the pixels rule; the DPI is written into the
+file), **finish by** samples, by time (or whichever comes first,
+in advanced) or **by noise** (E10: with adaptive sampling, when the relative
+error of each pixel's mean falls below a threshold from 0.5 to
+5 %, 1 % by default, with the samples as the cap; samples go where
+the noise is, in 8 × 8 blocks, and each pixel is still the mean of
+its own samples), advanced engine settings, in animation the range, the fps
+and the output (MP4/WebM video or frame sequence), and the
+**AI post-processing** with its settings (`AI-POST.md`). *Render* puts the
+job first in the **queue** and starts it; *+ Add to queue* puts it
+at the end. In the state, `render` stores the window's settings
+and the queue; each job carries its copy of the settings, state, progress,
+creation, start and end dates, the ids of its results, the error if there
+was one and the current frame. *All cameras* is expanded into one
+job per camera when entering the queue; an animation is a single
+job. Editing the queue is undoable; progress is not. The queue runs in series, with progress, pause, reordering and
+cancellation (*Stop* the running job, which ends *Cancelled* and lets the
+next one go on; *Remove* one that is waiting, which does not touch the others), **always with the full engine**. Each result stores the
+engine image and, if there was post-processing, the AI one too, to
+compare them with a sliding divider. The running job can be **watched
+live** (U14; `UI.md` §2.5 and §2.8): when chosen in the queue, its image as the
+engine accumulates it, reduced to what fits and with the samples and seconds that the
+engine reports, at most twice a second and only while it is being looked at (the
+engine does none while nobody is looking); a waiting job says it
+has not started, and a finished one opens its result. The live view is interface
+state, not project state: it is neither saved nor undone.
 
-**Pases, lotes y ZIP** (N2). Un trabajo de imagen puede pedir, además de la
-imagen, los **pases** de objetos que el motor renderiza con ella (`RNDR.passes`,
-`ARCHITECTURE.md` §5.2): **alfa** (la cobertura de los objetos de 0 a 1, con los
-bordes suavizados como la imagen; el suelo del estudio, el fondo y el entorno valen 0),
-**profundidad** (la distancia a lo largo del eje de la vista), **normales** (en el
-espacio del mundo, Z arriba) e **id de pieza** (el número de instancia que el motor da
-a cada pieza, con una leyenda `.json` de quién es quién). Cada pase es un archivo junto
-a la imagen con su nombre más `_alpha`, `_depth`, `_normal` o `_partId`, en **PNG de 16 bits** (gris, o RGB las normales; la profundidad
-normalizada a 0 = fondo y 65535 = lo más cercano, con el rango en el archivo) o en
-**EXR** (32 bits flotantes, los valores tal cual, `+Infinity` donde no hay nada). Un
-fondo transparente de la imagen no cambia los pases. Una animación no escribe pases.
+**Passes, batches and ZIP** (N2). An image job can ask for, besides the
+image, the object **passes** that the engine renders with it (`RNDR.passes`,
+`ARCHITECTURE.md` §5.2): **alpha** (the objects' coverage from 0 to 1, with edges
+smoothed like the image; the studio floor, the background and the environment are 0),
+**depth** (the distance along the view axis), **normals** (in
+world space, Z up) and **part id** (the instance number that the engine gives
+to each part, with a `.json` legend of who is who). Each pass is a file next
+to the image with its name plus `_alpha`, `_depth`, `_normal` or `_partId`, in **16-bit PNG** (grey, or RGB for the normals; depth
+normalized to 0 = background and 65535 = the nearest, with the range in the file) or in
+**EXR** (32-bit floats, the values as they are, `+Infinity` where there is nothing). A
+transparent image background does not change the passes. An animation writes no passes.
 
-El **estudio** del trabajo es la escena como está, uno de los **estudios
-guardados** (la pestaña *Estudios*; los de un proyecto antiguo, también) o *todos*:
-el estudio se pone sobre una **copia** del proyecto y esa copia es lo que se renderiza,
-con la cámara del trabajo (el estudio no le quita su vista); el proyecto abierto no se
-toca. *Todas las cámaras* × *Todos los estudios* es un **lote**: un trabajo por cámara
-y estudio (primero por cámara), con el nombre de la plantilla (`{project}_{camera}_{studio}`,
-cuyas fichas dicen *Proyecto*, *Cámara* y *Estudio*, da cuatro archivos distintos en un 2 × 2;
-`{studio}` es el estudio guardado del trabajo y, sin él, el nombre del tipo de producto como antes). Un trabajo con
-estudio no pasa por la IA (sus pases se dibujan del proyecto abierto).
+The job's **studio** is the scene as it is, one of the **saved
+studios** (the *Studios* tab; those of an old project too) or *all*:
+the studio is put on a **copy** of the project and that copy is what is rendered,
+with the job's camera (the studio does not take its view away); the open project is not
+touched. *All cameras* × *All studios* is a **batch**: one job per camera
+and studio (camera first), with the template's name (`{project}_{camera}_{studio}`,
+whose chips say *Project*, *Camera* and *Studio*, gives four different files in a 2 × 2;
+`{studio}` is the job's saved studio and, without one, the name of the product type as before). A job with a
+studio does not go through the AI (its passes are drawn from the open project).
 
-**El estudio viaja con el proyecto** (N2b). Al crear un trabajo con un estudio guardado,
-el proyecto guarda una **copia** de ese estudio (lo que pone *Restaurar*: focos, entorno,
-imagen, cámara, materiales por pieza y visibilidad), una sola por estudio y contenido
-aunque la usen muchos trabajos, y el trabajo la nombra por el *hash* de su contenido.
-Esa copia es lo que el trabajo renderiza: abierto el proyecto en otro equipo o en otro
-perfil del navegador sin ese estudio en la biblioteca, los trabajos salen igual; y si la
-biblioteca tiene un estudio con el mismo id pero otro contenido (se guardó encima), **gana
-la copia** para los trabajos que ya estaban; uno nuevo toma el estudio como está ahora.
-Editar un trabajo sin cambiarle el estudio conserva su copia; cambiárselo toma la del
-nuevo. La copia sale del proyecto con el último trabajo que la nombra (y vuelve con
-deshacer). Su HDRI, su imagen de fondo y sus texturas no se guardan dos veces: van con
-las del proyecto, una vez cada imagen. Un estudio que llegó en el proyecto y no está en
-la biblioteca se puede **añadir a la biblioteca** desde la cola. Un trabajo de un
-proyecto anterior a N2b no tiene copia: busca su estudio en la biblioteca, como antes,
-y sin él falla con el motivo y la cola sigue.
+**The studio travels with the project** (N2b). When creating a job with a saved studio,
+the project stores a **copy** of that studio (what *Restore* sets: lights, environment,
+image, camera, per-part materials and visibility), one per studio and content
+even if many jobs use it, and the job names it by the *hash* of its content.
+That copy is what the job renders: with the project opened on another machine or in another
+browser profile without that studio in the library, the jobs come out the same; and if the
+library has a studio with the same id but other content (it was saved over), **the copy
+wins** for the jobs that were already there; a new one takes the studio as it is now.
+Editing a job without changing its studio keeps its copy; changing it takes that of the
+new one. The copy leaves the project with the last job that names it (and comes back with
+undo). Its HDRI, its background image and its textures are not stored twice: they go with
+those of the project, once per image. A studio that arrived in the project and is not in
+the library can be **added to the library** from the queue. A job from a
+project earlier than N2b has no copy: it looks for its studio in the library, as before,
+and without it fails with the reason and the queue goes on.
 
-Con **ZIP**, los archivos de los trabajos que una orden *Render* o *+ Añadir a la cola*
-metió en la cola (imágenes, pases, leyendas) no se guardan uno a uno: se acumulan y, al
-acabar el último trabajo del grupo (terminado, fallido, detenido o quitado), se escribe
-**un solo ZIP** (método *store*, escritor propio, `Proyecto_0001-0004.zip`) en el
-destino; si el ZIP no se pudiera crear, los archivos se guardan uno a uno, así que nunca
-se pierde una imagen. Un grupo cuya cola se pausa espera en memoria; cerrar la página lo
-pierde.
+With **ZIP**, the files of the jobs that a *Render* or *+ Add to queue* command
+put in the queue (images, passes, legends) are not saved one by one: they are accumulated and, when
+the group's last job ends (finished, failed, stopped or removed), **a single ZIP** is written
+(*store* method, own writer, `Project_0001-0004.zip`) at the
+destination; if the ZIP could not be created, the files are saved one by one, so an image
+is never lost. A group whose queue is paused waits in memory; closing the page
+loses it.
 
-**Plugins** (P6; `ARCHITECTURE.md` §9). Herramientas de otros programas que
-trabajan sobre un **resultado terminado**: se instalan en *Ajustes ▸ Plugins*
-desde el registro de Repackshot o desde un archivo `.rpk`, con su clave de
-activación y bajo **su propia licencia** (cerrada en el de película, y se dice).
-Cada plugin instalado con el *slot* `render.plugins` tiene su bloque en la
-sección **Plugins** de la ventana de render, dibujado desde su manifiesto: sus
-recetas (con sus nombres públicos), sus mandos, una **vista previa** del
-resultado actual por el plugin con los números que el plugin da y **Aplicar**,
-que deja un **resultado nuevo** en el historial junto a su origen, con su
-procedencia (`provenance: { plugin, version, recipe, controls }`). La receta y
-los mandos de cada plugin son del proyecto (`render.plugins`): deshacibles y
-guardados con él; un proyecto anterior no tiene ninguno. Las recetas son un
-**carrusel** de tarjetas, cada una con la imagen base del plugin (su escena de
-prueba) por esa receta, hecha una vez por equipo y versión; sin resultado
-todavía, la vista previa es esa escena de prueba. Con **Aplicar a los trabajos
-de render**, cada imagen de un trabajo de la cola pasa también por el plugin y
-se guarda junto a la del motor; en una animación, cada fotograma con su
-semilla, `semilla + fotograma` (`provenance.seed` guarda la semilla y la
-regla). Un plugin no toca el proyecto: recibe píxeles y devuelve píxeles. El
-primero es la **simulación de película de aintfilm** (la app de edición de
-fotos y simulación de película del mismo desarrollador, en desarrollo).
+**Plugins** (P6; `ARCHITECTURE.md` §9). Tools from other programs that
+work on a **finished result**: they are installed in *Settings ▸ Plugins*
+from the Repackshot registry or from an `.rpk` file, with their activation
+key and under **their own licence** (closed in the film one, and it says so).
+Each plugin installed with the `render.plugins` *slot* has its block in the
+**Plugins** section of the render window, drawn from its manifest: its
+recipes (with their public names), its controls, a **preview** of the
+current result through the plugin with the numbers the plugin gives, and **Apply**,
+which leaves a **new result** in the history next to its origin, with its
+provenance (`provenance: { plugin, version, recipe, controls }`). Each plugin's recipe and
+controls belong to the project (`render.plugins`): undoable and
+saved with it; an earlier project has none. The recipes are a
+**carousel** of cards, each with the plugin's base image (its test
+scene) through that recipe, made once per machine and version; with no result
+yet, the preview is that test scene. With **Apply to render jobs**,
+each image of a queue job also goes through the plugin and
+is saved next to the engine's; in an animation, each frame with its
+seed, `seed + frame` (`provenance.seed` stores the seed and the
+rule). A plugin does not touch the project: it receives pixels and returns pixels. The
+first is the **film simulation by aintfilm** (the photo-editing and film-simulation
+app by the same developer, in development).
 
-### 3.9 · Estudios, biblioteca propia y proyecto
+### 3.9 · Studios, own library and project
 
-Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de
-materiales por pieza y la visibilidad de piezas; restaurarlo es una sola
-acción deshacible. Con un set de L6 (§3.4) en vigor, el estudio guarda sus
-focos (el charco incluido) y su fondo; sus tarjetas, barrido y suelo son
-piezas de la escena y se quedan en ella. Fondo `GRADIENT` (L6): el entorno
-guarda sus dos colores (`gradient`), en el proyecto y en los estudios de la
-biblioteca. El **proyecto** es el estado completo en un archivo
-`.repack`, con las mallas dentro. El contenido es JSON (la extensión lo
-distingue de cualquier otro JSON); hasta v0.1.6 se llamaba `.repack.json`,
-y esos archivos se siguen abriendo igual (selector, diálogo del escritorio y
-al soltarlos en la ventana). *Guardar* y *Guardar como…* proponen `.repack`;
-guardar sobre un archivo abierto lo escribe donde está, con el nombre que
-tenga. Los estudios que usan los trabajos de la cola van dentro del proyecto
-(N2b, §3.8), aunque el estudio sea de la biblioteca.
+A **studio** stores a camera, a light and environment setup, a set of
+materials per part and the visibility of parts; restoring it is a single
+undoable action. With an L6 set (§3.4) in force, the studio stores its
+lights (the pool included) and its backdrop; its cards, sweep and floor are
+pieces of the scene and stay in it. `GRADIENT` backdrop (L6): the environment
+stores its two colours (`gradient`), in the project and in the library's
+studios. The **project** is the complete state in a
+`.repack` file, with the meshes inside. The content is JSON (the extension
+distinguishes it from any other JSON); up to v0.1.6 it was called `.repack.json`,
+and those files are still opened the same way (picker, desktop dialog and
+when dropped on the window). *Save* and *Save as…* propose `.repack`;
+saving over an open file writes it where it is, with whatever name it
+has. The studios used by the queue's jobs go inside the project
+(N2b, §3.8), even if the studio belongs to the library.
 
-La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
-entre proyectos: materiales (*Guardar material como…*), montajes de luz
-(*Guardar montaje como…*), tipos de producto (*Guardar como tipo de
-producto*: el estudio actual como preset), estudios y lentes (*Guardar
-lente como…*, O2: la lente trazada de la cámara con su iris y sus ajustes
-no físicos, la prescripción por su clave del catálogo; O2c: una lente
-editada, con su prescripción editada y su nombre, también desde el editor de
-lente con *Guardar en la biblioteca…*). Aparece como pestaña
-*Míos* en cada catálogo, con miniaturas renderizadas por el producto, se
-persiste en el navegador y se exporta e importa como un archivo JSON para
-llevarla a otra máquina. Los presets de fábrica no se editan: editar uno
-crea una copia propia.
+The **own library** stores what the user creates and wants to reuse
+between projects: materials (*Save material as…*), light setups
+(*Save setup as…*), product types (*Save as product
+type…*: the current studio as a preset), studios and lenses (*Save
+lens as…*, O2: the camera's traced lens with its iris and its non-physical
+adjustments, the prescription by its catalogue key; O2c: an
+edited lens, with its edited prescription and its name, also from the
+lens editor with *Save to library…*). It appears as a
+*Mine* tab in each catalogue, with thumbnails rendered by the product, is
+persisted in the browser and is exported and imported as a JSON file to
+take it to another machine. Factory presets are not edited: editing one
+creates a copy of your own.
 
 ---
 
-### 3.10 · Interiores y mobiliario
+### 3.10 · Interiors and furniture
 
-Un **tipo de escena** (*Producto · Interior · Estudio de catálogo*) que
-solo cambia valores por defecto (hecho en K1: `scene.type` en el proyecto,
-`scene/setType`, la memoria `scene.typeBase` de lo que cada tipo reemplazó, y
-los proyectos anteriores abren como *Producto*); una **habitación** paramétrica como nodo
-(medidas, aberturas, material por superficie, pared frontal oculta,
-ciclorama); **ventanas que iluminan solas** (portales automáticos, vidrio
-fino, vista exterior en un plano con paralaje); **cámara de interiores**
-(verticales rectas, altura de ojo, panorámica, alzados y planta,
-exposición automática, recorrido; hecho en K3 salvo el recorrido, §3.5 y
-§3.6); Doctor de interiores (siete chequeos de escena, K1; el resto, con el
-motor); grupos de luz
-ajustables tras el render; entregables de mobiliario (silos con alfa y
-cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
+A **scene type** (*Product · Interior · Catalogue studio*) that
+only changes default values (done in K1: `scene.type` in the project,
+`scene/setType`, the `scene.typeBase` memory of what each type replaced, and
+earlier projects open as *Product*); a parametric **room** as a node
+(measurements, openings, material per surface, hidden front wall,
+cyclorama); **windows that light the scene by themselves** (automatic portals, thin
+glass, outside view on a plane with parallax); **interiors camera**
+(straight verticals, eye height, panorama, elevations and plan,
+automatic exposure, walkthrough; done in K3 except the walkthrough, §3.5 and
+§3.6); interiors Doctor (seven scene checks, K1; the rest, with the
+engine); light groups
+adjustable after the render; furniture deliverables (cut-outs with alpha and
+dimensions, variants, 360). The decisions, sources and phases are in
 `INTERIORS.md`.
 
-## 4 · El Doctor
+## 4 · The Doctor
 
-Diecinueve chequeos, cada uno con detección y, cuando el proyecto puede
-cambiar algo, arreglo (`DOCTOR_CHECKS` en `src/data/doctor.ts`), y siete más
-con el tipo de escena *Interior* (más abajo). Los de
-escena se evalúan sobre el modelo: escala
-plausible para el tipo de producto (una joya de 3 m está mal), origen y
-apoyo en el suelo, suavizado de normales, bisel de aristas (sin bisel, las
-aristas de un CAD no reflejan nada y delatan el render), clipping de
-cámara, luces visibles a cámara sin querer, y una pieza dinámica que
-empieza atravesando el suelo (S2: el arreglo la sube hasta apoyarla). El Doctor no
-cambia nada sin que se le pida y explica cada aviso en una frase.
+Nineteen checks, each with detection and, when the project can
+change something, a fix (`DOCTOR_CHECKS` in `src/data/doctor.ts`), and seven more
+with the *Interior* scene type (below). The scene
+ones are evaluated on the model: plausible scale
+for the product type (a 3 m piece of jewellery is wrong), origin and
+resting on the floor, normal smoothing, edge bevel (without a bevel, the
+edges of a CAD model reflect nothing and give the render away), camera
+clipping, lights visible to the camera by accident, and a dynamic part that
+starts passing through the floor (S2: the fix raises it until it rests). The Doctor does not
+change anything without being asked and explains each warning in one sentence.
 
-**Los de motor** (D1, `src/core/doctor-engine.ts`) miran además lo que el
-motor y el sistema dicen, que no es del proyecto: la página se lo entrega
-(workers, SIMD, si el motor sabe hacer *denoise*, la velocidad medida y lo que
-dice la acumulación del visor *Completo*) y, mientras no lo sabe, esos
-chequeos están *no disponibles* con su motivo (el motor carga, no está en
-marcha, hace falta el visor *Completo*, todavía mide). Todo arreglo cambia el
-proyecto y nada más: pasa por el *store* y es una entrada de deshacer. Lo que el
-proyecto no puede cambiar (falta `rt.wasm`, el sistema da un solo worker, no hay
-simd128) es un aviso que dice por qué y **no tiene arreglo falso**; si una fila de
-*Ajustes* lo limita (*Hilos*, *SIMD*), el aviso trae el botón que la abre, porque
-el Doctor no toca los ajustes de la aplicación (no se deshacen).
+**The engine ones** (D1, `src/core/doctor-engine.ts`) also look at what the
+engine and the system say, which is not part of the project: the page hands it over
+(workers, SIMD, whether the engine can *denoise*, the measured speed and what
+the *Full* viewport's accumulation says) and, while it does not know, those
+checks are *unavailable* with their reason (the engine is loading, is not
+running, the *Full* viewport is needed, it is still measuring). Every fix changes the
+project and nothing else: it goes through the *store* and is an undo entry. What the
+project cannot change (`rt.wasm` is missing, the system gives a single worker, there is no
+simd128) is a warning that says why and **has no fake fix**; if a *Settings* row
+limits it (*Threads*, *SIMD*), the warning brings the button that opens it, because
+the Doctor does not touch the application's settings (they are not undone).
 
-| Chequeo | Avisa de | Arreglo |
+| Check | Warns of | Fix |
 | --- | --- | --- |
-| `engine` · *Motor* | `rt.wasm` no está compilado, es anterior a la página, no arrancó, el sistema no da *workers*; o el *pool* es de un solo *worker* (el sistema no da más, o *Hilos* lo dice y *Automático* daría más) | ninguno; con *Hilos* de por medio, abre esa fila |
-| `simd` · *SIMD* | corre la compilación escalar: el sistema no tiene simd128, *SIMD* está en *Desactivado*, falta `rt-simd.wasm`, o el motor de escritorio no tiene camino vectorial | ninguno; con *SIMD* en *Desactivado*, abre esa fila |
-| `denoise` · *Denoise* | está encendido en el visor y apagado en el render (la imagen saldría con ruido), o a fuerza 0, o el motor no sabe hacerlo; apagado en todas partes es una decisión y no avisa | enciende el del render / devuelve la fuerza al 100 % (el motor sin *denoiser* no tiene) |
-| `color` · *Tono* | con *Estándar*, más del 1 % del encuadre está a más de una parada sobre el blanco una vez aplicada la exposición, y se recorta a blanco puro (se lee del histograma de la acumulación; *Fílmica* y *AgX* no recortan y no necesitan imagen). Es un **aviso**, nunca un fallo: un fondo blanco liso se quiere recortado (C1) | propone *AgX* |
-| `caustics` · *Fireflies* | la acumulación tiene *fireflies*: píxeles más brillantes que el blanco, cuatro veces más que el mejor de sus ocho vecinos y, si la acumulación guarda la luminancia al cuadrado (con el *denoise* del visor encendido), con una sola muestra que aporta la mitad de su luz o más; avisa desde 8 píxeles (o una cienmilésima del encuadre). Con la imagen ya filtrada por el *denoise* del lanzador, no hay nada que contar | devuelve las cáusticas de *Apagado* a *Automático* y recorta la luz indirecta en 10; si ya está así, dice que solo ayudan más muestras |
-| `output` · *Formato de salida* | la animación sale como vídeo en un contenedor que este sistema no codifica (lo que el navegador dice que codifica, desde N1; un vídeo que sí se codifica no es un fallo) | pasa a secuencia de fotogramas |
-| `budget` · *Presupuesto de tiempo* | con la velocidad que el motor midió aquí, el tiempo del render no alcanza las muestras: con *lo que llegue antes*, menos de la mitad de las pedidas; con *Tiempo*, menos que un Borrador | sube el tiempo al que esas muestras necesitan más una cuarta parte (la velocidad medida se mueve de una lectura a la siguiente), redondeado a los diez segundos |
+| `engine` · *Engine* | `rt.wasm` is not compiled, is older than the page, did not start, the system gives no *workers*; or the *pool* has a single *worker* (the system gives no more, or *Threads* says so and *Automatic* would give more) | none; with *Threads* involved, opens that row |
+| `simd` · *SIMD* | the scalar build is running: the system has no simd128, *SIMD* is *Off*, `rt-simd.wasm` is missing, or the desktop engine has no vector path | none; with *SIMD* *Off*, opens that row |
+| `denoise` · *Denoising* | it is on in the viewport and off in the render (the image would come out noisy), or at strength 0, or the engine cannot do it; off everywhere is a decision and does not warn | turns on the render's / returns the strength to 100 % (an engine without a *denoiser* has none) |
+| `color` · *View transform* | with *Standard*, more than 1 % of the framing is more than one stop above white once the exposure is applied, and is clipped to pure white (read from the accumulation's histogram; *Filmic* and *AgX* do not clip and need no image). It is a **warning**, never a failure: a plain white background is meant to be clipped (C1) | proposes *AgX* |
+| `caustics` · *Fireflies* | the accumulation has *fireflies*: pixels brighter than white, four times brighter than the best of their eight neighbours and, if the accumulation stores the squared luminance (with the viewport *denoise* on), with a single sample that contributes half of its light or more; it warns from 8 pixels (or one hundred-thousandth of the framing). With the image already filtered by the launcher's *denoise*, there is nothing to count | returns the caustics from *Off* to *Automatic* and clamps the indirect light at 10; if it is already so, it says that only more samples help |
+| `output` · *Output format* | the animation comes out as video in a container that this system does not encode (what the browser says it encodes, since N1; a video that does get encoded is not a failure) | switches to a frame sequence |
+| `budget` · *Time budget* | with the speed the engine measured here, the render's time does not reach the samples: with *whichever comes first*, less than half of those requested; with *Time*, less than a Draft | raises the time to what those samples need plus a quarter (the measured speed moves from one reading to the next), rounded to ten seconds |
 
-`lighttree` (*Light tree*, de K4) y `persist` (*Persistent data*, propio de
-Blender) siguen en la lista como *no disponibles*: el motor aún no tiene árbol
-de luces, y en este motor no hay nada equivalente a los datos persistentes. Los
-chequeos de motor se vuelven a pasar cuando cambia lo que leen (el estado de la
-interfaz, los ajustes de imagen, de motor, de presupuesto y de salida de
-animación del render, la imagen que acumula el visor) y tras deshacer y
-rehacer.
+`lighttree` (*Light tree*, from K4) and `persist` (*Persistent data*, specific to
+Blender) remain in the list as *unavailable*: the engine does not yet have a light
+tree, and in this engine there is nothing equivalent to persistent data. The
+engine checks are run again when what they read changes (the interface
+state, the image, engine, budget and animation-output settings of the
+render, the image the viewport accumulates) and after undo and
+redo.
 
-**Doctor de interiores** (K1, `core/doctor-interior.ts`). Con el tipo de
-escena *Interior*, siete chequeos más que no piden el motor, cada uno con su
-arreglo, que es una acción normal del *store*: *escala y unidades* (el tamaño
-de la escena fuera de 100 mm–30 m: reescala por el factor del importador o
-por una potencia de diez), *abertura para el sol y el cielo* (la cámara dentro
-de un espacio cerrado que ilumina el sol o el cielo y ninguna pieza de
-vidrio o transparente: pone la *Sala blanca de estudio*), *vidrio de ventana*
-(una pieza plana de vidrio de paredes sólidas: la hace fina, en una copia si
-el material lo comparte otra pieza), *óptica* (menos de 18 mm: 24 mm), *altura
-de ojo* (fuera de 0,3–2,2 m sobre el suelo: 1,5 m, mirando al mismo punto),
-*recorte cercano* (el de una cámara dentro de la habitación llega a la pared más
-próxima: la mitad de la distancia) y *normales invertidas* (una superficie
-cerrada o una pared plana que mira al lado equivocado para donde está la
-cámara: las invierte). En *Interior* la comprobación de escala del Doctor
-no compara con el tamaño del tipo de producto. Mientras no existe el nodo
-habitación (K2), «espacio cerrado», «abertura» y «pared» se leen de la caja
-de las piezas, del vidrio y de los materiales transparentes. Con otro tipo de
-escena estos chequeos no están en la lista.
+**Interiors Doctor** (K1, `core/doctor-interior.ts`). With the *Interior* scene
+type, seven more checks that do not need the engine, each with its
+fix, which is a normal *store* action: *scale and units* (the scene
+size outside 100 mm–30 m: rescales by the importer's factor or
+by a power of ten), *opening for the sun and sky* (the camera inside
+a closed space lit by the sun or sky and no glass or transparent
+part: sets the *White studio room*), *window glass*
+(a flat glass part with solid walls: makes it thin, on a copy if
+another part shares the material), *lens* (less than 18 mm: 24 mm), *eye
+height* (outside 0.3–2.2 m above the floor: 1.5 m, looking at the same point),
+*near clipping* (that of a camera inside the room reaches the nearest
+wall: half the distance) and *inverted normals* (a closed surface
+or a flat wall that faces the wrong side for where the camera
+is: flips them). In *Interior* the Doctor's scale check
+does not compare with the product type's size. While the room node
+(K2) does not exist, “closed space”, “opening” and “wall” are read from the box
+of the parts, from glass and from transparent materials. With another scene
+type these checks are not in the list.
 
 ---
 
-## 5 · Importación: lo que entra y cómo
+## 5 · Import: what comes in and how
 
-La importación es el tronco del producto: lo que no entra, no se
-renderiza. Se comporta como en KeyShot: arrastrar o *Importar*, una hoja
-de opciones con valores que funcionan, y la pieza aparece centrada,
-apoyada y encuadrada.
+Import is the trunk of the product: what does not come in, is not
+rendered. It behaves as in KeyShot: drag or *Import*, an options
+sheet with values that work, and the part appears centred,
+resting and framed.
 
-**Formatos y origen.** Los programas de origen tienen formatos nativos
-propietarios y sin documentación pública; en sala limpia no se leen (ni
-se harán análisis de sus binarios, ver `README.md`). Lo que sí se lee es
-lo que cada uno **exporta** con un clic, que es lo que hace cualquiera
-que trabaja con KeyShot:
+**Formats and origin.** The source programs have proprietary native formats
+with no public documentation; in a clean room they are not read (nor
+will their binaries be analysed, see `README.md`). What is read is
+what each one **exports** with one click, which is what anyone
+who works with KeyShot does:
 
-| Origen | Nativo | ¿Se lee? | Camino que funciona |
+| Source | Native | Read? | Path that works |
 | --- | --- | --- | --- |
-| Rhinoceros | `.3dm` | **Sí** (openNURBS es MIT): mallas de render guardadas en el archivo, capas, materiales básicos; los B-rep sin malla de render avisan de guardar con mallas | `.3dm` directo; o STEP / OBJ / FBX |
-| KeyShot | `.bip`, `.ksp` | No (propietario, sin especificación) | *File ▸ Export* de KeyShot a glTF, FBX, OBJ, USD o STL |
+| Rhinoceros | `.3dm` | **Yes** (openNURBS is MIT): render meshes saved in the file, layers, basic materials; B-reps without a render mesh warn to save with meshes | `.3dm` directly; or STEP / OBJ / FBX |
+| KeyShot | `.bip`, `.ksp` | No (proprietary, no specification) | KeyShot's *File ▸ Export* to glTF, FBX, OBJ, USD or STL |
 | Maya | `.ma`, `.mb` | No | FBX, OBJ, USD, glTF |
-| SolidWorks | `.sldprt`, `.sldasm` | No (propietario) | **STEP AP214** (lo que SolidWorks exporta por defecto), IGES, 3MF, STL |
-| ZBrush | `.ztl`, `.zpr` | No | OBJ (con grupos de polígonos), FBX |
+| SolidWorks | `.sldprt`, `.sldasm` | No (proprietary) | **STEP AP214** (what SolidWorks exports by default), IGES, 3MF, STL |
+| ZBrush | `.ztl`, `.zpr` | No | OBJ (with polygroups), FBX |
 | Fusion 360 | `.f3d` | No | STEP, OBJ, FBX, 3MF, STL |
-| Blender, Cinema 4D, 3ds Max, SketchUp… | varios | No | glTF, FBX, OBJ, USD |
-| Universal | glTF / GLB, OBJ, STL, FBX, STEP, IGES, 3MF, PLY, DAE (Collada), USD / USDZ | **Sí** | directo |
+| Blender, Cinema 4D, 3ds Max, SketchUp… | various | No | glTF, FBX, OBJ, USD |
+| Universal | glTF / GLB, OBJ, STL, FBX, STEP, IGES, 3MF, PLY, DAE (Collada), USD / USDZ | **Yes** | directly |
 
-STEP e IGES (CAD de verdad: superficies, no mallas) se teselan al
-importar con calidad ajustable, conservando **cada cara CAD** como rango
-de triángulos (lo que hace que *Caras* seleccione una cara entera) y los
-**colores y nombres** del ensamblaje. FBX trae jerarquía, materiales,
-texturas incrustadas y unidades. Los formatos de malla traen lo que
-traen; el importador reconstruye normales y aristas vivas si faltan, y
-conserva las normales por vértice del archivo cuando las trae.
+STEP and IGES (real CAD: surfaces, not meshes) are tessellated on
+import with adjustable quality, keeping **each CAD face** as a range
+of triangles (which makes *Faces* select a whole face) and the assembly's
+**colours and names**. FBX brings hierarchy, materials,
+embedded textures and units. Mesh formats bring what they
+bring; the importer rebuilds normals and sharp edges if they are missing, and
+keeps the file's per-vertex normals when it brings them.
 
-**Materiales y texturas del archivo** (fase M2a). glTF y GLB traen sus
-materiales leídos de su propio JSON: el PBR metálico-rugoso (color base,
-metal-rugosidad con G rugosidad y B metal, normal con su `scale`, emisión
-con su factor y `KHR_materials_emissive_strength`, `alphaMode` y
-`alphaCutoff`; la oclusión no tiene ranura y se avisa),
-`KHR_materials_transmission`, `_ior` y `_clearcoat`, y
-`KHR_texture_transform` y el muestreador de cada mapa como su mapeado. OBJ
-lee sus bibliotecas `.mtl` (`Kd`, `Ks`, `Ns`, `d`/`Tr`, `Ni`, `Ke` y la
-extensión PBR `Pr`, `Pm`, `Pc`; `map_Kd`, `map_Pr`, `map_Ns`/`map_Ks` como
-rugosidad invertida, `map_Pm`, `map_d`, `norm`, `map_Bump`/`bump` como
-mapa de alturas salvo que su nombre diga que es de normales, `map_Ke`, con
-`-s`, `-o`, `-bm`, `-clamp` e `-imfchan`). FBX, Collada, 3MF, USD y 3DM
-traen los mapas que su lector de three.js carga (color, rugosidad, metal,
-normal o relieve, alfa, emisión, con su transformación). Las imágenes y
-bibliotecas que un modelo nombra y no lleva dentro (las de un OBJ, un
-`.gltf` con sus `.bin`, un FBX o un `.dae` con sus imágenes) se buscan
-entre los archivos **elegidos o soltados con él**, por nombre. Las UV se
-guardan por vértice, y un segundo juego si lo hay (glTF `TEXCOORD_1`, FBX
-`uv1`). Las imágenes PNG y JPEG viajan en el proyecto tal cual; las demás
-se pasan a PNG en el navegador cuando el lector las ha decodificado, y las
-que no, se dejan fuera. La hoja dice cuántas imágenes se guardan y cuánto
-pesan, y cada una que no (más de 16 MB, más de 8192 píxeles de lado, no
-es PNG ni JPEG, no estaba entre los archivos elegidos, el proyecto ya
-lleva 64 MB) y por qué; con *material predeterminado* no se importa
-ninguna.
+**Materials and textures from the file** (phase M2a). glTF and GLB bring their
+materials read from their own JSON: metallic-roughness PBR (base colour,
+metal-roughness with G roughness and B metal, normal with its `scale`, emission
+with its factor and `KHR_materials_emissive_strength`, `alphaMode` and
+`alphaCutoff`; occlusion has no slot and a warning is given),
+`KHR_materials_transmission`, `_ior` and `_clearcoat`, and
+`KHR_texture_transform` and each map's sampler as its mapping. OBJ
+reads its `.mtl` libraries (`Kd`, `Ks`, `Ns`, `d`/`Tr`, `Ni`, `Ke` and the
+PBR extension `Pr`, `Pm`, `Pc`; `map_Kd`, `map_Pr`, `map_Ns`/`map_Ks` as
+inverted roughness, `map_Pm`, `map_d`, `norm`, `map_Bump`/`bump` as
+a height map unless its name says it is a normal map, `map_Ke`, with
+`-s`, `-o`, `-bm`, `-clamp` and `-imfchan`). FBX, Collada, 3MF, USD and 3DM
+bring the maps that their three.js reader loads (colour, roughness, metal,
+normal or bump, alpha, emission, with their transform). The images and
+libraries that a model names and does not carry inside (those of an OBJ, a
+`.gltf` with its `.bin` files, an FBX or a `.dae` with its images) are looked for
+among the files **chosen or dropped with it**, by name. UVs are
+stored per vertex, and a second set if there is one (glTF `TEXCOORD_1`, FBX
+`uv1`). PNG and JPEG images travel in the project as they are; the others
+are converted to PNG in the browser when the reader has decoded them, and those
+that are not, are left out. The sheet says how many images are saved and how much
+they weigh, and each one that is not (more than 16 MB, more than 8192 pixels on a side, not
+PNG or JPEG, was not among the chosen files, the project already
+carries 64 MB) and why; with *default material* none is imported.
 
-**Hoja de importación** (en línea, no modal), con los valores por defecto
-ya puestos: **unidades** del archivo (mm, cm, m, pulgadas; detectadas
-cuando el formato las declara), **eje arriba** (Y o Z; detectado), **centrar**,
-**apoyar en el suelo**, **encuadrar la cámara**, **añadir a la escena** o
-**escena nueva**, **agrupar por** (objeto, material, capa), **mantener
-materiales y texturas** del archivo o aplicar el material por defecto,
-**separar piezas** (por material, por cara CAD), **calidad de teselado**
-(solo CAD: tolerancia de cuerda y ángulo), **importar capas ocultas**,
-**invertir normales**. Un archivo arrastrado sobre una escena con piezas
-pregunta *añadir o sustituir* en línea.
+**Import sheet** (inline, not modal), with the default values
+already set: file **units** (mm, cm, m, inches; detected
+when the format declares them), **up axis** (Y or Z; detected), **centre**,
+**rest on the floor**, **frame the camera**, **add to scene** or
+**new scene**, **group by** (object, material, layer), **keep
+materials and textures** from the file or apply the default material,
+**separate parts** (by material, by CAD face), **tessellation quality**
+(CAD only: chord tolerance and angle), **import hidden layers**,
+**flip normals**. A file dragged onto a scene with parts
+asks *add or replace* inline.
 
-Las bibliotecas de lectura de formatos viven en la capa `io/` del lado
-web y se cargan bajo demanda; el motor de render no las conoce
+The format-reading libraries live in the `io/` layer on the web
+side and are loaded on demand; the render engine does not know them
 (`ARCHITECTURE.md` §1).
 
-## 6 · Lo que distingue este producto
+## 6 · What sets this product apart
 
-- **El visor es el render.** En modo *Completo* la imagen converge donde
-  se trabaja y *Render* solo la guarda a tamaño completo; el modo *Rápido*
-  existe para que editar luces y materiales responda al instante, y el
-  conmutador está siempre a la vista en la cabecera.
-- **Lenguaje de fotógrafo** en todos los controles y una **intención**
-  escrita para cada preset.
-- **Catálogos por el ojo**: montajes de luz y materiales se eligen por
-  miniatura, con filtros por estilo y categoría.
-- **Nada se rompe en silencio**: Doctor, inventario antes de sobrescribir,
-  conflictos de animación visibles, medidor honesto.
-- **Todo escala con la pieza**: una receta sirve para un anillo y un sofá.
-- **Sin entorno que descargar**: la cúpula de estudio procedural ilumina
-  y se refleja sin ningún HDRI.
-- **Interfaz en blanco y negro**: el único color en pantalla es la imagen.
-- **Modo estándar por defecto**: abre listo para importar y renderizar;
-  los presets son atajos, y todo lo que hace un preset se puede hacer a
-  mano y guardar como propio.
-- **Importa lo que la gente exporta**: STEP, IGES, 3DM, FBX, OBJ, glTF,
-  USD, 3MF, STL, PLY, DAE, con una hoja de opciones al estilo KeyShot.
-- **Motor propio, en Rust y sin dependencias**, que corre en cualquier
-  máquina: en el navegador por WebAssembly, en la línea de comandos y en
-  el escritorio en nativo, con el mismo resultado píxel a píxel.
-- **Accesible por teclado y por ajustes.** El orden de Tab sigue el diseño
-  de cada panel y no hay tabulación positiva. Cada botón sin texto tiene su
-  nombre, de `strings.ts`, en español y en inglés. La paleta de comandos,
-  los menús, las confirmaciones y las ventanas mantienen el foco mientras
-  están abiertas y lo devuelven al control que las abrió. *Ajustes ▸
-  Accesibilidad* ofrece el tamaño de la interfaz y del texto, el contraste
-  alto, *Reducir movimiento* (que apaga también el desplazamiento suave) y
-  el foco siempre visible. El texto principal (`ink-0`, `ink-1`) llega a
-  7:1 sobre todas sus superficies y el secundario (`ink-2`) a 4,5:1 (WCAG
-  AA; decisión de H1, aplicada en C1), sin aplanar la jerarquía de grises.
-  `ink-3`, el gris de lo apagado (controles deshabilitados, filas ocultas,
-  separadores), queda por debajo de `ink-2`, sin mínimo propio salvo en el
-  contraste alto, donde también llega a 4,5:1.
+- **The viewport is the render.** In *Full* mode the image converges where
+  you work and *Render* only saves it at full size; *Fast* mode
+  exists so that editing lights and materials responds instantly, and the
+  switch is always in view in the header.
+- **Photographer's language** in all the controls and a written **intent**
+  for each preset.
+- **Catalogues for the eye**: light setups and materials are chosen by
+  thumbnail, with filters by style and category.
+- **Nothing breaks silently**: Doctor, inventory before overwriting,
+  visible animation conflicts, an honest meter.
+- **Everything scales with the part**: a recipe works for a ring and a sofa.
+- **No environment to download**: the procedural studio dome lights
+  and reflects without any HDRI.
+- **Black-and-white interface**: the only colour on screen is the image.
+- **Standard mode by default**: it opens ready to import and render;
+  presets are shortcuts, and everything a preset does can be done by
+  hand and saved as your own.
+- **Imports what people export**: STEP, IGES, 3DM, FBX, OBJ, glTF,
+  USD, 3MF, STL, PLY, DAE, with a KeyShot-style options sheet.
+- **Own engine, in Rust and without dependencies**, which runs on any
+  machine: in the browser through WebAssembly, on the command line and on
+  the desktop natively, with the same result pixel for pixel.
+- **Accessible by keyboard and by settings.** The Tab order follows the layout
+  of each panel and there is no positive tabindex. Every button without text has its
+  name, from `strings.ts`, in Spanish and in English. The command palette,
+  menus, confirmations and windows keep the focus while
+  they are open and give it back to the control that opened them. *Settings ▸
+  Accessibility* offers the size of the interface and of the text, high
+  contrast, *Reduce motion* (which also turns off smooth scrolling) and
+  an always-visible focus. The main text (`ink-0`, `ink-1`) reaches
+  7:1 on all its surfaces and the secondary (`ink-2`) 4.5:1 (WCAG
+  AA; H1 decision, applied in C1), without flattening the hierarchy of greys.
+  `ink-3`, the grey of what is switched off (disabled controls, hidden rows,
+  separators), is below `ink-2`, with no minimum of its own except in high
+  contrast, where it also reaches 4.5:1.

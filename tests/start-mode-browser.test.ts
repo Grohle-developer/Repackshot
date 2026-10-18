@@ -1,5 +1,5 @@
-// The viewport starts in Fast (user report of 17-10: "nada más entrar a la app se pone a renderizar, lo que no tiene
-// sentido si no hay ni modelo"). Before, the factory setting started in "the last one", and the last mode of a fresh
+// The viewport starts in Fast (owner's report of 2026-10-17: "as soon as you open the app it starts rendering, which
+// makes no sense when there is not even a model"). Before, the factory setting started in "the last one", and the last mode of a fresh
 // install was Full: the engine rendered an empty scene at once. In a browser (headless Chromium, the app through Vite),
 // with a stored document that remembers Full and carries the old setting set to Full, the app opens in Fast, in both
 // languages. Skipped without Chromium (REPACKSHOT_CHROMIUM, /opt/pw-browsers).

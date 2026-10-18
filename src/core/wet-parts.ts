@@ -1,4 +1,4 @@
-// Rain, dust and snow on the parts (phase S3c, SPEC §3.1 "Físicas", UI.md §2.5): what the ambient effects that fall on
+// Rain, dust and snow on the parts (phase S3c, SPEC §3.1 "Physics", UI.md §2.5): what the ambient effects that fall on
 // the parts (their `wetParts` switch) leave on the meshes of the scene. The engine simulates it (engine/crates/rt-phys
 // `wet_parts`, through rt.wasm's `wpt_*` in the physics worker, next to the rigid bodies of S2 and the front glass of
 // S3b) from a WPT1 spec (`wptBytes` writes it from `wetPartsSpec`): every visible part that does not move in the run,

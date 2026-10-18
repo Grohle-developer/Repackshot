@@ -1,580 +1,579 @@
-# rt-app — el lanzador de escritorio `repackshot`
+# rt-app — the `repackshot` desktop launcher
 
-Binario de Rust **solo con `std`**, en el mismo *workspace* y con las mismas puertas que el motor
-(`cargo fmt`, `clippy -D warnings`, ningún *crate* externo). **Sin `unsafe` salvo en
-`src/platform/`** (`#![deny(unsafe_code)]` en el *crate*, `#[allow(unsafe_code)]` solo en ese
-módulo; cada bloque dice por qué es correcto): la ventana propia de Windows llama a Win32 y a la
-interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITECTURE.md` §5.5):
+A Rust binary with **`std` only**, in the same *workspace* and with the same gates as the engine
+(`cargo fmt`, `clippy -D warnings`, no external *crate*). **No `unsafe` except in
+`src/platform/`** (`#![deny(unsafe_code)]` in the *crate*, `#[allow(unsafe_code)]` only in that
+module; each block says why it is correct): the own Windows window calls Win32 and the
+COM interface of WebView2 through FFI. It is the desktop application (`docs/ARCHITECTURE.md` §5.5):
 
-1. sirve la interfaz (el `dist/` de Vite, que se distribuye como `app/` junto al ejecutable) en
+1. serves the interface (Vite's `dist/`, distributed as `app/` next to the executable) on
    `127.0.0.1`;
-2. la abre en **su propia ventana** en Windows (Win32 con la barra de título del sistema y
-   WebView2 dentro, `src/platform/`), o, si no puede, en una ventana de aplicación de Edge
-   (Windows) o de un navegador de la familia Chromium (Linux), con perfil propio en la carpeta de
-   datos;
-3. renderiza con `rt-core` **en nativo**, con todos los hilos, los mismos píxeles que `rt` y que
-   el pool de wasm;
-4. guarda los modelos de IA en la carpeta de datos, por contenido, comprobados con un SHA-256
-   propio, y **todo el estado de la página** (ajustes, biblioteca, historial de resultados, caché
-   de miniaturas, lo que queda por descargar): en escritorio la página es solo la interfaz (P3e);
-5. detecta el equipo y aplica la regla de recomendación de `src/data/ai-models.json`
-   (`repackshot --hardware`, que lee el instalador);
-6. muestra los **diálogos del sistema** (carpeta, abrir, guardar) y lee y escribe **solo** lo que la
-   persona eligió en ellos (P3b): la ventana no usa nunca los selectores de archivos, las descargas
-   ni los permisos del navegador;
-7. descarga, comprueba, instala y **gobierna el motor de ejecución de la IA** (X3b,
-   `src/ai/`): stable-diffusion.cpp como proceso aparte, nunca enlazado (abajo, *IA: el motor de
-   ejecución*);
-8. **se actualiza a sí mismo** (P5, `src/update/`): descarga la versión nueva de la release,
-   comprueba su SHA-256, la instala y arranca la nueva cuando él ha parado (abajo,
-   *Actualizar desde la aplicación*).
+2. opens it in **its own window** on Windows (Win32 with the system title bar and
+   WebView2 inside, `src/platform/`), or, if that cannot be done, in an application window of Edge
+   (Windows) or of a Chromium-family browser (Linux), with its own profile in the data
+   folder;
+3. renders with `rt-core` **natively**, on all threads, the same pixels as `rt` and as
+   the wasm pool;
+4. stores the AI models in the data folder, by content, checked with its own SHA-256,
+   and **all of the page's state** (settings, library, results history, thumbnail
+   cache, what is left to download): on the desktop the page is only the interface (P3e);
+5. detects the machine and applies the recommendation rule of `src/data/ai-models.json`
+   (`repackshot --hardware`, which the installer reads);
+6. shows the **system dialogs** (folder, open, save) and reads and writes **only** what the
+   person chose in them (P3b): the window never uses the browser's file pickers, downloads
+   or permissions;
+7. downloads, checks, installs and **runs the AI execution engine** (X3b,
+   `src/ai/`): stable-diffusion.cpp as a separate process, never linked (below, *AI: the execution
+   engine*);
+8. **updates itself** (P5, `src/update/`): downloads the new release version,
+   checks its SHA-256, installs it and starts the new one once it has stopped (below,
+   *Updating from the application*).
 
-Lo que necesita del sistema lo pide a programas del sistema (`reg`, `powershell`, `wmic`,
+What it needs from the system it asks of system programs (`reg`, `powershell`, `wmic`,
 `nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, `curl`, `tar`, `tasklist`,
-`taskkill`, `kill`, el navegador), en Windows por su ruta absoluta en `System32`; por FFI, solo
-la ventana propia y DXGI para las tarjetas gráficas (`src/platform/`).
+`taskkill`, `kill`, the browser), on Windows by their absolute path in `System32`; through FFI, only
+the own window and DXGI for the graphics cards (`src/platform/`).
 
-## Línea de órdenes
+## Command line
 
 ```text
 repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window webview2|browser|auto] [--after-update]
-repackshot --serve-only [...]           sin ventana: escribe la URL con el token y sirve hasta que se pare
-repackshot --hardware <f.ini> [--device gpu|cpu]   escribe el INI del instalador y sale
-repackshot --shortcut-id <f.lnk>        Windows: escribe el AppUserModelID en un acceso directo a repackshot.exe y sale
+repackshot --serve-only [...]           no window: writes the URL with the token and serves until stopped
+repackshot --hardware <f.ini> [--device gpu|cpu]   writes the installer's INI and exits
+repackshot --shortcut-id <f.lnk>        Windows: writes the AppUserModelID into a shortcut to repackshot.exe and exits
 repackshot --version | --help
 ```
 
-`--after-update` lo pone el propio lanzador al arrancar la versión nueva tras una actualización (P5):
-solo lo apunta en el registro y lo dice `/api/info` (`afterUpdate`), para que la página avise de que
-se actualizó. Los argumentos con que arrancó el viejo (`--port`, `--data-dir`, `--serve-only`…) los
-recibe el nuevo tal cual.
+`--after-update` is set by the launcher itself when it starts the new version after an update (P5):
+it only records it in the log and `/api/info` reports it (`afterUpdate`), so that the page can say that
+it updated. The arguments the old one started with (`--port`, `--data-dir`, `--serve-only`…) are
+received by the new one unchanged.
 
-En Windows la compilación *release* no tiene consola (`windows_subsystem = "windows"`): los
-mensajes van a `<datos>/logs/repackshot.log` (rotado a `.log.1` al pasar de 1 MiB), y la salida
-de `--version` o `--serve-only` solo se ve redirigida a un fichero.
+On Windows the *release* build has no console (`windows_subsystem = "windows"`): messages
+go to `<data>/logs/repackshot.log` (rotated to `.log.1` past 1 MiB), and the output
+of `--version` or `--serve-only` can only be seen redirected to a file.
 
-## Carpetas
+## Folders
 
-| Qué | Dónde |
+| What | Where |
 | --- | --- |
-| Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
-| Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
-| Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; todo va dentro (ajustes, biblioteca, resultados, modelos, perfiles de la ventana), así que viaja con la carpeta |
-| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `cache/ai/` (imagen y pases de los renders finales grandes, X2), `cache/update/` (la descarga de una actualización mientras se comprueba, P5), `models/`, `ai/` (motores de ejecución de la IA y `sidecar.json`), `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
+| Interface | `<executable folder>/app/` (`--app-dir` changes it) |
+| Data, installed | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` or `~/.local/share/repackshot` (Linux) |
+| Data, **portable** | `data/` next to the executable when `portable.txt` exists beside it; everything goes inside (settings, library, results, models, window profiles), so it travels with the folder |
+| Inside the data | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (page state), `cache/ai/` (image and passes of large final renders, X2), `cache/update/` (an update's download while it is being checked, P5), `models/`, `ai/` (AI execution engines and `sidecar.json`), `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (own window's profile), `window.json` (where the own window was), `launcher.json` (the port), `instance.json`, `pending-models.json` |
 
-`--data-dir` manda sobre todo lo anterior.
+`--data-dir` overrides all of the above.
 
-## Ciclo de vida
+## Lifecycle
 
-- **Puerto estable por carpeta de datos** (P3e, `src/port.rs`): el lanzador apunta su puerto en
-  `<datos>/launcher.json` (`{"port": N}`) y lo vuelve a usar en el siguiente arranque si está
-  libre; solo si está ocupado toma otro libre, y lo apunta. Así el origen de la ventana
-  (`http://127.0.0.1:<puerto>`) no cambia de un arranque a otro. `--port N` usa N y no apunta nada.
+- **Stable port per data folder** (P3e, `src/port.rs`): the launcher records its port in
+  `<data>/launcher.json` (`{"port": N}`) and reuses it on the next start-up if it is
+  free; only if it is taken does it take another free one, and record it. That way the window's
+  origin (`http://127.0.0.1:<port>`) does not change from one start-up to the next. `--port N` uses N and records nothing.
 
-- **Instancia única**: `<datos>/instance.json` (`{port, token, pid}`, legible solo por su dueño
-  en Unix). Un segundo arranque que encuentra una instancia viva (responde `/api/info` con su
-  token) abre otra ventana contra ella y termina.
-- **Ventana propia** (Windows, `src/platform/`): si junto al ejecutable está `WebView2Loader.dll`
-  (de Microsoft, del paquete NuGet `Microsoft.Web.WebView2` fijado con su SHA-256 en
-  `packaging/lib/webview2.mjs`) y `GetAvailableCoreWebView2BrowserVersionString` encuentra el
-  *runtime* de WebView2, una ventana Win32 `WS_OVERLAPPEDWINDOW` con la barra de título del sistema,
-  nuestro icono (`WM_SETICON` a los DPI del monitor), título `Repackshot — <proyecto>`, barra oscura
-  con el tema oscuro (`DWMWA_USE_IMMERSIVE_DARK_MODE`, 20 y si no 19), AppUserModelID
-  `Repackshot.App`, DPI por monitor v2, tamaño mínimo de 500 × 400 a 100 % y su sitio en
-  `window.json` (no se usa si su barra de título ya no cae en ninguna pantalla). El instalador da
-  a sus accesos directos el mismo AppUserModelID con `repackshot --shortcut-id <lnk>`
-  (`IShellLinkW`, `IPropertyStore` con `PKEY_AppUserModel_ID`, `IPersistFile::Save`; solo
-  accesos directos a `repackshot.exe`), para que el anclado y la ventana sean un solo botón de la
-  barra de tareas. Los diálogos de archivo (`src/dialogs.rs`) se abren con esta ventana como
-  dueña. Dentro, WebView2 con perfil en `webview2/` (con las `PROFILE_PREFERENCES` de abajo) y,
-  como argumentos, las mismas `DISABLED_FEATURES` y `NO_THROTTLING_SWITCHES` de `src/browser.rs`
-  que la ventana de aplicación (`src/platform/flags.rs`); todo lo que no es nuestra
-  interfaz, apagado por la API (`src/platform/policy.rs`): menús contextuales, diálogos de script,
-  atajos del navegador, barra de estado, zoom, pellizco, deslizar para volver, autorrelleno,
-  contraseñas, SmartScreen, página de error propia y, en *release*, las herramientas de desarrollo.
-  Navegación solo a nuestro origen (un enlace `https` pulsado se abre en el navegador por defecto
-  con `ShellExecuteW`; nada abre otra ventana), descargas canceladas sin su panel, permisos
-  denegados salvo escribir un archivo o carpeta que la persona eligió y el almacenamiento
-  persistente, diálogos `alert`/`confirm`/`prompt` descartados. **Cerrar** (botón, `Alt F4`, barra
-  de tareas, menú del sistema: todo acaba en `WM_CLOSE`) no cierra: manda `close-requested` a la
-  página, que pregunta con su propia interfaz (la misma pregunta que Ctrl/⌘ W:
-  `requestCloseWindow`) y contesta `close-ok`; si la página no está, no ha
-  cargado o no late desde hace 20 s, se cierra sin preguntar. Si cualquier paso falla antes (o el
-  proceso del navegador muere), se apunta en el registro y se abre la ventana de aplicación de
-  abajo; `--window=browser` la fuerza y `--window=webview2` prohíbe el respaldo (falla). El
-  protocolo con la página está en `src/platform/protocol.rs` y `tests/fixtures/host-protocol.json`.
-- **Ventana de aplicación** (respaldo, y siempre en Linux): `REPACKSHOT_BROWSER`, si está; si no, en Windows Edge (`App Paths` de `msedge.exe`
-  en HKCU y HKLM, después las rutas de instalación habituales) y luego Chrome; en Linux el primero
-  de `chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, `microsoft-edge`,
-  `microsoft-edge-stable`, `brave-browser` en el `PATH`. Argumentos: `--app=<url>
-  --user-data-dir=<datos>/browser-profile`, los de *Ventana sin navegador* (abajo),
-  `--window-size=1600,1000` (y `--class=Repackshot`, `--password-store=basic`, `--noerrdialogs`
-  en Linux), más los tres `--disable-*-throttling/backgrounding` para que el latido no se frene
-  con la ventana minimizada. Sin ninguno, el navegador por defecto (`cmd /C start "" "<url>"`,
+- **Single instance**: `<data>/instance.json` (`{port, token, pid}`, readable only by its owner
+  on Unix). A second start-up that finds a live instance (it answers `/api/info` with its
+  token) opens another window against it and exits.
+- **Own window** (Windows, `src/platform/`): if `WebView2Loader.dll` is next to the executable
+  (Microsoft's, from the NuGet package `Microsoft.Web.WebView2` pinned with its SHA-256 in
+  `packaging/lib/webview2.mjs`) and `GetAvailableCoreWebView2BrowserVersionString` finds the
+  WebView2 *runtime*, a Win32 `WS_OVERLAPPEDWINDOW` window with the system title bar,
+  our icon (`WM_SETICON` at the monitor's DPIs), title `Repackshot — <project>`, dark bar
+  with the dark theme (`DWMWA_USE_IMMERSIVE_DARK_MODE`, 20 and failing that 19), AppUserModelID
+  `Repackshot.App`, per-monitor v2 DPI, minimum size of 500 × 400 at 100 % and its place in
+  `window.json` (not used if its title bar no longer falls on any screen). The installer gives
+  its shortcuts the same AppUserModelID with `repackshot --shortcut-id <lnk>`
+  (`IShellLinkW`, `IPropertyStore` with `PKEY_AppUserModel_ID`, `IPersistFile::Save`; only
+  shortcuts to `repackshot.exe`), so that the pin and the window are a single taskbar
+  button. The file dialogs (`src/dialogs.rs`) open with this window as
+  owner. Inside, WebView2 with its profile in `webview2/` (with the `PROFILE_PREFERENCES` below) and,
+  as arguments, the same `DISABLED_FEATURES` and `NO_THROTTLING_SWITCHES` of `src/browser.rs`
+  as the application window (`src/platform/flags.rs`); everything that is not our
+  interface, turned off through the API (`src/platform/policy.rs`): context menus, script dialogs,
+  browser shortcuts, status bar, zoom, pinch, swipe-to-go-back, autofill,
+  passwords, SmartScreen, own error page and, in *release*, the developer tools.
+  Navigation only to our origin (a clicked `https` link opens in the default browser
+  with `ShellExecuteW`; nothing opens another window), downloads cancelled without their panel, permissions
+  denied except writing a file or folder that the person chose and persistent
+  storage, `alert`/`confirm`/`prompt` dialogs dismissed. **Closing** (button, `Alt F4`, taskbar,
+  system menu: everything ends in `WM_CLOSE`) does not close: it sends `close-requested` to the
+  page, which asks with its own interface (the same question as Ctrl/⌘ W:
+  `requestCloseWindow`) and answers `close-ok`; if the page is absent, has not
+  loaded or has not beaten for 20 s, it closes without asking. If any step fails earlier (or the
+  browser process dies), it is recorded in the log and the application window
+  below is opened; `--window=browser` forces it and `--window=webview2` forbids the fallback (it fails). The
+  protocol with the page is in `src/platform/protocol.rs` and `tests/fixtures/host-protocol.json`.
+- **App window** (fallback, and always on Linux): `REPACKSHOT_BROWSER`, if set; otherwise, on Windows Edge (`App Paths` of `msedge.exe`
+  in HKCU and HKLM, then the usual install paths) and then Chrome; on Linux the first
+  of `chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, `microsoft-edge`,
+  `microsoft-edge-stable`, `brave-browser` on the `PATH`. Arguments: `--app=<url>
+  --user-data-dir=<data>/browser-profile`, those of *Window without browser chrome* (below),
+  `--window-size=1600,1000` (and `--class=Repackshot`, `--password-store=basic`, `--noerrdialogs`
+  on Linux), plus the three `--disable-*-throttling/backgrounding` so that the heartbeat is not slowed
+  when the window is minimised. With none, the default browser (`cmd /C start "" "<url>"`,
   `xdg-open`).
-- **Fin**: con la ventana propia, cuando se destruye. Con la de aplicación: cuando termina el proceso del navegador (si vivió más de 5 s: uno que sale antes ha
-  pasado la ventana a un navegador ya abierto con el mismo perfil), o cuando el latido de la
-  página (`POST /api/alive` cada 5 s, desde un *worker* para que no lo frene una pestaña oculta)
-  calla 20 s (60 s de gracia al arrancar). Si el equipo se suspende, el plazo vuelve a empezar.
+- **End**: with the own window, when it is destroyed. With the application window: when the browser process ends (if it lived more than 5 s: one that exits earlier has
+  handed the window to a browser already open with the same profile), or when the page's heartbeat
+  (`POST /api/alive` every 5 s, from a *worker* so that a hidden tab does not slow it)
+  falls silent for 20 s (60 s of grace at start-up). If the machine suspends, the deadline starts over.
 
-## Ventana sin navegador
+## Window without browser chrome
 
-Decisión del usuario tras probar v0.1.0: en escritorio no aparece nada que no sea la interfaz
-propia. Tres capas, todas en `src/browser.rs` como constantes que un anfitrión WebView2 (P3c)
-puede reutilizar tal cual (`AdditionalBrowserArguments`):
+Decision after trying v0.1.0: on the desktop nothing appears that is not the
+own interface. Three layers, all in `src/browser.rs` as constants that a WebView2 host (P3c)
+can reuse as they are (`AdditionalBrowserArguments`):
 
-1. **`HARDENING_SWITCHES`**, interruptores documentados en las listas de Chromium
-   (`chrome/common/chrome_switches.cc`, `content/public/common/content_switches.cc`; índice en
-   <https://peter.sh/experiments/chromium-command-line-switches/>) y presentes en las cadenas de
+1. **`HARDENING_SWITCHES`**, switches documented in Chromium's lists
+   (`chrome/common/chrome_switches.cc`, `content/public/common/content_switches.cc`; index at
+   <https://peter.sh/experiments/chromium-command-line-switches/>) and present in the strings of
    Chromium 141.0.7390.37: `--no-first-run`, `--no-default-browser-check`,
-   `--hide-crash-restore-bubble` (sin *¿restaurar páginas?*), `--disable-sync`,
+   `--hide-crash-restore-bubble` (no *Restore pages?*), `--disable-sync`,
    `--disable-extensions`, `--disable-default-apps`, `--disable-component-update`,
    `--disable-background-networking`, `--disable-domain-reliability`, `--no-pings`,
-   `--deny-permission-prompts` (los permisos se deniegan sin preguntar), `--disable-notifications`,
-   `--disable-search-engine-choice-screen`, `--disable-infobars`, `--disable-pinch` (sin zoom con
-   los dedos) y `--overscroll-history-navigation=0` (sin deslizar para ir atrás).
-2. **`DISABLED_FEATURES`**, en un solo `--disable-features=` (un segundo sustituiría al primero):
-   `Translate` (la burbuja de traducir; el interruptor `--disable-translate` ya no existe y Chromium
-   remite a la directiva `TranslateEnabled`, <https://codereview.chromium.org/2819813002>),
+   `--deny-permission-prompts` (permissions are denied without asking), `--disable-notifications`,
+   `--disable-search-engine-choice-screen`, `--disable-infobars`, `--disable-pinch` (no zoom with
+   the fingers) and `--overscroll-history-navigation=0` (no swiping to go back).
+2. **`DISABLED_FEATURES`**, in a single `--disable-features=` (a second would replace the first):
+   `Translate` (the translate bubble; the `--disable-translate` switch no longer exists and Chromium
+   points to the `TranslateEnabled` policy, <https://codereview.chromium.org/2819813002>),
    `TFLiteLanguageDetectionEnabled`, `AutofillServerCommunication`, `HardwareMediaKeyHandling`,
-   `PrivacySandboxSettings4`, `LensOverlay`, `OptimizationHints` (nombres comprobados en las cadenas
-   de Chromium 141) y, de Edge, `msWebOOUI` y `msPdfOOUI` (el minimenú al seleccionar texto,
-   descrito para el modo quiosco en
+   `PrivacySandboxSettings4`, `LensOverlay`, `OptimizationHints` (names checked in the strings
+   of Chromium 141) and, from Edge, `msWebOOUI` and `msPdfOOUI` (the mini menu on selecting text,
+   described for kiosk mode at
    <https://learn.microsoft.com/en-us/answers/questions/1194213/how-to-hide-all-context-menu-running-edge-in-kiosk>).
-   Un nombre desconocido se ignora, así que los de Edge no hacen nada en Chromium y al revés.
-3. **`PROFILE_PREFERENCES`**, escritas en `<perfil>/Default/Preferences` antes de cada arranque
-   (mezcladas con lo que haya; un fichero que no sea un objeto JSON no se toca):
+   An unknown name is ignored, so Edge's do nothing in Chromium and vice versa.
+3. **`PROFILE_PREFERENCES`**, written to `<profile>/Default/Preferences` before each start-up
+   (merged with whatever is there; a file that is not a JSON object is left alone):
    `translate.enabled`, `browser.enable_spellchecking`, `autofill.profile_enabled`,
    `autofill.credit_card_enabled`, `credentials_enable_service`, `credentials_enable_autosignin`,
-   `signin.allowed`, `alternate_error_pages.enabled` a `false`, `profile.exit_type = "Normal"`,
-   `browser.has_seen_welcome_page = true`, y de Edge `edge_quick_search.show_mini_menu`,
-   `PDF_show_mini_menu` y `show_smart_actions` a `false` (el ajuste *Mostrar minimenú al
-   seleccionar texto*; la clave, en
+   `signin.allowed`, `alternate_error_pages.enabled` to `false`, `profile.exit_type = "Normal"`,
+   `browser.has_seen_welcome_page = true`, and from Edge `edge_quick_search.show_mini_menu`,
+   `PDF_show_mini_menu` and `show_smart_actions` to `false` (the *Show mini menu when
+   selecting text* setting; the key is at
    <https://learn.microsoft.com/en-us/answers/questions/449c6c04-a6be-420c-a31d-ded8658decc6/prevent-context-menu-in-edge-when-text-is-selected>;
-   la directiva equivalente es `QuickSearchShowMiniMenu`,
+   the equivalent policy is `QuickSearchShowMiniMenu`,
    <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/quicksearchshowminimenu>,
-   que no se usa porque las directivas son de todo el equipo y no se escriben sin administrador).
+   which is not used because policies are machine-wide and are not written without administrator rights).
 
-Además, en Linux, **`QUIET_ENV`**: `GOOGLE_API_KEY`, `GOOGLE_DEFAULT_CLIENT_ID` y
-`GOOGLE_DEFAULT_CLIENT_SECRET` a `no` si no están, porque un Chromium sin claves (el de Arch, el de
-Playwright) pone en cada ventana la barra *Google API keys are missing*; comprobado bajo Xvfb con
-Chromium 141. Las directivas (`TranslateEnabled`, `QuickSearchShowMiniMenu`...) no se usan: en
-Windows viven en `HKLM`/`HKCU\Software\Policies`, protegidas, y afectarían al Edge de la persona.
+In addition, on Linux, **`QUIET_ENV`**: `GOOGLE_API_KEY`, `GOOGLE_DEFAULT_CLIENT_ID` and
+`GOOGLE_DEFAULT_CLIENT_SECRET` to `no` if not set, because a Chromium without keys (Arch's, Playwright's)
+puts the *Google API keys are missing* bar on every window; checked under Xvfb with
+Chromium 141. Policies (`TranslateEnabled`, `QuickSearchShowMiniMenu`...) are not used: on
+Windows they live in `HKLM`/`HKCU\Software\Policies`, protected, and would affect the person's own Edge.
 
-La página pone el resto (`src/ui/guards.ts`, en web y escritorio): `translate="no"` y `<meta
-name="google" content="notranslate">`, favicon y manifiesto propios, sin menú contextual del
-navegador fuera de los campos de texto, sin selección del cromo, sin los atajos del navegador
-(imprimir, recargar, zoom, buscar, código fuente, descargas, historial, marcadores, ventanas,
-pestañas, navegación con Alt + flechas y los botones laterales del ratón, F7, F11, F12 y Ctrl ⇧ I en
-producción) y, en escritorio, Ctrl/⌘ W con la pregunta propia y los enlaces en el navegador del
-sistema (`/api/open-url`).
+The page does the rest (`src/ui/guards.ts`, on web and desktop): `translate="no"` and `<meta
+name="google" content="notranslate">`, own favicon and manifest, no browser
+context menu outside text fields, no chrome selection, no browser shortcuts
+(print, reload, zoom, find, view source, downloads, history, bookmarks, windows,
+tabs, navigation with Alt + arrows and the mouse's side buttons, F7, F11, F12 and Ctrl ⇧ I in
+production) and, on the desktop, Ctrl/⌘ W with the own question and links in the system
+browser (`/api/open-url`).
 
-Lo que solo quita una ventana propia (P3c, WebView2): el menú *⋯* de la barra de título de una
-ventana `--app` de Edge o Chromium, y el diálogo *¿Salir?* de `beforeunload` al cerrar con la X.
+What only an own window removes (P3c, WebView2): the *⋯* menu of the title bar of an
+Edge or Chromium `--app` window, and the *Leave site?* `beforeunload` dialog when closing with the X.
 
-## Seguridad
+## Security
 
-- Escucha solo en `127.0.0.1`.
-- **`Host`**: toda petición debe traer `Host: 127.0.0.1:<puerto>` o `localhost:<puerto>`; si no,
-  421. Así una página de otro dominio que se haya hecho resolver a 127.0.0.1 (*DNS rebinding*) no
-  lee nada.
-- **Token**: 128 bits aleatorios por arranque (de `/dev/urandom` en Unix; en Windows, de los
-  `RandomState` de `std`, cuyas claves SipHash salen del generador del sistema, mezcladas con la
-  hora y el pid). Todo `/api/*` exige la cabecera `X-Repackshot-Token` con él (401 si falta o no
-  coincide; comparación en tiempo constante). Una cabecera propia no se puede mandar desde otro
-  origen sin *preflight* CORS, y este servidor **no envía ninguna cabecera CORS**.
-- **`Origin`**: un `/api/*` con un `Origin` que no sea `http://127.0.0.1:<puerto>` o
-  `http://localhost:<puerto>` se rechaza (403).
-- El token viaja a la página en el **fragmento** de la URL de la ventana
-  (`http://127.0.0.1:<puerto>/#token=<hex>`), que el navegador nunca manda al servidor ni pone en
-  `Referer`; la página lo guarda en `sessionStorage` y lo quita de la barra de direcciones
-  (`src/io/native.ts`). No aparece en ningún registro.
-- **Ficheros elegidos** (`src/files.rs`): la página nunca nombra una ruta que el lanzador lea o
-  escriba. Cada ruta que toca la API de ficheros la eligió la persona en un diálogo del sistema
-  **en este arranque**, y queda como una *concesión*: un id (`d…` carpeta, `f…` fichero: 24
-  hexadecimales del SHA-256 de la ruta, así la misma carpeta elegida otra vez tiene el mismo id) y
-  lo que permite. Una carpeta de `dialog/folder`: crear ficheros **nuevos** dentro (nunca
-  sobrescribe: `nombre (2).png`) y, si se pidió `read` (una importación), listar y leer lo que
-  cuelga de ella (sin seguir enlaces simbólicos). Un fichero de `dialog/open`: leerlo; escribirlo
-  solo si se pidió `writable` (un proyecto que se vuelve a guardar). Un fichero de `dialog/save`:
-  escribirlo entero (a un temporal al lado y renombrado encima: un guardado fallido no deja medio
-  fichero). Solo se escriben extensiones que produce la aplicación (`png`, `jpg`, `jpeg`, `exr`,
-  `tif`, `tiff`, `dng`, `json`, `repack`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
-  en todos los sistemas (`\ / : * ? " < > |` y controles a `_`, sin puntos ni espacios finales, los
-  nombres de dispositivo de Windows con `_` delante, 200 bytes como mucho). Dos entradas son del
-  propio lanzador, no de la página: `downloads` (la carpeta Descargas del sistema, solo ficheros
-  nuevos: el *Descargas* de la ventana de render) y el último proyecto, que el lanzador recuerda
-  en `<datos>/last-project.json` cuando la página se lo pide para un `.repack` (o `.repack.json`) concedido
-  (*General ▸ Al iniciar ▸ Último proyecto*). Lo que la página manda a un diálogo (título, nombre,
-  filtros, carpeta inicial) es solo texto para el diálogo: no concede nada. `/api/open-url` abre
-  solo direcciones `https://` sin comillas, espacios ni metacaracteres, con `rundll32
-  url.dll,FileProtocolHandler` (sin `cmd`) o `xdg-open`.
-- Ficheros estáticos: la ruta tiene que ser absoluta, sin NUL, `\`, `:`, segmentos vacíos, `.` ni
-  `..`, y la ruta canónica del fichero tiene que seguir dentro de la carpeta canónica (también
-  frena enlaces simbólicos que salgan). En `/api/*` cualquier segmento vacío, `.` o `..` es 400.
-- Cabeceras siempre: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+- It listens only on `127.0.0.1`.
+- **`Host`**: every request must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`; otherwise,
+  421. That way a page from another domain that has been made to resolve to 127.0.0.1 (*DNS rebinding*) cannot
+  read anything.
+- **Token**: 128 random bits per start-up (from `/dev/urandom` on Unix; on Windows, from `std`'s
+  `RandomState`s, whose SipHash keys come from the system generator, mixed with the
+  time and the pid). Every `/api/*` requires the `X-Repackshot-Token` header with it (401 if missing or not
+  matching; constant-time comparison). A custom header cannot be sent from another
+  origin without a CORS *preflight*, and this server **sends no CORS header**.
+- **`Origin`**: an `/api/*` with an `Origin` that is not `http://127.0.0.1:<port>` or
+  `http://localhost:<port>` is rejected (403).
+- The token travels to the page in the URL **fragment** of the window
+  (`http://127.0.0.1:<port>/#token=<hex>`), which the browser never sends to the server or puts in
+  `Referer`; the page stores it in `sessionStorage` and removes it from the address bar
+  (`src/io/native.ts`). It appears in no log.
+- **Chosen files** (`src/files.rs`): the page never names a path that the launcher reads or
+  writes. Each path the file API touches was chosen by the person in a system dialog
+  **in this start-up**, and remains a *grant*: an id (`d…` folder, `f…` file: 24
+  hexadecimal digits of the path's SHA-256, so the same folder chosen again has the same id) and
+  what it allows. A folder from `dialog/folder`: create **new** files inside (it never
+  overwrites: `name (2).png`) and, if `read` was requested (an import), list and read what
+  hangs from it (without following symbolic links). A file from `dialog/open`: read it; write it
+  only if `writable` was requested (a project that is saved again). A file from `dialog/save`:
+  write it whole (to a temporary beside it and renamed over it: a failed save leaves no half
+  file). Only extensions that the application produces are written (`png`, `jpg`, `jpeg`, `exr`,
+  `tif`, `tiff`, `dng`, `json`, `repack`, `rsb`, `mp4`, `webm`): nothing executable lands anywhere; names are made valid
+  on every system (`\ / : * ? " < > |` and control characters to `_`, no trailing dots or spaces, Windows
+  device names with a leading `_`, 200 bytes at most). Two entries belong to the
+  launcher itself, not the page: `downloads` (the system's Downloads folder, new files only:
+  the render window's *Downloads*) and the last project, which the launcher remembers
+  in `<data>/last-project.json` when the page asks it for a granted `.repack` (or `.repack.json`)
+  (*General ▸ On start ▸ Last project*). What the page sends to a dialog (title, name,
+  filters, initial folder) is only text for the dialog: it grants nothing. `/api/open-url` opens
+  only `https://` addresses without quotes, spaces or metacharacters, with `rundll32
+  url.dll,FileProtocolHandler` (without `cmd`) or `xdg-open`.
+- Static files: the path must be absolute, without NUL, `\`, `:`, empty segments, `.` or
+  `..`, and the file's canonical path must remain inside the canonical folder (this also
+  stops symbolic links that point out). In `/api/*` any empty segment, `.` or `..` is 400.
+- Headers always: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
   `X-Frame-Options: DENY`, `Cross-Origin-Resource-Policy: same-origin`; `Cache-Control: no-store`
-  en la API y `no-cache` en el HTML (los `assets/` de Vite, con *hash*, son inmutables).
-- HTTP/1.1 con *keep-alive*, un hilo por conexión (máximo 64), cuerpos con `Content-Length`
-  (los `chunked` de petición dan 501), cabeceras hasta 32 KiB, `Expect: 100-continue` atendido.
+  on the API and `no-cache` on the HTML (Vite's `assets/`, with a *hash*, are immutable).
+- HTTP/1.1 with *keep-alive*, one thread per connection (64 at most), bodies with `Content-Length`
+  (request `chunked` gets 501), headers up to 32 KiB, `Expect: 100-continue` handled.
 
-## Diálogos
+## Dialogs
 
-Uno abierto a la vez (otro da 409 `dialog-open`); se cierran con la aplicación. Lo que la página
-manda (título, nombre propuesto, filtros, carpeta inicial) llega al programa del diálogo como
-datos, nunca como código.
+One open at a time (another gets 409 `dialog-open`); they close with the application. What the page
+sends (title, proposed name, filters, initial folder) reaches the dialog program as
+data, never as code.
 
 - **Windows**: Windows PowerShell (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`)
-  con `-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -STA -EncodedCommand <guion>` y sin
-  ventana de consola (`CREATE_NO_WINDOW`). El guion (`POWERSHELL_SCRIPT` en `src/dialogs.rs`) lee
-  las entradas de variables `RPX_*` y usa `System.Windows.Forms`: `OpenFileDialog` y
-  `SaveFileDialog` (que .NET muestra con el diálogo moderno de Vista), y para carpetas el
-  `IFileOpenDialog` de Vista en modo `FOS_PICKFOLDERS`, compilado una vez por `Add-Type` y guardado
-  en `<datos>/cache/folder-picker-<v>.dll`; si eso no se puede (un equipo en modo de lenguaje
-  restringido), el truco de la carpeta del `OpenFileDialog`. El dueño del diálogo es la ventana de
-  la aplicación cuando el lanzador conoce su `HWND` (`Dialogs::set_owner_window`, para el
-  anfitrión propio de P3c) o un formulario oculto *siempre encima*, así sale delante de la
-  ventana. Las rutas vuelven como `PATH <base64 de UTF-8>`, sea cual sea la página de códigos de
-  la consola.
+  with `-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -STA -EncodedCommand <script>` and without a
+  console window (`CREATE_NO_WINDOW`). The script (`POWERSHELL_SCRIPT` in `src/dialogs.rs`) reads
+  the inputs from `RPX_*` variables and uses `System.Windows.Forms`: `OpenFileDialog` and
+  `SaveFileDialog` (which .NET shows with Vista's modern dialog), and for folders Vista's
+  `IFileOpenDialog` in `FOS_PICKFOLDERS` mode, compiled once by `Add-Type` and stored
+  in `<data>/cache/folder-picker-<v>.dll`; if that cannot be done (a machine in restricted
+  language mode), the `OpenFileDialog` folder trick. The dialog's owner is the application's window
+  when the launcher knows its `HWND` (`Dialogs::set_owner_window`, for the
+  own host of P3c) or a hidden *always on top* form, so it comes out in front of the
+  window. Paths come back as `PATH <base64 of UTF-8>`, whatever the console's code
+  page.
 - **Linux**: `zenity` (`--file-selection`, `--directory`, `--save --confirm-overwrite`,
-  `--multiple`, `--file-filter`), si no `kdialog` (`--getexistingdirectory`, `--getopenfilename`,
-  `--getsavefilename`), si no 501 `no-dialog` y la interfaz pide instalar uno de los dos.
+  `--multiple`, `--file-filter`), otherwise `kdialog` (`--getexistingdirectory`, `--getopenfilename`,
+  `--getsavefilename`), otherwise 501 `no-dialog` and the interface asks to install one of the two.
 
 ## API
 
-Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
-`{"error": "<código>", "message": "<texto>"}`.
+All `/api/*` routes carry `X-Repackshot-Token`. Errors in JSON:
+`{"error": "<code>", "message": "<text>"}`.
 
-### Aplicación
+### Application
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `GET /api/info` | `{app:"repackshot", version, engineVersion, features, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid, filesApi, aiApi, aiPost, updateApi, afterUpdate}` (`updateApi: 1` cuando el lanzador sabe actualizarse, P5; `afterUpdate`, que lo arrancó una actualización). `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: la versión de WebView2 o el navegador; `reason`, por qué no es la ventana propia: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` con `--serve-only`; `features`, lo que el motor lee además del RSB de siempre (`rt_core::FEATURES`; bit 0, M2b: las texturas: `IMGS`, el bloque de texturas de `MATL` y las UV de `MESH`; bit 1, M3b: los programas de material, `PROG`; bit 2, Q1: la vista en sección, `SECT`; bit 3, L5: las luces IES, `LGHT` de tipo 5 e `IESP`) |
-| `POST /api/alive` | 204. El latido. |
-| `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], gpuDetection, gpuSources[{source, ok, found, detail}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}`. `gpuDetection`: `ok` si alguna fuente de tarjetas gráficas contestó, `failed` si ninguna (entonces `gpus` vacío no quiere decir «sin tarjeta»); `gpuSources`: qué dijo cada una (`dxgi`, `registry`, `cim`, `wmic`; `nvidia-smi`, `drm`; `test`), con `detail` el error o las notas |
-| `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
-| `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...],"runtime":"SDCPP_WIN_VULKAN"}`, o `null`. `runtime` (U10) solo está si el instalador lo dejó marcado junto a los modelos (un nombre válido; si no lo es, se omite). El lanzador empieza a descargarlo él mismo en el arranque (`Ai::start_pending_runtime`: una clave desconocida, de otro sistema o ya instalada no hace nada); los modelos los empieza la página, que luego borra el fichero |
-| `DELETE /api/pending-models` | 204: consumido |
+| `GET /api/info` | `{app:"repackshot", version, engineVersion, features, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid, filesApi, aiApi, aiPost, updateApi, afterUpdate}` (`updateApi: 1` when the launcher knows how to update itself, P5; `afterUpdate`, that an update started it). `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: the WebView2 version or the browser; `reason`, why it is not the own window: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` with `--serve-only`; `features`, what the engine reads besides the usual RSB (`rt_core::FEATURES`; bit 0, M2b: textures: `IMGS`, the texture block of `MATL` and the UVs of `MESH`; bit 1, M3b: material programs, `PROG`; bit 2, Q1: the section view, `SECT`; bit 3, L5: IES lights, `LGHT` of type 5 and `IESP`) |
+| `POST /api/alive` | 204. The heartbeat. |
+| `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], gpuDetection, gpuSources[{source, ok, found, detail}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}`. `gpuDetection`: `ok` if any graphics-card source answered, `failed` if none did (then an empty `gpus` does not mean “no card”); `gpuSources`: what each said (`dxgi`, `registry`, `cim`, `wmic`; `nvidia-smi`, `drm`; `test`), with `detail` the error or notes |
+| `POST /api/open-folder` | Body `{"folder":"data\|models\|logs\|results"}` or `{"path":"<inside the data folder>"}`; 204, 403 outside the data |
+| `GET /api/pending-models` | What the installer chose, normalised: `{"device":"gpu\|cpu","keys":[...],"runtime":"SDCPP_WIN_VULKAN"}`, or `null`. `runtime` (U10) is only present if the installer left it marked alongside the models (a valid name; if it is not, it is omitted). The launcher starts downloading it itself at start-up (`Ai::start_pending_runtime`: an unknown key, one for another system or one already installed does nothing); the models are started by the page, which then deletes the file |
+| `DELETE /api/pending-models` | 204: consumed |
 
-### Diálogos y ficheros elegidos
+### Dialogs and chosen files
 
-Cada concesión es `{id, name, path, folder, read, write, size}`. Una respuesta de diálogo es
-`{"cancelled": true}` o `{"cancelled": false, "file": <la primera>, "files": [...]}`.
+Each grant is `{id, name, path, folder, read, write, size}`. A dialog response is
+`{"cancelled": true}` or `{"cancelled": false, "file": <the first>, "files": [...]}`.
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `POST /api/dialog/folder` | Cuerpo `{title, start?, read?, write?, folderItem?}`: una carpeta; `write` (por defecto) permite crear ficheros nuevos, `read` listarla y leerla. `start` es un id o una carpeta que exista (solo una pista) |
-| `POST /api/dialog/open` | Cuerpo `{title, multiple?, filters?, start?, writable?}`; `filters` es `[{name, extensions:["png","repack","repack.json","*"]}]` (extensiones validadas, 400 si no) |
-| `POST /api/dialog/save` | Cuerpo `{title, defaultName, filters?, start?}`; el diálogo pregunta antes de sustituir. 422 `extension` si la persona escribe una extensión que la aplicación no escribe |
-| `PUT /api/files?dir=<id>&name=<nombre>` | Cuerpo: los bytes. Un fichero **nuevo** en la carpeta `<id>` (o `downloads`): `nombre`, o `nombre (2)`...; 201 con su concesión (que se puede mostrar, no leer ni escribir). 404 `not-granted`, 403 sin permiso o extensión no admitida, 400 `bad-name`, 507 sin espacio |
-| `PUT /api/files/<id>` | Escribe el fichero entero (temporal y renombrado); 403 si no es escribible |
-| `GET` / `HEAD /api/files/<id>` | El fichero, con `Range` (para importaciones de muchos GB) |
-| `GET /api/files/<id>/info` | La concesión, más `hashing{done,total}` mientras se calcula su SHA-256 |
-| `POST /api/files/<id>/sha256` | `{sha256, bytes}`, calculado en *streaming* con el SHA-256 propio (modelos de IA importados) |
-| `GET /api/files/<id>/list` | `{files:[{id, name, rel, size}]}`: lo que cuelga de una carpeta legible (8 niveles, 4096 ficheros, sin enlaces) |
-| `POST /api/files/<id>/reveal` | 204: la carpeta, o el fichero seleccionado (`explorer /select,`), en el gestor de archivos; 410 si ya no está |
-| `GET /api/projects/last` | La concesión del último proyecto (lectura y escritura) o `null` |
-| `PUT /api/projects/last` | Cuerpo `{id}` de un `.repack` o `.repack.json` concedido; 204 |
-| `POST /api/open-url` | Cuerpo `{url}`, solo `https://`; 204 |
+| `POST /api/dialog/folder` | Body `{title, start?, read?, write?, folderItem?}`: a folder; `write` (the default) allows creating new files, `read` listing and reading it. `start` is an id or a folder that exists (only a hint) |
+| `POST /api/dialog/open` | Body `{title, multiple?, filters?, start?, writable?}`; `filters` is `[{name, extensions:["png","repack","repack.json","*"]}]` (extensions validated, 400 if not) |
+| `POST /api/dialog/save` | Body `{title, defaultName, filters?, start?}`; the dialog asks before replacing. 422 `extension` if the person types an extension that the application does not write |
+| `PUT /api/files?dir=<id>&name=<name>` | Body: the bytes. A **new** file in folder `<id>` (or `downloads`): `name`, or `name (2)`...; 201 with its grant (which can be shown, not read or written). 404 `not-granted`, 403 without permission or unsupported extension, 400 `bad-name`, 507 no space |
+| `PUT /api/files/<id>` | Writes the whole file (temporary and renamed); 403 if it is not writable |
+| `GET` / `HEAD /api/files/<id>` | The file, with `Range` (for imports of many GB) |
+| `GET /api/files/<id>/info` | The grant, plus `hashing{done,total}` while its SHA-256 is being computed |
+| `POST /api/files/<id>/sha256` | `{sha256, bytes}`, computed by *streaming* with the own SHA-256 (imported AI models) |
+| `GET /api/files/<id>/list` | `{files:[{id, name, rel, size}]}`: what hangs from a readable folder (8 levels, 4096 files, no links) |
+| `POST /api/files/<id>/reveal` | 204: the folder, or the selected file (`explorer /select,`), in the file manager; 410 if it is no longer there |
+| `GET /api/projects/last` | The last project's grant (read and write) or `null` |
+| `PUT /api/projects/last` | Body `{id}` of a granted `.repack` or `.repack.json`; 204 |
+| `POST /api/open-url` | Body `{url}`, `https://` only; 204 |
 
-`GET /api/info` lleva `filesApi: 1` cuando el lanzador tiene esta API.
+`GET /api/info` carries `filesApi: 1` when the launcher has this API.
 
-### Motor nativo
+### Native engine
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&passes=<pases>][&mesh=<clave>][&client=<id>][&seq=<n>][&share=<hilos>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa, passes}` (`passes`: los nombres de los pases que renderiza, X2). 400 `bad-scene` si el RSB no vale; 400 `bad-query` si `passes` nombra un pase que no existe o se pide en un trabajo de visor; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera, con el mismo `seq`); 409 `stale` si un trabajo de visor de ese `client` con un `seq` mayor o igual ya llegó (dos peticiones que se adelantan: la vieja no sustituye a la nueva); 503 `busy` con 8 ventanas en uso (que han preguntado en los últimos 3 s) |
-| `GET /api/render/<id>[?after=<n>][&data=0][&fit=<an>x<al>]` | Una **trama**: cabecera binaria y, si hay una pasada nueva, las sumas. Con `after=n` espera hasta 1 s a una pasada posterior a `n` (o al final, o a un cambio de cómo comparte con los renders: empieza o deja de compartir, o espera). `data=0`: solo la cabecera (progreso). `fit` (U14, la vista en vivo de la cola): las sumas reducidas por el menor factor entero `k` que cabe en ese recuadro (cada píxel, la media de las sumas de su caja de `k × k` dentro de la imagen), la cabecera con el tamaño reducido y la bandera 512, sin las sumas sin *denoise*; sin sumas que mandar no cambia nada; 400 `bad-query` si no es `<an>x<al>` de 1 a 16384. 404 si el trabajo no existe o fue sustituido o cancelado |
-| `DELETE /api/render/<id>` | 204: cancelado (o, si ya terminó, olvidado; los pases guardados siguen) |
-| `GET /api/render/<id>/passes` | Los **pases** guardados del render final `<id>` (X2), en binario (`RPP1`, abajo). 404 `not-found` si el id no existe, ya se desalojó o el trabajo no pidió pases (o se canceló, quedó huérfano o falló); 409 `not-ready` mientras se renderiza |
-| `GET /api/render/state[?log=1&reason=<texto>]` | Diagnóstico: `{connections, heartbeatSilenceMs, engine: {threads, isa, gate: {finalsRunning, finalsWaiting[], liveViewportThreads}, jobs: [{id, kind, width, height, maxSamples, share, passes, threads, pass, samples, seconds, flags[], cancelRequested, unaskedMs, error?}], viewports: [{client, lastSeq, sceneKept, running: {id, threadDone} \| null}]}}` (`passes`: la máscara de pases del trabajo). Con `log=1` también va al registro, con el motivo que da la página (el *watchdog* del visor lo pide al saltar) |
+| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&passes=<passes>][&mesh=<key>][&client=<id>][&seq=<n>][&share=<threads>]` | Body: the RSB. `{id, width, height, maxSamples, threads, isa, passes}` (`passes`: the names of the passes it renders, X2). 400 `bad-scene` if the RSB is not valid; 400 `bad-query` if `passes` names a pass that does not exist or is requested in a viewer job; 409 `need-meshes` if it is an update without `MESH` and those meshes are not loaded (the page then sends the whole scene, with the same `seq`); 409 `stale` if a viewer job of that `client` with a `seq` greater or equal has already arrived (two requests that overtake each other: the old one does not replace the new one); 503 `busy` with 8 windows in use (that have asked within the last 3 s) |
+| `GET /api/render/<id>[?after=<n>][&data=0][&fit=<w>x<h>]` | A **frame**: binary header and, if there is a new pass, the sums. With `after=n` it waits up to 1 s for a pass later than `n` (or for the end, or for a change in how it shares with the renders: it starts or stops sharing, or waits). `data=0`: the header only (progress). `fit` (U14, the queue's live view): the sums reduced by the smallest integer factor `k` that fits in that box (each pixel, the mean of the sums of its `k × k` box within the image), the header with the reduced size and flag 512, without the non-*denoise* sums; with no sums to send nothing changes; 400 `bad-query` if it is not `<w>x<h>` from 1 to 16384. 404 if the job does not exist or was replaced or cancelled |
+| `DELETE /api/render/<id>` | 204: cancelled (or, if it already finished, forgotten; the stored passes remain) |
+| `GET /api/render/<id>/passes` | The stored **passes** of final render `<id>` (X2), in binary (`RPP1`, below). 404 `not-found` if the id does not exist, was already evicted or the job did not request passes (or was cancelled, orphaned or failed); 409 `not-ready` while rendering |
+| `GET /api/render/state[?log=1&reason=<text>]` | Diagnostics: `{connections, heartbeatSilenceMs, engine: {threads, isa, gate: {finalsRunning, finalsWaiting[], liveViewportThreads}, jobs: [{id, kind, width, height, maxSamples, share, passes, threads, pass, samples, seconds, flags[], cancelRequested, unaskedMs, error?}], viewports: [{client, lastSeq, sceneKept, running: {id, threadDone} \| null}]}}` (`passes`: the job's pass mask). With `log=1` it also goes to the log, with the reason the page gives (the viewer's *watchdog* asks for it when it fires) |
 
-Trabajos: muestras y tiempo máximos del `RNDR` del RSB (0 muestras = 16, como `rt`). `finish` dice
-cuándo para, como *Terminar por* de la ventana de render (`src/render/schedule.ts`): `samples` (las
-muestras; el tiempo no cuenta), `time` (el tiempo, sin límite de muestras) o `first` (lo que llegue
-antes); sin él, `first` si hay tiempo y `samples` si no. La regla de parada es la de `runPasses`:
-solo entre pasadas, así que todos los píxeles tienen las mismas muestras, y con tiempo no empieza
-una pasada de la que no quepa la mitad (acaba a menos de media pasada del límite). El reloj de un
-trabajo empieza cuando empieza a renderizar: un final que espera en la cola no gasta su tiempo. Un trabajo
-`final` tiene prioridad y los finales van de uno en uno por orden de llegada. Un trabajo de visor
-con `share=n` (la página pide la cuarta parte de los hilos, al menos uno, salvo que *Ajustes ▸ Motor
-de render ▸ Mientras se renderiza* diga *Pausar*) sigue renderizando en `n` hilos mientras corre un
-final, que se queda con el resto (y con todos otra vez cuando no queda ningún visor vivo: uno que ha
-convergido no cuenta); sin `share`, se para entre baldosas (bandera *en pausa*). Qué hilo renderiza
-cada baldosa no cambia ningún píxel: el final da los mismos bits con o sin visor vivo
-(`tests/parity.rs`). Un trabajo de visor nuevo de un `client` sustituye al anterior de ese
-`client` (salvo que llegue tarde: `seq`); si el RSB no trae `MESH` y `mesh` coincide con el del
-trabajo anterior, se conservan sus mallas y sus BVH (`Scene::update_from_rsb`); un trabajo anterior
-que no se para en 5 s (una baldosa eterna) se deja atrás sin su escena, y la siguiente
-actualización pide la escena entera. Un `final` siempre lleva sus mallas. Los dos últimos finales
-terminados se guardan para recogerlos; la página los borra al leerlos. Un trabajo por el que nadie
-pregunta (la página consulta cada segundo) se para solo: el de visor a los 10 s y el final a los
-20 s (su página se fue). Con las 8 ventanas ocupadas, la que lleva más de 3 s sin preguntar (una
-página recargada, cuyo yo anterior no vuelve) deja su sitio a la nueva: las recargas solas nunca
-llegan al límite, y la página, además, cancela sus trabajos al irse (`pagehide`). Un render que entra en pánico termina como fallido y suelta su turno. La
-escritura de una trama de `after=` que la página ya no lee se corta a los 10 s y la conexión se
-cierra (antes retenía su hilo 120 s). La página lee o cancela siempre el cuerpo de cada respuesta:
-una respuesta sin leer retiene una de las seis conexiones que el navegador abre al lanzador, y con
-las seis retenidas todas las peticiones esperan para siempre (lo que paraba el visor, el render y
-*Pausar* en la v0.1.0).
+Jobs: maximum samples and time from the RSB's `RNDR` (0 samples = 16, as in `rt`). `finish` says
+when to stop, like the render window's *Finish by* (`src/render/schedule.ts`): `samples` (the
+samples; time does not count), `time` (the time, no sample limit) or `first` (whichever comes
+first); without it, `first` if there is a time and `samples` if not. The stop rule is that of `runPasses`:
+only between passes, so all pixels have the same samples, and with a time it does not start
+a pass of which half would not fit (it ends within half a pass of the limit). A
+job's clock starts when it starts rendering: a final waiting in the queue does not spend its time. A `final`
+job has priority and finals run one at a time in order of arrival. A viewer job
+with `share=n` (the page asks for a quarter of the threads, at least one, unless *Settings ▸ Render
+engine ▸ While a render runs* says *Pause the viewport*) keeps rendering on `n` threads while a
+final runs, and the final keeps the rest (and all of them again when no viewer is alive: one that has
+converged does not count); without `share`, it stops between tiles (the *paused* flag). Which thread renders
+each tile changes no pixel: the final gives the same bits with or without a live viewer
+(`tests/parity.rs`). A new viewer job from a `client` replaces that `client`'s previous one
+(unless it arrives late: `seq`); if the RSB brings no `MESH` and `mesh` matches that of the
+previous job, its meshes and BVHs are kept (`Scene::update_from_rsb`); a previous job
+that does not stop in 5 s (an eternal tile) is left behind without its scene, and the next
+update asks for the whole scene. A `final` always carries its meshes. The last two finished
+finals are stored for collection; the page deletes them when it reads them. A job that nobody
+asks about (the page asks every second) stops by itself: the viewer one after 10 s and the final one after
+20 s (its page is gone). With all 8 windows busy, the one that has gone more than 3 s without asking (a
+reloaded page, whose earlier self does not come back) gives its place to the new one: reloads alone never
+reach the limit, and the page, besides, cancels its jobs on leaving (`pagehide`). A render that panics ends as failed and releases its turn. The
+writing of an `after=` frame that the page no longer reads is cut off after 10 s and the connection is
+closed (before, it held its thread for 120 s). The page always reads or cancels the body of each response:
+an unread response holds one of the six connections that the browser opens to the launcher, and with
+all six held every request waits forever (which stopped the viewer, the render and
+*Pause* in v0.1.0).
 
-**Pases** (X2, `src/kept.rs`; contrato en `docs/AI-POST.md` §7.4). `passes` es una lista separada
-por comas de `albedo`, `normal`, `depth`, `partId`, `materialId` y `coc` (los nombres de
-`PASS_KEYS`, sensibles a mayúsculas); el trabajo final renderiza esos y los de `RNDR.passes` de su
-RSB, junto a la imagen y sin cambiarle un píxel, con los hilos que tenga (también los que le deja un
-visor que comparte, `share`: qué hilo hace una baldosa no cambia ni un píxel ni un pase). Un trabajo
-de visor no renderiza nunca pases (los de su RSB se ignoran). Cuando un final termina con todas sus
-muestras (no si se cancela, queda huérfano porque su página dejó de preguntar o falla), la imagen
-lineal (su última trama) y los pases se **guardan por id**, antes de que el trabajo diga que ha
-terminado, para el post-procesado IA (X3c los toma de ahí con el id del render; en Rust,
-`Engine::kept`); olvidar el trabajo no los borra. Se guardan los **cuatro últimos**: uno nuevo
-desaloja el más antiguo. Uno de más de **64 MiB** entre imagen y pases (unos 1,5 megapíxeles con
-todos los pases) no se queda en memoria: va a `<datos>/cache/ai/<id>.rpx` (la imagen, una trama
-`RPX1` con datos) y `<id>.rpp` (los pases, `RPP1`), escritos por un temporal y renombrados, y se
-sirve desde ahí; desalojarlo borra los dos ficheros. Los ids empiezan de nuevo en cada arranque, así
-que los `.rpx`, `.rpp` y `.tmp` de nombre numérico que dejó un arranque anterior se borran al
-arrancar.
+**Passes** (X2, `src/kept.rs`; contract in `docs/AI-POST.md` §7.4). `passes` is a comma-separated
+list of `albedo`, `normal`, `depth`, `partId`, `materialId` and `coc` (the names of
+`PASS_KEYS`, case-sensitive); the final job renders those and those of its RSB's `RNDR.passes`,
+alongside the image and without changing a pixel of it, with the threads it has (also those left to it by a
+sharing viewer, `share`: which thread does a tile changes neither a pixel nor a pass). A viewer
+job never renders passes (those of its RSB are ignored). When a final finishes with all its
+samples (not if it is cancelled, orphaned because its page stopped asking, or fails), the linear
+image (its last frame) and the passes are **stored by id**, before the job says it has
+finished, for the AI post-processing (X3c takes them from there with the render's id; in Rust,
+`Engine::kept`); forgetting the job does not delete them. The **last four** are stored: a new one
+evicts the oldest. One of more than **64 MiB** between image and passes (about 1.5 megapixels with
+all the passes) is not kept in memory: it goes to `<data>/cache/ai/<id>.rpx` (the image, an `RPX1`
+frame with data) and `<id>.rpp` (the passes, `RPP1`), written through a temporary and renamed, and is
+served from there; evicting it deletes both files. Ids start over at each start-up, so
+the `.rpx`, `.rpp` and `.tmp` files of numeric name left by an earlier start-up are deleted at
+start-up.
 
-**Trama** (little-endian, 48 bytes de cabecera):
+**Frame** (little-endian, 48-byte header):
 
-| Byte | Campo |
+| Byte | Field |
 | --- | --- |
 | 0 | `"RPX1"` |
-| 4 | `u32` longitud de la cabecera (48) |
-| 8 | `u32` pasadas completadas (0: todavía ninguna) |
-| 12 | `u32` muestras por píxel en las sumas |
-| 16, 20 | `u32` ancho, alto |
-| 24 | `f32` segundos desde que empezó (hasta que terminó) |
-| 28 | `u32` banderas: 1 terminado, 2 cancelado, 4 fallido, 8 en pausa por un final, 16 lleva datos, 32 comparte los hilos (un visor en su parte mientras corre un final, o un final que deja esa parte a un visor vivo), 64 sumas con *denoise*, 128 detrás van las sumas sin *denoise*, 256 con cáusticas, 512 sumas reducidas (`fit=`: el ancho y el alto son los de la imagen reducida) |
-| 32 | `u32` muestras pedidas (0: las que quepan en el tiempo) |
-| 36 | `u32` hilos que lo renderizan ahora (todos, su parte mientras comparte, 0 mientras espera) |
-| 40 | `u64` rayos lanzados |
-| 48 | con la bandera 16: `ancho × alto × 4` `f32`, por píxel la **suma** de radiancia premultiplicada (RGB) y de cobertura (A) de todas las muestras |
+| 4 | `u32` header length (48) |
+| 8 | `u32` passes completed (0: none yet) |
+| 12 | `u32` samples per pixel in the sums |
+| 16, 20 | `u32` width, height |
+| 24 | `f32` seconds since it started (until it ended) |
+| 28 | `u32` flags: 1 finished, 2 cancelled, 4 failed, 8 paused by a final, 16 carries data, 32 shares the threads (a viewer in its part while a final runs, or a final that leaves that part to a live viewer), 64 sums with *denoise*, 128 the non-*denoise* sums follow, 256 with caustics, 512 reduced sums (`fit=`: the width and height are those of the reduced image) |
+| 32 | `u32` samples requested (0: as many as fit in the time) |
+| 36 | `u32` threads rendering it now (all, its part while sharing, 0 while waiting) |
+| 40 | `u64` rays cast |
+| 48 | with flag 16: `width × height × 4` `f32`, per pixel the **sum** of premultiplied radiance (RGB) and coverage (A) of all the samples |
 
-Son las mismas sumas que acumula el `Accumulator` de `src/render/tiles.ts`, así que la página
-reutiliza tal cual su camino de visualización y su conversión exacta a 8 bits.
+They are the same sums that `src/render/tiles.ts`'s `Accumulator` accumulates, so the page
+reuses its display path and its exact conversion to 8 bits as is.
 
-**Pases** (`GET /api/render/<id>/passes` y `<datos>/cache/ai/<id>.rpp`; little-endian, 32 bytes de
-cabecera):
+**Passes** (`GET /api/render/<id>/passes` and `<data>/cache/ai/<id>.rpp`; little-endian, 32-byte
+header):
 
-| Byte | Campo |
+| Byte | Field |
 | --- | --- |
 | 0 | `"RPP1"` |
-| 4 | `u32` longitud de la cabecera (32; los planos empiezan ahí) |
-| 8, 12 | `u32` ancho, alto |
-| 16 | `u32` los pases presentes: bit *i* = `PASS_KEYS[i]` de `src/core/passes.ts` (1 albedo, 2 normal, 4 depth, 8 partId, 16 materialId, 32 coc) |
-| 20 | `u32` muestras de las que el albedo es la media |
-| 24 | `u32` id del trabajo |
-| 28 | `u32` 0 (reservado) |
-| 32 | por cada bit, en ese orden: `ancho × alto × canales` palabras por filas desde arriba (3 canales el albedo y la normal, 1 los demás); `f32`, salvo `partId` y `materialId`, `u32` |
+| 4 | `u32` header length (32; the planes start there) |
+| 8, 12 | `u32` width, height |
+| 16 | `u32` the passes present: bit *i* = `PASS_KEYS[i]` of `src/core/passes.ts` (1 albedo, 2 normal, 4 depth, 8 partId, 16 materialId, 32 coc) |
+| 20 | `u32` samples of which the albedo is the mean |
+| 24 | `u32` job id |
+| 28 | `u32` 0 (reserved) |
+| 32 | for each bit, in that order: `width × height × channels` words in rows from the top (3 channels for the albedo and the normal, 1 for the others); `f32`, except `partId` and `materialId`, `u32` |
 
-Fondo: albedo, normal, ids y `coc` 0, profundidad +∞; el suelo del estudio, `0xFFFFFFFF` en los dos
-ids. `src/render/pass-planes.ts` (`parsePasses`) lo lee en la página; `tests/fixtures/passes-3x2.rpp`
-lo escribe este *crate* y lo lee la página, para que los dos lados no se separen.
+Background: albedo, normal, ids and `coc` 0, depth +∞; the studio floor, `0xFFFFFFFF` in both
+ids. `src/render/pass-planes.ts` (`parsePasses`) reads it on the page; `tests/fixtures/passes-3x2.rpp`
+is written by this *crate* and read by the page, so that the two sides do not drift apart.
 
-**Paridad.** El renderizado es el de `rt` (`rt_cli::render_progressive`): baldosas de 32 píxeles
-de `tile_grid`, una película por baldosa, pasadas de 1, 2, 4, 8 y luego 16 índices de muestra,
-baldosas repartidas por un contador atómico y las muestras de cada baldosa sumadas en orden de
-índice en `f32`. Como `rt-core` saca sus números aleatorios solo de (semilla, píxel, índice de
-muestra), la película es la misma, bit a bit, que la de `rt` y la del pool de wasm, con
-cualquier número de hilos. `tests/parity.rs` lo comprueba: el ejemplo a 4 muestras por la API
-(con 1 y 4 hilos) da la película de `rt_cli::render` y el *hash* fijado `PINNED_EXAMPLE_4SPP`
-de `rt-core`, el mismo que reproduce el wasm (E4); una actualización de visor sin mallas da la
-película de la escena completa. Con todos los pases (X2) la película no cambia y los planos que
-sirve `/passes` son los `PINNED_PASS_*` de `rt-core`, también con 1 y 4 hilos; y el almacén guarda
-los últimos, los manda al disco, los desaloja y rechaza los ids que no conoce.
+**Parity.** The rendering is that of `rt` (`rt_cli::render_progressive`): 32-pixel tiles
+from `tile_grid`, one film per tile, passes of 1, 2, 4, 8 and then 16 sample indices,
+tiles distributed by an atomic counter and each tile's samples summed in index
+order in `f32`. Since `rt-core` draws its random numbers only from (seed, pixel, sample
+index), the film is the same, bit for bit, as `rt`'s and the wasm pool's, with
+any number of threads. `tests/parity.rs` checks it: the example at 4 samples through the API
+(with 1 and 4 threads) gives the film of `rt_cli::render` and `rt-core`'s pinned *hash* `PINNED_EXAMPLE_4SPP`,
+the same that the wasm reproduces (E4); a viewer update without meshes gives the
+film of the complete scene. With all the passes (X2) the film does not change and the planes that
+`/passes` serves are `rt-core`'s `PINNED_PASS_*`, also with 1 and 4 threads; and the store keeps
+the last ones, sends them to disk, evicts them and rejects ids it does not know.
 
-### Actualizar desde la aplicación (P5)
+### Updating from the application (P5)
 
-La página pide, el lanzador hace (`src/update/`). Solo `https://github.com/<owner>/<repo>/releases/download/<versión>/<archivo>` del repositorio de
-`src/data/update-feed.ts` (el *crate* lee ese archivo al compilarse), el paquete que le toca a esta copia y el `SHA256SUMS.txt` de la
-misma versión; nada más se descarga, venga de donde venga la petición.
+The page asks, the launcher does (`src/update/`). Only `https://github.com/<owner>/<repo>/releases/download/<version>/<file>` of the repository in
+`src/data/update-feed.ts` (the *crate* reads that file at compile time), the package that suits this copy and the `SHA256SUMS.txt` of the
+same version; nothing else is downloaded, wherever the request comes from.
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `GET /api/update` | `{state, tag, received, total, ready, error, message, mode}`. `state`: `IDLE` · `DOWNLOADING` · `VERIFYING` · `INSTALLING` · `FAILED`. `received` y `total` en bytes (`total` es el `size` que dio la página, 0 si no lo dio). `ready: true` con `INSTALLING`: los archivos ya están en su sitio y el lanzador espera a que se cierre la ventana (antes, `INSTALLING` es el desempaquetado y el cambio de archivos: no se cierra nada todavía). `error` (con `FAILED`): `download` · `disk-full` · `sums` (la release no lista la suma del paquete) · `checksum` (no cuadra: nada se instaló) · `extract` · `install`; `message`, lo mismo en inglés y con detalle, para el registro. `mode`: `installer` · `portable` · `null` (una copia que no puede actualizarse) |
-| `POST /api/update/install` | Cuerpo `{tag, assetUrl, sumsUrl, size?}` (`tag`: `0.2.0` o `v0.2.0`). `202` con el estado. `400` `bad-tag`, `bad-url` (fuera de la lista blanca: otro servidor, otro repositorio, `http`, una consulta o un fragmento, `%`, `..`, otra versión), `bad-asset` (el paquete no es el de esta clase de copia, o las sumas no se llaman `SHA256SUMS.txt`), `bad-body`; `409` `not-updatable` (ni instalada —`uninstall.exe` junto al programa— ni portable —`portable.txt`—, o no x86-64) y `busy` (ya hay una en marcha) |
-| `POST /api/update/cancel` | Para una descarga o una comprobación (el lanzador no guarda nada de ellas) y borra un fallo: el estado, `200`. `409` `not-cancellable` cuando ya se están cambiando los archivos |
+| `GET /api/update` | `{state, tag, received, total, ready, error, message, mode}`. `state`: `IDLE` · `DOWNLOADING` · `VERIFYING` · `INSTALLING` · `FAILED`. `received` and `total` in bytes (`total` is the `size` the page gave, 0 if it gave none). `ready: true` with `INSTALLING`: the files are already in place and the launcher waits for the window to close (before that, `INSTALLING` is the unpacking and the swapping of files: nothing is closed yet). `error` (with `FAILED`): `download` · `disk-full` · `sums` (the release does not list the package's sum) · `checksum` (does not match: nothing was installed) · `extract` · `install`; `message`, the same in English and with detail, for the log. `mode`: `installer` · `portable` · `null` (a copy that cannot be updated) |
+| `POST /api/update/install` | Body `{tag, assetUrl, sumsUrl, size?}` (`tag`: `0.2.0` or `v0.2.0`). `202` with the state. `400` `bad-tag`, `bad-url` (outside the allowlist: another server, another repository, `http`, a query or a fragment, `%`, `..`, another version), `bad-asset` (the package is not that of this kind of copy, or the sums are not called `SHA256SUMS.txt`), `bad-body`; `409` `not-updatable` (neither installed —`uninstall.exe` next to the program— nor portable —`portable.txt`—, or not x86-64) and `busy` (one is already running) |
+| `POST /api/update/cancel` | Stops a download or a check (the launcher keeps nothing of them) and clears a failure: the state, `200`. `409` `not-cancellable` when the files are already being swapped |
 
-Lo que hace, en un hilo y con el `curl` del sistema (los mismos límites y reintentos con reanudación que las demás descargas):
+What it does, on a thread and with the system `curl` (the same limits and retries with resume as the other downloads):
 
-1. **DOWNLOADING**: las sumas y el paquete (como mucho 1 GiB) a `<datos>/cache/update/`.
-2. **VERIFYING**: el SHA-256 propio del paquete contra la suma que la release lista para su nombre (dos sumas distintas para el mismo
-   nombre no se aceptan). Si no cuadra se borra y `FAILED` `checksum`.
-3. **INSTALLING**, según la copia:
-   - **Instalada (Windows)**: el instalador verificado se queda en `cache/update/` para el final.
-   - **Portable (Windows `.zip`, Linux `.tar.gz`)**: se extrae **todo** a `<carpeta del ejecutable>/update-<tag>/` (nombres de
-     `[A-Za-z0-9._+-]`, nada que suba con `..`, ningún enlace; el zip con el lector propio, el tar con el `tar` del sistema tras mirar
-     su lista) y se comprueba que trae el ejecutable y `app/index.html`. Después, **sustituye en el sitio**: cada archivo y carpeta del
-     paquete —el ejecutable el último— ocupa el lugar del que tenía su nombre, que se renombra `<nombre>.old` (`repackshot.old.exe`,
-     `app.old`; un ejecutable en uso se puede renombrar, no sobrescribir). `data/` y `portable.txt` no se tocan. Si cualquier paso
-     falla se deshacen los hechos, lo viejo queda donde estaba y el estado es `FAILED` (`disk-full` si faltó espacio, `extract`,
-     `install`). Los nombres a borrar se apuntan antes en `update.json`.
-4. **El lanzador espera a que se cierre la ventana** (la página la cierra al ver `ready`, tras su pregunta sobre cambios sin guardar;
-   con `--serve-only`, sin ventana, sale él solo). **Solo cuando ha parado** —el servidor, la ventana y `instance.json` ya soltados— arranca,
-   suelto del proceso (sin consola, sin entrada, grupo de procesos propio), `setup.exe /S /LAUNCH` o el ejecutable nuevo con los mismos
-   argumentos más `--after-update`. Nunca hay una versión nueva junto a una vieja que tenga el puerto.
-5. **Al arrancar**, la versión nueva borra los `.old` del `update.json` (y solo esos), las carpetas `update-<versión>` y
-   `cache/update/`; en Windows lo reintenta unos segundos porque el ejecutable viejo puede seguir cerrándose.
+1. **DOWNLOADING**: the sums and the package (1 GiB at most) to `<data>/cache/update/`.
+2. **VERIFYING**: the package's own SHA-256 against the sum that the release lists for its name (two different sums for the same
+   name are not accepted). If it does not match it is deleted and `FAILED` `checksum`.
+3. **INSTALLING**, according to the copy:
+   - **Installed (Windows)**: the verified installer stays in `cache/update/` for the end.
+   - **Portable (Windows `.zip`, Linux `.tar.gz`)**: **everything** is extracted to `<executable folder>/update-<tag>/` (names of
+     `[A-Za-z0-9._+-]`, nothing that climbs with `..`, no links; the zip with the own reader, the tar with the system `tar` after looking at
+     its list) and it is checked that it brings the executable and `app/index.html`. Then, it **replaces in place**: each file and folder of the
+     package —the executable last— takes the place of the one with its name, which is renamed `<name>.old` (`repackshot.old.exe`,
+     `app.old`; an executable in use can be renamed, not overwritten). `data/` and `portable.txt` are not touched. If any step
+     fails those done are undone, the old stays where it was and the state is `FAILED` (`disk-full` if space ran out, `extract`,
+     `install`). The names to delete are recorded beforehand in `update.json`.
+4. **The launcher waits for the window to close** (the page closes it on seeing `ready`, after its question about unsaved changes;
+   with `--serve-only`, without a window, it exits by itself). **Only when it has stopped** —the server, the window and `instance.json` already released— it starts,
+   detached from the process (no console, no input, own process group), `setup.exe /S /LAUNCH` or the new executable with the same
+   arguments plus `--after-update`. There is never a new version alongside an old one that holds the port.
+5. **On start-up**, the new version deletes the `.old` files of `update.json` (and only those), the `update-<version>` folders and
+   `cache/update/`; on Windows it retries for a few seconds because the old executable may still be closing.
 
-El instalador (`packaging/windows/installer.nsi`) en silencio: espera hasta 30 s a poder abrir `repackshot.exe` para escribir, no enseña ni
-escribe la página de modelos de IA, renueva el acceso directo del escritorio solo si existe y, con `/LAUNCH`, arranca la aplicación al
-acabar (`.onInstSuccess`). `tests/installer.rs` lee el guion como texto y comprueba el bucle, `/LAUNCH` y esas protecciones.
+The installer (`packaging/windows/installer.nsi`), when silent: waits up to 30 s to be able to open `repackshot.exe` for writing, neither shows nor
+writes the AI models page, renews the desktop shortcut only if it exists and, with `/LAUNCH`, starts the application when done
+(`.onInstSuccess`). `tests/installer.rs` reads the script as text and checks the loop, `/LAUNCH` and those safeguards.
 
-### Estado de la página
+### Page state
 
-En escritorio la página es solo la interfaz (fase P3e): **todo lo que guarda lo escribe el
-lanzador** en la carpeta de datos, nunca el almacenamiento del navegador de la ventana (que además
-no duraría: cada arranque escucha en otro puerto, y otro puerto es otro origen, con el
-almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src/io/platform.ts`.
+On the desktop the page is only the interface (phase P3e): **everything it stores is written by the
+launcher** in the data folder, never the window's browser storage (which would not
+last anyway: each start-up listens on another port, and another port is another origin, with
+empty storage). The client is `src/io/native-store.ts`; the seam, `src/io/platform.ts`.
 
 ```text
-<datos>/settings.json              el documento de ajustes ({schema, settings, layout} de src/core/settings.ts)
-<datos>/state/<nombre>.json        documentos pequeños (descargas por reanudar, la marca de la migración...)
-<datos>/library/library.json       la biblioteca propia (U4)
-<datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
-<datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif, dng)
-<datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR, TIFF, DNG)
-<datos>/results/<id>.ai.<n>.<ext>  la variante n (de 1 a 8) que hizo el post-procesado IA, cuando el resultado pasó por él (X4b), en su tipo
-<datos>/results/<id>.ai.<ext>      la única imagen de la IA de un resultado de antes de X4b (fase X4): se lee como su variante 1
-<datos>/cache/thumbs/<clave>.txt   las esferas de materiales (data URL): caché, se libera cuando se quiera
+<data>/settings.json              the settings document ({schema, settings, layout} of src/core/settings.ts)
+<data>/state/<name>.json          small documents (downloads to resume, the migration mark...)
+<data>/library/library.json       the own library (U4)
+<data>/results/index.json         the history: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
+<data>/results/<id>.<ext>         a result's file as is (png, jpg, exr, webp, tif, dng)
+<data>/results/<id>.display.png   its image for the viewer, when the page cannot display the file (EXR, TIFF, DNG)
+<data>/results/<id>.ai.<n>.<ext>  variant n (1 to 8) made by the AI post-processing, when the result went through it (X4b), in its type
+<data>/results/<id>.ai.<ext>      the single AI image of a result from before X4b (phase X4): read as its variant 1
+<data>/cache/thumbs/<key>.txt     the material spheres (data URL): cache, freed whenever wanted
 ```
 
-- **Escrituras atómicas**: a un temporal junto al destino, `sync_all`, y `rename` encima; un corte
-  o un cierre deja el archivo viejo o el nuevo, nunca medio. Un cuerpo más corto de lo anunciado
-  es 400 `short-body` y no toca nada.
-- **Nombres**: `[a-z0-9._-]`, en minúscula (dos nombres nunca chocan en un disco que no distingue
-  mayúsculas), de 1 a 96 caracteres, sin empezar ni acabar en punto, sin `..` y nunca un nombre de
-  dispositivo de Windows (`con`, `nul`, `com1`...): si no, 400 `bad-name`.
-- **Confinamiento**: cada ruta es la carpeta de datos más carpetas fijas y un nombre así; cada
-  carpeta del camino tiene que ser una carpeta de verdad, no un enlace, y el archivo tampoco puede
-  ser un enlace (403 `outside`).
-- Un documento que no es JSON (editado a mano, un fallo del disco) se aparta como
-  `<nombre>.corrupt` y se lee como ninguno: la página arranca con los valores de fábrica.
+- **Atomic writes**: to a temporary beside the destination, `sync_all`, and `rename` over it; a cut
+  or a shutdown leaves the old file or the new one, never half. A body shorter than announced
+  is 400 `short-body` and touches nothing.
+- **Names**: `[a-z0-9._-]`, lowercase (two names never collide on a case-insensitive disk), from 1 to 96 characters, not starting or ending with a dot, without `..` and never a Windows
+  device name (`con`, `nul`, `com1`...): otherwise, 400 `bad-name`.
+- **Confinement**: each path is the data folder plus fixed folders and such a name; each
+  folder along the way must be a real folder, not a link, and the file may not
+  be a link either (403 `outside`).
+- A document that is not JSON (hand-edited, a disk fault) is set aside as
+  `<name>.corrupt` and read as none: the page starts with the factory values.
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `GET /api/store/settings` | El documento tal cual se guardó, o `null` |
-| `PUT /api/store/settings` | Cuerpo: un objeto JSON (1 MiB como mucho). 204 |
+| `GET /api/store/settings` | The document as it was stored, or `null` |
+| `PUT /api/store/settings` | Body: a JSON object (1 MiB at most). 204 |
 | `DELETE /api/store/settings` | 204 |
-| `GET /api/store/docs` | `{"<nombre>": <valor>, ...}`: todos los documentos pequeños |
-| `GET` / `PUT` / `DELETE /api/store/docs/<nombre>` | Uno (`null` si no está); `PUT` admite cualquier valor JSON de 1 MiB como mucho |
-| `GET` / `PUT` / `DELETE /api/store/library` | La biblioteca: un objeto JSON de 64 MiB como mucho |
-| `GET /api/store/results` | `{"results": [meta...]}`, en el orden en que llegaron; un resultado cuyo archivo se borró a mano no aparece |
-| `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp`, `image/tiff` (`.tif`) o `image/x-adobe-dng` (`.dng`); otro tipo, 415 |
-| `PUT /api/store/results/<id>/display` | Cuerpo: la imagen PNG para el visor (512 MiB como mucho) |
-| `PUT /api/store/results/<id>/ai/<n>?type=<tipo>` | Cuerpo: la variante `n` (1 a 8, escrita sin ceros delante; si no, 400 `bad-variant`) que hizo el post-procesado IA (X4b), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro (`aiVariants: [{n, file, type}]`) con `PUT .../meta` si ya está. Una variante que la guarda rechazó no tiene archivo: no se manda |
-| `PUT /api/store/results/<id>/ai?type=<tipo>` | La única imagen de la IA de antes de X4b (X4), `<id>.ai.<ext>`; sigue funcionando y se lee como la variante 1 |
-| `PUT /api/store/results/<id>/meta` | Cuerpo: el registro (`ResultMeta`, objeto con `id` igual al de la ruta, si no 400 `id-mismatch`). Entra en el índice solo si su archivo ya está (409 `no-file`) |
-| `GET` / `HEAD /api/store/results/<id>[/display\|/ai\|/ai/<n>]` | El archivo, su imagen o la variante `n` de la IA (`/ai` es la 1; la 1 de un resultado de antes de X4b es su `<id>.ai.<ext>`), con su tipo y `Range`; 404 si no está |
-| `DELETE /api/store/results/<id>` | 204: el registro y sus archivos, todas las variantes incluidas |
-| `DELETE /api/store/results` | `{"deleted": n}`: el índice y lo que escribió el almacén en `results/` (un archivo que puso la persona se queda) |
-| `GET /api/store/cache/<clave>` | La miniatura (`text/plain`), o 204 si no está (lo normal, no un error) |
-| `PUT /api/store/cache/<clave>` | Cuerpo: texto UTF-8 de 1 MiB como mucho. 204 |
-| `DELETE /api/store/cache` | `{"freed": bytes}`: borra las miniaturas (no otras cachés de `cache/`) |
-| `GET /api/storage/usage` | `{dataDir, total, files, folders: [{id, path, bytes, files}]}` con `id` `models`, `results`, `library`, `thumbs`, `logs`, `window` (el perfil de la ventana: `browser-profile/` y `webview2/`) y `other` (el resto: ajustes, `state/`...). Se mide recorriendo las carpetas sin seguir enlaces |
+| `GET /api/store/docs` | `{"<name>": <value>, ...}`: all the small documents |
+| `GET` / `PUT` / `DELETE /api/store/docs/<name>` | One (`null` if absent); `PUT` accepts any JSON value of 1 MiB at most |
+| `GET` / `PUT` / `DELETE /api/store/library` | The library: a JSON object of 64 MiB at most |
+| `GET /api/store/results` | `{"results": [meta...]}`, in the order they arrived; a result whose file was deleted by hand does not appear |
+| `PUT /api/store/results/<id>?type=<type>` | Body: the file (4 GiB at most, written to disk in chunks). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp`, `image/tiff` (`.tif`) or `image/x-adobe-dng` (`.dng`); any other type, 415 |
+| `PUT /api/store/results/<id>/display` | Body: the PNG image for the viewer (512 MiB at most) |
+| `PUT /api/store/results/<id>/ai/<n>?type=<type>` | Body: variant `n` (1 to 8, written without leading zeros; otherwise 400 `bad-variant`) made by the AI post-processing (X4b), with the same types and limit as the file; again in another type leaves a single file. It enters the record (`aiVariants: [{n, file, type}]`) with `PUT .../meta` if it is already there. A variant that the guard rejected has no file: it is not sent |
+| `PUT /api/store/results/<id>/ai?type=<type>` | The single AI image from before X4b (X4), `<id>.ai.<ext>`; it keeps working and is read as variant 1 |
+| `PUT /api/store/results/<id>/meta` | Body: the record (`ResultMeta`, an object with `id` equal to the path's, otherwise 400 `id-mismatch`). It enters the index only if its file is already there (409 `no-file`) |
+| `GET` / `HEAD /api/store/results/<id>[/display\|/ai\|/ai/<n>]` | The file, its image or the AI variant `n` (`/ai` is the 1st; the 1st of a result from before X4b is its `<id>.ai.<ext>`), with its type and `Range`; 404 if absent |
+| `DELETE /api/store/results/<id>` | 204: the record and its files, all variants included |
+| `DELETE /api/store/results` | `{"deleted": n}`: the index and what the store wrote in `results/` (a file the person put there stays) |
+| `GET /api/store/cache/<key>` | The thumbnail (`text/plain`), or 204 if absent (normal, not an error) |
+| `PUT /api/store/cache/<key>` | Body: UTF-8 text of 1 MiB at most. 204 |
+| `DELETE /api/store/cache` | `{"freed": bytes}`: deletes the thumbnails (not other caches under `cache/`) |
+| `GET /api/storage/usage` | `{dataDir, total, files, folders: [{id, path, bytes, files}]}` with `id` `models`, `results`, `library`, `thumbs`, `logs`, `window` (the window profile: `browser-profile/` and `webview2/`) and `other` (the rest: settings, `state/`...). It is measured by walking the folders without following links |
 
-**Migración, una vez.** Si la carpeta de datos no tiene `state/migration.json`, la página copia
-lo que una versión anterior dejó en el almacenamiento del navegador de su origen (ajustes, también
-las preferencias sueltas de antes; biblioteca; cada `repackshot.*` salvo las miniaturas; el
-historial de IndexedDB, resultado a resultado), solo lo que el lanzador no tenga ya, y escribe la
-marca con lo copiado y lo que falló. Después no vuelve a mirar el almacenamiento del navegador. La
-copia del navegador se deja como estaba.
+**Migration, once.** If the data folder has no `state/migration.json`, the page copies
+what an earlier version left in its origin's browser storage (settings, also
+the loose preferences from before; library; each `repackshot.*` except the thumbnails; the
+IndexedDB history, result by result), only what the launcher does not already have, and writes the
+mark with what was copied and what failed. After that it does not look at the browser storage again. The
+browser's copy is left as it was.
 
-**Solo para pruebas**: `REPACKSHOT_TEST_GPUS="nombre|fabricante|bytes;..."` sustituye las tarjetas
-gráficas detectadas (la comprobación de interfaz de P3e en un equipo sin tarjeta).
+**For tests only**: `REPACKSHOT_TEST_GPUS="name|vendor|bytes;..."` replaces the detected graphics
+cards (P3e's interface check on a machine without a card).
 
-### Modelos de IA
+### AI models
 
-Almacén **por contenido**: un fichero que comparten varios modelos (el codificador Qwen3-4B de
-cuatro claves, el VAE de Z-Image de tres) se guarda y se descarga una vez.
+**Content-based** store: a file shared by several models (the Qwen3-4B encoder of
+four keys, Z-Image's VAE of three) is stored and downloaded once.
 
 ```text
-<datos>/models/blobs/<sha256>             fichero completo, comprobado contra su nombre
-<datos>/models/blobs/<sha256>.part        fichero a medio descargar
-<datos>/models/blobs/<sha256>.part.json   {"total", "ranges": [[ini, fin), ...], "damaged", "actual"}
-<datos>/models/installed.json             {"installed": [claves]}
-<datos>/models/imported/<clave>.json      manifiesto de un modelo importado
+<data>/models/blobs/<sha256>             complete file, checked against its name
+<data>/models/blobs/<sha256>.part        half-downloaded file
+<data>/models/blobs/<sha256>.part.json   {"total", "ranges": [[start, end), ...], "damaged", "actual"}
+<data>/models/installed.json             {"installed": [keys]}
+<data>/models/imported/<key>.json        manifest of an imported model
 ```
 
-La versión web replica la misma disposición en OPFS.
+The web version replicates the same layout in OPFS.
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `GET /api/models` | `{dir, installed[], models[{key, source:"catalogue"\|"imported", installed, state:"missing"\|"partial"\|"complete", totalBytes, presentBytes, files[{name, role, sha256, bytes, state, written?, contiguous?, damaged?, checking?}], manifest?}]}` para cada clave del catálogo y cada importada |
-| `PUT /api/models/blobs/<sha256>?offset=<n>[&total=<n>]` | Cuerpo: un trozo. Se escribe en su sitio del `.part` sin cargarlo entero en memoria (tamaños de decenas de GB); los trozos pueden llegar desordenados y por varias conexiones. Responde el estado del *blob*. 409 `damaged` o `checking`; 409 `conflict` si `total` cambia; 416 si el trozo se sale; 507 sin espacio. Un trozo cortado deja escrito lo que llegó |
-| `GET /api/models/blobs/<sha256>/status` | `{sha256, state, contiguous, written, total?, ready?, damaged?, actual?, checking?{done, total}}`; `contiguous` son los bytes escritos sin hueco desde 0: **desde ahí se reanuda** |
-| `POST /api/models/blobs/<sha256>/finish[?bytes=<n>]` | Calcula el SHA-256 (propio, en streaming) y, si coincide con el nombre, renombra el `.part` a su nombre final: 200 `{sha256, state:"complete", bytes}`. Si no coincide: 422 `sha256-mismatch` con `actual`, y el `.part` queda **dañado** hasta que se borre. 409 `incomplete` con `contiguous` si faltan bytes |
-| `GET` / `HEAD /api/models/blobs/<sha256>` | El fichero completo, con `Range` (un rango: 206; fuera: 416). 404 si no está completo |
-| `DELETE /api/models/blobs/<sha256>` | Borra el *blob* o su parte; 409 si lo usa un modelo instalado |
-| `PUT /api/models/imported/<clave>` | Cuerpo: el manifiesto (objeto con `files[{name, role, bytes, sha256}]` y lo que quiera la interfaz: licencia, arquitectura...). 409 si la clave es del catálogo |
-| `GET /api/models/imported/<clave>` | El manifiesto guardado |
-| `POST /api/models/installed` | Cuerpo `{"key": ...}`: lo apunta en `installed.json` si todos sus *blobs* están completos (409 `missing` con los ficheros que faltan) |
-| `DELETE /api/models/<clave>[?keep=A,B]` | Lo quita de `installed.json` (y su manifiesto si era importado) y borra **solo** los *blobs* que no usa ningún otro modelo instalado ni los de `keep` (descargas en curso). `{deleted:[sha256...]}` |
+| `GET /api/models` | `{dir, installed[], models[{key, source:"catalogue"\|"imported", installed, state:"missing"\|"partial"\|"complete", totalBytes, presentBytes, files[{name, role, sha256, bytes, state, written?, contiguous?, damaged?, checking?}], manifest?}]}` for each catalogue key and each imported one |
+| `PUT /api/models/blobs/<sha256>?offset=<n>[&total=<n>]` | Body: a chunk. It is written at its place in the `.part` without loading it whole into memory (sizes of tens of GB); chunks may arrive out of order and over several connections. Responds with the *blob*'s state. 409 `damaged` or `checking`; 409 `conflict` if `total` changes; 416 if the chunk falls outside; 507 no space. A cut chunk leaves what arrived written |
+| `GET /api/models/blobs/<sha256>/status` | `{sha256, state, contiguous, written, total?, ready?, damaged?, actual?, checking?{done, total}}`; `contiguous` is the bytes written with no gap from 0: **resuming starts from there** |
+| `POST /api/models/blobs/<sha256>/finish[?bytes=<n>]` | Computes the SHA-256 (own, streaming) and, if it matches the name, renames the `.part` to its final name: 200 `{sha256, state:"complete", bytes}`. If it does not match: 422 `sha256-mismatch` with `actual`, and the `.part` stays **damaged** until deleted. 409 `incomplete` with `contiguous` if bytes are missing |
+| `GET` / `HEAD /api/models/blobs/<sha256>` | The complete file, with `Range` (one range: 206; outside: 416). 404 if not complete |
+| `DELETE /api/models/blobs/<sha256>` | Deletes the *blob* or its part; 409 if an installed model uses it |
+| `PUT /api/models/imported/<key>` | Body: the manifest (an object with `files[{name, role, bytes, sha256}]` and whatever the interface wants: licence, architecture...). 409 if the key belongs to the catalogue |
+| `GET /api/models/imported/<key>` | The stored manifest |
+| `POST /api/models/installed` | Body `{"key": ...}`: records it in `installed.json` if all its *blobs* are complete (409 `missing` with the files that are lacking) |
+| `DELETE /api/models/<key>[?keep=A,B]` | Removes it from `installed.json` (and its manifest if it was imported) and deletes **only** the *blobs* that no other installed model uses nor those in `keep` (downloads in progress). `{deleted:[sha256...]}` |
 
-Validación: `<sha256>` exactamente 64 hexadecimales en minúscula; claves y nombres de fichero
-`[A-Za-z0-9._-]`, de 1 a 128 caracteres, sin empezar por punto y sin `..`.
+Validation: `<sha256>` exactly 64 lowercase hexadecimal digits; keys and file names
+`[A-Za-z0-9._-]`, from 1 to 128 characters, not starting with a dot and without `..`.
 
-## Equipo y recomendación
+## Hardware and recommendation
 
-`repackshot --hardware <f.ini> [--device gpu|cpu]` y `GET /api/hardware`:
+`repackshot --hardware <f.ini> [--device gpu|cpu]` and `GET /api/hardware`:
 
-- **Windows, tarjetas gráficas**: hasta cuatro fuentes, en este orden, y cada una deja en el
-  registro del lanzador (`logs/repackshot.log`, líneas `hardware:`) qué encontró o por qué falló,
-  más una línea final con lo que quedó:
-  1. **DXGI** (`src/platform/dxgi.rs`, dentro del proceso: `CreateDXGIFactory1`,
-     `EnumAdapters1`, `GetDesc1`): cada adaptador presente con su VRAM dedicada exacta (64 bits).
-     Se saltan los adaptadores de software (`DXGI_ADAPTER_FLAG_SOFTWARE`, el *Microsoft Basic
-     Render Driver*) y los de Microsoft (fabricante `0x1414`). `dxgi.dll` se carga solo de
-     `System32` (`LOAD_LIBRARY_SEARCH_SYSTEM32`). No necesita procesos hijos ni permisos del
-     registro.
-  2. **El registro**: la clase de pantalla
-     `HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}`, con
-     un `reg query` para listar sus subclaves y otro por cada adaptador (`\0000`, `\0001`…):
-     `DriverDesc`, `ProviderName`, VRAM de `HardwareInformation.qwMemorySize` (64 bits, exacta), si
-     no `HardwareInformation.MemorySize` (32 bits). **Nunca `/s` sobre la clase**: su subclave
-     `Properties` da «Acceso denegado» (*Access is denied*) y `reg` sale con 1; con `/s` tampoco
-     se puede contar con lo que liste detrás de un error. La salida se lee aunque `reg` termine
-     con un código distinto de 0 (`process::output_any`): v0.1.2 la tiraba entera y no encontraba
-     ninguna tarjeta en ningún Windows.
+- **Windows, graphics cards**: up to four sources, in this order, and each leaves in the
+  launcher's log (`logs/repackshot.log`, `hardware:` lines) what it found or why it failed,
+  plus a final line with what was kept:
+  1. **DXGI** (`src/platform/dxgi.rs`, in-process: `CreateDXGIFactory1`,
+     `EnumAdapters1`, `GetDesc1`): each adapter present with its exact dedicated VRAM (64 bits).
+     Software adapters (`DXGI_ADAPTER_FLAG_SOFTWARE`, the *Microsoft Basic
+     Render Driver*) and Microsoft's (vendor `0x1414`) are skipped. `dxgi.dll` is loaded only from
+     `System32` (`LOAD_LIBRARY_SEARCH_SYSTEM32`). It needs no child processes or registry
+     permissions.
+  2. **The registry**: the display class
+     `HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}`, with
+     one `reg query` to list its subkeys and another for each adapter (`\0000`, `\0001`…):
+     `DriverDesc`, `ProviderName`, VRAM from `HardwareInformation.qwMemorySize` (64 bits, exact), failing that
+     `HardwareInformation.MemorySize` (32 bits). **Never `/s` on the class**: its subkey
+     `Properties` gives “Access is denied” and `reg` exits with 1; with `/s` one cannot
+     count on what it lists after an error either. The output is read even if `reg` ends
+     with a non-zero code (`process::output_any`): v0.1.2 threw it all away and found
+     no card on any Windows.
   3. **CIM**: `Get-CimInstance Win32_VideoController` (`Name`, `AdapterCompatibility`,
-     `AdapterRAM`, que es de 32 bits y se queda en 4 GiB), en la misma ejecución de PowerShell que
-     la RAM y los núcleos.
-  4. **wmic** (`path Win32_VideoController`), solo si PowerShell no contestó.
+     `AdapterRAM`, which is 32-bit and tops out at 4 GiB), in the same PowerShell run as
+     the RAM and the cores.
+  4. **wmic** (`path Win32_VideoController`), only if PowerShell did not answer.
 
-  **Mezcla** (`merge_gpus`): los adaptadores son los de la primera fuente que contestó de las que
-  listan exactamente lo que hay ahora (DXGI, si no CIM, si no wmic), porque el registro guarda las
-  claves de controlador de una tarjeta que ya se quitó; las demás fuentes completan esos mismos
-  adaptadores, emparejados por nombre (minúsculas, sin `(R)` ni `(TM)`; dos tarjetas iguales siguen
-  siendo dos). Si ninguna de esas contestó, vale lo del registro. VRAM: la mayor de las exactas
-  (DXGI, `qwMemorySize`), si no la mayor de las de 32 bits. Si ninguna fuente contestó,
-  `gpuDetection` es `failed` y la interfaz dice que no se pudieron leer las tarjetas, no que no
-  haya.
-- **Windows, lo demás**: RAM instalada y utilizable y núcleos con PowerShell `Get-CimInstance`
-  (30 s como mucho), si no `wmic`; nombre de la CPU del registro. Todo sin ventana de consola
-  (`CREATE_NO_WINDOW`), los programas por su ruta absoluta (`%SystemRoot%\System32\reg.exe`,
-  `…\WindowsPowerShell\v1.0\powershell.exe`, `…\wbem\WMIC.exe`) y sus salidas leídas sea cual sea
-  su código de salida.
-- **Linux**: `/proc/cpuinfo`, `/proc/meminfo`, bloques de `/sys/devices/system/memory` (la RAM
-  instalada: un equipo de "16 GB" muestra unos 15,6 GiB utilizables), `nvidia-smi` si está,
-  `mem_info_vram_total` de las tarjetas DRM (AMD).
-- **Memoria efectiva**: la memoria se informa por debajo de su tamaño comercial (un equipo de
-  "16 GB" muestra de 15,6 a 15,9 GiB utilizables; una tarjeta de "12 GB" puede leer 11,99 GiB), y la
-  tabla habla en tamaños comerciales. Por eso la regla compara con la tabla los **GiB efectivos =
-  GiB medidos / 0,94**, en RAM y en VRAM (no en los búferes del navegador): constante
-  `MEMORY_REPORTING_FACTOR`, con el mismo nombre en `recommend.rs` y en
-  `src/core/ai-recommend.ts`. Se sigue prefiriendo la RAM instalada cuando se puede leer. El INI y
-  `/api/hardware` dan lo medido; la regla aplica el factor.
-- **Dispositivo**: GPU si hay una con ≥ 4 GiB efectivos de VRAM dedicada; si no, CPU; `--device`
-  manda.
-- **Regla**: la de `docs/AI-POST.md` §2.4 sobre la tabla de `src/data/ai-models.json`, incluido en
-  el binario al compilar: primera fila que encaja, mínimo incluido y máximo excluido, modelos no
-  disponibles saltados (la recomendación pasa al primer ofrecido disponible), detección fallida →
-  sin recomendación. La misma que `src/core/ai-recommend.ts`; las dos pasan
+  **Merging** (`merge_gpus`): the adapters are those of the first source that answered among those that
+  list exactly what is there now (DXGI, failing that CIM, failing that wmic), because the registry keeps the
+  driver keys of a card that has been removed; the other sources complete those same
+  adapters, matched by name (lowercase, without `(R)` or `(TM)`; two identical cards are still
+  two). If none of those answered, the registry's is used. VRAM: the largest of the exact ones
+  (DXGI, `qwMemorySize`), failing that the largest of the 32-bit ones. If no source answered,
+  `gpuDetection` is `failed` and the interface says that the cards could not be read, not that there
+  are none.
+- **Windows, the rest**: installed and usable RAM and cores with PowerShell `Get-CimInstance`
+  (30 s at most), failing that `wmic`; CPU name from the registry. All without a console window
+  (`CREATE_NO_WINDOW`), the programs by their absolute path (`%SystemRoot%\System32\reg.exe`,
+  `…\WindowsPowerShell\v1.0\powershell.exe`, `…\wbem\WMIC.exe`) and their outputs read whatever
+  their exit code.
+- **Linux**: `/proc/cpuinfo`, `/proc/meminfo`, blocks of `/sys/devices/system/memory` (the installed
+  RAM: a "16 GB" machine shows about 15.6 GiB usable), `nvidia-smi` if present,
+  `mem_info_vram_total` of the DRM cards (AMD).
+- **Effective memory**: memory is reported below its commercial size (a "16 GB" machine
+  shows 15.6 to 15.9 GiB usable; a "12 GB" card may read 11.99 GiB), and the
+  table speaks in commercial sizes. That is why the rule compares with the table the **effective GiB =
+  measured GiB / 0.94**, in RAM and in VRAM (not in the browser's buffers): constant
+  `MEMORY_REPORTING_FACTOR`, with the same name in `recommend.rs` and in
+  `src/core/ai-recommend.ts`. Installed RAM is still preferred when it can be read. The INI and
+  `/api/hardware` give the measured values; the rule applies the factor.
+- **Device**: GPU if there is one with ≥ 4 effective GiB of dedicated VRAM; otherwise, CPU; `--device`
+  overrides.
+- **Rule**: that of `docs/AI-POST.md` §2.4 over the table of `src/data/ai-models.json`, included in
+  the binary at compile time: first row that fits, minimum included and maximum excluded, unavailable
+  models skipped (the recommendation moves to the first available offered one), failed detection →
+  no recommendation. The same as `src/core/ai-recommend.ts`; both pass
   `tests/fixtures/ai-recommend-cases.json`.
 
-El INI va en **UTF-16LE con BOM** (lo que leen como Unicode las funciones de INI de Windows y
-`ReadINIStr` de NSIS), con líneas CRLF:
+The INI is in **UTF-16LE with BOM** (what Windows' INI functions and NSIS's `ReadINIStr` read as Unicode),
+with CRLF lines:
 
 ```ini
 [hardware]
@@ -590,263 +589,262 @@ key=ZIMAGE_Q8  label_en=…  label_es=…  summary_en=…  summary_es=…  size_
 licence=Apache-2.0  commercial=1  restrictions=0  available=1  desktop=1  recommended=1  offered=0
 ```
 
-(una clave por línea; aquí agrupadas para leerlas). `size_gib` son GiB con un decimal (lo que
-Windows muestra como "GB").
+(one key per line; grouped here to read them). `size_gib` is GiB with one decimal (what
+Windows shows as "GB").
 
-`[runtime]` (fase U10) es **el motor de ejecución que el instalador ofrece junto a los modelos**: la
-compilación que elige la regla de `src/data/ai-runtimes.json` para este sistema (`std::env::consts`)
-con la misma entrada que usa `GET /api/ai/runtime`: GPU que usar si el lanzador mismo, sin forzar
-nada, elegiría la GPU (≥ 4 GiB efectivos), salvo que `--device cpu` pida el procesador. `--device
-gpu` no cambia nada, porque la aplicación solo sabe anular la regla hacia el procesador (`device=cpu`
-de la consulta). `available=0` con todo vacío cuando no hay compilación fijada para el sistema.
-`size_mib` son MiB redondeados (lo que Windows muestra como "MB"). `tests/installer.rs` lee
-`packaging/windows/models-page.nsh` como texto y comprueba que cada `ReadINIStr` tiene su clave en
-este INI y que la línea que escribe en `pending-models.json` es la que lee `read_pending`.
+`[runtime]` (phase U10) is **the execution engine that the installer offers alongside the models**: the
+build that the rule of `src/data/ai-runtimes.json` chooses for this system (`std::env::consts`)
+with the same input that `GET /api/ai/runtime` uses: a GPU to use if the launcher itself, forcing
+nothing, would choose the GPU (≥ 4 effective GiB), unless `--device cpu` asks for the processor. `--device
+gpu` changes nothing, because the application can only override the rule towards the processor (the query's `device=cpu`).
+`available=0` with everything empty when there is no pinned build for the system.
+`size_mib` is rounded MiB (what Windows shows as "MB"). `tests/installer.rs` reads
+`packaging/windows/models-page.nsh` as text and checks that each `ReadINIStr` has its key in
+this INI and that the line it writes to `pending-models.json` is the one `read_pending` reads.
 
-## IA: el motor de ejecución (X3b)
+## AI: the execution engine (X3b)
 
-`docs/AI-POST.md` §7.1. **stable-diffusion.cpp** (MIT, sobre ggml, MIT) en sus compilaciones
-oficiales, fijadas en `src/data/ai-runtimes.json` (incluido en el binario al compilar, como
-`ai-models.json`): *release* `master-959-d637cfb`, una **Vulkan** y una **CPU** para Windows y
-para Linux x86_64 (la CPU trae todas las variantes de x86-64 de ggml y carga la mejor, AVX2 o
-superior si la hay). Un proceso aparte que el lanzador descarga, arranca, alimenta y para; nada
-de él se enlaza ni se copia en `engine/`.
+`docs/AI-POST.md` §7.1. **stable-diffusion.cpp** (MIT, on top of ggml, MIT) in its official
+builds, pinned in `src/data/ai-runtimes.json` (included in the binary at compile time, like
+`ai-models.json`): *release* `master-959-d637cfb`, one **Vulkan** and one **CPU** for Windows and
+for Linux x86_64 (the CPU one brings all of ggml's x86-64 variants and loads the best, AVX2 or
+higher if available). A separate process that the launcher downloads, starts, feeds and stops; nothing
+of it is linked or copied into `engine/`.
 
 ```text
-<datos>/ai/runtimes/<sha256>.zip.part     el archivo bajando (se reanuda desde su longitud)
-<datos>/ai/runtimes/<sha256>.tmp/         descomprimiéndose (un arranque que lo encuentra lo borra)
-<datos>/ai/runtimes/<sha256>/             instalado: lo del zip, repackshot-runtime.json, repackshot-probe.json
-<datos>/ai/sidecar.json                   {pid, server} del sd-server en marcha
+<data>/ai/runtimes/<sha256>.zip.part     the archive downloading (resumed from its length)
+<data>/ai/runtimes/<sha256>.tmp/         being unpacked (a start-up that finds it deletes it)
+<data>/ai/runtimes/<sha256>/             installed: the zip's contents, repackshot-runtime.json, repackshot-probe.json
+<data>/ai/sidecar.json                   {pid, server} of the running sd-server
 ```
 
-- **Regla de elección** (la misma que `src/core/ai-runtimes.ts`; las dos pasan
-  `tests/fixtures/ai-runtime-cases.json`): filas `choice` de arriba abajo, gana la primera cuya
-  `force` sea la forzada (`null`: nada forzado) y, si tiene `gpu`, cuyo valor sea si el informe
-  del equipo tiene GPU que usar (el `device` de `/api/hardware`: una GPU con ≥ 4 GiB efectivos;
-  una detección fallida es «sin GPU»; `device=cpu` en la petición, la CPU elegida en *Ajustes*,
-  también). Con la fila y el sistema (`os`, `arch`) sale la compilación; sin compilación para el
-  sistema, la fila y ninguna clave.
-- **Descarga**: la página no puede: las descargas de *releases* de GitHub (y
-  `release-assets.githubusercontent.com`, adonde redirigen) no mandan
-  `Access-Control-Allow-Origin`, así que un `fetch` desde `http://127.0.0.1:<puerto>` no puede
-  leerlas. La hace el lanzador con el `curl` del sistema (`%SystemRoot%\System32\curl.exe`
-  desde Windows 10 1803, nunca uno del `PATH` en Windows; el primero del `PATH` en Linux):
+- **Selection rule** (the same as `src/core/ai-runtimes.ts`; both pass
+  `tests/fixtures/ai-runtime-cases.json`): `choice` rows from top to bottom, the first wins whose
+  `force` is the forced one (`null`: nothing forced) and, if it has `gpu`, whose value is whether the machine
+  report has a GPU to use (the `device` of `/api/hardware`: a GPU with ≥ 4 effective GiB;
+  a failed detection is “no GPU”; `device=cpu` in the request, the CPU chosen in *Settings*,
+  too). With the row and the system (`os`, `arch`) the build comes out; with no build for the
+  system, the row and no key.
+- **Download**: the page cannot do it: GitHub *release* downloads (and
+  `release-assets.githubusercontent.com`, where they redirect) send no
+  `Access-Control-Allow-Origin`, so a `fetch` from `http://127.0.0.1:<port>` cannot
+  read them. The launcher does it with the system `curl` (`%SystemRoot%\System32\curl.exe`
+  since Windows 10 1803, never one from the `PATH` on Windows; the first on the `PATH` on Linux):
   `--fail --location --max-redirs 5 --proto =https --proto-redir =https --connect-timeout 30
-  --speed-limit 1024 --speed-time 60 [--continue-at <bytes>] --url <url>`, con la salida por su
-  salida estándar, que el lanzador añade al `.part` (ninguna ruta pasa a `curl`). Pausar es parar
-  `curl`; reanudar, `--continue-at` con lo que haya (un servidor que no reanuda, código 33, hace
-  empezar de 0 una vez). Cortes, conexiones fallidas y lentitud (códigos 7, 18, 28, 52, 55, 56,
-  92) se reintentan dos veces, a los 2 y 5 s, desde donde se quedó. Sin `curl`, la fila lo dice e
-  **Instalar desde un archivo…** instala uno descargado con un navegador. La URL sale siempre del
-  catálogo incluido en el binario, nunca de la página.
-- **Instalación**: SHA-256 propio del archivo entero; si no es el fijado, se borra y **no se
-  instala nada** (el error lo dice con los dos valores). Se descomprime con `src/ai/zip.rs` e
-  `src/ai/inflate.rs` (APPNOTE 6.3 y RFC 1951 desde las especificaciones; CRC-32 de cada entrada,
-  límites de entradas y tamaños, nombres solo `[A-Za-z0-9._+-]` por componente, sin `..`,
-  absolutas, barras invertidas, letras de unidad ni enlaces simbólicos, ficheros que no existían),
-  los ejecutables con `0755` en Unix, en `<sha256>.tmp/`, que se renombra entero; se exige que
-  estén `sd-server` y `sd-cli`, y se les pregunta `--version` y `--list-devices` (60 s como
-  mucho; un Windows sin el entorno de Visual C++ sale con `0xC0000135` y la fila lo nombra).
-- **El servidor**: `sd-server <argumentos de la familia> --listen-ip 127.a.b.c --listen-port
-  <libre>` con el directorio del motor como directorio de trabajo, la entrada cerrada, las dos
-  salidas leídas y `CREATE_NO_WINDOW`. `sd-server` refleja cualquier `Origin` en
-  `Access-Control-Allow-Origin` y numera sus trabajos en orden, así que escucha en una dirección
-  de bucle local **aleatoria** (todo `127/8` es bucle local en Linux y en Windows; nunca
-  `127.0.0.1`) y un puerto libre: unas 2^40 combinaciones que una página ajena tendría que
-  probar, además del permiso de acceso a la red local de los navegadores. Listo cuando
-  `GET /sdcpp/v1/capabilities` responde (escucha solo tras cargar el modelo). Se mantiene
-  cargado entre llamadas con los mismos argumentos; otro modelo, otra compilación u otro
-  ControlNet lo reinician. Se para: si termina solo (el error dice cómo y sus últimas líneas), si
-  no dice nada ni cambia de estado durante `silence` (10 min), si cargar pasa de `load` (30 min)
-  o una imagen de `run` (60 min), si se cancela y no obedece en 15 s, a los `idle` (5 min) sin
-  uso, con `DELETE /api/ai/sidecar` y al cerrar la aplicación; un arranque que encuentra en
-  `sidecar.json` un proceso vivo que es nuestro `sd-server` lo para (`kill -9`, `taskkill /F`).
-  En Linux, «nuestro» quiere decir el mismo archivo: dispositivo e inodo de `/proc/<pid>/exe`,
-  o la ruta con los enlaces resueltos si el archivo ya no existe. Así vale también con la carpeta
-  de datos detrás de un enlace simbólico. En Windows, el nombre de la imagen (`tasklist`). Límites de partida: los mide X1 parte B.
-- **Protocolo** (`examples/server/api.md` de la *release*): `POST /sdcpp/v1/img_gen` con
+  --speed-limit 1024 --speed-time 60 [--continue-at <bytes>] --url <url>`, with the output through its
+  standard output, which the launcher appends to the `.part` (no path is passed to `curl`). Pausing is stopping
+  `curl`; resuming, `--continue-at` with what is there (a server that does not resume, code 33, makes it
+  start from 0 once). Cuts, failed connections and slowness (codes 7, 18, 28, 52, 55, 56,
+  92) are retried twice, at 2 and 5 s, from where it left off. Without `curl`, the row says so and
+  **Install from a file…** installs one downloaded with a browser. The URL always comes from the
+  catalogue included in the binary, never from the page.
+- **Installation**: own SHA-256 of the whole file; if it is not the pinned one, it is deleted and **nothing is
+  installed** (the error states both values). It is unpacked with `src/ai/zip.rs` and
+  `src/ai/inflate.rs` (APPNOTE 6.3 and RFC 1951 from the specifications; CRC-32 of each entry,
+  limits on entries and sizes, names only `[A-Za-z0-9._+-]` per component, without `..`,
+  absolute paths, backslashes, drive letters or symbolic links, files that did not exist),
+  executables with `0755` on Unix, in `<sha256>.tmp/`, which is renamed whole; `sd-server` and `sd-cli`
+  are required to be present, and they are asked `--version` and `--list-devices` (60 s at
+  most; a Windows without the Visual C++ environment exits with `0xC0000135` and the row names it).
+- **The server**: `sd-server <family arguments> --listen-ip 127.a.b.c --listen-port
+  <free>` with the engine directory as working directory, input closed, both
+  outputs read and `CREATE_NO_WINDOW`. `sd-server` reflects any `Origin` in
+  `Access-Control-Allow-Origin` and numbers its jobs in order, so it listens on a **random**
+  loopback address (all of `127/8` is loopback on Linux and on Windows; never
+  `127.0.0.1`) and a free port: about 2^40 combinations that a foreign page would have to
+  try, besides the browsers' local network access permission. Ready when
+  `GET /sdcpp/v1/capabilities` answers (it listens only after loading the model). It is kept
+  loaded between calls with the same arguments; another model, another build or another
+  ControlNet restarts it. It is stopped: if it ends by itself (the error says how and its last lines), if
+  it says nothing or changes state for `silence` (10 min), if loading exceeds `load` (30 min)
+  or one image exceeds `run` (60 min), if cancelled and it does not obey in 15 s, after `idle` (5 min) of no
+  use, with `DELETE /api/ai/sidecar` and when the application closes; a start-up that finds in
+  `sidecar.json` a live process that is our `sd-server` stops it (`kill -9`, `taskkill /F`).
+  On Linux, “ours” means the same file: device and inode of `/proc/<pid>/exe`,
+  or the path with links resolved if the file no longer exists. This holds also with the data folder
+  behind a symbolic link. On Windows, the image name (`tasklist`). Starting limits: measured by X1 part B.
+- **Protocol** (the *release*'s `examples/server/api.md`): `POST /sdcpp/v1/img_gen` with
   `{prompt, negative_prompt, width, height, strength, seed, batch_count: 1, init_image,
   ref_images, control_image, control_strength, sample_params: {sample_steps, guidance:
   {txt_cfg}, sample_method?, flow_shift?}, embed_image_metadata: false, output_format: "png",
-  preview: "none"}` (imágenes en base64) → `202 {id}`; `GET /sdcpp/v1/jobs/<id>` cada 150 ms
-  hasta `completed` (la imagen en `result.images[0].b64_json`), `failed` o `cancelled`;
-  `POST /sdcpp/v1/jobs/<id>/cancel`. **Progreso**: lo que los dos programas escriben en la
-  salida estándar, `|=====>   | 3/8 - 1.23s/it` por paso de muestreo y la misma barra de `#` al
-  leer pesos (stable-diffusion.cpp los carga en el primer uso, así que el primer trabajo
-  también muestra *Cargando*). La imagen vuelta se decodifica (`src/ai/png.rs`) y **se rechaza
-  si su tamaño no es el pedido**.
+  preview: "none"}` (images in base64) → `202 {id}`; `GET /sdcpp/v1/jobs/<id>` every 150 ms
+  until `completed` (the image in `result.images[0].b64_json`), `failed` or `cancelled`;
+  `POST /sdcpp/v1/jobs/<id>/cancel`. **Progress**: what the two programs write to
+  standard output, `|=====>   | 3/8 - 1.23s/it` per sampling step and the same `#` bar when
+  reading weights (stable-diffusion.cpp loads them on first use, so the first job
+  also shows *Loading*). The returned image is decoded (`src/ai/png.rs`) and **is rejected
+  if its size is not the requested one**.
 
-**Argumentos por familia** (`profiles` del JSON; `@rol` es la ruta del fichero del modelo con ese
-papel en el almacén, `@rol~texto` el que además lo lleva en el nombre):
+**Arguments per family** (`profiles` of the JSON; `@role` is the path of the model file with that
+role in the store, `@role~text` the one that also carries it in its name):
 
-| Clave | Familia | Carga (`sd-server …`) | Por trabajo |
+| Key | Family | Load (`sd-server …`) | Per job |
 | --- | --- | --- | --- |
-| `ZIMAGE_Q8`, `ZIMAGE_Q4`, `ZIMAGE_Q2` | `z-image` | `--diffusion-model @transformer --llm @text-encoder --vae @vae --diffusion-fa` | 8 pasos, cfg 1, `init_image` + `strength` |
-| `KLEIN4B_Q4` | `flux2-klein` | `--diffusion-model @transformer --llm @text-encoder --vae @vae --diffusion-fa` | 4 pasos, cfg 1, `euler`, `init_image` + `strength` y la misma imagen en `ref_images` |
-| `QWENEDIT_Q4` | `qwen-image-edit` | `--diffusion-model @transformer --llm @text-encoder --llm_vision @mmproj --vae @vae --diffusion-fa --model-args qwen_image_zero_cond_t=true` | 20 pasos, cfg 2,5, `euler`, `flow_shift` 3, `init_image` + `strength` + `ref_images` |
-| `SD15_LIGHT` | `sd15` | `-m @transformer` [`--control-net @controlnet~tile` o `@controlnet~depth`] | 20 pasos, cfg 7, `init_image` + `strength` [+ `control_image`, `control_strength` 0,9] |
+| `ZIMAGE_Q8`, `ZIMAGE_Q4`, `ZIMAGE_Q2` | `z-image` | `--diffusion-model @transformer --llm @text-encoder --vae @vae --diffusion-fa` | 8 steps, cfg 1, `init_image` + `strength` |
+| `KLEIN4B_Q4` | `flux2-klein` | `--diffusion-model @transformer --llm @text-encoder --vae @vae --diffusion-fa` | 4 steps, cfg 1, `euler`, `init_image` + `strength` and the same image in `ref_images` |
+| `QWENEDIT_Q4` | `qwen-image-edit` | `--diffusion-model @transformer --llm @text-encoder --llm_vision @mmproj --vae @vae --diffusion-fa --model-args qwen_image_zero_cond_t=true` | 20 steps, cfg 2.5, `euler`, `flow_shift` 3, `init_image` + `strength` + `ref_images` |
+| `SD15_LIGHT` | `sd15` | `-m @transformer` [`--control-net @controlnet~tile` or `@controlnet~depth`] | 20 steps, cfg 7, `init_image` + `strength` [+ `control_image`, `control_strength` 0.9] |
 
-Sacados de `docs/z_image.md`, `docs/flux2.md`, `docs/qwen_image_edit.md`, `docs/sd.md` y el
-`README` del *tag*; `init+ref` en las de edición es nuestro (el *img2img* genérico más su
-referencia). `supports` dice qué claves carga cada compilación según eso; `verified: []` hasta que
-X1 parte B lo pruebe en un equipo de verdad. Un modelo importado se ejecuta con el perfil de la
-`family` de su manifiesto.
+Taken from `docs/z_image.md`, `docs/flux2.md`, `docs/qwen_image_edit.md`, `docs/sd.md` and the
+*tag*'s `README`; `init+ref` in the edit ones is ours (generic *img2img* plus its
+reference). `supports` says which keys each build loads according to that; `verified: []` until
+X1 part B tests it on a real machine. An imported model runs with the profile of the
+`family` in its manifest.
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `GET /api/ai/runtime[?force=VULKAN\|CPU][&device=cpu][&model=<clave>]` | Un `AiRuntimeStatus` (`src/core/ai.ts`): `{available, reason?, backend, device, supports[], activeModel}` (`backend` y `device`: lo que dijo `--list-devices`, el primer Vulkan si lo hay; `reason`: `NO_RUNTIME`, `NO_MODEL`, `MODEL_UNSUPPORTED`), y además `detail`, `choice{rowId, backend, key}`, `release{tag, commit}`, `platform{os, arch}`, `gpu`, `force`, `runtime` (la elegida), `runtimes[]`, `sidecar{state, label, pid, idleSeconds}`, `downloader` |
-| `GET /api/ai/runtimes/<clave>` | `{key, os, arch, backend, here, name, url, sha256, bytes, state: missing\|paused\|downloading\|verifying\|installing\|installed, done, total, error, version, devices[{name, description}], probeError, supports[], verified[]}` |
-| `POST /api/ai/runtimes/<clave>/download` | 202: empieza o reanuda. 409 `other-system` para otra plataforma, 404 clave desconocida |
-| `POST /api/ai/runtimes/<clave>/pause` | Para la descarga; el `.part` se queda |
-| `POST /api/ai/runtimes/<clave>/import` | Cuerpo `{"file": <id de concesión>}` de un `dialog/open`: instala ese archivo si su tamaño y su SHA-256 son los fijados |
-| `POST /api/ai/runtimes/<clave>/probe` | Vuelve a preguntar `--version` y `--list-devices` |
-| `DELETE /api/ai/runtimes/<clave>` | 204: para lo que haga (y el servidor si es suyo) y lo borra todo |
-| `POST /api/ai/run` | Cuerpo (≤ 96 MiB) `{model, image, control?{kind: tile\|depth, image}, prompt, negative, strength (0, 1], seed, steps?, width?, height?, force?, device?}`, imágenes en PNG base64 (o `data:`), lados de 64 a 4096 múltiplos de 16, iguales a `width`/`height` si se dan. 202 con el estado; 400 `bad-body` o `size`, 409 `unavailable` con `reason`, 409 `control-unsupported`, 503 `busy` con 4 esperando |
-| `GET /api/ai/run/<id>[?after=<versión>]` | `{id, state: QUEUED\|STARTING\|LOADING\|INFERENCE\|FINISHING\|DONE\|FAILED\|CANCELLED, step, steps, fraction, seconds, version, model, runtime, width, height, error, message}`; con `after` espera hasta 1 s a una versión posterior. `error`: `crashed`, `hung`, `timeout`, `failed`, `wrong-size`, `bad-image`, `start`, `protocol` |
-| `GET /api/ai/run/<id>/image` | `image/png` cuando `DONE`; 409 si no |
-| `DELETE /api/ai/run/<id>` | Cancela uno en marcha u olvida uno terminado (se guardan los 8 últimos, 10 min) |
-| `DELETE /api/ai/sidecar` | Para el servidor si nadie lo usa (204; 409 si sí) |
+| `GET /api/ai/runtime[?force=VULKAN\|CPU][&device=cpu][&model=<key>]` | An `AiRuntimeStatus` (`src/core/ai.ts`): `{available, reason?, backend, device, supports[], activeModel}` (`backend` and `device`: what `--list-devices` said, the first Vulkan if there is one; `reason`: `NO_RUNTIME`, `NO_MODEL`, `MODEL_UNSUPPORTED`), and also `detail`, `choice{rowId, backend, key}`, `release{tag, commit}`, `platform{os, arch}`, `gpu`, `force`, `runtime` (the chosen one), `runtimes[]`, `sidecar{state, label, pid, idleSeconds}`, `downloader` |
+| `GET /api/ai/runtimes/<key>` | `{key, os, arch, backend, here, name, url, sha256, bytes, state: missing\|paused\|downloading\|verifying\|installing\|installed, done, total, error, version, devices[{name, description}], probeError, supports[], verified[]}` |
+| `POST /api/ai/runtimes/<key>/download` | 202: starts or resumes. 409 `other-system` for another platform, 404 unknown key |
+| `POST /api/ai/runtimes/<key>/pause` | Stops the download; the `.part` stays |
+| `POST /api/ai/runtimes/<key>/import` | Body `{"file": <grant id>}` from a `dialog/open`: installs that file if its size and SHA-256 are the pinned ones |
+| `POST /api/ai/runtimes/<key>/probe` | Asks `--version` and `--list-devices` again |
+| `DELETE /api/ai/runtimes/<key>` | 204: stops whatever it is doing (and the server if it is its own) and deletes everything |
+| `POST /api/ai/run` | Body (≤ 96 MiB) `{model, image, control?{kind: tile\|depth, image}, prompt, negative, strength (0, 1], seed, steps?, width?, height?, force?, device?}`, images as base64 PNG (or `data:`), sides from 64 to 4096 in multiples of 16, equal to `width`/`height` if given. 202 with the state; 400 `bad-body` or `size`, 409 `unavailable` with `reason`, 409 `control-unsupported`, 503 `busy` with 4 waiting |
+| `GET /api/ai/run/<id>[?after=<version>]` | `{id, state: QUEUED\|STARTING\|LOADING\|INFERENCE\|FINISHING\|DONE\|FAILED\|CANCELLED, step, steps, fraction, seconds, version, model, runtime, width, height, error, message}`; with `after` it waits up to 1 s for a later version. `error`: `crashed`, `hung`, `timeout`, `failed`, `wrong-size`, `bad-image`, `start`, `protocol` |
+| `GET /api/ai/run/<id>/image` | `image/png` when `DONE`; 409 otherwise |
+| `DELETE /api/ai/run/<id>` | Cancels one running or forgets a finished one (the last 8 are kept, 10 min) |
+| `DELETE /api/ai/sidecar` | Stops the server if nobody is using it (204; 409 if someone is) |
 
-`GET /api/info` lleva `aiApi: 1`. El catálogo de compilaciones es siempre el incluido:
-nada de la carpeta de datos ni del entorno lo sustituye, en ninguna compilación. Las pruebas
-ponen el suyo (la compilación falsa, direcciones `http://` de un servidor local) con
-`server::Options { ai_runtimes }` al construir el servidor (`Server::start_with`); la
-aplicación arranca siempre con `Server::start`, que usa las opciones por defecto.
+`GET /api/info` carries `aiApi: 1`. The catalogue of builds is always the one included:
+nothing in the data folder or the environment replaces it, in any build. The tests
+supply their own (the fake build, `http://` addresses of a local server) with
+`server::Options { ai_runtimes }` when building the server (`Server::start_with`); the
+application always starts with `Server::start`, which uses the default options.
 
-## IA: la tubería (X3c)
+## AI: the pipeline (X3c)
 
-`docs/AI-POST.md` §7.3, `src/ai/post.rs`. La página no manda píxeles de un render final: el
-lanzador guardó su imagen lineal y sus pases (`src/kept.rs`, con su exposición y su curva de
-tono, `Look`) y la página pide el post-procesado **por el id del render** (`RENDER`). La vista
-previa del modo Rápido, que no es un render del lanzador, manda su imagen y sus pases en el mismo
-cuerpo (`INLINE`, ≤ 512 px de lado). En el lanzador, la máquina de pasos de `rt-post`:
-`plan` → por mosaico `tile_input` (sRGB de 8 bits con la curva del render) y la imagen de control
-de `control_planes` → `sd-server` (el mismo servidor de X3b, que se queda cargado: varias llamadas
-seguidas no lo reinician) con la fuerza del intento, la semilla y el tamaño exacto del mosaico
-con relleno → `accept` → reintento a `RETRY_FACTOR` de la fuerza hasta `MAX_ATTEMPTS` o rechazo.
-**Con Intervención 0 (o todos los aspectos a 0) el plan no tiene mosaicos: no se arranca el
-motor de ejecución, no hace falta ni que esté instalado ni el modelo, y la imagen es la del motor
-bit a bit.** Un mosaico que vuelve de otro tamaño es la comprobación `size` fallida: rechazo a la
-primera y la imagen del motor. La imagen lineal de un render es la conversión de la página
-(`exactBytes`): las sumas por las muestras, el color dividido por la cobertura donde no es opaca y
-alfa 1 donde lo es (el umbral, `1 − 1e-6` en `f64`, como el número de JavaScript).
+`docs/AI-POST.md` §7.3, `src/ai/post.rs`. The page does not send pixels of a final render: the
+launcher stored its linear image and its passes (`src/kept.rs`, with its exposure and tone
+curve, `Look`) and the page asks for the post-processing **by the render's id** (`RENDER`). The Fast mode's
+preview, which is not a launcher render, sends its image and its passes in the same
+body (`INLINE`, ≤ 512 px per side). In the launcher, `rt-post`'s step machine:
+`plan` → per tile `tile_input` (8-bit sRGB with the render's curve) and the control image
+from `control_planes` → `sd-server` (the same X3b server, which stays loaded: several calls in a
+row do not restart it) with the attempt's strength, the seed and the exact size of the padded
+tile → `accept` → retry at `RETRY_FACTOR` of the strength until `MAX_ATTEMPTS` or rejection.
+**With Intervention 0 (or all aspects at 0) the plan has no tiles: the execution engine is
+not started, neither it nor the model needs to be installed, and the image is the engine's
+bit for bit.** A tile that comes back at another size is the failed `size` check: rejection at
+the first attempt and the engine's image. A render's linear image is the page's conversion
+(`exactBytes`): the sums over the samples, the colour divided by the coverage where it is not opaque and
+alpha 1 where it is (the threshold, `1 − 1e-6` in `f64`, like JavaScript's number).
 
-- **Control**: la primera de `depth`, `tile` que tenga el perfil de la familia (hoy solo SD 1.5:
-  `depth`, el plano de profundidad de los pases en gris; `tile` sería la propia imagen del
-  mosaico). Una sola, la misma en vista previa y en final, para no reiniciar el servidor.
-- **El suelo del estudio** (`FLOOR_ID` en los dos ids) es una región más de la guarda: se reilumina
-  y tiene su comprobación de color, con el nombre *Floor* si la tabla de materiales no lo nombra.
-- **Huérfanos**: un post en marcha por el que nadie pregunta en `ORPHAN_AFTER` (2 min) se para (su
-  página se fue); la página pregunta al menos cada segundo.
-- `GET /api/info` lleva `aiPost: 1`.
+- **Control**: the first of `depth`, `tile` that the family's profile has (today only SD 1.5:
+  `depth`, the passes' depth plane in grey; `tile` would be the tile's own image). Only one, the same
+  in preview and in final, so as not to restart the server.
+- **The studio floor** (`FLOOR_ID` in both ids) is one more region of the guard: it is relit
+  and has its colour check, named *Floor* if the materials table does not name it.
+- **Orphans**: a running post that nobody asks about for `ORPHAN_AFTER` (2 min) is stopped (its
+  page is gone); the page asks at least every second.
+- `GET /api/info` carries `aiPost: 1`.
 
-| Petición | Respuesta |
+| Request | Response |
 | --- | --- |
-| `POST /api/ai/post` (JSON, ≤ 1 MiB) | `{source: {kind: "RENDER", renderId}, settings: {intervention, light, bounce, wear, style, styleStrength, seed}, prompt, negative, modelKey, materials?: [{materialId, name, allowsWear, locked}], tolerances?: {clave: número}, steps?, force?, device?}` (los controles, enteros 0..100; `tolerances` con las claves de `rt_post::Tolerances::KEYS`, para calibrar en X1 parte B). 202 con el estado; 400 `bad-body` o `size` (un mosaico de menos de 64 px), 404 `not-kept` (el render no se guardó o se desalojó), 409 `no-passes`, 409 `unavailable` con `reason` (`NO_RUNTIME`, `NO_MODEL`, `MODEL_UNSUPPORTED`; solo si el plan llama al modelo), 503 `busy` con 4 en marcha |
-| `POST /api/ai/post` (`application/octet-stream`, ≤ 64 MiB) | `INLINE`: `"RPI1"`, `u32` longitud del JSON, el JSON (`source: {kind: "INLINE", tonemap?, exposureEv?}`: por defecto lineal y 0 EV, la imagen ya es lo que se ve), la imagen `RPL1` y los pases `RPP1`, del mismo tamaño, ≤ 512 px de lado |
-| `GET /api/ai/post/<id>[?after=<versión>]` | `{id, state: QUEUED\|LOADING\|CONDITIONING\|INFERENCE\|GUARD\|RETRY\|DONE\|FAILED\|CANCELLED, stage (el AiPostStage o null), tile, tiles, attempt, maxAttempts, strength, step, steps, fraction, seconds, version, calls, renderId, model, runtime, width, height, tonemap, exposureEv, verdict, report (el GuardReport al terminar), error, message}`; con `after` espera hasta 1 s a una versión posterior. `tile` y `attempt` empiezan en 1; `fraction` nunca retrocede |
-| `GET /api/ai/post/<id>/image` | La imagen entregada cuando `DONE` (la del motor sin cambios si `REJECTED`): `"RPL1"`, `u32` 16, ancho, alto, y `f32` RGBA lineal con alfa recto, filas desde arriba; 409 si no ha terminado |
-| `DELETE /api/ai/post/<id>` | Cancela uno en marcha (204; el modelo sigue cargado) u olvida uno terminado (se guardan los 8 últimos, 10 min) |
+| `POST /api/ai/post` (JSON, ≤ 1 MiB) | `{source: {kind: "RENDER", renderId}, settings: {intervention, light, bounce, wear, style, styleStrength, seed}, prompt, negative, modelKey, materials?: [{materialId, name, allowsWear, locked}], tolerances?: {key: number}, steps?, force?, device?}` (the controls, integers 0..100; `tolerances` with the keys of `rt_post::Tolerances::KEYS`, to calibrate in X1 part B). 202 with the state; 400 `bad-body` or `size` (a tile under 64 px), 404 `not-kept` (the render was not stored or was evicted), 409 `no-passes`, 409 `unavailable` with `reason` (`NO_RUNTIME`, `NO_MODEL`, `MODEL_UNSUPPORTED`; only if the plan calls the model), 503 `busy` with 4 running |
+| `POST /api/ai/post` (`application/octet-stream`, ≤ 64 MiB) | `INLINE`: `"RPI1"`, `u32` JSON length, the JSON (`source: {kind: "INLINE", tonemap?, exposureEv?}`: linear and 0 EV by default, the image is already what is seen), the `RPL1` image and the `RPP1` passes, of the same size, ≤ 512 px per side |
+| `GET /api/ai/post/<id>[?after=<version>]` | `{id, state: QUEUED\|LOADING\|CONDITIONING\|INFERENCE\|GUARD\|RETRY\|DONE\|FAILED\|CANCELLED, stage (the AiPostStage or null), tile, tiles, attempt, maxAttempts, strength, step, steps, fraction, seconds, version, calls, renderId, model, runtime, width, height, tonemap, exposureEv, verdict, report (the GuardReport when finished), error, message}`; with `after` it waits up to 1 s for a later version. `tile` and `attempt` start at 1; `fraction` never goes backwards |
+| `GET /api/ai/post/<id>/image` | The delivered image when `DONE` (the engine's unchanged if `REJECTED`): `"RPL1"`, `u32` 16, width, height, and linear RGBA `f32` with straight alpha, rows from the top; 409 if not finished |
+| `DELETE /api/ai/post/<id>` | Cancels one running (204; the model stays loaded) or forgets a finished one (the last 8 are kept, 10 min) |
 
-`GET /api/ai/runtimes/<clave>` lleva además `vcRuntime: "missing"` cuando una compilación de
-Windows no arranca porque falta una DLL (`0xC0000135` o `0xC0000139`, `Probe.dllMissing`) y falta
-alguna de las del entorno de Microsoft Visual C++ 2015–2022 (`MSVCP140.dll`, `VCRUNTIME140.dll`,
-`VCRUNTIME140_1.dll`, `VCOMP140.DLL`, `MSVCP140_CODECVT_IDS.dll`) en su carpeta y en
-`System32`, y `vcRuntimeUrl` (la página oficial de Microsoft) en las de Windows: no
-redistribuimos esas DLL.
+`GET /api/ai/runtimes/<key>` additionally carries `vcRuntime: "missing"` when a Windows build
+does not start because a DLL is missing (`0xC0000135` or `0xC0000139`, `Probe.dllMissing`) and
+one of the Microsoft Visual C++ 2015–2022 environment's (`MSVCP140.dll`, `VCRUNTIME140.dll`,
+`VCRUNTIME140_1.dll`, `VCOMP140.DLL`, `MSVCP140_CODECVT_IDS.dll`) is missing in its folder and in
+`System32`, and `vcRuntimeUrl` (Microsoft's official page) on the Windows ones: we do not
+redistribute those DLLs.
 
-## Icono y versión del `.exe`
+## `.exe` icon and version
 
-`build.rs`, solo al compilar para Windows con mingw-w64: escribe un `.rc` con `VERSIONINFO`
-(versión de `package.json`) y el icono de `REPACKSHOT_ICON`, lo compila con
-`x86_64-w64-mingw32-windres` (o `WINDRES`) y lo enlaza. Sin la herramienta o sin icono, un aviso
-y nunca un fallo. `packaging/release.mjs` genera el icono desde `docs/media/logo.svg`.
+`build.rs`, only when building for Windows with mingw-w64: writes a `.rc` with `VERSIONINFO`
+(version from `package.json`) and the icon from `REPACKSHOT_ICON`, compiles it with
+`x86_64-w64-mingw32-windres` (or `WINDRES`) and links it. Without the tool or without an icon, a warning
+and never a failure. `packaging/release.mjs` generates the icon from `docs/media/logo.svg`.
 
-## Pruebas
+## Tests
 
-`cargo test -p rt-app`: SHA-256 con los vectores del NIST (`""`, `"abc"`, el mensaje de 448 bits,
-el de 896 bits, un millón de `a`) y en trozos de tamaños impares; el lector JSON (válido,
-inválido, escapes Unicode y sustitutos, números, profundidad); el lector HTTP (línea de
-petición, cabeceras, peticiones malas); `Range`; rutas de ficheros; el almacén de modelos
-(trozos desordenados y reanudados, *hash* erróneo → dañado, *blob* compartido conservado al
-borrar uno de dos modelos, manifiestos importados); la regla con el fichero de casos; los
-analizadores de `reg` (con líneas de «Acceso denegado» en inglés y en español entre las claves),
-de `Win32_VideoController` por PowerShell y por `wmic`, `/proc` y `nvidia-smi`; la fuente del
-registro con un `reg` falso que sale con 1 y con programas de verdad que imprimen y salen con 1
-(nunca `/s`, nunca `Properties`); la mezcla de fuentes (la que manda, VRAM exacta frente a la de
-32 bits, la tarjeta quitada que recuerda el registro, dos tarjetas iguales, «sin tarjeta» frente a
-«no se pudo preguntar»); las líneas del registro del lanzador; leer la salida de un programa que
-sale con 1 (`process.rs`); el INI; los trabajos (P3a): un visor vivo comparte
-los hilos con un final y sigue sacando pasadas, el final da los mismos bits con o sin él, una vista
-que llega tarde no sustituye a una nueva, un trabajo por el que nadie pregunta se para, un render
-que entra en pánico termina fallido y suelta el turno, un trabajo que no se para se deja atrás, la
-puerta se abre otra vez tras un final cancelado o terminado con 4, 16 y 32 hilos, las ventanas que
-se fueron no dejan fuera a una nueva y una página recargada 24 veces sigue renderizando; el estado de la página (nombres, tipos,
-escritura atómica que deja el archivo viejo si el cuerpo se corta, documento dañado apartado,
-enlaces dentro de la carpeta de datos, medidas) y el puerto recordado. `src/dialogs.rs`: los argumentos de `zenity` y `kdialog`, la lectura de sus salidas y de la del
-guion de PowerShell, que las palabras de la página van como datos, base64, un diálogo a la vez y
-el cierre con la aplicación (con un `zenity` falso). `src/files.rs`: nombres seguros y numerados,
-ids estables, lo que cada concesión deja hacer, Descargas, el último proyecto entre arranques.
-`src/browser.rs`: los interruptores y la mezcla de preferencias del perfil. `tests/files.rs`: la
-API de ficheros por HTTP con un `zenity` falso. Fuera del motor: `packaging/wine-dialogs.mjs`
-(el `.exe` bajo Wine con un `powershell.exe` falso), `tools/desktop-window-check.mjs` (el lanzador
-real bajo Xvfb) y el guion de PowerShell analizado y su C# compilado con `pwsh` 7.
-`src/ai/`: *inflate* con bloques almacenados, fijos y dinámicos (hechos a mano según la RFC y de
-zlib), errores y límites; zip de Info-ZIP y de un flujo con descriptores de datos (fijos en
-`tests/fixtures/`), Zip64, nombres hostiles y enlaces; PNG de ImageMagick de cada tipo de color,
-profundidad, filtro y Adam7 contra los píxeles de PIL, CRC, cortes; base64 (RFC 4648); la regla
-con el fichero de casos; las líneas de progreso tal como las imprime la *release*; el cuerpo del
-trabajo; capturar con tiempo límite (también con un nieto que retiene las salidas).
-`tests/ai.rs`, con **`rt-fake-sd`** (un binario de este *crate*, nunca distribuido, que habla la
-misma línea de órdenes y el mismo protocolo que `sd-cli`/`sd-server`, apunta sus argumentos y sus
-trabajos y, por etiquetas en el *prompt* o `fake-sd.json`, se cuelga, se cae, va lento, falla,
-calla o devuelve otro tamaño): argumentos exactos y trabajo por clave y por ControlNet, servidor
-reutilizado, imagen de vuelta comprobada, progreso y cancelación con el modelo aún cargado,
-colgado, tiempo límite, caída al cargar y al generar, fallo, tamaño distinto rechazado,
-rechazos con su motivo, el estado, liberar por petición, por inactividad y al cerrar, el que
-dejó un arranque anterior; y con el `curl` real contra un servidor local: descarga, pausa,
-reanudación desde el byte, instalación, borrado, un `sha256` distinto que no instala nada y un
-archivo elegido. `tests/ai_post.rs` (X3c), con el mismo falso (que en modo `gain` aclara con
-suavidad, como un modelo que hace lo que se le pide): Intervención 0 bit a bit sin arrancar el
-motor (también sin motor instalado), un render de dos mosaicos con progreso por mosaico y la
-fracción que no retrocede, reintentos con la fuerza exacta del plan y la imagen del motor al
-final, un mosaico de otro tamaño rechazado a la primera, cancelar a mitad con el modelo aún
-cargado, `MODEL_UNSUPPORTED` y `NO_MODEL` con su motivo, peticiones malas, la vista previa en
-línea, el suelo reiluminado con su comprobación de color y el post huérfano que se para.
-Ignoradas salvo que se pidan: el zip real de cada compilación descomprimido
-(`RPX_SDCPP_ZIP`), la compilación real de Linux CPU instalada y respondiendo `--version`,
-`--list-devices` y `--help` (`RPX_SDCPP_LINUX_CPU_ZIP`), la descarga real desde GitHub con pausa
-(`RPX_REAL_DOWNLOAD=1`), un *img2img* real con SD 1.5 en CPU (`RPX_SD15_WEIGHTS`) y la tubería
-entera con SD 1.5 y su ControlNet de profundidad (`RPX_SD15_WEIGHTS` y `RPX_SD15_DEPTH`; 53 s en
-cuatro núcleos para 256 × 192 y 10 pasos, aceptada al primer intento).
-En `tests/`: el servidor por sockets reales
-(`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
-models*, `seq` y `share`, el diagnóstico, una trama sin leer que suelta su conexión), el estado de la página por HTTP (`tests/appdata.rs`: seguridad, nombres que no salen de
-su carpeta, enlaces no seguidos, límites, una petición cortada, resultados con índice, caché y
-espacio usado, y que todo sigue ahí para otro arranque), el puerto estable (`tests/port.rs`: el
-mismo si está libre, otro recordado si está ocupado, `--port` sin recordar) y la paridad con `rt`,
-también con un visor vivo en 16 hilos.
+`cargo test -p rt-app`: SHA-256 with NIST's vectors (`""`, `"abc"`, the 448-bit message,
+the 896-bit one, a million `a`) and in chunks of odd sizes; the JSON reader (valid,
+invalid, Unicode escapes and surrogates, numbers, depth); the HTTP reader (request
+line, headers, bad requests); `Range`; file paths; the model store
+(out-of-order and resumed chunks, wrong *hash* → damaged, shared *blob* kept when
+deleting one of two models, imported manifests); the rule with the cases file; the
+`reg` parsers (with “Access denied” lines in English and in Spanish among the keys),
+of `Win32_VideoController` through PowerShell and through `wmic`, `/proc` and `nvidia-smi`; the
+registry source with a fake `reg` that exits with 1 and with real programs that print and exit with 1
+(never `/s`, never `Properties`); the merging of sources (the one that rules, exact VRAM against
+32-bit, the removed card that the registry remembers, two identical cards, “no card” against
+“could not ask”); the launcher's log lines; reading the output of a program that
+exits with 1 (`process.rs`); the INI; the jobs (P3a): a live viewer shares
+the threads with a final and keeps producing passes, the final gives the same bits with or without it, a view
+that arrives late does not replace a new one, a job that nobody asks about stops, a render
+that panics ends as failed and releases the turn, a job that does not stop is left behind, the
+gate opens again after a cancelled or finished final with 4, 16 and 32 threads, windows that
+left do not shut out a new one and a page reloaded 24 times keeps rendering; the page state (names, types,
+atomic writing that leaves the old file if the body is cut off, damaged document set aside,
+links inside the data folder, measurements) and the remembered port. `src/dialogs.rs`: the arguments of `zenity` and `kdialog`, reading their outputs and that of the
+PowerShell script, that the page's words go as data, base64, one dialog at a time and
+closing with the application (with a fake `zenity`). `src/files.rs`: safe and numbered names,
+stable ids, what each grant allows, Downloads, the last project across start-ups.
+`src/browser.rs`: the switches and the merging of profile preferences. `tests/files.rs`: the
+file API over HTTP with a fake `zenity`. Outside the engine: `packaging/wine-dialogs.mjs`
+(the `.exe` under Wine with a fake `powershell.exe`), `tools/desktop-window-check.mjs` (the real
+launcher under Xvfb) and the PowerShell script parsed and its C# compiled with `pwsh` 7.
+`src/ai/`: *inflate* with stored, fixed and dynamic blocks (made by hand according to the RFC and by
+zlib), errors and limits; zip from Info-ZIP and from a stream with data descriptors (pinned in
+`tests/fixtures/`), Zip64, hostile names and links; ImageMagick PNGs of each colour type,
+depth, filter and Adam7 against PIL's pixels, CRC, truncations; base64 (RFC 4648); the rule
+with the cases file; the progress lines as the *release* prints them; the job body;
+capturing with a time limit (also with a grandchild that holds the outputs).
+`tests/ai.rs`, with **`rt-fake-sd`** (a binary of this *crate*, never distributed, that speaks the
+same command line and protocol as `sd-cli`/`sd-server`, records its arguments and its
+jobs and, by tags in the *prompt* or `fake-sd.json`, hangs, crashes, runs slow, fails,
+goes silent or returns another size): exact arguments and job per key and per ControlNet, reused
+server, returned image checked, progress and cancellation with the model still loaded,
+hung, time limit, crash on loading and on generating, failure, different size rejected,
+rejections with their reason, the state, freeing on request, on inactivity and on closing, the one
+left by an earlier start-up; and with the real `curl` against a local server: download, pause,
+resume from the byte, installation, deletion, a different `sha256` that installs nothing and a
+chosen file. `tests/ai_post.rs` (X3c), with the same fake (which in `gain` mode brightens
+smoothly, like a model that does what it is asked): Intervention 0 bit for bit without starting the
+engine (also with no engine installed), a render of two tiles with per-tile progress and the
+fraction that does not go backwards, retries with the plan's exact strength and the engine's image at the
+end, a tile of another size rejected at the first attempt, cancelling midway with the model still
+loaded, `MODEL_UNSUPPORTED` and `NO_MODEL` with their reason, bad requests, the inline
+preview, the relit floor with its colour check and the orphaned post that stops.
+Ignored unless requested: the real zip of each build unpacked
+(`RPX_SDCPP_ZIP`), the real Linux CPU build installed and answering `--version`,
+`--list-devices` and `--help` (`RPX_SDCPP_LINUX_CPU_ZIP`), the real download from GitHub with pause
+(`RPX_REAL_DOWNLOAD=1`), a real *img2img* with SD 1.5 on CPU (`RPX_SD15_WEIGHTS`) and the whole pipeline
+with SD 1.5 and its depth ControlNet (`RPX_SD15_WEIGHTS` and `RPX_SD15_DEPTH`; 53 s on
+four cores for 256 × 192 and 10 steps, accepted at the first attempt).
+In `tests/`: the server over real sockets
+(foreign `Host`, token, `Origin`, no CORS, *keep-alive*, files, models over HTTP, *pending
+models*, `seq` and `share`, the diagnostics, an unread frame that releases its connection), the page state over HTTP (`tests/appdata.rs`: security, names that do not leave
+their folder, links not followed, limits, a cut request, results with index, cache and
+space used, and that everything is still there for another start-up), the stable port (`tests/port.rs`: the
+same if free, another remembered one if taken, `--port` without remembering) and parity with `rt`,
+also with a live viewer on 16 threads.
 
-Actualizar (P5): `src/update/` (la lista blanca de URL con las hostiles de siempre, los nombres de los paquetes, las sumas, los
-nombres de lo que se sustituye y de lo que se borra al arrancar, el cambio de archivos con un fallo inyectado en cada uno de sus ocho
-pasos, la limpieza que no borra nada que no sea de una actualización) y `tests/update.rs`, con el `curl` y el `tar` reales contra un
-servidor local que hace de GitHub: de punta a punta el portable de Linux (`.tar.gz`) y el de Windows (`.zip`) sobre una carpeta de
-prueba con un ejecutable falso, que dejan lo nuevo, el `.old`, `data/` y `portable.txt` intactos y arrancan el nuevo con
-`--after-update` y los argumentos de antes, solo cuando se pide; una suma que no cuadra, una que no está, una release sin archivos, un
-paquete que no es la aplicación, que sale de su carpeta o lleva un enlace: no cambian nada; el instalador arrancado con `/S /LAUNCH`;
-la lista blanca por HTTP; una copia que no es instalada ni portable; el progreso, cancelar, una descarga cortada que reanuda.
-`tests/installer.rs` lee `installer.nsi` como texto. Fuera del motor, `tools/update-install-check.mjs` (el lanzador real con Chromium).
+Updating (P5): `src/update/` (the URL allowlist with the usual hostile ones, the package names, the sums, the
+names of what is replaced and of what is deleted on start-up, the swapping of files with a failure injected at each of its eight
+steps, the cleanup that deletes nothing that does not belong to an update) and `tests/update.rs`, with the real `curl` and `tar` against a
+local server standing in for GitHub: end to end the Linux portable (`.tar.gz`) and the Windows one (`.zip`) over a test
+folder with a fake executable, which leave the new files, the `.old`, `data/` and `portable.txt` intact and start the new one with
+`--after-update` and the earlier arguments, only when asked; a sum that does not match, one that is absent, a release without files, a
+package that is not the application, that leaves its folder or carries a link: they change nothing; the installer started with `/S /LAUNCH`;
+the allowlist over HTTP; a copy that is neither installed nor portable; progress, cancelling, a cut download that resumes.
+`tests/installer.rs` reads `installer.nsi` as text. Outside the engine, `tools/update-install-check.mjs` (the real launcher with Chromium).
 
-La ventana propia (`src/platform/`): en todas las plataformas, los GUID, nuestros objetos COM
-(recuento de referencias, `QueryInterface`, `Invoke`), el tamaño de cada vtable de WebView2 contra
-el número de métodos del IDL y la posición de cada método que se llama, el protocolo con la página
-contra `tests/fixtures/host-protocol.json` (el mismo que pasa `src/core/host-protocol.ts`), el
-título, el sitio de la ventana, la política (ajustes, navegación, ventanas nuevas, permisos,
-diálogos) y los argumentos. Solo para Windows, y en Linux bajo Wine con una pantalla virtual
+The own window (`src/platform/`): on all platforms, the GUIDs, our COM objects
+(reference counting, `QueryInterface`, `Invoke`), the size of each WebView2 vtable against
+the IDL's number of methods and the position of each method that is called, the protocol with the page
+against `tests/fixtures/host-protocol.json` (the same one that `src/core/host-protocol.ts` passes), the
+title, the window's place, the policy (settings, navigation, new windows, permissions,
+dialogs) and the arguments. Windows only, and on Linux under Wine with a virtual display
 (`CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine xvfb-run -a cargo test -p rt-app --target
-x86_64-pc-windows-gnu --lib platform`): DXGI de verdad (bajo Wine lista su adaptador, con
-nombre y VRAM), nuestras opciones del entorno de WebView2 como las lee el
-cargador, el cargador que falta o no es una DLL, y la ventana Win32 de verdad (barra de título del
-sistema, título, tamaño mínimo, cerrar preguntado y luego permitido, `window.json` guardado y
-restaurado, un sitio fuera de las pantallas olvidado). WebView2 no corre aquí: lo que queda se
-prueba en Windows.
+x86_64-pc-windows-gnu --lib platform`): real DXGI (under Wine it lists its adapter, with
+name and VRAM), our WebView2 environment options as the loader reads them, the loader that is
+missing or is not a DLL, and the real Win32 window (system title bar, title, minimum size, closing asked and then
+allowed, `window.json` saved and restored, a place outside the screens forgotten). WebView2 does not run here: what is left is
+tested on Windows.

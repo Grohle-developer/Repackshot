@@ -1,730 +1,730 @@
-# Galería de capturas
+# Screenshot gallery
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 162 archivos: 160 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 162 files: 160 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
-**De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
+**Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
-**Cómo se ordenan.**
+**How they are ordered.**
 
-- **Versión.** La primera etiqueta de git que contiene el commit que añadió el archivo (`git log --diff-filter=A`). v0.1.1, v0.1.2 y v0.1.3 no tienen etiqueta en el repositorio: se toma el commit «Release v0.1.N» que sube la versión, y casa con lo que dice `CHANGELOG.md` de cada una. Las fechas son las del `CHANGELOG.md`.
-- **Fase.** La del prefijo del asunto del commit; si no lo tiene (o el ROADMAP cuenta la captura en otra fase), la fase que la cita en `ROADMAP.md`, `UI.md` o `CHANGELOG.md`. El título es el del encabezado del ROADMAP.
-- **Regrabadas.** Muchas capturas se vuelven a hacer después de entrar. Aquí cuenta la primera entrada; si la última regrabación cae en otra versión, la línea lo dice («regrabada en vX») y lo que se ve es lo último. La versión que se lee abajo a la derecha en la barra de estado de cada captura de pantalla (`v0.1.x`) es la de la compilación con que se hizo, y ayuda a datarla.
-- **Parejas.** Las de tema claro y oscuro, o español e inglés, van juntas en una línea. Cada captura es una imagen HTML de 480 px de ancho (440 px cada una en las parejas; las tiras muy anchas y las columnas muy altas se ajustan para que se lean). Delante de cada una va el commit que la añadió.
+- **Version.** The first git tag that contains the commit that added the file (`git log --diff-filter=A`). v0.1.1, v0.1.2 and v0.1.3 have no tag in the repository: the “Release v0.1.N” commit that bumps the version is taken, and it matches what `CHANGELOG.md` says for each. Dates are those of `CHANGELOG.md`.
+- **Phase.** That of the commit subject's prefix; if it has none (or the ROADMAP counts the screenshot in another phase), the phase that cites it in `ROADMAP.md`, `UI.md` or `CHANGELOG.md`. The title is that of the ROADMAP heading.
+- **Re-recorded.** Many screenshots are made again after landing. Here the first entry counts; if the last re-recording falls in another version, the line says so (“re-recorded in vX”) and what you see is the latest. The version read at the bottom right of the status bar in each screen capture (`v0.1.x`) is that of the build it was made with, and helps date it.
+- **Pairs.** Light and dark theme, or Spanish and English, go together on one line. Each screenshot is an HTML image 480 px wide (440 px each in pairs; very wide strips and very tall columns are adjusted so they can be read). In front of each goes the commit that added it.
 
-**Cómo se mantiene.** Es parte del trabajo de cada fase (regla 2 de `CLAUDE.md`):
+**How it is kept.** It is part of each phase's work (rule 2 of `CLAUDE.md`):
 
-1. El PR de una fase que trae capturas nuevas añade su entrada bajo «Sin publicar», en «Por versión»: la imagen con su descripción, agrupada bajo el id y el nombre de la fase como en el ROADMAP, y su línea en «Por función». Si ya no está en la lista de «Sin captura», se quita de ahí.
-2. El PR de versión mueve ese bloque bajo la versión nueva, con su fecha, y deja «Sin publicar» vacío. Las notas de la release (`docs/release-notes/`) llevan las mismas capturas con URL absolutas; el procedimiento está en `ROADMAP.md`, fase P1.
-3. Una captura regrabada no cambia de sitio: se anota «regrabada en vX» en su línea.
-4. Esta página no toca el `README.md`. «Por función» es la lista de la que elegir qué llevar allí; la captura marcada en cada área es solo una propuesta.
+1. The PR of a phase that brings new screenshots adds its entry under “Unreleased”, in “By version”: the image with its description, grouped under the phase id and name as in the ROADMAP, and its line in “By feature”. If it is no longer in the “No screenshot” list, it is removed from there.
+2. The version PR moves that block under the new version, with its date, and leaves “Unreleased” empty. The release notes (`docs/release-notes/`) carry the same screenshots with absolute URLs; the procedure is in `ROADMAP.md`, phase P1.
+3. A re-recorded screenshot does not change place: “re-recorded in vX” is noted on its line.
+4. This page does not touch the `README.md`. “By feature” is the list to choose from what to take there; the screenshot marked in each area is only a proposal.
 
 ---
 
-## Por versión
+## By version
 
-De la más nueva a la más antigua: 22 versiones, 19 con capturas nuevas; las capturas se reparten en 59 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 59 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
-### Sin publicar
+### Unreleased
 
-Los goteos y las salpicaduras que caen por el aire, y el medidor que dice lo que hay en las piezas (S3d).
+Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d).
 
-#### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación)
+#### S3d · What remains of drops and dust on the parts (simulation)
 
-<a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y Sobre las piezas encendido, en pausa a los 2 s: gotas como casquetes sobre el cuerpo y el tapón; la barra de físicas dice Piezas: 875 gotas, 0 goteos, 62 en el aire; la barra de estado, Lluvia en 7 piezas: 875 gotas, 62 en el aire."><br>
-`physics-rain-air.png` · `f36ca82` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido, en pausa a los 2 s simulados con gotas en el aire (*Parts: 875 drops · 0 drips · 62 in the air*): *Rápido* dibuja las gotas del fotograma como casquetes y las del aire (las salpicaduras que vuelan) como esferas de agua, pequeñas a este encuadre (◆1 de S3d); la barra de estado dice lo que hay en las piezas: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
+<a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="The example bottle in Fast in the rain with a 3 m/s wind and On the parts switched on, paused at 2 s: drops as caps on the body and the cap; the physics bar says Parts: 875 drops, 0 drips, 62 in the air; the status bar, Rain on 7 parts: 875 drops, 62 in the air."><br>
+`physics-rain-air.png` · `f36ca82` · The example's rain with a 3 m/s wind and *On the parts* switched on, paused at 2 simulated seconds with drops in the air (*Parts: 875 drops · 0 drips · 62 in the air*): *Fast* draws the frame's drops as caps and those in the air (the splashes that fly) as water spheres, small at this framing (S3d ◆1); the status bar says what is on the parts: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
 
 ### v0.1.21 · 2026-10-18
 
-La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápido* y la lluvia que la escena deja en el cristal (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3); la lluvia sobre las piezas (S3c).
+The *Shape* among the visible controls of *Ambient*, the front glass in *Fast* and the rain the scene leaves on the glass (S3b), which re-record, without changing place, `ambient-drops.png` and `ambient-mix.png` (S3); rain on the parts (S3c).
 
-#### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación)
+#### S3b · Rain and dust that settle, run down and fall on the lens (simulation)
 
-<a id="c-ambient-shape"></a><img src="ui/ambient-shape.png" width="480" alt="El frasco en Rápido con Gotas de agua en mezcla de formas; en el inspector, los mandos del efecto con la Forma, Mezcla, justo después del Tamaño, sus cuatro pesos y la parte que da cada uno debajo, y Avanzado plegado."><br>
-`ambient-shape.png` · `fe3f101` · El frasco en *Rápido* con *Gotas de agua* en mezcla de formas; en el inspector, los mandos del efecto con la **Forma** (*Mezcla*) justo después del *Tamaño*, sus cuatro pesos y la parte que da cada uno debajo, y *Avanzado* plegado (decisión S3 ◆5). `tools/s3b-check.mjs --only shape`.
+<a id="c-ambient-shape"></a><img src="ui/ambient-shape.png" width="480" alt="The bottle in Fast with Water drops in a mix of shapes; in the inspector, the effect's controls with the Shape, Mix, right after the Size, its four weights and the share each gives below, and Advanced folded."><br>
+`ambient-shape.png` · `fe3f101` · The bottle in *Fast* with *Water drops* in a mix of shapes; in the inspector, the effect's controls with the **Shape** (*Mix*) right after the *Size*, its four weights and the share each gives below, and *Advanced* folded (decision S3 ◆5). `tools/s3b-check.mjs --only shape`.
 
-<a id="c-lens-glass-fast"></a><img src="ui/lens-glass-fast.png" width="480" alt="El frasco en Rápido a través del cristal frontal con gotas de 8 mm a 150 mm del objetivo a f/16: la imagen velada y desenfocada por discos suaves; en el inspector, el cristal con Gotas y polvo A mano y sus mandos; la barra de estado dice que el cristal es una aproximación de las 389 gotas y 28 747 motas del motor."><br>
-`lens-glass-fast.png` · `fe3f101` · El mismo cristal que `lens-glass.png` (gotas de 8 mm a 150 mm, f/16) en *Rápido*: la aproximación con las gotas y motas que coloca el motor, discos suaves de borde oscuro desenfocados por la huella de cada píxel en el cristal y el polvo como un tinte; en el inspector, *Gotas y polvo ▸ A mano* y sus mandos; la barra de estado: *Front glass: approximation of the engine’s 389 drops and 28,747 motes* (decisión S3 ◆9). `tools/s3b-check.mjs --only fast`.
+<a id="c-lens-glass-fast"></a><img src="ui/lens-glass-fast.png" width="480" alt="The bottle in Fast through the front glass with 8 mm drops at 150 mm from the lens at f/16: the image veiled and defocused by soft discs; in the inspector, the glass with Drops and dust By hand and its controls; the status bar says the glass is an approximation of the engine's 389 drops and 28,747 motes."><br>
+`lens-glass-fast.png` · `fe3f101` · The same glass as `lens-glass.png` (8 mm drops at 150 mm, f/16) in *Fast*: the approximation with the drops and motes the engine places, soft discs with a dark edge defocused by each pixel's footprint on the glass and the dust as a tint; in the inspector, *Drops and dust ▸ By hand* and its controls; the status bar: *Front glass: approximation of the engine’s 389 drops and 28,747 motes* (decision S3 ◆9). `tools/s3b-check.mjs --only fast`.
 
-<a id="c-physics-rain"></a><img src="ui/physics-rain.png" width="480" alt="El frasco bajo la lluvia, a 35 mm f/11, con la barra de físicas en pausa a los 4 s: Cristal 148 gotas; en el inspector, el cristal frontal De la escena, alimentado por la lluvia, y lo grabado en el cabezal."><br>
-`physics-rain.png` · `fe3f101` · La lluvia empujada hacia la cámara por un viento de 6 m/s, a 35 mm f/11, con el cristal frontal en *Gotas y polvo ▸ De la escena*: la barra de físicas en pausa a los 4 s simulados (*Glass: 148 drops · 0 motes*), el inspector dice que lo alimenta la lluvia y lo que hay grabado en el cabezal, y *Rápido* dibuja las gotas del cristal, que han resbalado hacia abajo. `tools/s3b-check.mjs --only rain`.
+<a id="c-physics-rain"></a><img src="ui/physics-rain.png" width="480" alt="The bottle in the rain, at 35 mm f/11, with the physics bar paused at 4 s: Glass 148 drops; in the inspector, the front glass From the scene, fed by the rain, and what is recorded at the playhead."><br>
+`physics-rain.png` · `fe3f101` · Rain pushed towards the camera by a 6 m/s wind, at 35 mm f/11, with the front glass on *Drops and dust ▸ From the scene*: the physics bar paused at 4 simulated seconds (*Glass: 148 drops · 0 motes*), the inspector says the rain feeds it and what is recorded at the playhead, and *Fast* draws the glass's drops, which have slid downward. `tools/s3b-check.mjs --only rain`.
 
-#### S3c · Gotas y polvo sobre las piezas (simulación)
+#### S3c · Drops and dust on the parts (simulation)
 
-<a id="c-physics-rain-set"></a><img src="ui/physics-rain-set.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y el interruptor Sobre las piezas encendido: el cuerpo, el tapón y el set salpicados de gotas pequeñas; la barra de físicas en pausa a los 3 s con Piezas: 1.443 gotas y 0 goteos; la barra de estado dice Lluvia sobre las piezas: 1.443 gotas en 7 piezas."><br>
-`physics-rain-set.png` · `324bb1e` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido en sus mandos: la barra de físicas en pausa a los 3 s simulados (*Parts: 1,443 drops · 0 drips*), y *Rápido* dibuja el fotograma grabado: las gotas del motor como casquetes sobre el cuerpo, el cuello, el tapón y el set, y la película de agua donde ha llovido; la barra de estado: *Rain on the parts: 1,443 drops on 7 parts*. `tools/s3c-check.mjs --only rain`.
+<a id="c-physics-rain-set"></a><img src="ui/physics-rain-set.png" width="480" alt="The example bottle in Fast in the rain with a 3 m/s wind and the On the parts switch on: the body, the cap and the set speckled with small drops; the physics bar paused at 3 s with Parts: 1,443 drops and 0 drips; the status bar says Rain on the parts: 1,443 drops on 7 parts."><br>
+`physics-rain-set.png` · `324bb1e` · The example's rain with a 3 m/s wind and *On the parts* switched on in its controls: the physics bar paused at 3 simulated seconds (*Parts: 1,443 drops · 0 drips*), and *Fast* draws the recorded frame: the engine's drops as caps on the body, the neck, the cap and the set, and the film of water where it has rained; the status bar: *Rain on the parts: 1,443 drops on 7 parts*. `tools/s3c-check.mjs --only rain`.
 
 ### v0.1.20 · 2026-10-18
 
-La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M3d), con sus nudos donde los pone *Completo*, y la tela de la familia tejida en *Rápido* cuando sus hilos se leen (M3e); la forma de gota y la mezcla de formas de *Ambiente*, y el cristal frontal de la cámara (S3).
+The wood of the *Wood* family in *Fast* through the *Wood* node's path (M3d), with its knots where *Full* puts them, and the family's fabric woven in *Fast* when its threads can be read (M3e); the drop shape and the mix of shapes in *Ambient*, and the camera's front glass (S3).
 
-#### M3d · La madera de la familia en *Rápido* por el camino del nodo *Madera*
+#### M3d · The family's wood in *Fast* through the path of the *Wood* node
 
-<a id="c-m3d-wood-fast"></a><img src="ui/m3d-wood-fast.png" width="480" alt="Seis bolas de madera en dos filas, el roble arriba y el pino nudoso abajo: a la izquierda la vista Rápida antes de M3d, de un color liso con los nudos del pino; en medio la vista Rápida ahora, con los anillos horneados como el nodo Madera y los nudos del pino arriba a la izquierda, abajo a la derecha y abajo; a la derecha el modo Completo, con los anillos y los nudos del motor."><br>
-`m3d-wood-fast.png` · `305db3e` · La madera de la familia en una bola de 100 mm, el roble (arriba) y el pino nudoso (abajo): a la izquierda, *Rápido* antes de M3d (su color medio y los nudos de la capa de E6); en medio, *Rápido* ahora, horneada por el grafo de *Simple → Nodos* como el nodo *Madera* (los mismos píxeles que la madera pasada a nodos), con sus anillos; a la derecha, *Completo* (el `rt.wasm`). El fondo de las tres columnas es el mismo gris. `tests/wood-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`. *(regrabada en v0.1.20: M3e, los nudos del pino de *Rápido*, ahora encima del horneado, caen donde los pone *Completo*; en M3d eran los del horneado, en otro sitio)*
+<a id="c-m3d-wood-fast"></a><img src="ui/m3d-wood-fast.png" width="480" alt="Six wooden balls in two rows, oak on top and knotty pine below: on the left the Fast view before M3d, a flat colour with the pine's knots; in the middle the Fast view now, with the rings baked like the Wood node and the pine's knots at top left, bottom right and bottom; on the right Full mode, with the engine's rings and knots."><br>
+`m3d-wood-fast.png` · `305db3e` · The family's wood on a 100 mm ball, oak (top) and knotty pine (bottom): on the left, *Fast* before M3d (its average colour and the knots of E6's layer); in the middle, *Fast* now, baked through the graph of *Simple → Nodes* like the *Wood* node (the same pixels as the wood switched to nodes), with its rings; on the right, *Full* (the `rt.wasm`). The background of the three columns is the same grey. `tests/wood-fast-browser.test.ts` with `REPACK_WRITE_CAPTURES=1`. *(re-recorded in v0.1.20: M3e, the pine's knots in *Fast*, now on top of the bake, fall where *Full* puts them; in M3d they were those of the bake, in another place)*
 
-#### M3e · Los nudos de *Rápido* donde los pone *Completo* y la tela horneada cuando sus hilos se leen
+#### M3e · *Fast* knots where *Full* puts them and fabric baked when its threads are readable
 
-<a id="c-m3e-fabric-fast"></a><img src="ui/m3e-fabric-fast.png" width="480" alt="Nueve bolas de tela en tres filas, el punto arriba, la lona en medio y el algodón abajo: a la izquierda la vista Rápida antes de M3e, de un color liso; en medio la vista Rápida ahora, con los puntos del punto y la trama de la lona horneados y el algodón liso como antes; a la derecha el modo Completo, con su tejido."><br>
-`m3e-fabric-fast.png` · `8a5591a` · La tela de la familia en una bola de 100 mm, el punto (arriba, 12,8 téxeles por hilo), la lona (en medio, 3,7) y el algodón (abajo, 1,3): a la izquierda, *Rápido* antes de M3e (el color medio de su tejido y su pelusa); en medio, *Rápido* ahora, el punto y la lona horneados por el nodo *Tela* con la pelusa encima, el algodón, por debajo de 2,5 téxeles por hilo, igual que antes; a la derecha, *Completo* (el `rt.wasm`). *Rápido* sale más claro que *Completo* en las tres columnas, como cualquier material bajo el mundo blanco. `tests/fabric-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`.
+<a id="c-m3e-fabric-fast"></a><img src="ui/m3e-fabric-fast.png" width="480" alt="Nine fabric balls in three rows, knit on top, canvas in the middle and cotton below: on the left the Fast view before M3e, a flat colour; in the middle the Fast view now, with the knit's stitches and the canvas's weft baked and the cotton flat as before; on the right Full mode, with its weave."><br>
+`m3e-fabric-fast.png` · `8a5591a` · The family's fabric on a 100 mm ball, knit (top, 12.8 texels per thread), canvas (middle, 3.7) and cotton (bottom, 1.3): on the left, *Fast* before M3e (the average colour of its weave and its fuzz); in the middle, *Fast* now, the knit and the canvas baked by the *Fabric* node with the fuzz on top, the cotton, below 2.5 texels per thread, the same as before; on the right, *Full* (the `rt.wasm`). *Fast* comes out lighter than *Full* in the three columns, like any material under the white world. `tests/fabric-fast-browser.test.ts` with `REPACK_WRITE_CAPTURES=1`.
 
-#### S3 · Lluvia y polvo sobre el set y sobre la lente
+#### S3 · Rain and dust on the set and on the lens
 
-<a id="c-ambient-drops"></a><img src="ui/ambient-drops.png" width="480" alt="El frasco de ejemplo en Rápido con el efecto Gotas de agua: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, Ambiente ▸ Avanzado con la forma Gota elegida, su largo, su punta y la variación de forma."><br>
-`ambient-drops.png` · `ee18304` · El frasco de ejemplo en *Rápido* con el efecto *Gotas de agua*: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, *Ambiente ▸ Avanzado* con la forma *Gota* elegida, su *Largo de la gota*, su *Punta* y la *Variación de forma*. `tools/s3-check.mjs --only drops`. *(regrabada en v0.1.21: S3b, la *Forma* ya está entre los mandos visibles, encima de *Avanzado*)*
+<a id="c-ambient-drops"></a><img src="ui/ambient-drops.png" width="480" alt="The example bottle in Fast with the Water drops effect: transparent drops with their round body and the tip upward falling around the product; in the inspector, Ambient ▸ Advanced with the Drop shape chosen, its length, its tip and the shape variation."><br>
+`ambient-drops.png` · `ee18304` · The example bottle in *Fast* with the *Water drops* effect: transparent drops with their round body and the tip upward falling around the product; in the inspector, *Ambient ▸ Advanced* with the *Drop* shape chosen, its *Drop length*, its *Tip* and the *Shape variation*. `tools/s3-check.mjs --only drops`. *(re-recorded in v0.1.21: S3b, the *Shape* is now among the visible controls, above *Advanced*)*
 
-<a id="c-ambient-mix"></a><img src="ui/ambient-mix.png" width="480" alt="El mismo efecto con la forma Mezcla: puntos, copos, estelas y gotas mezclados en el visor; en el inspector, un peso por forma y la línea con la parte que da cada uno."><br>
-`ambient-mix.png` · `ee18304` · El mismo efecto con la forma *Mezcla*: puntos, copos, estelas y gotas en el visor, cada partícula con la forma que le da el motor; en el inspector, un peso por forma (*Puntos*, *Copos*, *Estelas*, *Gotas*) y la línea con la parte que da cada uno. `tools/s3-check.mjs --only mix`. *(regrabada en v0.1.21: S3b, la *Forma* y los pesos, entre los mandos visibles)*
+<a id="c-ambient-mix"></a><img src="ui/ambient-mix.png" width="480" alt="The same effect with the Mix shape: points, flakes, streaks and drops mixed in the viewport; in the inspector, a weight per shape and the line with the share each gives."><br>
+`ambient-mix.png` · `ee18304` · The same effect with the *Mix* shape: points, flakes, streaks and drops in the viewport, each particle with the shape the engine gives it; in the inspector, a weight per shape (*Points*, *Flakes*, *Streaks*, *Drops*) and the line with the share each gives. `tools/s3-check.mjs --only mix`. *(re-recorded in v0.1.21: S3b, the *Shape* and the weights, among the visible controls)*
 
-<a id="c-lens-glass"></a><img src="ui/lens-glass.png" width="480" alt="El frasco en Completo a través de un cristal mojado a 150 mm del objetivo, a f/16: discos blandos con la escena del revés dentro, cada uno una gota del cristal; en el inspector, Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal con sus gotas, su tamaño, el polvo, la semilla y la distancia."><br>
-`lens-glass.png` · `ee18304` · El frasco en *Completo* a través de un cristal mojado a 150 mm del objetivo, a f/16 y con gotas de 8 mm: discos blandos con la escena del revés dentro, cada uno una gota del cristal desenfocada; en el inspector, *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal* con *Gotas*, *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia*. `tools/s3-check.mjs --only glass`.
+<a id="c-lens-glass"></a><img src="ui/lens-glass.png" width="480" alt="The bottle in Full through a wet glass at 150 mm from the lens, at f/16: soft discs with the scene upside down inside, each one a drop of the glass; in the inspector, Camera ▸ Lens ▸ Filters ▸ Front glass with its drops, its size, the dust, the seed and the distance."><br>
+`lens-glass.png` · `ee18304` · The bottle in *Full* through a wet glass at 150 mm from the lens, at f/16 and with 8 mm drops: soft discs with the scene upside down inside, each one a defocused drop of the glass; in the inspector, *Camera ▸ Lens ▸ Filters ▸ Front glass* with *Drops*, *Drop size*, *Dust*, *Seed* and *Distance*. `tools/s3-check.mjs --only glass`.
 
 ### v0.1.19 · 2026-10-17
 
-El estudio de un lote que viaja con el proyecto (N2b), el interruptor de la focal, *Mantener el tamaño de lo enfocado* (C2), el editor de elementos de la lente trazada (O2c) y los nodos *Madera* y *Tela* del editor de material (M3c), que regraban, sin cambiar de sitio, `m3b-wood.png` y `m3b-graphs.png` (M3b).
+A batch's studio that travels with the project (N2b), the focal-length switch, *Keep the size of what is in focus* (C2), the traced lens's element editor (O2c) and the *Wood* and *Fabric* nodes of the material editor (M3c), which re-record, without changing place, `m3b-wood.png` and `m3b-graphs.png` (M3b).
 
-#### N2b · El estudio viaja con el proyecto
+#### N2b · The studio travels with the project
 
-<a id="c-batch-queue-adopt"></a><img src="ui/batch-queue-adopt.png" width="480" alt="Un proyecto con un lote sobre dos estudios, abierto en otro perfil del navegador con la biblioteca vacía: el cajón de la cola con los dos trabajos terminados, cada uno en su estudio, y encima una línea por estudio, «El estudio “Studio 1” vino con el proyecto; no está en tu biblioteca», con el botón Añadir a mi biblioteca."><br>
-`batch-queue-adopt.png` · `e5e3c11` · Un proyecto con un lote sobre dos estudios, abierto en otro perfil del navegador con la biblioteca vacía: el cajón de la cola con los dos trabajos terminados, cada uno renderizado en la copia de su estudio que trae el proyecto, y encima una línea por estudio, *The studio “Studio 1” came with the project; it is not in your library*, con **Add to my library**. `tools/batch-check.mjs` (g).
+<a id="c-batch-queue-adopt"></a><img src="ui/batch-queue-adopt.png" width="480" alt="A project with a batch over two studios, opened in another browser profile with an empty library: the queue drawer with the two finished jobs, each in its studio, and above a line per studio, “The studio “Studio 1” came with the project; it is not in your library”, with the Add to my library button."><br>
+`batch-queue-adopt.png` · `e5e3c11` · A project with a batch over two studios, opened in another browser profile with an empty library: the queue drawer with the two finished jobs, each rendered in the copy of its studio that the project carries, and above a line per studio, *The studio “Studio 1” came with the project; it is not in your library*, with **Add to my library**. `tools/batch-check.mjs` (g).
 
-#### C2 · Interruptor de la focal
+#### C2 · Focal-length switch
 
-<a id="c-c2-focal-switch"></a><img src="ui/c2-focal-switch.png" width="339" alt="El bloque Cámara del inspector con el interruptor nuevo debajo de la focal (85 mm): Mantener el tamaño de lo enfocado, encendido, y su línea auxiliar: encendido, al cambiar la focal la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño y cambia la perspectiva; apagado, la cámara se queda y cambia el encuadre."><br>
-`c2-focal-switch.png` · `bbf3c6b` · El bloque *Cámara* del inspector con el interruptor nuevo debajo de la focal (85 mm): *Mantener el tamaño de lo enfocado*, encendido, y su línea auxiliar, que dice lo que hace encendido (la cámara se acerca o se aleja por su eje para que lo enfocado conserve su tamaño; cambia la perspectiva) y lo que hace apagado (la cámara se queda y cambia el encuadre). `tools/focal-check.mjs --shots docs/ui`.
+<a id="c-c2-focal-switch"></a><img src="ui/c2-focal-switch.png" width="339" alt="The inspector's Camera block with the new switch below the focal length (85 mm): Keep the size of what is in focus, on, and its helper line: on, when the focal length changes the camera moves closer or farther along its axis so that what is in focus keeps its size and the perspective changes; off, the camera stays and the framing changes."><br>
+`c2-focal-switch.png` · `bbf3c6b` · The inspector's *Camera* block with the new switch below the focal length (85 mm): *Keep the size of what is in focus*, on, and its helper line, which says what it does when on (the camera moves closer or farther along its axis so that what is in focus keeps its size; the perspective changes) and what it does when off (the camera stays and the framing changes). `tools/focal-check.mjs --shots docs/ui`.
 
-#### O2c · Editor de elementos de la lente
+#### O2c · Lens element editor
 
-<a id="c-o2c-lens-editor"></a><img src="ui/o2c-lens-editor.png" width="480" alt="El editor de lente abierto sobre la doble Gauss del catálogo, flotando sobre la aplicación: el corte del motor con los seis elementos numerados y el primero elegido, las herramientas (Añadir delante, Añadir detrás, Girar 180°, Borrar, Más pequeño, Más grande, Apertura automática), la tabla con los radios, el grosor, el vidrio, el diámetro y el aire de cada elemento y del diafragma, y a la derecha lo que calcula el motor: la focal del diseño y la de la cámara, el tiraje, el diafragma, el círculo de imagen y las curvas."><br>
-`o2c-lens-editor.png` · `5187dd7` · El editor de lente abierto sobre la doble Gauss del catálogo, flotando sobre la aplicación: el corte del motor con los seis elementos numerados y el primero elegido, las herramientas (*Añadir delante*, *Añadir detrás*, *Girar 180°*, *Borrar*, *Más pequeño*, *Más grande*, *Apertura automática*), la tabla con los radios, el grosor, el vidrio, el diámetro y el aire de cada elemento y del diafragma, y a la derecha lo que calcula el motor: la focal del diseño y la de la cámara, el tiraje, el diafragma, el círculo de imagen y las curvas. `tools/lens-editor-check.mjs --shots docs/ui`.
+<a id="c-o2c-lens-editor"></a><img src="ui/o2c-lens-editor.png" width="480" alt="The lens editor open on the catalogue's double Gauss, floating over the application: the engine's cross-section with the six elements numbered and the first one chosen, the tools (Add in front, Add behind, Turn 180°, Delete, Smaller, Larger, Automatic aperture), the table with the radii, thickness, glass, diameter and air of each element and of the diaphragm, and on the right what the engine computes: the design and the camera's focal length, the flange distance, the aperture, the image circle and the curves."><br>
+`o2c-lens-editor.png` · `5187dd7` · The lens editor open on the catalogue's double Gauss, floating over the application: the engine's cross-section with the six elements numbered and the first one chosen, the tools (*Add in front*, *Add behind*, *Turn 180°*, *Delete*, *Smaller*, *Larger*, *Automatic aperture*), the table with the radii, thickness, glass, diameter and air of each element and of the diaphragm, and on the right what the engine computes: the design and the camera's focal length, the flange distance, the aperture, the image circle and the curves. `tools/lens-editor-check.mjs --shots docs/ui`.
 
-<a id="c-o2c-lens-modified"></a><img src="ui/o2c-lens-modified.png" width="480" alt="La misma lente modificada: un elemento nuevo detrás del primero (siete elementos) y el delantero girado 180° (sus radios intercambiados y negados), comprobada por el motor y lista para aplicar: la focal del diseño más corta, otro tiraje y otra distorsión, y el corte al día."><br>
-`o2c-lens-modified.png` · `5187dd7` · La misma lente modificada: un elemento nuevo detrás del primero (siete elementos) y el delantero girado 180° (sus radios intercambiados y negados), comprobada por el motor y lista para aplicar: la focal del diseño más corta, otro tiraje y otra distorsión, y el corte al día. `tools/lens-editor-check.mjs --shots docs/ui`.
+<a id="c-o2c-lens-modified"></a><img src="ui/o2c-lens-modified.png" width="480" alt="The same lens modified: a new element behind the first (seven elements) and the front one turned 180° (its radii swapped and negated), checked by the engine and ready to apply: the design focal length shorter, another flange distance and another distortion, and the cross-section up to date."><br>
+`o2c-lens-modified.png` · `5187dd7` · The same lens modified: a new element behind the first (seven elements) and the front one turned 180° (its radii swapped and negated), checked by the engine and ready to apply: the design focal length shorter, another flange distance and another distortion, and the cross-section up to date. `tools/lens-editor-check.mjs --shots docs/ui`.
 
-#### M3c · Nodos Madera y Tela
+#### M3c · Wood and Fabric nodes
 
-<a id="c-material-nodes-wood"></a><img src="ui/material-nodes-wood.png" width="480" alt="El editor de material con el ejemplo Roble (nodo Madera): el nodo Madera, con su esfera de anillos, conectado al color base, la rugosidad, la anisotropía y la normal de la salida de material; en el panel, la esfera del material, lo que hace Rápido (un corte por el frente de la pieza) y los parámetros del nodo Madera."><br>
-`material-nodes-wood.png` · `f21ae73` · El editor de material con el ejemplo *Roble (nodo Madera)*: el nodo *Madera*, con su esfera de anillos, conectado al color base, la rugosidad, la anisotropía y la normal de la salida de material; en el panel, la esfera del material, lo que hace *Rápido* (un corte por el frente de la pieza) y los parámetros del nodo *Madera*. `tools/material-nodes-check.mjs --only wood`.
+<a id="c-material-nodes-wood"></a><img src="ui/material-nodes-wood.png" width="480" alt="The material editor with the Oak (Wood node) example: the Wood node, with its sphere of rings, connected to the material output's base colour, roughness, anisotropy and normal; in the panel, the material's sphere, what Fast does (a cut through the front of the part) and the Wood node's parameters."><br>
+`material-nodes-wood.png` · `f21ae73` · The material editor with the *Oak (Wood node)* example: the *Wood* node, with its sphere of rings, connected to the material output's base colour, roughness, anisotropy and normal; in the panel, the material's sphere, what *Fast* does (a cut through the front of the part) and the *Wood* node's parameters. `tools/material-nodes-check.mjs --only wood`.
 
 ### v0.1.18 · 2026-10-17
 
-La lente simple y la trazada, cada una con sus opciones: la inclinación con un dial, el plano de enfoque en el visor y por dos puntos, y la lente trazada inclinada. Regrabadas aquí, sin cambiar de sitio, las de la lente (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` y `camera-optics.png`). Y el enfoque de F1: el bloque *Enfoque* del inspector, la marca del punto en el visor y renders antes y después de enfocar con un clic. C1 (decisiones de criterio aplicadas) regraba, sin cambiar de sitio: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` y `ai-results-light.png` (X4).
+The simple and the traced lens, each with its own options: tilt with a dial, the plane of focus in the viewport and through two points, and the tilted traced lens. Re-recorded here, without changing place, those of the lens (`lens-editor.png`, `lens-section.png`, `camera-bokeh.png` and `camera-optics.png`). And F1's focus: the inspector's *Focus* block, the point marker in the viewport and renders before and after click-to-focus. C1 (judgement calls applied) re-records, without changing place: `scene-type-interior.png` (K1), `m3b-graphs.png` (M3b), `ai-section-light.png` and `ai-results-light.png` (X4).
 
-#### F1 · Enfoque por punto y por objeto
+#### F1 · Focus by point and by object
 
-<a id="c-f1-focus-inspector"></a><img src="ui/f1-focus-inspector.png" width="340" alt="El bloque Cámara del inspector tras enfocar con un clic: Enfoque en Punto (Distancia · Punto · Objeto), la distancia de enfoque como deslizador con su campo y sus flechas al lado, con la distancia que sale del punto (660 mm; moverla pasa a Distancia), y la fila Punto con el botón de enfocar con clic y «On Body»."><br>
-`f1-focus-inspector.png` · `1cb9f87` · El bloque Cámara del inspector tras enfocar con un clic: *Enfoque* en *Punto* (*Distancia · Punto · Objeto*), la distancia de enfoque como deslizador con su campo y sus flechas al lado, con la distancia que sale del punto (660 mm; moverla pasa a *Distancia*), y la fila *Punto* con el botón de enfocar con clic y la pieza enfocada. `tools/focus-click-check.mjs --shots docs/ui`.
+<a id="c-f1-focus-inspector"></a><img src="ui/f1-focus-inspector.png" width="340" alt="The inspector's Camera block after click-to-focus: Focus on Point (Distance · Point · Object), the focus distance as a slider with its field and arrows beside it, with the distance that comes from the point (660 mm; moving it switches to Distance), and the Point row with the click-to-focus button and “On Body”."><br>
+`f1-focus-inspector.png` · `1cb9f87` · The inspector's Camera block after click-to-focus: *Focus* on *Point* (*Distance · Point · Object*), the focus distance as a slider with its field and arrows beside it, with the distance that comes from the point (660 mm; moving it switches to *Distance*), and the *Point* row with the click-to-focus button and the part in focus. `tools/focus-click-check.mjs --shots docs/ui`.
 
-<a id="c-f1-focus-marker"></a><img src="ui/f1-focus-marker.png" width="480" alt="El visor en Rápido alrededor del punto enfocado en la etiqueta de la botella del ejemplo, con la cámara seleccionada: la marca del punto (un anillo con cuatro trazos y un punto en el centro) donde cayó el clic."><br>
-`f1-focus-marker.png` · `1cb9f87` · El visor en *Rápido* alrededor del punto enfocado en la etiqueta de la botella del ejemplo, con la cámara seleccionada: la marca del punto (un anillo con cuatro trazos y un punto en el centro) donde cayó el clic. `tools/focus-click-check.mjs --shots docs/ui`.
+<a id="c-f1-focus-marker"></a><img src="ui/f1-focus-marker.png" width="480" alt="The viewport in Fast around the point focused on the example bottle's label, with the camera selected: the point marker (a ring with four strokes and a dot in the centre) where the click landed."><br>
+`f1-focus-marker.png` · `1cb9f87` · The viewport in *Fast* around the point focused on the example bottle's label, with the camera selected: the point marker (a ring with four strokes and a dot in the centre) where the click landed. `tools/focus-click-check.mjs --shots docs/ui`.
 
-<a id="c-f1-focus-sheet"></a><img src="ui/f1-focus-sheet.png" width="480" alt="Tres clics, antes de F1 a la izquierda y después a la derecha, en renders finales de 480 × 270 de un damero de 1,3 mm inclinado 45° visto con 135 mm a f/1,4 a 600 mm; un anillo marca el píxel del clic. Arriba y en medio, la lente con 6° de inclinación y el clic en las esquinas: antes la banda nítida pasaba a unos 35 píxeles del anillo, después pasa por él. Abajo, la doble Gauss trazada abierta y el clic en el centro: antes la banda quedaba arriba a la izquierda del anillo, después lo cruza."><br>
-`f1-focus-sheet.png` · `ed0e937` · Tres clics, antes de F1 a la izquierda y después a la derecha (*antes*: `319614b`), en renders finales de 480 × 270 de un damero de 1,3 mm inclinado 45° visto con 135 mm a f/1,4 a 600 mm; un anillo marca el píxel del clic. Arriba y en medio, la lente con 6° de inclinación y el clic en las esquinas: antes la banda nítida pasaba a unos 35 píxeles del anillo, después pasa por él. Abajo, la doble Gauss trazada abierta y el clic en el centro: antes la banda quedaba arriba a la izquierda del anillo, después lo cruza. Hecha con `tools/focus-sheet.mjs` de los renders de `tests/focus-measure.test.ts` (`REPACK_FOCUS_MEASURE=1`, con `rt`).
+<a id="c-f1-focus-sheet"></a><img src="ui/f1-focus-sheet.png" width="480" alt="Three clicks, before F1 on the left and after on the right, in 480 × 270 final renders of a 1.3 mm checkerboard tilted 45° seen with 135 mm at f/1.4 from 600 mm; a ring marks the click's pixel. Top and middle, the lens with 6° of tilt and the click in the corners: before, the sharp band passed about 35 pixels from the ring, after, it passes through it. Bottom, the traced double Gauss wide open and the click in the centre: before, the band was to the upper left of the ring, after, it crosses it."><br>
+`f1-focus-sheet.png` · `ed0e937` · Three clicks, before F1 on the left and after on the right (*before*: `319614b`), in 480 × 270 final renders of a 1.3 mm checkerboard tilted 45° seen with 135 mm at f/1.4 from 600 mm; a ring marks the click's pixel. Top and middle, the lens with 6° of tilt and the click in the corners: before, the sharp band passed about 35 pixels from the ring, after, it passes through it. Bottom, the traced double Gauss wide open and the click in the centre: before, the band was to the upper left of the ring, after, it crosses it. Made with `tools/focus-sheet.mjs` from the renders of `tests/focus-measure.test.ts` (`REPACK_FOCUS_MEASURE=1`, with `rt`).
 
-#### O4 · Lente simple y trazada: opciones de cada una
+#### O4 · Simple and traced lens: options for each
 
-<a id="c-o4-simple-optics"></a><img src="ui/o4-simple-optics.png" width="331" alt="Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V."><br>
-`o4-simple-optics.png` · `f4f5e12` · Óptica avanzada de la lente simple con el bloque nuevo Inclinación y desplazamiento: la inclinación a 7,2°, el dial de «El plano se aleja hacia» apuntando arriba (como el suelo) con sus cuatro atajos y el ángulo, Por dos puntos…, De frente, Ver el plano y el desplazamiento H y V.
+<a id="c-o4-simple-optics"></a><img src="ui/o4-simple-optics.png" width="331" alt="The simple lens's advanced optics with the new Tilt and shift block: the tilt at 7.2°, the “Plane runs to” dial pointing up (like the floor) with its four shortcuts and the angle, Through two points…, Square, Show the plane and the H and V shift."><br>
+`o4-simple-optics.png` · `f4f5e12` · The simple lens's advanced optics with the new Tilt and shift block: the tilt at 7.2°, the “Plane runs to” dial pointing up (like the floor) with its four shortcuts and the angle, Through two points…, Square, Show the plane and the H and V shift.
 
-<a id="c-o4-tilt-overlay"></a><img src="ui/o4-tilt-overlay.png" width="480" alt="El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro."><br>
-`o4-tilt-overlay.png` · `f4f5e12` · El visor en modo Rápido con el plano de enfoque dibujado: un trapecio translúcido con su rejilla, en grises, tumbado hacia el suelo detrás del frasco, y el punto de enfoque en su centro.
+<a id="c-o4-tilt-overlay"></a><img src="ui/o4-tilt-overlay.png" width="480" alt="The viewport in Fast mode with the plane of focus drawn: a translucent trapezoid with its grid, in greys, laid towards the floor behind the bottle, and the focus point at its centre."><br>
+`o4-tilt-overlay.png` · `f4f5e12` · The viewport in Fast mode with the plane of focus drawn: a translucent trapezoid with its grid, in greys, laid towards the floor behind the bottle, and the focus point at its centre.
 
-<a id="c-o4-traced-more"></a><img src="ui/o4-traced-more.png" width="331" alt="Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos."><br>
-`o4-traced-more.png` · `f4f5e12` · Más opciones de la lente trazada: su propia inclinación (6°, el plano hacia arriba), la nota de que la lente gira hasta dar el plano de la lente simple, el desplazamiento, el resto del diafragma (redondez, giro, obstrucción) y los ajustes no físicos.
+<a id="c-o4-traced-more"></a><img src="ui/o4-traced-more.png" width="331" alt="More options of the traced lens: its own tilt (6°, the plane upward), the note that the lens turns until it gives the simple lens's plane, the shift, the rest of the diaphragm (roundness, rotation, obstruction) and the non-physical settings."><br>
+`o4-traced-more.png` · `f4f5e12` · More options of the traced lens: its own tilt (6°, the plane upward), the note that the lens turns until it gives the simple lens's plane, the shift, the rest of the diaphragm (roundness, rotation, obstruction) and the non-physical settings.
 
-<a id="c-o4-traced-tilt"></a><img src="ui/o4-traced-tilt.png" width="480" alt="La hoja rt --tilt-sheet: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas."><br>
-`o4-traced-tilt.png` · `f4f5e12` · La hoja `rt --tilt-sheet`: luces pequeñas sobre un suelo que se aleja, un 50 mm a f/2 a 40 cm del suelo enfocado a 1,2 m. A la izquierda la lente derecha (solo la fila de 1,2 m nítida; las cercanas y las lejanas, discos); a la derecha inclinada 6,8° para tumbar el plano sobre el suelo (todas nítidas). Arriba la lente simple, abajo la doble Gauss trazada, con su propio carácter en las esquinas.
+<a id="c-o4-traced-tilt"></a><img src="ui/o4-traced-tilt.png" width="480" alt="The rt --tilt-sheet sheet: small lights over a receding floor, a 50 mm at f/2 at 40 cm from the floor focused at 1.2 m. On the left the straight lens (only the 1.2 m row sharp; the near and far ones, discs); on the right tilted 6.8° to lay the plane on the floor (all sharp). Top the simple lens, bottom the traced double Gauss, with its own character in the corners."><br>
+`o4-traced-tilt.png` · `f4f5e12` · The `rt --tilt-sheet` sheet: small lights over a receding floor, a 50 mm at f/2 at 40 cm from the floor focused at 1.2 m. On the left the straight lens (only the 1.2 m row sharp; the near and far ones, discs); on the right tilted 6.8° to lay the plane on the floor (all sharp). Top the simple lens, bottom the traced double Gauss, with its own character in the corners.
 
 ### v0.1.17 · 2026-10-17
 
-El catálogo de luz en Sets y Luces, con sus filtros, la pregunta por los focos que hay y el tamaño de las miniaturas; flechas de paso en todos los valores y deslizadores donde convienen; la cámara de interiores: verticales rectas, la planta con el techo oculto a cámara y la panorámica 2:1. Regrabadas aquí, sin cambiar de sitio: las cuatro de la ventana de render y la cola de U5 (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` y `results-split.png`), con la interfaz de hoy, y `sets-catalogue.png` (L6) y `scene-type-interior.png` (K1), con la sección *Luz* de L7. N2: la ventana de render con un lote de cámaras × estudios y la cola con él terminado.
+The light catalogue in Sets and Lights, with its filters, the question about the lights that are there and the thumbnail size; step arrows on every value and sliders where they fit; the interior camera: straight verticals, the plan with the ceiling hidden from camera and the 2:1 panorama. Re-recorded here, without changing place: the four of U5's render window and queue (`render-window-image.png`, `render-window-animation.png`, `queue-drawer.png` and `results-split.png`), with today's interface, and `sets-catalogue.png` (L6) and `scene-type-interior.png` (K1), with L7's *Light* section. N2: the render window with a cameras × studios batch and the queue with it finished.
 
-#### L7 · Sets y Luces: catálogo reorganizado
+#### L7 · Sets and Lights: reorganised catalogue
 
-<a id="c-light-sets"></a><img src="ui/light-sets.png" width="480" alt="La sección Luz en el grupo Sets: los filtros Tipo de producto y Sujeto, con Frasco elegido; 7 de 17 sets, todos con miniaturas del mismo tamaño, y el rig del tipo de producto en vigor el primero, atenuado y marcado fuera de los filtros."><br>
-`light-sets.png` · `71fa0a1` · La sección *Luz* en el grupo *Sets*: los filtros *Tipo de producto* y *Sujeto*, con *Frasco* elegido; *7 de 17 sets*, todas las miniaturas del mismo tamaño, y el rig del tipo de producto en vigor el primero, atenuado y marcado *Fuera de los filtros*.
+<a id="c-light-sets"></a><img src="ui/light-sets.png" width="480" alt="The Light section in the Sets group: the Product type and Subject filters, with Bottle chosen; 7 of 17 sets, all with thumbnails of the same size, and the product type's rig in force first, dimmed and marked outside the filters."><br>
+`light-sets.png` · `71fa0a1` · The *Light* section in the *Sets* group: the *Product type* and *Subject* filters, with *Bottle* chosen; *7 of 17 sets*, all the thumbnails the same size, and the product type's rig in force first, dimmed and marked *Outside the filters*.
 
-<a id="c-light-lights"></a><img src="ui/light-lights.png" width="480" alt="El grupo Luces con el filtro Estilo en Cinematográfico: 11 de 78 montajes, con miniaturas del tamaño de las de los sets."><br>
-`light-lights.png` · `71fa0a1` · El grupo *Luces* con el filtro *Estilo* en *Cinematográfico*: *11 de 78 montajes*, con miniaturas del tamaño de las de los sets.
+<a id="c-light-lights"></a><img src="ui/light-lights.png" width="480" alt="The Lights group with the Style filter on Cinematic: 11 of 78 setups, with thumbnails the size of the sets'."><br>
+`light-lights.png` · `71fa0a1` · The *Lights* group with the *Style* filter on *Cinematic*: *11 of 78 setups*, with thumbnails the size of the sets'.
 
-<a id="c-light-question"></a><img src="ui/light-question.png" width="480" alt="En español: al elegir Clave baja con focos en la escena, la pregunta en línea «Hay focos en la escena. ¿Qué pasa con ellos al entrar Clave baja?» con Sustituir, Ocultar, Añadir, Cancelar y Recordar mi elección."><br>
-`light-question.png` · `71fa0a1` · En español: al elegir *Clave baja* con focos en la escena, la pregunta en línea «Hay focos en la escena. ¿Qué pasa con ellos al entrar Clave baja?» con *Sustituir*, *Ocultar*, *Añadir*, *Cancelar* y *Recordar mi elección*.
+<a id="c-light-question"></a><img src="ui/light-question.png" width="480" alt="In Spanish: when choosing Low key with lights in the scene, the inline question “There are lights in the scene. What happens to them when Low key comes in?” with Replace, Hide, Add, Cancel and Remember my choice."><br>
+`light-question.png` · `71fa0a1` · In Spanish: when choosing *Low key* with lights in the scene, the inline question “There are lights in the scene. What happens to them when Low key comes in?” with *Replace*, *Hide*, *Add*, *Cancel* and *Remember my choice*.
 
-<a id="c-light-thumb-sizes"></a><img src="ui/light-thumb-sizes.png" width="480" alt="Las miniaturas pequeñas (cuatro columnas, solo la imagen) y grandes (dos columnas), elegidas con el botón de la derecha de la cabecera de Luz; tras Ocultar sobre un set, En el set sigue con su fondo y su suelo."><br>
-`light-thumb-sizes.png` · `71fa0a1` · Las miniaturas pequeñas (cuatro columnas, solo la imagen) y grandes (dos columnas), elegidas con el botón de la derecha de la cabecera de *Luz*; tras *Ocultar* sobre un set, *En el set* sigue con su fondo y su suelo.
+<a id="c-light-thumb-sizes"></a><img src="ui/light-thumb-sizes.png" width="480" alt="The small thumbnails (four columns, image only) and large ones (two columns), chosen with the button to the right of the Light header; after Hide on a set, In the set keeps its background and floor."><br>
+`light-thumb-sizes.png` · `71fa0a1` · The small thumbnails (four columns, image only) and large ones (two columns), chosen with the button to the right of the *Light* header; after *Hide* on a set, *In the set* keeps its background and floor.
 
-#### U15 · Flechas y deslizadores en los valores
+#### U15 · Arrows and sliders on values
 
-<a id="c-u15-light-fields"></a><img src="ui/u15-light-fields.png" width="480" alt="Un foco propio (Área) elegido: en el inspector, Ancho, Distancia, Temperatura y Potencia son campos con sus flechas ▲ ▼ a la derecha; Acimut, Elevación y Dispersión, deslizadores con su campo y sus flechas al lado (Dispersión en 180°, su máximo, con ▲ apagada); las Coordenadas X, Y, Z llevan el par compacto."><br>
-`u15-light-fields.png` · `84f0673` · Un foco propio (Área) elegido: en el inspector, Ancho, Distancia, Temperatura y Potencia son campos con sus flechas ▲ ▼ a la derecha; Acimut, Elevación y Dispersión, deslizadores con su campo y sus flechas al lado (Dispersión en 180°, su máximo, con ▲ apagada); las Coordenadas X, Y, Z llevan el par compacto.
+<a id="c-u15-light-fields"></a><img src="ui/u15-light-fields.png" width="480" alt="An own light (Area) chosen: in the inspector, Width, Distance, Temperature and Power are fields with their ▲ ▼ arrows on the right; Azimuth, Elevation and Spread, sliders with their field and arrows beside them (Spread at 180°, its maximum, with ▲ switched off); the X, Y, Z Coordinates carry the compact pair."><br>
+`u15-light-fields.png` · `84f0673` · An own light (Area) chosen: in the inspector, Width, Distance, Temperature and Power are fields with their ▲ ▼ arrows on the right; Azimuth, Elevation and Spread, sliders with their field and arrows beside them (Spread at 180°, its maximum, with ▲ switched off); the X, Y, Z Coordinates carry the compact pair.
 
-<a id="c-u15-part-triplets"></a><img src="ui/u15-part-triplets.png" width="339" alt="La columna del inspector con la sección Pieza: Posición, Rotación y Escala en tripletes X, Y, Z de 102 px con el par compacto de flechas, el puntero sobre ▲ de la X de Posición; debajo, el Bisel de aristas con el par normal."><br>
-`u15-part-triplets.png` · `84f0673` · La columna del inspector con la sección Pieza: Posición, Rotación y Escala en tripletes X, Y, Z de 102 px con el par compacto de flechas, el puntero sobre ▲ de la X de Posición; debajo, el Bisel de aristas con el par normal.
+<a id="c-u15-part-triplets"></a><img src="ui/u15-part-triplets.png" width="339" alt="The inspector column with the Part section: Position, Rotation and Scale in 102 px X, Y, Z triplets with the compact pair of arrows, the pointer over the ▲ of Position's X; below, the Edge bevel with the normal pair."><br>
+`u15-part-triplets.png` · `84f0673` · The inspector column with the Part section: Position, Rotation and Scale in 102 px X, Y, Z triplets with the compact pair of arrows, the pointer over the ▲ of Position's X; below, the Edge bevel with the normal pair.
 
-<a id="c-u15-settings-sliders"></a><img src="ui/u15-settings-sliders.png" width="480" alt="Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %)."><br>
-`u15-settings-sliders.png` · `84f0673` · Ajustes ▸ Preferencias con Velocidad de órbita, Velocidad de zoom y Tamaño del gizmo convertidos en deslizadores con su campo y sus flechas (100 %).
+<a id="c-u15-settings-sliders"></a><img src="ui/u15-settings-sliders.png" width="480" alt="Settings ▸ Preferences with Orbit speed, Zoom speed and Gizmo size turned into sliders with their field and arrows (100 %)."><br>
+`u15-settings-sliders.png` · `84f0673` · Settings ▸ Preferences with Orbit speed, Zoom speed and Gizmo size turned into sliders with their field and arrows (100 %).
 
-#### N2 · Cola, pases y lotes
+#### N2 · Queue, passes and batches
 
-<a id="c-batch-window"></a><img src="ui/batch-window.png" width="480" alt="La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido."><br>
-`batch-window.png` · `8816f19` · La ventana de Render, pestaña Imagen, con un lote preparado: el nombre {project}_{camera}_{studio} con sus fichas, los pases Alfa, Profundidad y Id de pieza elegidos en EXR de 32 bits, Todas las cámaras (2) y Todos los estudios (2) con el aviso «Lote de 4 imágenes: cámaras 2 × estudios 2», y el interruptor del ZIP encendido.
+<a id="c-batch-window"></a><img src="ui/batch-window.png" width="480" alt="The Render window, Image tab, with a batch prepared: the name {project}_{camera}_{studio} with its chips, the Alpha, Depth and Part ID passes chosen in 32-bit EXR, All cameras (2) and All studios (2) with the notice “Batch of 4 images: cameras 2 × studios 2”, and the ZIP switch on."><br>
+`batch-window.png` · `8816f19` · The Render window, Image tab, with a batch prepared: the name {project}_{camera}_{studio} with its chips, the Alpha, Depth and Part ID passes chosen in 32-bit EXR, All cameras (2) and All studios (2) with the notice “Batch of 4 images: cameras 2 × studios 2”, and the ZIP switch on.
 
-<a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes."><br>
-`batch-queue.png` · `8816f19` · El cajón de la cola con el lote de 2 × 2 terminado: cuatro trabajos (cada cámara en cada estudio, en ese orden) con su estudio junto a la cámara y «+3 pases · ZIP» al final del nombre, y el historial con las cuatro imágenes.
+<a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="The queue drawer with the 2 × 2 batch finished: four jobs (each camera in each studio, in that order) with its studio next to the camera and “+3 passes · ZIP” at the end of the name, and the history with the four images."><br>
+`batch-queue.png` · `8816f19` · The queue drawer with the 2 × 2 batch finished: four jobs (each camera in each studio, in that order) with its studio next to the camera and “+3 passes · ZIP” at the end of the name, and the history with the four images.
 
-#### K3 · Cámara de interiores
+#### K3 · Interiors camera
 
-<a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado."><br>
-`k3-verticals.png` · `0082860` · La habitación de prueba en Completo con la cámara a 1,5 m mirando 10° hacia abajo y las verticales rectas encendidas: la esquina de las paredes sale vertical. En la sección Cámara, la proyección, el interruptor Verticales rectas con su nota (desplazamiento de −4,2 mm para 10° de inclinación), la altura de ojo con De pie y Sentado y las ópticas de interior 24, 28 y 35 mm; la exposición automática medida en la barra de estado.
+<a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="The test room in Full with the camera at 1.5 m looking 10° down and straight verticals on: the corner of the walls comes out vertical. In the Camera section, the projection, the Straight verticals switch with its note (shift of −4.2 mm for 10° of tilt), the eye height with Standing and Seated and the 24, 28 and 35 mm interior lenses; the automatic exposure measured in the status bar."><br>
+`k3-verticals.png` · `0082860` · The test room in Full with the camera at 1.5 m looking 10° down and straight verticals on: the corner of the walls comes out vertical. In the Camera section, the projection, the Straight verticals switch with its note (shift of −4.2 mm for 10° of tilt), the eye height with Standing and Seated and the 24, 28 and 35 mm interior lenses; the automatic exposure measured in the status bar.
 
-<a id="c-k3-plan-fast"></a><img src="ui/k3-plan-fast.png" width="480" alt="La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo."><br>
-`k3-plan-fast.png` · `0082860` · La vista Planta (ortográfica desde arriba) en Rápido con el techo elegido y Visible a cámara apagado en la sección Pieza: se ve el suelo, el sofá, la mesa y la bola por debajo del techo.
+<a id="c-k3-plan-fast"></a><img src="ui/k3-plan-fast.png" width="480" alt="The Plan view (orthographic from above) in Fast with the ceiling chosen and Visible to camera off in the Part section: the floor, the sofa, the table and the ball are seen below the ceiling."><br>
+`k3-plan-fast.png` · `0082860` · The Plan view (orthographic from above) in Fast with the ceiling chosen and Visible to camera off in the Part section: the floor, the sofa, the table and the ball are seen below the ceiling.
 
-<a id="c-k3-plan"></a><img src="ui/k3-plan.png" width="480" alt="La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado."><br>
-`k3-plan.png` · `0082860` · La misma planta en Completo: el techo no se ve y la habitación sigue iluminada por la ventana con el techo dando su sombra y sus rebotes; la exposición automática medida en la barra de estado.
+<a id="c-k3-plan"></a><img src="ui/k3-plan.png" width="480" alt="The same plan in Full: the ceiling is not seen and the room is still lit by the window with the ceiling giving its shadow and its bounces; the automatic exposure measured in the status bar."><br>
+`k3-plan.png` · `0082860` · The same plan in Full: the ceiling is not seen and the room is still lit by the window with the ceiling giving its shadow and its bounces; the automatic exposure measured in the status bar.
 
-<a id="c-k3-panorama"></a><img src="ui/k3-panorama.png" width="480" alt="La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado."><br>
-`k3-panorama.png` · `0082860` · La proyección Panorámica 360° (2:1) en Completo desde dentro de la habitación de prueba: las cuatro paredes, el suelo y el techo en una sola imagen equirectangular, con la ventana a un lado.
+<a id="c-k3-panorama"></a><img src="ui/k3-panorama.png" width="480" alt="The Panorama 360° (2:1) projection in Full from inside the test room: the four walls, the floor and the ceiling in a single equirectangular image, with the window to one side."><br>
+`k3-panorama.png` · `0082860` · The Panorama 360° (2:1) projection in Full from inside the test room: the four walls, the floor and the ceiling in a single equirectangular image, with the window to one side.
 
-<a id="c-k3-verticals-fast"></a><img src="ui/k3-verticals-fast.png" width="480" alt="La habitación de prueba en Rápido con Verticales rectas encendidas: la cámara a 1,5 m mirando 10° hacia abajo y las aristas verticales paralelas; el inspector dice el desplazamiento de −4,2 mm que lo corrige"><br>
-`k3-verticals-fast.png` · `0082860` · La misma corrección en Rápido: con *Verticales rectas* las aristas verticales salen paralelas, y el inspector dice el desplazamiento que aplica (−4,2 mm para 10° de inclinación), con los presets de altura de ojo y las focales de interior.
+<a id="c-k3-verticals-fast"></a><img src="ui/k3-verticals-fast.png" width="480" alt="The test room in Fast with Straight verticals on: the camera at 1.5 m looking 10° down and the vertical edges parallel; the inspector states the −4.2 mm shift that corrects it"><br>
+`k3-verticals-fast.png` · `0082860` · The same correction in Fast: with *Straight verticals* the vertical edges come out parallel, and the inspector states the shift it applies (−4.2 mm for 10° of tilt), with the eye-height presets and the interior focal lengths.
 
-<a id="c-k3-panorama-fast"></a><img src="ui/k3-panorama-fast.png" width="480" alt="La panorámica 360° (2:1) en Rápido, dibujada desde las seis caras de un cubo: la habitación entera alrededor de la cámara"><br>
-`k3-panorama-fast.png` · `0082860` · La panorámica 360° en Rápido, dibujada desde las seis caras de un cubo con el mismo mapa que el motor; encima no se dibuja nada (contorno, *gizmo*).
+<a id="c-k3-panorama-fast"></a><img src="ui/k3-panorama-fast.png" width="480" alt="The 360° panorama (2:1) in Fast, drawn from the six faces of a cube: the whole room around the camera"><br>
+`k3-panorama-fast.png` · `0082860` · The 360° panorama in Fast, drawn from the six faces of a cube with the same map as the engine; nothing is drawn on top of it (outline, gizmo).
 
 ### v0.1.16 · 2026-10-17
 
-Animación y vídeo: el asistente en tres pasos con la rejilla de tipos, la curva personalizada, los fundidos entre planos y el vídeo codificado en la ventana de render.
+Animation and video: the three-step wizard with the grid of types, the custom curve, fades between shots and the encoded video in the render window.
 
-#### N1 · Animación y vídeo al estilo KeyShot
+#### N1 · Animation and video in the KeyShot style
 
-<a id="c-animation-n1-wizard"></a><img src="ui/animation-n1-wizard.png" width="480" alt="La línea de tiempo con tres pistas (la cámara con tres planos y un fundido a negro en el corte del segundo, el modelo que gira y el material Gloss ABS que cambia de color con una curva personalizada) y el asistente de «+ Animar…» en el paso 1 de 3, con «Una pieza o un grupo» y la tapa elegidas. Las animaciones salen también bajo su objetivo en el árbol de la escena."><br>
-`animation-n1-wizard.png` · `b2eeab6` · La línea de tiempo con tres pistas (la cámara con tres planos y un fundido a negro en el corte del segundo, el modelo que gira y el material Gloss ABS que cambia de color con una curva personalizada) y el asistente de «+ Animar…» en el paso 1 de 3, con «Una pieza o un grupo» y la tapa elegidas. Las animaciones salen también bajo su objetivo en el árbol de la escena.
+<a id="c-animation-n1-wizard"></a><img src="ui/animation-n1-wizard.png" width="480" alt="The timeline with three tracks (the camera with three shots and a fade to black at the second one's cut, the model that spins and the Gloss ABS material that changes colour with a custom curve) and the “+ Animate…” wizard at step 1 of 3, with “A part or a group” and the lid chosen. The animations also appear under their target in the scene tree."><br>
+`animation-n1-wizard.png` · `b2eeab6` · The timeline with three tracks (the camera with three shots and a fade to black at the second one's cut, the model that spins and the Gloss ABS material that changes colour with a custom curve) and the “+ Animate…” wizard at step 1 of 3, with “A part or a group” and the lid chosen. The animations also appear under their target in the scene tree.
 
-<a id="c-animation-n1-cards"></a><img src="ui/animation-n1-cards.png" width="480" alt="El paso 2 del asistente para un material: la rejilla de tarjetas del grupo Materiales (Color de material y Fundido, cada una con su frase), con Atrás y Siguiente."><br>
-`animation-n1-cards.png` · `b2eeab6` · El paso 2 del asistente para un material: la rejilla de tarjetas del grupo Materiales (Color de material y Fundido, cada una con su frase), con Atrás y Siguiente.
+<a id="c-animation-n1-cards"></a><img src="ui/animation-n1-cards.png" width="480" alt="Step 2 of the wizard for a material: the grid of cards of the Materials group (Material colour and Fade, each with its sentence), with Back and Next."><br>
+`animation-n1-cards.png` · `b2eeab6` · Step 2 of the wizard for a material: the grid of cards of the Materials group (Material colour and Fade, each with its sentence), with Back and Next.
 
-<a id="c-animation-n1-curve"></a><img src="ui/animation-n1-curve.png" width="480" alt="Las propiedades de «Gloss ABS · Color de material · 0–3 s» con la curva Personalizada: el editor con sus dos asas, la primera arrastrada (x1 0,62, y1 0,4) y sus campos debajo; en el visor, las piezas de ese material marcadas."><br>
-`animation-n1-curve.png` · `b2eeab6` · Las propiedades de «Gloss ABS · Color de material · 0–3 s» con la curva Personalizada: el editor con sus dos asas, la primera arrastrada (x1 0,62, y1 0,4) y sus campos debajo; en el visor, las piezas de ese material marcadas.
+<a id="c-animation-n1-curve"></a><img src="ui/animation-n1-curve.png" width="480" alt="The properties of “Gloss ABS · Material colour · 0–3 s” with the Custom curve: the editor with its two handles, the first one dragged (x1 0.62, y1 0.4) and its fields below; in the viewport, the parts of that material marked."><br>
+`animation-n1-curve.png` · `b2eeab6` · The properties of “Gloss ABS · Material colour · 0–3 s” with the Custom curve: the editor with its two handles, the first one dragged (x1 0.62, y1 0.4) and its fields below; in the viewport, the parts of that material marked.
 
-<a id="c-render-window-video"></a><img src="ui/render-window-video.png" width="480" alt="La ventana de Render en Animación con salida Vídeo: WebM VP9 elegido y MP4 H.264 deshabilitado (este Chromium no lo codifica), la línea «Un archivo: Untitled_Camera 1_0001.webm, WebM VP9, 48 fotogramas a 24 fps» y el resumen con WEBM VP9. Es lo que render-window-animation.png (U5) enseñaba aún como «próximamente»."><br>
-`render-window-video.png` · `b2eeab6` · La ventana de Render en Animación con salida Vídeo: WebM VP9 elegido y MP4 H.264 deshabilitado (este Chromium no lo codifica), la línea «Un archivo: Untitled_Camera 1_0001.webm, WebM VP9, 48 fotogramas a 24 fps» y el resumen con WEBM VP9. Es lo que render-window-animation.png (U5) enseñaba aún como «próximamente».
+<a id="c-render-window-video"></a><img src="ui/render-window-video.png" width="480" alt="The Render window in Animation with Video output: WebM VP9 chosen and MP4 H.264 disabled (this Chromium does not encode it), the line “One file: Untitled_Camera 1_0001.webm, WebM VP9, 48 frames at 24 fps” and the summary with WEBM VP9. It is what render-window-animation.png (U5) still showed as “coming soon”."><br>
+`render-window-video.png` · `b2eeab6` · The Render window in Animation with Video output: WebM VP9 chosen and MP4 H.264 disabled (this Chromium does not encode it), the line “One file: Untitled_Camera 1_0001.webm, WebM VP9, 48 frames at 24 fps” and the summary with WEBM VP9. It is what render-window-animation.png (U5) still showed as “coming soon”.
 
 ### v0.1.15 · 2026-10-17
 
-Tipo de escena (Producto, Interior, Catálogo), el estilo de luz Interior con siete recetas, el Doctor de interiores y el Doctor de motor.
+Scene type (Product, Interior, Catalogue), the Interior light style with seven recipes, the Interior Doctor and the Engine Doctor.
 
-#### K1 · Tipo de escena, luz de interior y Doctor de interiores
+#### K1 · Scene type, interior lighting and interiors Doctor
 
-<a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm."><br>
-`scene-type-interior.png` · `431e7b8` · El tipo de escena Interior elegido (Producto · Interior · Catálogo) y el estilo de luz Interior con sus siete recetas: ventana de mañana, de mediodía y de tarde, nublado, lámparas de noche, hora azul y sala blanca de estudio. La pieza se ve pequeña porque Interior pone 28 mm. *(regrabada en v0.1.17: Interior es un estilo del grupo Luces de L7)* *(regrabada en v0.1.18: C1, *Interior* empieza con la receta *Ventana de mediodía*; la decoración del set del tipo de producto se queda)*
+<a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="The Interior scene type chosen (Product · Interior · Catalogue) and the Interior light style with its seven recipes: morning, midday and afternoon window, overcast, night lamps, blue hour and white studio room. The part looks small because Interior sets 28 mm."><br>
+`scene-type-interior.png` · `431e7b8` · The Interior scene type chosen (Product · Interior · Catalogue) and the Interior light style with its seven recipes: morning, midday and afternoon window, overcast, night lamps, blue hour and white studio room. The part looks small because Interior sets 28 mm. *(re-recorded in v0.1.17: Interior is a style of L7's Lights group)* *(re-recorded in v0.1.18: C1, *Interior* starts with the *Midday window* recipe; the product type's set decoration stays)*
 
-#### D1 · Doctor de motor
+#### D1 · Engine Doctor
 
-<a id="c-doctor-engine"></a><img src="ui/doctor-engine.png" width="480" alt="El Doctor con los chequeos de motor y de escena en el popover: Motor, SIMD (con el botón Ajustes), Árbol de luces, Denoise (con Arreglar), Tono, escala, origen y suavizado, y Arreglar todo."><br>
-`doctor-engine.png` · `e17f146` · El Doctor con los chequeos de motor y de escena en el popover: Motor, SIMD (con el botón Ajustes), Árbol de luces, Denoise (con Arreglar), Tono, escala, origen y suavizado, y Arreglar todo.
+<a id="c-doctor-engine"></a><img src="ui/doctor-engine.png" width="480" alt="The Doctor with the engine and scene checks in the popover: Engine, SIMD (with the Settings button), Light tree, Denoise (with Fix), Tone, scale, origin and smoothing, and Fix all."><br>
+`doctor-engine.png` · `e17f146` · The Doctor with the engine and scene checks in the popover: Engine, SIMD (with the Settings button), Light tree, Denoise (with Fix), Tone, scale, origin and smoothing, and Fix all.
 
 ### v0.1.14 · 2026-10-17
 
-Vista en sección (un plano que corta la pieza y tapa el corte) y luces IES.
+Section view (a plane that cuts the part and caps the cut) and IES lights.
 
-#### L5 · Luces IES
+#### L5 · IES lights
 
-<a id="c-ies-light"></a><img src="ui/ies-light.png" width="480" alt="Una luz IES en el inspector: nombre del perfil, gráfico polar dibujado desde el archivo (planos C0–C180 y C90–C270), pico, ángulo del haz y el aviso de que Rápido la aproxima con un foco."><br>
-`ies-light.png` · `6d90dc9` · Una luz IES en el inspector: nombre del perfil, gráfico polar dibujado desde el archivo (planos C0–C180 y C90–C270), pico, ángulo del haz y el aviso de que Rápido la aproxima con un foco.
+<a id="c-ies-light"></a><img src="ui/ies-light.png" width="480" alt="An IES light in the inspector: profile name, polar plot drawn from the file (C0–C180 and C90–C270 planes), peak, beam angle and the notice that Fast approximates it with a spot."><br>
+`ies-light.png` · `6d90dc9` · An IES light in the inspector: profile name, polar plot drawn from the file (C0–C180 and C90–C270 planes), peak, beam angle and the notice that Fast approximates it with a spot.
 
-<a id="c-ies-light-full"></a><img src="ui/ies-light-full.png" width="480" alt="La luz IES en modo Completo: el motor usa el perfil entero del archivo."><br>
-`ies-light-full.png` · `6d90dc9` · La luz IES en modo Completo: el motor usa el perfil entero del archivo.
+<a id="c-ies-light-full"></a><img src="ui/ies-light-full.png" width="480" alt="The IES light in Full mode: the engine uses the file's whole profile."><br>
+`ies-light-full.png` · `6d90dc9` · The IES light in Full mode: the engine uses the file's whole profile.
 
-#### Q1 · Vista en sección
+#### Q1 · Section view
 
-<a id="c-section-fast"></a><img src="ui/section-fast.png" width="480" alt="La vista en sección en modo Rápido: un plano de corte quita un lado del frasco y tapa el corte con el color del material; el inspector avisa de las dos piezas abiertas sin tapa."><br>
-`section-fast.png` · `3c51cd8` · La vista en sección en modo Rápido: un plano de corte quita un lado del frasco y tapa el corte con el color del material; el inspector avisa de las dos piezas abiertas sin tapa.
+<a id="c-section-fast"></a><img src="ui/section-fast.png" width="480" alt="The section view in Fast mode: a cutting plane removes one side of the bottle and caps the cut with the material's colour; the inspector warns of the two open parts without a cap."><br>
+`section-fast.png` · `3c51cd8` · The section view in Fast mode: a cutting plane removes one side of the bottle and caps the cut with the material's colour; the inspector warns of the two open parts without a cap.
 
-<a id="c-section-full"></a><img src="ui/section-full.png" width="480" alt="La misma vista en sección en modo Completo: el trazador corta y tapa el sólido, también en sombras y reflejos."><br>
-`section-full.png` · `3c51cd8` · La misma vista en sección en modo Completo: el trazador corta y tapa el sólido, también en sombras y reflejos.
+<a id="c-section-full"></a><img src="ui/section-full.png" width="480" alt="The same section view in Full mode: the tracer cuts and caps the solid, also in shadows and reflections."><br>
+`section-full.png` · `3c51cd8` · The same section view in Full mode: the tracer cuts and caps the solid, also in shadows and reflections.
 
 ### v0.1.13 · 2026-10-16
 
-Muestreo adaptativo y «Terminar por ruido» en la ventana de render.
+Adaptive sampling and “Finish by noise” in the render window.
 
-#### E10 · Muestreo adaptativo y terminar por ruido
+#### E10 · Adaptive sampling and finish by noise
 
-<a id="c-render-window-noise"></a><img src="ui/render-window-noise.png" width="480" alt="Render ▸ Calidad con «Terminar por: Ruido» al 1 %: las muestras son el tope y la estimación sale de las pasadas del visor."><br>
-`render-window-noise.png` · `b4718c4` · Render ▸ Calidad con «Terminar por: Ruido» al 1 %: las muestras son el tope y la estimación sale de las pasadas del visor.
+<a id="c-render-window-noise"></a><img src="ui/render-window-noise.png" width="480" alt="Render ▸ Quality with “Finish by: Noise” at 1 %: the samples are the cap and the estimate comes from the viewport's passes."><br>
+`render-window-noise.png` · `b4718c4` · Render ▸ Quality with “Finish by: Noise” at 1 %: the samples are the cap and the estimate comes from the viewport's passes.
 
-<a id="c-meter-adaptive"></a><img src="ui/meter-adaptive.png" width="277" alt="El medidor del visor en Completo diciendo «Adaptativo · 16–17 muestras» junto a «Denoised»."><br>
-`meter-adaptive.png` · `b4718c4` · El medidor del visor en Completo diciendo «Adaptativo · 16–17 muestras» junto a «Denoised».
+<a id="c-meter-adaptive"></a><img src="ui/meter-adaptive.png" width="277" alt="The viewport meter in Full saying “Adaptive · 16–17 samples” next to “Denoised”."><br>
+`meter-adaptive.png` · `b4718c4` · The viewport meter in Full saying “Adaptive · 16–17 samples” next to “Denoised”.
 
 ### v0.1.12 · 2026-10-16
 
-Los materiales de nodos funcionan en Completo y en los renders.
+Node materials work in Full and in renders.
 
-#### M3b · El motor evalúa grafos
+#### M3b · The engine evaluates graphs
 
-<a id="c-m3b-graphs"></a><img src="ui/m3b-graphs.png" width="480" alt="Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha)."><br>
-`m3b-graphs.png` · `fbb054e` · Los diez ejemplos del editor de nodos en modo Completo: con la media de cada salida (izquierda) y con el programa del grafo que ejecuta el motor (derecha). *(regrabada en v0.1.18: C1, los copos de la pintura metalizada miran hacia fuera; y en v0.1.19: M3c, el ejemplo de madera es el roble con el nodo Madera; la hace `tests/m3b-graphs-sheet.test.ts`)*
+<a id="c-m3b-graphs"></a><img src="ui/m3b-graphs.png" width="480" alt="The ten examples of the node editor in Full mode: with the mean of each output (left) and with the graph program that the engine runs (right)."><br>
+`m3b-graphs.png` · `fbb054e` · The ten examples of the node editor in Full mode: with the mean of each output (left) and with the graph program that the engine runs (right). *(re-recorded in v0.1.18: C1, the metallic paint's flakes face outward; and in v0.1.19: M3c, the wood example is the oak with the Wood node; `tests/m3b-graphs-sheet.test.ts` makes it)*
 
-<a id="c-m3b-wood"></a><img src="ui/m3b-wood.png" width="480" alt="Dos cajas de roble en el motor: la familia Madera del catálogo a la izquierda y el ejemplo de nodos con el nodo Madera a la derecha, la misma madera (anillos finos y rectos, poros)."><br>
-`m3b-wood.png` · `fbb054e` · Dos cajas de roble en el motor: la familia *Madera* del catálogo a la izquierda y el ejemplo de nodos con el nodo *Madera* a la derecha, la misma madera (anillos finos y rectos, poros). *(regrabada en v0.1.19: M3c; en M3b el ejemplo, «Madera con dos ruidos», aún no se parecía a la familia; la hace `tests/m3c-wood-sheet.test.ts`)*
+<a id="c-m3b-wood"></a><img src="ui/m3b-wood.png" width="480" alt="Two oak boxes in the engine: the catalogue's Wood family on the left and the nodes example with the Wood node on the right, the same wood (fine, straight rings, pores)."><br>
+`m3b-wood.png` · `fbb054e` · Two oak boxes in the engine: the catalogue's *Wood* family on the left and the nodes example with the *Wood* node on the right, the same wood (fine, straight rings, pores). *(re-recorded in v0.1.19: M3c; in M3b the example, “Wood with two noises”, did not yet resemble the family; `tests/m3c-wood-sheet.test.ts` makes it)*
 
 ### v0.1.11 · 2026-10-16
 
-Partículas de ambiente mejoradas: polvo a contraluz, lluvia sin puntitos y más baratas.
+Improved ambient particles: dust against the light, rain without dots and cheaper.
 
-Sin capturas nuevas en esta versión; lo que trajo y no tiene captura está en «Sin captura».
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
 
 ### v0.1.10 · 2026-10-16
 
-Texturas de imagen, mapeado y etiquetas en Completo y en los renders.
+Image textures, mapping and labels in Full and in renders.
 
-Sin capturas nuevas en esta versión; lo que trajo y no tiene captura está en «Sin captura».
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
 
 ### v0.1.9 · 2026-10-16
 
-Vista en vivo del render seleccionado en la cola.
+Live view of the selected render in the queue.
 
-#### U14 · Vista en vivo en la cola
+#### U14 · Live view in the queue
 
-<a id="c-queue-live"></a><img src="ui/queue-live.png" width="440" alt="La vista en vivo de la cola: el clic en el trabajo que se renderiza abre su imagen mientras el motor añade muestras, con la ficha EN VIVO, las muestras y el progreso. Tema claro y oscuro."> <a id="c-queue-live-dark"></a><img src="ui/queue-live-dark.png" width="440" alt="La vista en vivo de la cola: el clic en el trabajo que se renderiza abre su imagen mientras el motor añade muestras, con la ficha EN VIVO, las muestras y el progreso. Tema claro y oscuro."><br>
-`queue-live.png` y `queue-live-dark.png` · `ab06ce9` · La vista en vivo de la cola: el clic en el trabajo que se renderiza abre su imagen mientras el motor añade muestras, con la ficha EN VIVO, las muestras y el progreso. Tema claro y oscuro.
+<a id="c-queue-live"></a><img src="ui/queue-live.png" width="440" alt="The queue's live view: the click on the job being rendered opens its image while the engine adds samples, with the LIVE chip, the samples and the progress. Light and dark theme."> <a id="c-queue-live-dark"></a><img src="ui/queue-live-dark.png" width="440" alt="The queue's live view: the click on the job being rendered opens its image while the engine adds samples, with the LIVE chip, the samples and the progress. Light and dark theme."><br>
+`queue-live.png` and `queue-live-dark.png` · `ab06ce9` · The queue's live view: the click on the job being rendered opens its image while the engine adds samples, with the LIVE chip, the samples and the progress. Light and dark theme.
 
 ### v0.1.8 · 2026-10-16
 
-La ventana con los elementos de una lente al dejar el puntero sobre ella.
+The window with a lens's elements when the pointer rests on it.
 
-#### O2b · Ventana de la lente al pasar el ratón
+#### O2b · Lens window on hover
 
-<a id="c-lens-hover"></a><img src="ui/lens-hover.png" width="440" alt="La ventana con los elementos de una lente al dejar el puntero sobre ella en la lista: «Five-element symmetric», con su corte, su fuente y los números que da el motor. Tema claro y oscuro."> <a id="c-lens-hover-dark"></a><img src="ui/lens-hover-dark.png" width="440" alt="La ventana con los elementos de una lente al dejar el puntero sobre ella en la lista: «Five-element symmetric», con su corte, su fuente y los números que da el motor. Tema claro y oscuro."><br>
-`lens-hover.png` y `lens-hover-dark.png` · `430f1ef` · La ventana con los elementos de una lente al dejar el puntero sobre ella en la lista: «Five-element symmetric», con su corte, su fuente y los números que da el motor. Tema claro y oscuro.
+<a id="c-lens-hover"></a><img src="ui/lens-hover.png" width="440" alt="The window with a lens's elements when the pointer rests on it in the list: “Five-element symmetric”, with its cross-section, its source and the numbers the engine gives. Light and dark theme."> <a id="c-lens-hover-dark"></a><img src="ui/lens-hover-dark.png" width="440" alt="The window with a lens's elements when the pointer rests on it in the list: “Five-element symmetric”, with its cross-section, its source and the numbers the engine gives. Light and dark theme."><br>
+`lens-hover.png` and `lens-hover-dark.png` · `430f1ef` · The window with a lens's elements when the pointer rests on it in the list: “Five-element symmetric”, with its cross-section, its source and the numbers the engine gives. Light and dark theme.
 
-<a id="c-lens-hover-chip"></a><img src="ui/lens-hover-chip.png" width="480" alt="La ventana de las lentes de un carácter (Gran angular) al pasar sobre su chip: dos lentes lado a lado con sus cortes y números."><br>
-`lens-hover-chip.png` · `430f1ef` · La ventana de las lentes de un carácter (Gran angular) al pasar sobre su chip: dos lentes lado a lado con sus cortes y números.
+<a id="c-lens-hover-chip"></a><img src="ui/lens-hover-chip.png" width="480" alt="The window of the lenses of a character (Wide) when passing over its chip: two lenses side by side with their cross-sections and numbers."><br>
+`lens-hover-chip.png` · `430f1ef` · The window of the lenses of a character (Wide) when passing over its chip: two lenses side by side with their cross-sections and numbers.
 
 ### v0.1.7 · 2026-10-16
 
-Madera, tela y bisel de aristas en Completo, materiales con más realismo, lente trazada con 16 lentes, filtros de efecto en la lente, 88 miniaturas de montaje rehechas y los arreglos del reporte de errores del 14-10.
+Wood, fabric and edge bevel in Full, materials with more realism, traced lens with 16 lenses, effect filters on the lens, 88 setup thumbnails redone and the fixes from the bug report of 2026-10-14.
 
-#### O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas
+#### O3a · Lens effect filters: black, white and gold diffusion, glimmer, net, star, streaks
 
-<a id="c-lens-filters"></a><img src="ui/lens-filters.png" width="331" alt="Cámara ▸ Filtros: una difusión negra y una estrella de 8 puntas apiladas, cada una con su grado, puntas y ángulo."><br>
-`lens-filters.png` · `304696f` · Cámara ▸ Filtros: una difusión negra y una estrella de 8 puntas apiladas, cada una con su grado, puntas y ángulo.
+<a id="c-lens-filters"></a><img src="ui/lens-filters.png" width="331" alt="Camera ▸ Filters: a black diffusion and an 8-point star stacked, each with its strength, points and angle."><br>
+`lens-filters.png` · `304696f` · Camera ▸ Filters: a black diffusion and an 8-point star stacked, each with its strength, points and angle.
 
-#### O2 · Lente trazada
+#### O2 · Traced lens
 
-<a id="c-lens-editor"></a><img src="ui/lens-editor.png" width="331" alt="Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas."><br>
-`lens-editor.png` · `99df141` · Cámara ▸ Lente trazada: el carácter (Clínica, Suave, Remolino, Vintage…), la lente del catálogo con su fuente, el tratamiento, el hueco de aberración esférica y las láminas. *(regrabada en v0.1.18: Lente simple · Lente trazada, O4)*
+<a id="c-lens-editor"></a><img src="ui/lens-editor.png" width="331" alt="Camera ▸ Traced lens: the character (Clinical, Soft, Swirl, Vintage…), the catalogue lens with its source, the coating, the spherical-aberration gap and the blades."><br>
+`lens-editor.png` · `99df141` · Camera ▸ Traced lens: the character (Clinical, Soft, Swirl, Vintage…), the catalogue lens with its source, the coating, the spherical-aberration gap and the blades. *(re-recorded in v0.1.18: Simple lens · Traced lens, O4)*
 
-<a id="c-lens-section"></a><img src="ui/lens-section.png" width="331" alt="Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina."><br>
-`lens-section.png` · `99df141` · Lo que calcula el motor para la lente: su corte, focal, tiraje, f/ y T-stop, elementos y grupos, pupila de entrada y las curvas de distorsión y de luz hacia la esquina. *(regrabada en v0.1.18, O4)*
+<a id="c-lens-section"></a><img src="ui/lens-section.png" width="331" alt="What the engine computes for the lens: its cross-section, focal length, flange distance, f-number and T-stop, elements and groups, entrance pupil and the distortion and light-towards-the-corner curves."><br>
+`lens-section.png` · `99df141` · What the engine computes for the lens: its cross-section, focal length, flange distance, f-number and T-stop, elements and groups, entrance pupil and the distortion and light-towards-the-corner curves. *(re-recorded in v0.1.18, O4)*
 
 ### v0.1.6 · 2026-10-14
 
-Texturas y etiquetas, editor de materiales por nodos, sets de estudio, selector de bokeh, salida TIFF y RAW, proporción en la cámara, plugins con el de película, despieces y línea de tiempo nueva, cuerpos rígidos, partículas de ambiente, denoise en directo, suavizado de bordes y actualizar desde la aplicación.
+Textures and labels, node-based material editor, studio sets, bokeh chooser, TIFF and RAW output, aspect ratio in the camera, plugins with the film one, exploded views and new timeline, rigid bodies, ambient particles, live denoise, edge smoothing and update from the app.
 
-#### Sin fase · Lista de cámaras con lápiz (aviso del usuario del 14-10)
+#### No phase · Camera list with a pencil (reported on 2026-10-14)
 
-<a id="c-camera-menu"></a><img src="ui/camera-menu.png" width="480" alt="La lista de cámaras del visor con la óptica de cada una (85 mm · f/5.6) y un lápiz por fila; al fondo, la sección Cámara que dice qué cámara edita."><br>
-`camera-menu.png` · `c625777` · La lista de cámaras del visor con la óptica de cada una (85 mm · f/5.6) y un lápiz por fila; al fondo, la sección Cámara que dice qué cámara edita.
+<a id="c-camera-menu"></a><img src="ui/camera-menu.png" width="480" alt="The viewport's camera list with each one's lens (85 mm · f/5.6) and a pencil per row; in the background, the Camera section that says which camera it edits."><br>
+`camera-menu.png` · `c625777` · The viewport's camera list with each one's lens (85 mm · f/5.6) and a pencil per row; in the background, the Camera section that says which camera it edits.
 
-<a id="c-camera-edit"></a><img src="ui/camera-edit.png" width="480" alt="La ficha de la Cámara 2 abierta con el lápiz: nombre, Activar, Mirar a través, óptica y posición, sin activarla."><br>
-`camera-edit.png` · `c625777` · La ficha de la Cámara 2 abierta con el lápiz: nombre, Activar, Mirar a través, óptica y posición, sin activarla.
+<a id="c-camera-edit"></a><img src="ui/camera-edit.png" width="480" alt="The card of Camera 2 opened with the pencil: name, Activate, Look through, lens and position, without activating it."><br>
+`camera-edit.png` · `c625777` · The card of Camera 2 opened with the pencil: name, Activate, Look through, lens and position, without activating it.
 
-<a id="c-camera-section"></a><img src="ui/camera-section.png" width="340" alt="La sección Cámara del inspector de escena titulada con la cámara que edita (Cámara 1), con el mismo lápiz."><br>
-`camera-section.png` · `c625777` · La sección Cámara del inspector de escena titulada con la cámara que edita (Cámara 1), con el mismo lápiz.
+<a id="c-camera-section"></a><img src="ui/camera-section.png" width="340" alt="The scene inspector's Camera section titled with the camera it edits (Camera 1), with the same pencil."><br>
+`camera-section.png` · `c625777` · The scene inspector's Camera section titled with the camera it edits (Camera 1), with the same pencil.
 
-#### M2a · Texturas: importación, mapeado, etiquetas y vista previa
+#### M2a · Textures: import, mapping, labels and preview
 
-<a id="c-textures-fast"></a><img src="ui/textures-fast.png" width="480" alt="Un cubo de pruebas con las seis ranuras de textura dibujadas en modo Rápido: color con cuadrantes y una flecha, rugosidad y metal, mapa de normales, alfa con una esquina recortada y un anillo de emisión."><br>
-`textures-fast.png` · `14cf9bc` · Un cubo de pruebas con las seis ranuras de textura dibujadas en modo Rápido: color con cuadrantes y una flecha, rugosidad y metal, mapa de normales, alfa con una esquina recortada y un anillo de emisión.
+<a id="c-textures-fast"></a><img src="ui/textures-fast.png" width="480" alt="A test cube with the six texture slots drawn in Fast mode: colour with quadrants and an arrow, roughness and metal, normal map, alpha with a cut-out corner and a ring of emission."><br>
+`textures-fast.png` · `14cf9bc` · A test cube with the six texture slots drawn in Fast mode: colour with quadrants and an arrow, roughness and metal, normal map, alpha with a cut-out corner and a ring of emission.
 
-<a id="c-textures-inspector"></a><img src="ui/textures-inspector.png" width="339" alt="La sección Texturas del inspector: una ranura por mapa con su vista previa, canal, invertir, intensidad del mapa de normales, alfa como recorte con umbral y tinte de emisión. Tema oscuro en inglés; el claro en español enseña además Mapeado y Etiquetas."> <a id="c-textures-inspector-light"></a><img src="ui/textures-inspector-light.png" width="339" alt="La sección Texturas del inspector: una ranura por mapa con su vista previa, canal, invertir, intensidad del mapa de normales, alfa como recorte con umbral y tinte de emisión. Tema oscuro en inglés; el claro en español enseña además Mapeado y Etiquetas."><br>
-`textures-inspector.png` y `textures-inspector-light.png` · `14cf9bc` · La sección Texturas del inspector: una ranura por mapa con su vista previa, canal, invertir, intensidad del mapa de normales, alfa como recorte con umbral y tinte de emisión. Tema oscuro en inglés; el claro en español enseña además Mapeado y Etiquetas.
+<a id="c-textures-inspector"></a><img src="ui/textures-inspector.png" width="339" alt="The inspector's Textures section: one slot per map with its preview, channel, invert, normal-map intensity, alpha as cutout with threshold and emission tint. Dark theme in English; the light one in Spanish also shows Mapping and Labels."> <a id="c-textures-inspector-light"></a><img src="ui/textures-inspector-light.png" width="339" alt="The inspector's Textures section: one slot per map with its preview, channel, invert, normal-map intensity, alpha as cutout with threshold and emission tint. Dark theme in English; the light one in Spanish also shows Mapping and Labels."><br>
+`textures-inspector.png` and `textures-inspector-light.png` · `14cf9bc` · The inspector's Textures section: one slot per map with its preview, channel, invert, normal-map intensity, alpha as cutout with threshold and emission tint. Dark theme in English; the light one in Spanish also shows Mapping and Labels.
 
-<a id="c-box-projection"></a><img src="ui/box-projection.png" width="480" alt="Proyección de caja de una textura de cuadros sobre un cubo, sin costuras entre las caras."><br>
-`box-projection.png` · `14cf9bc` · Proyección de caja de una textura de cuadros sobre un cubo, sin costuras entre las caras.
+<a id="c-box-projection"></a><img src="ui/box-projection.png" width="480" alt="Box projection of a checker texture on a cube, with no seams between the faces."><br>
+`box-projection.png` · `14cf9bc` · Box projection of a checker texture on a cube, with no seams between the faces.
 
-<a id="c-label-placed"></a><img src="ui/label-placed.png" width="480" alt="Una etiqueta puesta con clic y arrastre sobre el frasco de ejemplo: una franja roja sobre papel."><br>
-`label-placed.png` · `14cf9bc` · Una etiqueta puesta con clic y arrastre sobre el frasco de ejemplo: una franja roja sobre papel.
+<a id="c-label-placed"></a><img src="ui/label-placed.png" width="480" alt="A label placed with click and drag on the example bottle: a red stripe on paper."><br>
+`label-placed.png` · `14cf9bc` · A label placed with click and drag on the example bottle: a red stripe on paper.
 
-#### U11 · Reducción de ruido en directo
+#### U11 · Live noise reduction
 
-<a id="c-denoise-live"></a><img src="ui/denoise-live.png" width="480" alt="El visor en modo Completo con Reducir ruido en la barra superior: la imagen limpia mientras se acumula, y «Denoised» en el medidor."><br>
-`denoise-live.png` · `b5434b8` · El visor en modo Completo con Reducir ruido en la barra superior: la imagen limpia mientras se acumula, y «Denoised» en el medidor.
+<a id="c-denoise-live"></a><img src="ui/denoise-live.png" width="480" alt="The viewport in Full mode with Denoise in the top bar: the image cleans up as it accumulates, and “Denoised” in the meter."><br>
+`denoise-live.png` · `b5434b8` · The viewport in Full mode with Denoise in the top bar: the image cleans up as it accumulates, and “Denoised” in the meter.
 
-#### P5 · Actualizar desde la aplicación
+#### P5 · Update from within the application
 
-<a id="c-update-install"></a><img src="ui/update-install.png" width="480" alt="Ajustes ▸ Actualizaciones descargando la versión nueva (45 %), con «Cancelar la actualización»; el progreso también sale en la barra de estado."><br>
-`update-install.png` · `f93955b` · Ajustes ▸ Actualizaciones descargando la versión nueva (45 %), con «Cancelar la actualización»; el progreso también sale en la barra de estado.
+<a id="c-update-install"></a><img src="ui/update-install.png" width="480" alt="Settings ▸ Updates downloading the new version (45 %), with “Cancel the update”; the progress also shows in the status bar."><br>
+`update-install.png` · `f93955b` · Settings ▸ Updates downloading the new version (45 %), with “Cancel the update”; the progress also shows in the status bar.
 
-#### L6 · Sets de estudio con criterio fotográfico
+#### L6 · Studio sets with photographic judgement
 
-<a id="c-sets-catalogue"></a><img src="ui/sets-catalogue.png" width="480" alt="El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas)."><br>
-`sets-catalogue.png` · `6ce8c67` · El catálogo de sets de estudio con sus miniaturas renderizadas por el motor, la descripción de «Tira larga y canto negro» y ese set aplicado al frasco (fondo oscuro, suelo de acrílico negro y tarjetas). *(regrabada en v0.1.17: el grupo Sets de L7, las miniaturas del tamaño de las demás)*
+<a id="c-sets-catalogue"></a><img src="ui/sets-catalogue.png" width="480" alt="The catalogue of studio sets with their thumbnails rendered by the engine, the description of “Long strip and black edge” and that set applied to the bottle (dark background, black acrylic floor and cards)."><br>
+`sets-catalogue.png` · `6ce8c67` · The catalogue of studio sets with their thumbnails rendered by the engine, the description of “Long strip and black edge” and that set applied to the bottle (dark background, black acrylic floor and cards). *(re-recorded in v0.1.17: L7's Sets group, the thumbnails the same size as the others)*
 
-#### P6 · Plugins, y el plugin de película (aintfilm)
+#### P6 · Plugins, and the film plugin (aintfilm)
 
-<a id="c-settings-plugins"></a><img src="ui/settings-plugins.png" width="480" alt="Ajustes ▸ Plugins: los plugins del registro (aintfilm · simulación de película, con licencia cerrada) e «Instalar desde archivo» con la clave de activación."><br>
-`settings-plugins.png` · `b150270` · Ajustes ▸ Plugins: los plugins del registro (aintfilm · simulación de película, con licencia cerrada) e «Instalar desde archivo» con la clave de activación.
+<a id="c-settings-plugins"></a><img src="ui/settings-plugins.png" width="480" alt="Settings ▸ Plugins: the registry's plugins (aintfilm · film simulation, with a closed licence) and “Install from a file” with the activation key."><br>
+`settings-plugins.png` · `b150270` · Settings ▸ Plugins: the registry's plugins (aintfilm · film simulation, with a closed licence) and “Install from a file” with the activation key.
 
-<a id="c-render-plugins-film"></a><img src="ui/render-plugins-film.png" width="300" alt="La ventana de render ▸ Plugins con el plugin de película: carrusel de recetas con filtros, vista previa y aplicar a los trabajos."><br>
-`render-plugins-film.png` · `b150270` · La ventana de render ▸ Plugins con el plugin de película: carrusel de recetas con filtros, vista previa y aplicar a los trabajos.
+<a id="c-render-plugins-film"></a><img src="ui/render-plugins-film.png" width="300" alt="The render window ▸ Plugins with the film plugin: recipe carousel with filters, preview and apply to jobs."><br>
+`render-plugins-film.png` · `b150270` · The render window ▸ Plugins with the film plugin: recipe carousel with filters, preview and apply to jobs.
 
-#### U12 · Salida en TIFF y RAW (DNG)
+#### U12 · TIFF and RAW (DNG) output
 
-<a id="c-render-format-tiff"></a><img src="ui/render-format-tiff.png" width="480" alt="La ventana de render con salida TIFF de 32 bits en coma flotante (luz lineal), junto a PNG, JPEG, EXR y RAW (DNG)."><br>
-`render-format-tiff.png` · `a424a31` · La ventana de render con salida TIFF de 32 bits en coma flotante (luz lineal), junto a PNG, JPEG, EXR y RAW (DNG).
+<a id="c-render-format-tiff"></a><img src="ui/render-format-tiff.png" width="480" alt="The render window with 32-bit floating-point TIFF output (linear light), next to PNG, JPEG, EXR and RAW (DNG)."><br>
+`render-format-tiff.png` · `a424a31` · The render window with 32-bit floating-point TIFF output (linear light), next to PNG, JPEG, EXR and RAW (DNG).
 
-#### O1 · Lente fina mejorada y selector de bokeh
+#### O1 · Improved thin lens and bokeh selector
 
-<a id="c-camera-bokeh"></a><img src="ui/camera-bokeh.png" width="300" alt="El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente»."><br>
-`camera-bokeh.png` · `0830f93` · El selector de bokeh: veinte tipos con una miniatura renderizada por el motor; los que necesitan la lente trazada dicen «próximamente». *(regrabada en v0.1.7, y en v0.1.18: diecisiete tipos, sin los tres de la lente trazada, O4)*
+<a id="c-camera-bokeh"></a><img src="ui/camera-bokeh.png" width="300" alt="The bokeh chooser: twenty types with a thumbnail rendered by the engine; those that need the traced lens say “coming soon”."><br>
+`camera-bokeh.png` · `0830f93` · The bokeh chooser: twenty types with a thumbnail rendered by the engine; those that need the traced lens say “coming soon”. *(re-recorded in v0.1.7, and in v0.1.18: seventeen types, without the three of the traced lens, O4)*
 
-<a id="c-camera-optics"></a><img src="ui/camera-optics.png" width="300" alt="Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico»."><br>
-`camera-optics.png` · `0830f93` · Óptica avanzada: láminas, redondez, giro, perfil, obstrucción, ojo de gato, anamórfico, inclinación y desplazamiento, y los mandos «no físico». *(regrabada en v0.1.7, y en v0.1.18 con el bloque de inclinación de O4)*
+<a id="c-camera-optics"></a><img src="ui/camera-optics.png" width="300" alt="Advanced optics: blades, roundness, rotation, profile, obstruction, cat's eye, anamorphic, tilt and shift, and the “non-physical” controls."><br>
+`camera-optics.png` · `0830f93` · Advanced optics: blades, roundness, rotation, profile, obstruction, cat's eye, anamorphic, tilt and shift, and the “non-physical” controls. *(re-recorded in v0.1.7, and in v0.1.18 with O4's tilt block)*
 
-#### U13 · Proporción de la imagen en la cámara
+#### U13 · Image aspect ratio in the camera
 
-<a id="c-camera-aspect"></a><img src="ui/camera-aspect.png" width="480" alt="La sección Cámara con la proporción 4:3 elegida y el marco del visor cambiado."><br>
-`camera-aspect.png` · `3ba8740` · La sección Cámara con la proporción 4:3 elegida y el marco del visor cambiado.
+<a id="c-camera-aspect"></a><img src="ui/camera-aspect.png" width="480" alt="The Camera section with the 4:3 aspect ratio chosen and the viewport frame changed."><br>
+`camera-aspect.png` · `3ba8740` · The Camera section with the 4:3 aspect ratio chosen and the viewport frame changed.
 
-<a id="c-render-size-from-camera"></a><img src="ui/render-size-from-camera.png" width="480" alt="La ventana de render: el alto de los píxeles sigue la proporción de la cámara (4:3, 1920 × 1440) y lo dice debajo."><br>
-`render-size-from-camera.png` · `3ba8740` · La ventana de render: el alto de los píxeles sigue la proporción de la cámara (4:3, 1920 × 1440) y lo dice debajo.
+<a id="c-render-size-from-camera"></a><img src="ui/render-size-from-camera.png" width="480" alt="The render window: the pixel height follows the camera's aspect ratio (4:3, 1920 × 1440) and says so below."><br>
+`render-size-from-camera.png` · `3ba8740` · The render window: the pixel height follows the camera's aspect ratio (4:3, 1920 × 1440) and says so below.
 
-#### S4a · Ambiente: partículas de aire sin estado
+#### S4a · Ambient: stateless air particles
 
-<a id="c-ambient-section"></a><img src="ui/ambient-section.png" width="480" alt="La sección Ambiente con un efecto de nieve (153 partículas), sus mandos (cantidad, tamaño, energía, caos, viento, gravedad) y las partículas dibujadas en el visor."><br>
-`ambient-section.png` · `f200fe3` · La sección Ambiente con un efecto de nieve (153 partículas), sus mandos (cantidad, tamaño, energía, caos, viento, gravedad) y las partículas dibujadas en el visor.
+<a id="c-ambient-section"></a><img src="ui/ambient-section.png" width="480" alt="The Ambient section with a snow effect (153 particles), its controls (amount, size, energy, chaos, wind, gravity) and the particles drawn in the viewport."><br>
+`ambient-section.png` · `f200fe3` · The Ambient section with a snow effect (153 particles), its controls (amount, size, energy, chaos, wind, gravity) and the particles drawn in the viewport.
 
-<a id="c-ambient-gallery"></a><img src="ui/ambient-gallery.png" width="300" alt="El selector de efectos de Ambiente: motas de polvo, polen, lluvia, nieve, polvareda, ceniza, burbujas y confeti; bruma, haces de luz y niebla, «próximamente»."><br>
-`ambient-gallery.png` · `f200fe3` · El selector de efectos de Ambiente: motas de polvo, polen, lluvia, nieve, polvareda, ceniza, burbujas y confeti; bruma, haces de luz y niebla, «próximamente».
+<a id="c-ambient-gallery"></a><img src="ui/ambient-gallery.png" width="300" alt="The Ambient effect chooser: dust motes, pollen, rain, snow, dust cloud, ash, bubbles and confetti; haze, light shafts and fog, “coming soon”."><br>
+`ambient-gallery.png` · `f200fe3` · The Ambient effect chooser: dust motes, pollen, rain, snow, dust cloud, ash, bubbles and confetti; haze, light shafts and fog, “coming soon”.
 
-#### N6 · Despiece configurable y línea de tiempo clara
+#### N6 · Configurable exploded view and clear timeline
 
-<a id="c-animation-timeline"></a><img src="ui/animation-timeline.png" width="480" alt="La línea de tiempo de tres zonas: árbol de lo animado, regla con las barras y propiedades del movimiento elegido (despiece apilado en Z) con su pista en el visor."><br>
-`animation-timeline.png` · `1f8f8fb` · La línea de tiempo de tres zonas: árbol de lo animado, regla con las barras y propiedades del movimiento elegido (despiece apilado en Z) con su pista en el visor.
+<a id="c-animation-timeline"></a><img src="ui/animation-timeline.png" width="480" alt="The three-zone timeline: tree of what is animated, ruler with the bars and properties of the chosen move (stacked exploded view along Z) with its track in the viewport."><br>
+`animation-timeline.png` · `1f8f8fb` · The three-zone timeline: tree of what is animated, ruler with the bars and properties of the chosen move (stacked exploded view along Z) with its track in the viewport.
 
-<a id="c-explode-types"></a><img src="ui/explode-types.png" width="300" alt="Despieces del frasco de ejemplo por tipo (lineal separar, lineal apilar, radial, esférico y por niveles), con cuatro fotogramas de cada uno."><br>
-`explode-types.png` · `1f8f8fb` · Despieces del frasco de ejemplo por tipo (lineal separar, lineal apilar, radial, esférico y por niveles), con cuatro fotogramas de cada uno.
+<a id="c-explode-types"></a><img src="ui/explode-types.png" width="300" alt="Exploded views of the example bottle by type (linear separate, linear stack, radial, spherical and by levels), with four frames of each."><br>
+`explode-types.png` · `1f8f8fb` · Exploded views of the example bottle by type (linear separate, linear stack, radial, spherical and by levels), with four frames of each.
 
-#### S2 · Cuerpos rígidos: «Dejar caer», la barra de físicas y grabar
+#### S2 · Rigid bodies: “Drop”, the physics bar and recording
 
-<a id="c-physics-bar"></a><img src="ui/physics-bar.png" width="960" alt="La barra de físicas bajo el visor: Iniciar, Pausar o Reanudar, Parar y Reiniciar, con el tiempo simulado y los cuerpos despiertos."><br>
-`physics-bar.png` · `79a3d24` · La barra de físicas bajo el visor: Iniciar, Pausar o Reanudar, Parar y Reiniciar, con el tiempo simulado y los cuerpos despiertos.
+<a id="c-physics-bar"></a><img src="ui/physics-bar.png" width="960" alt="The physics bar under the viewport: Start, Pause or Resume, Stop and Reset, with the simulated time and the awake bodies."><br>
+`physics-bar.png` · `79a3d24` · The physics bar under the viewport: Start, Pause or Resume, Stop and Reset, with the simulated time and the awake bodies.
 
-<a id="c-physics-drop"></a><img src="ui/physics-drop.png" width="480" alt="Dejar caer: un cubo, una esfera y un cilindro en el aire (izquierda) y en reposo sobre el suelo tras la simulación (derecha)."><br>
-`physics-drop.png` · `79a3d24` · Dejar caer: un cubo, una esfera y un cilindro en el aire (izquierda) y en reposo sobre el suelo tras la simulación (derecha).
+<a id="c-physics-drop"></a><img src="ui/physics-drop.png" width="480" alt="Drop: a cube, a sphere and a cylinder in the air (left) and at rest on the floor after the simulation (right)."><br>
+`physics-drop.png` · `79a3d24` · Drop: a cube, a sphere and a cylinder in the air (left) and at rest on the floor after the simulation (right).
 
-<a id="c-physics-drop-strip"></a><img src="ui/physics-drop-strip.png" width="960" alt="Seis instantes del clip grabado de la caída, de 0 a 0,83 s."><br>
-`physics-drop-strip.png` · `79a3d24` · Seis instantes del clip grabado de la caída, de 0 a 0,83 s.
+<a id="c-physics-drop-strip"></a><img src="ui/physics-drop-strip.png" width="960" alt="Six instants of the recorded clip of the fall, from 0 to 0.83 s."><br>
+`physics-drop-strip.png` · `79a3d24` · Six instants of the recorded clip of the fall, from 0 to 0.83 s.
 
-#### M3a · Editor de materiales por nodos: modelo, editor y vista previa
+#### M3a · Node material editor: model, editor and preview
 
-<a id="c-material-nodes"></a><img src="ui/material-nodes.png" width="480" alt="El editor de materiales por nodos con el ejemplo del mármol: nodos con su vista previa, conexiones, esfera de resultado, Ejemplos y Añadir nodo."><br>
-`material-nodes.png` · `15a6d96` · El editor de materiales por nodos con el ejemplo del mármol: nodos con su vista previa, conexiones, esfera de resultado, Ejemplos y Añadir nodo.
+<a id="c-material-nodes"></a><img src="ui/material-nodes.png" width="480" alt="The node-based material editor with the marble example: nodes with their preview, connections, result sphere, Examples and Add node."><br>
+`material-nodes.png` · `15a6d96` · The node-based material editor with the marble example: nodes with their preview, connections, result sphere, Examples and Add node.
 
-<a id="c-material-nodes-preview"></a><img src="ui/material-nodes-preview.png" width="460" alt="El frasco con el mármol del editor de nodos dibujado en el visor Rápido."><br>
-`material-nodes-preview.png` · `15a6d96` · El frasco con el mármol del editor de nodos dibujado en el visor Rápido.
+<a id="c-material-nodes-preview"></a><img src="ui/material-nodes-preview.png" width="460" alt="The bottle with the node editor's marble drawn in the Fast viewport."><br>
+`material-nodes-preview.png` · `15a6d96` · The bottle with the node editor's marble drawn in the Fast viewport.
 
-#### U11b · Intensidad de la reducción de ruido
+#### U11b · Denoise strength
 
-<a id="c-denoise-strength"></a><img src="ui/denoise-strength.png" width="480" alt="Render ▸ Avanzado ▸ Reducción de ruido (Desactivado, Visor, Render o Ambos) con la Intensidad al 50 % y la calidad de cáusticas."><br>
-`denoise-strength.png` · `920afb9` · Render ▸ Avanzado ▸ Reducción de ruido (Desactivado, Visor, Render o Ambos) con la Intensidad al 50 % y la calidad de cáusticas.
+<a id="c-denoise-strength"></a><img src="ui/denoise-strength.png" width="480" alt="Render ▸ Advanced ▸ Denoise (Off, Viewport, Render or Both) with the Strength at 50 % and the caustic quality."><br>
+`denoise-strength.png` · `920afb9` · Render ▸ Advanced ▸ Denoise (Off, Viewport, Render or Both) with the Strength at 50 % and the caustic quality.
 
-#### E11 · Suavizado de bordes, de menos a más coste
+#### E11 · Edge smoothing, from cheaper to costlier
 
-<a id="c-settings-aa"></a><img src="ui/settings-aa.png" width="480" alt="Ajustes ▸ Motor de renderizado ▸ Suavizado de bordes: el MSAA del modo Rápido y los seis filtros de píxel del modo Completo, de Ninguno a «Fino + bordes ×4»."><br>
-`settings-aa.png` · `920afb9` · Ajustes ▸ Motor de renderizado ▸ Suavizado de bordes: el MSAA del modo Rápido y los seis filtros de píxel del modo Completo, de Ninguno a «Fino + bordes ×4».
+<a id="c-settings-aa"></a><img src="ui/settings-aa.png" width="480" alt="Settings ▸ Render engine ▸ Edge smoothing: Fast mode's MSAA and Full mode's six pixel filters, from None to “Fine + edges ×4”."><br>
+`settings-aa.png` · `920afb9` · Settings ▸ Render engine ▸ Edge smoothing: Fast mode's MSAA and Full mode's six pixel filters, from None to “Fine + edges ×4”.
 
-<a id="c-meter-filter"></a><img src="ui/meter-filter.png" width="186" alt="El medidor del visor con «Filter · Standard»: el motor dice qué filtro de píxel usa."><br>
-`meter-filter.png` · `920afb9` · El medidor del visor con «Filter · Standard»: el motor dice qué filtro de píxel usa.
+<a id="c-meter-filter"></a><img src="ui/meter-filter.png" width="186" alt="The viewport meter with “Filter · Standard”: the engine says which pixel filter it uses."><br>
+`meter-filter.png` · `920afb9` · The viewport meter with “Filter · Standard”: the engine says which pixel filter it uses.
 
 ### v0.1.5 · 2026-10-14
 
-Cáusticas y denoise propio, focos propios y luces y cámaras en el visor, prompt y variantes de la IA, recorrido guiado y avisos del motor de ejecución de la IA.
+Caustics and own denoise, own lights and lights and cameras in the viewport, the AI's prompt and variants, guided tour and notices of the AI runtime.
 
-#### X4b · Prompt propio y variantes
+#### X4b · Own prompt and variants
 
-<a id="c-ai-section-prompt"></a><img src="ui/ai-section-prompt.png" width="480" alt="La sección Post-procesado IA con un prompt propio («Late afternoon light, a calm mood»), cuatro variantes, intervención y luz al 80 % y estilo Cálido al 70 %."><br>
-`ai-section-prompt.png` · `a40a6b4` · La sección Post-procesado IA con un prompt propio («Late afternoon light, a calm mood»), cuatro variantes, intervención y luz al 80 % y estilo Cálido al 70 %.
+<a id="c-ai-section-prompt"></a><img src="ui/ai-section-prompt.png" width="480" alt="The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %."><br>
+`ai-section-prompt.png` · `a40a6b4` · The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %.
 
-<a id="c-ai-results-variants"></a><img src="ui/ai-results-variants.png" width="480" alt="El visor de resultados con la tira de cuatro variantes de la IA bajo la cabecera; la tercera, comparada con el render con el divisor."><br>
-`ai-results-variants.png` · `a40a6b4` · El visor de resultados con la tira de cuatro variantes de la IA bajo la cabecera; la tercera, comparada con el render con el divisor.
+<a id="c-ai-results-variants"></a><img src="ui/ai-results-variants.png" width="480" alt="The results viewer with the strip of four AI variants under the header; the third one, compared with the render using the divider."><br>
+`ai-results-variants.png` · `a40a6b4` · The results viewer with the strip of four AI variants under the header; the third one, compared with the render using the divider.
 
-<a id="c-settings-ai-prompt"></a><img src="ui/settings-ai-prompt.png" width="480" alt="Ajustes ▸ Post-procesado IA: el prompt del sistema, con su contador y «Restablecer el predeterminado»."><br>
-`settings-ai-prompt.png` · `a40a6b4` · Ajustes ▸ Post-procesado IA: el prompt del sistema, con su contador y «Restablecer el predeterminado».
+<a id="c-settings-ai-prompt"></a><img src="ui/settings-ai-prompt.png" width="480" alt="Settings ▸ AI post-processing: the system prompt, with its counter and “Restore default”."><br>
+`settings-ai-prompt.png` · `a40a6b4` · Settings ▸ AI post-processing: the system prompt, with its counter and “Restore default”.
 
-#### U10 · Recorrido guiado y avisos de la IA
+#### U10 · Guided tour and AI notices
 
-<a id="c-tour-tools"></a><img src="ui/tour-tools.png" width="480" alt="Paso 5 de 31 del recorrido guiado: las herramientas de vista resaltadas, con la nota que las explica."><br>
-`tour-tools.png` · `5f6566e` · Paso 5 de 31 del recorrido guiado: las herramientas de vista resaltadas, con la nota que las explica. *(regrabada en v0.1.15)*
+<a id="c-tour-tools"></a><img src="ui/tour-tools.png" width="480" alt="Step 5 of 31 of the guided tour: the view tools highlighted, with the note that explains them."><br>
+`tour-tools.png` · `5f6566e` · Step 5 of 31 of the guided tour: the view tools highlighted, with the note that explains them. *(re-recorded in v0.1.15)*
 
-<a id="c-tour-camera"></a><img src="ui/tour-camera.png" width="480" alt="Paso 10 de 31: Cámara y enfoque, con el inspector de cámara y el selector de bokeh resaltados."><br>
-`tour-camera.png` · `5f6566e` · Paso 10 de 31: Cámara y enfoque, con el inspector de cámara y el selector de bokeh resaltados. *(regrabada en v0.1.15)*
+<a id="c-tour-camera"></a><img src="ui/tour-camera.png" width="480" alt="Step 10 of 31: Camera and focus, with the camera inspector and the bokeh chooser highlighted."><br>
+`tour-camera.png` · `5f6566e` · Step 10 of 31: Camera and focus, with the camera inspector and the bokeh chooser highlighted. *(re-recorded in v0.1.15)*
 
-<a id="c-tour-render-ai"></a><img src="ui/tour-render-ai.png" width="480" alt="Paso 20 de 31: Post-procesado IA, plegado y apagado, en la ventana de render."><br>
-`tour-render-ai.png` · `5f6566e` · Paso 20 de 31: Post-procesado IA, plegado y apagado, en la ventana de render. *(regrabada en v0.1.15)*
+<a id="c-tour-render-ai"></a><img src="ui/tour-render-ai.png" width="480" alt="Step 20 of 31: AI post-processing, folded and off, in the render window."><br>
+`tour-render-ai.png` · `5f6566e` · Step 20 of 31: AI post-processing, folded and off, in the render window. *(re-recorded in v0.1.15)*
 
-<a id="c-tour-settings-es"></a><img src="ui/tour-settings-es.png" width="480" alt="Paso 26 de 31, en español: Ajustes ▸ Motor de renderizado."><br>
-`tour-settings-es.png` · `5f6566e` · Paso 26 de 31, en español: Ajustes ▸ Motor de renderizado. *(regrabada en v0.1.15)*
+<a id="c-tour-settings-es"></a><img src="ui/tour-settings-es.png" width="480" alt="Step 26 of 31, in Spanish: Settings ▸ Render engine."><br>
+`tour-settings-es.png` · `5f6566e` · Step 26 of 31, in Spanish: Settings ▸ Render engine. *(re-recorded in v0.1.15)*
 
-<a id="c-ai-runtime-warning-render"></a><img src="ui/ai-runtime-warning-render.png" width="480" alt="La sección de IA de la ventana de render avisa de que el motor de ejecución no está instalado, con Instalar (26 MB) y Ajustes…"><br>
-`ai-runtime-warning-render.png` · `5f6566e` · La sección de IA de la ventana de render avisa de que el motor de ejecución no está instalado, con Instalar (26 MB) y Ajustes…
+<a id="c-ai-runtime-warning-render"></a><img src="ui/ai-runtime-warning-render.png" width="480" alt="The render window's AI section warns that the runtime is not installed, with Install (26 MB) and Settings…"><br>
+`ai-runtime-warning-render.png` · `5f6566e` · The render window's AI section warns that the runtime is not installed, with Install (26 MB) and Settings…
 
-<a id="c-ai-runtime-warning-settings"></a><img src="ui/ai-runtime-warning-settings.png" width="480" alt="Ajustes ▸ Post-procesado IA con el mismo aviso del motor de ejecución y el botón Instalar."><br>
-`ai-runtime-warning-settings.png` · `5f6566e` · Ajustes ▸ Post-procesado IA con el mismo aviso del motor de ejecución y el botón Instalar.
+<a id="c-ai-runtime-warning-settings"></a><img src="ui/ai-runtime-warning-settings.png" width="480" alt="Settings ▸ AI post-processing with the same runtime notice and the Install button."><br>
+`ai-runtime-warning-settings.png` · `5f6566e` · Settings ▸ AI post-processing with the same runtime notice and the Install button.
 
-<a id="c-ai-runtime-warning-vc"></a><img src="ui/ai-runtime-warning-vc.png" width="480" alt="El aviso de que en Windows falta el entorno de Microsoft Visual C++, con Instalar el entorno, Comprobar de nuevo y Ajustes…"><br>
-`ai-runtime-warning-vc.png` · `5f6566e` · El aviso de que en Windows falta el entorno de Microsoft Visual C++, con Instalar el entorno, Comprobar de nuevo y Ajustes…
+<a id="c-ai-runtime-warning-vc"></a><img src="ui/ai-runtime-warning-vc.png" width="480" alt="The notice that on Windows the Microsoft Visual C++ environment is missing, with Install the runtime, Check again and Settings…"><br>
+`ai-runtime-warning-vc.png` · `5f6566e` · The notice that on Windows the Microsoft Visual C++ environment is missing, with Install the runtime, Check again and Settings…
 
-<a id="c-ai-runtime-chooser"></a><img src="ui/ai-runtime-chooser.png" width="480" alt="El cuadro «Elige los modelos de IA que descargar» con la casilla de descargar también el motor de ejecución (CPU, 26 MB)."><br>
-`ai-runtime-chooser.png` · `5f6566e` · El cuadro «Elige los modelos de IA que descargar» con la casilla de descargar también el motor de ejecución (CPU, 26 MB).
+<a id="c-ai-runtime-chooser"></a><img src="ui/ai-runtime-chooser.png" width="480" alt="The “Choose the AI models to download” dialog with the checkbox to also download the runtime (CPU, 26 MB)."><br>
+`ai-runtime-chooser.png` · `5f6566e` · The “Choose the AI models to download” dialog with the checkbox to also download the runtime (CPU, 26 MB).
 
-<a id="c-ai-runtime-note"></a><img src="ui/ai-runtime-note.png" width="960" alt="La barra de estado con el aviso «IA: el motor de ejecución no está instalado», con Instalar y Más tarde."><br>
-`ai-runtime-note.png` · `5f6566e` · La barra de estado con el aviso «IA: el motor de ejecución no está instalado», con Instalar y Más tarde.
+<a id="c-ai-runtime-note"></a><img src="ui/ai-runtime-note.png" width="960" alt="The status bar with the notice “AI: the runtime is not installed”, with Install and Later."><br>
+`ai-runtime-note.png` · `5f6566e` · The status bar with the notice “AI: the runtime is not installed”, with Install and Later.
 
-#### L4 · Focos propios
+#### L4 · Own lights
 
-<a id="c-lights-add-menu"></a><img src="ui/lights-add-menu.png" width="480" alt="La lista de «+ Añadir luz»: área rectangular, disco y esfera, punto, foco, sol e IES…, con los glifos de luces dibujados en el visor."><br>
-`lights-add-menu.png` · `af98de0` · La lista de «+ Añadir luz»: área rectangular, disco y esfera, punto, foco, sol e IES…, con los glifos de luces dibujados en el visor. *(regrabada en v0.1.14)*
+<a id="c-lights-add-menu"></a><img src="ui/lights-add-menu.png" width="480" alt="The “+ Add light” list: rectangular area, disc and sphere, point, spot, sun and IES…, with the light glyphs drawn in the viewport."><br>
+`lights-add-menu.png` · `af98de0` · The “+ Add light” list: rectangular area, disc and sphere, point, spot, sun and IES…, with the light glyphs drawn in the viewport. *(re-recorded in v0.1.14)*
 
-<a id="c-lights-glyphs-gizmo"></a><img src="ui/lights-glyphs-gizmo.png" width="480" alt="Un foco propio seleccionado con su gizmo de mover, los glifos de luces y cámaras en el visor y su inspector (tipo, acimut, elevación, coordenadas, apuntar, cono)."><br>
-`lights-glyphs-gizmo.png` · `af98de0` · Un foco propio seleccionado con su gizmo de mover, los glifos de luces y cámaras en el visor y su inspector (tipo, acimut, elevación, coordenadas, apuntar, cono).
+<a id="c-lights-glyphs-gizmo"></a><img src="ui/lights-glyphs-gizmo.png" width="480" alt="An own light selected with its move gizmo, the light and camera glyphs in the viewport and its inspector (type, azimuth, elevation, coordinates, aim, cone)."><br>
+`lights-glyphs-gizmo.png` · `af98de0` · An own light selected with its move gizmo, the light and camera glyphs in the viewport and its inspector (type, azimuth, elevation, coordinates, aim, cone).
 
-<a id="c-lights-look-through"></a><img src="ui/lights-look-through.png" width="480" alt="Mirar a través del foco: el visor ve la escena desde la luz, con el aviso de salida (Esc o «Volver a la cámara activa»)."><br>
-`lights-look-through.png` · `af98de0` · Mirar a través del foco: el visor ve la escena desde la luz, con el aviso de salida (Esc o «Volver a la cámara activa»).
+<a id="c-lights-look-through"></a><img src="ui/lights-look-through.png" width="480" alt="Look through the spot: the viewport sees the scene from the light, with the exit notice (Esc or “Return to the active camera”)."><br>
+`lights-look-through.png` · `af98de0` · Look through the spot: the viewport sees the scene from the light, with the exit notice (Esc or “Return to the active camera”).
 
-<a id="c-lights-spot-aimed"></a><img src="ui/lights-spot-aimed.png" width="480" alt="El foco apuntado al frasco en modo Rápido: el círculo de luz sobre la etiqueta y el glifo del cono."><br>
-`lights-spot-aimed.png` · `af98de0` · El foco apuntado al frasco en modo Rápido: el círculo de luz sobre la etiqueta y el glifo del cono.
+<a id="c-lights-spot-aimed"></a><img src="ui/lights-spot-aimed.png" width="480" alt="The spot aimed at the bottle in Fast mode: the circle of light on the label and the cone glyph."><br>
+`lights-spot-aimed.png` · `af98de0` · The spot aimed at the bottle in Fast mode: the circle of light on the label and the cone glyph.
 
-<a id="c-lights-spot-full"></a><img src="ui/lights-spot-full.png" width="480" alt="El mismo foco en modo Completo: el trazador dibuja su penumbra y su sombra."><br>
-`lights-spot-full.png` · `af98de0` · El mismo foco en modo Completo: el trazador dibuja su penumbra y su sombra.
+<a id="c-lights-spot-full"></a><img src="ui/lights-spot-full.png" width="480" alt="The same spot in Full mode: the tracer draws its penumbra and its shadow."><br>
+`lights-spot-full.png` · `af98de0` · The same spot in Full mode: the tracer draws its penumbra and its shadow.
 
-#### E5b-1 · Cáusticas y *denoise* propio
+#### E5b-1 · Caustics and own *denoise*
 
-<a id="c-engine-e5b1-denoise-4spp"></a><img src="ui/engine-e5b1-denoise-4spp.png" width="480" alt="Una escena a 4 muestras por píxel sin reducción de ruido (izquierda) y con el denoise propio del motor (derecha)."><br>
-`engine-e5b1-denoise-4spp.png` · `a75eec7` · Una escena a 4 muestras por píxel sin reducción de ruido (izquierda) y con el denoise propio del motor (derecha).
+<a id="c-engine-e5b1-denoise-4spp"></a><img src="ui/engine-e5b1-denoise-4spp.png" width="480" alt="A scene at 4 samples per pixel without denoising (left) and with the engine's own denoise (right)."><br>
+`engine-e5b1-denoise-4spp.png` · `a75eec7` · A scene at 4 samples per pixel without denoising (left) and with the engine's own denoise (right).
 
-<a id="c-engine-e5b1-bottle-caustics"></a><img src="ui/engine-e5b1-bottle-caustics.png" width="480" alt="El frasco de vidrio a 64 muestras sin y con cáusticas (mapa de fotones progresivo)."><br>
-`engine-e5b1-bottle-caustics.png` · `a75eec7` · El frasco de vidrio a 64 muestras sin y con cáusticas (mapa de fotones progresivo).
+<a id="c-engine-e5b1-bottle-caustics"></a><img src="ui/engine-e5b1-bottle-caustics.png" width="480" alt="The glass bottle at 64 samples without and with caustics (progressive photon map)."><br>
+`engine-e5b1-bottle-caustics.png` · `a75eec7` · The glass bottle at 64 samples without and with caustics (progressive photon map).
 
-<a id="c-engine-e5b1-bottle-caustics-final"></a><img src="ui/engine-e5b1-bottle-caustics-final.png" width="480" alt="El mismo par, sin y con cáusticas, rehecho con los ajustes finales de la fase."><br>
-`engine-e5b1-bottle-caustics-final.png` · `a75eec7` · El mismo par, sin y con cáusticas, rehecho con los ajustes finales de la fase.
+<a id="c-engine-e5b1-bottle-caustics-final"></a><img src="ui/engine-e5b1-bottle-caustics-final.png" width="480" alt="The same pair, without and with caustics, redone with the phase's final settings."><br>
+`engine-e5b1-bottle-caustics-final.png` · `a75eec7` · The same pair, without and with caustics, redone with the phase's final settings.
 
 ### v0.1.4 · 2026-10-13
 
-Post-procesado con IA de punta a punta en el escritorio, cielo físico propio, primitivas paramétricas y herramienta Escalar.
+AI post-processing end to end on the desktop, own physical sky, parametric primitives and Scale tool.
 
-#### U9 · Primitivas y herramienta de escalar
+#### U9 · Primitives and scale tool
 
-<a id="c-primitives-add-menu"></a><img src="ui/primitives-add-menu.png" width="480" alt="Menú de la aplicación ▸ Añadir con las doce primitivas paramétricas: caja, plano, disco, cilindro, pedestal, esfera, cono, toro, cápsula, tubo, escalones y fondo infinito."><br>
-`primitives-add-menu.png` · `69f3eca` · Menú de la aplicación ▸ Añadir con las doce primitivas paramétricas: caja, plano, disco, cilindro, pedestal, esfera, cono, toro, cápsula, tubo, escalones y fondo infinito.
+<a id="c-primitives-add-menu"></a><img src="ui/primitives-add-menu.png" width="480" alt="Application menu ▸ Add with the twelve parametric primitives: box, plane, disc, cylinder, pedestal, sphere, cone, torus, capsule, tube, steps and infinity sweep."><br>
+`primitives-add-menu.png` · `69f3eca` · Application menu ▸ Add with the twelve parametric primitives: box, plane, disc, cylinder, pedestal, sphere, cone, torus, capsule, tube, steps and infinity sweep.
 
-<a id="c-primitives-base-box"></a><img src="ui/primitives-base-box.png" width="480" alt="Una caja como base bajo el frasco, en modo Rápido; el árbol lista además un toro y un cilindro ocultos y el fondo infinito detrás."><br>
-`primitives-base-box.png` · `69f3eca` · Una caja como base bajo el frasco, en modo Rápido; el árbol lista además un toro y un cilindro ocultos y el fondo infinito detrás.
+<a id="c-primitives-base-box"></a><img src="ui/primitives-base-box.png" width="480" alt="A box as a base under the bottle, in Fast mode; the tree also lists a hidden torus and cylinder and the infinity sweep behind."><br>
+`primitives-base-box.png` · `69f3eca` · A box as a base under the bottle, in Fast mode; the tree also lists a hidden torus and cylinder and the infinity sweep behind.
 
-<a id="c-primitives-pedestal"></a><img src="ui/primitives-pedestal.png" width="480" alt="Un pedestal paramétrico bajo el frasco, sobre el fondo infinito, en modo Rápido."><br>
-`primitives-pedestal.png` · `69f3eca` · Un pedestal paramétrico bajo el frasco, sobre el fondo infinito, en modo Rápido.
+<a id="c-primitives-pedestal"></a><img src="ui/primitives-pedestal.png" width="480" alt="A parametric pedestal under the bottle, on the infinity sweep, in Fast mode."><br>
+`primitives-pedestal.png` · `69f3eca` · A parametric pedestal under the bottle, on the infinity sweep, in Fast mode.
 
-<a id="c-primitives-pedestal-full"></a><img src="ui/primitives-pedestal-full.png" width="480" alt="El mismo pedestal en modo Completo: el trazador acumula muestras con la luz y las sombras del estudio."><br>
-`primitives-pedestal-full.png` · `69f3eca` · El mismo pedestal en modo Completo: el trazador acumula muestras con la luz y las sombras del estudio.
+<a id="c-primitives-pedestal-full"></a><img src="ui/primitives-pedestal-full.png" width="480" alt="The same pedestal in Full mode: the tracer accumulates samples with the studio's light and shadows."><br>
+`primitives-pedestal-full.png` · `69f3eca` · The same pedestal in Full mode: the tracer accumulates samples with the studio's light and shadows.
 
-<a id="c-primitive-inspector"></a><img src="ui/primitive-inspector.png" width="480" alt="La sección Primitiva del inspector: medidas en mm (radio, alto, bisel, segmentos) que regeneran la pieza en vivo, y «Convertir a malla»."><br>
-`primitive-inspector.png` · `69f3eca` · La sección Primitiva del inspector: medidas en mm (radio, alto, bisel, segmentos) que regeneran la pieza en vivo, y «Convertir a malla».
+<a id="c-primitive-inspector"></a><img src="ui/primitive-inspector.png" width="480" alt="The inspector's Primitive section: dimensions in mm (radius, height, bevel, segments) that regenerate the part live, and “Convert to mesh”."><br>
+`primitive-inspector.png` · `69f3eca` · The inspector's Primitive section: dimensions in mm (radius, height, bevel, segments) that regenerate the part live, and “Convert to mesh”.
 
-<a id="c-scale-tool"></a><img src="ui/scale-tool.png" width="480" alt="La herramienta Escalar: el gizmo de Mover con solo asas de escala (un cubo por eje y el punto central)."><br>
-`scale-tool.png` · `69f3eca` · La herramienta Escalar: el gizmo de Mover con solo asas de escala (un cubo por eje y el punto central).
+<a id="c-scale-tool"></a><img src="ui/scale-tool.png" width="480" alt="The Scale tool: the Move gizmo with only scale handles (a cube per axis and the central point)."><br>
+`scale-tool.png` · `69f3eca` · The Scale tool: the Move gizmo with only scale handles (a cube per axis and the central point).
 
-<a id="c-scale-panel"></a><img src="ui/scale-panel.png" width="480" alt="Clic derecho ▸ Escalar…: panel con Uniforme, Por eje y A medida (mm de ancho, fondo y alto con la proporción bloqueada), Aplicar y Restablecer."><br>
-`scale-panel.png` · `69f3eca` · Clic derecho ▸ Escalar…: panel con Uniforme, Por eje y A medida (mm de ancho, fondo y alto con la proporción bloqueada), Aplicar y Restablecer.
+<a id="c-scale-panel"></a><img src="ui/scale-panel.png" width="480" alt="Right click ▸ Scale…: panel with Uniform, Per axis and Custom (mm of width, depth and height with the proportion locked), Apply and Reset."><br>
+`scale-panel.png` · `69f3eca` · Right click ▸ Scale…: panel with Uniform, Per axis and Custom (mm of width, depth and height with the proportion locked), Apply and Reset.
 
 ### v0.1.3 · 2026-10-13
 
-Detección de las tarjetas gráficas en Windows. *(Sin etiqueta en git: se toma del commit «Release v0.1.3».)*
+Detection of graphics cards on Windows. *(No git tag: taken from the “Release v0.1.3” commit.)*
 
-Sin capturas nuevas en esta versión; lo que trajo y no tiene captura está en «Sin captura».
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
 
 ### v0.1.2 · 2026-10-13
 
-Arreglos de escritorio (ventana propia, datos que sobreviven a un reinicio), arrastrar un material y selección por caja, vidrio y entorno nuevos y la interfaz del post-procesado con IA. *(Sin etiqueta en git: se toma del commit «Release v0.1.2».)*
+Desktop fixes (own window, data that survives a restart), dragging a material and box selection, new glass and environment and the AI post-processing interface. *(No git tag: taken from the “Release v0.1.2” commit.)*
 
-#### P3e · Escritorio: todo sobre el lanzador
+#### P3e · Desktop: everything on the launcher
 
-<a id="c-settings-ai-desktop"></a><img src="ui/settings-ai-desktop.png" width="480" alt="Ajustes ▸ Post-procesado IA en el escritorio con la tarjeta gráfica real del equipo en la fila GPU."><br>
-`settings-ai-desktop.png` · `398302d` · Ajustes ▸ Post-procesado IA en el escritorio con la tarjeta gráfica real del equipo en la fila GPU.
+<a id="c-settings-ai-desktop"></a><img src="ui/settings-ai-desktop.png" width="480" alt="Settings ▸ AI post-processing on the desktop with the machine's real graphics card in the GPU row."><br>
+`settings-ai-desktop.png` · `398302d` · Settings ▸ AI post-processing on the desktop with the machine's real graphics card in the GPU row.
 
-<a id="c-settings-desktop-paths"></a><img src="ui/settings-desktop-paths.png" width="480" alt="Ajustes ▸ Escritorio: modo portable, carpeta de datos, qué dibuja la ventana y carpeta de registros, con su botón Abrir carpeta."><br>
-`settings-desktop-paths.png` · `398302d` · Ajustes ▸ Escritorio: modo portable, carpeta de datos, qué dibuja la ventana y carpeta de registros, con su botón Abrir carpeta.
+<a id="c-settings-desktop-paths"></a><img src="ui/settings-desktop-paths.png" width="480" alt="Settings ▸ Desktop: portable mode, data folder, what draws the window and logs folder, with its Open folder button."><br>
+`settings-desktop-paths.png` · `398302d` · Settings ▸ Desktop: portable mode, data folder, what draws the window and logs folder, with its Open folder button.
 
-<a id="c-settings-storage-desktop"></a><img src="ui/settings-storage-desktop.png" width="480" alt="Ajustes ▸ Almacenamiento medido por el lanzador: espacio de modelos, historial, biblioteca y miniaturas, con Liberar y los límites del historial."><br>
-`settings-storage-desktop.png` · `398302d` · Ajustes ▸ Almacenamiento medido por el lanzador: espacio de modelos, historial, biblioteca y miniaturas, con Liberar y los límites del historial.
+<a id="c-settings-storage-desktop"></a><img src="ui/settings-storage-desktop.png" width="480" alt="Settings ▸ Storage measured by the launcher: space of models, history, library and thumbnails, with Free up and the history limits."><br>
+`settings-storage-desktop.png` · `398302d` · Settings ▸ Storage measured by the launcher: space of models, history, library and thumbnails, with Free up and the history limits.
 
-#### U7 · Arrastrar un material y selección por caja
+#### U7 · Dragging a material and box selection
 
-<a id="c-material-drag"></a><img src="ui/material-drag.png" width="480" alt="Arrastrando una miniatura del catálogo (Oro) sobre el cuerpo del frasco: fantasma con el nombre del material y la pieza de destino resaltada."><br>
-`material-drag.png` · `093ce11` · Arrastrando una miniatura del catálogo (Oro) sobre el cuerpo del frasco: fantasma con el nombre del material y la pieza de destino resaltada.
+<a id="c-material-drag"></a><img src="ui/material-drag.png" width="480" alt="Dragging a catalogue thumbnail (Gold) onto the bottle's body: ghost with the material's name and the target part highlighted."><br>
+`material-drag.png` · `093ce11` · Dragging a catalogue thumbnail (Gold) onto the bottle's body: ghost with the material's name and the target part highlighted.
 
-<a id="c-material-drag-tree"></a><img src="ui/material-drag-tree.png" width="480" alt="Arrastrando un material (Goma) sobre una fila del árbol de piezas: la fila de destino resaltada y el fantasma del material."><br>
-`material-drag-tree.png` · `093ce11` · Arrastrando un material (Goma) sobre una fila del árbol de piezas: la fila de destino resaltada y el fantasma del material.
+<a id="c-material-drag-tree"></a><img src="ui/material-drag-tree.png" width="480" alt="Dragging a material (Rubber) onto a row of the parts tree: the target row highlighted and the material's ghost."><br>
+`material-drag-tree.png` · `093ce11` · Dragging a material (Rubber) onto a row of the parts tree: the target row highlighted and the material's ghost.
 
-<a id="c-box-window"></a><img src="ui/box-window.png" width="480" alt="Selección por caja de izquierda a derecha (ventana): el recuadro continuo coge solo lo que queda entero dentro."><br>
-`box-window.png` · `093ce11` · Selección por caja de izquierda a derecha (ventana): el recuadro continuo coge solo lo que queda entero dentro.
+<a id="c-box-window"></a><img src="ui/box-window.png" width="480" alt="Box selection from left to right (window): the continuous box picks only what stays entirely inside."><br>
+`box-window.png` · `093ce11` · Box selection from left to right (window): the continuous box picks only what stays entirely inside.
 
-<a id="c-box-crossing"></a><img src="ui/box-crossing.png" width="480" alt="Selección por caja de derecha a izquierda (cruce): el recuadro discontinuo coge todo lo que toca."><br>
-`box-crossing.png` · `093ce11` · Selección por caja de derecha a izquierda (cruce): el recuadro discontinuo coge todo lo que toca.
+<a id="c-box-crossing"></a><img src="ui/box-crossing.png" width="480" alt="Box selection from right to left (crossing): the dashed box picks everything it touches."><br>
+`box-crossing.png` · `093ce11` · Box selection from right to left (crossing): the dashed box picks everything it touches.
 
-#### M1 · Cara CAD entera
+#### M1 · Whole CAD face
 
-<a id="c-material-drag-faces"></a><img src="ui/material-drag-faces.png" width="480" alt="Arrastrando un material a nivel Caras: se asigna a la superficie entera bajo el cursor (3 456 caras de Cuerpo)."><br>
-`material-drag-faces.png` · `093ce11` · Arrastrando un material a nivel Caras: se asigna a la superficie entera bajo el cursor (3 456 caras de Cuerpo).
+<a id="c-material-drag-faces"></a><img src="ui/material-drag-faces.png" width="480" alt="Dragging a material at Faces level: it is assigned to the whole surface under the cursor (3,456 faces of Body)."><br>
+`material-drag-faces.png` · `093ce11` · Dragging a material at Faces level: it is assigned to the whole surface under the cursor (3,456 faces of Body).
 
-<a id="c-box-faces"></a><img src="ui/box-faces.png" width="480" alt="Selección de caras con la vista en rayos X: las seis caras de una caja de CAD elegidas de una vez."><br>
-`box-faces.png` · `093ce11` · Selección de caras con la vista en rayos X: las seis caras de una caja de CAD elegidas de una vez.
+<a id="c-box-faces"></a><img src="ui/box-faces.png" width="480" alt="Face selection with the X-ray view: the six faces of a CAD box chosen at once."><br>
+`box-faces.png` · `093ce11` · Face selection with the X-ray view: the six faces of a CAD box chosen at once.
 
-#### X4 · Interfaz del post-procesado
+#### X4 · Post-processing interface
 
-<a id="c-ai-section-dark"></a><img src="ui/ai-section-dark.png" width="440" alt="La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro."> <a id="c-ai-section-light"></a><img src="ui/ai-section-light.png" width="440" alt="La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro."><br>
-`ai-section-dark.png` y `ai-section-light.png` · `693762d` · La sección Post-procesado IA de la ventana de render con el servicio sintético de pruebas: interruptor, mandos de intervención, luz, rebotes, desgaste y estilo, prompt propio, protecciones, variantes y vista previa Antes y Después con divisor. Tema oscuro y claro. *(regrabada en v0.1.5)* *(`ai-section-light.png` regrabada en v0.1.18: C1, la intervención de fábrica en 50 y el texto secundario del tema claro a 4,5:1)*
+<a id="c-ai-section-dark"></a><img src="ui/ai-section-dark.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme."> <a id="c-ai-section-light"></a><img src="ui/ai-section-light.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme."><br>
+`ai-section-dark.png` and `ai-section-light.png` · `693762d` · The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-section-light.png` re-recorded in v0.1.18: C1, the factory intervention at 50 and the light theme's secondary text at 4.5:1)*
 
-<a id="c-ai-results-viewer"></a><img src="ui/ai-results-viewer.png" width="440" alt="El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro."> <a id="c-ai-results-light"></a><img src="ui/ai-results-light.png" width="440" alt="El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro."><br>
-`ai-results-viewer.png` y `ai-results-light.png` · `693762d` · El visor de resultados con una imagen de IA: divisor Render | IA, el informe de la guarda en su propia línea y el aviso de que la IA se limitó para respetar las protecciones. Tema oscuro y claro. *(regrabada en v0.1.5)* *(`ai-results-light.png` regrabada en v0.1.18: C1, el texto secundario del tema claro a 4,5:1)*
+<a id="c-ai-results-viewer"></a><img src="ui/ai-results-viewer.png" width="440" alt="The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme."> <a id="c-ai-results-light"></a><img src="ui/ai-results-light.png" width="440" alt="The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme."><br>
+`ai-results-viewer.png` and `ai-results-light.png` · `693762d` · The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-results-light.png` re-recorded in v0.1.18: C1, the light theme's secondary text at 4.5:1)*
 
-<a id="c-ai-queue"></a><img src="ui/ai-queue.png" width="480" alt="La cola con un trabajo terminado con IA (columna «IA»): dos miniaturas, la del render y la de la IA, en la fila y en el historial."><br>
-`ai-queue.png` · `693762d` · La cola con un trabajo terminado con IA (columna «IA»): dos miniaturas, la del render y la de la IA, en la fila y en el historial. *(regrabada en v0.1.5)*
+<a id="c-ai-queue"></a><img src="ui/ai-queue.png" width="480" alt="The queue with a job finished with AI (“AI” column): two thumbnails, the render's and the AI's, in the row and in the history."><br>
+`ai-queue.png` · `693762d` · The queue with a job finished with AI (“AI” column): two thumbnails, the render's and the AI's, in the row and in the history. *(re-recorded in v0.1.5)*
 
-#### E5 · Dieléctricos, emisores, barniz, cielo, HDRI
+#### E5 · Dielectrics, emitters, clearcoat, sky, HDRI
 
-<a id="c-engine-e5-glass-bottle"></a><img src="ui/engine-e5-glass-bottle.png" width="480" alt="Render del motor: un frasco de vidrio macizo con tapón dorado, con refracción y absorción de color, sobre fondo claro."><br>
-`engine-e5-glass-bottle.png` · `e1b9087` · Render del motor: un frasco de vidrio macizo con tapón dorado, con refracción y absorción de color, sobre fondo claro.
+<a id="c-engine-e5-glass-bottle"></a><img src="ui/engine-e5-glass-bottle.png" width="480" alt="Engine render: a solid glass bottle with a gold cap, with refraction and colour absorption, on a light background."><br>
+`engine-e5-glass-bottle.png` · `e1b9087` · Engine render: a solid glass bottle with a gold cap, with refraction and colour absorption, on a light background.
 
-<a id="c-engine-e5-materials"></a><img src="ui/engine-e5-materials.png" width="480" alt="Tablero de materiales del motor: cinco esferas (plástico rojo, metal rugoso, cromo, vidrio y vidrio azul)."><br>
-`engine-e5-materials.png` · `e1b9087` · Tablero de materiales del motor: cinco esferas (plástico rojo, metal rugoso, cromo, vidrio y vidrio azul).
+<a id="c-engine-e5-materials"></a><img src="ui/engine-e5-materials.png" width="480" alt="The engine's material board: five spheres (red plastic, rough metal, chrome, glass and blue glass)."><br>
+`engine-e5-materials.png` · `e1b9087` · The engine's material board: five spheres (red plastic, rough metal, chrome, glass and blue glass).
 
-<a id="c-engine-e5-lamp"></a><img src="ui/engine-e5-lamp.png" width="480" alt="Una lámpara con bombilla emisora que ilumina de verdad la escena (cubo rojo, esfera y suelo): los emisores alumbran."><br>
-`engine-e5-lamp.png` · `e1b9087` · Una lámpara con bombilla emisora que ilumina de verdad la escena (cubo rojo, esfera y suelo): los emisores alumbran.
+<a id="c-engine-e5-lamp"></a><img src="ui/engine-e5-lamp.png" width="480" alt="A lamp with an emitting bulb that really lights the scene (red cube, sphere and floor): emitters light."><br>
+`engine-e5-lamp.png` · `e1b9087` · A lamp with an emitting bulb that really lights the scene (red cube, sphere and floor): emitters light.
 
-<a id="c-engine-e5-hdri-studio"></a><img src="ui/engine-e5-hdri-studio.png" width="480" alt="Cromo y plástico iluminados solo por un HDRI de estudio: los reflejos enseñan las ventanas del entorno."><br>
-`engine-e5-hdri-studio.png` · `e1b9087` · Cromo y plástico iluminados solo por un HDRI de estudio: los reflejos enseñan las ventanas del entorno.
+<a id="c-engine-e5-hdri-studio"></a><img src="ui/engine-e5-hdri-studio.png" width="480" alt="Chrome and plastic lit only by a studio HDRI: the reflections show the environment's windows."><br>
+`engine-e5-hdri-studio.png` · `e1b9087` · Chrome and plastic lit only by a studio HDRI: the reflections show the environment's windows.
 
-<a id="c-engine-e5-sky-sun"></a><img src="ui/engine-e5-sky-sun.png" width="480" alt="Cielo de día con el sol del montaje SUN (55° de altura, 5200 K) sobre dos esferas."><br>
-`engine-e5-sky-sun.png` · `e1b9087` · Cielo de día con el sol del montaje SUN (55° de altura, 5200 K) sobre dos esferas.
+<a id="c-engine-e5-sky-sun"></a><img src="ui/engine-e5-sky-sun.png" width="480" alt="Daytime sky with the SUN setup's sun (55° high, 5200 K) over two spheres."><br>
+`engine-e5-sky-sun.png` · `e1b9087` · Daytime sky with the SUN setup's sun (55° high, 5200 K) over two spheres.
 
-<a id="c-engine-e5-sky-golden-hour"></a><img src="ui/engine-e5-sky-golden-hour.png" width="480" alt="El mismo cielo con el montaje GOLDEN_HOUR: sol bajo y cálido (12°, 2900 K) desde detrás."><br>
-`engine-e5-sky-golden-hour.png` · `e1b9087` · El mismo cielo con el montaje GOLDEN_HOUR: sol bajo y cálido (12°, 2900 K) desde detrás.
+<a id="c-engine-e5-sky-golden-hour"></a><img src="ui/engine-e5-sky-golden-hour.png" width="480" alt="The same sky with the GOLDEN_HOUR setup: low, warm sun (12°, 2900 K) from behind."><br>
+`engine-e5-sky-golden-hour.png` · `e1b9087` · The same sky with the GOLDEN_HOUR setup: low, warm sun (12°, 2900 K) from behind.
 
-<a id="c-engine-e5-sky-dawn"></a><img src="ui/engine-e5-sky-dawn.png" width="480" alt="El mismo cielo con el montaje DAWN: sol rasante (8°, 3600 K) y luz cálida."><br>
-`engine-e5-sky-dawn.png` · `e1b9087` · El mismo cielo con el montaje DAWN: sol rasante (8°, 3600 K) y luz cálida.
+<a id="c-engine-e5-sky-dawn"></a><img src="ui/engine-e5-sky-dawn.png" width="480" alt="The same sky with the DAWN setup: grazing sun (8°, 3600 K) and warm light."><br>
+`engine-e5-sky-dawn.png` · `e1b9087` · The same sky with the DAWN setup: grazing sun (8°, 3600 K) and warm light.
 
 ### v0.1.1 · 2026-10-13
 
-Buscar actualizaciones, en Ajustes. *(Sin etiqueta en git: se toma del commit «Release v0.1.1».)*
+Check for updates, in Settings. *(No git tag: taken from the “Release v0.1.1” commit.)*
 
-#### Sin fase · Buscar actualizaciones (el ROADMAP la nombra en U6 y U8; P5 la completa)
+#### No phase · Check for updates (the ROADMAP names it in U6 and U8; P5 completes it)
 
-<a id="c-settings-updates"></a><img src="ui/settings-updates.png" width="480" alt="Ajustes ▸ Actualizaciones: versión instalada, Buscar actualizaciones, el aviso de versión nueva con Descargar y Notas, Buscar al iniciar y última comprobación; el mismo aviso en la barra de estado."><br>
-`settings-updates.png` · `47cd39d` · Ajustes ▸ Actualizaciones: versión instalada, Buscar actualizaciones, el aviso de versión nueva con Descargar y Notas, Buscar al iniciar y última comprobación; el mismo aviso en la barra de estado. *(regrabada en v0.1.6)*
+<a id="c-settings-updates"></a><img src="ui/settings-updates.png" width="480" alt="Settings ▸ Updates: installed version, Check for updates, the new-version notice with Download and Release notes, Check at start-up and last check; the same notice in the status bar."><br>
+`settings-updates.png` · `47cd39d` · Settings ▸ Updates: installed version, Check for updates, the new-version notice with Download and Release notes, Check at start-up and last check; the same notice in the status bar. *(re-recorded in v0.1.6)*
 
 ### v0.1.0 · 2026-10-13
 
-La primera versión: interfaz, importadores, motor en Rust con modos Rápido y Completo, ventana de render y cola, ajustes y escritorio.
+The first version: interface, importers, Rust engine with Fast and Full modes, render window and queue, settings and desktop.
 
-#### U1 · La interfaz
+#### U1 · The interface
 
-<a id="c-dark-studio"></a><img src="ui/dark-studio.png" width="480" alt="La interfaz de tres columnas en tema oscuro con el frasco de ejemplo (tipo de producto Joyería, montaje «Rembrandt»): árbol de piezas a la izquierda, visor en modo Rápido en el centro e inspector de escena con el catálogo de montajes de luz a la derecha."><br>
-`dark-studio.png` · `6a263db` · La interfaz de tres columnas en tema oscuro con el frasco de ejemplo (tipo de producto Joyería, montaje «Rembrandt»): árbol de piezas a la izquierda, visor en modo Rápido en el centro e inspector de escena con el catálogo de montajes de luz a la derecha.
+<a id="c-dark-studio"></a><img src="ui/dark-studio.png" width="480" alt="The three-column interface in dark theme with the example bottle (product type Jewellery, “Rembrandt” setup): parts tree on the left, viewport in Fast mode in the centre and scene inspector with the light-setup catalogue on the right."><br>
+`dark-studio.png` · `6a263db` · The three-column interface in dark theme with the example bottle (product type Jewellery, “Rembrandt” setup): parts tree on the left, viewport in Fast mode in the centre and scene inspector with the light-setup catalogue on the right.
 
-<a id="c-light-materials"></a><img src="ui/light-materials.png" width="480" alt="El tema claro con el catálogo de materiales abierto sobre el cuerpo del frasco: la familia «Otros» con goma, cuero, cerámica, hormigón, papel, cartón, fibra de carbono, pintura de coche, pintura metalizada y blanco de estudio."><br>
-`light-materials.png` · `3a55426` · El tema claro con el catálogo de materiales abierto sobre el cuerpo del frasco: la familia «Otros» con goma, cuero, cerámica, hormigón, papel, cartón, fibra de carbono, pintura de coche, pintura metalizada y blanco de estudio.
+<a id="c-light-materials"></a><img src="ui/light-materials.png" width="480" alt="The light theme with the material catalogue open on the bottle's body: the “Other” family with rubber, leather, ceramic, concrete, paper, cardboard, carbon fibre, car paint, metallic paint and studio white."><br>
+`light-materials.png` · `3a55426` · The light theme with the material catalogue open on the bottle's body: the “Other” family with rubber, leather, ceramic, concrete, paper, cardboard, carbon fibre, car paint, metallic paint and studio white.
 
-<a id="c-animation-drawer"></a><img src="ui/animation-drawer.png" width="480" alt="El cajón de animación con tres tomas, cuatro movimientos (órbita, elevación, empuje y giro del modelo) y su línea de tiempo con el cabezal."><br>
-`animation-drawer.png` · `3a55426` · El cajón de animación con tres tomas, cuatro movimientos (órbita, elevación, empuje y giro del modelo) y su línea de tiempo con el cabezal.
+<a id="c-animation-drawer"></a><img src="ui/animation-drawer.png" width="480" alt="The animation drawer with three shots, four moves (orbit, elevation, push and model spin) and its timeline with the playhead."><br>
+`animation-drawer.png` · `3a55426` · The animation drawer with three shots, four moves (orbit, elevation, push and model spin) and its timeline with the playhead.
 
-#### U3 · Herramienta de mover y operaciones de pieza
+#### U3 · Move tool and part operations
 
-<a id="c-move-tool"></a><img src="ui/move-tool.png" width="480" alt="La herramienta Mover con su gizmo sobre el tapón y la sección Pieza del inspector: posición, rotación, escala, pivote, apoyar y centrar."><br>
-`move-tool.png` · `a6897ee` · La herramienta Mover con su gizmo sobre el tapón y la sección Pieza del inspector: posición, rotación, escala, pivote, apoyar y centrar.
+<a id="c-move-tool"></a><img src="ui/move-tool.png" width="480" alt="The Move tool with its gizmo on the cap and the inspector's Part section: position, rotation, scale, pivot, rest and centre."><br>
+`move-tool.png` · `a6897ee` · The Move tool with its gizmo on the cap and the inspector's Part section: position, rotation, scale, pivot, rest and centre.
 
-#### U4 · Biblioteca propia
+#### U4 · Own library
 
-<a id="c-library-materials"></a><img src="ui/library-materials.png" width="480" alt="La biblioteca propia en el catálogo de materiales: la familia «Mío» con dos materiales guardados y los botones Exportar e Importar biblioteca."><br>
-`library-materials.png` · `92db14a` · La biblioteca propia en el catálogo de materiales: la familia «Mío» con dos materiales guardados y los botones Exportar e Importar biblioteca.
+<a id="c-library-materials"></a><img src="ui/library-materials.png" width="480" alt="The own library in the material catalogue: the “Mine” family with two saved materials and the Export and Import library buttons."><br>
+`library-materials.png` · `92db14a` · The own library in the material catalogue: the “Mine” family with two saved materials and the Export and Import library buttons.
 
-<a id="c-library-save"></a><img src="ui/library-save.png" width="480" alt="Guardar material como…: el cuadro para dar nombre al material del tapón y guardarlo en la biblioteca."><br>
-`library-save.png` · `92db14a` · Guardar material como…: el cuadro para dar nombre al material del tapón y guardarlo en la biblioteca.
+<a id="c-library-save"></a><img src="ui/library-save.png" width="480" alt="Save material as…: the dialog to name the cap's material and save it to the library."><br>
+`library-save.png` · `92db14a` · Save material as…: the dialog to name the cap's material and save it to the library.
 
-<a id="c-library-setups"></a><img src="ui/library-setups.png" width="480" alt="Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca."><br>
-`library-setups.png` · `92db14a` · Lo guardado en «Mío»: un tipo de producto («Fragancia, estudio A») y un montaje de luz («Editorial, borde más cálido»), con Exportar e Importar biblioteca. *(superada en v0.1.17: con L7, *Míos* es un valor del filtro Estilo del grupo Luces; ver `light-lights.png`)*
+<a id="c-library-setups"></a><img src="ui/library-setups.png" width="480" alt="What is saved in “Mine”: a product type (“Fragrance, studio A”) and a light setup (“Editorial, warmer edge”), with Export and Import library."><br>
+`library-setups.png` · `92db14a` · What is saved in “Mine”: a product type (“Fragrance, studio A”) and a light setup (“Editorial, warmer edge”), with Export and Import library. *(superseded in v0.1.17: with L7, *Mine* is a value of the Lights group's Style filter; see `light-lights.png`)*
 
-<a id="c-library-studios"></a><img src="ui/library-studios.png" width="480" alt="La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca."><br>
-`library-studios.png` · `92db14a` · La pestaña Estudios con el estudio guardado «Perfume hero» (fragancia, editorial), el aviso de guardado y Exportar e Importar biblioteca.
+<a id="c-library-studios"></a><img src="ui/library-studios.png" width="480" alt="The Studios tab with the saved studio “Perfume hero” (fragrance, editorial), the save notice and Export and Import library."><br>
+`library-studios.png` · `92db14a` · The Studios tab with the saved studio “Perfume hero” (fragrance, editorial), the save notice and Export and Import library.
 
-#### E4 · El motor en el navegador
+#### E4 · The engine in the browser
 
-<a id="c-viewport-fast"></a><img src="ui/viewport-fast.png" width="480" alt="El visor en modo Rápido: la vista previa rasterizada del frasco de ejemplo, a 3 ms por fotograma."><br>
-`viewport-fast.png` · `3a5bbc7` · El visor en modo Rápido: la vista previa rasterizada del frasco de ejemplo, a 3 ms por fotograma.
+<a id="c-viewport-fast"></a><img src="ui/viewport-fast.png" width="480" alt="The viewport in Fast mode: the rasterised preview of the example bottle, at 3 ms per frame."><br>
+`viewport-fast.png` · `3a5bbc7` · The viewport in Fast mode: the rasterised preview of the example bottle, at 3 ms per frame.
 
-<a id="c-viewport-full"></a><img src="ui/viewport-full.png" width="480" alt="El visor en modo Completo: el trazador del motor acumula muestras en el navegador (143 muestras, 3 workers con SIMD)."><br>
-`viewport-full.png` · `3a5bbc7` · El visor en modo Completo: el trazador del motor acumula muestras en el navegador (143 muestras, 3 workers con SIMD).
+<a id="c-viewport-full"></a><img src="ui/viewport-full.png" width="480" alt="The viewport in Full mode: the engine's tracer accumulates samples in the browser (143 samples, 3 workers with SIMD)."><br>
+`viewport-full.png` · `3a5bbc7` · The viewport in Full mode: the engine's tracer accumulates samples in the browser (143 samples, 3 workers with SIMD).
 
-<a id="c-render-output"></a><img src="ui/render-output.png" width="480" alt="La imagen de un render final de 1920 × 1080 hecho con el motor: el frasco de ejemplo sobre un fondo oscuro liso."><br>
-`render-output.png` · `3a5bbc7` · La imagen de un render final de 1920 × 1080 hecho con el motor: el frasco de ejemplo sobre un fondo oscuro liso.
+<a id="c-render-output"></a><img src="ui/render-output.png" width="480" alt="The image of a final 1920 × 1080 render made with the engine: the example bottle on a plain dark background."><br>
+`render-output.png` · `3a5bbc7` · The image of a final 1920 × 1080 render made with the engine: the example bottle on a plain dark background.
 
-#### U5 · Ventana de render y visor de resultados
+#### U5 · Render window and results viewer
 
-<a id="c-render-window-image"></a><img src="ui/render-window-image.png" width="480" alt="La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras."><br>
-`render-window-image.png` · `3ccbb2f` · La ventana de Render, pestaña Imagen: nombre con plantilla, carpeta, formato (PNG, JPEG, EXR, TIFF, RAW), tamaño en píxeles o en impresión y calidad por muestras. *(regrabada en v0.1.17)*
+<a id="c-render-window-image"></a><img src="ui/render-window-image.png" width="480" alt="The Render window, Image tab: name with template, folder, format (PNG, JPEG, EXR, TIFF, RAW), size in pixels or in print and quality by samples."><br>
+`render-window-image.png` · `3ccbb2f` · The Render window, Image tab: name with template, folder, format (PNG, JPEG, EXR, TIFF, RAW), size in pixels or in print and quality by samples. *(re-recorded in v0.1.17)*
 
-<a id="c-render-window-animation"></a><img src="ui/render-window-animation.png" width="480" alt="La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma."><br>
-`render-window-animation.png` · `3ccbb2f` · La ventana de Render, pestaña Animación: rango, fotogramas por segundo, salida en vídeo o en secuencia de fotogramas (el vídeo ya no es «próximamente») y tamaño de fotograma. *(regrabada en v0.1.17)*
+<a id="c-render-window-animation"></a><img src="ui/render-window-animation.png" width="480" alt="The Render window, Animation tab: range, frames per second, output as video or frame sequence (video is no longer “coming soon”) and frame size."><br>
+`render-window-animation.png` · `3ccbb2f` · The Render window, Animation tab: range, frames per second, output as video or frame sequence (video is no longer “coming soon”) and frame size. *(re-recorded in v0.1.17)*
 
-<a id="c-queue-drawer"></a><img src="ui/queue-drawer.png" width="480" alt="El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados."><br>
-`queue-drawer.png` · `3ccbb2f` · El cajón de la cola con tres trabajos (hecho, renderizando y en espera; uno es una pista de cámara) y el historial de resultados. *(regrabada en v0.1.17)*
+<a id="c-queue-drawer"></a><img src="ui/queue-drawer.png" width="480" alt="The queue drawer with three jobs (done, rendering and waiting; one is a camera track) and the results history."><br>
+`queue-drawer.png` · `3ccbb2f` · The queue drawer with three jobs (done, rendering and waiting; one is a camera track) and the results history. *(re-recorded in v0.1.17)*
 
-<a id="c-results-split"></a><img src="ui/results-split.png" width="480" alt="El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo."><br>
-`results-split.png` · `3ccbb2f` · El visor de resultados comparando dos renders con el divisor (cobre contra pintura metalizada), con zoom, datos y Guardar de nuevo. *(regrabada en v0.1.17)*
+<a id="c-results-split"></a><img src="ui/results-split.png" width="480" alt="The results viewer comparing two renders with the divider (copper against metallic paint), with zoom, data and Save again."><br>
+`results-split.png` · `3ccbb2f` · The results viewer comparing two renders with the divider (copper against metallic paint), with zoom, data and Save again. *(re-recorded in v0.1.17)*
 
-#### I2 · STEP e IGES
+#### I2 · STEP and IGES
 
-<a id="c-import-step"></a><img src="ui/import-step.png" width="480" alt="Un ensamblaje STEP importado en el tema claro: el grupo «Bottle» con dos piezas, el cuerpo azul y el tapón rojo, con los colores del CAD, y el tamaño de 75 mm detectado al importar."><br>
-`import-step.png` · `a6a53b7` · Un ensamblaje STEP importado en el tema claro: el grupo «Bottle» con dos piezas, el cuerpo azul y el tapón rojo, con los colores del CAD, y el tamaño de 75 mm detectado al importar.
+<a id="c-import-step"></a><img src="ui/import-step.png" width="480" alt="A STEP assembly imported in the light theme: the “Bottle” group with two parts, the blue body and the red cap, with the CAD's colours, and the 75 mm size detected on import."><br>
+`import-step.png` · `a6a53b7` · A STEP assembly imported in the light theme: the “Bottle” group with two parts, the blue body and the red cap, with the CAD's colours, and the 75 mm size detected on import.
 
-#### P2 · Escritorio: lanzador propio, portables e instalador
+#### P2 · Desktop: own launcher, portables and installer
 
-<a id="c-desktop-linux"></a><img src="ui/desktop-linux.png" width="480" alt="La aplicación de escritorio en Linux, en tema claro: el visor en modo Completo con el motor nativo (4 hilos, AVX2) y, en el pie, los controles de render (Borrador, Vista previa y Final, formato PNG, JPEG o EXR)."><br>
-`desktop-linux.png` · `6b4cf0f` · La aplicación de escritorio en Linux, en tema claro: el visor en modo Completo con el motor nativo (4 hilos, AVX2) y, en el pie, los controles de render (Borrador, Vista previa y Final, formato PNG, JPEG o EXR).
+<a id="c-desktop-linux"></a><img src="ui/desktop-linux.png" width="480" alt="The desktop application on Linux, in light theme: the viewport in Full mode with the native engine (4 threads, AVX2) and, at the foot, the render controls (Draft, Preview and Final, PNG, JPEG or EXR format)."><br>
+`desktop-linux.png` · `6b4cf0f` · The desktop application on Linux, in light theme: the viewport in Full mode with the native engine (4 threads, AVX2) and, at the foot, the render controls (Draft, Preview and Final, PNG, JPEG or EXR format).
 
-#### U6 · Ventana de Ajustes y gestor de modelos
+#### U6 · Settings window and model manager
 
-<a id="c-settings-general"></a><img src="ui/settings-general.png" width="480" alt="Ajustes ▸ General: idioma (inglés o español), tema, qué abre al arrancar, unidades de la interfaz y recuperación."><br>
-`settings-general.png` · `2078559` · Ajustes ▸ General: idioma (inglés o español), tema, qué abre al arrancar, unidades de la interfaz y recuperación.
+<a id="c-settings-general"></a><img src="ui/settings-general.png" width="480" alt="Settings ▸ General: language (English or Spanish), theme, what opens at start-up, interface units and recovery."><br>
+`settings-general.png` · `2078559` · Settings ▸ General: language (English or Spanish), theme, what opens at start-up, interface units and recovery.
 
-<a id="c-settings-accessibility"></a><img src="ui/settings-accessibility.png" width="480" alt="Ajustes ▸ Accesibilidad en tema claro: tamaño de interfaz al 150 %, tamaño de texto, alto contraste activado, reducir movimiento, foco siempre visible, retardo de los tooltips y anuncios de progreso para lectores de pantalla."><br>
-`settings-accessibility.png` · `2078559` · Ajustes ▸ Accesibilidad en tema claro: tamaño de interfaz al 150 %, tamaño de texto, alto contraste activado, reducir movimiento, foco siempre visible, retardo de los tooltips y anuncios de progreso para lectores de pantalla.
+<a id="c-settings-accessibility"></a><img src="ui/settings-accessibility.png" width="480" alt="Settings ▸ Accessibility in light theme: interface size at 150 %, text size, high contrast on, reduce motion, focus always visible, tooltip delay and progress announcements for screen readers."><br>
+`settings-accessibility.png` · `2078559` · Settings ▸ Accessibility in light theme: interface size at 150 %, text size, high contrast on, reduce motion, focus always visible, tooltip delay and progress announcements for screen readers.
 
-<a id="c-settings-engine"></a><img src="ui/settings-engine.png" width="480" alt="Ajustes ▸ Motor de renderizado: motor, hilos, SIMD, cuándo para el modo Completo y «Medir rendimiento» (1,08 M de muestras por segundo)."><br>
-`settings-engine.png` · `2078559` · Ajustes ▸ Motor de renderizado: motor, hilos, SIMD, cuándo para el modo Completo y «Medir rendimiento» (1,08 M de muestras por segundo).
+<a id="c-settings-engine"></a><img src="ui/settings-engine.png" width="480" alt="Settings ▸ Render engine: engine, threads, SIMD, when Full mode stops and “Measure performance” (1.08 M samples per second)."><br>
+`settings-engine.png` · `2078559` · Settings ▸ Render engine: engine, threads, SIMD, when Full mode stops and “Measure performance” (1.08 M samples per second).
 
-<a id="c-settings-ai-models"></a><img src="ui/settings-ai-models.png" width="480" alt="Ajustes ▸ Post-procesado IA: la lista de modelos del catálogo con licencia y tamaño, y una descarga en curso con Pausar y Cancelar."><br>
-`settings-ai-models.png` · `2078559` · Ajustes ▸ Post-procesado IA: la lista de modelos del catálogo con licencia y tamaño, y una descarga en curso con Pausar y Cancelar.
+<a id="c-settings-ai-models"></a><img src="ui/settings-ai-models.png" width="480" alt="Settings ▸ AI post-processing: the catalogue's model list with licence and size, and a download in progress with Pause and Cancel."><br>
+`settings-ai-models.png` · `2078559` · Settings ▸ AI post-processing: the catalogue's model list with licence and size, and a download in progress with Pause and Cancel.
 
-<a id="c-settings-desktop"></a><img src="ui/settings-desktop.png" width="480" alt="Ajustes ▸ Post-procesado IA en el escritorio: el cuadro «Elige los modelos de IA que descargar», con el recomendado para el equipo marcado."><br>
-`settings-desktop.png` · `a45825d` · Ajustes ▸ Post-procesado IA en el escritorio: el cuadro «Elige los modelos de IA que descargar», con el recomendado para el equipo marcado.
+<a id="c-settings-desktop"></a><img src="ui/settings-desktop.png" width="480" alt="Settings ▸ AI post-processing on the desktop: the “Choose the AI models to download” dialog, with the one recommended for the machine ticked."><br>
+`settings-desktop.png` · `a45825d` · Settings ▸ AI post-processing on the desktop: the “Choose the AI models to download” dialog, with the one recommended for the machine ticked.
 
 ---
 
-## Por función
+## By feature
 
-El índice para el `README.md`: las capturas por área, con la más nueva primero (el enlace salta a «Por versión»). En cada área va marcada **una propuesta para el README**; es solo una propuesta, la decisión es tuya.
+The index for the `README.md`: the screenshots by area, newest first (the link jumps to “By version”). In each area **a proposal for the README** is marked; it is only a proposal, the decision is the lead's.
 
-### Interfaz y edición de la escena
+### Interface and scene editing
 
-**Propuesta para el README:** [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) (v0.1.4): la interfaz entera con el visor en Completo: árbol de piezas, pedestal y fondo infinito, y el catálogo de montajes de luz.
+**Proposal for the README:** [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) (v0.1.4): the whole interface with the viewport in Full: parts tree, pedestal and infinity sweep, and the light-setup catalogue.
 
 - [`u15-light-fields.png`](#c-u15-light-fields) · v0.1.17 · U15
 - [`u15-part-triplets.png`](#c-u15-part-triplets) · v0.1.17 · U15
 - [`primitives-add-menu.png`](#c-primitives-add-menu) · v0.1.4 · U9
 - [`primitives-base-box.png`](#c-primitives-base-box) · v0.1.4 · U9
 - [`primitives-pedestal.png`](#c-primitives-pedestal) · v0.1.4 · U9
-- [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) · v0.1.4 · U9 **← propuesta**
+- [`primitives-pedestal-full.png`](#c-primitives-pedestal-full) · v0.1.4 · U9 **← proposal**
 - [`primitive-inspector.png`](#c-primitive-inspector) · v0.1.4 · U9
 - [`scale-tool.png`](#c-scale-tool) · v0.1.4 · U9
 - [`scale-panel.png`](#c-scale-panel) · v0.1.4 · U9
@@ -735,15 +735,15 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`viewport-fast.png`](#c-viewport-fast) · v0.1.0 · E4
 - [`move-tool.png`](#c-move-tool) · v0.1.0 · U3
 
-### Importación
+### Import
 
-**Propuesta para el README:** [`import-step.png`](#c-import-step) (v0.1.0): la única captura de importación: un ensamblaje STEP con sus colores de CAD.
+**Proposal for the README:** [`import-step.png`](#c-import-step) (v0.1.0): the only import screenshot: a STEP assembly with its CAD colours.
 
-- [`import-step.png`](#c-import-step) · v0.1.0 · I2 **← propuesta**
+- [`import-step.png`](#c-import-step) · v0.1.0 · I2 **← proposal**
 
-### Materiales y nodos
+### Materials and nodes
 
-**Propuesta para el README:** [`material-nodes.png`](#c-material-nodes) (v0.1.6): el editor de materiales por nodos con el mármol y su esfera de resultado.
+**Proposal for the README:** [`material-nodes.png`](#c-material-nodes) (v0.1.6): the node-based material editor with the marble and its result sphere.
 
 - [`m3b-graphs.png`](#c-m3b-graphs) · v0.1.12 · M3b
 - [`m3b-wood.png`](#c-m3b-wood) · v0.1.12 · M3b
@@ -752,7 +752,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`textures-inspector-light.png`](#c-textures-inspector-light) · v0.1.6 · M2a
 - [`box-projection.png`](#c-box-projection) · v0.1.6 · M2a
 - [`label-placed.png`](#c-label-placed) · v0.1.6 · M2a
-- [`material-nodes.png`](#c-material-nodes) · v0.1.6 · M3a **← propuesta**
+- [`material-nodes.png`](#c-material-nodes) · v0.1.6 · M3a **← proposal**
 - [`material-nodes-preview.png`](#c-material-nodes-preview) · v0.1.6 · M3a
 - [`m3e-fabric-fast.png`](#c-m3e-fabric-fast) · v0.1.20 · M3e
 - [`m3d-wood-fast.png`](#c-m3d-wood-fast) · v0.1.20 · M3d
@@ -764,9 +764,9 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`library-materials.png`](#c-library-materials) · v0.1.0 · U4
 - [`library-save.png`](#c-library-save) · v0.1.0 · U4
 
-### Luz y estudios
+### Light and studios
 
-**Propuesta para el README:** [`sets-catalogue.png`](#c-sets-catalogue) (v0.1.6): los sets de estudio con sus miniaturas y un set ya aplicado al frasco.
+**Proposal for the README:** [`sets-catalogue.png`](#c-sets-catalogue) (v0.1.6): the studio sets with their thumbnails and a set already applied to the bottle.
 
 - [`light-sets.png`](#c-light-sets) · v0.1.17 · L7
 - [`light-lights.png`](#c-light-lights) · v0.1.17 · L7
@@ -774,7 +774,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`light-thumb-sizes.png`](#c-light-thumb-sizes) · v0.1.17 · L7
 - [`ies-light.png`](#c-ies-light) · v0.1.14 · L5
 - [`ies-light-full.png`](#c-ies-light-full) · v0.1.14 · L5
-- [`sets-catalogue.png`](#c-sets-catalogue) · v0.1.6 · L6 **← propuesta**
+- [`sets-catalogue.png`](#c-sets-catalogue) · v0.1.6 · L6 **← proposal**
 - [`lights-add-menu.png`](#c-lights-add-menu) · v0.1.5 · L4
 - [`lights-glyphs-gizmo.png`](#c-lights-glyphs-gizmo) · v0.1.5 · L4
 - [`lights-look-through.png`](#c-lights-look-through) · v0.1.5 · L4
@@ -783,9 +783,9 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`library-setups.png`](#c-library-setups) · v0.1.0 · U4
 - [`library-studios.png`](#c-library-studios) · v0.1.0 · U4
 
-### Cámara y lente
+### Camera and lens
 
-**Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
+**Proposal for the README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): the chooser of twenty bokeh types with thumbnails rendered by the engine.
 
 - [`lens-glass-fast.png`](#c-lens-glass-fast) · v0.1.21 · S3b
 - [`lens-glass.png`](#c-lens-glass) · v0.1.20 · S3
@@ -803,27 +803,27 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`lens-editor.png`](#c-lens-editor) · v0.1.7 · O2
 - [`lens-section.png`](#c-lens-section) · v0.1.7 · O2
 - [`lens-filters.png`](#c-lens-filters) · v0.1.7 · O3a
-- [`camera-bokeh.png`](#c-camera-bokeh) · v0.1.6 · O1 **← propuesta**
+- [`camera-bokeh.png`](#c-camera-bokeh) · v0.1.6 · O1 **← proposal**
 - [`camera-optics.png`](#c-camera-optics) · v0.1.6 · O1
-- [`camera-menu.png`](#c-camera-menu) · v0.1.6 · sin fase
-- [`camera-edit.png`](#c-camera-edit) · v0.1.6 · sin fase
-- [`camera-section.png`](#c-camera-section) · v0.1.6 · sin fase
+- [`camera-menu.png`](#c-camera-menu) · v0.1.6 · no phase
+- [`camera-edit.png`](#c-camera-edit) · v0.1.6 · no phase
+- [`camera-section.png`](#c-camera-section) · v0.1.6 · no phase
 - [`camera-aspect.png`](#c-camera-aspect) · v0.1.6 · U13
 - [`c2-focal-switch.png`](#c-c2-focal-switch) · v0.1.19 · C2
 - [`f1-focus-inspector.png`](#c-f1-focus-inspector) · v0.1.18 · F1
 - [`f1-focus-marker.png`](#c-f1-focus-marker) · v0.1.18 · F1
 - [`f1-focus-sheet.png`](#c-f1-focus-sheet) · v0.1.18 · F1
 
-### Render y cola
+### Render and queue
 
-**Propuesta para el README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): la cola con la vista en vivo del trabajo que se está renderizando.
+**Proposal for the README:** [`queue-live-dark.png`](#c-queue-live-dark) (v0.1.9): the queue with the live view of the job being rendered.
 
 - [`batch-window.png`](#c-batch-window) · v0.1.17 · N2
 - [`batch-queue.png`](#c-batch-queue) · v0.1.17 · N2
 - [`batch-queue-adopt.png`](#c-batch-queue-adopt) · v0.1.19 · N2b
 - [`render-window-video.png`](#c-render-window-video) · v0.1.16 · N1
 - [`queue-live.png`](#c-queue-live) · v0.1.9 · U14
-- [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← propuesta**
+- [`queue-live-dark.png`](#c-queue-live-dark) · v0.1.9 · U14 **← proposal**
 - [`render-size-from-camera.png`](#c-render-size-from-camera) · v0.1.6 · U13
 - [`render-format-tiff.png`](#c-render-format-tiff) · v0.1.6 · U12
 - [`render-output.png`](#c-render-output) · v0.1.0 · E4
@@ -832,9 +832,9 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`queue-drawer.png`](#c-queue-drawer) · v0.1.0 · U5
 - [`results-split.png`](#c-results-split) · v0.1.0 · U5
 
-### Motor y calidad
+### Engine and quality
 
-**Propuesta para el README:** [`engine-e5b1-bottle-caustics.png`](#c-engine-e5b1-bottle-caustics) (v0.1.5): el frasco de vidrio sin y con cáusticas: lo que el motor hace y una vista previa no.
+**Proposal for the README:** [`engine-e5b1-bottle-caustics.png`](#c-engine-e5b1-bottle-caustics) (v0.1.5): the glass bottle without and with caustics: what the engine does and a preview does not.
 
 - [`section-fast.png`](#c-section-fast) · v0.1.14 · Q1
 - [`section-full.png`](#c-section-full) · v0.1.14 · Q1
@@ -845,7 +845,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`settings-aa.png`](#c-settings-aa) · v0.1.6 · E11
 - [`meter-filter.png`](#c-meter-filter) · v0.1.6 · E11
 - [`engine-e5b1-denoise-4spp.png`](#c-engine-e5b1-denoise-4spp) · v0.1.5 · E5b-1
-- [`engine-e5b1-bottle-caustics.png`](#c-engine-e5b1-bottle-caustics) · v0.1.5 · E5b-1 **← propuesta**
+- [`engine-e5b1-bottle-caustics.png`](#c-engine-e5b1-bottle-caustics) · v0.1.5 · E5b-1 **← proposal**
 - [`engine-e5b1-bottle-caustics-final.png`](#c-engine-e5b1-bottle-caustics-final) · v0.1.5 · E5b-1
 - [`engine-e5-glass-bottle.png`](#c-engine-e5-glass-bottle) · v0.1.2 · E5
 - [`engine-e5-materials.png`](#c-engine-e5-materials) · v0.1.2 · E5
@@ -856,46 +856,46 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`engine-e5-sky-dawn.png`](#c-engine-e5-sky-dawn) · v0.1.2 · E5
 - [`viewport-full.png`](#c-viewport-full) · v0.1.0 · E4
 
-### Animación
+### Animation
 
-**Propuesta para el README:** [`explode-types.png`](#c-explode-types) (v0.1.6): los despieces del frasco por tipo, cuatro fotogramas de cada uno.
+**Proposal for the README:** [`explode-types.png`](#c-explode-types) (v0.1.6): the bottle's exploded views by type, four frames of each.
 
 - [`animation-n1-wizard.png`](#c-animation-n1-wizard) · v0.1.16 · N1
 - [`animation-n1-cards.png`](#c-animation-n1-cards) · v0.1.16 · N1
 - [`animation-n1-curve.png`](#c-animation-n1-curve) · v0.1.16 · N1
 - [`animation-timeline.png`](#c-animation-timeline) · v0.1.6 · N6
-- [`explode-types.png`](#c-explode-types) · v0.1.6 · N6 **← propuesta**
+- [`explode-types.png`](#c-explode-types) · v0.1.6 · N6 **← proposal**
 - [`animation-drawer.png`](#c-animation-drawer) · v0.1.0 · U1
 
-### Física y ambiente
+### Physics and ambient
 
-**Propuesta para el README:** [`physics-drop.png`](#c-physics-drop) (v0.1.6): antes y después de «Dejar caer»: tres cuerpos en el aire y en reposo sobre el suelo.
+**Proposal for the README:** [`physics-drop.png`](#c-physics-drop) (v0.1.6): before and after “Drop”: three bodies in the air and at rest on the floor.
 
 - [`physics-bar.png`](#c-physics-bar) · v0.1.6 · S2
-- [`physics-drop.png`](#c-physics-drop) · v0.1.6 · S2 **← propuesta**
+- [`physics-drop.png`](#c-physics-drop) · v0.1.6 · S2 **← proposal**
 - [`physics-drop-strip.png`](#c-physics-drop-strip) · v0.1.6 · S2
 - [`ambient-drops.png`](#c-ambient-drops) · v0.1.20 · S3
 - [`ambient-mix.png`](#c-ambient-mix) · v0.1.20 · S3
 - [`physics-rain.png`](#c-physics-rain) · v0.1.21 · S3b
 - [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
-- [`physics-rain-air.png`](#c-physics-rain-air) · Sin publicar · S3d
+- [`physics-rain-air.png`](#c-physics-rain-air) · Unreleased · S3d
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 
-### Interiores
+### Interiors
 
-**Propuesta para el README:** [`scene-type-interior.png`](#c-scene-type-interior) (v0.1.15): el tipo de escena Interior con las siete recetas de luz de ventana, lámparas y hora azul.
+**Proposal for the README:** [`scene-type-interior.png`](#c-scene-type-interior) (v0.1.15): the Interior scene type with the seven light recipes for window, lamps and blue hour.
 
 - [`k3-verticals.png`](#c-k3-verticals) · v0.1.17 · K3
 - [`k3-plan.png`](#c-k3-plan) · v0.1.17 · K3
 - [`k3-plan-fast.png`](#c-k3-plan-fast) · v0.1.17 · K3
 - [`k3-panorama.png`](#c-k3-panorama) · v0.1.17 · K3
-- [`scene-type-interior.png`](#c-scene-type-interior) · v0.1.15 · K1 **← propuesta**
+- [`scene-type-interior.png`](#c-scene-type-interior) · v0.1.15 · K1 **← proposal**
 
-### IA
+### AI
 
-**Propuesta para el README:** [`ai-results-viewer.png`](#c-ai-results-viewer) (v0.1.2): el resultado con IA comparado con el render con el divisor y el informe de la guarda.
+**Proposal for the README:** [`ai-results-viewer.png`](#c-ai-results-viewer) (v0.1.2): the AI result compared with the render using the divider and the guard's report.
 
 - [`ai-section-prompt.png`](#c-ai-section-prompt) · v0.1.5 · X4b
 - [`ai-results-variants.png`](#c-ai-results-variants) · v0.1.5 · X4b
@@ -908,7 +908,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`settings-ai-desktop.png`](#c-settings-ai-desktop) · v0.1.2 · P3e
 - [`ai-section-dark.png`](#c-ai-section-dark) · v0.1.2 · X4
 - [`ai-section-light.png`](#c-ai-section-light) · v0.1.2 · X4
-- [`ai-results-viewer.png`](#c-ai-results-viewer) · v0.1.2 · X4 **← propuesta**
+- [`ai-results-viewer.png`](#c-ai-results-viewer) · v0.1.2 · X4 **← proposal**
 - [`ai-results-light.png`](#c-ai-results-light) · v0.1.2 · X4
 - [`ai-queue.png`](#c-ai-queue) · v0.1.2 · X4
 - [`settings-ai-models.png`](#c-settings-ai-models) · v0.1.0 · U6
@@ -916,13 +916,13 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 ### Doctor
 
-**Propuesta para el README:** [`doctor-engine.png`](#c-doctor-engine) (v0.1.15): el Doctor con los chequeos de escena y de motor, y su Arreglar todo.
+**Proposal for the README:** [`doctor-engine.png`](#c-doctor-engine) (v0.1.15): the Doctor with the scene and engine checks, and its Fix all.
 
-- [`doctor-engine.png`](#c-doctor-engine) · v0.1.15 · D1 **← propuesta**
+- [`doctor-engine.png`](#c-doctor-engine) · v0.1.15 · D1 **← proposal**
 
-### Ajustes, escritorio y plugins
+### Settings, desktop and plugins
 
-**Propuesta para el README:** [`desktop-linux.png`](#c-desktop-linux) (v0.1.0): la aplicación de escritorio con el motor nativo (4 hilos, AVX2) en el visor Completo.
+**Proposal for the README:** [`desktop-linux.png`](#c-desktop-linux) (v0.1.0): the desktop application with the native engine (4 threads, AVX2) in the Full viewport.
 
 - [`u15-settings-sliders.png`](#c-u15-settings-sliders) · v0.1.17 · U15
 - [`settings-plugins.png`](#c-settings-plugins) · v0.1.6 · P6
@@ -930,67 +930,67 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`update-install.png`](#c-update-install) · v0.1.6 · P5
 - [`settings-desktop-paths.png`](#c-settings-desktop-paths) · v0.1.2 · P3e
 - [`settings-storage-desktop.png`](#c-settings-storage-desktop) · v0.1.2 · P3e
-- [`settings-updates.png`](#c-settings-updates) · v0.1.1 · sin fase
+- [`settings-updates.png`](#c-settings-updates) · v0.1.1 · no phase
 - [`settings-general.png`](#c-settings-general) · v0.1.0 · U6
 - [`settings-engine.png`](#c-settings-engine) · v0.1.0 · U6
-- [`desktop-linux.png`](#c-desktop-linux) · v0.1.0 · P2 **← propuesta**
+- [`desktop-linux.png`](#c-desktop-linux) · v0.1.0 · P2 **← proposal**
 
-### Accesibilidad y recorrido
+### Accessibility and tour
 
-**Propuesta para el README:** [`tour-camera.png`](#c-tour-camera) (v0.1.5): un paso del recorrido guiado de 31 pasos sobre la interfaz real.
+**Proposal for the README:** [`tour-camera.png`](#c-tour-camera) (v0.1.5): a step of the 31-step guided tour over the real interface.
 
 - [`tour-tools.png`](#c-tour-tools) · v0.1.5 · U10
-- [`tour-camera.png`](#c-tour-camera) · v0.1.5 · U10 **← propuesta**
+- [`tour-camera.png`](#c-tour-camera) · v0.1.5 · U10 **← proposal**
 - [`tour-render-ai.png`](#c-tour-render-ai) · v0.1.5 · U10
 - [`tour-settings-es.png`](#c-tour-settings-es) · v0.1.5 · U10
 - [`settings-accessibility.png`](#c-settings-accessibility) · v0.1.0 · U6
 
 ---
 
-## Sin captura
+## No screenshot
 
-Funciones del `CHANGELOG.md` que no tienen captura en `docs/ui/`, o la tienen solo a medias, para hacerlas más adelante. Casi todo lo que falta es lo que cambia el motor y no la interfaz (no hay botón que enseñar: hace falta una imagen renderizada, con `rt` o con el visor en Completo) o lo que solo existe en Windows. Varias hojas de contacto ya existen pero escriben en `out/`, que no se versiona (`tools/ambient-sheet.mjs`, `tools/lens-sheet.mjs`, `tools/lens-filters-sheet.mjs`).
+Features from `CHANGELOG.md` that have no screenshot in `docs/ui/`, or only a partial one, to be made later. Almost everything that is missing is what changes the engine and not the interface (there is no button to show: a rendered image is needed, with `rt` or with the viewport in Full) or what only exists on Windows. Several contact sheets already exist but write to `out/`, which is not versioned (`tools/ambient-sheet.mjs`, `tools/lens-sheet.mjs`, `tools/lens-filters-sheet.mjs`).
 
-| Versión | Fase | Qué falta |
+| Version | Phase | What is missing |
 | --- | --- | --- |
-| v0.1.16 | N1 | El **fundido a negro o a blanco** en el visor y en un fotograma renderizado, una pieza que **se funde** (translúcida en *Rápido*, con su cobertura en *Completo*), el **pivote** de un giro y el **arco solar**: `tools/video-check.mjs` comprueba el fundido del visor pero no lo captura. Tampoco hay un fotograma del vídeo, ni MP4, que el Chromium de las pruebas no codifica. |
-| v0.1.15 | K1 | Las siete filas nuevas del **Doctor de interiores** con el tipo Interior (escala y unidades, abertura para el sol y el cielo, vidrio de ventana, óptica demasiado angular, altura de ojo, recorte cercano, normales de las paredes). `tools/scene-type-check.mjs` las comprueba pero solo deja `scene-type-interior.png`, que enseña el control y las recetas. |
-| v0.1.14 | Q1 | El movimiento **Sección** de la línea de tiempo (desplaza el plano a lo largo de su normal) y las dos acciones de la paleta. Las dos capturas son del inspector y del visor. |
-| v0.1.14 | L5 | **Luces IES**: hay el inspector con el gráfico polar y el visor en Completo, pero falta un render que enseñe lo que hace el perfil frente a un foco corriente del mismo nivel (en *Rápido* el perfil se aproxima con un foco, en *Completo* y en el render se usa el archivo entero). |
-| v0.1.13 | E10 | **Muestreo adaptativo**: hay el campo «Ruido» de la ventana de render y el medidor («Adaptativo · mín–máx muestras»), pero ninguna imagen del reparto de muestras por bloques de 8 × 8 ni de la comparación, a igual tiempo, con el muestreo uniforme. |
-| v0.1.11 | S4b | **Polvo que brilla a contraluz**, **lluvia sin puntitos** y partículas más baratas. Las capturas de ambiente son de S4a (el selector y la nieve en *Rápido*); la hoja de presets en dos luces (`tools/ambient-sheet.mjs`) escribe en `out/`. |
-| v0.1.10 | M2b | **Texturas de imagen, mapeado y etiquetas en *Completo* y en los renders**: `textures-fast.png` es el visor *Rápido*; falta la misma escena en *Completo* (con los *mipmaps*, el relieve del mapa de normales y la etiqueta con su papel). |
-| v0.1.7 | E6 | **Madera** con anillos, poros y nudos (salvo las de `m3b-wood.png` y `m3d-wood-fast.png`), **tela** hilo a hilo (salvo las tres de `m3e-fabric-fast.png`) y **bisel de aristas** en *Completo*. La **tela con el nodo *Tela*** (M3c) tampoco tiene captura. |
-| v0.1.7 | E9 | Materiales rugosos que ya no pierden luz (E9a), **medios dispersores** (leche, cera, jabón, zumos; E9b) y **dispersión cromática** del vidrio con el número de Abbe (E9c). Tampoco están los campos nuevos del inspector del vidrio (*Dispersión interna*, *Número de Abbe*) ni los nueve materiales nuevos. |
-| v0.1.7 | O2 | **Lente trazada**: hay el inspector y el corte de la lente, pero no lo que la lente hace a la imagen (bokeh, distorsión, viñeteo, remolino) renderizado por el motor con cada carácter; esa hoja (`tools/lens-sheet.mjs`) escribe en `out/`. |
-| v0.1.7 | O3a | **Filtros de efecto en el motor** (difusión, brillo, red, estrella, rayas): `lens-filters.png` es el inspector; falta el efecto sobre una imagen (`tools/lens-filters-sheet.mjs` escribe en `out/`). |
-| v0.1.7 | L6, E9 | Las **88 miniaturas de montaje** rehechas con el motor de esta versión: se ven al fondo de muchas capturas, pero `sets-catalogue.png` enseña solo el estilo *Sets* y ninguna el catálogo entero. |
-| v0.1.7 | B1 | La extensión **`.repack`** y los **intentos de la IA contados** en la fila de la cola («IA · mosaico 2 de 4 · intento 2 de 4»). |
-| v0.1.6 | E12 | **Elección de luz por punto** (cambio de motor sin interfaz): una escena con varias luces, antes y después. |
-| v0.1.6 | L6 | El fondo **Degradado** (su selector asoma en `section-fast.png`, pero no su efecto) y los sets aplicados uno por uno: solo hay el catálogo y un set (`sets-catalogue.png`). |
-| v0.1.6 | E11 | El efecto de los **filtros de píxel y las muestras extra en los bordes** sobre una imagen (de *Ninguno* a *Fino + bordes ×4*); hay el bloque de Ajustes y el medidor. |
-| v0.1.6 | S2 | El clip **Simulación** que cada cuerpo que cae deja en la línea de tiempo. |
-| v0.1.6 | M2a | La sección **Texturas** de la hoja de importación. |
-| v0.1.5 | U10 | La página del instalador de Windows con el motor de ejecución de la IA: no se puede ejecutar el instalador en este entorno. |
-| v0.1.4 | X3c | La **primera imagen real de la IA** en una tarjeta gráfica: no hay GPU, y las capturas `ai-*` usan el servicio sintético de pruebas. |
-| v0.1.4 | E5c | El **cielo físico propio** y el selector *Modelo ▸ Físico · Clásico*: los `engine-e5-sky-*` son del cielo anterior (E5, v0.1.2) y no se han rehecho. |
-| v0.1.2 | P3c | La **ventana propia de Windows** (WebView2) con su barra de título, su icono y la pregunta de guardar al cerrar: nunca se ha capturado en un Windows real. |
-| v0.1.2 | E5 | El inspector de **Entorno** (*Cielo*, *Plano*, *Archivo HDRI*, imagen de fondo con *Cargar HDRI…* y *Cargar imagen…*): los `engine-e5-*` son renders del motor, no la interfaz (la parte baja de Entorno, el fondo, asoma en `section-fast.png` y `section-full.png`). |
-| v0.1.2 | P3a | *Completo · compartido con el render* en el medidor y el ajuste *Mientras se renderiza*. |
-| v0.1.0 | I3 | La **hoja de importación** (unidades y eje detectados) y el resto de importadores: OBJ, STL, glTF y GLB, FBX, 3DM, 3MF, PLY, DAE y USD. Solo hay STEP. |
-| v0.1.0 | E3 | Las **curvas de tono** (lineal, ACES, fílmica, AgX y estándar) comparadas sobre la misma imagen. |
-| v0.1.0 | U3 | Duplicar, enlazar, agrupar, patrones lineales y circulares, y el menú contextual de pieza. |
-| v0.1.0 | U2 | Guardar y abrir proyecto y la pregunta por los cambios sin guardar. |
-| v0.1.0 | P2 | El **instalador de Windows** y su paso de modelos de IA: no se puede ejecutar aquí. |
+| v0.1.16 | N1 | The **fade to black or white** in the viewport and in a rendered frame, a part that **fades** (translucent in *Fast*, with its coverage in *Full*), the **pivot** of a spin and the **sun arc**: `tools/video-check.mjs` checks the viewport's fade but does not capture it. There is no frame of the video either, nor MP4, which the tests' Chromium does not encode. |
+| v0.1.15 | K1 | The seven new rows of the **Interior Doctor** with the Interior type (scale and units, opening for the sun and sky, window glass, lens too wide, eye height, near clipping, wall normals). `tools/scene-type-check.mjs` checks them but only leaves `scene-type-interior.png`, which shows the control and the recipes. |
+| v0.1.14 | Q1 | The timeline's **Section** move (shifts the plane along its normal) and the two palette actions. The two screenshots are of the inspector and the viewport. |
+| v0.1.14 | L5 | **IES lights**: there is the inspector with the polar plot and the viewport in Full, but a render is missing that shows what the profile does compared with an ordinary spot of the same level (in *Fast* the profile is approximated with a spot, in *Full* and in the render the whole file is used). |
+| v0.1.13 | E10 | **Adaptive sampling**: there is the render window's “Noise” field and the meter (“Adaptive · min–max samples”), but no image of the distribution of samples in 8 × 8 blocks or of the comparison, at equal time, with uniform sampling. |
+| v0.1.11 | S4b | **Dust that shines against the light**, **rain without dots** and cheaper particles. The ambient screenshots are from S4a (the chooser and the snow in *Fast*); the sheet of presets under two lights (`tools/ambient-sheet.mjs`) writes to `out/`. |
+| v0.1.10 | M2b | **Image textures, mapping and labels in *Full* and in renders**: `textures-fast.png` is the *Fast* viewport; the same scene in *Full* is missing (with the mipmaps, the normal map's relief and the label with its paper). |
+| v0.1.7 | E6 | **Wood** with rings, pores and knots (except those of `m3b-wood.png` and `m3d-wood-fast.png`), thread-by-thread **fabric** (except the three of `m3e-fabric-fast.png`) and **edge bevel** in *Full*. The **fabric with the *Fabric* node** (M3c) has no screenshot either. |
+| v0.1.7 | E9 | Rough materials that no longer lose light (E9a), **scattering media** (milk, wax, soap, juices; E9b) and **chromatic dispersion** of glass with the Abbe number (E9c). The glass inspector's new fields (*Internal scattering*, *Abbe number*) and the nine new materials are not there either. |
+| v0.1.7 | O2 | **Traced lens**: there is the inspector and the lens cross-section, but not what the lens does to the image (bokeh, distortion, vignetting, swirl) rendered by the engine with each character; that sheet (`tools/lens-sheet.mjs`) writes to `out/`. |
+| v0.1.7 | O3a | **Effect filters in the engine** (diffusion, glow, net, star, streaks): `lens-filters.png` is the inspector; the effect on an image is missing (`tools/lens-filters-sheet.mjs` writes to `out/`). |
+| v0.1.7 | L6, E9 | The **88 setup thumbnails** redone with this version's engine: they are seen in the background of many screenshots, but `sets-catalogue.png` shows only the *Sets* style and none shows the whole catalogue. |
+| v0.1.7 | B1 | The **`.repack`** extension and the **AI attempts counted** in the queue row (“AI · tile 2 of 4 · attempt 2 of 4”). |
+| v0.1.6 | E12 | **Per-point light choice** (an engine change with no interface): a scene with several lights, before and after. |
+| v0.1.6 | L6 | The **Gradient** background (its chooser peeks out in `section-fast.png`, but not its effect) and the sets applied one by one: there is only the catalogue and one set (`sets-catalogue.png`). |
+| v0.1.6 | E11 | The effect of **pixel filters and extra samples on edges** on an image (from *None* to *Fine + edges ×4*); there is the Settings block and the meter. |
+| v0.1.6 | S2 | The **Simulation** clip that each falling body leaves on the timeline. |
+| v0.1.6 | M2a | The import sheet's **Textures** section. |
+| v0.1.5 | U10 | The Windows installer page with the AI runtime: the installer cannot be run in this environment. |
+| v0.1.4 | X3c | The **first real AI image** on a graphics card: there is no GPU, and the `ai-*` screenshots use the synthetic test service. |
+| v0.1.4 | E5c | The **own physical sky** and the *Model ▸ Physical · Classic* chooser: the `engine-e5-sky-*` ones are of the previous sky (E5, v0.1.2) and have not been redone. |
+| v0.1.2 | P3c | The **Windows own window** (WebView2) with its title bar, its icon and the save question on closing: it has never been captured on a real Windows machine. |
+| v0.1.2 | E5 | The **Environment** inspector (*Sky*, *Plane*, *HDRI file*, background image with *Load HDRI…* and *Load image…*): the `engine-e5-*` ones are engine renders, not the interface (the lower part of Environment, the background, peeks out in `section-fast.png` and `section-full.png`). |
+| v0.1.2 | P3a | *Full · sharing with Render* in the meter and the *While a render runs* setting. |
+| v0.1.0 | I3 | The **import sheet** (detected units and axis) and the rest of the importers: OBJ, STL, glTF and GLB, FBX, 3DM, 3MF, PLY, DAE and USD. Only STEP is there. |
+| v0.1.0 | E3 | The **tone curves** (linear, ACES, filmic, AgX and standard) compared on the same image. |
+| v0.1.0 | U3 | Duplicate, link, group, linear and circular patterns, and the part context menu. |
+| v0.1.0 | U2 | Saving and opening a project and the question about unsaved changes. |
+| v0.1.0 | P2 | The **Windows installer** and its AI models step: it cannot be run here. |
 
 ---
 
-## Huérfanas
+## Orphans
 
-Capturas que no son una función por sí mismas: un diagnóstico de píxeles o una referencia de otro programa. No están en «Por versión» ni en «Por función». Las hojas de contacto y las tiras que sí enseñan una función (`explode-types.png`, `physics-drop-strip.png`, `m3b-graphs.png` y los pares de `engine-e5b1-*`) se quedan en su versión.
+Screenshots that are not a feature in themselves: a pixel diagnostic or a reference from another program. They are not in “By version” or in “By feature”. The contact sheets and strips that do show a feature (`explode-types.png`, `physics-drop-strip.png`, `m3b-graphs.png` and the `engine-e5b1-*` pairs) stay in their version.
 
-<a id="c-textures-reference"></a><img src="ui/textures-reference.png" width="480" alt="Render de referencia del mismo cubo de pruebas hecho con el GLTFLoader y el MeshStandardMaterial de three.js, para comparar con textures-fast.png (M2a, v0.1.6). No es una pantalla de Repackshot."><br>
-`textures-reference.png` · `14cf9bc` · v0.1.6 · Render de referencia del mismo cubo de pruebas hecho con el GLTFLoader y el MeshStandardMaterial de three.js, para comparar con `textures-fast.png` (M2a, v0.1.6). No es una pantalla de Repackshot.
+<a id="c-textures-reference"></a><img src="ui/textures-reference.png" width="480" alt="Reference render of the same test cube made with three.js's GLTFLoader and MeshStandardMaterial, to compare with textures-fast.png (M2a, v0.1.6). It is not a Repackshot screen."><br>
+`textures-reference.png` · `14cf9bc` · v0.1.6 · Reference render of the same test cube made with three.js's GLTFLoader and MeshStandardMaterial, to compare with `textures-fast.png` (M2a, v0.1.6). It is not a Repackshot screen.
 
-<a id="c-engine-e5b1-bottle-glints-4x"></a><img src="ui/engine-e5b1-bottle-glints-4x.png" width="480" alt="Tres recortes apilados de la base del frasco a 4× (antes, después y después con denoise) para ver los destellos sueltos de las cáusticas (E5b-1, v0.1.5). Es un diagnóstico de píxeles, no una imagen para enseñar."><br>
-`engine-e5b1-bottle-glints-4x.png` · `a75eec7` · v0.1.5 · Tres recortes apilados de la base del frasco a 4× (antes, después y después con denoise) para ver los destellos sueltos de las cáusticas (E5b-1, v0.1.5). Es un diagnóstico de píxeles, no una imagen para enseñar.
+<a id="c-engine-e5b1-bottle-glints-4x"></a><img src="ui/engine-e5b1-bottle-glints-4x.png" width="480" alt="Three stacked crops of the bottle's base at 4× (before, after and after with denoise) to see the stray glints of the caustics (E5b-1, v0.1.5). It is a pixel diagnostic, not an image to show."><br>
+`engine-e5b1-bottle-glints-4x.png` · `a75eec7` · v0.1.5 · Three stacked crops of the bottle's base at 4× (before, after and after with denoise) to see the stray glints of the caustics (E5b-1, v0.1.5). It is a pixel diagnostic, not an image to show.

@@ -1,4 +1,4 @@
-// The cross-section of a traced lens (phase O2, STUDIO-TOOLS §1 "corte de la lente"): an SVG drawn from the lens as
+// The cross-section of a traced lens (phase O2, STUDIO-TOOLS §1 "cutaway of the lens"): an SVG drawn from the lens as
 // the engine prepared it (rt-core `LensSection`: the prescription scaled to the camera's focal length, focused, with
 // the semi-apertures it derived), so the drawing is what is traced. Pure and string-only (no DOM): the inspector puts
 // it in the Lens section (ui/panels/insp-traced.ts) and tools/lens-sheet.mjs in the sheet. The interface chrome is achromatic (rule 4): glass is

@@ -25,10 +25,10 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
   named groups, every CAD face as a run of triangles (`SceneNode.faceRanges`) with its own vertices and normals,
   sharp edges where two faces meet, colours as SIMPLE instances. The library is never bundled
   (`tests/chunks.test.ts`).
-- `library.ts`: la biblioteca propia (U4) como archivo y guardada. `{ format: 'repackshot-library', schema: 1, items }`
-  es a la vez el JSON exportado y lo que se guarda bajo una sola clave (`repackshot.library`: `localStorage` en la web,
-  `library/library.json` en escritorio). Todo lo que
-  entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.
+- `library.ts`: the user's own library (U4) as a file and as stored data. `{ format: 'repackshot-library', schema: 1, items }`
+  is both the exported JSON and what is stored under a single key (`repackshot.library`: `localStorage` on the web,
+  `library/library.json` on the desktop). Everything that
+  comes in is validated item by item and rebuilt with the known fields; an invalid one is skipped, with the reason.
 - `phys.ts` (S2): the simulator's scene file (PHY1, `engine/crates/rt-phys/src/scene.rs`) for what `core/physics.ts`
   says to simulate: the meshes of the dynamic pieces and of the static parts, each body's pieces with their world
   matrices and its density, friction and bounciness, then the static parts and the floor.
@@ -40,38 +40,38 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
   `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have. An IES light (L5) is
   `LGHT` kind 5 (80 bytes: the position of its profile) with its file once, as text, in an `IESP` section after the lights,
   when `SceneView.ies` says the engine renders them; for any other engine it is the spot light that stands for it.
-- **La costura de plataforma** (P3e): `platform.ts` define `Platform`, todo servicio que guarda algo o pregunta al
-  equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de resultados, almacén de modelos, equipo,
-  espacio usado, miniaturas), elegida una vez al arrancar con `choosePlatform()`. `platform-web.ts`: el navegador
-  (localStorage, IndexedDB, OPFS, WebGPU). `platform-desktop.ts`: en la ventana del lanzador la página es solo la
-  interfaz y todo es del lanzador (`settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` en la carpeta de
-  datos, por `native-store.ts`), con una migración, una sola vez por carpeta de datos, de lo que una versión anterior
-  dejó en el almacenamiento del navegador. `prefs.ts`: el documento de ajustes sobre un `KeyValue` cualquiera (migra
-  las claves sueltas de antes, `repackshot.lang`, `.theme`, `.ui.*`; uno dañado se aparta en `.corrupt`).
+- **The platform seam** (P3e): `platform.ts` defines `Platform`, every service that stores something or asks the
+  machine a question (settings, small remembered things, library, results history, model store, hardware,
+  space used, thumbnails), chosen once at startup with `choosePlatform()`. `platform-web.ts`: the browser
+  (localStorage, IndexedDB, OPFS, WebGPU). `platform-desktop.ts`: in the launcher's window the page is only the
+  interface and everything belongs to the launcher (`settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` in the
+  data folder, through `native-store.ts`), with a one-time migration, once per data folder, of what an earlier version
+  left in the browser's storage. `prefs.ts`: the settings document over any `KeyValue` (it migrates the loose keys of
+  before, `repackshot.lang`, `.theme`, `.ui.*`; a damaged one is set aside as `.corrupt`).
 - `native.ts`: the desktop launcher seen from the page (`engine/crates/rt-app`): the token taken from the window
   URL's fragment into `sessionStorage`, `connectNative()` (null in the web version), and `NativeClient` for its API
   (info, hardware and recommendation, the model store by blob, the installer's pending choice, open folder, the
   heartbeat that keeps the launcher running). The contract is `engine/crates/rt-app/README.md`.
-- `project.ts`: el archivo de proyecto `.repack` (U2; hasta v0.1.6 `.repack.json`, que se sigue abriendo): `{ format, schema, state, meshes }`. El estado va tal cual
-  (con `-0` conservado y `meta.dirty` a falso); cada malla que usa una pieza va una vez en `meshes` como GLB en base64
-  (`glb.ts`, bit a bit), con sus aristas vivas (`sharpEdges`) y el mapa de triángulos (`triangleSource`) al lado.
-  `loadProject` lee, migra (`STEPS`), comprueba la estructura y registra las mallas con identificadores que nadie más
-  usa (`prjN:`); un archivo dañado, de una versión más nueva o que no es un proyecto lanza `ProjectError` sin tocar el
-  registro. `readProjectFile` es lo mismo para la interfaz, sin lanzar.
-- `glb.ts`, `base64.ts`: el GLB de una malla (escritor y lector del subconjunto que escribimos, no un importador glTF)
-  y base64 por trozos para búferes de decenas de megas.
-- `project-file.ts`: dónde se escribe y de dónde se lee el proyecto: File System Access (Guardar escribe otra vez en el
-  mismo archivo; Guardar como… pregunta) o descarga y `<input type="file">`; si un diálogo falla, se descarga. El
-  último archivo abierto o guardado se recuerda (su *handle*, en el almacén `handles` de `results.ts`) para *Al
-  arrancar ▸ Último proyecto* (U6): `last()` y `reopen()`, que pide permiso de lectura desde un clic.
-- Modelos de IA (U6, AI-POST.md §5): `model-store.ts` es la interfaz del almacén por contenido
-  (`models/blobs/<sha256>`, `installed.json`, `imported/<clave>.json`) con tres implementaciones: OPFS a través de
-  `model-worker.ts` (que ejecuta `blob-store.ts` sobre `opfs-fs.ts`, con el SHA-256 incremental guardado en
-  `.part.json` tras cada trozo), el lanzador de escritorio por su API (`nativeModelStore` sobre `native.ts`) y
-  memoria. `downloads.ts` es el gestor: peticiones `Range` en trozos de 4 MiB, reanudación desde los bytes
-  guardados, verificación, pausa, reanudar, cancelar, dos ficheros a la vez, ficheros compartidos una sola vez,
-  importación (sin *pickle*, con manifiesto) y la elección del instalador. `hardware.ts`: lo que el navegador dice
-  del equipo (WebGPU, núcleos, memoria redondeada) o lo que detectó el lanzador.
+- `project.ts`: the `.repack` project file (U2; up to v0.1.6 `.repack.json`, which still opens): `{ format, schema, state, meshes }`. The state goes as it is
+  (with `-0` preserved and `meta.dirty` set to false); each mesh a part uses goes once in `meshes` as a base64 GLB
+  (`glb.ts`, bit for bit), with its sharp edges (`sharpEdges`) and the triangle map (`triangleSource`) beside it.
+  `loadProject` reads, migrates (`STEPS`), checks the structure and registers the meshes under ids nobody else
+  uses (`prjN:`); a damaged file, one from a newer version or one that is not a project throws `ProjectError` without touching the
+  registry. `readProjectFile` is the same for the interface, without throwing.
+- `glb.ts`, `base64.ts`: a mesh's GLB (writer and reader of the subset written here, not a glTF importer)
+  and chunked base64 for buffers of tens of megabytes.
+- `project-file.ts`: where the project is written to and read from: File System Access (*Save* writes to the
+  same file again; *Save as…* asks) or a download and `<input type="file">`; if a dialog fails, it downloads. The
+  last file opened or saved is remembered (its handle, in the `handles` store of `results.ts`) for *On
+  start ▸ Last project* (U6): `last()` and `reopen()`, which asks for read permission from a click.
+- AI models (U6, AI-POST.md §5): `model-store.ts` is the interface of the content-addressed store
+  (`models/blobs/<sha256>`, `installed.json`, `imported/<key>.json`) with three implementations: OPFS through
+  `model-worker.ts` (which runs `blob-store.ts` over `opfs-fs.ts`, with the incremental SHA-256 saved in
+  `.part.json` after each chunk), the desktop launcher through its API (`nativeModelStore` over `native.ts`) and
+  memory. `downloads.ts` is the manager: `Range` requests in 4 MiB chunks, resuming from the bytes
+  already saved, verification, pause, resume, cancel, two files at a time, shared files fetched once,
+  import (no pickle, with a manifest) and the installer choice. `hardware.ts`: what the browser says
+  about the machine (WebGPU, cores, rounded memory) or what the launcher detected.
 - `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
   browser's `CompressionStream`, stored blocks without it), JPEG through a canvas, 16-bit PNG from the float sums
   and a minimal uncompressed scan-line EXR (32-bit float, linear). The DPI of the render window goes into the file
