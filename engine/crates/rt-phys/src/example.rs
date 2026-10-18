@@ -316,6 +316,7 @@ pub fn parts_spec() -> crate::wet_parts::PartsSpec {
         receding_deg: rec,
         soak_mm_s: 0.0,
         flags,
+        body: crate::wet_parts::NO_BODY,
     };
     PartsSpec {
         seed: 5,
@@ -382,6 +383,7 @@ pub fn parts_spec() -> crate::wet_parts::PartsSpec {
                 size_var: 0.5,
             },
         ],
+        extras: crate::wet_parts::PartsExtras::default(),
     }
 }
 
@@ -512,6 +514,7 @@ pub fn organic_spec() -> crate::wet_parts::PartsSpec {
         receding_deg: GLASS_RECEDING_DEG,
         soak_mm_s: 0.0,
         flags: 0,
+        body: crate::wet_parts::NO_BODY,
     };
     let mut ceiling = plate_mesh(60.0, 60.0, 3, 3);
     ceiling
@@ -542,6 +545,7 @@ pub fn organic_spec() -> crate::wet_parts::PartsSpec {
             size_mm: 1.4,
             size_var: 0.4,
         }],
+        extras: crate::wet_parts::PartsExtras::default(),
     }
 }
 

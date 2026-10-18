@@ -58,8 +58,28 @@ use crate::scene::{Material, Scene, MATERIAL_EMISSIVE, MATERIAL_GLASS};
 
 /// The bytes of a `WETP` section's header.
 pub const WETP_HEADER: usize = 24;
-/// Most steps of a triangle's grid per side.
+/// Most steps of a triangle's grid per side in a `WETP` section (one byte).
 pub const MAX_RESOLUTION: u32 = 255;
+/// S3e: most steps of a triangle's grid per side in a `WTP2` section (two bytes: the set's fine
+/// samples, where a shadow edge crosses a large triangle).
+pub const MAX_FINE_RESOLUTION: u32 = 4095;
+/// S3e: the tag of the motes tail of a `WETP` or `WTP2` section.
+pub const MOTE_TAG: [u8; 4] = *b"MOT1";
+/// S3e: the dust share of a sample above which grains show over the layer (◆).
+pub const MOTE_THRESHOLD: f32 = 0.3;
+/// S3e: the share of the grains a sample's dust stands for that are drawn one by one (◆): the
+/// layer is the rest.
+pub const MOTE_SHARE: f32 = 0.02;
+/// S3e: most motes of all the instances together (◆: each is a grain the reader meshes).
+pub const MAX_MOTES: usize = 20_000;
+/// S3e: triangles of a mote (an octahedron).
+pub const MOTE_TRIANGLES: u32 = 8;
+/// S3e: the bytes of a `WETG` section's header.
+pub const WETG_HEADER: usize = 32;
+/// S3e: most cells of the studio floor.
+pub const MAX_FLOOR_CELLS: u32 = 4_000_000;
+/// S3e: the reflectance of water at normal incidence, `((n − 1)/(n + 1))²` for `n` = 1.333.
+pub const WATER_F0: f32 = 0.020_4;
 /// Most drops of all the instances together.
 pub const MAX_WET_DROPS: usize = 4096;
 /// The depth of snow one step of its byte stands for, mm (255 steps: 5.1 mm).
@@ -463,8 +483,8 @@ impl Layers {
 pub struct PartWeather {
     /// Its index among the instances.
     pub instance: u32,
-    /// The resolution of each triangle.
-    pub resolution: Vec<u8>,
+    /// The resolution of each triangle (S3e: up to [`MAX_FINE_RESOLUTION`] in a `WTP2` section).
+    pub resolution: Vec<u16>,
     /// Wet, dust and snow of each sample.
     pub values: Vec<[u8; 3]>,
     /// The contact angle its drops are capped at, degrees.
@@ -475,8 +495,24 @@ pub struct PartWeather {
     pub drops: Vec<WetDrop>,
     /// S3f: the shape of each of its drops (the shape tail), or none: round caps.
     pub shapes: Vec<DropShape>,
+    /// S3e: the dust's grains drawn over its layer (the motes tail), or none.
+    pub motes: Option<MoteSpec>,
     /// The first sample of each triangle.
     first: Vec<u32>,
+}
+
+/// S3e: the grains of the dust on an instance, the payload of the motes tail ([`MOTE_TAG`], then
+/// `f32 size_mm size_var; u32 seed`): grains of the dust effect's size, where a sample's share under
+/// dust passes [`MOTE_THRESHOLD`], [`MOTE_SHARE`] of the grains its share stands for, each placed by
+/// a hash of the seed, the triangle, the sample and its number ([`motes_on`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MoteSpec {
+    /// Mean diameter of a grain, mm (0..50).
+    pub size_mm: f32,
+    /// Its relative variation, 0..1.
+    pub size_var: f32,
+    /// The seed of their places.
+    pub seed: u32,
 }
 
 /// Bytes `n` rounded up to a multiple of 4.
@@ -490,7 +526,7 @@ impl PartWeather {
     /// out of its range.
     pub fn new(
         instance: u32,
-        resolution: Vec<u8>,
+        resolution: Vec<u16>,
         values: Vec<[u8; 3]>,
         cap_angle_deg: f32,
         porosity: f32,
@@ -499,8 +535,8 @@ impl PartWeather {
         let mut first = Vec::with_capacity(resolution.len());
         let mut total = 0u64;
         for &r in &resolution {
-            if r == 0 || u32::from(r) > MAX_RESOLUTION {
-                return Err("a triangle's resolution is out of 1..255");
+            if r == 0 || u32::from(r) > MAX_FINE_RESOLUTION {
+                return Err("a triangle's resolution is out of 1..4095");
             }
             first.push(total as u32);
             total += u64::from(samples_of(u32::from(r)));
@@ -530,8 +566,27 @@ impl PartWeather {
             porosity,
             drops,
             shapes: Vec::new(),
+            motes: None,
             first,
         })
+    }
+
+    /// S3e: true when a triangle's resolution needs two bytes (a `WTP2` section).
+    pub fn wide(&self) -> bool {
+        self.resolution
+            .iter()
+            .any(|&r| u32::from(r) > MAX_RESOLUTION)
+    }
+
+    /// S3e: the same weather with the grains of its dust. Fails when the size or its variation is
+    /// out of range.
+    pub fn with_motes(mut self, motes: MoteSpec) -> Result<PartWeather, &'static str> {
+        if !(motes.size_mm > 0.0 && motes.size_mm <= 50.0) || !(0.0..=1.0).contains(&motes.size_var)
+        {
+            return Err("the motes are out of their range");
+        }
+        self.motes = Some(motes);
+        Ok(self)
     }
 
     /// S3f: the same weather with the shapes of its drops (one each, in their order). Fails when
@@ -549,9 +604,19 @@ impl PartWeather {
 
     /// Reads a `WETP` payload (see the layout above). S3f: after the drops, a shape tail (the tag
     /// [`SHAPE_TAG`], `u32 count` equal to the drops, `f32 shape[15][count]`: [`DropShape`]); a tail
-    /// with that tag that does not fit makes the section invalid. Other trailing bytes are ignored (a
-    /// newer writer's).
+    /// with that tag that does not fit makes the section invalid. S3e: then a motes tail
+    /// ([`MOTE_TAG`], [`MoteSpec`]). Other trailing bytes are ignored (a newer writer's).
     pub fn decode(p: &[u8]) -> Result<PartWeather, &'static str> {
+        PartWeather::decode_as(p, false)
+    }
+
+    /// S3e: reads a `WTP2` payload: a `WETP` whose resolutions are two bytes each
+    /// (`u16 resolution[triangles]`, zero padding to 4).
+    pub fn decode_wide(p: &[u8]) -> Result<PartWeather, &'static str> {
+        PartWeather::decode_as(p, true)
+    }
+
+    fn decode_as(p: &[u8], wide: bool) -> Result<PartWeather, &'static str> {
         let word = |at: usize| -> Result<u32, &'static str> {
             p.get(at..at + 4)
                 .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
@@ -571,8 +636,13 @@ impl PartWeather {
         let drops = word(12)? as usize;
         let cap_angle_deg = float(16)?;
         let porosity = float(20)?;
+        let res_bytes = if wide {
+            triangles.checked_mul(2).ok_or("the section is cut short")?
+        } else {
+            triangles
+        };
         let res_end = WETP_HEADER
-            .checked_add(padded(triangles))
+            .checked_add(padded(res_bytes))
             .ok_or("the section is cut short")?;
         let val_end = res_end
             .checked_add(padded(
@@ -585,7 +655,17 @@ impl PartWeather {
         if p.len() < end {
             return Err("the section is cut short");
         }
-        let resolution = p[WETP_HEADER..WETP_HEADER + triangles].to_vec();
+        let resolution: Vec<u16> = if wide {
+            p[WETP_HEADER..WETP_HEADER + res_bytes]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect()
+        } else {
+            p[WETP_HEADER..WETP_HEADER + triangles]
+                .iter()
+                .map(|&r| u16::from(r))
+                .collect()
+        };
         let values = p[res_end..res_end + 3 * samples]
             .chunks_exact(3)
             .map(|c| [c[0], c[1], c[2]])
@@ -599,8 +679,9 @@ impl PartWeather {
                 radius: float(at + 16)?,
             });
         }
-        let weather =
+        let mut weather =
             PartWeather::new(instance, resolution, values, cap_angle_deg, porosity, list)?;
+        let mut end = end;
         // S3f: the shape tail.
         if p.len() >= end + 8 && p[end..end + 4] == SHAPE_TAG {
             let count = word(end + 4)? as usize;
@@ -616,7 +697,17 @@ impl PartWeather {
                 }
                 shapes.push(DropShape::from_floats(f));
             }
-            return weather.with_shapes(shapes);
+            weather = weather.with_shapes(shapes)?;
+            end += 8 + 4 * SHAPE_FLOATS * count;
+        }
+        // S3e: the motes tail.
+        if p.len() >= end + 4 && p[end..end + 4] == MOTE_TAG {
+            let motes = MoteSpec {
+                size_mm: float(end + 4)?,
+                size_var: float(end + 8)?,
+                seed: word(end + 12)?,
+            };
+            weather = weather.with_motes(motes)?;
         }
         Ok(weather)
     }
@@ -634,8 +725,16 @@ impl PartWeather {
         ] {
             out.extend_from_slice(&w.to_le_bytes());
         }
-        out.extend_from_slice(&self.resolution);
-        out.resize(WETP_HEADER + padded(self.resolution.len()), 0);
+        // S3e: two bytes each when one needs it (a `WTP2` section: [`PartWeather::wide`]).
+        if self.wide() {
+            for r in &self.resolution {
+                out.extend_from_slice(&r.to_le_bytes());
+            }
+            out.resize(WETP_HEADER + padded(2 * self.resolution.len()), 0);
+        } else {
+            out.extend(self.resolution.iter().map(|&r| r as u8));
+            out.resize(WETP_HEADER + padded(self.resolution.len()), 0);
+        }
         for v in &self.values {
             out.extend_from_slice(v);
         }
@@ -658,6 +757,13 @@ impl PartWeather {
                 for v in s.to_floats() {
                     out.extend_from_slice(&v.to_bits().to_le_bytes());
                 }
+            }
+        }
+        // S3e: the motes tail.
+        if let Some(m) = &self.motes {
+            out.extend_from_slice(&MOTE_TAG);
+            for w in [m.size_mm.to_bits(), m.size_var.to_bits(), m.seed] {
+                out.extend_from_slice(&w.to_le_bytes());
             }
         }
         out
@@ -721,17 +827,368 @@ impl PartWeather {
                 [w0 / sum, fx / sum, fy / sum],
             )
         };
-        let depth = v[2] * SNOW_STEP_MM;
-        Some(Layers {
-            wet: v[0] * (1.0 / 255.0),
-            dust: v[1] * (1.0 / 255.0),
-            snow: if depth > 0.0 {
-                1.0 - fmath::exp(-depth / SNOW_COVER_MM)
-            } else {
-                0.0
-            },
-        })
+        Some(layers_of(v))
     }
+}
+
+/// The layers of a point whose bytes (wet, dust, snow) blend to `v`.
+fn layers_of(v: [f32; 3]) -> Layers {
+    let depth = v[2] * SNOW_STEP_MM;
+    Layers {
+        wet: v[0] * (1.0 / 255.0),
+        dust: v[1] * (1.0 / 255.0),
+        snow: if depth > 0.0 {
+            1.0 - fmath::exp(-depth / SNOW_COVER_MM)
+        } else {
+            0.0
+        },
+    }
+}
+
+/// S3e: the rain, dust and snow on the studio floor (the plane `z` of `FLOR`, which is not a mesh),
+/// the payload of the `WETG` section (at most one):
+///
+/// ```text
+/// off  type  field
+///   0  u32   nx ny           cells along X and Y (at most MAX_FLOOR_CELLS)
+///   8  f32   x0 y0           the corner of the cells with the lower X and Y, world, mm
+///  16  f32   cell            the side of a cell, mm
+///  20  f32   z               the height of the plane
+///  24  f32   porosity        how much a wet film darkens the floor, 0..1
+///  28  u32   flags           0
+///  32  u8    (wet dust snow)[nx × ny]   (row j after row j − 1), zero padding to 4
+/// ```
+///
+/// A point over the cells reads them linearly between the cells' centres (as a hit reads a part's
+/// samples); past them nothing lies on the floor. Trailing bytes are ignored (a newer writer's).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FloorWeather {
+    /// Cells along X and Y.
+    pub nx: u32,
+    /// See [`FloorWeather::nx`].
+    pub ny: u32,
+    /// The corner of the cells with the lower X and Y, world, mm.
+    pub x0: f32,
+    /// See [`FloorWeather::x0`].
+    pub y0: f32,
+    /// The side of a cell, mm.
+    pub cell: f32,
+    /// The height of the plane, mm.
+    pub z: f32,
+    /// How much a wet film darkens the floor, 0..1.
+    pub porosity: f32,
+    /// Wet, dust and snow of each cell.
+    pub values: Vec<[u8; 3]>,
+}
+
+impl FloorWeather {
+    /// Checks its numbers: the cells fit and are finite, the porosity in 0..1.
+    pub fn check(&self) -> Result<(), &'static str> {
+        let cells = u64::from(self.nx) * u64::from(self.ny);
+        if self.nx == 0 || self.ny == 0 || cells > u64::from(MAX_FLOOR_CELLS) {
+            return Err("the floor's cells are out of their range");
+        }
+        if cells != self.values.len() as u64 {
+            return Err("the floor's values are not one per cell");
+        }
+        if !(self.x0.is_finite() && self.y0.is_finite() && self.z.is_finite())
+            || !(self.cell > 0.0 && self.cell <= 1000.0)
+            || !(0.0..=1.0).contains(&self.porosity)
+        {
+            return Err("the floor's numbers are out of their range");
+        }
+        Ok(())
+    }
+
+    /// Reads a `WETG` payload.
+    pub fn decode(p: &[u8]) -> Result<FloorWeather, &'static str> {
+        let word = |at: usize| -> Result<u32, &'static str> {
+            p.get(at..at + 4)
+                .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .ok_or("the section is cut short")
+        };
+        let float = |at: usize| word(at).map(f32::from_bits);
+        let (nx, ny) = (word(0)?, word(4)?);
+        let cells = u64::from(nx) * u64::from(ny);
+        if cells > u64::from(MAX_FLOOR_CELLS) {
+            return Err("the floor's cells are out of their range");
+        }
+        let n = cells as usize;
+        if p.len() < WETG_HEADER + 3 * n {
+            return Err("the section is cut short");
+        }
+        let f = FloorWeather {
+            nx,
+            ny,
+            x0: float(8)?,
+            y0: float(12)?,
+            cell: float(16)?,
+            z: float(20)?,
+            porosity: float(24)?,
+            values: p[WETG_HEADER..WETG_HEADER + 3 * n]
+                .chunks_exact(3)
+                .map(|c| [c[0], c[1], c[2]])
+                .collect(),
+        };
+        f.check()?;
+        Ok(f)
+    }
+
+    /// The `WETG` payload.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(WETG_HEADER + padded(3 * self.values.len()));
+        for w in [
+            self.nx,
+            self.ny,
+            self.x0.to_bits(),
+            self.y0.to_bits(),
+            self.cell.to_bits(),
+            self.z.to_bits(),
+            self.porosity.to_bits(),
+            0,
+        ] {
+            out.extend_from_slice(&w.to_le_bytes());
+        }
+        for v in &self.values {
+            out.extend_from_slice(v);
+        }
+        out.resize(WETG_HEADER + padded(3 * self.values.len()), 0);
+        out
+    }
+
+    /// True when nothing lies on it.
+    pub fn is_clear(&self) -> bool {
+        self.values.iter().all(|v| *v == [0, 0, 0])
+    }
+
+    /// The layers at `(x, y)` of the plane: the four cells around it blended linearly between their
+    /// centres; `None` past its cells.
+    pub fn at(&self, x: f32, y: f32) -> Option<Layers> {
+        let (w, h) = (self.nx as f32 * self.cell, self.ny as f32 * self.cell);
+        let (dx, dy) = (x - self.x0, y - self.y0);
+        if !(dx >= 0.0 && dy >= 0.0 && dx <= w && dy <= h) {
+            return None;
+        }
+        let axis = |d: f32, n: u32| {
+            let f = (d / self.cell - 0.5).clamp(0.0, (n - 1) as f32);
+            let i = (f.floor() as u32).min(n - 1);
+            (i, (i + 1).min(n - 1), f - i as f32)
+        };
+        let (i0, i1, tx) = axis(dx, self.nx);
+        let (j0, j1, ty) = axis(dy, self.ny);
+        let get = |i: u32, j: u32| -> [f32; 3] {
+            let v = self.values[(j * self.nx + i) as usize];
+            [f32::from(v[0]), f32::from(v[1]), f32::from(v[2])]
+        };
+        let (a, b, c, d) = (get(i0, j0), get(i1, j0), get(i0, j1), get(i1, j1));
+        let mut v = [0.0f32; 3];
+        for k in 0..3 {
+            let lo = a[k] + (b[k] - a[k]) * tx;
+            let hi = c[k] + (d[k] - c[k]) * tx;
+            v[k] = lo + (hi - lo) * ty;
+        }
+        Some(layers_of(v))
+    }
+}
+
+/// S3e: a 32-bit hash (Wellons' `lowbias32`): the motes' places, which the page's Fast preview
+/// draws with its twin.
+pub fn hash32(mut x: u32) -> u32 {
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    x
+}
+
+/// S3e: the uniform number in `[0, 1)` of a hash (its top 24 bits).
+pub fn unit32(h: u32) -> f32 {
+    (h >> 8) as f32 * (1.0 / 16_777_216.0)
+}
+
+/// S3e: a grain of dust on an instance: on its mesh's triangle `triangle`, centred at `position`
+/// on the surface (object space), the face's unit normal there, its radius.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mote {
+    /// Its triangle in the mesh.
+    pub triangle: u32,
+    /// Its foot on the surface, object space.
+    pub position: Vec3,
+    /// The outward unit normal of its triangle, object space.
+    pub normal: Vec3,
+    /// Its radius, mm.
+    pub radius: f32,
+}
+
+/// S3e: the grains of dust of `w` (its motes tail) on the triangles `corners` gives (object space,
+/// the outward way), sample by sample in their order, at most `budget`: where a sample's share
+/// under dust `c` passes [`MOTE_THRESHOLD`], [`MOTE_SHARE`] of the `−ln(1 − c) / (π r̄²)` grains per
+/// unit area its share stands for (the coverage of grains of mean area `π r̄²` dropped at random),
+/// over the sample's share of its triangle's area; each placed in the cell around its sample and
+/// sized by [`hash32`] of the seed, the triangle, the sample and its number.
+pub fn motes_on(
+    w: &PartWeather,
+    corners: impl Fn(u32) -> Option<[Vec3; 3]>,
+    budget: usize,
+) -> Vec<Mote> {
+    let mut out = Vec::new();
+    let Some(spec) = w.motes else {
+        return out;
+    };
+    let r_mean = 0.5 * spec.size_mm;
+    let var = spec.size_var.clamp(0.0, 1.0);
+    let grain = fmath::PI * r_mean * r_mean * (1.0 + var * var / 3.0);
+    if grain <= 0.0 || grain.is_nan() {
+        return out;
+    }
+    for (t, &res) in w.resolution.iter().enumerate() {
+        let r = u32::from(res);
+        let first = w.first[t];
+        let n = samples_of(r);
+        if !(0..n).any(|k| f32::from(w.values[(first + k) as usize][1]) >= MOTE_THRESHOLD * 255.0) {
+            continue;
+        }
+        let Some([a, b, c]) = corners(t as u32) else {
+            continue;
+        };
+        let cross = (b - a).cross(c - a);
+        let len = cross.length();
+        if !(len > 0.0 && len.is_finite()) {
+            continue;
+        }
+        let normal = cross / len;
+        let area = 0.5 * len / n as f32;
+        let rf = r as f32;
+        for j in 0..=r {
+            for i in 0..=r - j {
+                let k = sample_index(r, i, j);
+                let share = f32::from(w.values[(first + k) as usize][1]) * (1.0 / 255.0);
+                if share < MOTE_THRESHOLD {
+                    continue;
+                }
+                let mean = MOTE_SHARE * -fmath::ln(1.0 - share.min(0.999)) * area / grain;
+                let key = hash32(spec.seed ^ hash32(t as u32 ^ hash32(k)));
+                let count = (mean + unit32(hash32(key ^ 0x6d6f_7465))).floor() as u32;
+                for m in 0..count {
+                    if out.len() >= budget {
+                        return out;
+                    }
+                    let h = hash32(key ^ hash32(m.wrapping_add(1)));
+                    let h2 = hash32(h);
+                    let h3 = hash32(h2);
+                    let mut u = (i as f32 + unit32(h) - 0.5).max(0.0) / rf;
+                    let mut v = (j as f32 + unit32(h2) - 0.5).max(0.0) / rf;
+                    if u + v > 1.0 {
+                        let s = u + v;
+                        u /= s;
+                        v /= s;
+                    }
+                    let radius = (r_mean * (1.0 + var * (2.0 * unit32(h3) - 1.0))).max(0.01);
+                    out.push(Mote {
+                        triangle: t as u32,
+                        position: a + (b - a) * u + (c - a) * v,
+                        normal,
+                        radius,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// S3e: the material of the motes: dry dust.
+pub fn dust() -> Material {
+    Material {
+        base_color: DUST_ALBEDO,
+        roughness: DUST_ROUGHNESS,
+        ..Material::default()
+    }
+}
+
+/// S3e: the motes of `parts` in world space, each with the instance it lies on: its centre a third
+/// of its radius above its foot, along its face's outward normal, carried by its instance's
+/// transform; at most [`MAX_MOTES`] in all.
+pub fn motes_of(
+    parts: &[PartWeather],
+    instances: &[crate::geometry::Instance],
+    meshes: &[Mesh],
+) -> Vec<(u32, Vec3, Vec3, f32)> {
+    let mut out = Vec::new();
+    for p in parts {
+        if p.motes.is_none() {
+            continue;
+        }
+        let Some(inst) = instances.get(p.instance as usize) else {
+            continue;
+        };
+        let (Some(mesh), Some(inverse)) =
+            (meshes.get(inst.mesh as usize), inst.transform.inverse())
+        else {
+            continue;
+        };
+        let flip = mesh.inside_out();
+        let left = MAX_MOTES.saturating_sub(out.len());
+        let corners = |t: u32| {
+            mesh.triangle(t as usize)
+                .map(|[a, b, c]| if flip { [a, c, b] } else { [a, b, c] })
+        };
+        for m in motes_on(p, corners, left) {
+            let normal = inverse.transpose_vector(m.normal).normalize();
+            if normal.length_squared().is_nan() || normal.length_squared() <= 0.5 {
+                continue;
+            }
+            let foot = inst.transform.point(m.position);
+            out.push((
+                p.instance,
+                foot + normal * (m.radius / 3.0),
+                normal,
+                m.radius,
+            ));
+        }
+    }
+    out
+}
+
+/// S3e: the mesh of the motes (centre, unit normal, radius each; world space): an octahedron each,
+/// its axes the normal and two tangents, the normals of a sphere; [`MOTE_TRIANGLES`] triangles each.
+/// `None` without any.
+pub fn mote_mesh(motes: &[(Vec3, Vec3, f32)]) -> Option<Mesh> {
+    if motes.is_empty() {
+        return None;
+    }
+    let mut positions = Vec::with_capacity(6 * motes.len());
+    let mut normals = Vec::with_capacity(6 * motes.len());
+    let mut indices = Vec::with_capacity(24 * motes.len());
+    for &(c, n, r) in motes {
+        let helper = if n.z.abs() < 0.9 {
+            Vec3::new(0.0, 0.0, 1.0)
+        } else {
+            Vec3::new(1.0, 0.0, 0.0)
+        };
+        let u = helper.cross(n).normalize();
+        let v = n.cross(u);
+        let base = positions.len() as u32;
+        // 0 +n, 1 +u, 2 +v, 3 −u, 4 −v, 5 −n.
+        for d in [n, u, v, -u, -v, -n] {
+            positions.push(c + d * r);
+            normals.push(d);
+        }
+        for t in [
+            [0, 1, 2],
+            [0, 2, 3],
+            [0, 3, 4],
+            [0, 4, 1],
+            [5, 2, 1],
+            [5, 3, 2],
+            [5, 4, 3],
+            [5, 1, 4],
+        ] {
+            indices.extend(t.iter().map(|k| base + k));
+        }
+    }
+    Mesh::new(&positions, &normals, &indices, 0).ok()
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
@@ -1051,6 +1508,8 @@ pub struct WeatherSetup {
     by_instance: Vec<Option<u32>>,
     /// The instance of the drops' caps.
     caps: Option<u32>,
+    /// S3e: the studio floor has weather.
+    floor: bool,
 }
 
 impl WeatherSetup {
@@ -1066,6 +1525,7 @@ impl WeatherSetup {
         WeatherSetup {
             by_instance,
             caps: scene.caps().map(|c| c.instance),
+            floor: scene.wet_floor.as_ref().is_some_and(|f| !f.is_clear()),
         }
     }
 
@@ -1087,6 +1547,74 @@ impl WeatherSetup {
         let (l, porosity) = self.layers(scene, hit)?;
         weathered(m, l, porosity)
     }
+
+    /// S3e: the layers on the studio floor at `p` (its plane) and the floor's porosity; `None` where
+    /// none lies (or the scene has no floor weather).
+    pub fn floor_layers(&self, scene: &Scene, p: Vec3) -> Option<(Layers, f32)> {
+        if !self.floor {
+            return None;
+        }
+        let f = scene.wet_floor.as_ref()?;
+        let l = f.at(p.x, p.y)?;
+        (!l.is_clear()).then_some((l, f.porosity))
+    }
+}
+
+/// S3e: the material of a visible studio floor of colour `color` under the layers `l` (its film,
+/// dust and snow; ◆): a matte diffuse of its colour, weathered as a part's material is.
+pub fn floor_material(color: Rgb, l: Layers, porosity: f32) -> Option<Material> {
+    let base = Material {
+        base_color: color,
+        roughness: 1.0,
+        ..Material::default()
+    };
+    weathered(&base, l, porosity)
+}
+
+/// S3e: what a shadow-catcher floor shows under the layers `l`, seen at `cos` from its normal (◆):
+/// the share `cover` that dust and snow cover, `1 − (1 − dust)(1 − snow)`, is a visible layer (the
+/// material [`catcher_cover`]); of the rest, the water film reflects the share `wet × F(cos)`
+/// (Schlick's Fresnel of water), a mirror ([`catcher_film`]); the rest is the catcher. Their shares,
+/// in that order.
+pub fn catcher_shares(l: Layers, cos: f32) -> (f32, f32) {
+    let cover = 1.0 - (1.0 - l.dust.clamp(0.0, 1.0)) * (1.0 - l.snow.clamp(0.0, 1.0));
+    let c = 1.0 - cos.abs().clamp(0.0, 1.0);
+    let fresnel = WATER_F0 + (1.0 - WATER_F0) * c * c * c * c * c;
+    let film = (1.0 - cover) * l.wet.clamp(0.0, 1.0) * fresnel;
+    (cover, film)
+}
+
+/// S3e: the visible layer of a shadow-catcher floor where dust and snow cover it: the dust (wet, as
+/// the film makes it) with the snow over it by its share of the cover.
+pub fn catcher_cover(l: Layers, porosity: f32) -> Material {
+    let cover = 1.0 - (1.0 - l.dust.clamp(0.0, 1.0)) * (1.0 - l.snow.clamp(0.0, 1.0));
+    let snow = if cover > 0.0 {
+        (l.snow / cover).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let base = dust();
+    weathered(
+        &base,
+        Layers {
+            wet: l.wet,
+            dust: 1.0,
+            snow,
+        },
+        porosity,
+    )
+    .unwrap_or(base)
+}
+
+/// S3e: the film of water on a shadow-catcher floor: a mirror (its share is the Fresnel of water,
+/// [`catcher_shares`]), as smooth as the film on a part ([`WET_COAT_ROUGHNESS`]).
+pub fn catcher_film() -> Material {
+    Material {
+        base_color: Rgb::WHITE,
+        metallic: 1.0,
+        roughness: WET_COAT_ROUGHNESS,
+        ..Material::default()
+    }
 }
 
 #[cfg(test)]
@@ -1097,7 +1625,7 @@ mod tests {
         let n: u32 = res.iter().map(|&r| samples_of(u32::from(r))).sum();
         PartWeather::new(
             3,
-            res.to_vec(),
+            res.iter().map(|&r| u16::from(r)).collect(),
             (0..n as usize).map(fill).collect(),
             60.0,
             0.5,

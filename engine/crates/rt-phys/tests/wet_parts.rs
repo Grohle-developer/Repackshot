@@ -15,8 +15,8 @@ use rt_phys::example::{
 };
 use rt_phys::math::Quat;
 use rt_phys::wet_parts::{
-    samples_of, PartsMesh, PartsSource, PartsSourceKind, PartsSpec, WetPartSpec, WetParts, NEVER,
-    PART_FILM, PINCH_OFF_SHARE, PINCH_TIMES,
+    samples_of, PartsExtras, PartsMesh, PartsSource, PartsSourceKind, PartsSpec, WetPartSpec,
+    WetParts, NEVER, NO_BODY, PART_FILM, PINCH_OFF_SHARE, PINCH_TIMES,
 };
 use rt_phys::Transform;
 
@@ -40,6 +40,7 @@ fn glass_part(mesh: u32, transform: Transform) -> WetPartSpec {
         receding_deg: GLASS_RECEDING_DEG,
         soak_mm_s: 0.0,
         flags: 0,
+        body: NO_BODY,
     }
 }
 
@@ -53,6 +54,7 @@ fn spec(meshes: Vec<PartsMesh>, parts: Vec<WetPartSpec>, sources: Vec<PartsSourc
         meshes,
         parts,
         sources,
+        extras: PartsExtras::default(),
     }
 }
 
@@ -1201,6 +1203,7 @@ fn part_of(adv: f32, rec: f32, transform: Transform) -> WetPartSpec {
         receding_deg: rec,
         soak_mm_s: 0.0,
         flags: 0,
+        body: NO_BODY,
     }
 }
 
