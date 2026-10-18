@@ -1,6 +1,6 @@
-# Investigación: biblioteca y editor de HDRI propios (2026-10-13)
+# Research: own HDRI library and editor (2026-10-13)
 
-> Informe de investigación preparado por Sonnet para el líder, en inglés tal como se redactó. Las decisiones están en `docs/STUDIO-TOOLS.md` y en `docs/ROADMAP.md`.
+> Research report prepared for the lead, kept in English as it was written. The decisions are in `docs/STUDIO-TOOLS.md` and in `docs/ROADMAP.md`.
 
 # Clean-room HDRI library and editor for Repackshot: research report (2026-10-13)
 
@@ -8,7 +8,7 @@ Nothing was written into the repository. I read `CLAUDE.md`, `docs/ROADMAP.md` (
 
 **Tags used below.** Numbers in brackets such as [12] refer to the source list in §9.
 - **[D]** = I derived it and checked it numerically in a throwaway script (`/tmp/claude-0/.../scratchpad/chk.py`, `lib.py`, `lib2.py`).
-- **[P]** = my design proposal, not a fact. Items touching architecture or photographic taste are for Fable, per CLAUDE.md rule 11.
+- **[P]** = my design proposal, not a fact. Items touching architecture or photographic taste are for the lead, per CLAUDE.md rule 11.
 - **[T]** = common practitioner convention with no citable source; treat as a starting value.
 
 ---
@@ -19,7 +19,7 @@ Nothing was written into the repository. I read `CLAUDE.md`, `docs/ROADMAP.md` (
 2. **Physics.** Specify each light by the illuminance it produces at normal incidence (in stops relative to a reference) and let the generator compute the painted radiance. Closed forms for rectangles, discs and rings are in §4.1 and match brute-force integration to better than 1e-5 [D].
 3. **Skies.**
    - **Preetham 1999** can be implemented from the paper alone [19]. It is also the least accurate of eight models in Bruneton's evaluation [22].
-   - **Hošek–Wilkie licence is now confirmed.** Every file in the v1.4a archive carries a 3-clause BSD header (§4.2). This resolves the "licencia a confirmar" in `docs/INTERIORS.md`.
+   - **Hošek–Wilkie licence is now confirmed.** Every file in the v1.4a archive carries a 3-clause BSD header (§4.2). This resolves the "licence to be confirmed" in `docs/INTERIORS.md`.
    - **Sun below the horizon.** Hošek–Wilkie and Preetham both only handle a sun above the horizon [22]. Blue hour and night need an atmosphere integrator of our own.
 4. **Determinism.** Rust's `f32::sin`, `exp` and `powf` are documented as non-deterministic across platforms [30]. The generator must use the engine's `fmath` and PCG32/Sobol so pixels are bit-identical on x86_64, ARM64 and wasm.
 5. **Provenance.** Commit recipe + generator commit + seed + pixel SHA-256 for each HDRI. CI regenerates and compares. Library-mode recipes can have no image inputs.
@@ -55,7 +55,7 @@ Nothing was written into the repository. I read `CLAUDE.md`, `docs/ROADMAP.md` (
 - **Each studio light is specified by `E` in stops relative to E_ref**, measured at normal incidence on a card facing that light. This is how a photographer meters each light with an incident meter. The generator then solves for radiance L (§4.1).
 - **Ambient `AMB(−s)`** is a uniform dome giving E_ref·2^−s on an unoccluded surface, which means L = E/π.
 - **Shape notation.** `R(az,el | W×H° | feather | E stops | K)` is a rectangle, with W and H the full angular width and height seen from the subject. `S` is a strip, `D` a disc (radius), `O` a ring (outer/inner radius).
-- **Existing repo units.** `photometry.ts` shows the engine's radiometry is Cycles-tuned and not cd/m² (`L = P/(4A)`). The photometric normalisation above is therefore metadata plus a fixed constant mapped through `ENVR.strength`. Relative ratios are the physically meaningful content; absolute reconciliation with `photometry.ts` is a Fable decision.
+- **Existing repo units.** `photometry.ts` shows the engine's radiometry is Cycles-tuned and not cd/m² (`L = P/(4A)`). The photometric normalisation above is therefore metadata plus a fixed constant mapped through `ENVR.strength`. Relative ratios are the physically meaningful content; absolute reconciliation with `photometry.ts` is a judgement call for the lead.
 
 ---
 
@@ -194,7 +194,7 @@ Values: L is the painted radiance at the stated E [D]; DR = peak L / floor L, in
 | Model | What it gives | Licence / obligations | Verdict |
 |---|---|---|---|
 | **Preetham 1999** [19] | Perez 5-parameter distribution F(θ,γ) = (1 + A·e^{B/cosθ})(1 + C·e^{Dγ} + E·cos²γ) in Y, x, y. Coefficients are linear in turbidity T. Zenith luminance Yz = (4.0453T − 4.9710)·tanχ − 0.2155T + 2.4192 (kcd/m²), χ = (4/9 − T/120)(π − 2θs). Appendix A also gives sun position, sun transmittance (air mass m = 1/(cosθ + 0.15(93.885−θ)^−1.253); Rayleigh e^(−0.008735 λ^−4.08 m)), ozone, gases, water vapour. The paper says the Appendix lets you "implement our model without sources other than this paper" [19] | A published paper. No code or table licence applies; clear sky and overcast only; not for partly cloudy [19]; counsel should confirm formulas can be reimplemented freely [P] | Good quick start; least accurate in the independent comparison (RMSE 88.1 vs 11.3 for Bruneton; overestimates ≈2×); sun above horizon only [22] |
-| **Hošek–Wilkie 2012/13** [20] | Full-spectral sky radiance. Turbidity 1–10, ground albedo, sun elevation ≥ 0; RGB data uses sRGB primaries; spectral output W/(m²·sr·nm), ×683 lm/W gives luminance [20 README]. Solar-disc function added in 2013 [20] | **3-clause BSD, verified** from the v1.4a archive: `Copyright (c) 2012-2013, Lukas Hosek and Alexander Wilkie`. All five files (`ArHosekSkyModel.c/.h`, `…Data_RGB.h`, `…Data_CIEXYZ.h`, `…Data_Spectral.h`) carry the same header. Obligations: keep the copyright, conditions and disclaimer; no endorsement using the contributors' names. The RGB data file is ≈66 KB of source, Spectral ≈514 KB [20] | Better than Preetham (RMSE 41.5 vs 88.1) but underestimates near the sun, no sun below the horizon, no aerial perspective [22]. Fine for the live sky if the notice is kept; porting the tables is a Fable decision |
+| **Hošek–Wilkie 2012/13** [20] | Full-spectral sky radiance. Turbidity 1–10, ground albedo, sun elevation ≥ 0; RGB data uses sRGB primaries; spectral output W/(m²·sr·nm), ×683 lm/W gives luminance [20 README]. Solar-disc function added in 2013 [20] | **3-clause BSD, verified** from the v1.4a archive: `Copyright (c) 2012-2013, Lukas Hosek and Alexander Wilkie`. All five files (`ArHosekSkyModel.c/.h`, `…Data_RGB.h`, `…Data_CIEXYZ.h`, `…Data_Spectral.h`) carry the same header. Obligations: keep the copyright, conditions and disclaimer; no endorsement using the contributors' names. The RGB data file is ≈66 KB of source, Spectral ≈514 KB [20] | Better than Preetham (RMSE 41.5 vs 88.1) but underestimates near the sun, no sun below the horizon, no aerial perspective [22]. Fine for the live sky if the notice is kept; porting the tables is a judgement call for the lead |
 | **Bruneton** precomputed scattering [21] | Precomputed transmittance and single/multiple scattering tables, ozone layer, density profiles, configurable solar spectrum | **BSD** (the repo LICENSE reads "Copyright (c) 2017 Eric Bruneton … Redistribution and use … 1. 2." — I read only the first lines; confirm 3 clauses before relying on it). Code is GLSL + C++ | Most accurate in the evaluation (RMSE 11.3, with Elek); fewer approximations means higher accuracy [22]. **Implement the algorithm in Rust ourselves** (CPU tables), no code copying needed |
 | **Hillaire 2020** [23] | LUT-based real-time atmosphere with a multiple-scattering approximation | **MIT** repo [23] | Alternative to Bruneton |
 | **Single-scattering ray march (Nishita-style)** [25] | Constants: Earth 6,360 km, atmosphere 6,420 km, scale heights 8 km (code 7,994 m) and 1.2 km; Rayleigh β (RGB) ≈ (5.8 or 3.8, 13.5, 33.1)·10⁻⁶ m⁻¹ (text and code disagree on red); Mie g = 0.76; phase functions given [25] | Tutorial, no licence needed for physics | Single scattering only, no ozone [25]; check constants against primary sources before using |
@@ -249,7 +249,7 @@ Place an equirect camera at the probe point (the product's position). Walls and 
   - **Copy pin:** a clone of a patch of the background.
   - The manual does not list the blend modes, the falloff modes or any units [2][4].
 - **Pin list.** Order is layering top to bottom; checkboxes enable pins; double-click renames; folders group; pins can be copied between environments [2][4].
-- **Set Highlight.** Cmd/Ctrl-click on the model aims a pin so its reflection lands at that surface point; it can also reposition an existing pin [2][4]. Repackshot already has the equivalent ("colocación por reflejo", E-phase) [36].
+- **Set Highlight.** Cmd/Ctrl-click on the model aims a pin so its reflection lands at that surface point; it can also reposition an existing pin [2][4]. Repackshot already has the equivalent (*Place by reflection*, E-phase) [36].
 - **Workflow.** A fast low-resolution preview, and on demand a full-resolution generation [2][4]. Settings are stored inside the scene file (not a separate .HDZ per environment), and the result can be exported as .HDR, .EXR or .HDZ [1][2].
 - **Context.** KeyShot states its stock environments were rebuilt this way, procedurally [7]. The Blender add-ons above add: up to 8 shape slots with softness [12]; scrim pins with a movable hotspot, flag/cutout pins and a 1,000–12,000 K temperature slider [13]; softbox textures [11].
 
@@ -438,10 +438,10 @@ Baked with our path tracer (§4.3) at a probe near table height; 4k float32; bak
 
 ---
 
-## 8. Risks, conflicts with the repo, and decisions for Fable
+## 8. Risks, conflicts with the repo, and judgement calls for the lead
 
-- **K7 conflict.** `docs/ROADMAP.md` K7 and `docs/INTERIORS.md` §3.8 plan on-demand Poly Haven and ambientCG HDRI downloads. That contradicts "no trace of existing HDRIs". Fable should decide whether those downloads are dropped or kept as an explicit, separate, non-library option.
-- **"Licencia a confirmar"** (`docs/INTERIORS.md` §4.2) is now resolved for Hošek–Wilkie: 3-clause BSD in v1.4a, all five files [20]. Whether to port the tables (and attribute them) or use Preetham plus an own table builder is a Fable decision.
+- **K7 conflict.** `docs/ROADMAP.md` K7 and `docs/INTERIORS.md` §3.8 plan on-demand Poly Haven and ambientCG HDRI downloads. That contradicts "no trace of existing HDRIs". The lead should decide whether those downloads are dropped or kept as an explicit, separate, non-library option.
+- **"Licence to be confirmed"** (`docs/INTERIORS.md` §4.2) is now resolved for Hošek–Wilkie: 3-clause BSD in v1.4a, all five files [20]. Whether to port the tables (and attribute them) or use Preetham plus an own table builder is a judgement call for the lead.
 - **E5** specifies readers for RGBE and EXR. The library needs **writers** too (and `rt-core` already has a PNG writer). Decide where the generator lives; a new std-only crate used by `rt-cli` and `rt-wasm` is the natural fit under rule 8b [P].
 - **Units.** Pixel unit 1.0 = PW and `whiteLuminance` are proposals. Reconcile with `ENVR.strength` and the Cycles-tuned `photometry.ts` before shipping.
 - **Determinism details.** `fmath` lists sin, cos, exp2, log2, pow, atan2, acos [36]. The generator also needs tan, asin and atan (or equivalent) built the same way.

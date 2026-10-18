@@ -1,6 +1,6 @@
-# Licencias de los modelos de IA (X1 parte A)
+# AI model licences (X1 part A)
 
-Citas literales en su idioma original, leídas el 2026-10-13 y fijadas al *commit* de cada repositorio. Las preparó Sonnet en X1 parte A y las confirmó el líder; el comentario se deja en inglés tal como se redactó. Los datos que las usan están en `src/data/ai-models.json`.
+Verbatim quotes in their original language, read on 2026-10-13 and pinned to the commit of each repository. They were prepared in X1 part A and confirmed by the lead; the commentary is kept in English as it was written. The data that uses them lives in `src/data/ai-models.json`.
 
 ---
 
@@ -203,7 +203,7 @@ used by both Z-Image and Klein repackaging is the same file (sha256 `6c671498573
   > 7. Updates and Runtime Restrictions. To the maximum extent permitted by law, Licensor reserves the right to restrict (remotely or otherwise) usage of the Model in violation of this License, update the Model through electronic means, or modify the Output of the Model based on updates. You shall undertake reasonable efforts to use the latest version of the Model.
 
 `useRestrictions: true`, `commercialUse: true`. The app must show Attachment A and obtain acceptance before the
-download (matches `AI-POST.md` §2.4 "restricciones de uso que se muestran y se aceptan").
+download (matches `AI-POST.md` §2.4 "use restrictions that are shown and accepted").
 
 **Base checkpoint** (`Comfy-Org/stable-diffusion-v1-5-archive`, `v1-5-pruned-emaonly-fp16.safetensors`).
 - Card (https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/blob/9cfd069101959ca3828bf9c04a4419870832b74f/README.md):
@@ -243,24 +243,24 @@ download (matches `AI-POST.md` §2.4 "restricciones de uso que se muestran y se 
 
 ---
 
-## 7. El motor de ejecución de escritorio: stable-diffusion.cpp y ggml (X3b)
+## 7. The desktop execution engine: stable-diffusion.cpp and ggml (X3b)
 
-Fijado en `src/data/ai-runtimes.json`: la *release* oficial **`master-959-d637cfb`** de
-stable-diffusion.cpp (*commit* `d637cfb935feb2254898a8f1524046c958f3df80`, 2026-10-12), con
-ggml como submódulo en `d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93` (repositorio
-`leejet/ggml`). Leídas el **2026-10-13** en el *tag* y en los propios archivos de la
-*release*: cada zip lleva `stable-diffusion.cpp.txt` y `ggml.txt` con estos mismos textos
-(los de Windows, con finales de línea CRLF). Repackshot **no redistribuye** estos
-binarios: el usuario los descarga desde GitHub, desde *Ajustes*, comprobados por su `sha256`;
-nunca entran en el repositorio, el instalador ni los portables, ni se enlazan (son un proceso
-aparte).
+Pinned in `src/data/ai-runtimes.json`: the official **`master-959-d637cfb`** release of
+stable-diffusion.cpp (commit `d637cfb935feb2254898a8f1524046c958f3df80`, 2026-10-12), with
+ggml as a submodule at `d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93` (repository
+`leejet/ggml`). Read on **2026-10-13** at the tag and in the release's own files:
+each zip carries `stable-diffusion.cpp.txt` and `ggml.txt` with these same texts
+(the Windows ones with CRLF line endings). Repackshot **does not redistribute** these
+binaries: the user downloads them from GitHub, from *Settings*, verified by their `sha256`;
+they never enter the repository, the installer or the portables, and they are not linked (they are a separate
+process).
 
-| Componente | Licencia | Fuente |
+| Component | Licence | Source |
 | --- | --- | --- |
 | stable-diffusion.cpp | MIT | https://github.com/leejet/stable-diffusion.cpp/blob/d637cfb935feb2254898a8f1524046c958f3df80/LICENSE |
 | ggml | MIT | https://github.com/leejet/ggml/blob/d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93/LICENSE |
 
-**stable-diffusion.cpp** (`LICENSE`, y `stable-diffusion.cpp.txt` dentro de cada zip):
+**stable-diffusion.cpp** (`LICENSE`, and `stable-diffusion.cpp.txt` inside each zip):
 
 > MIT License
 >
@@ -284,7 +284,7 @@ aparte).
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
-**ggml** (`ggml.txt` dentro de cada zip):
+**ggml** (`ggml.txt` inside each zip):
 
 > MIT License
 >
@@ -308,17 +308,17 @@ aparte).
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
-**Lo que además va compilado dentro de los binarios** (según `thirdparty/README.md` y
-`.gitmodules` del *tag*; los zips no traen sus textos, solo los dos de arriba), todo permisivo:
-libwebp y libwebm (submódulos `0c9546f7…` y `5bf12267…`, BSD-3-Clause, WebM Project),
-cpp-httplib (MIT, el servidor), nlohmann/json (MIT), stb_image, stb_image_write y
-stb_image_resize (MIT o dominio público, a elegir), miniz (MIT/Unlicense), kuba--/zip
-(Unlicense), darts_clone (BSD-2-Clause), Oniguruma (BSD-2-Clause) y utf8proc (MIT y licencia
-de datos Unicode). Ninguno es copyleft ni no comercial.
+**What is also compiled into the binaries** (according to `thirdparty/README.md` and
+`.gitmodules` at the tag; the zips do not ship their texts, only the two above), all permissive:
+libwebp and libwebm (submodules `0c9546f7…` and `5bf12267…`, BSD-3-Clause, WebM Project),
+cpp-httplib (MIT, the server), nlohmann/json (MIT), stb_image, stb_image_write and
+stb_image_resize (MIT or public domain, at the user's choice), miniz (MIT/Unlicense), kuba--/zip
+(Unlicense), darts_clone (BSD-2-Clause), Oniguruma (BSD-2-Clause) and utf8proc (MIT and the Unicode
+data licence). None is copyleft or non-commercial.
 
-**Lo que no va en el zip y el equipo tiene que tener**: en Windows, el entorno de **Microsoft
-Visual C++ 2015–2022 (x64)** (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`,
-`VCOMP140.DLL`, `MSVCP140_CODECVT_IDS.dll`: las compilaciones enlazan el CRT dinámicamente),
-licenciado por Microsoft para redistribución con su propio acuerdo; para Vulkan, `vulkan-1.dll`
-o `libvulkan.so.1`, que instala el controlador de la tarjeta. En Linux, glibc ≥ 2.38 y
-libstdc++ de GCC 13 (`GLIBCXX_3.4.32`): las compilaciones se hacen en Ubuntu 24.04.
+**What is not in the zip and the machine must have**: on Windows, the **Microsoft
+Visual C++ 2015–2022 (x64)** runtime (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`,
+`VCOMP140.DLL`, `MSVCP140_CODECVT_IDS.dll`: the builds link the CRT dynamically),
+licensed by Microsoft for redistribution under its own agreement; for Vulkan, `vulkan-1.dll`
+or `libvulkan.so.1`, which the graphics card driver installs. On Linux, glibc ≥ 2.38 and
+libstdc++ from GCC 13 (`GLIBCXX_3.4.32`): the builds are made on Ubuntu 24.04.
