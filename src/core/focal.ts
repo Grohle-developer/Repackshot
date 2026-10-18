@@ -1,4 +1,4 @@
-// The focal length's switch (phase C2; ROADMAP "Decisiones de criterio" 1.7, SPEC §3.5 "Focal"): *Keep the size of
+// The focal length's switch (phase C2; ROADMAP "Judgement calls" 1.7, SPEC §3.5 "Focal length"): *Keep the size of
 // what is in focus*, one per camera (`CameraState.keepFocusSize`, absent: off).
 //
 // - Off (the default, as on a real camera): changing the focal length leaves the camera where it is; the framing changes.

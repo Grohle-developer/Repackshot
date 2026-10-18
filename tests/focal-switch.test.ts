@@ -1,4 +1,4 @@
-// C2, the focal length's switch (ROADMAP "Decisiones de criterio" 1.7; core/focal.ts): *Keep the size of what is in
+// C2, the focal length's switch (ROADMAP "Judgement calls" 1.7; core/focal.ts): *Keep the size of what is in
 // focus*. Off, a focal change leaves the camera where it is and the framing changes; on, the camera dollies along its
 // axis so that the plane in focus keeps its size in the image, measured here by projecting points of that plane through
 // the camera as it is rendered (its straight verticals' level camera and lens shift included). One undo entry per change

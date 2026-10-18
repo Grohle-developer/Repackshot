@@ -1,4 +1,4 @@
-// Physics (phase S2, SPEC §3.1 "Físicas"): the rigid bodies the simulator is given, what its poses do to the scene,
+// Physics (phase S2, SPEC §3.1 "Physics"): the rigid bodies the simulator is given, what its poses do to the scene,
 // and the recorded track of a PHYSICS clip. Pure functions over ProjectState and the store's `physics/` actions.
 //
 // **Bodies.** A body is a *mover*, the node whose transform the simulation changes, and the parts it is made of: a

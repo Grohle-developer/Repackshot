@@ -1,4 +1,4 @@
-// Focus with a click in a real browser (phase F1, the user's report 1.8: the click must focus exactly on the pixel
+// Focus with a click in a real browser (phase F1, the owner's report 1.8: the click must focus exactly on the pixel
 // clicked, in the exact view on screen). The page of tests/browser/focus-page.ts draws the slanted checker board of
 // tests/browser/focus-scene.ts with the preview engine (headless Chromium, SwiftShader) and clicks the way the viewport
 // does: the engine's chief ray of the pixel from the page's rt.wasm, cast at the preview's geometry through both faces,

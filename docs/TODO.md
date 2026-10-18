@@ -1,403 +1,405 @@
-# TODO diferido — documentos guardados tal cual (14/16-10-2026)
+Translated from the owner's original notes.
 
-Trabajo pedido para **después** de terminar todo lo que está en curso (ver `ROADMAP.md` y `SESSION-STATE.md`). No se implementa todavía; cuando toque, cada apartado se convierte en fases del `ROADMAP.md` con brief y veredictos del responsable. Guardado por petición del usuario sin cambios. Contiene dos documentos, uno detrás de otro: la especificación de Room Builder y paseos (14-10-2026) y el reporte de errores graves (Render IA y anteriores; añadido el 16-10-2026). El reporte de errores tiene prioridad sobre la especificación: son regresiones y faltas de la versión publicada, no trabajo nuevo. Su triaje punto por punto está en `TRIAGE.md`, y lo que sale de él (B1, U14, las decisiones para Fable) en `ROADMAP.md`, sección «Reporte de errores del usuario».
+# Deferred TODO — documents saved as they were (2026-10-14/16)
+
+Work requested for **after** everything in progress is finished (see `ROADMAP.md` and `SESSION-STATE.md`). It is not implemented yet; when its turn comes, each section becomes phases in `ROADMAP.md` with a brief and lead's verdicts. Saved at the owner's request without changes. It contains two documents, one after the other: the Room Builder and walkthroughs specification (2026-10-14) and the serious bug report (AI Render and earlier; added on 2026-10-16). The bug report takes priority over the specification: they are regressions and gaps in the published version, not new work. Its point-by-point triage is in `TRIAGE.md`, and what comes out of it (B1, U14, the judgement calls) is in `ROADMAP.md`, section “Owner's bug report”.
 
 ---
 
-# Repackshot — Room Builder + Paseos: especificación futura
+# Repackshot — Room Builder + Walkthroughs: future specification
 
-**Estado: DIFERIDO.** Pedido por Berto el 2026-10-14 para **después de terminar todo lo que está en curso** (v0.1–v0.3 y resto de trabajo abierto). No implementar todavía. Este documento es la especificación guardada tal cual la pidió, para retomarla cuando toque.
+**Status: DEFERRED.** Requested by the owner on 2026-10-14 for **after everything in progress is finished** (v0.1–v0.3 and the rest of the open work). Do not implement yet. This document is the specification saved exactly as it was requested, to pick it up again when the time comes.
 
-## 1. Room Builder estilo Los Sims 4
+## 1. Room Builder in the style of The Sims 4
 
-Constructor de habitaciones con la misma forma de montar una habitación que en Los Sims 4: dibujar / levantar paredes de forma directa e intuitiva, no por parámetros sueltos.
+A room builder with the same way of putting a room together as in The Sims 4: drawing / raising walls directly and intuitively, not through loose parameters.
 
-### Elementos constructivos / decorativos (catálogo de modelos)
-- Ventanas (modelos varios).
-- Rodapiés.
-- Pinturas / cuadros de pared.
-- (Catálogo ampliable con el mismo funcionamiento: cada tipo es un modelo colocable sobre la habitación.)
+### Construction / decorative elements (model catalogue)
+- Windows (various models).
+- Skirting boards.
+- Wall paintings / pictures.
+- (Extensible catalogue with the same behaviour: each type is a model that can be placed on the room.)
 
-### Presets (mismo funcionamiento del builder, habitaciones ya montadas)
-- **Habitación cuadrada** — habitación base genérica, punto de partida vacío.
-- **Sala tipo estudio de fotografía** — incluye:
-  - Fondo blanco de tela de estudio dejándose caer (curva de ciclorama: cae de arriba y se extiende por el suelo, sin arista pared-suelo).
-  - Focos.
-  - Soporte de la tela (estructura / pie del fondo).
-- Más presets bajo este mismo funcionamiento (pendiente definir la lista cuando se retome).
+### Presets (same behaviour as the builder, rooms already set up)
+- **Square room** — generic base room, an empty starting point.
+- **Photography studio room** — includes:
+  - White studio-fabric backdrop falling down (cyclorama curve: it drops from above and spreads over the floor, with no wall-floor edge).
+  - Spotlights.
+  - Fabric support (backdrop structure / stand).
+- More presets under this same behaviour (the list to be defined when it is picked up again).
 
-### Notas de diseño (a confirmar cuando se implemente)
-- El builder trabaja sobre la escena del render: la habitación es geometría de la escena, no un overlay.
-- Los presets deben ser editables tras cargarlos (mover / quitar / añadir elementos), no escenas cerradas.
+### Design notes (to be confirmed when implemented)
+- The builder works on the render scene: the room is scene geometry, not an overlay.
+- Presets must be editable after loading them (move / remove / add elements), not closed scenes.
 
-## 2. Material madera: corrección de los nudos
+## 2. Wood material: knot correction
 
-Defecto actual a corregir (observación de Berto sobre el render de madera):
+Current defect to fix (the owner's observation on the wood render):
 
-1. **Rayas oscuras rectas raras que salen de los nudos sin sentido.** Los nudos generan trazos rectos oscuros que no siguen la lógica de la veta.
-2. **Color de los nudos no del todo logrado.** Ajustar el color (más fiel a un nudo real: centro más oscuro, transición gradual, no mancha plana).
-3. **Posición: los nudos suelen estar entre medias de dos vetas, no solo "pegados a una".** El generador debe colocar los nudos en el espacio entre dos vetas, no anclados a una sola veta.
+1. **Odd straight dark streaks coming out of the knots for no reason.** The knots generate straight dark strokes that do not follow the logic of the grain.
+2. **Knot colour not quite right.** Adjust the colour (more faithful to a real knot: darker centre, gradual transition, not a flat stain).
+3. **Position: knots are usually in between two grain lines, not just "stuck to one".** The generator must place the knots in the space between two grain lines, not anchored to a single grain line.
 
-Especificación del comportamiento deseado:
-- El nudo nace **entre dos vetas** (en el intersticio), no adosado a una.
-- Las vetas vecinas se **desvían / rodean** el nudo (flujo de veta deformado alrededor del nudo), no lo atraviesan en recto ni salen de él en rayas rectas.
-- Anillos concéntricos del nudo deformados por el flujo de la veta, con caída de color gradual centro → borde.
-- Sin trazos rectos oscuros espurios saliendo del nudo.
+Specification of the desired behaviour:
+- The knot is born **between two grain lines** (in the gap), not attached to one.
+- The neighbouring grain lines **deviate / wrap around** the knot (grain flow deformed around the knot), neither going straight through it nor leaving it in straight streaks.
+- Concentric rings of the knot deformed by the grain flow, with a gradual colour falloff centre → edge.
+- No spurious straight dark strokes coming out of the knot.
 
-## 3. Paseos a pie (walkthroughs)
+## 3. Walkthroughs on foot
 
-### Acceso: el muñeco estilo Street View
-- **Fácilmente accesible:** se deja caer un "muñeco" estilo el de Google Street View sobre un punto del mapa del render.
-- **Al agarrar el muñeco, se pasa a una vista aérea de planta** (plano cenital de la escena) para elegir el punto de caída con precisión.
-- **El muñeco deja una sombra de dónde caería** mientras se arrastra sobre la planta: marcador de suelo que indica el punto exacto de aterrizaje antes de soltar.
-- **Al caer (soltar), se pasa a la vista del muñeco** = se entra en modo paseo en ese punto, en primera persona desde la cámara asignada.
-- Arrastrar y soltar el muñeco en cualquier punto transitable de la escena = entrar en modo paseo en ese punto.
-- **El muñeco es siempre invisible** (nunca se renderiza, nunca aparece en la grabación). Es solo el punto de entrada / marcador de posición. La sombra de caída es un indicador de UI en la vista de planta, no el muñeco renderizado.
+### Access: the Street View-style figure
+- **Easily accessible:** a "figure" like the one in Google Street View is dropped onto a point of the render map.
+- **When the figure is grabbed, the view changes to an aerial plan view** (top-down plan of the scene) to choose the drop point precisely.
+- **The figure leaves a shadow of where it would land** while it is dragged over the plan: a floor marker that shows the exact landing point before releasing.
+- **On dropping (releasing), the view changes to the figure's view** = walkthrough mode is entered at that point, in first person from the assigned camera.
+- Dragging and dropping the figure at any walkable point of the scene = entering walkthrough mode at that point.
+- **The figure is always invisible** (never rendered, never appears in the recording). It is only the entry point / position marker. The drop shadow is a UI indicator in the plan view, not the rendered figure.
 
-### Salida del modo paseo
-- **Se puede salir del modo "paseo" en cualquier momento.**
-- **Al salir, se puede elegir si se guarda esta nueva posición en la cámara seleccionada** (diálogo / opción guardar / descartar): si se guarda, la cámara seleccionada adopta la posición (y orientación) donde terminó el paseo; si no, la cámara queda como estaba.
+### Leaving walkthrough mode
+- **You can leave "walkthrough" mode at any moment.**
+- **On leaving, you can choose whether to save this new position into the selected camera** (dialog / save / discard option): if saved, the selected camera adopts the position (and orientation) where the walkthrough ended; if not, the camera stays as it was.
 
-### Cámara del muñeco
-- El muñeco lleva **una cámara asignada encima**.
-- **Por defecto: la cámara que esté en vista actual** en el momento de soltar el muñeco.
-- **Configurable también en el panel:** se puede cambiar la cámara asignada al muñeco desde el panel (no solo la actual).
-- **Altura del muñeco completamente configurable** (= altura del ojo / de la cámara sobre el suelo). Sin valor fijo: el usuario la ajusta libremente.
-- **El slider de altura ha de estar en la UI como un slider vertical en los bordes de la parte del canvas** (pegado al borde del viewport, no en un panel flotante lejano ni solo en Settings). Ajuste directo mientras se está en / preparando el paseo.
+### The figure's camera
+- The figure carries **an assigned camera on top**.
+- **By default: the camera in the current view** at the moment the figure is dropped.
+- **Also configurable in the panel:** the camera assigned to the figure can be changed from the panel (not only the current one).
+- **Figure height fully configurable** (= eye / camera height above the floor). No fixed value: the owner adjusts it freely.
+- **The height slider must be in the UI as a vertical slider on the edges of the canvas area** (attached to the viewport edge, not in a distant floating panel or only in Settings). Direct adjustment while in / preparing the walkthrough.
 
-### Movimiento y sensación
-- **WASD** para moverse + **ratón** para mover la cámara (first-person, estilo videojuego).
-- **Simulación de pasos:** con o sin ella (toggle). Con ella: balanceo / bobbing de cámara al caminar. Sin ella: cámara estable, deslizamiento limpio.
-- **Suavidad configurable** con más o menos intensidad, por separado para:
-  - Movimiento de cámara.
+### Movement and feel
+- **WASD** to move + **mouse** to move the camera (first-person, video-game style).
+- **Footstep simulation:** with or without it (toggle). With it: camera sway / bobbing while walking. Without it: stable camera, clean gliding.
+- **Configurable smoothness** with more or less intensity, separately for:
+  - Camera movement.
   - Zoom.
-  - Pasos (frecuencia / amplitud del bobbing cuando la simulación está activa).
-- El paseo debe sentirse ajustable: de respuesta seca e inmediata a movimiento suavizado / con inercia, según los controles de suavidad.
+  - Footsteps (frequency / amplitude of the bobbing when the simulation is active).
+- The walkthrough must feel adjustable: from a dry, immediate response to smoothed movement / with inertia, according to the smoothness controls.
 
-### Grabación
-- **Botón REC claramente visible en la UI** para grabar el paseo. Tiene que verse a primera vista, no escondido en un menú.
-- El paseo **se graba como una mera animación de cámara** (no como vídeo plano, no como path bloqueado).
-- Consecuencia: la grabación es **editable frame a frame la posición de la cámara** — cada frame es un keyframe de posición (y orientación) de cámara que se puede corregir / retocar en el editor de animación después de grabar.
+### Recording
+- **A clearly visible REC button in the UI** to record the walkthrough. It has to be seen at first glance, not hidden in a menu.
+- The walkthrough **is recorded as a plain camera animation** (not as flat video, not as a locked path).
+- Consequence: the recording is **editable frame by frame in the camera position** — each frame is a camera position (and orientation) keyframe that can be corrected / touched up in the animation editor after recording.
 
-### Notas de diseño (a confirmar cuando se implemente)
-- Colisión / límites del paseo: por definir (¿atravesar paredes libremente, o colisión con la geometría de la habitación?).
-- La grabación debe reutilizar el sistema de animación de cámara de v0.3 (turntable / animación), no un sistema paralelo.
-- El botón REC debe tener estado visible grabando / parado, y la grabación debe poder pausarse sin perder lo grabado.
+### Design notes (to be confirmed when implemented)
+- Collision / walkthrough limits: to be defined (walk through walls freely, or collide with the room geometry?).
+- The recording must reuse the v0.3 camera animation system (turntable / animation), not a parallel system.
+- The REC button must have a visible recording / stopped state, and the recording must be pausable without losing what was recorded.
 
-## 4. Paneles del canvas: ocultar, plegar, mover y configurar (click derecho)
+## 4. Canvas panels: hide, collapse, move and configure (right click)
 
-Los pequeños paneles superpuestos al canvas deben ser personalizables, no fijos.
+The small panels overlaid on the canvas must be customisable, not fixed.
 
-### Paneles afectados
-- Panel de **progreso de render**.
-- Panel de los **ejes X, Y y Z** (gizmo / indicador de ejes).
-- Paneles **de arriba** (barra(s) superior(es) del canvas).
+### Affected panels
+- **Render progress** panel.
+- **X, Y and Z axes** panel (axes gizmo / indicator).
+- **Top** panels (the canvas's top bar(s)).
 
-### Ocultar / plegar
-- Se pueden **ocultar** los pequeños paneles del canvas: progreso de render, ejes X/Y/Z, etc.
-- **Los de arriba lo único que han de poder es plegarse con un botón, en vez de ocultarse:** la barra superior no desaparece del todo; se pliega / despliega con su botón de plegado, quedando siempre recuperable desde el propio canvas.
+### Hide / collapse
+- The small canvas panels can be **hidden**: render progress, X/Y/Z axes, etc.
+- **The top ones only need to be collapsible with a button, instead of hidden:** the top bar does not disappear entirely; it collapses / expands with its collapse button, always remaining recoverable from the canvas itself.
 
-### Mover y configurar (click derecho)
-- **Todos los paneles han de poder moverse de sitio arrastrándolos** (drag & drop a otra posición del canvas).
-- **Todo esto con click derecho sobre estos paneles:** el menú de click derecho sobre un panel permite:
-  - Configurar los **botones** del panel (cuáles se muestran).
-  - Configurar su **posición**.
-  - Elegir **cuáles quitar o poner** (qué botones / elementos del panel están visibles).
-- Es decir: click derecho = menú de personalización del panel (botones, posición, elementos visibles), no un menú genérico.
+### Move and configure (right click)
+- **All panels must be movable by dragging them** (drag & drop to another position on the canvas).
+- **All of this with a right click on these panels:** the right-click menu on a panel allows:
+  - Configuring the panel's **buttons** (which ones are shown).
+  - Configuring its **position**.
+  - Choosing **which to remove or add** (which buttons / elements of the panel are visible).
+- That is: right click = the panel's customisation menu (buttons, position, visible elements), not a generic menu.
 
-### Volver a mostrar
-- Los paneles ocultos **se han de poder volver a mostrar desde Settings, en el panel de interfaz** (Settings → Interfaz: lista de paneles con mostrar / ocultar, y restauración de los que se quitaron).
+### Showing again
+- Hidden panels **must be able to be shown again from Settings, in the interface panel** (Settings → Interface: list of panels with show / hide, and restoration of the ones that were removed).
 
-### Notas de diseño (a confirmar cuando se implemente)
-- La disposición de paneles debe persistir entre sesiones (layout guardado).
-- El plegado de las barras de arriba debe dejar un tirador / botón visible para desplegar, nunca un estado sin salida.
-- El click derecho no debe entrar en conflicto con el click derecho de órbita / menú contextual del viewport: el click derecho sobre un panel actúa sobre el panel; sobre el canvas vacío, lo habitual del viewport.
+### Design notes (to be confirmed when implemented)
+- The panel layout must persist between sessions (saved layout).
+- Collapsing the top bars must leave a visible handle / button to expand them, never a dead-end state.
+- The right click must not conflict with the viewport's orbit right click / context menu: a right click on a panel acts on the panel; on the empty canvas, the usual viewport behaviour.
 
-## 5. Física + efectos ambientales + viento + fuzz
+## 5. Physics + ambient effects + wind + fuzz
 
-### Física en los efectos ambientales
-- **Las físicas se han de aplicar a todos los efectos ambientales.** Ningún efecto de ambiente queda fuera del sistema de físicas: todos responden a las mismas fuerzas.
-- **Gravedad realista:** la gravedad que actúa sobre los efectos es realista (valor terrestre por defecto, no gravedad de videojuego exagerada).
-- **Aire:** el aire también actúa (resistencia / arrastre aerodinámico sobre las partículas y elementos de los efectos). La física es gravedad + aire, no gravedad sola.
+### Physics in the ambient effects
+- **Physics must be applied to all ambient effects.** No ambient effect is left outside the physics system: all respond to the same forces.
+- **Realistic gravity:** the gravity acting on the effects is realistic (Earth value by default, not exaggerated video-game gravity).
+- **Air:** the air also acts (aerodynamic resistance / drag on the particles and elements of the effects). The physics is gravity + air, not gravity alone.
 
-### Partículas
-- **Tiempo de generación de partículas configurable:** cuánto tiempo se generan partículas (ventana / duración de la emisión) es un parámetro ajustable por el usuario, por efecto.
-- (A definir al implementar: si el control cubre también cadencia de emisión y vida de cada partícula, o solo la duración de la generación.)
+### Particles
+- **Configurable particle generation time:** how long particles are generated (emission window / duration) is a parameter adjustable by the owner, per effect.
+- (To be defined when implementing: whether the control also covers emission rate and the lifetime of each particle, or only the duration of generation.)
 
 ### Fuzz
-- **El fuzz tiene un toggle de activar físicas realistas también.**
-  - OFF: fuzz estático / decorativo, sin simulación física (comportamiento actual / barato).
-  - ON: las fibras del fuzz responden a la física realista (gravedad + aire + viento, ver abajo), como el resto de efectos ambientales.
+- **Fuzz has a toggle to activate realistic physics too.**
+  - OFF: static / decorative fuzz, no physics simulation (current / cheap behaviour).
+  - ON: the fuzz fibres respond to realistic physics (gravity + air + wind, see below), like the rest of the ambient effects.
 
-### Combinación de efectos de ambiente
-- **En Ambiente se pueden combinar varios efectos de ambiente.**
-- **Máximo dos a la vez por defecto, para evitar cloggeos** (saturación / atasco de rendimiento por acumulación de simulaciones).
-- El límite de 2 es el valor por defecto (a confirmar al implementar si se puede subir en Settings, con aviso de rendimiento).
+### Combining ambient effects
+- **In Ambient, several ambient effects can be combined.**
+- **Maximum two at a time by default, to avoid clogging** (saturation / performance jam from the accumulation of simulations).
+- The limit of 2 is the default value (to be confirmed when implementing whether it can be raised in Settings, with a performance warning).
 
-### Simulador de viento
-- **Se podrá añadir un simulador de viento** (como un efecto / emisor más del sistema de ambiente).
-- Parámetros del viento:
-  - **Dirección.**
-  - **Volumen** (cantidad / caudal de aire).
-  - **Velocidad.**
-  - **Densidad** (del aire).
-  - (… = lista abierta, esos cuatro como mínimo.)
-- **Esto afectará a las físicas claramente:** el viento es una fuerza del sistema de físicas — empuja / desvía partículas de los efectos ambientales, mueve el fuzz con físicas activas, y en general modifica cualquier efecto sometido a física.
+### Wind simulator
+- **A wind simulator can be added** (as one more effect / emitter of the ambient system).
+- Wind parameters:
+  - **Direction.**
+  - **Volume** (amount / flow of air).
+  - **Speed.**
+  - **Density** (of the air).
+  - (… = open list, those four at a minimum.)
+- **This will clearly affect the physics:** wind is a force of the physics system — it pushes / deflects particles of the ambient effects, moves the fuzz when physics is active, and in general modifies any effect subject to physics.
 
-### Previsualización
-- **Cuando se active la previsualización de efectos de ambiente simulados, por defecto siempre se verán en fast** (modo de previsualización rápida / baja calidad, para no atascar el viewport). El render final no queda en fast; el fast es solo el modo por defecto de la preview de efectos simulados.
+### Preview
+- **When the preview of simulated ambient effects is activated, by default they will always be seen in fast** (fast / low-quality preview mode, so as not to clog the viewport). The final render does not stay in fast; fast is only the default mode of the simulated-effects preview.
 
-### Notas de diseño (a confirmar cuando se implemente)
-- La física debe ser un único sistema compartido (gravedad + aire + viento) del que beban todos los efectos, no una física por efecto.
-- El límite de 2 efectos simultáneos debe aplicarse a efectos simulados (con física/partículas), no a efectos estáticos de ambiente si los hay — confirmar.
-- El modo fast de la preview debe ser conmutable (si el usuario quiere preview en calidad completa, que pueda cambiarlo; el por defecto es fast).
+### Design notes (to be confirmed when implemented)
+- The physics must be a single shared system (gravity + air + wind) that all effects draw from, not a physics per effect.
+- The limit of 2 simultaneous effects must apply to simulated effects (with physics / particles), not to static ambient effects if there are any — confirm.
+- The preview's fast mode must be switchable (if the owner wants a full-quality preview, they must be able to change it; the default is fast).
 
-## 6. Servidor MCP integrado: manejo de la aplicación completa
+## 6. Built-in MCP server: operating the whole application
 
-### Servidor MCP en la aplicación
-- **Añadir un servidor MCP a la aplicación** (Model Context Protocol, integrado en Repackshot, no un proceso externo aparte).
-- **Que maneje la aplicación completa:** el servidor MCP expone herramientas para operar toda la aplicación — escena, materiales, luces, cámaras, Room Builder, renders, paseos / animación de cámara, efectos de ambiente / física, paneles e interfaz, Settings — no solo un subconjunto (lectura o render).
-- Cualquier cosa que el usuario pueda hacer en la UI debe poder hacerse vía MCP, siempre que el permiso correspondiente esté activado (ver abajo).
+### MCP server in the application
+- **Add an MCP server to the application** (Model Context Protocol, built into Repackshot, not a separate external process).
+- **Let it operate the whole application:** the MCP server exposes tools to operate the entire application — scene, materials, lights, cameras, Room Builder, renders, walkthroughs / camera animation, ambient / physics effects, panels and interface, Settings — not just a subset (reading or rendering).
+- Anything the owner can do in the UI must be doable via MCP, as long as the corresponding permission is activated (see below).
 
-### Permisos con toggle — Settings > MCP
-- **Cada permiso será activable o desactivable con un toggle en el menú.**
-- Ubicación: **Settings > MCP** — ahí vive la lista completa de permisos, cada uno con su toggle.
-- Apagar un permiso = el servidor MCP deja de exponer / deniega esa capacidad (no la ejecuta aunque el cliente la pida). Encenderlo = la vuelve a permitir. El cambio aplica sin reiniciar la app (a confirmar al implementar si algún permiso exige reinicio del servidor).
-- La granularidad es **por permiso**, no un único on/off global: el usuario puede dejar activas p. ej. las lecturas y desactivadas las escrituras / acciones destructivas, o activar solo la familia de herramientas que necesita.
+### Permissions with toggles — Settings > MCP
+- **Each permission will be switchable on or off with a toggle in the menu.**
+- Location: **Settings > MCP** — the full list of permissions lives there, each with its toggle.
+- Turning a permission off = the MCP server stops exposing / denies that capability (it does not run it even if the client asks). Turning it on = allows it again. The change applies without restarting the app (to be confirmed when implementing whether any permission requires restarting the server).
+- Granularity is **per permission**, not a single global on/off: the owner can leave, for example, reads active and writes / destructive actions disabled, or activate only the family of tools needed.
 
-### Notas de diseño (a confirmar cuando se implemente)
-- Lista exacta de permisos por definir al implementar (propuesta: agrupar por dominio — escena, materiales, cámaras, render, animación/paseos, ambiente/física, UI/paneles, Settings — y dentro de cada uno separar lectura de escritura/acción).
-- Estado por defecto de cada permiso por definir (pendiente decisión de Berto; el criterio a aplicar: lo destructivo / que borra o sobrescribe debe ser conservador por defecto).
-- Transporte y acceso por definir: ¿solo local (stdio / localhost) o también HTTP remoto? ¿Con autenticación / token? El servidor no debe quedar abierto a la red sin permiso explícito del usuario.
-- El panel Settings > MCP debe mostrar el estado del servidor (corriendo / parado, puerto / transporte si aplica) y qué cliente está conectado, si lo hay.
-- Log / auditoría: que quede registro de las acciones ejecutadas vía MCP (qué herramienta, cuándo), para poder revisar qué hizo un agente externo.
+### Design notes (to be confirmed when implemented)
+- The exact list of permissions to be defined when implementing (proposal: group by domain — scene, materials, cameras, render, animation/walkthroughs, ambient/physics, UI/panels, Settings — and within each separate read from write/action).
+- The default state of each permission to be defined (pending the owner's decision; the criterion to apply: whatever is destructive / deletes or overwrites must be conservative by default).
+- Transport and access to be defined: local only (stdio / localhost) or also remote HTTP? With authentication / token? The server must not be left open to the network without the owner's explicit permission.
+- The Settings > MCP panel must show the server's state (running / stopped, port / transport if applicable) and which client is connected, if any.
+- Log / audit: keep a record of the actions executed via MCP (which tool, when), to be able to review what an external agent did.
 
-## 7. Materiales líquidos: emisor y desagüe de líquido
+## 7. Liquid materials: liquid emitter and drain
 
-### Estado existente (según Berto, ya existe)
-- En Materiales **ya tenemos líquidos**, y tienen un **toggle para activar sus físicas realistas en función de varios parámetros**.
-- Alternativa por click derecho: **click derecho sobre un sólido y activar Físicas > Líquido** (si el material se crea como líquido) **o Tela** (si es tela).
-- Es decir: la física de líquido / tela ya se puede activar desde el panel del material o desde el menú contextual Físicas del sólido.
+### Existing state (according to the owner, it already exists)
+- In Materials **we already have liquids**, and they have a **toggle to activate their realistic physics depending on several parameters**.
+- Alternative by right click: **right click on a solid and activate Physics > Liquid** (if the material is created as a liquid) **or Cloth** (if it is cloth).
+- That is: liquid / cloth physics can already be activated from the material panel or from the solid's Physics context menu.
 
-### Nuevos materiales: emisor y desagüe de líquido
-- Añadir un material que sea **"emisor" de líquido** (suelta / genera líquido en la escena).
-- Añadir otro material que sea **"desagüe" de líquido** (elimina / recoge el líquido que lo toca / entra en su volumen).
-- **Ambos configurables** (parámetros propios de cada uno; lista exacta a definir al implementar: p. ej. tipo de líquido, caudal, dirección / radio de acción, activo o no, etc.).
-- **Finalidad:** de esta manera **se podría evitar que desborde el agua en algún contexto si no interesa** — el desagüe equilibra al emisor: el líquido generado no se acumula indefinidamente, sino que desaparece al llegar al desagüe.
+### New materials: liquid emitter and drain
+- Add a material that is a liquid **"emitter"** (releases / generates liquid in the scene).
+- Add another material that is a liquid **"drain"** (removes / collects the liquid that touches it / enters its volume).
+- **Both configurable** (own parameters for each; exact list to be defined when implementing: e.g. type of liquid, flow rate, direction / radius of action, active or not, etc.).
+- **Purpose:** this way **the water could be prevented from overflowing in some context if it is not wanted** — the drain balances the emitter: the generated liquid does not accumulate indefinitely, but disappears on reaching the drain.
 
-### Asignación a un sólido
-- **Este material se podrá asignar a un sólido con otras propiedades por sí mismo** (el sólido puede tener sus propias propiedades de material / física / aspecto y además comportarse como emisor o desagüe).
-- **Aunque al asignarlo a un sólido, preguntar si desea borrar otras propiedades y hacerlo invisible** (diálogo de confirmación en la asignación):
-  - **Sí:** se borran las otras propiedades del sólido y se hace **invisible** — queda como un volumen emisor / desagüe puro, funcional pero sin renderizarse (no se ve en la escena ni en el render).
-  - **No:** el sólido conserva sus otras propiedades y además actúa como emisor / desagüe (visible y con su aspecto / física anteriores + la función de emisor / desagüe).
-- El comportamiento invisible es el del sólido al que se asigna, no un objeto aparte.
+### Assignment to a solid
+- **This material can be assigned to a solid with other properties of its own** (the solid can have its own material / physics / appearance properties and also behave as an emitter or drain).
+- **Although when assigning it to a solid, ask whether to delete the other properties and make it invisible** (confirmation dialog on assignment):
+  - **Yes:** the solid's other properties are deleted and it is made **invisible** — it stays as a pure emitter / drain volume, functional but not rendered (not seen in the scene or in the render).
+  - **No:** the solid keeps its other properties and also acts as an emitter / drain (visible and with its previous appearance / physics + the emitter / drain function).
+- The invisible behaviour is that of the solid it is assigned to, not a separate object.
 
-### Notas de diseño (a confirmar cuando se implemente)
-- El líquido emitido debe entrar en el sistema de físicas compartido de la sección 5 (gravedad realista + aire + viento).
-- El desagüe debe eliminar líquido de forma controlada (sin parpadeos ni borrados bruscos visibles cuando el líquido lo toca).
-- Si hay varios emisores / desagües, el balance total (emitido − drenado) es lo que evita el desborde; a definir si hay un indicador de nivel / caudal neto en la UI.
-- La pregunta de borrar propiedades + invisibilidad debe aparecer en cada asignación de emisor / desagüe a un sólido que ya tenga propiedades, no solo la primera vez.
+### Design notes (to be confirmed when implemented)
+- The emitted liquid must enter the shared physics system of section 5 (realistic gravity + air + wind).
+- The drain must remove liquid in a controlled way (without flicker or visible abrupt deletions when the liquid touches it).
+- If there are several emitters / drains, the total balance (emitted − drained) is what prevents overflow; to be defined whether there is a level / net flow indicator in the UI.
+- The question about deleting properties + invisibility must appear on every assignment of an emitter / drain to a solid that already has properties, not only the first time.
 
-## 8. Vídeo: render + postprocesado IA con consistencia entre frames
+## 8. Video: render + AI post-processing with consistency between frames
 
-### Render de vídeo: fps y resolución independientes
-- **En el vídeo, al renderizar, quiero elegir fps aparte de resolución:** fps y resolución son dos controles independientes (cambiar uno no arrastra al otro).
-- **Con límite en 16K por arriba:** la resolución máxima de render de vídeo es **16K** (techo superior; no se puede pedir por encima de 16K).
-- (A confirmar al implementar: si el límite 16K es por lado mayor, y qué valores de fps se ofrecen — presets + valor libre.)
+### Video render: fps and resolution independent
+- **In video, when rendering, I want to choose fps separately from resolution:** fps and resolution are two independent controls (changing one does not drag the other).
+- **With a 16K upper limit:** the maximum video render resolution is **16K** (upper ceiling; nothing above 16K can be requested).
+- (To be confirmed when implementing: whether the 16K limit is on the longer side, and which fps values are offered — presets + free value.)
 
 ### Aspect ratio: Open Gate
-- **En Aspect Ratio quiero meter Open Gate:** una opción más en el selector de Aspect Ratio, junto a los ratios fijos (16:9, 9:16, 1:1, etc.).
-- **Open Gate = usar el cuadro completo, sin recorte:** no se recorta a ningún ratio; se renderiza todo el gate / encuadre completo de la cámara virtual, con toda la información del frame.
-- Finalidad: poder **reencuadrar después** a cualquier ratio en post (vertical, cuadrado, panorámico…) sin haber perdido imagen por un recorte en el render, igual que el Open Gate de cámara real (sensor completo).
-- Open Gate convive con lo anterior: fps independiente, límite 16K por arriba (el frame Open Gate también respeta el techo 16K), y la IA + plugins trabajan sobre el frame completo.
+- **In Aspect Ratio I want to add Open Gate:** one more option in the Aspect Ratio selector, alongside the fixed ratios (16:9, 9:16, 1:1, etc.).
+- **Open Gate = use the full frame, uncropped:** it is not cropped to any ratio; the whole gate / complete framing of the virtual camera is rendered, with all the information of the frame.
+- Purpose: to be able to **reframe afterwards** to any ratio in post (vertical, square, panoramic…) without having lost image to a crop in the render, just like a real camera's Open Gate (full sensor).
+- Open Gate coexists with the above: independent fps, 16K upper limit (the Open Gate frame also respects the 16K ceiling), and the AI + plugins work on the full frame.
 
-### Postprocesado IA en vídeo: consistencia temporal
-- **A la IA de postprocesado en vídeo se le dará los anteriores frames mejorados por IA y el siguiente sin modificar.**
-  - Entrada de la IA para el frame N: los frames anteriores ya mejorados por IA (N−1, N−2, …) + el frame siguiente sin modificar (N+1 en bruto).
-  - Es decir: contexto temporal hacia atrás (versiones mejoradas) + un frame de anticipo en bruto hacia adelante.
-- **La idea es generar consistencia entre frames** en cuanto a:
-  - Luces.
-  - Texturas.
-  - Colores.
-  - Reflejos.
-  - (… = cualquier atributo visual que tienda a parpadear / cambiar entre frames si se procesa cada frame aislado.)
-- **De tal manera que cada frame respete con mucha precisión el anterior o anteriores frames:** el frame N no se mejora aislado; debe mantenerse fiel, con mucha precisión, a lo que la IA ya decidió en el/los frames anteriores (sin derivas de luz / color / textura / reflejo de un frame a otro).
-- (A definir al implementar: cuántos frames anteriores se le dan exactamente — mínimo 1, ideal N configurable — y cómo se trata el primer frame, que no tiene anteriores.)
+### AI post-processing in video: temporal consistency
+- **The video post-processing AI will be given the previous AI-enhanced frames and the next one unmodified.**
+  - AI input for frame N: the previous frames already enhanced by the AI (N−1, N−2, …) + the next frame unmodified (raw N+1).
+  - That is: temporal context backwards (enhanced versions) + one raw lookahead frame forwards.
+- **The idea is to create consistency between frames** in terms of:
+  - Lights.
+  - Textures.
+  - Colours.
+  - Reflections.
+  - (… = any visual attribute that tends to flicker / change between frames if each frame is processed in isolation.)
+- **So that each frame respects the previous frame or frames with great precision:** frame N is not enhanced in isolation; it must stay faithful, with great precision, to what the AI already decided in the previous frame(s) (no drift of light / colour / texture / reflection from one frame to the next).
+- (To be defined when implementing: exactly how many previous frames are given — minimum 1, ideally a configurable N — and how the first frame, which has no previous ones, is treated.)
 
-### Orden del pipeline: IA siempre antes que los plugins
-- **El procesado IA siempre será previo a los plugins.**
-- Orden fijo: render en bruto → postprocesado IA (con consistencia temporal) → plugins (filtros / postprocesados).
-- Ningún plugin se aplica antes de la IA; la IA trabaja sobre el render en bruto, y los plugins trabajan sobre el resultado de la IA.
+### Pipeline order: AI always before plugins
+- **AI processing will always come before plugins.**
+- Fixed order: raw render → AI post-processing (with temporal consistency) → plugins (filters / post-processing).
+- No plugin is applied before the AI; the AI works on the raw render, and the plugins work on the AI's result.
 
-### Guardado: todas las versiones o solo la final
-- **Quiero poder elegir si se guardan todas las versiones o solamente la final con todos los filtros y postprocesados.**
-  - **Todas las versiones:** se guardan las etapas intermedias (p. ej. render en bruto, tras IA, tras plugins) además de la final.
-  - **Solo la final:** se guarda únicamente la versión final con todos los filtros y postprocesados aplicados; las intermedias se descartan.
-- La opción es del usuario por render / proyecto, no un comportamiento fijo.
+### Saving: all versions or only the final one
+- **I want to be able to choose whether all versions are saved or only the final one with all the filters and post-processing.**
+  - **All versions:** the intermediate stages are saved (e.g. raw render, after AI, after plugins) in addition to the final one.
+  - **Only the final one:** only the final version with all the filters and post-processing applied is saved; the intermediate ones are discarded.
+- The option belongs to the owner per render / project, not a fixed behaviour.
 
-### Notas de diseño (a confirmar cuando se implemente)
-- La consistencia temporal es el objetivo principal de la IA de vídeo, por encima de la mejora aislada de un frame: mejor un frame ligeramente menos "perfecto" pero consistente que un frame perfecto que parpadea respecto al anterior.
-- Si la IA recibe frames anteriores mejorados + siguiente en bruto, hay que definir la ventana de latencia (hay que esperar a tener N+1 en bruto antes de emitir N mejorado).
-- El guardado de "todas las versiones" debe etiquetar cada versión (bruto / IA / final) para no confundirlas en disco.
+### Design notes (to be confirmed when implemented)
+- Temporal consistency is the main goal of the video AI, above the isolated enhancement of a frame: better a slightly less "perfect" but consistent frame than a perfect frame that flickers relative to the previous one.
+- If the AI receives previous enhanced frames + the next raw one, the latency window has to be defined (it is necessary to wait until N+1 is available raw before emitting N enhanced).
+- Saving "all versions" must label each version (raw / AI / final) so they are not confused on disk.
 
-## Orden de trabajo
-1. Terminar todo lo que está en curso (v0.1–v0.3 y resto de trabajo abierto).
-2. Después: Room Builder + presets.
-3. Madera / nudos: puede ir con el Room Builder (es material de la habitación) o como corrección del shader de madera cuando se retome — decidir al retomarlo.
-4. Paseos: después del Room Builder (necesita habitaciones donde pasear).
-5. Paneles del canvas (ocultar / plegar / mover / configurar con click derecho, restaurar desde Settings → Interfaz): puede ir con los paseos o antes, es UI del canvas — decidir al retomarlo.
-6. Física + efectos ambientales + viento + fuzz: sistema de físicas compartido (gravedad realista + aire + viento), límite 2 efectos simultáneos por defecto, preview de efectos simulados en fast por defecto — decidir al retomarlo si va con el Room Builder / Ambiente.
-7. Servidor MCP integrado (Settings > MCP): maneja la aplicación completa, cada permiso con su toggle en Settings > MCP — decidir al retomarlo el listado exacto de permisos, sus valores por defecto, transporte y autenticación.
-8. Materiales líquidos emisor / desagüe (configurables, para evitar desbordes; al asignar a un sólido preguntar si borrar otras propiedades y hacerlo invisible).
-9. Vídeo: fps independiente de resolución con límite 16K; Aspect Ratio con Open Gate (cuadro completo sin recorte, para reencuadrar en post); IA de postprocesado con frames anteriores mejorados + siguiente en bruto para consistencia (luces, texturas, colores, reflejos), IA siempre antes que los plugins, opción guardar todas las versiones o solo la final.
-
----
-*Guardado 2026-10-14 desde los mensajes de Berto. Actualizado el mismo día con: vista aérea de planta al agarrar el muñeco + sombra de caída, salida del paseo con opción de guardar posición en la cámara, slider vertical de altura en el borde del canvas, paneles del canvas personalizables, física + efectos ambientales (gravedad realista + aire, tiempo de generación de partículas, toggle de físicas en el fuzz, máx. 2 efectos por defecto, simulador de viento, preview en fast), servidor MCP integrado con permisos por toggle en Settings > MCP, materiales emisor / desagüe de líquido configurables, vídeo (fps + 16K, IA con consistencia entre frames, IA antes que plugins, guardar todas las versiones o solo la final), y Aspect Ratio con Open Gate. No se ha implementado nada: es especificación diferida.*
-
+## Work order
+1. Finish everything in progress (v0.1–v0.3 and the rest of the open work).
+2. Afterwards: Room Builder + presets.
+3. Wood / knots: can go with the Room Builder (it is room material) or as a correction to the wood shader when picked up again — decide on picking it up.
+4. Walkthroughs: after the Room Builder (they need rooms to walk in).
+5. Canvas panels (hide / collapse / move / configure with right click, restore from Settings → Interface): can go with the walkthroughs or before, it is canvas UI — decide on picking it up.
+6. Physics + ambient effects + wind + fuzz: shared physics system (realistic gravity + air + wind), limit of 2 simultaneous effects by default, preview of simulated effects in fast by default — decide on picking it up whether it goes with the Room Builder / Ambient.
+7. Built-in MCP server (Settings > MCP): operates the whole application, each permission with its toggle in Settings > MCP — decide on picking it up the exact list of permissions, their defaults, transport and authentication.
+8. Liquid emitter / drain materials (configurable, to avoid overflows; when assigning to a solid, ask whether to delete other properties and make it invisible).
+9. Video: fps independent of resolution with a 16K limit; Aspect Ratio with Open Gate (full frame without cropping, to reframe in post); post-processing AI with previous enhanced frames + next raw one for consistency (lights, textures, colours, reflections), AI always before plugins, option to save all versions or only the final one.
 
 ---
+*Saved 2026-10-14 from the owner's messages. Updated the same day with: aerial plan view on grabbing the figure + drop shadow, leaving the walkthrough with the option of saving the position into the camera, vertical height slider at the canvas edge, customisable canvas panels, physics + ambient effects (realistic gravity + air, particle generation time, physics toggle on the fuzz, max. 2 effects by default, wind simulator, preview in fast), built-in MCP server with permissions by toggle in Settings > MCP, configurable liquid emitter / drain materials, video (fps + 16K, AI with consistency between frames, AI before plugins, save all versions or only the final one), and Aspect Ratio with Open Gate. Nothing has been implemented: it is a deferred specification.*
 
-# Reporte de errores graves — Render IA y errores anteriores
-
-**Ámbito de este documento:** contiene **tan solo** el mensaje anterior ("error gravísimo", 2026-10-14), este mensaje (fase de Render IA, 2026-10-14) y los de más adelante. No contiene la especificación de Room Builder / paseos / etc. (esa vive en `room-builder-y-paseos-especificacion-futura.md`).
-
-**Estado:** reporte abierto, sin verificar ni corregir en este chat. Nada implementado todavía a partir de este documento.
 
 ---
 
-## 1. Mensaje anterior — "error gravísimo" (2026-10-14)
+# Serious bug report — AI Render and earlier errors
 
-Texto de Berto, recogido tal cual:
+**Scope of this document:** it contains **only** the previous message ("very serious error", 2026-10-14), this message (AI Render phase, 2026-10-14) and the later ones. It does not contain the Room Builder / walkthroughs / etc. specification (that lives in `room-builder-y-paseos-especificacion-futura.md`).
 
-> error gravísimo. Los editores de materiales no tienen para cambiar el tipo de mapeado (UV, caja, triplanar, esférico...), cambiar tamaños, mover las texturas en distintas direcciones... Ha de mirar como lo hace keyshot. Por otro lado, en ambient, quiero una forma que sea gota, y que varíen de geometrías. Ahora mismo no puedes elegir lentes como dijimos, hay algún efecto pero tampoco se notan. No imitan tal cual las lentes que estudiaste, como distorsionan, o el bokeh que crean de manera natural. Me gustaría que al hacer hover por encima de la lente mostrara una ventana con los elementos. Aparte, un editor de lentes donde aparte de las opciones actuales, pueda editar los elementos, cambiar tamaño o distancias entre cada elemento, añadir uno nuevo, rotarlo 180º... Las maderas no se están viendo como mostrabas en las esferas, y ningun material está funcional respecto a los nodos. Aparte, al cambiar la focal length cambia el zoom respecto al objeto enfocado, y esto quiero que sea un toggle. O la cámara se acerca o el objeto/punto enfocado. Sigue sin funcionar el enfocar en el punto exacto donde se clicka, en mi vista exacta en el punto exacto del pixel exacto donde estoy haciendo click. Ahora hay doble barra deslizante vertical en el carrusel de LUTs de aintfilm.
-
-### 1.1. Editores de materiales: mapeado, tamaño y desplazamiento
-- Los editores de materiales actuales **no tienen** para cambiar el tipo de mapeado, cambiar tamaños ni mover las texturas en distintas direcciones.
-- Requisito: poder cambiar el **tipo de mapeado**: UV, caja, triplanar, esférico…
-- Requisito: poder **cambiar tamaños**.
-- Requisito: poder **mover las texturas en distintas direcciones**.
-- **Ha de mirar como lo hace KeyShot** (referencia de comportamiento / UI).
-- Límite clean-room vigente: solo observación del comportamiento usando KeyShot normalmente. No entra en el repo código descompilado, desensamblado, binarios ni recursos extraídos de KeyShot.
-
-### 1.2. Ambient: forma gota + variación de geometrías
-- En Ambient, quiero una **forma que sea gota**.
-- Y que **varíen de geometrías** (no una única geometría fija).
-
-### 1.3. Lentes: selección, distorsión y bokeh
-- **Ahora mismo no puedes elegir lentes como dijimos**; hay algún efecto pero **tampoco se notan**.
-- Requisito: poder **elegir lentes**.
-- **Deben imitar tal cual las lentes que se estudiaron:**
-  - Cómo **distorsionan**.
-  - El **bokeh que crean de manera natural**.
-- Si el efecto no se nota, no vale: la diferencia entre lentes tiene que ser visible en distorsión y bokeh.
-
-### 1.4. Hover sobre la lente: ventana con los elementos
-- **Al hacer hover por encima de la lente**, ha de mostrar **una ventana con los elementos**.
-
-### 1.5. Editor de lentes
-- **Un editor de lentes** donde, aparte de las opciones actuales, se pueda:
-  - **Editar los elementos**.
-  - **Cambiar tamaño** o **distancias entre cada elemento**.
-  - **Añadir uno nuevo**.
-  - **Rotarlo 180º**.
-
-### 1.6. Maderas vs esferas + materiales respecto a los nodos
-- **Las maderas no se están viendo como mostrabas en las esferas.**
-  - Requisito: la madera en escena ha de verse como en las esferas de preview.
-- **Ningún material está funcional respecto a los nodos.**
-  - Requisito: todos los materiales han de ser funcionales respecto a los nodos (el grafo de nodos ha de pilotar realmente el material).
-
-### 1.7. Cámara: focal length (toggle)
-- **Al cambiar la focal length cambia el zoom respecto al objeto enfocado**, y esto quiero que sea **un toggle**.
-- **O la cámara se acerca o el objeto / punto enfocado** (texto literal de Berto; a precisar al implementar cuál mueve qué y cómo se mantiene el encuadre en cada modo).
-
-### 1.8. Enfoque en el punto exacto del click
-- **Sigue sin funcionar el enfocar en el punto exacto donde se clicka, en mi vista exacta, en el punto exacto del píxel exacto donde estoy haciendo click.**
-- Requisito: el enfoque por click ha de usar el **píxel exacto** donde se hace click, **en la vista exacta** actual (rayo desde ese píxel exacto, no desde el centro ni desde un punto aproximado).
-
-### 1.9. Aparte (no es Repackshot): aintfilm, doble barra en el carrusel de LUTs
-- **Ahora hay doble barra deslizante vertical en el carrusel de LUTs de aintfilm.**
-- Bug de **aintfilm**, no de Repackshot. Queda anotado aquí para no perderlo; hay que verificarlo / corregirlo en aintfilm por separado. No verificado todavía en este chat.
+**Status:** open report, neither verified nor fixed in this chat. Nothing implemented yet from this document.
 
 ---
 
-## 2. Este mensaje — fase de Render IA (2026-10-14)
+## 1. Previous message — "very serious error" (2026-10-14)
 
-Texto de Berto, recogido tal cual:
+The owner's text, recorded as it was:
 
-> la fase de Render IA no hace casi nada, y además ahora se queda en un loop de attemps.
+> very serious error. The material editors have no way to change the mapping type (UV, box, triplanar, spherical...), change sizes, move the textures in different directions... It has to look at how KeyShot does it. On another note, in ambient, I want a shape that is a drop, and that they vary in geometries. Right now you cannot choose lenses as we said, there is some effect but they are not noticeable either. They do not imitate as such the lenses you studied, how they distort, or the bokeh they create naturally. I would like that on hovering over the lens it showed a window with the elements. Besides, a lens editor where apart from the current options, I can edit the elements, change size or distances between each element, add a new one, rotate it 180º... The woods are not looking as you showed in the spheres, and no material is functional with respect to the nodes. Besides, when changing the focal length the zoom changes with respect to the focused object, and I want this to be a toggle. Either the camera gets closer or the focused object/point. Focusing on the exact point where you click still does not work, in my exact view at the exact point of the exact pixel where I am clicking. Now there is a double vertical scroll bar in aintfilm's LUT carousel.
 
-### 2.1. Render IA no hace casi nada
-- La fase de **Render IA no hace casi nada**: su efecto es mínimo / casi imperceptible (no se detalla en el mensaje si es que no cambia nada visible, o que el cambio es tan sutil que no se nota).
-- Pendiente de precisar al reproducirlo: ¿qué se esperaba que hiciera la fase, qué hace realmente, y con qué entrada/salida se comparó?
+### 1.1. Material editors: mapping, size and offset
+- The current material editors **have no way** to change the mapping type, change sizes or move the textures in different directions.
+- Requirement: be able to change the **mapping type**: UV, box, triplanar, spherical…
+- Requirement: be able to **change sizes**.
+- Requirement: be able to **move the textures in different directions**.
+- **It has to look at how KeyShot does it** (behaviour / UI reference).
+- Clean-room limit in force: only observation of behaviour by using KeyShot normally. No decompiled or disassembled code, binaries or extracted resources of KeyShot enter the repo.
 
-### 2.2. Loop de attempts
-- **Además, ahora se queda en un loop de attemps** (bucle de intentos / reintentos).
-- La fase no termina: se queda repitiendo intentos sin salir del bucle.
-- Pendiente de precisar al reproducirlo: ¿cuántos intentos, con qué mensaje/error entre intentos, si hay tope o es infinito, y si hay que matar el proceso / cerrar la app para salir?
+### 1.2. Ambient: drop shape + variation of geometries
+- In Ambient, I want a **shape that is a drop**.
+- And that they **vary in geometry** (not a single fixed geometry).
+
+### 1.3. Lenses: selection, distortion and bokeh
+- **Right now you cannot choose lenses as we said**; there is some effect but **it is not noticeable either**.
+- Requirement: be able to **choose lenses**.
+- **They must imitate as such the lenses that were studied:**
+  - How they **distort**.
+  - The **bokeh they create naturally**.
+- If the effect is not noticeable, it is no good: the difference between lenses has to be visible in distortion and bokeh.
+
+### 1.4. Hover over the lens: window with the elements
+- **On hovering over the lens**, it has to show **a window with the elements**.
+
+### 1.5. Lens editor
+- **A lens editor** where, apart from the current options, it is possible to:
+  - **Edit the elements**.
+  - **Change the size** or the **distances between each element**.
+  - **Add a new one**.
+  - **Rotate it 180º**.
+
+### 1.6. Woods vs spheres + materials with respect to the nodes
+- **The woods are not looking as you showed in the spheres.**
+  - Requirement: the wood in the scene has to look like in the preview spheres.
+- **No material is functional with respect to the nodes.**
+  - Requirement: all materials have to be functional with respect to the nodes (the node graph has to really drive the material).
+
+### 1.7. Camera: focal length (toggle)
+- **When changing the focal length the zoom changes with respect to the focused object**, and I want this to be **a toggle**.
+- **Either the camera gets closer or the focused object / point** (the owner's literal text; to be specified when implementing which moves what and how the framing is kept in each mode).
+
+### 1.8. Focus on the exact point of the click
+- **Focusing on the exact point where you click still does not work, in my exact view, at the exact point of the exact pixel where I am clicking.**
+- Requirement: focus by click has to use the **exact pixel** where the click is made, **in the exact current view** (ray from that exact pixel, not from the centre or from an approximate point).
+
+### 1.9. Aside (not Repackshot): aintfilm, double bar in the LUT carousel
+- **Now there is a double vertical scroll bar in aintfilm's LUT carousel.**
+- A bug in **aintfilm**, not in Repackshot. Noted here so it is not lost; it has to be verified / fixed in aintfilm separately. Not yet verified in this chat.
+
+---
+
+## 2. This message — AI Render phase (2026-10-14)
+
+The owner's text, recorded as it was:
+
+> the AI Render phase does hardly anything, and besides it now gets stuck in a loop of attempts.
+
+### 2.1. AI Render hardly does anything
+- The **AI Render phase hardly does anything**: its effect is minimal / almost imperceptible (the message does not detail whether nothing visible changes, or the change is so subtle that it goes unnoticed).
+- To be specified on reproducing: what was the phase expected to do, what does it actually do, and with what input/output was it compared?
+
+### 2.2. Loop of attempts
+- **Besides, it now gets stuck in a loop of attempts** (a loop of attempts / retries).
+- The phase does not finish: it keeps repeating attempts without leaving the loop.
+- To be specified on reproducing: how many attempts, with what message/error between attempts, whether there is a cap or it is infinite, and whether the process has to be killed / the app closed to get out.
 
 ---
 
-## 3. De más adelante — Queue: preview en tiempo real del render seleccionado (2026-10-14)
+## 3. From later — Queue: real-time preview of the selected render (2026-10-14)
 
-Texto de Berto, recogido tal cual:
+The owner's text, recorded as it was:
 
-> aparte, al irme a queue quiero poder ver un preview en tiempo real de un render seleccionado.
+> besides, when I go to queue I want to be able to see a real-time preview of a selected render.
 
-### 3.1. Queue: preview en tiempo real
-- **Al irse a Queue**, ha de poder ver un **preview en tiempo real de un render seleccionado**.
-- Es decir: en la vista de Queue (cola de renders), al seleccionar un render (un trabajo de la cola), se muestra su preview **en tiempo real** (progreso vivo del render, no una miniatura estática ni el resultado solo al terminar).
-- Pendiente de precisar al implementar: si el preview es del render en curso (el que se está renderizando ahora) o de cualquier render seleccionado de la cola (en espera / en curso / terminado), y a qué resolución / calidad va ese preview en vivo.
+### 3.1. Queue: real-time preview
+- **On going to Queue**, it must be possible to see a **real-time preview of a selected render**.
+- That is: in the Queue view (render queue), when selecting a render (a job in the queue), its preview is shown **in real time** (live render progress, not a static thumbnail nor the result only at the end).
+- To be specified when implementing: whether the preview is of the render in progress (the one being rendered now) or of any selected render in the queue (waiting / in progress / finished), and at what resolution / quality that live preview goes.
 
-## 4. De más adelante — Extensión de archivo + denoise (2026-10-14)
+## 4. From later — File extension + denoise (2026-10-14)
 
-Texto de Berto, recogido tal cual:
+The owner's text, recorded as it was:
 
-> los archivos se está guardando como .repack.json y no como .repack a secas. Además, el denoise hace perder cierta personalidad y lava algunas luces y colores ahora.
+> files are being saved as .repack.json and not plain .repack. Besides, the denoise makes it lose some personality and washes out some lights and colours now.
 
-### 4.1. Extensión de archivo: .repack.json en vez de .repack
-- Los archivos **se están guardando como `.repack.json` y no como `.repack` a secas**.
-- Requisito: la extensión de guardado ha de ser **`.repack`** (a secas, sin `.json`).
-- Pendiente de precisar al corregirlo: si el contenido interno sigue siendo JSON (solo cambia la extensión) o si el formato `.repack` es otra cosa, y si hay que seguir abriendo los `.repack.json` ya guardados (compatibilidad hacia atrás).
+### 4.1. File extension: .repack.json instead of .repack
+- Files **are being saved as `.repack.json` and not plain `.repack`**.
+- Requirement: the save extension has to be **`.repack`** (plain, without `.json`).
+- To be specified on fixing it: whether the internal content stays JSON (only the extension changes) or whether the `.repack` format is something else, and whether the already saved `.repack.json` files have to keep opening (backward compatibility).
 
-### 4.2. Denoise: pierde personalidad y lava luces y colores
-- **El denoise hace perder cierta personalidad y lava algunas luces y colores ahora.**
-- Es decir: el denoise actual (regresión: "ahora") aplana el resultado — quita carácter / personalidad de la imagen y lava (desatura / suaviza en exceso) algunas luces y colores.
-- Requisito: el denoise ha de limpiar el ruido **sin** lavar luces y colores ni quitar personalidad (preservar el carácter de la imagen: contraste local, color, detalle de luces).
-- Pendiente de precisar al reproducirlo: con qué escenas / valores de denoise se nota más, y si hay un ajuste (intensidad) que lo atenúe o si pasa a cualquier ajuste.
+### 4.2. Denoise: loses personality and washes out lights and colours
+- **The denoise makes it lose some personality and washes out some lights and colours now.**
+- That is: the current denoise (regression: "now") flattens the result — it removes character / personality from the image and washes out (desaturates / over-softens) some lights and colours.
+- Requirement: the denoise has to clean the noise **without** washing out lights and colours or removing personality (preserve the image's character: local contrast, colour, highlight detail).
+- To be specified on reproducing: with which scenes / denoise values it is most noticeable, and whether there is a setting (strength) that attenuates it or whether it happens at any setting.
 
-## 5. De más adelante — Materiales: ajuste dinámico de tamaño al sólido (2026-10-14)
+## 5. From later — Materials: dynamic size adjustment to the solid (2026-10-14)
 
-Texto de Berto, recogido tal cual:
+The owner's text, recorded as it was:
 
-> Los materiales no se estan ajustando dinámicamente en tamaño (UV etc) al tamaño del solido al que se aplica.
+> Materials are not dynamically adjusting in size (UV etc) to the size of the solid they are applied to.
 
-### 5.1. Materiales no se ajustan dinámicamente al tamaño del sólido
-- Los materiales **no se están ajustando dinámicamente en tamaño (UV etc.) al tamaño del sólido al que se aplica**.
-- Requisito: al aplicar un material a un sólido, su escala / tamaño (UV, etc.) ha de ajustarse dinámicamente al tamaño de ese sólido (la textura no puede quedar con la misma escala absoluta en un sólido pequeño que en uno grande).
-- Pendiente de precisar al reproducirlo: si el ajuste debe ser automático siempre, o con un toggle de "ajuste dinámico", y cómo convive con el control manual de tamaño / mapeado de la sección 1.1 (si el usuario fija un tamaño manual, ¿el dinámico lo respeta o lo sobreescribe?).
+### 5.1. Materials do not dynamically adjust to the size of the solid
+- Materials **are not dynamically adjusting in size (UV etc.) to the size of the solid they are applied to**.
+- Requirement: when applying a material to a solid, its scale / size (UV, etc.) has to adjust dynamically to the size of that solid (the texture cannot keep the same absolute scale on a small solid as on a large one).
+- To be specified on reproducing: whether the adjustment must be automatic always, or with a "dynamic adjustment" toggle, and how it coexists with the manual size / mapping control of section 1.1 (if the owner sets a manual size, does the dynamic one respect it or overwrite it?).
 
-## 6. De más adelante — Presets de estudio: de Lights a Estudios + luces añadidas (2026-10-15)
+## 6. From later — Studio presets: from Lights to Studios + added lights (2026-10-15)
 
-Texto de Berto, recogido tal cual:
+The owner's text, recorded as it was:
 
-> Los presets nuevos de estudio estan dentro de lights y con un tamaño más grande que los presets de luces. Quiero que estén dentro de los "estudios", Y que elijas estudio con muestras del tamaño que se muestra ahora. Las luces propuestas son añadidos al estudio, que no interfieren con las luces de este, ya que se pueden desactivar a gusto las que se considere facilmente.
+> The new studio presets are inside lights and with a size larger than the light presets. I want them to be inside the "studios", And that you choose a studio with swatches of the size shown now. The proposed lights are additions to the studio, which do not interfere with the lights of this one, since the ones considered can be switched off at will easily.
 
-### 6.1. Presets de estudio fuera de Lights, dentro de Estudios
-- Estado actual (reportado): los **presets nuevos de estudio están dentro de Lights** y con un **tamaño más grande que los presets de luces**.
-- Requisito: los presets de estudio han de estar **dentro de los "estudios"** (sección Estudios), no dentro de Lights.
+### 6.1. Studio presets out of Lights, into Studios
+- Current state (reported): the **new studio presets are inside Lights** and with a **larger size than the light presets**.
+- Requirement: the studio presets have to be **inside the "studios"** (Studios section), not inside Lights.
 
-### 6.2. Elegir estudio con muestras del tamaño actual
-- Requisito: se elige estudio **con muestras del tamaño que se muestra ahora** — es decir, se conserva el tamaño de muestra grande actual de los presets de estudio (el que tienen ahora dentro de Lights) al moverlos a Estudios, no se reducen al tamaño pequeño de los presets de luces.
+### 6.2. Choose a studio with swatches of the current size
+- Requirement: a studio is chosen **with swatches of the size shown now** — that is, the current large swatch size of the studio presets (the one they have now inside Lights) is kept when moving them to Studios, they are not reduced to the small size of the light presets.
 
-### 6.3. Luces propuestas: añadidos al estudio, sin interferir, desactivables
-- Las **luces propuestas son añadidos al estudio**, que **no interfieren con las luces de este** (las luces propias del estudio).
-- Es decir: las luces que propone un preset de estudio se añaden a las luces que ya tiene el estudio, sin sustituirlas ni interferir con ellas.
-- Y se **pueden desactivar a gusto las que se considere fácilmente**: cada luz (propuesta o propia) se puede desactivar individualmente y fácilmente.
+### 6.3. Proposed lights: additions to the studio, without interfering, switchable off
+- The **proposed lights are additions to the studio**, which **do not interfere with the lights of this one** (the studio's own lights).
+- That is: the lights that a studio preset proposes are added to the lights the studio already has, without replacing them or interfering with them.
+- And **the ones considered can be switched off at will easily**: each light (proposed or own) can be switched off individually and easily.
 
-## 7. De más adelante (siguientes mensajes)
+## 7. From later (following messages)
 
-*(Los siguientes mensajes de este hilo se añadirán aquí, como nuevas secciones numeradas, sin mezclar con la especificación de Room Builder / paseos.)*
+*(The following messages of this thread will be added here, as new numbered sections, without mixing them with the Room Builder / walkthroughs specification.)*
 
 ---
-*Creado 2026-10-14 a petición de Berto: nuevo documento con tan solo el mensaje anterior ("error gravísimo") y este (Render IA), más los de más adelante.*
+*Created 2026-10-14 at the owner's request: a new document with only the previous message ("very serious error") and this one (AI Render), plus the later ones.*

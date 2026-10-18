@@ -1,6 +1,6 @@
 //! The interior cameras of K3: the panoramic projections (equirectangular and fisheye), their
 //! `CAMR` fields, and the straight verticals of a level camera with a lens shift (the camera the
-//! page writes for *Verticales rectas*).
+//! page writes for *Straight verticals*).
 
 use super::*;
 use crate::scene::rsb::{TAG_CAMR, TAG_LENS};

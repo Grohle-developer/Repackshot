@@ -1,4 +1,4 @@
-// The custom time curve of a clip (phase N1, UI.md §2.5 "Curva"): the curve from (0, 0) to (1, 1) drawn with its two
+// The custom time curve of a clip (phase N1, UI.md §2.5 "Curve"): the curve from (0, 0) to (1, 1) drawn with its two
 // handles, which are dragged (one undo entry per drag) or moved with the arrow keys (x with ← →, y with ↑ ↓; Shift:
 // ten times as far). The handles' x stay within 0..1 and their y within the overshoot the curve allows
 // (core/curve.ts). Achromatic: the ink of the theme.

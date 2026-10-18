@@ -116,7 +116,7 @@ export interface GuardMaterialCheck {
  */
 export type GuardVerdict = 'ACCEPTED' | 'LIMITED' | 'REJECTED';
 
-/** What the guard reports with every AI image (AI-POST.md §3.2 step 5, §4 "Al terminar"). */
+/** What the guard reports with every AI image (AI-POST.md §3.2 step 5, §4 "When the job finishes"). */
 export interface GuardReport {
   verdict: GuardVerdict;
   /** Fraction of the asked strength that was used: 1 when accepted at once, 0 when rejected. */
