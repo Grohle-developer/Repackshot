@@ -176,7 +176,7 @@ function grow(session: Session, frames: readonly Float32Array[], glass?: readonl
   if (g?.writer) setUi(session.ctx, { glass: { drops: g.writer.lastDrops, motes: g.writer.motesAlive } });
   const pr = session.parts;
   const partsTracks: Record<string, PartsTrack> | undefined = pr?.writer && pr.clip ? { [pr.clip]: pr.writer.track() } : undefined;
-  if (pr?.writer) setUi(session.ctx, { parts: { drops: pr.writer.lastDrops, drips: pr.writer.totalDrips } });
+  if (pr?.writer) setUi(session.ctx, { parts: { drops: pr.writer.lastDrops, drips: pr.writer.totalDrips, falling: pr.writer.lastFalling } });
   const { store } = session.ctx;
   store.dispatch({ type: 'physics/grow', tracks, ...(glassTracks ? { glass: glassTracks } : {}), ...(partsTracks ? { parts: partsTracks } : {}), gesture: session.gesture, label: session.label });
   store.dispatch({ type: 'anim/playhead', t: session.start + (session.frames - 1) / session.fps });
@@ -235,7 +235,7 @@ function begin(session: Session, started: PhysicsStarted): void {
       setUi(ctx, { state: 'STOPPED', ended: 'STOPPED', canReset: lastRunAlive(ctx) !== null });
     }
   });
-  setUi(ctx, { state: ctx.ui.get().physics.state === 'PAUSED' ? 'PAUSED' : 'RUNNING', time: 0, bodies: started.bodies, awake: started.bodies, ended: null, canReset: true, glass: g?.writer ? { drops: 0, motes: 0 } : null, parts: pr?.writer ? { drops: 0, drips: 0 } : null });
+  setUi(ctx, { state: ctx.ui.get().physics.state === 'PAUSED' ? 'PAUSED' : 'RUNNING', time: 0, bodies: started.bodies, awake: started.bodies, ended: null, canReset: true, glass: g?.writer ? { drops: 0, motes: 0 } : null, parts: pr?.writer ? { drops: 0, drips: 0, falling: 0 } : null });
 }
 
 function update(session: Session, u: PhysicsUpdate): void {

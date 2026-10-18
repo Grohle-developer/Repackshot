@@ -606,7 +606,23 @@ export interface RsbScene {
   section?: RsbSection;
   /** S3c: the rain, dust and snow on the instances (WETP, after INST), for an engine with bit 8. */
   wetParts?: RsbWetPart[];
+  /** S3d: the drops in the air (WETF, after the WETP sections), for an engine with bit 9. */
+  wetFalling?: RsbFallingDrop[];
 }
+
+/** S3d: a drop in the air of a WETF section (rt-core `weather::FallingDrop`). */
+export interface RsbFallingDrop {
+  /** The instance it left (the index among the instances the file means), or `NO_INSTANCE`. */
+  instance: number;
+  /** Its centre, world, mm. */
+  position: readonly [number, number, number];
+  /** The radius of its sphere, mm. */
+  radius: number;
+}
+
+/** S3d: the instance of a drop in the air that left none of the file's (rt-core `weather::NO_INSTANCE`). */
+export const NO_INSTANCE = 0xffffffff;
+export const TAG_WETF = 'WETF';
 
 /** S3c: the payload of a WETP section (rt-core `weather::PartWeather`). */
 export interface RsbWetPart {
@@ -959,6 +975,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   if (instances) size += instances.length * (8 + INST_BYTES);
   const wetParts = scene.wetParts ?? [];
   for (const p of wetParts) size += 8 + wetpBytes(p);
+  const wetFalling = scene.wetFalling ?? [];
+  if (wetFalling.length > 0) size += 8 + 4 + 20 * wetFalling.length;
   for (const p of programs) size += 8 + 4 + p.bytes.length;
   if (section) size += 8 + SECT_BYTES;
 
@@ -1110,6 +1128,17 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.pad((4 - (p.values.length % 4)) % 4);
       for (const d of p.drops) {
         w.u32(d.triangle);
+        w.vec(d.position);
+        w.f32(d.radius);
+      }
+    });
+  }
+  // S3d: the drops in the air, after them.
+  if (wetFalling.length > 0) {
+    w.section(TAG_WETF, 4 + 20 * wetFalling.length, () => {
+      w.u32(wetFalling.length);
+      for (const d of wetFalling) {
+        w.u32(d.instance);
         w.vec(d.position);
         w.f32(d.radius);
       }
@@ -1325,6 +1354,11 @@ export interface SceneView {
    * default: an engine of before skips the section, and the page writes what it reads.
    */
   wetParts?: boolean;
+  /**
+   * S3d: and the drops in the air of that frame (the WETF section: drips and splashes falling), for an engine with bit 9
+   * (render/engine.ts `readsWetFlight`); with `wetParts` only. Off by default: an engine of before skips it.
+   */
+  wetFlight?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -2375,9 +2409,23 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       wetParts.push({ instance: i, resolution: w.resolution, values: w.values, capAngleDeg: tp.capAngleDeg, porosity: tp.porosity, drops: w.drops });
     });
   }
+  // S3d: the drops in the air at that frame, each from the first instance of the part it left, for an engine that draws
+  // them. Those of a part that is not drawn are left out, as its weather is.
+  const wetFalling: RsbFallingDrop[] = [];
+  if (recorded && view.wetFlight) {
+    const first = new Map<NodeId, number>();
+    instanceParts.forEach((ip, i) => {
+      if (!first.has(ip.node)) first.set(ip.node, i);
+    });
+    for (const f of recorded.frame.falling) {
+      const node = recorded.track.parts[f.part]?.node;
+      const instance = node !== undefined ? first.get(node) : undefined;
+      if (instance !== undefined) wetFalling.push({ instance, position: f.position, radius: f.radius });
+    }
+  }
 
   return {
-    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}), ...(wetFalling.length > 0 ? { wetFalling } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

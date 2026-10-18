@@ -58,6 +58,7 @@ USAGE:
     rt --write-s3b-wet-example <scene.rsb>
     rt --write-s3b-wet-spec <pane.wet1>
     rt --write-s3c-wet-example <scene.rsb>
+    rt --write-s3d-flight-example <scene.rsb>
     rt --write-s3c-parts-spec <parts.wpt1>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
@@ -215,6 +216,9 @@ OPTIONS:
         --write-s3c-parts-spec <f>
                             write the spec of that simulation (rt_phys::wet_parts) as a WPT1
                             file
+        --write-s3d-flight-example <f>
+                            S3d: write that scene with the drops the simulation has in the air
+                            (drips and splashes, the WETF section) as an RSB file
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -380,6 +384,8 @@ pub enum S3Example {
     /// `rt_phys::example::s3c_wet_scene` (S3c): the parts the simulation of rain, dust and snow
     /// wetted, with their drops.
     WetParts,
+    /// `rt_phys::example::s3d_flight_scene` (S3d): the same with the drops in the air.
+    Flight,
 }
 
 impl S3Example {
@@ -390,6 +396,7 @@ impl S3Example {
             S3Example::Glass => rt_core::example::s3_glass_scene(),
             S3Example::WetGlass => rt_phys::example::s3b_wet_scene(),
             S3Example::WetParts => rt_phys::example::s3c_wet_scene(),
+            S3Example::Flight => rt_phys::example::s3d_flight_scene(),
         }
     }
 }
@@ -861,6 +868,9 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-s3b-wet-spec" => write_wet = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-s3c-wet-example" => {
                 write_s3 = Some((S3Example::WetParts, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3d-flight-example" => {
+                write_s3 = Some((S3Example::Flight, PathBuf::from(value(&mut it, arg)?)))
             }
             "--write-s3c-parts-spec" => write_parts = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),

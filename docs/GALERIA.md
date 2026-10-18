@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 161 archivos: 159 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 162 archivos: 160 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,16 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 22 versiones, 19 con capturas nuevas; las capturas se reparten en 58 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 22 versiones, 19 con capturas nuevas; las capturas se reparten en 59 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.21).
+Los goteos y las salpicaduras que caen por el aire, y el medidor que dice lo que hay en las piezas (S3d).
+
+#### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación)
+
+<a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y Sobre las piezas encendido, en pausa a los 2 s: gotas como casquetes sobre el cuerpo y el tapón; la barra de físicas dice Piezas: 875 gotas, 0 goteos, 62 en el aire; la barra de estado, Lluvia en 7 piezas: 875 gotas, 62 en el aire."><br>
+`physics-rain-air.png` · `f36ca82` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido, en pausa a los 2 s simulados con gotas en el aire (*Parts: 875 drops · 0 drips · 62 in the air*): *Rápido* dibuja las gotas del fotograma como casquetes y las del aire (las salpicaduras que vuelan) como esferas de agua, pequeñas a este encuadre (◆1 de S3d); la barra de estado dice lo que hay en las piezas: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
 
 ### v0.1.21 · 2026-10-18
 
@@ -874,6 +879,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`physics-rain.png`](#c-physics-rain) · v0.1.21 · S3b
 - [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
+- [`physics-rain-air.png`](#c-physics-rain-air) · Sin publicar · S3d
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

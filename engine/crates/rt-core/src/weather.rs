@@ -29,6 +29,13 @@
 //! in the part and material passes is the file's instances' count (the particles of the ambient
 //! effects come after it). The caps are crossed straight by shadow rays, as the small clear
 //! particles of S4b are, so a drop does not cast a black disc on the surface under it.
+//!
+//! **S3d.** In the part and material passes a drop counts as the instance it lies on (its part),
+//! not as the caps' instance ([`crate::scene::Scene::pass_instance`]). The drops **in the air** (a
+//! drip falling, the drops a splash threw: the `WETF` section, [`FallingDrop`]) are spheres of
+//! water in world space, meshed in the same mesh after the caps ([`SPHERE_SEGMENTS`] around by
+//! [`SPHERE_RINGS`] bands), with the same water and the same straight shadows, and in the passes
+//! each counts as the instance it left.
 
 use crate::color::Rgb;
 use crate::fmath;
@@ -64,6 +71,22 @@ pub const WATER_IOR: f32 = 1.333;
 pub const CAP_SEGMENTS: u32 = 16;
 /// Rings of a drop's cap from its top to its contact circle.
 pub const CAP_RINGS: u32 = 4;
+/// Triangles of a drop's cap.
+pub const CAP_TRIANGLES: u32 = CAP_SEGMENTS * (2 * CAP_RINGS - 1);
+/// S3d: segments around a drop in the air (a sphere).
+pub const SPHERE_SEGMENTS: u32 = 12;
+/// S3d: bands of a drop in the air from pole to pole.
+pub const SPHERE_RINGS: u32 = 6;
+/// S3d: triangles of a drop in the air.
+pub const SPHERE_TRIANGLES: u32 = 2 * SPHERE_SEGMENTS * (SPHERE_RINGS - 1);
+/// S3d: the bytes of a `WETF` section's header (its count).
+pub const WETF_HEADER: usize = 4;
+/// S3d: the bytes of a drop in the air in a `WETF` section.
+pub const WETF_DROP_BYTES: usize = 20;
+/// S3d: most drops in the air of a scene.
+pub const MAX_FALLING_DROPS: usize = 4096;
+/// S3d: the instance of a drop in the air that left no instance of the file.
+pub const NO_INSTANCE: u32 = u32::MAX;
 
 /// The index of sample `(i, j)` of a triangle of resolution `r` among its samples (the order of
 /// `rt_phys::wet_parts`).
@@ -86,6 +109,85 @@ pub struct WetDrop {
     pub position: Vec3,
     /// Its contact radius, mm.
     pub radius: f32,
+}
+
+/// S3d: a drop of water in the air (a drip, a splash's drop): a sphere at `position` (world space)
+/// of `radius` mm, which left instance `instance` (or [`NO_INSTANCE`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FallingDrop {
+    /// The instance it left (its index among the `INST` sections), or [`NO_INSTANCE`].
+    pub instance: u32,
+    /// Its centre, world space.
+    pub position: Vec3,
+    /// Its radius, mm.
+    pub radius: f32,
+}
+
+/// S3d: the drops in the air of a scene, the payload of its `WETF` section (at most one):
+///
+/// ```text
+/// off  type  field
+///   0  u32   drops
+///   4        (u32 instance; f32 x y z radius)[drops]   (world space; radius 0..50 mm;
+///                                                       instance 0xffffffff: none)
+/// ```
+///
+/// Trailing bytes are ignored (a newer writer's).
+pub fn decode_falling(p: &[u8]) -> Result<Vec<FallingDrop>, &'static str> {
+    let word = |at: usize| -> Result<u32, &'static str> {
+        p.get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .ok_or("the section is cut short")
+    };
+    let n = word(0)? as usize;
+    if n > MAX_FALLING_DROPS {
+        return Err("too many drops in the air");
+    }
+    let mut out = Vec::with_capacity(n);
+    for k in 0..n {
+        let at = WETF_HEADER + WETF_DROP_BYTES * k;
+        let f = |o: usize| word(at + o).map(f32::from_bits);
+        let d = FallingDrop {
+            instance: word(at)?,
+            position: Vec3::new(f(4)?, f(8)?, f(12)?),
+            radius: f(16)?,
+        };
+        if !d.position.is_finite() || !(d.radius > 0.0 && d.radius <= 50.0) {
+            return Err("a drop in the air is out of its range");
+        }
+        out.push(d);
+    }
+    Ok(out)
+}
+
+/// S3d: the `WETF` payload of `drops`.
+pub fn encode_falling(drops: &[FallingDrop]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(WETF_HEADER + WETF_DROP_BYTES * drops.len());
+    out.extend_from_slice(&(drops.len() as u32).to_le_bytes());
+    for d in drops {
+        out.extend_from_slice(&d.instance.to_le_bytes());
+        for v in [d.position.x, d.position.y, d.position.z, d.radius] {
+            out.extend_from_slice(&v.to_bits().to_le_bytes());
+        }
+    }
+    out
+}
+
+/// S3d: checks the drops in the air against the scene's instances: each names one of them (or
+/// [`NO_INSTANCE`]), a finite point, a radius in 0..50 mm, at most [`MAX_FALLING_DROPS`].
+pub fn check_falling(drops: &[FallingDrop], instances: usize) -> Result<(), &'static str> {
+    if drops.len() > MAX_FALLING_DROPS {
+        return Err("too many drops in the air");
+    }
+    for d in drops {
+        if (d.instance != NO_INSTANCE && d.instance as usize >= instances)
+            || !d.position.is_finite()
+            || !(d.radius > 0.0 && d.radius <= 50.0)
+        {
+            return Err("a drop in the air is out of its range");
+        }
+    }
+    Ok(())
 }
 
 /// What lies on a point of a surface: how wet it is, the share under dust and the share snow covers,
@@ -443,12 +545,21 @@ pub struct Cap {
 
 /// The mesh of the caps (world space, the sphere's normals), `None` without any.
 pub fn cap_mesh(caps: &[Cap]) -> Option<Mesh> {
-    if caps.is_empty() {
+    water_mesh(caps, &[])
+}
+
+/// S3d: the mesh of the caps and, after them, of the drops in the air (spheres: centre and
+/// radius), world space: [`CAP_TRIANGLES`] triangles each cap, then [`SPHERE_TRIANGLES`] each
+/// sphere; `None` without any.
+pub fn water_mesh(caps: &[Cap], spheres: &[(Vec3, f32)]) -> Option<Mesh> {
+    if caps.is_empty() && spheres.is_empty() {
         return None;
     }
     let per = 1 + CAP_RINGS * CAP_SEGMENTS;
-    let mut positions = Vec::with_capacity(caps.len() * per as usize);
-    let mut normals = Vec::with_capacity(caps.len() * per as usize);
+    let per_sphere = 2 + (SPHERE_RINGS - 1) * SPHERE_SEGMENTS;
+    let vertices = caps.len() * per as usize + spheres.len() * per_sphere as usize;
+    let mut positions = Vec::with_capacity(vertices);
+    let mut normals = Vec::with_capacity(vertices);
     let mut indices = Vec::new();
     let ring = |base: u32, r: u32, s: u32| base + 1 + (r - 1) * CAP_SEGMENTS + s % CAP_SEGMENTS;
     for c in caps {
@@ -491,6 +602,43 @@ pub fn cap_mesh(caps: &[Cap]) -> Option<Mesh> {
             }
         }
     }
+    // S3d: the spheres, a pole at +Z, rings of latitude, a pole at −Z (wound outwards).
+    let band =
+        |base: u32, r: u32, s: u32| base + 1 + (r - 1) * SPHERE_SEGMENTS + s % SPHERE_SEGMENTS;
+    for &(centre, radius) in spheres {
+        let base = positions.len() as u32;
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        positions.push(centre + up * radius);
+        normals.push(up);
+        for r in 1..SPHERE_RINGS {
+            let phi = std::f32::consts::PI * r as f32 / SPHERE_RINGS as f32;
+            let (sp, cp) = fmath::sin_cos(phi);
+            for s in 0..SPHERE_SEGMENTS {
+                let psi = std::f32::consts::TAU * s as f32 / SPHERE_SEGMENTS as f32;
+                let (ss, cs) = fmath::sin_cos(psi);
+                let dir = Vec3::new(sp * cs, sp * ss, cp);
+                positions.push(centre + dir * radius);
+                normals.push(dir);
+            }
+        }
+        let bottom = positions.len() as u32;
+        positions.push(centre - up * radius);
+        normals.push(-up);
+        for s in 0..SPHERE_SEGMENTS {
+            indices.extend_from_slice(&[base, band(base, 1, s), band(base, 1, s + 1)]);
+        }
+        for r in 1..SPHERE_RINGS - 1 {
+            for s in 0..SPHERE_SEGMENTS {
+                let (a, b) = (band(base, r, s), band(base, r, s + 1));
+                let (c2, d) = (band(base, r + 1, s), band(base, r + 1, s + 1));
+                indices.extend_from_slice(&[a, c2, d, a, d, b]);
+            }
+        }
+        let last = SPHERE_RINGS - 1;
+        for s in 0..SPHERE_SEGMENTS {
+            indices.extend_from_slice(&[bottom, band(base, last, s + 1), band(base, last, s)]);
+        }
+    }
     Mesh::new(&positions, &normals, &indices, 0).ok()
 }
 
@@ -524,13 +672,13 @@ pub fn check_parts(
     Ok(())
 }
 
-/// The caps of the drops of `parts` in world space: each at its point and along its triangle's
-/// outward normal, carried by its instance's transform.
+/// The caps of the drops of `parts` in world space, each with the instance it lies on: each at
+/// its point and along its triangle's outward normal, carried by its instance's transform.
 pub fn caps_of(
     parts: &[PartWeather],
     instances: &[crate::geometry::Instance],
     meshes: &[Mesh],
-) -> Vec<Cap> {
+) -> Vec<(u32, Cap)> {
     let mut caps = Vec::new();
     for p in parts {
         let Some(inst) = instances.get(p.instance as usize) else {
@@ -551,12 +699,15 @@ pub fn caps_of(
             if normal.length_squared().is_nan() || normal.length_squared() <= 0.5 {
                 continue;
             }
-            caps.push(Cap {
-                centre: inst.transform.point(d.position),
-                normal,
-                radius: d.radius,
-                angle_deg: p.cap_angle_deg,
-            });
+            caps.push((
+                p.instance,
+                Cap {
+                    centre: inst.transform.point(d.position),
+                    normal,
+                    radius: d.radius,
+                    angle_deg: p.cap_angle_deg,
+                },
+            ));
         }
     }
     caps
@@ -853,5 +1004,136 @@ mod tests {
         let bad = PartWeather::new(0, vec![1], vec![[0; 3]; 3], 70.0, 0.0, vec![]).unwrap();
         assert!(scene.set_wet_parts(vec![bad]).is_err());
         assert!(scene.wet_parts.is_empty());
+    }
+    #[test]
+    fn a_wetf_section_goes_and_comes_back_and_bad_ones_are_refused() {
+        let drops = vec![
+            FallingDrop {
+                instance: 2,
+                position: Vec3::new(1.0, -2.0, 30.0),
+                radius: 0.7,
+            },
+            FallingDrop {
+                instance: NO_INSTANCE,
+                position: Vec3::new(0.0, 0.0, 5.0),
+                radius: 2.0,
+            },
+        ];
+        let bytes = encode_falling(&drops);
+        assert_eq!(bytes.len(), WETF_HEADER + 2 * WETF_DROP_BYTES);
+        assert_eq!(decode_falling(&bytes), Ok(drops.clone()));
+        // A newer writer's tail is ignored.
+        let mut longer = bytes.clone();
+        longer.extend_from_slice(&[0; 8]);
+        assert_eq!(decode_falling(&longer), Ok(drops.clone()));
+        assert!(decode_falling(&bytes[..bytes.len() - 1]).is_err());
+        let mut bad = bytes.clone();
+        bad[20..24].copy_from_slice(&0.0f32.to_bits().to_le_bytes()); // a radius of 0
+        assert!(decode_falling(&bad).is_err());
+        assert!(check_falling(&drops, 3).is_ok());
+        assert!(check_falling(&drops, 2).is_err(), "instance 2 is not there");
+    }
+
+    #[test]
+    fn a_drop_in_the_air_is_a_sphere_after_the_caps_and_the_passes_name_their_parts() {
+        use crate::geometry::{Geometry, Instance, Transform};
+        use crate::integrator::{first_hit, BvhTracer, FirstHit, Prepared};
+        use crate::math::Ray;
+        // Two plates side by side: instance 0 at x < 0, instance 1 at x > 0, 30 mm up.
+        let at = |x: f32| Transform {
+            rows: [
+                [1.0, 0.0, 0.0, x],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 30.0],
+            ],
+        };
+        let mut scene = Scene {
+            geometry: Geometry::new(
+                vec![plate(40.0)],
+                vec![
+                    Instance::new(0, at(-50.0), 0),
+                    Instance::new(0, at(50.0), 0),
+                ],
+            )
+            .unwrap(),
+            materials: vec![Material::default()],
+            ..Scene::default()
+        };
+        // A drop on instance 1, and two in the air: one that left instance 0, one from nowhere.
+        let on = WetDrop {
+            triangle: 0,
+            position: Vec3::new(20.0, -20.0, 0.0),
+            radius: 3.0,
+        };
+        let w = PartWeather::new(1, vec![1, 1], vec![[0; 3]; 6], 70.0, 0.0, vec![on]).unwrap();
+        scene.set_wet_parts(vec![w]).unwrap();
+        scene
+            .set_wet_falling(vec![
+                FallingDrop {
+                    instance: 0,
+                    position: Vec3::new(-50.0, 0.0, 60.0),
+                    radius: 2.0,
+                },
+                FallingDrop {
+                    instance: NO_INSTANCE,
+                    position: Vec3::new(0.0, 0.0, 60.0),
+                    radius: 2.0,
+                },
+            ])
+            .unwrap();
+        let caps = scene.caps().unwrap();
+        assert_eq!((caps.instance, caps.caps), (2, 1));
+        let mesh = &scene.geometry.meshes()[caps.mesh as usize];
+        assert_eq!(
+            mesh.triangle_count() as u32,
+            CAP_TRIANGLES + 2 * SPHERE_TRIANGLES
+        );
+        let prepared = Prepared::new(&scene);
+        let tracer = BvhTracer {
+            geometry: &scene.geometry,
+            isa: crate::simd::Isa::detect(),
+        };
+        let down = |x: f32, y: f32| Ray::new(Vec3::new(x, y, 200.0), Vec3::new(0.0, 0.0, -1.0));
+        let met = |ray: &Ray| match first_hit(&scene, &prepared, &tracer, ray) {
+            FirstHit::Surface { instance, t, .. } => (instance, ray.origin.z - t),
+            other => panic!("{other:?}"),
+        };
+        // The sphere in the air: its top at 62 mm, named as instance 0 (the part it left).
+        let (inst, z) = met(&down(-50.0, 0.0));
+        assert_eq!(inst, 0);
+        assert!((z - 62.0).abs() < 0.05, "{z}");
+        // The one from nowhere: the drops' own instance.
+        assert_eq!(met(&down(0.0, 0.0)).0, caps.instance);
+        // The cap on instance 1: named as instance 1, not as the caps'.
+        let (inst, z) = met(&down(70.0, -20.0));
+        assert_eq!(inst, 1);
+        assert!(z > 30.5, "{z}");
+        // The sphere is a sphere: a ray along X through its centre meets it at its radius.
+        let side = Ray::new(Vec3::new(-150.0, 0.0, 60.0), Vec3::new(1.0, 0.0, 0.0));
+        let hit = scene.pick(&side).unwrap();
+        assert_eq!(hit.instance, caps.instance);
+        assert!((hit.point.x + 52.0).abs() < 0.05, "{:?}", hit.point);
+        // A shadow ray up from the plate under it goes through it, as through a cap.
+        let up = Ray::new(Vec3::new(-50.0, 0.0, 30.01), Vec3::new(0.0, 0.0, 1.0));
+        let keep = prepared
+            .shadow_for_tests(&scene, &tracer, &up)
+            .expect("not blocked");
+        assert!(keep.g > 0.85, "{keep:?}");
+        // Taken away, the cap stays and the spheres go.
+        scene.set_wet_falling(Vec::new()).unwrap();
+        let caps = scene.caps().unwrap();
+        assert_eq!(
+            scene.geometry.meshes()[caps.mesh as usize].triangle_count() as u32,
+            CAP_TRIANGLES
+        );
+        assert_eq!(scene.cap_owners, vec![1]);
+        // A drop in the air from an instance that is not there is refused and changes nothing.
+        let bad = FallingDrop {
+            instance: 7,
+            position: Vec3::ZERO,
+            radius: 1.0,
+        };
+        assert!(scene.set_wet_falling(vec![bad]).is_err());
+        assert!(scene.wet_falling.is_empty());
     }
 }

@@ -5,12 +5,15 @@
 // engine's numbers. The drops are caps of water (an instanced dome at the part's contact angle), placed where the part
 // stands. A wet part draws with a copy of its geometry that is not indexed (each triangle carries its number and the
 // barycentric weights of its corners) and a copy of its materials that runs this patch after its own.
+//
+// S3d: the drops in the air of the frame (drips and splashes falling) are spheres of the same water, one instanced
+// sphere each where the engine has it (the model's world, the root's space), for the parts that draw the weather.
 
 import * as THREE from 'three';
 import type { Pose } from '../core/animation';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
-import { partsResolution, recordedParts, SNOW_STEP_MM, type PartsTrack } from '../core/wet-parts';
+import { partsResolution, partsShown, recordedParts, SNOW_STEP_MM, type FallingDropFrame, type PartsShown, type PartsTrack } from '../core/wet-parts';
 
 /** The engine's look (rt-core `weather`, ◆ proposals there): the same numbers. */
 export const WEATHER_LOOK = {
@@ -28,6 +31,9 @@ const TEX_W = 2048;
 /** Segments around and rings of a drop's cap (rt-core `CAP_SEGMENTS`, `CAP_RINGS`). */
 const CAP_SEGMENTS = 16;
 const CAP_RINGS = 4;
+/** S3d: segments around and bands of a drop in the air (rt-core `SPHERE_SEGMENTS`, `SPHERE_RINGS`). */
+const SPHERE_SEGMENTS = 12;
+const SPHERE_RINGS = 6;
 
 const f = (v: number) => v.toFixed(4);
 const FRAGMENT_DECL = `
@@ -240,8 +246,11 @@ export class WeatherPreview {
   private frameKey = '';
   private readonly capMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.02, transmission: 1, ior: 1.333, thickness: 0.5 });
   private readonly capGeometries = new Map<number, THREE.BufferGeometry>();
-  /** Drops drawn, and the parts they and the weather are on (the meter). */
-  shown: { parts: number; drops: number } | null = null;
+  /** S3d: the drops in the air (unit spheres, scaled), in the root's space. */
+  private readonly sphere = new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS);
+  private falling: THREE.InstancedMesh | null = null;
+  /** What the frame holds on the parts that draw it (the meter: core/wet-parts.ts `partsShown`). */
+  shown: PartsShown | null = null;
 
   constructor(private readonly root: THREE.Object3D) {}
 
@@ -299,6 +308,7 @@ export class WeatherPreview {
     if (!rec) {
       const had = this.parts.size > 0;
       this.clear();
+      this.placeFalling([]);
       this.track = null;
       this.frameKey = '';
       this.shown = null;
@@ -343,7 +353,6 @@ export class WeatherPreview {
     // The frame: the samples' bytes into the textures, the caps where the drops are.
     if (key !== this.frameKey || changed) {
       this.frameKey = key;
-      let drops = 0;
       rec.track.parts.forEach((tp, k) => {
         const p = this.parts.get(tp.node);
         const fr = rec.frame.parts[k];
@@ -355,10 +364,12 @@ export class WeatherPreview {
           data[4 * s + 2] = fr.values[3 * s + 2];
         }
         p.valTex.needsUpdate = true;
-        drops += fr.drops.length;
         this.placeCaps(tp.node, p, fr.drops, objects.get(tp.node) ?? null);
       });
-      this.shown = { parts: this.parts.size, drops };
+      // S3d: what the frame holds (on the parts drawn), and its drops in the air.
+      const drawn = (k: number) => this.parts.has(rec.track.parts[k]?.node ?? '');
+      this.shown = partsShown(rec.frame, drawn);
+      this.placeFalling(rec.frame.falling.filter((f) => drawn(f.part)));
     } else {
       // The parts may have moved (a clip of the pose): the caps follow them.
       for (const [id, p] of this.parts) this.followCaps(p, objects.get(id) ?? null);
@@ -408,6 +419,37 @@ export class WeatherPreview {
     this.followCaps(p, obj);
   }
 
+  /** S3d: the spheres of the drops in the air, where the engine has them (the model's world: the root's space). */
+  private placeFalling(drops: readonly FallingDropFrame[]): void {
+    if (this.falling && this.falling.instanceMatrix.count < drops.length) {
+      this.falling.removeFromParent();
+      this.falling.dispose();
+      this.falling = null;
+    }
+    if (!this.falling && drops.length > 0) {
+      this.falling = new THREE.InstancedMesh(this.sphere, this.capMaterial, Math.max(16, drops.length));
+      this.falling.name = 'drops:air';
+      this.falling.castShadow = false;
+      this.falling.userData.weatherCaps = true;
+      this.falling.frustumCulled = false;
+      this.root.add(this.falling);
+    }
+    if (!this.falling) return;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    drops.forEach((d, i) => {
+      m.compose(new THREE.Vector3(d.position[0], d.position[1], d.position[2]), q, new THREE.Vector3(d.radius, d.radius, d.radius));
+      this.falling!.setMatrixAt(i, m);
+    });
+    this.falling.count = drops.length;
+    this.falling.instanceMatrix.needsUpdate = true;
+  }
+
+  /** S3d: the drops in the air drawn now (tests). */
+  fallingDrawn(): number {
+    return this.falling?.count ?? 0;
+  }
+
   /** The caps where the part stands: its object's matrix in the root's space. */
   private followCaps(p: PartWeatherDraw, obj: THREE.Object3D | null): void {
     if (!p.caps) return;
@@ -442,6 +484,12 @@ export class WeatherPreview {
 
   dispose(): void {
     this.clear();
+    if (this.falling) {
+      this.falling.removeFromParent();
+      this.falling.dispose();
+      this.falling = null;
+    }
+    this.sphere.dispose();
     this.capMaterial.dispose();
     for (const g of this.capGeometries.values()) g.dispose();
   }

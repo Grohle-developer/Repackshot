@@ -320,8 +320,16 @@ en triángulo (por un pliegue, a lo largo de él), con su rastro, que moja las
 muestras por donde pasa, se lleva su polvo y les quita agua; una gota que
 **cuelga** de una cara que mira hacia abajo **gotea** cuando su peso puede más
 que su línea de contacto (`ρ g V (ĝ·n) > 2π a γ sin θ̄`), y una que sale por
-una arista abierta gotea ahí: cae recta hasta la primera pieza de debajo y se
-posa (puede salpicar otra vez), o se va. Lo poroso se las bebe. **El polvo** se
+una arista abierta gotea ahí. **S3d: por el aire.** Un goteo (desde el reposo,
+o a la velocidad con que resbalaba por la arista) y las gotas de una
+salpicadura (despegadas 30° de la superficie, a la velocidad que en una cara
+horizontal las lleva a su alcance) son esferas de su volumen que caen con la
+gravedad y el arrastre del aire (a lo sumo a su velocidad terminal: Atlas,
+Srivastava y Sekhon 1973) y se posan, en un paso posterior al que salieron,
+en la primera cara que encuentran por delante (pueden salpicar otra vez), o se
+van por debajo de la pieza más baja y del suelo del estudio; mientras caen están
+en los fotogramas, en el render (bit 9, la sección `WETF`) y en *Rápido*. Lo
+poroso se las bebe. **El polvo** se
 posa como un campo (`1 − e^(−k t)` desde la última vez que la lluvia lo limpió)
 y **la nieve** como una capa que crece y no resbala, los dos solo donde la cara
 es lo bastante plana (polvo, 35°; nieve, 50°; una rampa de ±5°) y a cielo
@@ -330,12 +338,16 @@ abierto. Cada fotograma se graba en un clip `PHYSICS` de la **escena** (§3.7,
 el motor recibe, por instancia de una pieza mojada, la sección `WETP` (lo mojado,
 el polvo y la nieve de cada muestra y las gotas), bit 8 de sus capacidades; a
 un motor sin él no se le manda, y el inspector avisa de que el render enseñará
-las piezas secas. **Cómo se ve**: el agua de la película como una capa
+las piezas secas. S3d: las gotas en el aire van en una sección `WETF` de la
+escena (bit 9), cada una con la instancia de la pieza de la que salió; con el
+bit 8 y sin el 9 el inspector avisa de que los goteos y las salpicaduras solo se
+verán al posarse. En los pases de pieza y de material, una gota (en una pieza o
+en el aire) es su pieza. **Cómo se ve**: el agua de la película como una capa
 transparente casi lisa sobre el material (rugosidad 0,03) y lo poroso más
 oscuro; el polvo, un gris pardo mate encima (más oscuro mojado); la nieve, un
 blanco mate que cubre según su espesor (`1 − e^(−h / 0,5 mm)`); las gotas,
-casquetes de agua (índice 1,333) encima de la pieza. Sin grabación, las piezas
-están secas.
+casquetes de agua (índice 1,333) encima de la pieza; las del aire, esferas del
+mismo agua. Sin grabación, las piezas están secas.
 
 **Ambiente** (fase S4a, `src/core/effects.ts`, catálogo
 `src/data/effects.ts`). Partículas del aire **sin estado**: polvo en
@@ -1665,8 +1677,10 @@ y los fotogramas, la **clave** —el FNV-1a de sus bytes `WPT1` y la versión de
 formato—, cada pieza con su malla, sus triángulos, sus muestras, el ángulo de
 sus gotas y su porosidad, la disposición de las muestras que dio el motor, cada
 gota con los fotogramas en que fue como era, el fotograma en que se mojó cada
-muestra y en los que la lluvia la limpió, y las gotas y goteos de cada
-fotograma, en base64): la caché. Una pieza cuya malla ya no es la grabada se
+muestra y en los que la lluvia la limpió, las gotas y goteos de cada
+fotograma y, desde S3d, las gotas en el aire de cada fotograma —la pieza de la
+que salió cada una, su centro y su radio—, en base64; la versión 2 del formato,
+y una pista de S3c, sin ellas, se sigue leyendo): la caché. Una pieza cuya malla ya no es la grabada se
 queda seca. Una pista que no se lee se quita al abrir.
 
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,

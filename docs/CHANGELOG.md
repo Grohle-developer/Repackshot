@@ -5,6 +5,23 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Escena y ambiente
+
+- **Los goteos y las salpicaduras caen por el aire**: la gota que gotea de una pieza y las que tira una salpicadura vuelan con la gravedad y el aire (a lo sumo a su velocidad terminal) y se posan después, donde llegan, en vez de en el acto; mientras caen se ven en *Rápido*, en *Completo* y en el render, y la barra de físicas dice cuántas hay en el aire (S3d).
+- **El medidor dice lo que hay en las piezas**: *Lluvia*, *Polvo*, *Nieve* o lo que haya junto, en cuántas piezas y, con lluvia, las gotas en ellas y en el aire (*Lluvia y polvo en 4 piezas: 1.443 gotas, 12 en el aire*), o *Aún nada en las piezas*; antes decía *Lluvia en las piezas* también con solo polvo o nieve (S3d).
+- **Aviso de un motor que no dibujaría las gotas en el aire**: con un motor de render de antes (con el bit 8 y sin el 9), un efecto de gotas lo dice debajo de *Sobre las piezas* (S3d).
+
+### Motor
+
+- **Las gotas por el aire en `rt_phys::wet_parts`**: el goteo y las gotas de una salpicadura vuelan (la gravedad y un arrastre con la velocidad terminal de Atlas, Srivastava y Sekhon) y se posan en la primera cara que encuentran por delante, en un paso posterior; cada fotograma las lista (S3d).
+- **La sección `WETF`**: las gotas en el aire de la escena, que el motor dibuja como esferas de agua junto a los casquetes; bit 9 de las capacidades (`FEATURE_WET_FLIGHT`, `/api/info` dice 1023) (S3d).
+- **Las gotas con el id de su pieza en los pases** de pieza y de material: un casquete, el de la pieza en que está; una gota en el aire, el de la pieza de la que salió (antes, el de la instancia de los casquetes) (S3d).
+- Fijados nuevos: la escena de paridad con las gotas en el aire (`PINNED_S3D_FLIGHT_4SPP`, `rt --write-s3d-flight-example`) y sus seis pases (`PINNED_S3D_PASS_*`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos, en `wasm32-wasip1` y en el `rt.wasm` real. Se mueven, a propósito, `PINNED_WET_PARTS` y `PINNED_S3C_WET_4SPP`: la simulación de las piezas ya no es la de S3c; con la escena de S3c, el motor da su imagen de antes (S3d).
+
+### Herramientas
+
+- `tools/s3d-check.mjs`: la nota de un motor sin el bit 9 (en inglés y en español; con polvo, ninguna), las gotas en el aire con la barra de físicas y el medidor nuevo con su captura, el medidor con solo polvo, y el cromo acromático; la hoja `out/rain-dust-sheet.html` lleva las gotas en el aire de cada foto de las piezas y dice cuántas hay (S3d).
+
 ## v0.1.21 — 2026-10-18
 
 ### Escena y ambiente

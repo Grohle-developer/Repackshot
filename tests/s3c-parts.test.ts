@@ -68,11 +68,15 @@ function bytesOf(words: number[]): Uint8Array {
 }
 const bits = (v: number) => new Uint32Array(new Float32Array([v]).buffer)[0];
 
-/** A frame record as the engine writes it (rt_phys::wet_parts `WetParts::frame`). */
-function record(changed: [number, number, number, number, number, number, number][], gone: number[], wet: number[], wiped: number[], drips: number, drops: number): Uint8Array {
+/**
+ * A frame record as the engine writes it (rt_phys::wet_parts `WetParts::frame`); S3d: its drops in the air at the end
+ * (id, part, x, y, z, r).
+ */
+function record(changed: [number, number, number, number, number, number, number][], gone: number[], wet: number[], wiped: number[], drips: number, drops: number, falling: [number, number, number, number, number, number][] = []): Uint8Array {
   const words: number[] = [changed.length];
   for (const [id, part, tri, x, y, z, a] of changed) words.push(id, part, tri, bits(x), bits(y), bits(z), bits(a));
-  words.push(gone.length, ...gone, wet.length, ...wet, wiped.length, ...wiped, drips, drops);
+  words.push(gone.length, ...gone, wet.length, ...wet, wiped.length, ...wiped, drips, drops, falling.length);
+  for (const [id, part, x, y, z, r] of falling) words.push(id, part, bits(x), bits(y), bits(z), bits(r));
   return bytesOf(words);
 }
 
@@ -188,7 +192,7 @@ describe('S3c: the data', () => {
     expect(MAX_PARTS_SECONDS).toBeGreaterThan(30);
     expect(readsWetParts(511)).toBe(true);
     expect(readsWetParts(255)).toBe(false);
-    for (const k of ['ambient.wetParts', 'ambient.wetPartsTip.DROPS', 'ambient.wetPartsTip.DUST', 'ambient.wetPartsTip.SNOW', 'phys.parts', 'phys.partsTip', 'status.partsWeather', 'say.PHYSICS_PARTS', 'say.parts'] as const) {
+    for (const k of ['ambient.wetParts', 'ambient.wetPartsTip.DROPS', 'ambient.wetPartsTip.DUST', 'ambient.wetPartsTip.SNOW', 'phys.parts', 'phys.partsTip', 'status.partsOn.R', 'status.partsDrops', 'say.PHYSICS_PARTS', 'say.parts'] as const) {
       expect(STRINGS.en[k]).toBeTruthy();
       expect(STRINGS.es[k]).toBeTruthy();
     }
@@ -450,7 +454,7 @@ describe('S3c: the physics bar wets the parts', () => {
     expect(clip().parts!.key).toBe(wetPartsKey(runs[0].parts!));
     emit(3);
     expect(clip().parts!.frames).toBe(4);
-    expect(ui.get().physics.parts).toEqual({ drops: 1, drips: 3 });
+    expect(ui.get().physics.parts).toEqual({ drops: 1, drips: 3, falling: 0 });
     phys.stop(ctx);
     await tick();
     expect(ui.get().physics).toMatchObject({ state: 'STOPPED', ended: 'STOPPED', canReset: true });

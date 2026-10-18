@@ -6,7 +6,7 @@
 import { DEFAULT_MIX, EFFECT_PRESETS, EFFECT_SHAPES, effectPreset, type EffectKind, type EffectShape } from '../../data/effects';
 import { MATERIAL_PRESETS } from '../../data/materials';
 import { PARTS_FEED } from '../../data/wet-parts';
-import { partsRenderDry } from '../../core/wet-parts';
+import { partsRenderDry, partsRenderNoFlight } from '../../core/wet-parts';
 import { effectCap, effectHasShape, engineParticleCap, MAX_PALETTE, mixWeights, requestedParticles, windPolar, windVector, type AmbientEffect, type EffectPatch } from '../../core/effects';
 import type { Vec3 } from '../../core/math';
 import type { ProjectState } from '../../core/store';
@@ -269,6 +269,18 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
       },
     );
   }
+  // S3d: it draws them, but not the drops in the air (bit 9): the drips and splashes would show only once they land.
+  const partsNoFlight = feeds === 'DROPS' ? h('div', { class: 'note', 'data-ambient': 'wet-flight-old-engine' }, t('ambient.wetFlightOldEngine')) : null;
+  if (partsNoFlight) {
+    scope.watch(
+      (s, u) => [s.effects, u.engineInfo?.wetParts, u.engineInfo?.wetFlight] as const,
+      () => {
+        const e = get();
+        const info = ctx.ui.get().engineInfo;
+        partsNoFlight.style.display = e?.wetParts === true && partsRenderNoFlight(store.get(), info?.wetParts, info?.wetFlight) ? '' : 'none';
+      },
+    );
+  }
   if (partsRow) {
     partsRow.setAttribute('data-knob', 'ambient.wetParts');
     partsRow.setAttribute('data-tip', t(feeds === 'DROPS' ? 'ambient.wetPartsTip.DROPS' : feeds === 'DUST' ? 'ambient.wetPartsTip.DUST' : 'ambient.wetPartsTip.SNOW'));
@@ -444,7 +456,7 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     field(t('ambient.name'), nameField.el),
     line,
     // S3b (decision S3 ◆5): the Shape is one of the visible knobs, after the size, with the weights of a mix under it.
-    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow, partsRow, partsDry),
+    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow, partsRow, partsDry, partsNoFlight),
     section(ctx, 'ambient-advanced', t('ambient.advanced'), advanced, null, true),
     h('div', { class: 'note' }, t('ambient.previewNote')),
   );

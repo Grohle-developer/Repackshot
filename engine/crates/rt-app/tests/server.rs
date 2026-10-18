@@ -150,7 +150,9 @@ fn foreign_hosts_origins_and_missing_tokens_are_refused() {
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_GLASS_LAYOUT, 128);
     // S3c: and the rain, dust and snow on the parts.
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_PARTS, 256);
-    assert_eq!(info.get("features").unwrap().as_f64(), Some(511.0));
+    // S3d: and the drops in the air (and a drop named as its part in the passes).
+    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_FLIGHT, 512);
+    assert_eq!(info.get("features").unwrap().as_f64(), Some(1023.0));
     assert_eq!(info.get("portable").unwrap().as_bool(), Some(false));
     assert!(!ok.text().contains(TOKEN), "the token is never echoed");
 }
