@@ -52,7 +52,10 @@ import { resolveSection } from '../core/section';
 import { TexturePreview } from './texture-preview';
 import { filterActive, filtersOf, opticsOf } from '../core/optics';
 import { filterKernel, type FilterKernel } from './lens-filter-image';
-import { LensFilterPass } from './lens-filter-pass';
+import { LensFilterPass, type GlassDraw } from './lens-filter-pass';
+import { dropTransmittance, footprintRadiusMm, paneGrid, paneMapping, seenRect, type PaneGrid, type PaneLayout } from './glass-overlay';
+import { frontGlassOf, glassFromScene } from '../core/optics';
+import { recordedGlass, type EnginePane } from '../core/wet';
 import { lensProfileTable, PROFILE_GLSL, ProfileUniformSet, shownOfSource, sourceOfShown, type LensProfile, type ProfileView } from './lens-profile';
 import type { EngineLensInfo } from '../core/traced-lens';
 import { GraphBakes } from './graph-preview';
@@ -307,6 +310,9 @@ export interface GlyphSpec {
   selected: ViewObject | null;
   lookThrough: ViewObject | null;
 }
+
+/** S3b: the engine's layout of a camera's front glass for a view of a size (main.ts gives it, the page's rt.wasm). */
+export type GlassEngine = (state: ProjectState, cameraId: string, width: number, height: number) => EnginePane | null;
 
 export class PreviewEngine implements RenderEngine {
   readonly kind = 'preview' as const;
@@ -1666,9 +1672,109 @@ export class PreviewEngine implements RenderEngine {
   private drawFiltered(cam: THREE.Camera, c: CameraState): boolean {
     const kernels = this.filterKernels(cam, c);
     const profile = this.viewProfile(cam);
-    if (kernels.length === 0 && !profile) return false;
-    this.filterPass.render(this.renderer!, this.scene, cam, kernels, profile);
+    // S3b: and its front glass, an approximation of the engine's (render/glass-overlay.ts).
+    const glass = this.glassDraw(cam, c);
+    if (kernels.length === 0 && !profile && !glass) return false;
+    this.filterPass.render(this.renderer!, this.scene, cam, kernels, profile, glass);
     return true;
+  }
+
+  // ------------------------------------------------------------------ the front glass (S3b)
+
+  /**
+   * The engine's layout of camera `cameraId`'s front glass for a view of `width × height` (main.ts: the page's rt.wasm,
+   * `rt_scene_glass`, on io/rsb.ts `glassPaneRsb`); null: there is none.
+   */
+  private glassEngine: GlassEngine | null = null;
+  private glassPane: { cam: CameraState; width: number; height: number; pane: EnginePane | null } | null = null;
+  private glassMaps: { key: string; grid: PaneGrid; texture: THREE.DataTexture; drops: Float32Array; motes: Float32Array } | null = null;
+  private glassStats: EngineStatus['glass'] | null = null;
+
+  /** S3b: how the preview asks the engine where a camera's pane is and what lies on it by hand. */
+  setGlassEngine(fn: GlassEngine | null): void {
+    this.glassEngine = fn;
+    this.glassPane = null;
+    this.needsRender = true;
+  }
+
+  /**
+   * The front glass of camera `c` as the Fast viewport draws it, or null: the engine's pane for the camera (its
+   * distance, and by hand its drops and motes), or a pane fed by the scene with the frame of its recording the playhead
+   * shows; the maps over what the view sees of it, blurred by the footprint of a pixel (render/glass-overlay.ts).
+   */
+  private glassDraw(cam: THREE.Camera, c: CameraState): GlassDraw | null {
+    const s = this.state;
+    const g = c.optics?.frontGlass;
+    if (!s || !g?.on || isPanoramic(c.projection) || !frontGlassOf(c.optics) || !s.camera.cameras[c.id]) {
+      this.glassStats = null;
+      return null;
+    }
+    if (!this.glassEngine) {
+      this.glassStats = { drops: 0, motes: 0, noEngine: true };
+      return null;
+    }
+    // Asked again when the camera (its optics among it) or the view's size changes.
+    const camState = s.camera.cameras[c.id];
+    let held = this.glassPane;
+    if (!held || held.cam !== camState || held.width !== this.width || held.height !== this.height) {
+      held = { cam: camState, width: this.width, height: this.height, pane: this.glassEngine(s, c.id, this.width, this.height) };
+      this.glassPane = held;
+    }
+    const pane = held.pane;
+    const key = `${c.id}|${this.width}x${this.height}`;
+    if (!pane) {
+      this.glassStats = { drops: 0, motes: 0, noEngine: true };
+      return null;
+    }
+    let layout: PaneLayout;
+    if (glassFromScene(g)) {
+      const frame = recordedGlass(s, playheadPose(s), c.id);
+      if (!frame) {
+        this.glassStats = { drops: 0, motes: 0 };
+        return null;
+      }
+      layout = { distanceMm: pane.distanceMm, drops: frame.drops, motes: frame.motes, dustOpacity: pane.dustOpacity, ior: pane.ior, contactAngleDeg: frame.capAngleDeg };
+    } else layout = { distanceMm: pane.distanceMm, drops: pane.drops, motes: pane.motes, dustOpacity: pane.dustOpacity, ior: pane.ior, contactAngleDeg: pane.contactAngleDeg };
+    this.glassStats = { drops: layout.drops.length / 3, motes: layout.motes.length / 3 };
+    if (layout.drops.length === 0 && layout.motes.length === 0) return null;
+    const ortho = c.projection === 'ORTHOGRAPHIC' || !(cam instanceof THREE.PerspectiveCamera);
+    const mapping = paneMapping((cam as THREE.PerspectiveCamera).projectionMatrix.elements, layout.distanceMm, ortho);
+    const footprint = footprintRadiusMm(c.focalMm, c.fstop, c.focusDistance, layout.distanceMm, ortho);
+    const rect = seenRect(mapping);
+    const mapsKey = `${key}|${rect.x0.toFixed(3)},${rect.y0.toFixed(3)},${rect.x1.toFixed(3)},${rect.y1.toFixed(3)}|${footprint.toFixed(4)}`;
+    const same = (a: Float32Array, b: Float32Array) => a === b || (a.length === b.length && a.every((v, i) => v === b[i]));
+    const kept = this.glassMaps;
+    if (!kept || kept.key !== mapsKey || !same(kept.drops, layout.drops) || !same(kept.motes, layout.motes)) {
+      const grid = paneGrid(layout, rect, footprint);
+      const texels = new Uint16Array(4 * grid.width * grid.height);
+      for (let i = 0; i < grid.width * grid.height; i++) {
+        texels[4 * i] = THREE.DataUtils.toHalfFloat(grid.data[3 * i]);
+        texels[4 * i + 1] = THREE.DataUtils.toHalfFloat(grid.data[3 * i + 1]);
+        texels[4 * i + 2] = THREE.DataUtils.toHalfFloat(grid.data[3 * i + 2]);
+        texels[4 * i + 3] = THREE.DataUtils.toHalfFloat(1);
+      }
+      const texture = new THREE.DataTexture(texels, grid.width, grid.height, THREE.RGBAFormat, THREE.HalfFloatType);
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+      this.glassMaps?.texture.dispose();
+      this.glassMaps = { key: mapsKey, grid, texture, drops: layout.drops, motes: layout.motes };
+    }
+    const { grid, texture } = this.glassMaps!;
+    const width = this.renderer!.getDrawingBufferSize(new THREE.Vector2()).x;
+    let mean = 0;
+    for (let i = 2; i < layout.drops.length; i += 3) mean += layout.drops[i];
+    mean = layout.drops.length > 0 ? mean / (layout.drops.length / 3) : 0;
+    // The scene inside a drop: blurred over about the drop's own size in the picture with its footprint.
+    const sigmaPx = Math.min(64, Math.max(1, (0.5 * (mean + footprint) * width) / (2 * Math.abs(mapping.scale[0]))));
+    return {
+      texture,
+      scale: mapping.scale,
+      offset: mapping.offset,
+      rect: [grid.x0, grid.y0, grid.width * grid.cell, grid.height * grid.cell],
+      sigmaPx,
+      dropT: dropTransmittance(layout.ior),
+    };
   }
 
   /** O2: the engine's numbers of a camera's traced lens (main.ts asks the engine when the lens changes); null: none. */
@@ -2128,7 +2234,7 @@ export class PreviewEngine implements RenderEngine {
     const msaa = this.msaa();
     // K3: an automatic exposure draws with the path tracer's last reading of its image.
     const metered = this.state && autoExposure(this.state.image) ? { meteredEv: this.exposureMeter() } : {};
-    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...metered, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
+    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...metered, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}), ...(this.glassStats ? { glass: { ...this.glassStats } } : {}) };
   }
 
   // ------------------------------------------------------------------ ambient effects (S4a)
@@ -2750,6 +2856,7 @@ export class PreviewEngine implements RenderEngine {
     this.envMap?.dispose();
     this.maskTarget?.dispose();
     this.filterPass.dispose();
+    this.glassMaps?.texture.dispose();
     this.pmrem?.dispose();
     this.plateTexture?.dispose();
     this.renderer?.dispose();

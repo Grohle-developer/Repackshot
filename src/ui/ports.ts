@@ -36,6 +36,7 @@ import type { InstallOutcome, PluginImageRequest, PluginPresets, PluginRunReques
 import type { PluginRegistryEntry } from '../data/plugins';
 import type { PerfResult, Tool, VideoSupportUi } from './ui-state';
 import type { PhysicsRunHandle, PhysicsRunOptions, PhysicsSpec, PhysicsUpdate } from '../core/physics';
+import type { EnginePane, PaneAxes, WetPaneSpec } from '../core/wet';
 
 export interface PickResult {
   node: NodeId;
@@ -75,6 +76,11 @@ export interface EngineStatus {
    * the engine renders; `boxesOnly` when there is no rt.wasm and only the region boxes are drawn. Absent: no effect.
    */
   particles?: { shown: number; total: number; boxesOnly: boolean };
+  /**
+   * Preview (S3b): its approximation of the camera's front glass, the engine's drops and motes it draws; `noEngine`
+   * without rt.wasm. Absent: no front glass.
+   */
+  glass?: { drops: number; motes: number; noEngine?: boolean };
   watchdog?: number;
   /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
   shownKey?: string;
@@ -611,7 +617,16 @@ export interface PhysicsPort {
    * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
    * is not there (npm run engine:build), or with the engine's message when the scene does not load.
    */
-  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void): PhysicsRunHandle;
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null): PhysicsRunHandle;
+}
+
+/**
+ * S3b: what the engine says of a camera's front glass (the page's rt.wasm, `rt_scene_glass`): where the pane is, the
+ * square of it the render's rays cross (the square the simulation wets) and its axes. Null while the module is not
+ * loaded, without one, or without a front glass switched on.
+ */
+export interface GlassPort {
+  pane(state: ProjectState, cameraId: string): { pane: EnginePane; axes: PaneAxes } | null;
 }
 
 /**
@@ -745,6 +760,8 @@ export interface AppServices {
   plugins?: PluginsPort | null;
   /** The rigid body simulator (S2); null or absent where it cannot run (no Web Workers). */
   physics?: PhysicsPort | null;
+  /** S3b: the engine's front glass of a camera; absent or null where no engine is at hand. */
+  glass?: GlassPort | null;
   /** The material editor's node previews (M3a); absent or null where no worker runs them (the editor draws no spheres). */
   graphPreview?: GraphPreviewPort | null;
   /** The engine's numbers of a traced lens (O2); absent or null where no engine is at hand. */

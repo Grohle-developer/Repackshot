@@ -1,7 +1,7 @@
 // The scene's Ambient section (phase S4a, UI.md §2.4): the ambient effects of the project (dust motes, pollen, rain,
 // snow, a dust cloud, ash, rising bubbles, falling confetti), a gallery of cards to add one (the S5 volumes listed,
-// greyed, coming soon), and the effect being edited: its preset, the eight photographer's knobs and, folded,
-// Advanced with every parameter. Every change is an action of the store, one undo entry per drag.
+// greyed, coming soon), and the effect being edited: its preset, the eight photographer's knobs and its shape (S3b: out
+// of Advanced, decision S3 ◆5) and, folded, Advanced with every other parameter. Every change is an action of the store, one undo entry per drag.
 
 import { DEFAULT_MIX, EFFECT_PRESETS, EFFECT_SHAPES, effectPreset, type EffectKind, type EffectShape } from '../../data/effects';
 import { MATERIAL_PRESETS } from '../../data/materials';
@@ -254,8 +254,8 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   seedRow.setAttribute('data-knob', 'ambient.seed');
   seedRow.setAttribute('data-tip', t('ambient.seedTip'));
 
-  // --- Advanced.
-  // S3: the shape, a drop among them, or a mix of the four (each particle picks one by the weights).
+  // --- The shape (S3: a drop among them, or a mix of the four, each particle picking one by the weights). S3b: a knob
+  // of its own, out of Advanced (decision S3 ◆5).
   type ShapeChoice = EffectShape | 'MIX';
   const shapeOf = (e: AmbientEffect): ShapeChoice => (e.shapeMix?.on ? 'MIX' : e.shape);
   // Five choices: a list, which fits the inspector's width in both languages (S4a's three were buttons).
@@ -276,6 +276,8 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     },
     t('ambient.shape'),
   );
+  const shapeRow = field(t('ambient.shape'), watch(shapeSeg, shapeOf));
+  shapeRow.setAttribute('data-knob', 'ambient.shape');
   const mixRows = mixWeights(e0) || e0.shapeMix?.on
     ? h(
         'div',
@@ -316,6 +318,7 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     effectHasShape(e0, 'DROP') || effectHasShape(e0, 'CAPSULE')
       ? num('ambient.shapeVar', (e) => e.shapeVar, (v) => ({ shapeVar: v }), { min: 0, max: 1, step: 0.01, slider: true, tip: 'ambient.shapeVarTip', format: (v) => `${formatNumber(v * 100, getLang(), 0)} %` })
       : null;
+  // --- Advanced.
   const regionSeg = segmented<'SCENE' | 'BOX'>(
     (['SCENE', 'BOX'] as const).map((v) => ({ value: v, label: t(`ambient.region.${v}` as StringKey) })),
     e0.region.mode,
@@ -384,8 +387,6 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
         )
       : null,
     field(t('ambient.amountMode'), watch(modeSeg, (e) => e.amountMode)),
-    field(t('ambient.shape'), watch(shapeSeg, shapeOf)),
-    mixRows,
     dropRows,
     shapeVarRow,
     num('ambient.sizeVar', (e) => e.sizeVar, (v) => ({ sizeVar: v }), { min: 0, max: 1, step: 0.01, slider: true }),
@@ -422,7 +423,8 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     field(t('ambient.preset'), watch(presetSel, (e) => e.preset)),
     field(t('ambient.name'), nameField.el),
     line,
-    h('div', { class: 'stack', 'data-ambient': 'knobs' }, ...knobs, seedRow),
+    // S3b (decision S3 ◆5): the Shape is one of the visible knobs, after the size, with the weights of a mix under it.
+    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow),
     section(ctx, 'ambient-advanced', t('ambient.advanced'), advanced, null, true),
     h('div', { class: 'note' }, t('ambient.previewNote')),
   );

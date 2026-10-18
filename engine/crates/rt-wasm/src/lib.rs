@@ -29,6 +29,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
 pub mod phys;
+pub mod wet;
 
 /// Status returned by `rt_render_tile`: success.
 pub const STATUS_OK: u32 = 0;
@@ -293,6 +294,40 @@ pub fn scene_lens_info(handle: u32) -> Option<String> {
         .and_then(|i| reg.scenes.get(i as usize))
         .and_then(Option::as_ref)?;
     Some(loaded.scene.camera.lens_info_json())
+}
+
+/// S3b: the front glass of scene `handle` as the engine laid it out for its camera, for the Fast
+/// preview's approximation and the page's simulation of it: little-endian
+/// `f32 distance half_extent contact_angle_deg ior dust_opacity; u32 drops motes;
+/// f32 (x y a)[drops] (x y r)[motes]` (mm, the pane's axes); empty when the scene has no front glass
+/// (or its camera is panoramic, which has no front element); `None` for a bad handle.
+pub fn scene_glass(handle: u32) -> Option<Vec<u8>> {
+    let reg = registry();
+    let loaded = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get(i as usize))
+        .and_then(Option::as_ref)?;
+    let scene = &loaded.scene;
+    let Some(g) = scene.glass.as_ref().filter(|_| !scene.camera.panoramic()) else {
+        return Some(Vec::new());
+    };
+    let p = g.params();
+    let mut words: Vec<u32> = vec![
+        g.distance().to_bits(),
+        g.half_extent().to_bits(),
+        p.contact_angle_deg.to_bits(),
+        p.ior.to_bits(),
+        p.dust_opacity.to_bits(),
+        g.drops().len() as u32,
+        g.motes().len() as u32,
+    ];
+    for d in g.drops() {
+        words.extend_from_slice(&[d.x.to_bits(), d.y.to_bits(), d.a.to_bits()]);
+    }
+    for m in g.motes() {
+        words.extend_from_slice(&[m.x.to_bits(), m.y.to_bits(), m.r.to_bits()]);
+    }
+    Some(words.iter().flat_map(|w| w.to_le_bytes()).collect())
 }
 
 /// F1, focus with a click: the chief ray of image point `(u, v)` of scene `handle` (0 to 1 over the
@@ -1545,6 +1580,46 @@ mod tests {
     }
 
     #[test]
+    fn the_front_glass_of_a_scene_is_the_engines_layout() {
+        // S3b: what the Fast preview draws and the simulation is sized by.
+        let words = |b: &[u8]| -> Vec<u32> {
+            b.chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect()
+        };
+        let scene = rt_core::example::s3_glass_scene();
+        let glass = scene.glass.as_ref().unwrap();
+        let h = scene_load(&scene.to_rsb());
+        assert_ne!(h, 0);
+        let w = words(&scene_glass(h).unwrap());
+        assert_eq!(f32::from_bits(w[0]), glass.distance());
+        assert_eq!(f32::from_bits(w[1]), glass.half_extent());
+        assert_eq!(f32::from_bits(w[2]), 60.0);
+        assert_eq!(
+            (w[5] as usize, w[6] as usize),
+            (glass.drops().len(), glass.motes().len())
+        );
+        assert_eq!(w.len(), 7 + 3 * (glass.drops().len() + glass.motes().len()));
+        let d = glass.drops()[3];
+        assert_eq!(
+            &w[7 + 9..7 + 12],
+            &[d.x.to_bits(), d.y.to_bits(), d.a.to_bits()]
+        );
+        scene_free(h);
+        // A pane laid out drop by drop reads back as it was given.
+        let wet = rt_phys::example::s3b_wet_scene();
+        let h = scene_load(&wet.to_rsb());
+        let w = words(&scene_glass(h).unwrap());
+        assert_eq!(w[5] as usize, rt_phys::example::wet_pane().drops().len());
+        scene_free(h);
+        // No glass: nothing; a bad handle: None.
+        let h = scene_load(&rt_core::example::scene().to_rsb());
+        assert_eq!(scene_glass(h), Some(Vec::new()));
+        scene_free(h);
+        assert_eq!(scene_glass(h), None);
+    }
+
+    #[test]
     fn version_and_zero_length_allocations() {
         assert_eq!(rt_version(), rt_core::VERSION);
         assert_eq!(rt_features() & rt_core::FEATURE_TEXTURES, 1);
@@ -1559,6 +1634,7 @@ mod tests {
         // M3c: the pattern nodes; S3: the drops and the front glass.
         assert_eq!(rt_features() & rt_core::FEATURE_PATTERN_NODES, 32);
         assert_eq!(rt_features() & rt_core::FEATURE_DROPS, 64);
+        assert_eq!(rt_features() & rt_core::FEATURE_GLASS_LAYOUT, 128);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.

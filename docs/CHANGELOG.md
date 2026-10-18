@@ -5,6 +5,25 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Escena y ambiente
+
+- **La *Forma* sale de *Avanzado***: es uno de los mandos siempre visibles de un efecto, justo después del *Tamaño*, con los pesos de la *Mezcla* debajo (S3b).
+
+### Cámara y lente
+
+- **El cristal frontal en *Rápido***: una aproximación hecha con las gotas y motas que coloca el motor, las gotas como discos suaves de borde oscuro y el polvo como un tinte o unas motas, tan desenfocados como los deja la apertura; el medidor dice que es una aproximación y de cuántas gotas y motas (S3b).
+- **El cristal frontal alimentado por la escena** (*Gotas y polvo ▸ De la escena*): *Iniciar* en la barra de físicas simula la lluvia y el polvo de los efectos de *Ambiente* cayendo en el cristal. Las gotas se posan donde la lluvia lo cruza (una cámara que mira hacia abajo no se moja con lluvia vertical; con viento hacia ella, sí), se juntan, se quedan ancladas hasta su tamaño crítico y resbalan según el arriba de la cámara, y su rastro se lleva el polvo; el polvo se queda donde el cristal mira hacia arriba. La simulación se graba en un clip de *Físicas* de la cámara que se guarda con el proyecto; el inspector dice qué efectos lo alimentan, qué hay en el cabezal y si la escena ha cambiado desde que se grabó (S3b).
+
+### Motor
+
+- **`rt_phys::wet`**, la lluvia y el polvo en el cristal frontal, a paso fijo y determinista: llegadas por el flujo de cada efecto a través de la cara del cristal, gotas que se juntan por volumen, ancladas por la histéresis de su línea de contacto (Furmidge) y que resbalan con su rastro, polvo con ángulo de reposo que el rastro limpia; el formato WET1 y `wet_*` en `rt.wasm` (S3b).
+- **El cristal gota a gota**: el final de `GLAS` lleva las gotas y motas de un cristal simulado, y el motor las toma tal cual; bit 7 de las capacidades (`FEATURE_GLASS_LAYOUT`, `/api/info` dice 255). `rt_scene_glass_len` / `_copy` dan a la página el cristal tal como lo coloca el motor (S3b).
+- Fijados nuevos: el cristal de paridad tras 5 s de lluvia (`PINNED_WET_PANE`) y el ejemplo a través de él (`PINNED_S3B_WET_4SPP`, `rt --write-s3b-wet-example`; el WET1, `--write-s3b-wet-spec`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos, en `wasm32-wasip1` y en el `rt.wasm` real. Ningún *hash* fijado antes se mueve (S3b).
+
+### Herramientas
+
+- `tools/s3b-check.mjs`: la *Forma* entre los mandos visibles, el cristal en *Rápido* y la lluvia en el cristal con la barra de físicas, con sus tres capturas; `tools/rain-dust-sheet.mjs`, la hoja `out/rain-dust-sheet.html` (la lluvia a 0, 2, 5 y 15 s y el polvo a 0, 30 y 120 s en el cristal, con el dibujo del cristal al lado) (S3b).
+
 ## v0.1.20 — 2026-10-18
 
 ### Materiales

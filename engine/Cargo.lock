@@ -16,6 +16,7 @@ name = "rt-cli"
 version = "0.3.0"
 dependencies = [
  "rt-core",
+ "rt-phys",
  "rt-post",
 ]
 

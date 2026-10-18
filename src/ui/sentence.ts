@@ -83,6 +83,8 @@ function explodeVerb(clip: MotionClip, lang: Lang): string {
 function verb(clip: MotionClip, lang: Lang): string {
   const amount = (n: number) => formatNumber(Math.abs(n), lang);
   if (clip.move === 'EXPLODE' && clip.explode) return explodeVerb(clip, lang);
+  // S3b: the recorded front glass of the camera.
+  if (clip.move === 'PHYSICS' && clip.glass) return tIn(lang, 'say.PHYSICS_GLASS');
   switch (clip.move) {
     case 'RISE':
       return tIn(lang, clip.amount < 0 ? 'say.RISE.neg' : 'say.RISE', { amount: amount(clip.amount) });
@@ -129,7 +131,7 @@ function easingText(clip: MotionClip, lang: Lang): string {
 export function clipSentence(state: ProjectState, clip: MotionClip, lang: Lang): string {
   // A recorded simulation (S2) has no amount and no easing: it plays what was simulated.
   if (clip.move === 'PHYSICS') {
-    let p = `${subject(state, clip, lang)} ${tIn(lang, 'say.PHYSICS')} ${tIn(lang, 'say.over', { d: formatNumber(clip.duration, lang) })}`;
+    let p = `${subject(state, clip, lang)} ${verb(clip, lang)} ${tIn(lang, 'say.over', { d: formatNumber(clip.duration, lang) })}`;
     const m = clipRepeat(clip);
     if (m > 1) p += ` ${tIn(lang, 'say.repeat', { n: m })}`;
     if (clip.reverse) p += `, ${tIn(lang, 'say.reversed')}`;

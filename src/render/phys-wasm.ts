@@ -1,5 +1,6 @@
 // The rigid body simulator of rt.wasm (phase S2, engine/crates/rt-phys through rt-wasm's `phys_*`), typed: a world
-// built from a PHY1 scene (io/phys.ts writes it), stepped and read back. No DOM and no workers here, so the physics
+// built from a PHY1 scene (io/phys.ts writes it), stepped and read back. S3b: and the pane of a front glass under the
+// scene's rain and dust (`wet_*`, a WET1 spec from io/wet.ts), stepped with it and read a frame at a time. No DOM and no workers here, so the physics
 // worker (render/physics-worker.ts) and the tests in Node use the same code with the same module.
 
 /** The exports of rt.wasm the simulator uses (absent in an rt.wasm older than S2). */
@@ -109,6 +110,86 @@ export class PhysWorld {
 
   free(): void {
     if (this.handle !== 0) this.rt.phys_free(this.handle);
+    this.handle = 0;
+  }
+}
+
+/** S3b: the exports of rt.wasm that simulate rain and dust on a front glass (absent in an rt.wasm older than S3b). */
+export interface WetExports {
+  memory: WebAssembly.Memory;
+  rt_alloc(len: number): number;
+  rt_free(ptr: number, len: number): void;
+  rt_scene_error_len(): number;
+  rt_scene_error_copy(ptr: number): void;
+  wet_new(ptr: number, len: number): number;
+  wet_free(handle: number): number;
+  wet_step(handle: number, n: number): number;
+  wet_steps(handle: number): number;
+  wet_hash(handle: number): number;
+  wet_frame(handle: number): number;
+  wet_frame_copy(handle: number, out: number): number;
+}
+
+/** True when a compiled engine simulates the front glass (S3b). */
+export function hasWetExports(x: unknown): x is WetExports {
+  const e = x as Partial<WetExports> | null;
+  return !!e && typeof e.wet_new === 'function' && typeof e.wet_frame === 'function' && typeof e.wet_hash === 'function';
+}
+
+/** One pane of the front glass under the scene's rain and dust inside an instance of rt.wasm (rt_phys::wet). */
+export class WetSim {
+  private handle: number;
+
+  /** Builds the pane of a WET1 spec (io/wet.ts); throws with the engine's message when the bytes are not one. */
+  constructor(
+    private readonly rt: WetExports,
+    spec: Uint8Array,
+  ) {
+    const ptr = rt.rt_alloc(spec.length);
+    new Uint8Array(rt.memory.buffer, ptr, spec.length).set(spec);
+    this.handle = rt.wet_new(ptr, spec.length);
+    rt.rt_free(ptr, spec.length);
+    if (this.handle === 0) {
+      const len = rt.rt_scene_error_len();
+      const at = rt.rt_alloc(Math.max(1, len));
+      rt.rt_scene_error_copy(at);
+      const message = new TextDecoder().decode(new Uint8Array(rt.memory.buffer, at, len).slice());
+      rt.rt_free(at, Math.max(1, len));
+      throw new Error(message || 'wet_new failed');
+    }
+  }
+
+  private live(): number {
+    if (this.handle === 0) throw new Error('the pane was freed');
+    return this.handle;
+  }
+
+  step(n: number): void {
+    this.rt.wet_step(this.live(), Math.max(0, Math.floor(n)));
+  }
+
+  get steps(): number {
+    return this.rt.wet_steps(this.live());
+  }
+
+  /** FNV-1a of the pane: the native tests pin it. */
+  get hash(): number {
+    return this.rt.wet_hash(this.live()) >>> 0;
+  }
+
+  /** The record of a frame (the drops, the motes added and carried away since the last one); the next starts now. */
+  frame(): Uint8Array {
+    const h = this.live();
+    const len = this.rt.wet_frame(h) >>> 0;
+    const out = this.rt.rt_alloc(Math.max(4, len));
+    this.rt.wet_frame_copy(h, out);
+    const bytes = new Uint8Array(this.rt.memory.buffer, out, len).slice();
+    this.rt.rt_free(out, Math.max(4, len));
+    return bytes;
+  }
+
+  free(): void {
+    if (this.handle !== 0) this.rt.wet_free(this.handle);
     this.handle = 0;
   }
 }

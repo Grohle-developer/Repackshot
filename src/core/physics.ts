@@ -28,6 +28,7 @@ import type { MeshId } from './meshes';
 import { boundsOf, effectiveVisible, partsUnder, topMost, treeOrder, worldMatrix, type NodeId, type SceneNode, type Transform } from './scene';
 import type { ActionBase, ProjectState } from './store';
 import { cloneTransform, decomposeMatrix, isLocked } from './transform';
+import type { GlassTrack } from './wet';
 
 /** What a part does in a simulation. Cloth (S9) and liquid (S7) come later. */
 export type PhysicsRole = 'STATIC' | 'DYNAMIC';
@@ -103,6 +104,11 @@ export interface PhysicsUpdate {
   settled: boolean;
   /** The frames recorded since the last report (POSE_FLOATS per body of the world each), in order. */
   frames: Float32Array[];
+  /**
+   * S3b: with a front glass fed by the scene, the engine's record of each of those frames (rt_phys::wet `frame`:
+   * the drops, the motes added and carried away), in the same order; absent without one.
+   */
+  glass?: Uint8Array[];
 }
 
 /** When the world is built: where each body of the spec is among the poses, and the poses at step 0 (frame 0). */
@@ -110,6 +116,8 @@ export interface PhysicsStarted {
   ids: Uint32Array;
   initial: Float32Array;
   bodies: number;
+  /** S3b: the record of the front glass at step 0 (a dry pane), when the run has one. */
+  glass?: Uint8Array;
 }
 
 /** How a run ended: the frames not reported yet, and the poses of the last frame (what Stop commits). */
@@ -562,6 +570,25 @@ export class TrackWriter {
   }
 }
 
+/**
+ * S3b: the PHYSICS clip of a camera's front glass fed by the scene, starting at `start` seconds, with its glass track so
+ * far. It targets the camera (every shot: the glass is the camera's) and moves nothing: the pose says which frame of
+ * the glass shows (core/animation.ts `Pose.glass`).
+ */
+export function glassClip(id: string, start: number, glass: GlassTrack): MotionClip {
+  return {
+    id,
+    target: { kind: 'CAMERA' },
+    move: 'PHYSICS',
+    shot: null,
+    start,
+    duration: Math.max(0, glass.frames - 1) / glass.fps,
+    amount: 0,
+    easing: 'LINEAR',
+    glass,
+  };
+}
+
 /** A PHYSICS clip of a mover, starting at `start` seconds, with its track so far. */
 export function physicsClip(id: string, mover: NodeId, start: number, track: PhysicsTrack, anchor?: ClipAnchor): MotionClip {
   return {
@@ -587,8 +614,8 @@ export type PhysicsAction =
   | ({ type: 'physics/set'; ids: NodeId[]; patch: Partial<PhysicsProps> } & ActionBase)
   /** A simulation starts: its PHYSICS clips (one frame each), and the roles Drop gives. */
   | ({ type: 'physics/begin'; clips: MotionClip[]; roles?: Record<NodeId, PhysicsRole> } & ActionBase)
-  /** It runs: the clips' tracks so far (their durations follow). Same gesture as `begin`. */
-  | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack> } & ActionBase)
+  /** It runs: the clips' tracks so far (their durations follow), and S3b's glass tracks. Same gesture as `begin`. */
+  | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack>; glass?: Record<string, GlassTrack> } & ActionBase)
   /**
    * It stopped (by itself or by Stop): the movers' final transforms, and the run's clips (`clips`) anchored to them.
    * Same gesture: one undo step for all.
@@ -649,6 +676,11 @@ export function reducePhysics(state: ProjectState, action: PhysicsAction): Proje
       const anim = state.animation;
       let changed = false;
       const clips = anim.clips.map((c) => {
+        const glass = action.glass?.[c.id];
+        if (glass && c.move === 'PHYSICS' && c.glass !== glass) {
+          changed = true;
+          return { ...c, glass, duration: Math.max(0, glass.frames - 1) / glass.fps };
+        }
         const track = action.tracks[c.id];
         if (!track || c.move !== 'PHYSICS' || c.track === track) return c;
         changed = true;

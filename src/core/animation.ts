@@ -14,6 +14,7 @@ import { add, boxCenter, clamp, cross, dot, isEmptyBox, lerp, mat4Compose, mat4I
 import { allParts, boundsOf, partsUnder, worldMatrix, worldToLocalDelta, type NodeId } from './scene';
 import { decomposeMatrix } from './transform';
 import { trackPose, type PhysicsTrack } from './physics';
+import { glassFrameIndex, type GlassTrack } from './wet';
 
 /**
  * How the camera track changes into a shot (N1, SPEC §3.7 "Fundidos"): a cut, or a fade to a colour (black or white)
@@ -106,6 +107,11 @@ export interface MotionClip {
    * a part moved after a Drop takes its whole fall with it. Without it, the frames as they are.
    */
   anchor?: ClipAnchor;
+  /**
+   * PHYSICS of the camera (S3b): the recorded front glass of a run fed by the scene's rain and dust (core/wet.ts), its
+   * drops and motes per frame. The clip moves nothing; it says which frame of the glass the camera shows.
+   */
+  glass?: GlassTrack;
 }
 
 /** A node's position (mm) and rotation (degrees, XYZ) without its scale. */
@@ -333,6 +339,17 @@ export interface Pose {
   fade: FadeToColor | null;
   /** N1: where SUN_ARC has put the sky's own sun (when the rig has no sun light), or null: where the environment says. */
   skySun: { az: number; el: number } | null;
+  /**
+   * S3b: the frame of each camera's recorded front glass at this instant (the PHYSICS clips of the cameras, by camera:
+   * the clip and the frame), absent without one. The last clip of a camera wins.
+   */
+  glass?: Record<CameraId, GlassPose>;
+}
+
+/** S3b: which frame of which recorded glass a camera shows. */
+export interface GlassPose {
+  clip: string;
+  frame: number;
 }
 
 function targetKey(t: ClipTarget): string {
@@ -350,9 +367,13 @@ export function playheadPose(state: ProjectState): Pose | null {
   if (anim.clips.length === 0) return null;
   if (poseActive(state)) return evaluate(state, anim.playhead);
   const held = new Set(anim.clips.filter((c) => c.move === 'PHYSICS' && c.target.kind === 'NODE').map((c) => (c.target.kind === 'NODE' ? c.target.id : '')));
-  if (held.size === 0) return null;
+  // S3b: a recorded front glass shows its frame at 0 too, like the nodes a recorded simulation holds.
+  const glass = anim.clips.some((c) => c.move === 'PHYSICS' && c.glass);
+  if (held.size === 0 && !glass) return null;
   const pose = evaluate(state, anim.playhead);
-  return { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, materials: {}, fade: null, skySun: null, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
+  const out: Pose = { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, materials: {}, fade: null, skySun: null, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
+  if (!glass) delete out.glass;
+  return out;
 }
 
 /** N1: the colour of a fade of the camera track, linear RGB. */
@@ -481,7 +502,8 @@ export function evaluate(state: ProjectState, t: number): Pose {
   // Camera: the camera of the current shot, moved by the clips of that shot.
   const shotCamId = shot >= 0 ? anim.shots[shot]?.camera : null;
   const base = (shotCamId && state.camera.cameras[shotCamId]) || activeCamera(state);
-  const camClips = anim.clips.filter((c) => c.target.kind === 'CAMERA' && (c.shot === null || c.shot === shot));
+  // S3b: a PHYSICS clip of the camera records its front glass and moves nothing (below).
+  const camClips = anim.clips.filter((c) => c.target.kind === 'CAMERA' && c.move !== 'PHYSICS' && (c.shot === null || c.shot === shot));
   if (base && (camClips.length > 0 || shotCamId)) {
     const cp: CameraPose = {
       camera: base.id,
@@ -531,6 +553,12 @@ export function evaluate(state: ProjectState, t: number): Pose {
     }
     cp.distance = base.distance * Math.max(0.05, dolly);
     pose.camera = cp;
+  }
+
+  // S3b: the recorded front glass of each camera, the frame at this instant (through the clip's time: repeats, reversed).
+  for (const c of anim.clips) {
+    if (c.move !== 'PHYSICS' || c.target.kind !== 'CAMERA' || !c.glass) continue;
+    (pose.glass ??= {})[c.glass.camera] = { clip: c.id, frame: glassFrameIndex(c.glass, clipPhase(c, t)) };
   }
 
   // Nodes: the subject (every model root) or one node.

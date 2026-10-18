@@ -37,6 +37,13 @@
 //! their centre of mass, until no two touch. Everything is `+ − × ÷ sqrt` and [`crate::fmath`]:
 //! the same drops on every platform.
 //!
+//! **A pane given drop by drop** (S3b). A `GLAS` payload longer than [`GLAS_BYTES`] whose word 48 is
+//! [`GLAS_LAYOUT_VERSION`] carries its drops and motes one by one ([`GlassLayout`]): what the
+//! simulation of rain and dust on the pane left there (`rt_phys::wet`, the page's physics worker),
+//! instead of the scattered ones. They are taken as they come (neither scattered nor merged again:
+//! the simulation merged them), with the pane's contact angle, index and dust opacity; the coverage
+//! fields are then 0, so an engine of before S3b, which stops reading at byte 48, draws a clean pane.
+//!
 //! **What sees it.** The image's camera rays (and the albedo and alpha of their samples), through
 //! a standard or an orthographic camera; not the exact passes (their rays go through the centre of
 //! each pixel and the lens, to the scene), not the focus picks, and not a panoramic camera, which
@@ -51,6 +58,9 @@ use crate::scene::Camera;
 
 /// Bytes of a `GLAS` payload.
 pub const GLAS_BYTES: usize = 48;
+/// S3b: word 48 of a `GLAS` payload that carries its drops and motes one by one ([`GlassLayout`]).
+/// Any other value there (a newer writer's field) is not a layout.
+pub const GLAS_LAYOUT_VERSION: u32 = 1;
 /// The distance from the camera's position of a pane in front of a simple lens with distance 0
 /// (automatic), mm: where a front element sits (S3; a proposal for the lead's verdict, rule 11).
 pub const SIMPLE_LENS_GAP_MM: f32 = 25.0;
@@ -251,6 +261,97 @@ pub struct GlassMote {
     pub y: f32,
     /// Radius, mm.
     pub r: f32,
+}
+
+/// S3b: the drops and motes of a pane listed one by one (a simulated pane), the tail of a `GLAS`
+/// payload from byte 48:
+///
+/// ```text
+/// u32 layout (GLAS_LAYOUT_VERSION); u32 drop_count mote_count;
+/// f32 (x y a)[drop_count]   contact circle: centre to the camera's right and up, radius, mm
+/// f32 (x y r)[mote_count]   mote: centre, radius, mm
+/// ```
+///
+/// Every number finite, a centre within 10 m of the axis, a drop's radius in `(0, 50]` and a mote's
+/// in `(0, 10]`, at most [`MAX_DROPS`] drops and [`MAX_MOTES`] motes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GlassLayout {
+    /// The drops, as they are (not merged again).
+    pub drops: Vec<GlassDrop>,
+    /// The motes.
+    pub motes: Vec<GlassMote>,
+}
+
+impl GlassLayout {
+    /// The layout a `GLAS` payload carries after its [`GLAS_BYTES`]: `None` when it has none (48
+    /// bytes, or a word 48 that is not [`GLAS_LAYOUT_VERSION`]). Fails on a truncated list, a count
+    /// past the limits or a value out of its range.
+    pub fn decode(payload: &[u8]) -> Result<Option<GlassLayout>, &'static str> {
+        let tail = payload.get(GLAS_BYTES..).unwrap_or(&[]);
+        let word = |i: usize| -> Option<u32> {
+            tail.get(4 * i..4 * i + 4)
+                .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        };
+        if word(0) != Some(GLAS_LAYOUT_VERSION) {
+            return Ok(None);
+        }
+        let (Some(drops), Some(motes)) = (word(1), word(2)) else {
+            return Err("GLAS: layout without its counts");
+        };
+        let (drops, motes) = (drops as usize, motes as usize);
+        if drops > MAX_DROPS || motes > MAX_MOTES {
+            return Err("GLAS: more drops or motes than the pane holds");
+        }
+        if tail.len() < 4 * (3 + 3 * (drops + motes)) {
+            return Err("GLAS: layout shorter than its counts");
+        }
+        let float = |i: usize| f32::from_bits(word(i).unwrap_or(0));
+        let near = |v: f32| v.is_finite() && v.abs() <= 10_000.0;
+        let mut out = GlassLayout {
+            drops: Vec::with_capacity(drops),
+            motes: Vec::with_capacity(motes),
+        };
+        for k in 0..drops {
+            let at = 3 + 3 * k;
+            let d = GlassDrop {
+                x: float(at),
+                y: float(at + 1),
+                a: float(at + 2),
+            };
+            if !near(d.x) || !near(d.y) || !(d.a > 0.0 && d.a <= 50.0) {
+                return Err("GLAS: a drop out of its range");
+            }
+            out.drops.push(d);
+        }
+        for k in 0..motes {
+            let at = 3 + 3 * (drops + k);
+            let m = GlassMote {
+                x: float(at),
+                y: float(at + 1),
+                r: float(at + 2),
+            };
+            if !near(m.x) || !near(m.y) || !(m.r > 0.0 && m.r <= 10.0) {
+                return Err("GLAS: a mote out of its range");
+            }
+            out.motes.push(m);
+        }
+        Ok(Some(out))
+    }
+
+    /// The tail of the `GLAS` payload that carries this layout (to append after the 48 bytes).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut words = Vec::with_capacity(3 + 3 * (self.drops.len() + self.motes.len()));
+        words.push(GLAS_LAYOUT_VERSION);
+        words.push(self.drops.len() as u32);
+        words.push(self.motes.len() as u32);
+        for d in &self.drops {
+            words.extend_from_slice(&[d.x.to_bits(), d.y.to_bits(), d.a.to_bits()]);
+        }
+        for m in &self.motes {
+            words.extend_from_slice(&[m.x.to_bits(), m.y.to_bits(), m.r.to_bits()]);
+        }
+        words.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
 }
 
 /// A spherical cap's volume over the cube of its contact radius, at contact angle `θ` given by its
@@ -472,6 +573,8 @@ pub enum Crossed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrontGlass {
     params: GlassParams,
+    /// S3b: the drops and motes given one by one, when they were (then neither scattered nor merged).
+    layout: Option<GlassLayout>,
     /// Distance of the pane from the camera's position, mm (the automatic one resolved).
     distance: f32,
     /// Half the side of the square of the pane that camera rays can cross, mm.
@@ -494,6 +597,16 @@ impl FrontGlass {
     /// where its front vertex is): the pane's distance, the square its rays can cross, the drops
     /// (merged) and the motes there.
     pub fn new(params: GlassParams, camera: &Camera) -> FrontGlass {
+        FrontGlass::laid_out(params, None, camera)
+    }
+
+    /// The front glass of `params` in front of `camera` with the drops and motes of `layout` as they
+    /// are (S3b: a simulated pane), or scattered and merged as [`FrontGlass::new`] does without one.
+    pub fn laid_out(
+        params: GlassParams,
+        layout: Option<GlassLayout>,
+        camera: &Camera,
+    ) -> FrontGlass {
         let front = camera
             .lens
             .as_ref()
@@ -509,7 +622,9 @@ impl FrontGlass {
         let half_extent = Self::half_extent_of(camera, distance);
         let theta = params.contact_angle_deg.clamp(5.0, 175.0) * fmath::DEG_TO_RAD;
         let (sin_t, cos_t) = fmath::sin_cos(theta);
-        let mut drops = if params.has_drops() {
+        let mut drops = if let Some(l) = &layout {
+            l.drops.clone()
+        } else if params.has_drops() {
             scatter(
                 params.seed,
                 SALT_DROPS,
@@ -525,8 +640,12 @@ impl FrontGlass {
         } else {
             Vec::new()
         };
-        merge_drops(&mut drops);
-        let motes: Vec<GlassMote> = if params.has_dust() {
+        if layout.is_none() {
+            merge_drops(&mut drops);
+        }
+        let motes: Vec<GlassMote> = if let Some(l) = &layout {
+            l.motes.clone()
+        } else if params.has_dust() {
             scatter(
                 params.seed,
                 SALT_MOTES,
@@ -554,6 +673,7 @@ impl FrontGlass {
         let mote_grid = Grid::of(motes.iter().map(|m| (m.x, m.y, m.r)), 4.0 * mote_size);
         FrontGlass {
             params,
+            layout,
             distance,
             half_extent,
             drops,
@@ -619,6 +739,20 @@ impl FrontGlass {
     /// The parameters.
     pub fn params(&self) -> &GlassParams {
         &self.params
+    }
+
+    /// S3b: the drops and motes it was given one by one, if it was.
+    pub fn layout(&self) -> Option<&GlassLayout> {
+        self.layout.as_ref()
+    }
+
+    /// The `GLAS` payload of this pane: its parameters and, when it has one, its layout.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut bytes = self.params.encode();
+        if let Some(l) = &self.layout {
+            bytes.extend_from_slice(&l.encode());
+        }
+        bytes
     }
 
     /// The pane's distance from the camera's position, mm.

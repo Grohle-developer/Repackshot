@@ -1016,8 +1016,27 @@ impl Scene {
     pub fn prepare_glass(&mut self) {
         if let Some(glass) = &self.glass {
             let params = *glass.params();
-            self.glass = Some(crate::optics::glass::FrontGlass::new(params, &self.camera));
+            let layout = glass.layout().cloned();
+            self.glass = Some(crate::optics::glass::FrontGlass::laid_out(
+                params,
+                layout,
+                &self.camera,
+            ));
         }
+    }
+
+    /// Sets a front glass whose drops and motes are listed one by one (S3b: a simulated pane),
+    /// for the camera as it is now.
+    pub fn set_glass_layout(
+        &mut self,
+        params: crate::optics::glass::GlassParams,
+        layout: crate::optics::glass::GlassLayout,
+    ) {
+        self.glass = Some(crate::optics::glass::FrontGlass::laid_out(
+            params,
+            Some(layout),
+            &self.camera,
+        ));
     }
 
     /// Sets the front glass (S3; `None` removes it), laid out for the camera.

@@ -92,6 +92,8 @@
 //! GLAS  48 B  the front glass (S3, new, at most one, written right after LENS): u32 flags (0);
 //!             f32 distance_mm; u32 seed; f32 drop_coverage drop_size_mm drop_size_var
 //!             contact_angle_deg ior dust_coverage dust_size_mm dust_size_var dust_opacity
+//!             | u32 layout (1); u32 drop_count mote_count; f32 (x y a)[drop_count]
+//!             (x y r)[mote_count]     (S3b: the drops and motes one by one; only when there are)
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT` and `GLAS` may appear at most once (a missing one means
@@ -152,7 +154,11 @@
 //! lays the drops out for the file's camera ([`crate::optics::glass::FrontGlass`]); a pane with no
 //! drop and no dust changes no pixel, and a file without `GLAS` is the camera as before S3. An
 //! engine of before S3 skips the section (the page writes it only for an engine whose
-//! [`crate::FEATURES`] say it draws it, [`crate::FEATURE_DROPS`]).
+//! [`crate::FEATURES`] say it draws it, [`crate::FEATURE_DROPS`]). **S3b** appends the drops and
+//! motes listed one by one ([`crate::optics::glass::GlassLayout`]: a pane the simulation of the
+//! scene's rain and dust wet), which the reader takes as they are; the page writes them only for an
+//! engine with [`crate::FEATURE_GLASS_LAYOUT`], and with the coverage fields at 0, so an engine of S3
+//! draws a clean pane.
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
@@ -358,7 +364,7 @@ use crate::color::Rgb;
 use crate::ies::IesProfile;
 use crate::math::Vec3;
 use crate::optics::filters::FilterParams;
-use crate::optics::glass::{FrontGlass, GlassParams};
+use crate::optics::glass::{FrontGlass, GlassLayout, GlassParams};
 use crate::optics::traced::{MovingGap, Prescription, SurfaceSpec};
 use std::fmt;
 use std::sync::Arc;
@@ -1208,7 +1214,10 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                 }
                 let params = GlassParams::decode(payload)
                     .map_err(|reason| RsbError::Invalid { tag, reason })?;
-                set_once(&mut glass, tag, params)?;
+                // S3b: the drops and motes one by one, when the payload lists them.
+                let layout = GlassLayout::decode(payload)
+                    .map_err(|reason| RsbError::Invalid { tag, reason })?;
+                set_once(&mut glass, tag, (params, layout))?;
             }
             _ => {} // Unknown section: skipped for forward compatibility.
         }
@@ -1419,7 +1428,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         && scene.textures.is_empty()
         && scene.programs.is_empty();
     // S3: the front glass, laid out for this camera (its traced lens prepared).
-    scene.glass = glass.map(|p| FrontGlass::new(p, &camera));
+    scene.glass = glass.map(|(p, layout)| FrontGlass::laid_out(p, layout, &camera));
     scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
@@ -1545,9 +1554,7 @@ impl Scene {
         }
         // S3: the front glass, right after the camera's optics, only when there is one.
         if let Some(glass) = &self.glass {
-            w.section(TAG_GLAS, |w| {
-                w.buf.extend_from_slice(&glass.params().encode())
-            });
+            w.section(TAG_GLAS, |w| w.buf.extend_from_slice(&glass.encode()));
         }
         for (index, m) in self.materials.iter().enumerate() {
             w.section(TAG_MATL, |w| {

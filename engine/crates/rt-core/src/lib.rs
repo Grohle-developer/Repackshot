@@ -108,6 +108,12 @@ pub const FEATURE_PATTERN_NODES: u32 = 32;
 /// a mix (every particle is the effect's shape) and skips `GLAS`, so the page writes an effect of
 /// drops or of a mix for it as the shape the most particles have, and no front glass.
 pub const FEATURE_DROPS: u32 = 64;
+/// Bit 7 of [`FEATURES`] (S3b): the engine reads a front glass whose drops and motes are listed one
+/// by one (the tail of `GLAS`, [`optics::glass::GlassLayout`]: what the simulation of the scene's
+/// rain and dust left on the pane). An engine without it stops reading `GLAS` at its 48 bytes and
+/// draws the pane's coverage, which the page writes as 0: a clean pane, so the page writes no front
+/// glass fed by the scene for it.
+pub const FEATURE_GLASS_LAYOUT: u32 = 128;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
@@ -118,7 +124,8 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_IES
     | FEATURE_CAMERAS
     | FEATURE_PATTERN_NODES
-    | FEATURE_DROPS;
+    | FEATURE_DROPS
+    | FEATURE_GLASS_LAYOUT;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

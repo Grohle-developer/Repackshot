@@ -254,8 +254,11 @@ Sobre la animación de N1 y el paseo de N3:
 > (primera parte) añade la forma de gota, la mezcla de formas por
 > partícula y la variación de forma, y el cristal frontal de la cámara con
 > gotas y polvo como foto fija (`GLAS`, `ARCHITECTURE.md` §5.2
-> octodecies); las gotas que caen y resbalan sobre las piezas y sobre el
-> cristal, el polvo que se asienta y su simulación con caché son **S3b**.
+> octodecies). **S3b** hace la lluvia y el polvo de la escena sobre ese
+> cristal (`rt_phys::wet`, en el *worker* de físicas, con su caché en el clip
+> `PHYSICS` de la cámara; §5.2 novendecies) y la *Forma* fuera de
+> *Avanzado*; las gotas y el polvo sobre las piezas y la nieve que se
+> acumula son **S3c**.
 
 Un nodo de escena **Efecto** con emisor (punto, superficie de una pieza,
 volumen, curva o estallido en un fotograma), cantidad, vida, velocidad y
