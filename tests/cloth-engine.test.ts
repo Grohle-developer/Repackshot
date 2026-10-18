@@ -6,7 +6,6 @@
 // Skipped without rt.wasm (npm run engine:build) unless REPACK_REQUIRE_RT_WASM is set.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { clothSpec, cltBytes } from '../src/core/cloth';
 import { defaultParams } from '../src/core/primitives';
@@ -27,7 +26,7 @@ interface Fixture {
 const fixture = JSON.parse(readFileSync('tests/fixtures/cloth-drape.json', 'utf8')) as Fixture;
 const bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 const hex = (h: number) => `0x${(h >>> 0).toString(16).padStart(8, '0')}`;
-const SIMD = RT_WASM ? join(dirname(RT_WASM), 'rt-simd.wasm') : null;
+const SIMD = RT_WASM && /(^|\/)rt\.wasm$/.test(RT_WASM) ? RT_WASM.replace(/rt\.wasm$/, 'rt-simd.wasm') : null;
 
 async function engine(path: string): Promise<PhysExports & ClothExports> {
   const { instance } = await WebAssembly.instantiate(readFileSync(path), {});

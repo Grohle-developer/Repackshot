@@ -395,7 +395,7 @@ describe('the part as the pose shows it', () => {
     expect(meshOf(plain).positions.length / 3).toBe(4);
     const m = meshOf(at);
     expect(m.indices.length / 3).toBe(2 * 4 ** track.levels);
-    for (const v of m.indices) expect(m.positions[3 * v + 2]).toBeCloseTo(-3, 4);
+    for (const v of Array.from(m.indices)) expect(m.positions[3 * v + 2]).toBeCloseTo(-3, 4);
     expect(at.meshKey).not.toBe(plain.meshKey);
   });
 
