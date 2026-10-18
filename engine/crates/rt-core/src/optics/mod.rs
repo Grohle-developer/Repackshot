@@ -75,6 +75,7 @@
 #[cfg(test)]
 mod filter_tests;
 pub mod filters;
+pub mod glass;
 pub mod paraxial;
 pub mod pupil;
 #[cfg(test)]

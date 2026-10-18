@@ -5,11 +5,15 @@
 // be undone (`effect/add`, `effect/remove`, `effect/set`, `effect/preset`); the effects are saved with the
 // project, and a project saved before S4a opens with none.
 //
+// S3 adds the drop shape, the mixes of shapes (`shapeMix`), a drop's length and tip and the variation of the drops' and
+// capsules' lengths (`dropTail`, `dropTip`, `shapeVar`): the S3 fields of FXAM, written only when one is set and only for
+// an engine that draws them (rt_core::FEATURE_DROPS; `effectFxam`'s `drops`).
+//
 // The eight photographer's knobs of the interface are views of these fields: Amount is `density` (or `count`),
 // Size `sizeMm`, Energy `energy`, Chaos `chaos`, Wind the horizontal part of `wind` as a speed and a direction,
 // Gravity `gravity`, Variation `sizeVar` and `fallVar` together, Seed `seed`. Advanced shows the rest.
 
-import { AVAILABLE_EFFECTS, effectPreset, isEffectKind, type EffectKind, type EffectMaterial, type EffectShape, type EffectValues } from '../data/effects';
+import { AVAILABLE_EFFECTS, DEFAULT_MIX, DROP_TAIL, DROP_TIP, EFFECT_SHAPES, effectPreset, isEffectKind, type EffectKind, type EffectMaterial, type EffectShape, type EffectValues, type ShapeMix } from '../data/effects';
 import { materialPreset } from '../data/materials';
 import type { RGB } from '../data/types';
 import { isEmptyBox, type Box, type Vec3 } from './math';
@@ -88,6 +92,13 @@ export interface AmbientEffect {
   spin: number;
   /** Capsule length over speed, s. */
   streak: number;
+  /** S3: a drop's length (its tip's centre from its body's, in body radii, 0..16) and tip (over the body's radius, 0..1). */
+  dropTail: number;
+  dropTip: number;
+  /** S3: how much each drop's (or capsule's) length varies, 0..1. */
+  shapeVar: number;
+  /** S3: a mix of shapes (on: each particle picks one by the weights; `shape` is then what an older engine draws). */
+  shapeMix: ShapeMix;
   region: EffectRegion;
   band: EffectBand;
   cloud: EffectCloud;
@@ -190,6 +201,10 @@ function presetFields(state: ProjectState, key: EffectKind): Omit<AmbientEffect,
     gravity: v.gravity,
     spin: v.spin,
     streak: v.streak,
+    dropTail: v.dropTail ?? DROP_TAIL,
+    dropTip: v.dropTip ?? DROP_TIP,
+    shapeVar: v.shapeVar ?? 0,
+    shapeMix: { ...(v.mix ?? DEFAULT_MIX) },
     cloud: {
       on: v.cloudRadius > 0,
       // Around the base of the product, a third of the cloud below the floor (it is mirrored above it).
@@ -343,6 +358,12 @@ export interface FxamFields {
   /** S4b: the forward lobe of the particles' material (share 0..1, asymmetry). */
   forward: number;
   forwardG: number;
+  /** S3: the weights of the mix (sphere, disc, capsule, drop; all 0: every particle is `shape`). */
+  mix: [number, number, number, number];
+  /** S3: a drop's length and tip, and the variation of the drops' and capsules' lengths. */
+  dropTail: number;
+  dropTip: number;
+  shapeVar: number;
 }
 
 /** `FXAM.flags`. */
@@ -350,7 +371,30 @@ export const FX_FLAG_CAMERA = 1;
 export const FX_FLAG_REFLECTIONS = 2;
 export const FX_FLAG_SHADOW = 4;
 
-const SHAPE_CODES: Record<EffectShape, number> = { SPHERE: 0, DISC: 1, CAPSULE: 2 };
+const SHAPE_CODES: Record<EffectShape, number> = { SPHERE: 0, DISC: 1, CAPSULE: 2, DROP: 3 };
+
+/** S3: the weights of an effect's mix in the engine's order, or null when it draws one shape (off, or no weight). */
+export function mixWeights(e: AmbientEffect): [number, number, number, number] | null {
+  const m = e.shapeMix;
+  if (!m?.on) return null;
+  const w = EFFECT_SHAPES.map((k) => Math.max(0, finite(m[k], 0))) as [number, number, number, number];
+  return w.some((x) => x > 0) ? w : null;
+}
+
+/** True when some particle of the effect can be of `shape` (its shape, or a shape of its mix with a weight). */
+export function effectHasShape(e: AmbientEffect, shape: EffectShape): boolean {
+  const w = mixWeights(e);
+  return w ? w[EFFECT_SHAPES.indexOf(shape)] > 0 : e.shape === shape;
+}
+
+/** S3: the shape a mix draws most (the first of the heaviest), what an engine without mixes draws for every particle. */
+export function heaviestShape(e: AmbientEffect): EffectShape {
+  const w = mixWeights(e);
+  if (!w) return e.shape;
+  let best = 0;
+  for (let i = 1; i < 4; i++) if (w[i] > w[best]) best = i;
+  return EFFECT_SHAPES[best];
+}
 
 /** True when an effect renders with its own material (no catalogue key, or one the catalogue does not have). */
 export function usesOwnMaterial(e: AmbientEffect): boolean {
@@ -368,8 +412,12 @@ export function effectForward(e: AmbientEffect): [number, number] {
   return share > 0 ? [share, clamp(finite(m.forwardG ?? 0, 0), -0.95, 0.95)] : [0, 0];
 }
 
-/** The engine's parameters of an effect whose material is RSB material `materialId`. */
-export function effectFxam(state: ProjectState, e: AmbientEffect, materialId: number, engine = engineCap): FxamFields {
+/**
+ * The engine's parameters of an effect whose material is RSB material `materialId`. `drops` (S3) is whether the engine
+ * draws drops and mixes (rt_core::FEATURE_DROPS): without it a mix is its heaviest shape, a drop a sphere, and no S3
+ * field is written.
+ */
+export function effectFxam(state: ProjectState, e: AmbientEffect, materialId: number, engine = engineCap, drops = true): FxamFields {
   const [forward, forwardG] = effectForward(e);
   const r = effectRegion(state, e);
   const mm = (v: number) => v * 1000;
@@ -385,7 +433,7 @@ export function effectFxam(state: ProjectState, e: AmbientEffect, materialId: nu
     band: [0, 0],
     sizeMm: pos(e.sizeMm),
     sizeVar: clamp(finite(e.sizeVar, 0), 0, 1),
-    shape: SHAPE_CODES[e.shape] ?? 0,
+    shape: drops || heaviestShape(e) !== 'DROP' ? (SHAPE_CODES[heaviestShape(e)] ?? 0) : 0,
     fallSpeed: mm(pos(e.fallSpeed)),
     fallVar: clamp(finite(e.fallVar, 0), 0, 1),
     wind: [mm(finite(e.wind[0], 0)), mm(finite(e.wind[1], 0)), mm(finite(e.wind[2], 0))],
@@ -396,25 +444,41 @@ export function effectFxam(state: ProjectState, e: AmbientEffect, materialId: nu
     materialId,
     tintVar: clamp(finite(e.tintVar, 0), 0, 1),
     flags: (e.camera ? FX_FLAG_CAMERA : 0) | (e.reflections ? FX_FLAG_REFLECTIONS : 0) | (e.shadows ? FX_FLAG_SHADOW : 0),
-    streak: e.shape === 'CAPSULE' ? pos(e.streak) : 0,
+    streak: (drops ? effectHasShape(e, 'CAPSULE') : heaviestShape(e) === 'CAPSULE') ? pos(e.streak) : 0,
     gravity: finite(e.gravity, 1),
     energy: mm(pos(e.energy)),
     spin: finite(e.spin, 0),
     palette: e.palette.slice(0, MAX_PALETTE),
     forward,
     forwardG,
+    mix: (drops && mixWeights(e)) || [0, 0, 0, 0],
+    dropTail: drops ? clamp(finite(e.dropTail, DROP_TAIL), 0, MAX_DROP_TAIL) : DROP_TAIL,
+    dropTip: drops ? clamp(finite(e.dropTip, DROP_TIP), 0, 1) : DROP_TIP,
+    shapeVar: drops ? clamp(finite(e.shapeVar, 0), 0, 1) : 0,
   };
+}
+
+/** S3: the longest drop (rt_sim::MAX_DROP_TAIL). */
+export const MAX_DROP_TAIL = 16;
+
+/** S3: true when an effect's FXAM carries the S3 fields (rt_sim::AmbientParams::has_s3_fields, on the f32 values). */
+export function hasS3Fields(e: FxamFields): boolean {
+  const f = Math.fround;
+  return e.shape === 3 || e.mix.some((w) => f(w) !== 0) || f(e.shapeVar) !== 0 || f(e.dropTail) !== f(DROP_TAIL) || f(e.dropTip) !== f(DROP_TIP);
 }
 
 /** Bytes of an `FXAM` payload (rt_sim::FXAM_BYTES; 192 in S4a, 200 with the forward lobe of S4b). */
 export const FXAM_BYTES = 200;
+/** Bytes of an `FXAM` payload with the S3 fields (rt_sim::FXAM_S3_BYTES). */
+export const FXAM_S3_BYTES = 228;
 
 /**
  * The `FXAM` payload of an effect, little-endian, in the field order of rt_sim::params (the writer of the RSB and the
  * Fast preview's `rt_particles_eval` both send these bytes).
  */
 export function fxamPayload(e: FxamFields): Uint8Array {
-  const out = new Uint8Array(FXAM_BYTES);
+  const s3 = hasS3Fields(e);
+  const out = new Uint8Array(s3 ? FXAM_S3_BYTES : FXAM_BYTES);
   const v = new DataView(out.buffer);
   let o = 0;
   const u32 = (x: number) => {
@@ -460,6 +524,12 @@ export function fxamPayload(e: FxamFields): Uint8Array {
   for (let i = 0; i < MAX_PALETTE; i++) vec(tints[i] ?? [1, 1, 1]);
   f32(e.forward);
   f32(e.forwardG);
+  if (s3) {
+    for (const w of e.mix) f32(w);
+    f32(e.dropTail);
+    f32(e.dropTip);
+    f32(e.shapeVar);
+  }
   return out;
 }
 
@@ -480,7 +550,12 @@ function cleanPatch(patch: EffectPatch): EffectPatch {
   const out: EffectPatch = { ...patch };
   const nonNeg = ['density', 'count', 'sizeMm', 'energy', 'chaos', 'turbulenceScaleMm', 'turbulenceSpeed', 'fallSpeed', 'streak', 'time', 'cap'] as const;
   for (const k of nonNeg) if (out[k] !== undefined) (out as Record<string, number>)[k] = Math.max(0, finite(out[k], 0));
-  for (const k of ['sizeVar', 'fallVar', 'tintVar'] as const) if (out[k] !== undefined) out[k] = clamp(finite(out[k], 0), 0, 1);
+  for (const k of ['sizeVar', 'fallVar', 'tintVar', 'shapeVar', 'dropTip'] as const) if (out[k] !== undefined) out[k] = clamp(finite(out[k], 0), 0, 1);
+  if (out.dropTail !== undefined) out.dropTail = clamp(finite(out.dropTail, DROP_TAIL), 0, MAX_DROP_TAIL);
+  if (out.shapeMix !== undefined) {
+    const m = out.shapeMix;
+    out.shapeMix = { on: m.on === true, SPHERE: Math.max(0, finite(m.SPHERE, 0)), DISC: Math.max(0, finite(m.DISC, 0)), CAPSULE: Math.max(0, finite(m.CAPSULE, 0)), DROP: Math.max(0, finite(m.DROP, 0)) };
+  }
   if (out.count !== undefined) out.count = Math.min(MAX_PARTICLES, Math.round(out.count));
   if (out.cap !== undefined) out.cap = Math.min(MAX_PARTICLES, Math.round(out.cap));
   if (out.seed !== undefined) out.seed = Math.max(0, Math.min(0xffffffff, Math.round(finite(out.seed, 0))));
@@ -552,7 +627,7 @@ export function normalizeEffects(raw: unknown, state: ProjectState): AmbientEffe
       }
     }
     if (!['DENSITY', 'COUNT'].includes(merged.amountMode)) merged.amountMode = base.amountMode;
-    if (!['SPHERE', 'DISC', 'CAPSULE'].includes(merged.shape)) merged.shape = base.shape;
+    if (!(EFFECT_SHAPES as readonly string[]).includes(merged.shape)) merged.shape = base.shape;
     if (!['SCENE', 'BOX'].includes(merged.region.mode)) merged.region = base.region;
     const vec = (v: unknown, fallback: Vec3): Vec3 => (Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? [v[0], v[1], v[2]] : fallback);
     merged.wind = vec(merged.wind, base.wind);

@@ -85,11 +85,16 @@
 //!             cloud_softness; u32 material_id; f32 tint_var; u32 flags; f32 streak
 //!             | f32 gravity (1) energy (0) spin (0); u32 palette_count (0);
 //!             f32 palette[4][3] (white)                                           (192 B)
+//!             ||||||||| f32 mix[4] (0); f32 drop_tail (1.6) drop_tip (0.15) shape_var (0)
+//!                                                     (S3, 228 B; only when set: rt_sim::params)
 //! SECT  20 B  the section view (Q1, new, at most one, written after the FXAM sections): u32
 //!             flags (bit 0: cap the cut solids); f32 normal[3] distance
+//! GLAS  48 B  the front glass (S3, new, at most one, written right after LENS): u32 flags (0);
+//!             f32 distance_mm; u32 seed; f32 drop_coverage drop_size_mm drop_size_var
+//!             contact_angle_deg ior dust_coverage dust_size_mm dust_size_var dust_opacity
 //! ```
 //!
-//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS` and `IMGS` may appear at most once (a missing one means
+//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT` and `GLAS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
 //! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP` and `PROG` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
@@ -140,6 +145,14 @@
 //! BVH ([`crate::geometry::ParticleSet`]); a reader without S4a skips the section. The effect's
 //! `material_id` must refer to a `MATL` section. In the part and material id passes a particle
 //! counts as instance `instances + effect index`.
+//!
+//! **Front glass** (S3). `GLAS` puts a pane in front of the camera, at `distance_mm` from its
+//! position (0: where a front element sits), that drops of water and motes of dust lie on: the
+//! fields and what the camera rays do through it are those of [`crate::optics::glass`]. The reader
+//! lays the drops out for the file's camera ([`crate::optics::glass::FrontGlass`]); a pane with no
+//! drop and no dust changes no pixel, and a file without `GLAS` is the camera as before S3. An
+//! engine of before S3 skips the section (the page writes it only for an engine whose
+//! [`crate::FEATURES`] say it draws it, [`crate::FEATURE_DROPS`]).
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
@@ -345,6 +358,7 @@ use crate::color::Rgb;
 use crate::ies::IesProfile;
 use crate::math::Vec3;
 use crate::optics::filters::FilterParams;
+use crate::optics::glass::{FrontGlass, GlassParams};
 use crate::optics::traced::{MovingGap, Prescription, SurfaceSpec};
 use std::fmt;
 use std::sync::Arc;
@@ -382,6 +396,8 @@ pub const TAG_IMGS: [u8; 4] = *b"IMGS";
 pub const TAG_PROG: [u8; 4] = *b"PROG";
 /// Section tag of the section view's plane (Q1).
 pub const TAG_SECT: [u8; 4] = *b"SECT";
+/// Tag of the front glass section (S3, at most one).
+pub const TAG_GLAS: [u8; 4] = *b"GLAS";
 
 /// Widest field of view of a panoramic camera, degrees (`CAMR.fov_x_deg`, `fov_y_deg`; K3).
 pub const MAX_FOV_DEG: f32 = 3600.0;
@@ -1116,6 +1132,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut images: Option<Vec<Arc<TextureImage>>> = None;
     let mut programs: Vec<(u32, crate::program::Program)> = Vec::new();
     let mut section = None;
+    let mut glass = None;
     let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
     // The profile each IES light names, by the light's position in `scene.lights`.
     let mut light_profiles: Vec<(usize, u32)> = Vec::new();
@@ -1185,6 +1202,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                 rt_sim::FxamError::Invalid(reason) => RsbError::Invalid { tag, reason },
             })?),
             TAG_SECT => set_once(&mut section, tag, parse_section(&mut r)?)?,
+            TAG_GLAS => {
+                if payload.len() < crate::optics::glass::GLAS_BYTES {
+                    return Err(RsbError::SectionTooShort { tag });
+                }
+                let params = GlassParams::decode(payload)
+                    .map_err(|reason| RsbError::Invalid { tag, reason })?;
+                set_once(&mut glass, tag, params)?;
+            }
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
@@ -1393,6 +1418,8 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         && scene.images.is_empty()
         && scene.textures.is_empty()
         && scene.programs.is_empty();
+    // S3: the front glass, laid out for this camera (its traced lens prepared).
+    scene.glass = glass.map(|p| FrontGlass::new(p, &camera));
     scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
@@ -1514,6 +1541,12 @@ impl Scene {
                         w.f32(p.frame_sensor_mm);
                     }
                 }
+            });
+        }
+        // S3: the front glass, right after the camera's optics, only when there is one.
+        if let Some(glass) = &self.glass {
+            w.section(TAG_GLAS, |w| {
+                w.buf.extend_from_slice(&glass.params().encode())
             });
         }
         for (index, m) in self.materials.iter().enumerate() {

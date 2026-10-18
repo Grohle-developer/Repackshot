@@ -7,7 +7,7 @@
 // Without --url it serves dist/ with `vite preview` on port 4196 and stops it at the end (by the pids `lsof` reports).
 //
 //   section   on the example bottle, the Scene inspector has the Ambient section after Environment and before Camera,
-//             empty; Add opens the gallery of cards (the eight presets, and the three volumes of S5 greyed and
+//             empty; Add opens the gallery of cards (the nine presets, S3's drops among them, and the three volumes of S5 greyed and
 //             disabled as coming soon); a card adds the effect (one undo entry that names it), the list shows it with
 //             its particles, the editor shows the preset, the eight knobs and Advanced folded; the Fast preview draws
 //             the particles rt.wasm evaluates (the viewport's pixels change, the meter says how many); Preset changes
@@ -211,7 +211,8 @@ async function sectionCheck(browser) {
   await settle(page, 150);
   const cards = await page.evaluate(() => [...document.querySelectorAll('[data-ambient="gallery"] [data-preset]')].map((c) => ({ key: c.getAttribute('data-preset'), disabled: c.disabled, text: c.textContent })));
   log.cards = cards.map((c) => `${c.key}${c.disabled ? ' (soon)' : ''}`);
-  ok(cards.length === 11 && cards.filter((c) => !c.disabled).length === 8, `the gallery has ${cards.length} cards, ${cards.filter((c) => !c.disabled).length} enabled`, f);
+  // S3 adds the Water drops card: nine presets and the three volumes of S5.
+  ok(cards.length === 12 && cards.filter((c) => !c.disabled).length === 9, `the gallery has ${cards.length} cards, ${cards.filter((c) => !c.disabled).length} enabled`, f);
   ok(cards.filter((c) => c.disabled).every((c) => /coming soon/i.test(c.text) && ['HAZE', 'LIGHT_SHAFTS', 'GROUND_FOG'].includes(c.key)), 'the S5 cards are not the greyed ones that say coming soon', f);
   await page.locator(SECTION).screenshot({ path: join(SHOTS, 'ambient-gallery.png') });
 

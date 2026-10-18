@@ -374,6 +374,10 @@ export function readEffect(p: DataView): RsbEffect {
     palette: [],
     forward: 0,
     forwardG: 0,
+    mix: [0, 0, 0, 0],
+    dropTail: Math.fround(1.6),
+    dropTip: Math.fround(0.15),
+    shapeVar: 0,
   };
   if (c.remaining >= 16) {
     e.gravity = c.f32();
@@ -386,6 +390,13 @@ export function readEffect(p: DataView): RsbEffect {
   if (c.remaining >= 8) {
     e.forward = c.f32();
     e.forwardG = c.f32();
+  }
+  // S3: the mix, the drop and the variation (written only when one is set).
+  if (c.remaining >= 28) {
+    e.mix = [c.f32(), c.f32(), c.f32(), c.f32()];
+    e.dropTail = c.f32();
+    e.dropTip = c.f32();
+    e.shapeVar = c.f32();
   }
   return e;
 }

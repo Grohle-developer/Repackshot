@@ -144,7 +144,9 @@ fn foreign_hosts_origins_and_missing_tokens_are_refused() {
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_CAMERAS, 16);
     // M3c: and the pattern nodes of a program.
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_PATTERN_NODES, 32);
-    assert_eq!(info.get("features").unwrap().as_f64(), Some(63.0));
+    // S3: and the drops (the drop shape and the mixes of the ambient effects, the front glass).
+    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_DROPS, 64);
+    assert_eq!(info.get("features").unwrap().as_f64(), Some(127.0));
     assert_eq!(info.get("portable").unwrap().as_bool(), Some(false));
     assert!(!ok.text().contains(TOKEN), "the token is never echoed");
 }

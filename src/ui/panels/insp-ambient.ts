@@ -3,9 +3,9 @@
 // greyed, coming soon), and the effect being edited: its preset, the eight photographer's knobs and, folded,
 // Advanced with every parameter. Every change is an action of the store, one undo entry per drag.
 
-import { EFFECT_PRESETS, effectPreset, type EffectKind, type EffectShape } from '../../data/effects';
+import { DEFAULT_MIX, EFFECT_PRESETS, EFFECT_SHAPES, effectPreset, type EffectKind, type EffectShape } from '../../data/effects';
 import { MATERIAL_PRESETS } from '../../data/materials';
-import { effectCap, engineParticleCap, MAX_PALETTE, requestedParticles, windPolar, windVector, type AmbientEffect, type EffectPatch } from '../../core/effects';
+import { effectCap, effectHasShape, engineParticleCap, MAX_PALETTE, mixWeights, requestedParticles, windPolar, windVector, type AmbientEffect, type EffectPatch } from '../../core/effects';
 import type { Vec3 } from '../../core/math';
 import type { ProjectState } from '../../core/store';
 import { colorField, field, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
@@ -255,12 +255,67 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   seedRow.setAttribute('data-tip', t('ambient.seedTip'));
 
   // --- Advanced.
-  const shapeSeg = segmented<EffectShape>(
-    (['SPHERE', 'DISC', 'CAPSULE'] as const).map((v) => ({ value: v, label: t(`ambient.shape.${v}` as StringKey) })),
-    e0.shape,
-    (v) => set({ shape: v }, 'ambient.shape'),
-    { full: true, ariaLabel: t('ambient.shape') },
+  // S3: the shape, a drop among them, or a mix of the four (each particle picks one by the weights).
+  type ShapeChoice = EffectShape | 'MIX';
+  const shapeOf = (e: AmbientEffect): ShapeChoice => (e.shapeMix?.on ? 'MIX' : e.shape);
+  // Five choices: a list, which fits the inspector's width in both languages (S4a's three were buttons).
+  const shapeSeg = select(
+    ([...EFFECT_SHAPES, 'MIX'] as const).map((v) => ({ value: v, label: t(`ambient.shape.${v}` as StringKey) })),
+    shapeOf(e0),
+    (choice) => {
+      const v = choice as ShapeChoice;
+      const e = get();
+      if (!e) return;
+      if (v === 'MIX') {
+        // The weights it had, or every shape alike with drops twice (a proposal, rule 11).
+        const had = e.shapeMix && EFFECT_SHAPES.some((k) => e.shapeMix[k] > 0) ? e.shapeMix : DEFAULT_MIX;
+        set({ shapeMix: { ...had, on: true } }, 'ambient.shape');
+      } else {
+        set({ shape: v, shapeMix: { ...(e.shapeMix ?? DEFAULT_MIX), on: false } }, 'ambient.shape');
+      }
+    },
+    t('ambient.shape'),
   );
+  const mixRows = mixWeights(e0) || e0.shapeMix?.on
+    ? h(
+        'div',
+        { class: 'stack', 'data-ambient': 'mix' },
+        ...EFFECT_SHAPES.map((k) =>
+          num(`ambient.mix.${k}` as StringKey, (e) => e.shapeMix?.[k] ?? 0, (v) => ({ shapeMix: { ...get()!.shapeMix, [k]: Math.max(0, v) } }), {
+            min: 0,
+            max: 4,
+            step: 0.05,
+            slider: true,
+            tip: 'ambient.mixTip',
+          }),
+        ),
+        (() => {
+          const share = h('div', { class: 'aux', 'data-ambient': 'mix-shares' });
+          const show = (e: AmbientEffect) => {
+            const w = mixWeights(e);
+            const total = w ? w.reduce((a, b) => a + b, 0) : 0;
+            share.textContent = w && total > 0
+              ? EFFECT_SHAPES.map((k, i) => `${t(`ambient.shape.${k}` as StringKey)} ${formatNumber((100 * w[i]) / total, getLang(), 0)} %`).join(' · ')
+              : t('ambient.mixEmpty');
+          };
+          show(e0);
+          scope.watch((st) => st.effects.find((x) => x.id === id), (e) => e && show(e));
+          return share;
+        })(),
+      )
+    : null;
+  const dropRows = effectHasShape(e0, 'DROP')
+    ? h(
+        'div',
+        { class: 'stack', 'data-ambient': 'drop' },
+        num('ambient.dropTail', (e) => e.dropTail, (v) => ({ dropTail: v }), { min: 0.5, max: 4, step: 0.05, unit: '×', slider: true, tip: 'ambient.dropTailTip' }),
+        num('ambient.dropTip', (e) => e.dropTip, (v) => ({ dropTip: v }), { min: 0, max: 0.8, step: 0.01, slider: true, tip: 'ambient.dropTipTip', format: (v) => `${formatNumber(v * 100, getLang(), 0)} %` }),
+      )
+    : null;
+  const shapeVarRow =
+    effectHasShape(e0, 'DROP') || effectHasShape(e0, 'CAPSULE')
+      ? num('ambient.shapeVar', (e) => e.shapeVar, (v) => ({ shapeVar: v }), { min: 0, max: 1, step: 0.01, slider: true, tip: 'ambient.shapeVarTip', format: (v) => `${formatNumber(v * 100, getLang(), 0)} %` })
+      : null;
   const regionSeg = segmented<'SCENE' | 'BOX'>(
     (['SCENE', 'BOX'] as const).map((v) => ({ value: v, label: t(`ambient.region.${v}` as StringKey) })),
     e0.region.mode,
@@ -329,12 +384,15 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
         )
       : null,
     field(t('ambient.amountMode'), watch(modeSeg, (e) => e.amountMode)),
-    field(t('ambient.shape'), watch(shapeSeg, (e) => e.shape)),
+    field(t('ambient.shape'), watch(shapeSeg, shapeOf)),
+    mixRows,
+    dropRows,
+    shapeVarRow,
     num('ambient.sizeVar', (e) => e.sizeVar, (v) => ({ sizeVar: v }), { min: 0, max: 1, step: 0.01, slider: true }),
     num('ambient.fallSpeed', (e) => e.fallSpeed, (v) => ({ fallSpeed: v }), { min: 0, step: 0.01, unit: 'm/s', digits: 2 }),
     num('ambient.fallVar', (e) => e.fallVar, (v) => ({ fallVar: v }), { min: 0, max: 1, step: 0.01, slider: true }),
-    e0.shape === 'DISC' ? num('ambient.spin', (e) => e.spin, (v) => ({ spin: v }), { step: 0.05, unit: t('ambient.turnsPerSecond'), digits: 2 }) : null,
-    e0.shape === 'CAPSULE' ? num('ambient.streak', (e) => e.streak, (v) => ({ streak: v }), { min: 0, step: 0.001, unit: 's', digits: 3, tip: 'ambient.streakTip' }) : null,
+    effectHasShape(e0, 'DISC') ? num('ambient.spin', (e) => e.spin, (v) => ({ spin: v }), { step: 0.05, unit: t('ambient.turnsPerSecond'), digits: 2 }) : null,
+    effectHasShape(e0, 'CAPSULE') ? num('ambient.streak', (e) => e.streak, (v) => ({ streak: v }), { min: 0, step: 0.001, unit: 's', digits: 3, tip: 'ambient.streakTip' }) : null,
     num('ambient.windZ', (e) => e.wind[2], (v) => ({ wind: [get()!.wind[0], get()!.wind[1], v] }), { step: 0.01, unit: 'm/s', digits: 2 }),
     num('ambient.turbScale', (e) => e.turbulenceScaleMm, (v) => ({ turbulenceScaleMm: v }), { min: 0, step: 1, unit: 'mm', digits: 0 }),
     num('ambient.turbSpeed', (e) => e.turbulenceSpeed, (v) => ({ turbulenceSpeed: v }), { min: 0, step: 0.01, unit: 'm/s', digits: 2 }),
@@ -398,7 +456,9 @@ export function ambientSection(ctx: Ctx, scope: Scope): HTMLElement {
     (s, u) => {
       const id = editedId(s, u.effectSelected);
       const e = s.effects.find((x) => x.id === id);
-      return e ? `${e.id}|${e.preset}|${e.shape}|${e.amountMode}|${e.region.mode}|${e.band.on}|${e.cloud.on}|${e.palette.length}` : '';
+      // S3: the mix and which of its shapes have a weight (the rows of the drop, the streak and the spin follow them).
+      const mix = e?.shapeMix?.on ? EFFECT_SHAPES.map((k) => (e.shapeMix[k] > 0 ? 1 : 0)).join('') : '-';
+      return e ? `${e.id}|${e.preset}|${e.shape}|${mix}|${e.amountMode}|${e.region.mode}|${e.band.on}|${e.cloud.on}|${e.palette.length}` : '';
     },
     (sc, key) => (key ? editor(ctx, sc, key.split('|')[0]) : null),
   );

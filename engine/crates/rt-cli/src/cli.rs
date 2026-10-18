@@ -53,6 +53,8 @@ USAGE:
     rt --write-k3-plan-example <scene.rsb>
     rt --write-k3-panorama-example <scene.rsb>
     rt --write-k3-fisheye-example <scene.rsb>
+    rt --write-s3-drops-example <scene.rsb>
+    rt --write-s3-glass-example <scene.rsb>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
@@ -192,6 +194,11 @@ OPTIONS:
                             sky through a window): its plan from above, orthographic, with the
                             ceiling hidden to the camera; an equirectangular panorama from
                             inside; an equidistant fisheye) as an RSB file
+        --write-s3-drops-example <f>
+        --write-s3-glass-example <f>
+                            write an S3 parity scene (the example with falling drops and a mix
+                            of the four shapes of particles; the example through a front glass
+                            with drops and dust on it) as an RSB file
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -340,6 +347,25 @@ impl K3View {
             K3View::Plan => rt_core::example::k3_plan_scene(),
             K3View::Panorama => rt_core::example::k3_panorama_scene(),
             K3View::Fisheye => rt_core::example::k3_fisheye_scene(),
+        }
+    }
+}
+
+/// The S3 parity scenes (`rt --write-s3-*-example`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum S3Example {
+    /// `rt_core::example::s3_drops_scene`: falling drops and a mix of shapes.
+    Drops,
+    /// `rt_core::example::s3_glass_scene`: the example through a wet, dusty front glass.
+    Glass,
+}
+
+impl S3Example {
+    /// The parity scene.
+    pub fn scene(self) -> rt_core::scene::Scene {
+        match self {
+            S3Example::Drops => rt_core::example::s3_drops_scene(),
+            S3Example::Glass => rt_core::example::s3_glass_scene(),
         }
     }
 }
@@ -517,6 +543,13 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write an S3 parity scene ([`S3Example`]) as an RSB file.
+    WriteS3Example {
+        /// Which scene.
+        which: S3Example,
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
     WriteAmbientExample {
         /// RSB file to write.
@@ -635,6 +668,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_q1 = None;
     let mut write_l5 = None;
     let mut write_k3 = None;
+    let mut write_s3 = None;
     let mut write_e10 = None;
     let mut adaptive_noise_dir = None;
     let mut write_ambient = None;
@@ -778,6 +812,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--write-k3-fisheye-example" => {
                 write_k3 = Some((K3View::Fisheye, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3-drops-example" => {
+                write_s3 = Some((S3Example::Drops, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3-glass-example" => {
+                write_s3 = Some((S3Example::Glass, PathBuf::from(value(&mut it, arg)?)))
             }
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -950,6 +990,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-k3-*-example takes no other option".into());
         }
         return Ok(Command::WriteK3Example { view, path });
+    }
+    if let Some((which, path)) = write_s3 {
+        if args.len() != 2 {
+            return Err("--write-s3-*-example takes no other option".into());
+        }
+        return Ok(Command::WriteS3Example { which, path });
     }
     if let Some(path) = write_e10 {
         if args.len() != 2 {
@@ -1218,6 +1264,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteK3Example { view, path } => {
             let bytes = view.scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteS3Example { which, path } => {
+            let bytes = which.scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())

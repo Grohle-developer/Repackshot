@@ -43,15 +43,37 @@
 //! 192  f32       forward                share of the forward lobe of the particles' material,
 //!                                       0..1 (0: none; S4b)
 //! 196  f32       forward_g              its Henyey–Greenstein asymmetry, -1 < g < 1 (0)
-//! ---- 200 B
+//! ---- 200 B (S4b)
+//! 200  f32[4]    mix                    weights of a mix of shapes: sphere, disc, capsule, drop
+//!                                       (>= 0; all 0: every particle is `shape`; S3)
+//! 216  f32       drop_tail              a drop's length: from the centre of its round body to the
+//!                                       centre of its tip, over the body's radius, 0..16 (1.6)
+//! 220  f32       drop_tip               the radius of a drop's tip over its body's, 0..1 (0.15)
+//! 224  f32       shape_var              per-particle variation of a drop's length and of a
+//!                                       capsule's, 0..1 (0)
+//! ---- 228 B (S3)
 //! ```
+//!
+//! The writer adds the S3 fields only when one of them is not its default ([`AmbientParams::has_s3_fields`]),
+//! so an effect without drops, mixes or shape variation keeps the 200 bytes of S4b.
 
 use std::fmt;
 
 /// Bytes a payload must have: the fields of the brief.
 pub const FXAM_MIN_BYTES: usize = 128;
-/// Bytes this version writes.
+/// Bytes this version writes for an effect without the S3 fields (the payload of S4b).
 pub const FXAM_BYTES: usize = 200;
+/// Bytes this version writes for an effect with a drop, a mix of shapes or a shape variation (S3).
+pub const FXAM_S3_BYTES: usize = 228;
+/// Default `drop_tail`: the centre of a drop's tip 1.6 body radii from its body's (S3; a proposal
+/// for the lead's verdict, rule 11).
+pub const DROP_TAIL: f32 = 1.6;
+/// Default `drop_tip`: a drop's tip 0.15 times as wide as its body (S3; a proposal, rule 11).
+pub const DROP_TIP: f32 = 0.15;
+/// Largest `drop_tail`.
+pub const MAX_DROP_TAIL: f32 = 16.0;
+/// Shapes of a mix ([`AmbientParams::mix`]), in the order of [`Shape::to_u32`].
+pub const MIX_SHAPES: [Shape; 4] = [Shape::Sphere, Shape::Disc, Shape::Capsule, Shape::Drop];
 /// Largest `count` accepted (16 777 216): a hostile file cannot ask for more memory than that.
 pub const MAX_COUNT: u32 = 1 << 24;
 /// Most tints of a palette.
@@ -74,15 +96,20 @@ pub enum Shape {
     Disc,
     /// 2: a capsule, the sphere swept along the particle's velocity times `streak` (rain).
     Capsule,
+    /// 3 (S3): a drop, the convex hull of its round body (the particle's radius) and of a smaller
+    /// tip sphere (`drop_tip` times as wide) whose centre is `drop_tail` body radii away, behind the
+    /// body as the particle moves (a falling drop has its tip up).
+    Drop,
 }
 
 impl Shape {
-    /// Decodes the `FXAM` value: 1 disc, 2 capsule, anything else (0, and values a newer writer
-    /// may add) a sphere.
+    /// Decodes the `FXAM` value: 1 disc, 2 capsule, 3 drop (S3), anything else (0, and values a
+    /// newer writer may add) a sphere. An engine of before S3 reads a drop as a sphere.
     pub fn from_u32(value: u32) -> Shape {
         match value {
             1 => Shape::Disc,
             2 => Shape::Capsule,
+            3 => Shape::Drop,
             _ => Shape::Sphere,
         }
     }
@@ -93,6 +120,7 @@ impl Shape {
             Shape::Sphere => 0,
             Shape::Disc => 1,
             Shape::Capsule => 2,
+            Shape::Drop => 3,
         }
     }
 }
@@ -184,6 +212,16 @@ pub struct AmbientParams {
     pub forward: f32,
     /// Asymmetry of that lobe, `-1 < g < 1`.
     pub forward_g: f32,
+    /// S3: the weights of a mix of shapes, in the order of [`MIX_SHAPES`] (sphere, disc, capsule,
+    /// drop); each particle picks one with a probability proportional to its weight. All zero:
+    /// every particle is `shape`.
+    pub mix: [f32; 4],
+    /// S3: a drop's length, from its body's centre to its tip's, over the body's radius.
+    pub drop_tail: f32,
+    /// S3: a drop's tip radius over its body's.
+    pub drop_tip: f32,
+    /// S3: the per-particle variation of a drop's length and of a capsule's, 0..1.
+    pub shape_var: f32,
 }
 
 impl Default for AmbientParams {
@@ -218,6 +256,10 @@ impl Default for AmbientParams {
             palette: [[1.0; 3]; MAX_PALETTE],
             forward: 0.0,
             forward_g: 0.0,
+            mix: [0.0; 4],
+            drop_tail: DROP_TAIL,
+            drop_tip: DROP_TIP,
+            shape_var: 0.0,
         }
     }
 }
@@ -281,7 +323,8 @@ impl Reader<'_> {
 impl AmbientParams {
     /// Reads an `FXAM` payload. Fails when it is shorter than [`FXAM_MIN_BYTES`], holds a
     /// non-finite number, a negative size, radius or scale, more than [`MAX_COUNT`] particles,
-    /// more than [`MAX_PALETTE`] tints, or a forward lobe outside its ranges.
+    /// more than [`MAX_PALETTE`] tints, a forward lobe outside its ranges, a negative weight of
+    /// the mix, or a drop or a shape variation outside theirs.
     pub fn decode(payload: &[u8]) -> Result<AmbientParams, FxamError> {
         if payload.len() < FXAM_MIN_BYTES {
             return Err(FxamError::TooShort);
@@ -320,6 +363,10 @@ impl AmbientParams {
             palette: d.palette,
             forward: d.forward,
             forward_g: d.forward_g,
+            mix: d.mix,
+            drop_tail: d.drop_tail,
+            drop_tip: d.drop_tip,
+            shape_var: d.shape_var,
         };
         if p.palette_count as usize > MAX_PALETTE {
             return Err(FxamError::Invalid("palette_count must be at most 4"));
@@ -336,6 +383,26 @@ impl AmbientParams {
         }
         if !(p.forward_g > -1.0 && p.forward_g < 1.0) {
             return Err(FxamError::Invalid("forward_g must be within -1..1"));
+        }
+        for w in p.mix.iter_mut() {
+            *w = r.opt_f32(0.0)?;
+        }
+        p.drop_tail = r.opt_f32(d.drop_tail)?;
+        p.drop_tip = r.opt_f32(d.drop_tip)?;
+        p.shape_var = r.opt_f32(d.shape_var)?;
+        if p.mix.iter().any(|&w| w < 0.0) {
+            return Err(FxamError::Invalid(
+                "the weights of a mix must not be negative",
+            ));
+        }
+        if !(0.0..=MAX_DROP_TAIL).contains(&p.drop_tail) {
+            return Err(FxamError::Invalid("drop_tail must be within 0..16"));
+        }
+        if !(0.0..=1.0).contains(&p.drop_tip) {
+            return Err(FxamError::Invalid("drop_tip must be within 0..1"));
+        }
+        if !(0.0..=1.0).contains(&p.shape_var) {
+            return Err(FxamError::Invalid("shape_var must be within 0..1"));
         }
         if p.count > MAX_COUNT {
             return Err(FxamError::Invalid("count must be at most 16777216"));
@@ -360,9 +427,60 @@ impl AmbientParams {
         Ok(p)
     }
 
-    /// The `FXAM` payload of these parameters ([`FXAM_BYTES`] bytes).
+    /// True when an S3 field is not its default: a drop as the shape, a mix, a shape variation,
+    /// or another drop than the default one. Only then does [`AmbientParams::encode`] write them.
+    pub fn has_s3_fields(&self) -> bool {
+        self.shape == Shape::Drop
+            || self.mix.iter().any(|&w| w != 0.0)
+            || self.shape_var != 0.0
+            || self.drop_tail != DROP_TAIL
+            || self.drop_tip != DROP_TIP
+    }
+
+    /// True when the particles mix shapes: some weight of [`AmbientParams::mix`] is above zero.
+    pub fn mixed(&self) -> bool {
+        self.mix.iter().any(|&w| w > 0.0)
+    }
+
+    /// The shape a particle whose uniform draw is `u` (in `[0, 1)`) takes: `shape` without a mix;
+    /// with one, the shape whose share of the weights' running sum `u` falls in.
+    pub fn shape_for(&self, u: f32) -> Shape {
+        if !self.mixed() {
+            return self.shape;
+        }
+        let total: f32 = self.mix.iter().sum();
+        let mut acc = 0.0f32;
+        let target = u * total;
+        let mut last = self.shape;
+        for (shape, &w) in MIX_SHAPES.iter().zip(&self.mix) {
+            if w <= 0.0 {
+                continue;
+            }
+            acc += w;
+            last = *shape;
+            if target < acc {
+                return *shape;
+            }
+        }
+        last
+    }
+
+    /// True when some particle of the effect can be of `shape`.
+    pub fn can_be(&self, shape: Shape) -> bool {
+        if self.mixed() {
+            MIX_SHAPES
+                .iter()
+                .zip(&self.mix)
+                .any(|(s, &w)| *s == shape && w > 0.0)
+        } else {
+            self.shape == shape
+        }
+    }
+
+    /// The `FXAM` payload of these parameters: [`FXAM_BYTES`] bytes, or [`FXAM_S3_BYTES`] when
+    /// they have S3 fields ([`AmbientParams::has_s3_fields`]).
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(FXAM_BYTES);
+        let mut out = Vec::with_capacity(FXAM_S3_BYTES);
         let mut u = |v: u32| out.extend_from_slice(&v.to_le_bytes());
         u(self.kind);
         u(self.seed);
@@ -401,6 +519,15 @@ impl AmbientParams {
         }
         u(self.forward.to_bits());
         u(self.forward_g.to_bits());
+        if self.has_s3_fields() {
+            for v in self
+                .mix
+                .iter()
+                .chain(&[self.drop_tail, self.drop_tip, self.shape_var])
+            {
+                u(v.to_bits());
+            }
+        }
         out
     }
 
@@ -449,6 +576,10 @@ mod tests {
             ],
             forward: 0.5,
             forward_g: 0.7,
+            mix: [0.0; 4],
+            drop_tail: DROP_TAIL,
+            drop_tip: DROP_TIP,
+            shape_var: 0.0,
         }
     }
 
@@ -498,10 +629,16 @@ mod tests {
         let s4a = AmbientParams::decode(&bytes[..192]).unwrap();
         assert_eq!((s4a.forward, s4a.forward_g), (0.0, 0.0));
         assert_eq!(s4a.palette, p.palette);
-        // Longer payloads (a newer writer) are read as far as this version knows them.
-        let mut long = bytes.clone();
-        long.extend_from_slice(&[0xff; 40]);
-        assert_eq!(AmbientParams::decode(&long), Ok(p));
+        // Longer payloads (a newer writer) are read as far as this version knows them: past the
+        // S3 fields (which a payload of S4b leaves out and a longer one must have, S3).
+        let s3 = AmbientParams {
+            shape_var: 0.5,
+            ..p
+        };
+        let mut long = s3.encode();
+        assert_eq!(long.len(), FXAM_S3_BYTES);
+        long.extend_from_slice(&[0xff; 28]);
+        assert_eq!(AmbientParams::decode(&long), Ok(s3));
         assert_eq!(
             AmbientParams::decode(&bytes[..FXAM_MIN_BYTES - 1]),
             Err(FxamError::TooShort)
@@ -534,9 +671,88 @@ mod tests {
         assert!(check(&|p| p.gravity = -1.0).is_ok());
         assert!(check(&|p| p.time = -2.0).is_ok());
         assert_eq!(Shape::from_u32(9), Shape::Sphere);
-        for s in [Shape::Sphere, Shape::Disc, Shape::Capsule] {
+        for s in [Shape::Sphere, Shape::Disc, Shape::Capsule, Shape::Drop] {
             assert_eq!(Shape::from_u32(s.to_u32()), s);
         }
         assert!(!FxamError::TooShort.to_string().is_empty());
+        // S3.
+        assert!(check(&|p| p.mix = [0.0, 1.0, 0.0, 2.0]).is_ok());
+        assert!(check(&|p| p.mix = [0.0, -1.0, 0.0, 2.0]).is_err());
+        assert!(check(&|p| p.mix[3] = f32::INFINITY).is_err());
+        assert!(check(&|p| p.drop_tail = MAX_DROP_TAIL).is_ok());
+        assert!(check(&|p| p.drop_tail = MAX_DROP_TAIL + 0.5).is_err());
+        assert!(check(&|p| p.drop_tail = -0.1).is_err());
+        assert!(check(&|p| p.drop_tip = 1.0).is_ok());
+        assert!(check(&|p| p.drop_tip = 1.1).is_err());
+        assert!(check(&|p| p.shape_var = 1.0).is_ok());
+        assert!(check(&|p| p.shape_var = -0.2).is_err());
+    }
+
+    #[test]
+    fn the_s3_fields_are_written_only_when_set_and_read_back() {
+        // Without them: the 200 bytes of S4b.
+        let plain = sample();
+        assert!(!plain.has_s3_fields());
+        assert_eq!(plain.encode().len(), FXAM_BYTES);
+        // A drop, a mix, a variation or another drop each brings the 28 bytes of S3.
+        let cases: [&dyn Fn(&mut AmbientParams); 5] = [
+            &|p| p.shape = Shape::Drop,
+            &|p| p.mix = [1.0, 0.0, 0.0, 1.0],
+            &|p| p.shape_var = 0.25,
+            &|p| p.drop_tail = 2.5,
+            &|p| p.drop_tip = 0.3,
+        ];
+        for f in cases {
+            let mut p = sample();
+            f(&mut p);
+            assert!(p.has_s3_fields());
+            let bytes = p.encode();
+            assert_eq!(bytes.len(), FXAM_S3_BYTES);
+            const { assert!(FXAM_S3_BYTES <= 256) };
+            assert_eq!(AmbientParams::decode(&bytes), Ok(p));
+        }
+        let p = AmbientParams {
+            shape: Shape::Drop,
+            mix: [0.5, 0.25, 0.125, 2.0],
+            drop_tail: 2.25,
+            drop_tip: 0.2,
+            shape_var: 0.4,
+            ..sample()
+        };
+        let bytes = p.encode();
+        let float = |off: usize| f32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+        assert_eq!(u32::from_le_bytes(bytes[56..60].try_into().unwrap()), 3);
+        assert_eq!(
+            (float(200), float(204), float(208), float(212)),
+            (0.5, 0.25, 0.125, 2.0)
+        );
+        assert_eq!((float(216), float(220), float(224)), (2.25, 0.2, 0.4));
+        // A payload of S4b reads the defaults: no mix, the default drop, no variation.
+        let s4b = AmbientParams::decode(&bytes[..FXAM_BYTES]).unwrap();
+        assert_eq!(s4b.mix, [0.0; 4]);
+        assert_eq!(
+            (s4b.drop_tail, s4b.drop_tip, s4b.shape_var),
+            (DROP_TAIL, DROP_TIP, 0.0)
+        );
+        assert_eq!(s4b.shape, Shape::Drop);
+    }
+
+    #[test]
+    fn a_mix_picks_its_shapes_by_their_weights() {
+        let mut p = sample();
+        assert!(!p.mixed());
+        assert_eq!(p.shape_for(0.99), Shape::Capsule);
+        assert!(p.can_be(Shape::Capsule) && !p.can_be(Shape::Drop));
+        p.mix = [1.0, 0.0, 1.0, 2.0];
+        assert!(p.mixed());
+        assert_eq!(p.shape_for(0.0), Shape::Sphere);
+        assert_eq!(p.shape_for(0.2499), Shape::Sphere);
+        assert_eq!(p.shape_for(0.25), Shape::Capsule);
+        assert_eq!(p.shape_for(0.4999), Shape::Capsule);
+        assert_eq!(p.shape_for(0.5), Shape::Drop);
+        assert_eq!(p.shape_for(0.9999999), Shape::Drop);
+        assert!(p.can_be(Shape::Sphere) && p.can_be(Shape::Drop) && !p.can_be(Shape::Disc));
+        // The draw rounding past the last weight still lands on the last shape that has one.
+        assert_eq!(p.shape_for(1.0), Shape::Drop);
     }
 }

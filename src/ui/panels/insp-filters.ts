@@ -3,15 +3,19 @@
 // does photographically), its grade and the knobs of its type (tint, points, angle). Everything goes through the
 // store (camera/set with the camera's `optics`), one undo entry per change or drag. The engine scatters the camera
 // rays; the Fast viewport draws an approximation and says so.
+//
+// S3: below the stack, the front glass (UI.md §2.4 Camera ▸ Lens ▸ Filters ▸ Front glass): a pane in front of the lens
+// with drops and dust on it, its knobs (drops, their size, dust, the seed, the distance) through the same `camera/set`.
 
-import type { CameraId, CameraState } from '../../core/camera';
-import { filtersOf, newLensFilter, OPTICS_NEUTRAL, opticsOf, type CameraOptics, type LensFilter } from '../../core/optics';
+import { isPanoramic, type CameraId, type CameraState } from '../../core/camera';
+import { filtersOf, newFrontGlass, newLensFilter, OPTICS_NEUTRAL, opticsOf, type CameraOptics, type FrontGlass, type LensFilter } from '../../core/optics';
+import { FRONT_GLASS_LIMITS } from '../../data/front-glass';
 import { GRADE_LABELS, LENS_FILTER_GRADES, LENS_FILTERS, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../../data/lens-filters';
 import * as cmd from '../commands';
-import { colorField, field, segmented, select, slider } from '../components/controls';
+import { colorField, field, numberField, segmented, select, slider, toggle } from '../components/controls';
 import { h, icon } from '../dom';
 import { type Ctx, type Scope } from '../reactive';
-import { lbl, t, type StringKey } from '../strings';
+import { formatNumber, getLang, lbl, t, type StringKey } from '../strings';
 
 /** The swatch of a tint: brought to a peak of 1 (the engine keeps only its colour, at luminance 1). */
 function swatchOf(tint: readonly number[]): [number, number, number] {
@@ -153,5 +157,90 @@ export function filterFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     },
   );
 
-  return h('div', { class: 'stack', 'data-guide': 'camera-filters' }, list, h('div', { class: 'row' }, add), full, h('div', { class: 'note' }, t('camera.filtersNote')));
+  return h(
+    'div',
+    { class: 'stack', 'data-guide': 'camera-filters' },
+    list,
+    h('div', { class: 'row' }, add),
+    full,
+    h('div', { class: 'note' }, t('camera.filtersNote')),
+    frontGlassFields(ctx, scope, camId),
+  );
+}
+
+/** S3: the front glass of camera `camId()`: on or off, and its knobs while it is on. */
+function frontGlassFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
+  const { store } = ctx;
+  const cam = (): CameraState | undefined => store.get().camera.cameras[camId()];
+  const optics = (): CameraOptics => {
+    const c = cam();
+    return c ? opticsOf(c) : OPTICS_NEUTRAL;
+  };
+  const glass = (): FrontGlass => optics().frontGlass ?? { ...newFrontGlass(), on: false };
+  const set = (patch: Partial<FrontGlass>, what: StringKey, gesture?: string) => {
+    const cur = optics();
+    store.dispatch({ type: 'camera/set', id: camId(), patch: { optics: { ...cur, frontGlass: { ...glass(), ...patch } } }, gesture, label: cmd.editLabel('camera', what) });
+  };
+  const pct = (v: number) => `${formatNumber(v * 100, getLang(), 0)} %`;
+  const L = FRONT_GLASS_LIMITS;
+  const on = toggle(glass().on, (v) => set({ on: v }, 'camera.glassOn'), t('camera.glassOn'));
+  const drops = slider({ value: glass().drops, min: L.drops.min, max: L.drops.max, step: 0.01, format: pct, ariaLabel: t('camera.glassDrops'), onChange: (v, g) => set({ drops: v }, 'camera.glassDrops', g) });
+  const size = slider({ value: glass().dropSizeMm, min: L.dropSizeMm.min, max: L.dropSizeMm.max, step: 0.1, unit: 'mm', ariaLabel: t('camera.glassDropSize'), onChange: (v, g) => set({ dropSizeMm: v }, 'camera.glassDropSize', g) });
+  const dust = slider({ value: glass().dust, min: L.dust.min, max: L.dust.max, step: 0.005, format: pct, ariaLabel: t('camera.glassDust'), onChange: (v, g) => set({ dust: v }, 'camera.glassDust', g) });
+  const seed = numberField({ value: glass().seed, min: 0, max: 0xffffffff, step: 1, digits: 0, ariaLabel: t('camera.glassSeed'), onChange: (v, g) => set({ seed: Math.round(v) }, 'camera.glassSeed', g) });
+  const shuffle = h(
+    'button',
+    { type: 'button', class: 'icon-btn', 'aria-label': t('camera.glassShuffle'), 'data-tip': t('camera.glassShuffle'), onclick: () => set({ seed: Math.floor(Math.random() * 1_000_000) }, 'camera.glassSeed') },
+    icon('refresh', 14),
+  );
+  const distance = numberField({
+    value: glass().distanceMm,
+    min: L.distanceMm.min,
+    max: L.distanceMm.max,
+    step: 1,
+    unit: 'mm',
+    digits: 0,
+    ariaLabel: t('camera.glassDistance'),
+    format: (v) => (v <= 0 ? t('camera.glassAuto') : `${formatNumber(v, getLang(), 0)}`),
+    onChange: (v, g) => set({ distanceMm: Math.max(0, v) }, 'camera.glassDistance', g),
+  });
+  const row = (label: StringKey, tip: StringKey | null, ...controls: (Node | null)[]) => {
+    const r = field(t(label), ...controls);
+    if (tip) r.setAttribute('data-tip', t(tip));
+    return r;
+  };
+  const knobs = h(
+    'div',
+    { class: 'stack', 'data-glass': 'knobs' },
+    row('camera.glassDrops', 'camera.glassDropsTip', drops.el),
+    row('camera.glassDropSize', null, size.el),
+    row('camera.glassDust', 'camera.glassDustTip', dust.el),
+    row('camera.glassSeed', null, seed.el, shuffle),
+    row('camera.glassDistance', 'camera.glassDistanceTip', distance.el),
+  );
+  const panoramic = h('div', { class: 'note', 'data-glass': 'panoramic' }, t('camera.glassPanoramic'));
+  scope.watch(
+    (s) => [s.camera.cameras[camId()]?.optics?.frontGlass, s.camera.cameras[camId()]?.projection] as const,
+    () => {
+      const g = glass();
+      on.set(g.on);
+      drops.set(g.drops);
+      size.set(g.dropSizeMm);
+      dust.set(g.dust);
+      seed.set(g.seed);
+      distance.set(g.distanceMm);
+      knobs.style.display = g.on ? '' : 'none';
+      const c = cam();
+      panoramic.style.display = g.on && c && isPanoramic(c.projection) ? '' : 'none';
+    },
+  );
+  return h(
+    'div',
+    { class: 'stack', 'data-guide': 'camera-glass', style: 'border-top:1px solid var(--line);padding-top:8px' },
+    h('div', { class: 'subhead' }, t('camera.glass')),
+    field(t('camera.glassOn'), on.el),
+    knobs,
+    panoramic,
+    h('div', { class: 'note' }, t('camera.glassAux')),
+  );
 }

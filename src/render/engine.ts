@@ -74,6 +74,19 @@ export function readsPatternNodes(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_PATTERN_NODES) !== 0;
 }
 
+/**
+ * S3: bit 6 of the engine's features (rt_core::FEATURE_DROPS): it draws the drop shape, the mixes of shapes and the
+ * shape variation of the ambient effects (the S3 fields of FXAM) and the front glass (GLAS), so the page writes them; for
+ * an engine without the bit an effect of drops is spheres, a mix its heaviest shape, and there is no front glass
+ * (io/rsb.ts `SceneView.drops`).
+ */
+export const ENGINE_FEATURE_DROPS = 64;
+
+/** True when an engine of `features` draws drops and the front glass (S3). */
+export function readsDrops(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_DROPS) !== 0;
+}
+
 /** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
 export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
   if (!readsPrograms(features)) return {};

@@ -334,7 +334,7 @@ impl App {
                 // What the engine reads beyond the plain RSB (rt_core::FEATURES; bit 0, M2b:
                 // the texture data; bit 1, M3b: the material programs; bit 2, Q1: the section
                 // view; bit 3, L5: IES lights; bit 4, K3: the interior cameras; bit 5, M3c: the
-                // pattern nodes of a program).
+                // pattern nodes of a program; bit 6, S3: the drops and the front glass).
                 .num("features", f64::from(rt_core::FEATURES))
                 .num("threads", self.engine.threads() as f64)
                 .str("isa", self.engine.isa().name())

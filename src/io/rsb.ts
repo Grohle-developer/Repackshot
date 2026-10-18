@@ -14,7 +14,7 @@
 import { fabricRecipe, PATN_PARAMS, seedOf, woodRecipe } from '../core/pattern-recipe';
 import { playheadPose, posedMaterial, type Pose } from '../core/animation';
 import { partIsExempt, resolveSection } from '../core/section';
-import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
+import { effectFxam, engineParticleCap, fxamPayload, type AmbientEffect, type FxamFields } from '../core/effects';
 import { instanceFromPreset } from '../core/materials';
 import type { EffectMaterial } from '../data/effects';
 import { flattenGraph } from '../core/material-preview';
@@ -37,7 +37,8 @@ import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_P
 import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
-import { filtersOf, isNeutralOptics, type CameraOptics, type LensFilter } from '../core/optics';
+import { filtersOf, frontGlassOf, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
+import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
 import { lensFilterType } from '../data/lens-filters';
@@ -181,7 +182,29 @@ export interface RsbCamera {
   fovXDeg?: number;
   fovYDeg?: number;
   exterior?: number;
+  /** S3: the front glass (GLAS, written right after LENS; rt-core `optics::glass::GlassParams`); absent: none. */
+  glass?: RsbGlass | null;
 }
+
+/** S3: the front glass, field for field (rt-core `optics::glass::GlassParams`, the `GLAS` payload). */
+export interface RsbGlass {
+  flags: number;
+  distanceMm: number;
+  seed: number;
+  dropCoverage: number;
+  dropSizeMm: number;
+  dropSizeVar: number;
+  contactAngleDeg: number;
+  ior: number;
+  dustCoverage: number;
+  dustSizeMm: number;
+  dustSizeVar: number;
+  dustOpacity: number;
+}
+
+/** Tag and size of the front glass section (S3). */
+export const TAG_GLAS = 'GLAS';
+export const GLAS_BYTES = 48;
 
 /** `LENS.profile`. */
 export const LENS_PROFILE: Readonly<Record<PupilProfile, number>> = { uniform: 0, centreBright: 1, ringBright: 2, apodized: 3 };
@@ -878,12 +901,16 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   const profiles = profileTexts.map(iesBytesOf);
   const written = scene.lights.filter((l) => l.kind !== LIGHT_IES || l.ies !== undefined);
   const camrBytes = CAMR_BYTES + (writesCameraK3(scene.camera) ? CAMR_K3_BYTES : 0);
-  let size = 8 + 8 + camrBytes + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
+  // S3: an effect's payload is longer with the S3 fields.
+  const fxams = effects.map(fxamPayload);
+  let size = 8 + 8 + camrBytes + fxams.reduce((n, p) => n + 8 + p.length, 0) + patterns.length * (8 + PATN_BYTES);
   for (const l of written) size += 8 + (l.kind === LIGHT_IES ? LGHT_IES_BYTES : LGHT_BYTES);
   for (const p of profiles) size += 8 + iespBytes(p);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
+  const glass = scene.camera.glass ?? null;
+  if (glass) size += 8 + GLAS_BYTES;
   size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + renderBytes(scene.render);
   if (withMeshes) for (const m of scene.meshes) size += 8 + meshBytes(m, tex);
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
@@ -942,6 +969,15 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
         w.raw(prescriptionBytes(lens.prescription));
         if (lens.frameSensorMm) w.f32(lens.frameSensorMm);
       }
+    });
+  }
+  // S3: the front glass, right after the camera's optics, only when there is one.
+  if (glass) {
+    w.section(TAG_GLAS, GLAS_BYTES, () => {
+      w.u32(glass.flags);
+      w.f32(glass.distanceMm);
+      w.u32(glass.seed);
+      for (const v of [glass.dropCoverage, glass.dropSizeMm, glass.dropSizeVar, glass.contactAngleDeg, glass.ior, glass.dustCoverage, glass.dustSizeMm, glass.dustSizeVar, glass.dustOpacity]) w.f32(v);
     });
   }
   for (const m of scene.materials) {
@@ -1031,7 +1067,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.pad((4 - (p.length % 4)) % 4);
     });
   }
-  for (const e of effects) w.section(TAG_FXAM, FXAM_BYTES, () => w.raw(fxamPayload(e)));
+  for (const p of fxams) w.section(TAG_FXAM, p.length, () => w.raw(p));
   // Q1: the section view, only when there is one: a scene without it is the bytes of before.
   if (section) {
     w.section(TAG_SECT, SECT_BYTES, () => {
@@ -1199,6 +1235,12 @@ export interface SceneView {
    * page writes what it reads.
    */
   cameras?: boolean;
+  /**
+   * S3: write the drops (the drop shape, the mixes of shapes and the shape variation of the effects, the S3 fields of
+   * FXAM) and the camera's front glass (GLAS) for an engine that draws them (render/engine.ts `readsDrops`). Off by
+   * default: an effect of drops is written as spheres, a mix as its heaviest shape, and no front glass.
+   */
+  drops?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -1544,6 +1586,25 @@ export function cameraToRsb(cam0: CameraState, outW: number, outH: number, width
   };
 }
 
+/** S3: the GLAS fields of a front glass: its knobs, the rest the pane's fixed values (data/front-glass.ts). */
+export function glassToRsb(g: FrontGlass): RsbGlass {
+  const F = FRONT_GLASS_FIXED;
+  return {
+    flags: 0,
+    distanceMm: Math.max(0, g.distanceMm),
+    seed: Math.max(0, Math.round(g.seed)) >>> 0,
+    dropCoverage: Math.min(0.9, Math.max(0, g.drops)),
+    dropSizeMm: Math.min(50, Math.max(0, g.dropSizeMm)),
+    dropSizeVar: F.dropSizeVar,
+    contactAngleDeg: F.contactAngleDeg,
+    ior: F.ior,
+    dustCoverage: Math.min(0.5, Math.max(0, g.dust)),
+    dustSizeMm: F.dustSizeMm,
+    dustSizeVar: F.dustSizeVar,
+    dustOpacity: F.dustOpacity,
+  };
+}
+
 /** Widest field of view the engine reads (`CAMR.fov_x_deg`, rt-core `MAX_FOV_DEG`). */
 export const MAX_FOV_DEG = 3600;
 
@@ -1867,6 +1928,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
 
   const { cam, frame } = viewCamera(state, view, pose);
   const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
+  // S3: the front glass, for an engine that draws it (not through a panoramic camera, which has no front element).
+  const glass = view.drops && !isPanoramic(cam.projection) ? frontGlassOf(cam.optics) : null;
+  if (glass) camera.glass = glassToRsb(glass);
   // K3: the exterior factor of the camera ray, and the panorama, only for an engine that reads them.
   const exterior = exteriorOf(state.environment.exterior);
   if (view.cameras && exterior !== 1) camera.exterior = exterior;
@@ -2034,7 +2098,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     if (!e.enabled) continue;
     const materialId = materials.push(effectMaterial(state, e)) - 1;
     materialOrder.push(null);
-    effects.push(effectFxam(state, e, materialId, cap));
+    effects.push(effectFxam(state, e, materialId, cap, view.drops === true));
   }
 
   // Q1: the cutting plane, as it goes to the engine (`cutting`, resolved before the instances).

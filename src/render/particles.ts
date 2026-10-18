@@ -17,6 +17,62 @@ export function hasParticleExport(rt: object): rt is RtParticleExports {
   return typeof (rt as { rt_particles_eval?: unknown }).rt_particles_eval === 'function';
 }
 
+/** S3: the export of the particles' shapes (absent in a module of before S3). */
+export interface RtShapeExports extends RtParticleExports {
+  rt_particles_shapes(params: number, len: number, max: number, out: number): number;
+}
+
+export function hasShapeExport(rt: object): rt is RtShapeExports {
+  return hasParticleExport(rt) && typeof (rt as { rt_particles_shapes?: unknown }).rt_particles_shapes === 'function';
+}
+
+/**
+ * S3: the shape code of each of the first `max` particles of the effect whose `FXAM` payload is `payload` (0 sphere,
+ * 1 disc, 2 capsule, 3 drop; rt_sim::Shape::to_u32), in the order of `evalParticles`: what the preview splits a mix of
+ * shapes by. Null when the module refuses the payload.
+ */
+export function evalShapes(rt: RtShapeExports, payload: Uint8Array, max: number): Uint32Array | null {
+  const n = Math.max(0, Math.floor(max));
+  const inPtr = rt.rt_alloc(payload.length);
+  const outLen = Math.max(4, n * 4);
+  const outPtr = rt.rt_alloc(outLen);
+  try {
+    new Uint8Array(rt.memory.buffer, inPtr, payload.length).set(payload);
+    const got = rt.rt_particles_shapes(inPtr, payload.length, n, outPtr) >>> 0;
+    if (got === 0xffffffff || got > n) return null;
+    return new Uint32Array(rt.memory.buffer.slice(outPtr, outPtr + got * 4));
+  } finally {
+    rt.rt_free(inPtr, payload.length);
+    rt.rt_free(outPtr, outLen);
+  }
+}
+
+/**
+ * S3: the outline of a drop for a lathe (x the radius, y along the axis), for a body of radius 1 at the origin and a tip
+ * of radius `tip` whose centre is `tail` up the axis: the body's arc below the cone, the cone tangent to both spheres, the
+ * tip's arc above it (the engine's drop, rt-core `geometry::particles`). `segments` points per arc.
+ */
+export function dropOutline(tail: number, tip: number, segments = 8): [number, number][] {
+  const r2 = Math.max(0, Math.min(1, tip));
+  const len = Math.max(tail, 1 - r2 + 0.05);
+  const sinB = Math.min(1, (1 - r2) / len);
+  const beta = Math.asin(sinB);
+  const pts: [number, number][] = [];
+  // The body: from its bottom pole (angle -90° from the equator) to where the cone touches it (beta above it).
+  for (let i = 0; i <= segments; i++) {
+    const a = -Math.PI / 2 + ((beta + Math.PI / 2) * i) / segments;
+    pts.push([Math.cos(a), Math.sin(a)]);
+  }
+  // The tip: from where the cone touches it to its top pole.
+  for (let i = 0; i <= segments; i++) {
+    const a = beta + ((Math.PI / 2 - beta) * i) / segments;
+    pts.push([r2 * Math.cos(a), len + r2 * Math.sin(a)]);
+  }
+  pts[pts.length - 1][0] = 0;
+  pts[0][0] = 0;
+  return pts;
+}
+
 /**
  * The first `max` particles of the effect whose `FXAM` payload is `payload` (core/effects.ts `fxamPayload`):
  * `PARTICLE_FLOATS` floats each, the same the renderer evaluates. Null when the module refuses the payload.

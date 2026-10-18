@@ -5,6 +5,10 @@
 // The values of `values` and of `material` were proposed with the contact sheet `out/ambient-sheet.html` and
 // accepted by the lead (rule 11, ROADMAP S4a verdict); changing them is the lead's call. The three S5 effects
 // (volumes: haze, light shafts, ground fog) are listed, greyed and marked "coming soon": they have no values yet.
+//
+// S3 adds the drop shape (a round body and a tip trailing it), the mixes of shapes, the variation of the drops' and the
+// streaks' lengths, and the preset WATER_DROPS: its values, the drop's length and tip, and the mix's default weights are
+// this phase's proposals for the lead's verdict (rule 11, ◆ in the ROADMAP's S3).
 
 import type { Label, RGB } from './types';
 
@@ -19,9 +23,29 @@ export type EffectKind =
   | 'CONFETTI'
   | 'HAZE'
   | 'LIGHT_SHAFTS'
-  | 'GROUND_FOG';
+  | 'GROUND_FOG'
+  | 'WATER_DROPS';
 
-export type EffectShape = 'SPHERE' | 'DISC' | 'CAPSULE';
+/** S3 adds DROP: the convex hull of a round body and a smaller tip that trails it (rt_sim::Shape::Drop). */
+export type EffectShape = 'SPHERE' | 'DISC' | 'CAPSULE' | 'DROP';
+
+/** The shapes in the order of the engine's codes (FXAM `shape`, and the weights of a mix: rt_sim::MIX_SHAPES). */
+export const EFFECT_SHAPES: readonly EffectShape[] = ['SPHERE', 'DISC', 'CAPSULE', 'DROP'];
+
+/** S3: the weights of a mix of shapes (each particle picks one in proportion), and whether the mix is on. */
+export interface ShapeMix {
+  on: boolean;
+  SPHERE: number;
+  DISC: number;
+  CAPSULE: number;
+  DROP: number;
+}
+
+/** S3: a drop's length (its tip's centre from its body's, in body radii) and its tip's radius over its body's. */
+export const DROP_TAIL = 1.6;
+export const DROP_TIP = 0.15;
+/** S3: the mix an effect starts from when Mix is chosen: every shape alike, drops twice (a proposal, rule 11). */
+export const DEFAULT_MIX: Readonly<ShapeMix> = { on: false, SPHERE: 1, DISC: 1, CAPSULE: 1, DROP: 2 };
 
 /**
  * The engine's material of an effect (the RSB `MATL` fields it uses): `GLASS` is a clear dielectric (`ior`,
@@ -68,6 +92,11 @@ export interface EffectValues {
   spin: number;
   /** Capsule length as the distance travelled in this many seconds. */
   streak: number;
+  /** S3: a drop's length and tip (DROP_TAIL, DROP_TIP), the variation of the drops' and capsules' lengths, the mix. */
+  dropTail: number;
+  dropTip: number;
+  shapeVar: number;
+  mix: ShapeMix;
   /** Cloud envelope (0: the region box is filled): radius as a multiple of the part size, and its softness 0..1. */
   cloudRadius: number;
   cloudSoftness: number;
@@ -126,6 +155,10 @@ const BASE: Omit<EffectValues, 'density' | 'sizeMm' | 'shape'> = {
   gravity: 1,
   spin: 0,
   streak: 0,
+  dropTail: DROP_TAIL,
+  dropTip: DROP_TIP,
+  shapeVar: 0,
+  mix: DEFAULT_MIX,
   cloudRadius: 0,
   cloudSoftness: 0.5,
   tintVar: 0.2,
@@ -225,6 +258,16 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
       ],
     },
     material: surface([0.9, 0.9, 0.9], 0.5),
+  },
+  {
+    // S3: drops of water as drops (a round body, a tip trailing up), their lengths varying: what a person means by
+    // "a drop". Every value is a proposal for the lead's verdict (rule 11).
+    key: 'WATER_DROPS',
+    code: 12,
+    label: { en: 'Water drops', es: 'Gotas de agua' },
+    intent: { en: 'Falling drops with a round body and a tip, clear water that refracts the scene.', es: 'Gotas que caen con el cuerpo redondo y la punta, agua transparente que refracta la escena.' },
+    values: { ...BASE, density: 8_000, sizeMm: 3, sizeVar: 0.5, shape: 'DROP', chaos: 0.05, turbulenceScaleMm: 300, windSpeed: 0.3, fallSpeed: 2.5, fallVar: 0.3, shapeVar: 0.3, tintVar: 0, shadows: false },
+    material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: false, forward: 0, forwardG: 0 },
   },
   {
     key: 'HAZE',
