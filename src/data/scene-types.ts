@@ -9,7 +9,7 @@ import type { Label, RGBA, SceneType } from './types';
  * project is today). Each field is one row of the table of INTERIORS.md §3.1 that exists in the program today; the
  * rows that name a feature of a later phase are not here (the room and the cyclorama of K2, the auto exposure, the eye
  * height and the straight verticals of K3), nor the displayed unit, which is a setting of the application and not of
- * the project (ROADMAP K1, "Qué no encajó").
+ * the project (ROADMAP K1, "What did not fit the plan").
  */
 export interface SceneTypeDefaults {
   /**
@@ -88,7 +88,7 @@ export const SCENE_TYPES: readonly SceneTypeEntry[] = [
       focalMm: 28,
       straightVerticals: true,
       autoExposure: true,
-      // Decided in docs/ROADMAP.md (Decisiones de criterio, K1): the starting recipe is the midday window.
+      // Decided in docs/ROADMAP.md (Judgement calls, K1): the starting recipe is the midday window.
       lightSetup: 'INT_WINDOW_NOON',
     },
   },
