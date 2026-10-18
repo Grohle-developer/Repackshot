@@ -22,11 +22,20 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 21 versiones, 18 con capturas nuevas; las capturas se reparten en 59 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 22 versiones, 19 con capturas nuevas; las capturas se reparten en 59 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápido* y la lluvia que la escena deja en el cristal (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3); la lluvia sobre las piezas (S3c); las gotas en el aire sobre las piezas y el medidor que dice lo que hay en ellas (S3d).
+Los goteos y las salpicaduras que caen por el aire, y el medidor que dice lo que hay en las piezas (S3d).
+
+#### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación)
+
+<a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y Sobre las piezas encendido, en pausa a los 2 s: gotas como casquetes sobre el cuerpo y el tapón; la barra de físicas dice Piezas: 875 gotas, 0 goteos, 62 en el aire; la barra de estado, Lluvia en 7 piezas: 875 gotas, 62 en el aire."><br>
+`physics-rain-air.png` · `f36ca82` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido, en pausa a los 2 s simulados con gotas en el aire (*Parts: 875 drops · 0 drips · 62 in the air*): *Rápido* dibuja las gotas del fotograma como casquetes y las del aire (las salpicaduras que vuelan) como esferas de agua, pequeñas a este encuadre (◆1 de S3d); la barra de estado dice lo que hay en las piezas: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
+
+### v0.1.21 · 2026-10-18
+
+La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápido* y la lluvia que la escena deja en el cristal (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3); la lluvia sobre las piezas (S3c).
 
 #### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación)
 
@@ -43,11 +52,6 @@ La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápi
 
 <a id="c-physics-rain-set"></a><img src="ui/physics-rain-set.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y el interruptor Sobre las piezas encendido: el cuerpo, el tapón y el set salpicados de gotas pequeñas; la barra de físicas en pausa a los 3 s con Piezas: 1.443 gotas y 0 goteos; la barra de estado dice Lluvia sobre las piezas: 1.443 gotas en 7 piezas."><br>
 `physics-rain-set.png` · `324bb1e` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido en sus mandos: la barra de físicas en pausa a los 3 s simulados (*Parts: 1,443 drops · 0 drips*), y *Rápido* dibuja el fotograma grabado: las gotas del motor como casquetes sobre el cuerpo, el cuello, el tapón y el set, y la película de agua donde ha llovido; la barra de estado: *Rain on the parts: 1,443 drops on 7 parts*. `tools/s3c-check.mjs --only rain`.
-
-#### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación)
-
-<a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y Sobre las piezas encendido, en pausa a los 2 s: gotas como casquetes sobre el cuerpo y el tapón; la barra de físicas dice Piezas: 875 gotas, 0 goteos, 62 en el aire; la barra de estado, Lluvia en 7 piezas: 875 gotas, 62 en el aire."><br>
-`physics-rain-air.png` · `f36ca82` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido, en pausa a los 2 s simulados con gotas en el aire (*Parts: 875 drops · 0 drips · 62 in the air*): *Rápido* dibuja las gotas del fotograma como casquetes y las del aire (las salpicaduras que vuelan) como esferas de agua, pequeñas a este encuadre (◆1 de S3d); la barra de estado dice lo que hay en las piezas: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
 
 ### v0.1.20 · 2026-10-18
 
@@ -66,10 +70,10 @@ La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M
 #### S3 · Lluvia y polvo sobre el set y sobre la lente
 
 <a id="c-ambient-drops"></a><img src="ui/ambient-drops.png" width="480" alt="El frasco de ejemplo en Rápido con el efecto Gotas de agua: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, Ambiente ▸ Avanzado con la forma Gota elegida, su largo, su punta y la variación de forma."><br>
-`ambient-drops.png` · `ee18304` · El frasco de ejemplo en *Rápido* con el efecto *Gotas de agua*: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, *Ambiente ▸ Avanzado* con la forma *Gota* elegida, su *Largo de la gota*, su *Punta* y la *Variación de forma*. `tools/s3-check.mjs --only drops`. *(regrabada en Sin publicar: S3b, la *Forma* ya está entre los mandos visibles, encima de *Avanzado*)*
+`ambient-drops.png` · `ee18304` · El frasco de ejemplo en *Rápido* con el efecto *Gotas de agua*: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, *Ambiente ▸ Avanzado* con la forma *Gota* elegida, su *Largo de la gota*, su *Punta* y la *Variación de forma*. `tools/s3-check.mjs --only drops`. *(regrabada en v0.1.21: S3b, la *Forma* ya está entre los mandos visibles, encima de *Avanzado*)*
 
 <a id="c-ambient-mix"></a><img src="ui/ambient-mix.png" width="480" alt="El mismo efecto con la forma Mezcla: puntos, copos, estelas y gotas mezclados en el visor; en el inspector, un peso por forma y la línea con la parte que da cada uno."><br>
-`ambient-mix.png` · `ee18304` · El mismo efecto con la forma *Mezcla*: puntos, copos, estelas y gotas en el visor, cada partícula con la forma que le da el motor; en el inspector, un peso por forma (*Puntos*, *Copos*, *Estelas*, *Gotas*) y la línea con la parte que da cada uno. `tools/s3-check.mjs --only mix`. *(regrabada en Sin publicar: S3b, la *Forma* y los pesos, entre los mandos visibles)*
+`ambient-mix.png` · `ee18304` · El mismo efecto con la forma *Mezcla*: puntos, copos, estelas y gotas en el visor, cada partícula con la forma que le da el motor; en el inspector, un peso por forma (*Puntos*, *Copos*, *Estelas*, *Gotas*) y la línea con la parte que da cada uno. `tools/s3-check.mjs --only mix`. *(regrabada en v0.1.21: S3b, la *Forma* y los pesos, entre los mandos visibles)*
 
 <a id="c-lens-glass"></a><img src="ui/lens-glass.png" width="480" alt="El frasco en Completo a través de un cristal mojado a 150 mm del objetivo, a f/16: discos blandos con la escena del revés dentro, cada uno una gota del cristal; en el inspector, Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal con sus gotas, su tamaño, el polvo, la semilla y la distancia."><br>
 `lens-glass.png` · `ee18304` · El frasco en *Completo* a través de un cristal mojado a 150 mm del objetivo, a f/16 y con gotas de 8 mm: discos blandos con la escena del revés dentro, cada uno una gota del cristal desenfocada; en el inspector, *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal* con *Gotas*, *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia*. `tools/s3-check.mjs --only glass`.
@@ -783,7 +787,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
-- [`lens-glass-fast.png`](#c-lens-glass-fast) · Sin publicar · S3b
+- [`lens-glass-fast.png`](#c-lens-glass-fast) · v0.1.21 · S3b
 - [`lens-glass.png`](#c-lens-glass) · v0.1.20 · S3
 - [`o2c-lens-editor.png`](#c-o2c-lens-editor) · v0.1.19 · O2c
 - [`o2c-lens-modified.png`](#c-o2c-lens-modified) · v0.1.19 · O2c
@@ -872,9 +876,9 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`physics-drop-strip.png`](#c-physics-drop-strip) · v0.1.6 · S2
 - [`ambient-drops.png`](#c-ambient-drops) · v0.1.20 · S3
 - [`ambient-mix.png`](#c-ambient-mix) · v0.1.20 · S3
-- [`physics-rain.png`](#c-physics-rain) · Sin publicar · S3b
-- [`ambient-shape.png`](#c-ambient-shape) · Sin publicar · S3b
-- [`physics-rain-set.png`](#c-physics-rain-set) · Sin publicar · S3c
+- [`physics-rain.png`](#c-physics-rain) · v0.1.21 · S3b
+- [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
+- [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · Sin publicar · S3d
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
