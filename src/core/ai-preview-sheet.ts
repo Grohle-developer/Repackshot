@@ -5,7 +5,7 @@
 // model) and at which values it was made, where those differ from the person's. tools/ai-preview-sheet.mjs makes them
 // (public/ai-preview/: index.json and one WebP each); this file is the grid, the index's shape and the lookup.
 
-import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiStyle, type GuardReport } from '../core/ai';
+import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiStyle, type GuardReport } from './ai';
 
 /** The steps every 0..100 control is stored at. */
 export const SHEET_STEPS = [0, 25, 50, 75, 100] as const;

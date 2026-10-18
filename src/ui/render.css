@@ -362,7 +362,6 @@
   text-align: center;
 }
 .rw-ai-state {
-  min-height: 1.4em;
   margin: 0;
 }
 .rw-ai-report,
@@ -370,13 +369,27 @@
 .rw-ai-time {
   margin: 0;
 }
-.rw-ai-full {
+/* X6: what a control acts on, under its sentence; the example's source and values; the guard in plain words. */
+.rw-ai-how {
+  color: var(--ink-2);
+}
+.rw-ai-source {
+  margin: 0;
+  color: var(--ink-1);
+}
+.rw-ai-values {
+  margin: 0;
+}
+.rw-ai-guard {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rw-ai-run {
   align-items: center;
   gap: 8px;
-}
-.rw-ai-full-label {
-  font-size: var(--fs-label);
-  color: var(--ink-1);
 }
 /* Plugins (phase P6): a block a plugin, drawn from its manifest; the controls on the left, the preview on the right. */
 .rw-plugins {

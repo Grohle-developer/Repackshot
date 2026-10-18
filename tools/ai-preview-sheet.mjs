@@ -10,7 +10,7 @@
 // 2. writes the scene and the guard's job through tests/ai-preview-dump.test.ts (stage `scene`; skipped by `npm test`);
 // 3. renders it with `rt scene.rsb -o engine.png --ai-inputs inputs --samples N` (the Full engine, its linear image and
 //    the guard's passes);
-// 4. runs every example of the grid (src/ai/preview-sheet.ts) through post.wasm with the test model (stage `sheet`);
+// 4. runs every example of the grid (src/core/ai-preview-sheet.ts) through post.wasm with the test model (stage `sheet`);
 // 5. encodes each as WebP with the local Chromium (canvas.toBlob) into public/ai-preview/ with index.json, and writes a
 //    contact sheet to out/ai-preview-sheet.html.
 //

@@ -9227,6 +9227,173 @@ The model manager, the chooser and the machine detection arrive in
 live that the active model fits, and a one-image test from
 *Settings*) moves to X4.
 
+## X6 · The AI that shows and its stored preview — **Opus** — done
+
+**Owner's request (2026-10-17):** «greatly improve the use of the local AI and
+its interface: right now it barely affects anything the way it is asked to, and
+I doubt the sliders affect anything at all. I'd like the preview to use saved
+images, so the model doesn't have to be called just to see it, made with the
+test model. And since we're doing it that way, render it with the full engine.»
+
+**Audit (before X6).** What each control changed in what reaches the model or
+the guard, read from the code (`src/core/ai.ts`, `src/ai/prompt.ts`,
+`engine/crates/rt-post`, `rt-app/src/ai/post.rs`, `src/ai/synthetic.ts`) and
+measured with the test model built in this phase (the mean |Δ ln| of the
+product's pixels against the same job with that control at 0, at 0/25/50/75/100,
+the others at their defaults; `every_band_control_rises_step_by_step_with_the_test_model`
+run with the constants of before):
+
+| Control | What reached the model | What reached the guard | Effect at 0/25/50/75/100 before X6 | After X6 |
+| --- | --- | --- | --- | --- |
+| **Intervention** | The img2img strength, `0.4 × I/100`: **0.2 at the default 50** (a fifth of the steps of an 8-step turbo model); the guard's retries lowered it to 0.12, 0.072… | Every cap scaled by `I/100` × the retry factor | 0, 0.018, 0.037, 0.055, 0.073 | 0, 0.059, 0.118, 0.176, 0.235; strength 0.15/0.30/0.45/0.60 |
+| **Light** | Words only, and only whether it was above 0 (the same sentence at 1 and at 100) | **It did act**, contrary to the first reading: the band of local luminance, but as an attenuator: `light/100 ×` the model's change, capped at `light/100 × I/100 × 0.3`; at the defaults it let **half** of what the model did through | 0, 0.0038, 0.0076, 0.0114, 0.0152 | 0, 0.0114, 0.0227, 0.0341, 0.0454 |
+| **Bounces** | Words, on/off | The band of local colour, same attenuating law (cap 0.15), then each material's ΔE limit | 0, 0.011, 0.022, 0.034, 0.045 | 0, 0.028, 0.056, 0.084, 0.112 |
+| **Wear and micro-detail** | Words, on/off, naming the materials that allow wear | The model's mid band in wear materials, in focus, away from edges, same law (cap 0.15) | 0, 0.0009, 0.0018, 0.0028, 0.0037 | 0, 0.0028, 0.0055, 0.0083, 0.0111 |
+| **Style** | **Words only** (`STYLE_PROMPTS`): the job did not even carry the style to the guard (`RPJ1` had no field) | Nothing: the six styles gave the same pixels with any model that ignores words | identical for all six | six different grades (warm above natural above cool in ln r/b by more than 0.02 each) |
+| **Style strength** | Words, on/off | The model's change common to the whole image, same law (cap 0.2) | 0, 0.010, 0.020, 0.030, 0.040 | 0, 0.044, 0.088, 0.132, 0.175 |
+| **Your prompt** | Words, after the scene's, only to a model with `textPrompt` (tested in X4b) | Nothing (by design) | — | the same: words, and the section says so |
+| **Variants** | N requests, seeds `seed … seed + N − 1` (tested in X4b) | One report each | — | the same |
+| **Another variation** | The seed (`sd-server`'s `seed`) | Echoed in the report | — | the same; the stored example has four seeds at the defaults |
+
+So the first reading was half right: Light, Bounces and Wear never asked the model
+for anything but words, which a small img2img model largely ignores, and the overall
+strength was small; but in the guard each did gate its own band, only as a filter that
+could at most let through **half** of what the model did at the defaults (and the band's
+cap scaled with both the control and the Intervention, so the defaults' effect was
+quadratic). The **Style** list did nothing at all past the words. And the synthetic
+service the interface is shown with (`?ai=synthetic`) made Wear and the *Natural* style
+do nothing on purpose (`'Natural adds nothing'`, `'wear has nothing to add'` were its
+tests): there the sliders really did nothing visible. No test measured that a control
+changed its band step by step: the tests checked 0 against 100 only.
+
+**What was done.**
+- **Each band control is a gain on the model's change in its band** (`BAND_GAIN_AT_100`
+  = 2, `rt-post/src/prepared.rs`): 0 none, 50 the model's change as it made it, 100 twice;
+  the model's change is clamped at the attempt's cap (`scale × cap`) first, so inside the
+  cap the result is linear in the control. Light: the local luminance band; Bounces: the
+  local colour band (and the materials' ΔE limit after it); Wear: the mid band in wear
+  materials, in focus, away from edges; Style strength: the model's change common to the
+  image.
+- **The style is a real grade in post** (`rt-post/src/style.rs`, mirrored in
+  `src/core/ai-style.ts` and checked by `tests/ai-style.test.ts`): per style a tint of the
+  shadows, a tint of the highlights and a contrast, as a scene log gain that follows the
+  low band of the engine's luminance (smooth, so edges, text and focus are the engine's by
+  construction), by `2 × Style strength / 100 × the attempt's scale`, never on the
+  background or a locked material. The colour check measures each material against the
+  engine image *with the grade applied* (it is asked for), like the style's common change
+  before it. The job carries the style: `RPJ2` (`RPJ1` still reads, as *Natural*), the
+  launcher reads `settings.style` (an unknown key is *Natural*).
+- **`MAX_STRENGTH` 0.4 → 0.6** (◆): the default Intervention 50 now asks for 0.3.
+- **The report says where the guard limited an effect** (`GuardReport.capped`: the share
+  of the open image where each band's cap held the model's change back; and
+  `GuardMaterialCheck.kept`: the share of a material's colour change kept). The interface
+  says it in plain words (`guardWords`, `src/ui/ai-report.ts`), with the checks that sent
+  the stronger attempts back (*The AI was limited to 60 % to respect the protections: the
+  stronger attempts changed the focus*).
+- **A deterministic test model** (`rt-post/src/test_model.rs`, `AI-POST.md` §7.2): a
+  stand-in for an img2img model that acts in every band the guard separates and ignores
+  the words; `post.wasm` exports it (`post_test_model`, `PostGuard.testModel` and
+  `testModelFor`), `rt-fake-sd` has it as its `model` image, and the stored preview is made
+  with it. No small real model could run here: there is no GPU, and the one CPU run of
+  X3c (SD 1.5, 53 s for a 256 × 192 image) would have taken hours for the sheet; the
+  weights were not kept.
+- **The synthetic service** gives Wear (a seeded micro-variation inside the materials the
+  request lets wear into, in focus) and every style, *Natural* included, an effect of its
+  own; its grade is the guard's table at a quarter of the guard's amount.
+- **The preview is a stored example** (`src/core/ai-preview-sheet.ts`, `public/ai-preview/`):
+  the example bottle, framed closer (the camera at 0.7 of its distance, its target 40 mm
+  lower), rendered by the **Full engine** (`rt`, 512 × 288, 256 samples, 20 s on 4 threads;
+  `rt --ai-inputs` writes its linear image and its passes), and its AI results through the
+  real `post.wasm` with the test model at 0/25/50/75/100 of every control with the others
+  at their stored defaults (the defaults snapped to the steps: Light 50, Bounces 50, Wear
+  25, *Natural* 25), every style at every non-zero strength, Style strength 0, four seeds
+  at the defaults, at Intervention 25, 50, 75 and 100, and the engine's image for 0:
+  **161 images in WebP (quality 0.95), 0.74 MB** with `index.json`, reproduced by
+  `tools/ai-preview-sheet.mjs` (which also writes `out/ai-preview-sheet.html`). All 161
+  passed the guard at once. The section shows the one for the current controls as a
+  slider moves (the nearest stored step; among examples equally near, the one with the
+  control moved last at its value), never calls a model, keeps the divider, and labels
+  itself: *Example: reference scene, Full engine, test model; your render will differ*,
+  *Made at Intervention 50 · Light 50 · … — yours: Bounces 40, Wear and micro-detail 20,
+  Style strength 30*, and what the guard did there.
+- **Preview my scene (Full engine)**: the real pipeline on the job's own scene, always
+  drawn by the Full engine with the job's samples and time (the option *Use the full
+  engine for the preview* is gone); its result stays until a control, the scene, the
+  camera or the size changes, and the button then says *again*.
+- **The interface**: under each control, a line on what it acts on (Intervention's says
+  the strength it asks for, from `MAX_STRENGTH`); the guard's words as a list under the
+  preview; the time line is that of the person's own preview. Strings in `en` and `es`,
+  achromatic chrome.
+- **Two bugs found and fixed, each with its test:** (1) the median of the change common to
+  the image was the histogram bin's **centre**, half a bin (5 × 10⁻⁴) off a change of
+  exactly 0; it cancelled only while Light and Style strength scaled it alike, so with the
+  band gains an **identity model brightened the image** (`median3` takes the mean of the
+  samples in the median bin; `an_identity_model_changes_nothing_across_tiles`, which fails
+  with the bin's centre). (2) The **focus check read Wear's detail as sharpening** on blocks
+  that straddle the depth of field (a block whose mean circle of confusion is out of focus
+  but which holds in-focus pixels of a wear material, the example bottle against its
+  floor): it rejected every Wear above 50 on the example (`focus changed 1.43`); the focus
+  check now leaves out the pixels where Wear may add detail and that are in focus enough
+  to take it, as the detail check already did
+  (`wear_on_a_surface_across_the_depth_of_field_is_not_read_as_sharpening`, which fails
+  without it with *focus 44.0*).
+
+**Tests** (each fails if its control is ignored; checked by mutation, below). Rust
+(`rt-post`): `every_band_control_rises_step_by_step_with_the_test_model` (Light, Bounces,
+Wear, Style strength: 0 at 0, every step at least 5 % above the one before),
+`intervention_rises_step_by_step_and_asks_the_model_for_more` (and the strengths 0, 0.15,
+0.30, 0.45, 0.60), `every_style_is_its_own_grade_and_warm_and_cool_go_their_ways` (also
+with a model that changes nothing, and never on the background),
+`style_strength_moves_both_the_grade_and_the_models_common_change`,
+`another_seed_is_another_result_and_the_same_seed_the_same`,
+`the_report_says_where_a_cap_held_a_band_back`, the depth-of-field test above,
+`a_job_of_before_x6_reads_as_natural`, the style's unit test, the test model's, and in
+`rt-cli` `writes_the_ai_inputs_of_a_render`; in `rt-app`, the style read from the request.
+Vitest: `tests/ai-post-wasm.test.ts` (the test model through `post.wasm` and every
+control's rising effect through the web's own driver; `RPJ2`; the report's `capped` and
+`kept`), `tests/ai-synthetic.test.ts` (every control step by step, Wear only in its
+material, every style its own), `tests/ai-style.test.ts` (the table is the guard's),
+`tests/ai-preview-sheet.test.ts` (the grid, the lookup step by step, the differences said,
+the store complete and under 4 MB, the guard's words in both languages). Mutations, each
+making its test fail: Light, Bounces, Wear and Style strength ignored by the guard (each
+its gain fixed at 50), the style ignored (every style Natural's grade), the grade's amount
+or the common change ignoring Style strength, the strength ignoring Intervention, the
+median's bin centre, the caps not reported, the focus fix removed; on the web side, Wear,
+Light and the style ignored by the synthetic service, the lookup ignoring Light, and the
+guard's words leaving the caps out.
+
+**Judgement calls prepared for the verdict (◆):**
+- ◆1 `MAX_STRENGTH` = **0.6** (was 0.4): the default asks 0.3. Measured with the test model
+  only; X1b should confirm on Z-Image with the guard's verdicts.
+- ◆2 `BAND_GAIN_AT_100` = **2** for every band control (50 = as the model made it).
+- ◆3 The caps stay as they were (light 0.3, bounce 0.15, style 0.2, wear 0.15 natural log at
+  100 % of the Intervention); with the gain, the most a band can change is twice that.
+- ◆4 The six styles' grades (`style.rs`) and their amount (`2 × Style strength / 100 ×
+  Intervention / 100`): at the defaults (30, 50) a Warm highlight takes +3.7 % red; at 100
+  and 100, +27 %. The synthetic service uses a quarter of the guard's amount.
+- ◆5 The reference scene (the example bottle, the camera at 0.7 of its distance and 40 mm
+  lower, 512 × 288, 256 samples), the stored steps (0/25/50/75/100, one control at a time,
+  four seeds at the defaults) and the lookup rule (nearest step, the control moved last).
+- ◆6 The focus check now ignores the in-focus pixels of wear materials (point (2) above):
+  it loosens a check on purpose, inside what Wear is allowed to do.
+- ◆7 The test model's numbers (`test_model.rs`): what it does to light, bounce, the common
+  change, the micro-variation and the grain at each strength.
+
+**What did not fit the plan.** (1) The brief's examples asked for Light, Bounces and Wear
+as per-band *strength or conditioning* sent to the model; `sd-server` takes one strength
+and one ControlNet per call, so the band mechanism lives in the guard (a per-band gain), and
+what reaches the model per control is still only words. (2) The prompt's sentences still
+say only whether a control is above 0; scaling the words with the control was left out (a
+small img2img model largely ignores them and the prompt tests pin the sentences). (3) The
+stored example cannot cover every combination: one control at a time off the stored
+defaults (and the style with its strength); the line under it says which of the person's
+values differ. (4) `previewFullEngine` stays in the project's settings (stable keys) and is
+no longer read. (5) The desktop launcher's `rt-fake-sd` gives the test model the tile's
+own origin (0, 0): it does not know where the tile lies in the image. (6) The merge of
+`origin/main` into the branch is a plain merge commit without the session's attribution
+lines. (7) `tools/ai-post-check.mjs` (X4) was adapted: its checks of the old preview
+(updated on release, the full-engine option) now check the example and *Preview my scene*.
+
 ## K1 · Scene type, interior lighting and interiors Doctor — **Sonnet** — done
 
 **What.** `scene.type ∈ {PRODUCT, INTERIOR, CATALOGUE}` in the store and in

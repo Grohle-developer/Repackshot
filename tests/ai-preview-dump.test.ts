@@ -4,7 +4,7 @@
 //
 //   scene  the reference scene (the example bottle as the app opens it) as an RSB at the sheet's size that asks for the
 //          guard's passes, and the guard's job for it (its material table, its look): scene.rsb, job.json;
-//   sheet  after `rt scene.rsb --ai-inputs inputs` (the Full engine): every example of the grid (src/ai/preview-sheet.ts)
+//   sheet  after `rt scene.rsb --ai-inputs inputs` (the Full engine): every example of the grid (src/core/ai-preview-sheet.ts)
 //          through post.wasm with the test model (rt-post's `test_model`), each as display bytes with the render's
 //          exposure and tone curve (<key>.rgba, RGBA8) and its report, the engine's own as before.rgba: sheet.json.
 //
@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { AI_GUARD_PASSES } from '../src/core/ai-post';
 import { guardMaterials } from '../src/ai/prompt';
 import { PostGuard, runGuarded, type PostJob } from '../src/ai/post-wasm';
-import { SHEET_BASE, sheetGrid, sheetKey, type SheetReport } from '../src/ai/preview-sheet';
+import { SHEET_BASE, sheetGrid, sheetKey, type SheetReport } from '../src/core/ai-preview-sheet';
 import { decodeLinearImage } from '../src/io/ai-post';
 import { projectScene, writeRsb } from '../src/io/rsb';
 import { parsePasses } from '../src/render/pass-planes';
