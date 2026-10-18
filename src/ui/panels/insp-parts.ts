@@ -512,7 +512,7 @@ function operationButtons(ctx: Ctx, target: NodeId[]): HTMLElement {
     h('div', { class: 'row' }, btn(t('tree.rest'), () => cmd.restOnFloor(ctx, target)), btn(t('tree.center'), () => cmd.centerSelection(ctx, target)), btn(t('ops.centerRest'), () => cmd.centerAndRest(ctx, target))),
     h('div', { class: 'row' }, btn(t('ops.reset'), () => cmd.resetTransform(ctx, target)), btn(t('ops.cameraTarget'), () => cmd.setCameraTarget(ctx, target))),
     // Physics (S2): the selection falls onto the floor and whatever is under it.
-    h('div', { class: 'row' }, btn(t('ops.drop'), () => phys.drop(ctx, target), t('ops.dropAux'))),
+    h('div', { class: 'row' }, btn(t('ops.drop'), () => phys.drop(ctx, target), t('ops.dropAux')), btn(t('ops.drape'), () => phys.drape(ctx, target), t('ops.drapeAux'))),
   );
 }
 

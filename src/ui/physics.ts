@@ -17,6 +17,11 @@
 // S3c: Start also wets the parts when some effect falls on them (its switch in Scene ▸ Ambient, core/wet-parts.ts): every
 // visible part that does not move in the run steps under the effects in the same worker, each frame's record grows a
 // PHYSICS clip of the scene (the parts track, the cache), and such a run too stops only by Stop or its time.
+//
+// S9: Start also runs the parts whose role is Cloth (core/cloth.ts): their sheets step in the same worker with the bodies
+// (which push them), each frame's vertices grow a PHYSICS clip of each cloth part (its cloth track, the cache), and the run
+// settles when the cloth does too. Drape over the part adds a sheet of cloth above the selection and runs it alone, in the
+// same undo step. With an rt.wasm that does not simulate cloth, the rest runs and the bar says so.
 
 import { activeCamera, isPanoramic, type CameraId } from '../core/camera';
 import { nextIds } from '../core/ids';
@@ -25,8 +30,11 @@ import { capAngleDeg, GlassTrackWriter, wetBytes, wetKey, wetSpec, type GlassTra
 import { MAX_GLASS_SECONDS } from '../data/front-glass';
 import { MAX_PARTS_SECONDS } from '../data/wet-parts';
 import { parseLayout, PartsTrackWriter, wetPartsKey, wetPartsSpec, wptBytes, writtenParts, type PartsTrack, type WetPartEntry } from '../core/wet-parts';
+import { clothSpec, ClothTrackWriter, cltBytes, drapePlacement, type ClothPieceSpec, type ClothTrack } from '../core/cloth';
+import { DEFAULT_FABRIC } from '../data/fabrics';
 import {
   anchorOf,
+  clothClip,
   glassClip,
   moverSample,
   partsClip,
@@ -88,6 +96,16 @@ interface Session {
   glass: GlassRun | null;
   /** S3c: the parts it wets, their track and their clip ('' until it begins). */
   parts: PartsRun | null;
+  /** S9: the cloth it runs, a track and a clip per piece (empty until it begins). */
+  cloth: ClothRun | null;
+}
+
+/** S9: the cloth of a run. */
+interface ClothRun {
+  bytes: Uint8Array;
+  pieces: ClothPieceSpec[];
+  writers: ClothTrackWriter[];
+  clips: string[];
 }
 
 /** S3c: the wet parts of a run. */
@@ -150,12 +168,21 @@ function forget(session: Session): void {
   if (sessions.get(session.ctx.store) === session) sessions.delete(session.ctx.store);
 }
 
-/** The run's clips: the bodies', its glass's and its parts'. */
+/** The run's clips: the bodies', its glass's, its parts' and its cloth's. */
 function runClips(session: Session): string[] {
-  return [...session.clips.filter(Boolean), ...(session.glass?.clip ? [session.glass.clip] : []), ...(session.parts?.clip ? [session.parts.clip] : [])];
+  return [...session.clips.filter(Boolean), ...(session.glass?.clip ? [session.glass.clip] : []), ...(session.parts?.clip ? [session.parts.clip] : []), ...(session.cloth?.clips ?? [])];
 }
 
-function grow(session: Session, frames: readonly Float32Array[], glass?: readonly Uint8Array[], parts?: readonly Uint8Array[]): void {
+/** S9: appends a frame of the simulator's cloth vertices (every piece, in order) to each piece's track. */
+function pushCloth(run: ClothRun, frame: Float32Array): void {
+  let offset = 0;
+  run.pieces.forEach((p, i) => {
+    run.writers[i]?.push(frame, offset);
+    offset += p.positions.length / 3;
+  });
+}
+
+function grow(session: Session, frames: readonly Float32Array[], glass?: readonly Uint8Array[], parts?: readonly Uint8Array[], cloth?: readonly Float32Array[]): void {
   if (!session.ids || !session.initial || frames.length === 0) return;
   const { spec, ids, initial } = session;
   frames.forEach((frame, k) => {
@@ -164,6 +191,8 @@ function grow(session: Session, frames: readonly Float32Array[], glass?: readonl
     if (record) session.glass?.writer?.push(record);
     const partsRecord = parts?.[k];
     if (partsRecord) session.parts?.writer?.push(partsRecord);
+    const clothFrame = cloth?.[k];
+    if (clothFrame && session.cloth && session.cloth.writers.length > 0) pushCloth(session.cloth, clothFrame);
     session.frames++;
     session.last = frame;
   });
@@ -177,8 +206,10 @@ function grow(session: Session, frames: readonly Float32Array[], glass?: readonl
   const pr = session.parts;
   const partsTracks: Record<string, PartsTrack> | undefined = pr?.writer && pr.clip ? { [pr.clip]: pr.writer.track() } : undefined;
   if (pr?.writer) setUi(session.ctx, { parts: { drops: pr.writer.lastDrops, drips: pr.writer.totalDrips, falling: pr.writer.lastFalling } });
+  const cr = session.cloth;
+  const clothTracks: Record<string, ClothTrack> | undefined = cr && cr.writers.length > 0 ? Object.fromEntries(cr.writers.map((w, i) => [cr.clips[i], w.track()])) : undefined;
   const { store } = session.ctx;
-  store.dispatch({ type: 'physics/grow', tracks, ...(glassTracks ? { glass: glassTracks } : {}), ...(partsTracks ? { parts: partsTracks } : {}), gesture: session.gesture, label: session.label });
+  store.dispatch({ type: 'physics/grow', tracks, ...(glassTracks ? { glass: glassTracks } : {}), ...(partsTracks ? { parts: partsTracks } : {}), ...(clothTracks ? { cloth: clothTracks } : {}), gesture: session.gesture, label: session.label });
   store.dispatch({ type: 'anim/playhead', t: session.start + (session.frames - 1) / session.fps });
 }
 
@@ -222,6 +253,18 @@ function begin(session: Session, started: PhysicsStarted): void {
     pr.clip = nextIds('c', [...state.animation.clips.map((c) => c.id), ...session.clips.filter(Boolean), ...(g?.clip ? [g.clip] : [])], 1)[0];
     clips.push(partsClip(pr.clip, session.start, pr.writer.track()));
   }
+  // S9: a clip per cloth piece, its first frame the cloth at step 0. An engine without cloth runs the rest.
+  const cr = session.cloth;
+  if (cr && started.cloth) {
+    cr.writers = cr.pieces.map((p) => new ClothTrackWriter(session.fps, { mesh: p.mesh, ...(p.triangles ? { triangles: p.triangles } : {}), levels: p.levels, worldInv: p.worldInv, vertices: p.positions.length / 3 }));
+    pushCloth(cr, started.cloth);
+    const taken = [...state.animation.clips.map((c) => c.id), ...clips.map((c) => c.id)];
+    cr.clips = nextIds('c', taken, cr.pieces.length);
+    cr.pieces.forEach((p, i) => clips.push(clothClip(cr.clips[i], p.part, session.start, cr.writers[i].track())));
+  } else if (cr) {
+    session.cloth = null;
+    if (started.noCloth) ctx.ui.toast(t('phys.noCloth'));
+  }
   ctx.store.dispatch({ type: 'anim/play', playing: false });
   ctx.store.dispatch({ type: 'physics/begin', clips, roles: session.roles, gesture: session.gesture, label: session.label });
   ctx.store.dispatch({ type: 'anim/playhead', t: session.start });
@@ -235,7 +278,19 @@ function begin(session: Session, started: PhysicsStarted): void {
       setUi(ctx, { state: 'STOPPED', ended: 'STOPPED', canReset: lastRunAlive(ctx) !== null });
     }
   });
-  setUi(ctx, { state: ctx.ui.get().physics.state === 'PAUSED' ? 'PAUSED' : 'RUNNING', time: 0, bodies: started.bodies, awake: started.bodies, ended: null, canReset: true, glass: g?.writer ? { drops: 0, motes: 0 } : null, parts: pr?.writer ? { drops: 0, drips: 0, falling: 0 } : null });
+  const vertices = session.cloth ? session.cloth.pieces.reduce((n, p) => n + p.positions.length / 3, 0) : 0;
+  setUi(ctx, {
+    state: ctx.ui.get().physics.state === 'PAUSED' ? 'PAUSED' : 'RUNNING',
+    time: 0,
+    bodies: started.bodies,
+    awake: started.bodies,
+    ended: null,
+    canReset: true,
+    glass: g?.writer ? { drops: 0, motes: 0 } : null,
+    parts: pr?.writer ? { drops: 0, drips: 0, falling: 0 } : null,
+    cloth: session.cloth ? { pieces: session.cloth.pieces.length, vertices } : null,
+    noCloth: started.noCloth === true,
+  });
 }
 
 function update(session: Session, u: PhysicsUpdate): void {
@@ -244,7 +299,7 @@ function update(session: Session, u: PhysicsUpdate): void {
     session.held.push(u);
     return;
   }
-  grow(session, u.frames, u.glass, u.parts);
+  grow(session, u.frames, u.glass, u.parts, u.cloth);
   session.shown = { steps: u.steps, awake: u.awake, bodies: u.bodies };
   setUi(session.ctx, { time: u.steps / STEPS_PER_SECOND, awake: u.awake, bodies: u.bodies });
 }
@@ -259,7 +314,7 @@ function finish(session: Session, r: PhysicsResult): void {
   const { ctx, spec } = session;
   // Stopped by the person: the pose shown, not what the simulator did after it.
   const cut = session.stopped;
-  if (!cut) grow(session, r.frames, r.glass, r.parts);
+  if (!cut) grow(session, r.frames, r.glass, r.parts, r.cloth);
   session.over = true;
   session.unsubscribe();
   forget(session);
@@ -294,8 +349,8 @@ function glassRun(ctx: Ctx): GlassRun | 'NO_ENGINE' | null {
  * S3c: the parts a Start wets: every visible part that the run does not move, when some effect falls on them, with the
  * bytes of the simulation (its WPT1) and their key; null when there is nothing to run.
  */
-function partsRun(ctx: Ctx, spec: PhysicsSpec | null): PartsRun | null {
-  const moving = new Set((spec?.bodies ?? []).flatMap((b) => b.pieces.map((p) => p.part)));
+function partsRun(ctx: Ctx, spec: PhysicsSpec | null, cloth: ClothRun | null = null): PartsRun | null {
+  const moving = new Set([...(spec?.bodies ?? []).flatMap((b) => b.pieces.map((p) => p.part)), ...(cloth?.pieces ?? []).map((p) => p.part)]);
   const parts = wetPartsSpec(ctx.store.get(), moving);
   if (!parts) return null;
   const written = writtenParts(parts);
@@ -309,13 +364,33 @@ function fail(session: Session, err: unknown): void {
   const { ctx } = session;
   abandon(session);
   const missing = err instanceof Error && err.message === 'NO_ENGINE';
-  if (!missing) console.warn('physics:', err);
-  setUi(ctx, { state: 'STOPPED', ended: missing ? 'NO_ENGINE' : 'FAILED', canReset: lastRunAlive(ctx) !== null });
-  ctx.ui.toast(t(missing ? 'phys.noEngine' : 'phys.failed'));
+  // S9: a run of cloth alone with an rt.wasm that does not simulate it.
+  const noCloth = err instanceof Error && err.message === 'NO_CLOTH';
+  if (!missing && !noCloth) console.warn('physics:', err);
+  setUi(ctx, { state: 'STOPPED', ended: missing ? 'NO_ENGINE' : noCloth ? 'NO_CLOTH' : 'FAILED', canReset: lastRunAlive(ctx) !== null, noCloth });
+  ctx.ui.toast(t(missing ? 'phys.noEngine' : noCloth ? 'phys.noCloth' : 'phys.failed'));
 }
 
-/** Starts a run: of `drop` (Drop: they become Dynamic), or of the parts whose role is Dynamic. */
-function simulate(ctx: Ctx, drop: NodeId[] | null): void {
+/** S9: the cloth a run takes: its CLT1, its pieces (null: none). */
+function clothRun(ctx: Ctx, bodies: PhysicsSpec | null, only?: readonly NodeId[]): ClothRun | null {
+  const moving = new Set((bodies?.bodies ?? []).flatMap((b) => b.pieces.map((p) => p.part)));
+  const spec = only ? clothSpec(ctx.store.get(), moving, only) : clothSpec(ctx.store.get(), moving);
+  if (!spec) return null;
+  return { bytes: cltBytes(spec), pieces: spec.pieces, writers: [], clips: [] };
+}
+
+/** What a run is besides Drop's and Start's: S9's Drape over the part, its sheet alone, in the gesture that made it. */
+interface SimulateOptions {
+  cloth: NodeId[];
+  gesture: string;
+  label: Label;
+}
+
+/**
+ * Starts a run: of `drop` (Drop: they become Dynamic), or of the parts whose role is Dynamic and those whose role is
+ * Cloth; or (S9, `only`) of some cloth parts alone.
+ */
+function simulate(ctx: Ctx, drop: NodeId[] | null, only?: SimulateOptions): void {
   const port = ctx.services.physics;
   if (!port) {
     setUi(ctx, { ended: 'NO_ENGINE' });
@@ -326,22 +401,24 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
   const current = sessions.get(ctx.store);
   if (current?.begun) {
     stop(ctx);
-    void current.run.done.catch(() => undefined).then(() => simulate(ctx, drop));
+    void current.run.done.catch(() => undefined).then(() => simulate(ctx, drop, only));
     return;
   }
   if (current) abandon(current);
   const state = ctx.store.get();
   // S3b: Start runs the front glass fed by the scene too (Drop runs the bodies it drops).
-  const glass = drop ? null : glassRun(ctx);
+  const glass = drop || only ? null : glassRun(ctx);
   if (glass === 'NO_ENGINE') {
     setUi(ctx, { ended: 'NO_ENGINE' });
     ctx.ui.toast(t('phys.noEngine'));
     return;
   }
-  const bodies = physicsSpec(state, drop ?? undefined);
-  // S3c: Start wets the parts too (Drop runs the bodies it drops).
-  const parts = drop ? null : partsRun(ctx, bodies);
-  const spec = bodies ?? (glass || parts ? { bodies: [], statics: [], floor: { z: 0, friction: 0, bounciness: 0 } } : null);
+  const bodies = only ? null : physicsSpec(state, drop ?? undefined);
+  // S9: Start runs the cloth too (Drop runs the bodies it drops; Drape, its sheet alone).
+  const cloth = drop ? null : clothRun(ctx, bodies, only?.cloth);
+  // S3c: Start wets the parts too (Drop runs the bodies it drops), but not the cloth, which moves.
+  const parts = drop || only ? null : partsRun(ctx, bodies, cloth);
+  const spec = bodies ?? (glass || parts || cloth ? { bodies: [], statics: [], floor: { z: 0, friction: 0, bounciness: 0 } } : null);
   if (!spec) {
     setUi(ctx, { ended: 'NOTHING' });
     ctx.ui.toast(t(drop ? 'phys.nothingToDrop' : 'phys.nothingDynamic'));
@@ -350,12 +427,12 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
   const fps = state.animation.fps;
   const targets = drop ? movableTargets(state, drop) : [];
   const roles = drop ? Object.fromEntries(targets.map((id) => [id, 'DYNAMIC' as PhysicsRole])) : undefined;
-  const label = drop ? L('undo.drop', { target: targetLabel(state, targets) }) : L('undo.simulate');
+  const label = only ? only.label : drop ? L('undo.drop', { target: targetLabel(state, targets) }) : L('undo.simulate');
   const session: Session = {
     ctx,
     run: null as unknown as PhysicsRunHandle,
     spec,
-    gesture: `physics${++gestureCount}:${Date.now()}`,
+    gesture: only?.gesture ?? `physics${++gestureCount}:${Date.now()}`,
     label,
     roles,
     pre: moverTransforms(state, spec),
@@ -377,12 +454,13 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
     unsubscribe: () => undefined,
     glass,
     parts,
+    cloth,
   };
   // A run with a glass or wet parts goes on as long as it rains: only Stop or its time stops it.
   const maxSeconds = glass || parts ? Math.max(glass ? MAX_GLASS_SECONDS : 0, parts ? MAX_PARTS_SECONDS : 0) : MAX_SIMULATED_SECONDS;
-  session.run = port.run(spec, { fps, maxSeconds }, (u) => update(session, u), glass?.spec ?? null, parts?.bytes ?? null);
+  session.run = port.run(spec, { fps, maxSeconds }, (u) => update(session, u), glass?.spec ?? null, parts?.bytes ?? null, cloth?.bytes ?? null);
   sessions.set(ctx.store, session);
-  setUi(ctx, { state: 'STARTING', time: 0, awake: 0, bodies: spec.bodies.length, ended: null, glass: null, parts: null });
+  setUi(ctx, { state: 'STARTING', time: 0, awake: 0, bodies: spec.bodies.length, ended: null, glass: null, parts: null, cloth: null, noCloth: false });
   ctx.ui.set({ drawer: 'physics' });
   session.run.started.then(
     (st) => begin(session, st),
@@ -399,7 +477,28 @@ export function drop(ctx: Ctx, ids: NodeId[]): void {
   simulate(ctx, ids);
 }
 
-/** ▶ Start: the parts whose role is Dynamic; while paused, Resume. */
+/**
+ * S9: Drape over the part: a sheet of cloth (a plane of the default fabric, core/cloth.ts `drapePlacement`) above the
+ * selection, run alone; adding it, its role and its run are one undo step.
+ */
+export function drape(ctx: Ctx, ids: NodeId[]): void {
+  const state = ctx.store.get();
+  const place = drapePlacement(state, ids);
+  if (!place) {
+    setUi(ctx, { ended: 'NOTHING' });
+    ctx.ui.toast(t('phys.nothingToDrape'));
+    return;
+  }
+  const gesture = `drape${++gestureCount}:${Date.now()}`;
+  const label = L('undo.drape', { target: targetLabel(state, ids) });
+  ctx.store.dispatch({ type: 'scene/addPrimitive', kind: 'PLANE', params: place.params, position: place.position, name: t('phys.drapeName'), ...(place.material ? { material: place.material } : {}), gesture, label });
+  const sheet = ctx.store.get().selection.ids[0];
+  if (!sheet || sheet === ids[0] || !ctx.store.get().scene.nodes[sheet]) return;
+  ctx.store.dispatch({ type: 'physics/set', ids: [sheet], patch: { role: 'CLOTH', cloth: { fabric: DEFAULT_FABRIC } }, gesture, label });
+  simulate(ctx, null, { cloth: [sheet], gesture, label });
+}
+
+/** ▶ Start: the parts whose role is Dynamic or Cloth; while paused, Resume. */
 export function start(ctx: Ctx): void {
   const session = sessions.get(ctx.store);
   if (session) {
@@ -465,7 +564,7 @@ export function reset(ctx: Ctx): void {
     ctx.store.dispatch({ type: 'physics/reset', transforms, clips: target.clips, label: L('undo.physicsReset') });
     ctx.store.dispatch({ type: 'anim/playhead', t: target.start });
   }
-  setUi(ctx, { state: 'STOPPED', time: 0, awake: 0, ended: null, canReset: false, glass: null, parts: null });
+  setUi(ctx, { state: 'STOPPED', time: 0, awake: 0, ended: null, canReset: false, glass: null, parts: null, cloth: null, noCloth: false });
 }
 
 /** Keeps the bar's Reset honest: it has something to do only while the last run's clips are in the project. */

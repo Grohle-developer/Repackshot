@@ -618,9 +618,11 @@ export interface ImagesPort {
 export interface PhysicsPort {
   /**
    * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
-   * is not there (npm run engine:build), or with the engine's message when the scene does not load.
+   * is not there (npm run engine:build), or with the engine's message when the scene does not load. S9: `cloth`, the
+   * CLT1 of the run's cloth (core/cloth.ts); with an rt.wasm that does not simulate it, `started` says `noCloth` and
+   * the rest runs (or rejects with `NO_CLOTH` when there is nothing else).
    */
-  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null): PhysicsRunHandle;
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null, cloth?: Uint8Array | null): PhysicsRunHandle;
 }
 
 /**

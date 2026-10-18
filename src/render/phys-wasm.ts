@@ -1,5 +1,6 @@
 // The rigid body simulator of rt.wasm (phase S2, engine/crates/rt-phys through rt-wasm's `phys_*`), typed: a world
-// built from a PHY1 scene (io/phys.ts writes it), stepped and read back. S3b: and the pane of a front glass under the
+// built from a PHY1 scene (io/phys.ts writes it), stepped and read back. S9: and the cloth of a CLT1 spec (`cloth_*`),
+// stepped with the world. S3b: and the pane of a front glass under the
 // scene's rain and dust (`wet_*`, a WET1 spec from io/wet.ts), stepped with it and read a frame at a time. No DOM and no workers here, so the physics
 // worker (render/physics-worker.ts) and the tests in Node use the same code with the same module.
 
@@ -72,6 +73,11 @@ export class PhysWorld {
   private live(): number {
     if (this.handle === 0) throw new Error('the physics world was freed');
     return this.handle;
+  }
+
+  /** S9: the world's handle in its instance of rt.wasm (a cloth steps it with itself: `ClothSim.step`). */
+  get id(): number {
+    return this.live();
   }
 
   /** Simulates `n` fixed steps. */
@@ -278,6 +284,95 @@ export class PartsSim {
 
   free(): void {
     if (this.handle !== 0) this.rt.wpt_free(this.handle);
+    this.handle = 0;
+  }
+}
+
+/** S9: the exports of rt.wasm that simulate cloth (absent in an rt.wasm older than S9). */
+export interface ClothExports {
+  memory: WebAssembly.Memory;
+  rt_alloc(len: number): number;
+  rt_free(ptr: number, len: number): void;
+  rt_scene_error_len(): number;
+  rt_scene_error_copy(ptr: number): void;
+  cloth_new(ptr: number, len: number): number;
+  cloth_free(handle: number): number;
+  cloth_step(handle: number, world: number, n: number): number;
+  cloth_vertices(handle: number): number;
+  cloth_positions(handle: number, out: number): number;
+  cloth_settled(handle: number): number;
+  cloth_steps(handle: number): number;
+  cloth_hash(handle: number): number;
+}
+
+/** True when a compiled engine simulates cloth (S9). */
+export function hasClothExports(x: unknown): x is ClothExports {
+  const e = x as Partial<ClothExports> | null;
+  return !!e && typeof e.cloth_new === 'function' && typeof e.cloth_step === 'function' && typeof e.cloth_positions === 'function' && typeof e.cloth_hash === 'function';
+}
+
+/** The cloth of a scene inside an instance of rt.wasm (rt_phys::cloth). */
+export class ClothSim {
+  private handle: number;
+  /** Vertices of all its pieces, in the CLT1's order. */
+  readonly vertices: number;
+
+  /** Builds the cloth of a CLT1 spec (core/cloth.ts `cltBytes`); throws with the engine's message when the bytes are not one. */
+  constructor(
+    private readonly rt: ClothExports,
+    spec: Uint8Array,
+  ) {
+    const ptr = rt.rt_alloc(spec.length);
+    new Uint8Array(rt.memory.buffer, ptr, spec.length).set(spec);
+    this.handle = rt.cloth_new(ptr, spec.length);
+    rt.rt_free(ptr, spec.length);
+    if (this.handle === 0) {
+      const len = rt.rt_scene_error_len();
+      const at = rt.rt_alloc(Math.max(1, len));
+      rt.rt_scene_error_copy(at);
+      const message = new TextDecoder().decode(new Uint8Array(rt.memory.buffer, at, len).slice());
+      rt.rt_free(at, Math.max(1, len));
+      throw new Error(message || 'cloth_new failed');
+    }
+    this.vertices = rt.cloth_vertices(this.handle);
+  }
+
+  private live(): number {
+    if (this.handle === 0) throw new Error('the cloth was freed');
+    return this.handle;
+  }
+
+  /** Simulates `n` fixed steps; with `world` (of the same instance), its bodies step with the cloth and push it. */
+  step(n: number, world: PhysWorld | null = null): void {
+    if (this.rt.cloth_step(this.live(), world ? world.id : 0, Math.max(0, Math.floor(n))) !== 0) throw new Error('cloth_step: a handle that is not there');
+  }
+
+  /** Every vertex of every piece, world mm, x y z each (a copy). */
+  positions(): Float32Array {
+    const len = this.vertices * 12;
+    const out = this.rt.rt_alloc(Math.max(4, len));
+    this.rt.cloth_positions(this.live(), out);
+    const bytes = new Uint8Array(this.rt.memory.buffer, out, len).slice();
+    this.rt.rt_free(out, Math.max(4, len));
+    return new Float32Array(bytes.buffer);
+  }
+
+  /** No particle has moved on for half a second. */
+  get settled(): boolean {
+    return this.rt.cloth_settled(this.live()) === 1;
+  }
+
+  get steps(): number {
+    return this.rt.cloth_steps(this.live());
+  }
+
+  /** FNV-1a of the particles: the native tests pin it. */
+  get hash(): number {
+    return this.rt.cloth_hash(this.live()) >>> 0;
+  }
+
+  free(): void {
+    if (this.handle !== 0) this.rt.cloth_free(this.handle);
     this.handle = 0;
   }
 }

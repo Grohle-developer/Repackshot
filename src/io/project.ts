@@ -120,6 +120,7 @@ import { migrateRender, syncOutputSize } from '../core/render';
 import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { isGlassTrack } from '../core/wet';
 import { isPartsTrack } from '../core/wet-parts';
+import { isClothTrack } from '../core/cloth';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -437,9 +438,10 @@ function checkState(raw: RawState): ProjectState {
   // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project. S3b: a PHYSICS
   // clip of the camera records its front glass instead (a glass track, core/wet.ts), checked the same way.
   // S3c: a PHYSICS clip of the scene records the rain, dust and snow on the parts (a parts track, core/wet-parts.ts).
+  // S9: a PHYSICS clip of a cloth part records its shape instead (a cloth track, core/cloth.ts).
   const recorded = (c: Record<string, unknown>) => {
     const kind = (c.target as { kind?: unknown } | undefined)?.kind;
-    return kind === 'CAMERA' ? isGlassTrack(c.glass) : kind === 'SCENE' ? isPartsTrack(c.parts) : isTrack(c.track);
+    return kind === 'CAMERA' ? isGlassTrack(c.glass) : kind === 'SCENE' ? isPartsTrack(c.parts) : 'cloth' in c ? isClothTrack(c.cloth) : isTrack(c.track);
   };
   if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !recorded(c))) {
     s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !recorded(c))) };

@@ -109,5 +109,8 @@ export type ClothAnchor = (typeof CLOTH_ANCHORS)[number];
  */
 export const GUST_PER_CHAOS = 0.5;
 
-/** Drape over the part: a sheet this many times the footprint of the selection, this far above its top (share of its size). */
+/** Drape over the part: a sheet this many times the footprint of the selection, this far above its top (share of its size) (◆). */
 export const DRAPE_SHEET = { size: 1.6, lift: 0.08 } as const;
+
+/** The catalogue material (data/materials.ts) of the sheet Drape over the part lays: a plain cotton (its look is M5's). */
+export const DRAPE_MATERIAL = 'COTTON';
