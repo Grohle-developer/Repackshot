@@ -1,4 +1,4 @@
-// The Focus of a camera (phase F1, UI.md §5.1 "Cámara"): a segmented control Distance · Point · Object, and under it
+// The Focus of a camera (phase F1, UI.md §5.1 "Camera"): a segmented control Distance · Point · Object, and under it
 // the focus distance as a slider with its value field (a logarithmic slider over the depth of the scene, core/focus.ts
 // `focusRange`). Distance edits it (one undo entry per gesture); Point and Object show the distance the camera works
 // out for the point or the object, and moving it switches the camera to Distance from there (one undo entry), with the

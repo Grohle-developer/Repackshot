@@ -1,4 +1,4 @@
-// The camera track's fade to a colour on a rendered frame (phase N1, SPEC §3.7 "Fundidos"): the engine renders the
+// The camera track's fade to a colour on a rendered frame (phase N1, SPEC §3.7 "Fades"): the engine renders the
 // shot as it is, and the frame is mixed with the colour by the fade's amount at that instant (core/animation.ts
 // `shotFadeAt`). On a display picture (8 or 16 bits, the curve applied) the mix is in the picture's own values, so a
 // fade to white ends white whatever the curve; on scene-linear light (EXR, a float TIFF, DNG, exposure applied) it is

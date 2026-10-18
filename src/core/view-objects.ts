@@ -1,5 +1,5 @@
-// Lights and cameras as objects of the viewport (phase L4 and its extension, "luces y cámaras en el visor, mirar a
-// través"): where the move tool's gizmo sits on one and what a drag of it does, the view from one ("Look through")
+// Lights and cameras as objects of the viewport (phase L4 and its extension, "lights and cameras in the viewer, look
+// through"): where the move tool's gizmo sits on one and what a drag of it does, the view from one ("Look through")
 // and what navigating that view does to it, and the achromatic glyphs the viewport draws for them (a panel's
 // outline, a spot's cone, a point, a sun's arrow, a saved camera's frustum) with the click that picks one.
 //

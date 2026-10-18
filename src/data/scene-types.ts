@@ -13,37 +13,37 @@ import type { Label, RGBA, SceneType } from './types';
  */
 export interface SceneTypeDefaults {
   /**
-   * Row "Entorno": the environment kind. SKY is the sun and sky of a window; STUDIO is the studio dome. An HDRI that the
-   * person loaded is never replaced (it is the "o HDRI interior" of the table, and `worldFor` lets it win too).
+   * Row "Environment": the environment kind. SKY is the sun and sky of a window; STUDIO is the studio dome. An HDRI that the
+   * person loaded is never replaced (it is the "or an interior HDRI" of the table, and `worldFor` lets it win too).
    */
   environment?: 'SKY' | 'STUDIO';
-  /** Row "Entorno", "cúpula blanca": the background is this plain colour (linear RGBA) instead of the environment. */
+  /** Row "Environment", "white dome": the background is this plain colour (linear RGBA) instead of the environment. */
   background?: RGBA;
-  /** Row "Rebotes": most surface interactions per path (Advanced ▸ Max bounces). */
+  /** Row "Bounces": most surface interactions per path (Advanced ▸ Max bounces). */
   maxBounces?: number;
-  /** Row "Cáusticas": the render window's switch. */
+  /** Row "Caustics": the render window's switch. */
   caustics?: 'OFF';
   /**
-   * Row "Sombra de suelo": the contact shadow of the studio floor, on or off, and when on, how dark it draws in the
+   * Row "Floor shadow": the contact shadow of the studio floor, on or off, and when on, how dark it draws in the
    * Fast viewport (`environment.groundShadow`). Interior has none of its own: the room puts it.
    */
   floorShadow?: { on: boolean; opacity?: number };
-  /** Row "Transformada": the view transform. */
+  /** Row "Transform": the view transform. */
   viewTransform?: 'STANDARD' | 'AGX';
-  /** Row "Muestras objetivo": samples per pixel (the quality tier is the one with exactly these, else custom). */
+  /** Row "Target samples": samples per pixel (the quality tier is the one with exactly these, else custom). */
   samples?: number;
-  /** Row "Muestras objetivo", "adaptativo": finish by noise, so the easy pixels stop early. */
+  /** Row "Target samples", "adaptive": finish by noise, so the easy pixels stop early. */
   adaptive?: boolean;
-  /** Row "Muestras objetivo", "denoise": denoise in the viewport and in the render. */
+  /** Row "Target samples", "denoise": denoise in the viewport and in the render. */
   denoise?: boolean;
-  /** Row "Cámara": the focal length of every camera that is not locked. */
+  /** Row "Camera": the focal length of every camera that is not locked. */
   focalMm?: number;
-  /** K3, row "Cámara", "verticales rectas": the straight verticals of every camera that is not locked. */
+  /** K3, row "Camera", "straight verticals": the straight verticals of every camera that is not locked. */
   straightVerticals?: boolean;
-  /** K3, row "Exposición": the automatic exposure (the dial becomes its compensation). */
+  /** K3, row "Exposure": the automatic exposure (the dial becomes its compensation). */
   autoExposure?: boolean;
   /**
-   * C1, row "Luz": the light recipe (a catalogue setup key) the type starts with. It is put in force only over the
+   * C1, row "Light": the light recipe (a catalogue setup key) the type starts with. It is put in force only over the
    * product type's own lights, untouched (`typeLightsUntouched`): a setup the person chose, or lights they edited, are
    * theirs and stay. The decoration of a product type that is a set (its pool, its backdrop) stays as it is.
    */
