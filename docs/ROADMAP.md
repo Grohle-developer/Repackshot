@@ -11974,7 +11974,7 @@ probaba tras *Parar*):
    render, ◆7 de S3).
 8. ◆ `MAX_GLASS_SECONDS = 120`.
 
-### S3c · Gotas y polvo sobre las piezas (simulación) — **Opus** (tras S3b) — propuesta
+### S3c · Gotas y polvo sobre las piezas (simulación) — tras S3b — propuesta
 
 Lo que queda de S3 tras S3b, sobre el modelo de `rt_phys::wet` (que ya hace el
 cristal):
