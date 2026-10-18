@@ -30,6 +30,10 @@
 //! their trails, hang under faces that look down and drip off them and off open edges; dust and
 //! snow as fields that pile where the faces let them rest, in the open.
 //!
+//! **Liquids** (S7, [`liquid`]): position based fluids with viscosity, cohesion, surface tension
+//! and adhesion, filled into a part by ray parity, held by the static parts and the floor, and
+//! their surface rebuilt by marching cubes at every frame.
+//!
 //! **Determinism.** See [`world`]: contacts are sorted by (body, body, feature) before the solver
 //! sees them, so a narrow phase split over threads would give the same result; the pose hash
 //! ([`World::hash`]) is the check, pinned in the tests and compared with the WebAssembly build.
@@ -41,6 +45,7 @@ pub mod bvh;
 pub mod collide;
 pub mod example;
 pub mod hull;
+pub mod liquid;
 pub mod math;
 pub mod scene;
 pub mod shape;

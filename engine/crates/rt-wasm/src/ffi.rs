@@ -972,3 +972,139 @@ pub unsafe extern "C" fn wpt_copy(handle: u32, out: *mut u8) -> u32 {
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
     STATUS_OK
 }
+
+// --- Liquids (S7) --------------------------------------------------------------------------------
+
+/// S7: builds the liquids of a scene from `LIQ1` bytes (`rt_phys::liquid`). Returns the world's
+/// handle, or 0 after recording the error (`rt_scene_error_len`, `rt_scene_error_copy`).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn liq_new(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("liq_new: null pointer");
+        return 0;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::liquid::new(bytes)
+}
+
+/// Forgets a liquid world. Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn liq_free(handle: u32) -> u32 {
+    if crate::liquid::free(handle) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Simulates `n` fixed steps of 1/240 s (at most ten seconds per call). Returns 0, or 1 for a bad
+/// handle.
+#[no_mangle]
+pub extern "C" fn liq_step(handle: u32, n: u32) -> u32 {
+    if crate::liquid::step(handle, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Steps simulated (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn liq_steps(handle: u32) -> u32 {
+    crate::liquid::steps(handle).unwrap_or(0)
+}
+
+/// The number of liquids of the world (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn liq_liquids(handle: u32) -> u32 {
+    crate::liquid::liquids(handle).unwrap_or(0)
+}
+
+/// The particles of liquid `i` (0 for a bad handle or liquid).
+#[no_mangle]
+pub extern "C" fn liq_count(handle: u32, i: u32) -> u32 {
+    crate::liquid::count(handle, i).unwrap_or(0)
+}
+
+/// FNV-1a of the particles (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn liq_hash(handle: u32) -> u32 {
+    crate::liquid::hash(handle).unwrap_or(0)
+}
+
+/// Takes the frame record of liquid `i` (`LQF1`: its particles, quantised in the world's box) and
+/// returns its length in bytes, `u32::MAX` for a bad handle; copy it with [`liq_copy`].
+#[no_mangle]
+pub extern "C" fn liq_frame(handle: u32, i: u32) -> u32 {
+    crate::liquid::frame(handle, i).unwrap_or(u32::MAX)
+}
+
+/// Takes the surface of liquid `i` (marching cubes of its frame record: `u32 vertices, u32
+/// indices, f32 positions[3n], f32 normals[3n], u32 indices[m]`) and returns its length in bytes,
+/// `u32::MAX` for a bad handle; copy it with [`liq_copy`].
+#[no_mangle]
+pub extern "C" fn liq_surface(handle: u32, i: u32) -> u32 {
+    crate::liquid::surface(handle, i).unwrap_or(u32::MAX)
+}
+
+/// Copies what [`liq_frame`] or [`liq_surface`] took last to `out`. Returns 0, 1 for a bad handle,
+/// 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to at least the length that call returned, writable.
+#[no_mangle]
+pub unsafe extern "C" fn liq_copy(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(bytes) = crate::liquid::out_bytes(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    // SAFETY: the caller promises room for the length the call returned, which is `bytes.len()`;
+    // `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
+
+/// Builds the surface of a frame record of `len` bytes at `ptr` (no world needed: a recorded frame
+/// played back) and returns its length in bytes, or `u32::MAX` after recording the error; copy it
+/// with [`liq_mesh_copy`].
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn liq_mesh(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("liq_mesh: null pointer");
+        return u32::MAX;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::liquid::mesh(bytes).unwrap_or(u32::MAX)
+}
+
+/// Copies the surface [`liq_mesh`] built last to `out`. Returns 0, or 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to at least the length [`liq_mesh`] returned, writable.
+#[no_mangle]
+pub unsafe extern "C" fn liq_mesh_copy(out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let bytes = crate::liquid::mesh_bytes();
+    // SAFETY: the caller promises room for the length `liq_mesh` returned, which is `bytes.len()`;
+    // `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
