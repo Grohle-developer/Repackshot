@@ -267,6 +267,13 @@ impl PostRequest {
             bounce: control(s, "bounce")?,
             wear: control(s, "wear")?,
             style_strength: control(s, "styleStrength")?,
+            // X6: the style is a grade of the guard's own; an unknown or missing key is Natural,
+            // as the page reads one (`normaliseAi`).
+            style: s
+                .get("style")
+                .and_then(Value::as_str)
+                .and_then(rt_post::Style::from_key)
+                .unwrap_or_default(),
             seed: seed as u32,
         };
         let model = text("modelKey")
@@ -1168,6 +1175,12 @@ mod tests {
         assert!(matches!(r.source, PostSource::Render(7)));
         assert_eq!(r.settings.intervention, 30);
         assert_eq!(r.settings.seed, u32::MAX);
+        assert_eq!(r.settings.style, rt_post::Style::Natural);
+        // X6: the style reaches the guard; an unknown one reads as Natural.
+        let warm = body("").replace("\"NATURAL\"", "\"WARM\"");
+        assert_eq!(read(&warm).unwrap().settings.style, rt_post::Style::Warm);
+        let odd = body("").replace("\"NATURAL\"", "\"SEPIA\"");
+        assert_eq!(read(&odd).unwrap().settings.style, rt_post::Style::Natural);
         assert_eq!(r.materials[0].id, rt_post::FLOOR_ID);
         assert_eq!(r.tolerances, vec![("edgesPx".to_string(), 0.5)]);
         assert!(r.cpu);

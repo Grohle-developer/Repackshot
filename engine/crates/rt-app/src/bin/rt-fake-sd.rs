@@ -21,7 +21,9 @@
 //! The image: `wrap` (the default) lifts every byte by `round(strength × 64) + seed mod 7`,
 //! wrapping at 256 (a model that does something wrong); `gain` (or a prompt with `[fake:gain]`)
 //! brightens smoothly, `v × (1 + strength / 2)` saturating, with a warmer red (a model that does
-//! what the pipeline asks: more light, the guard lets it through).
+//! what the pipeline asks: more light, the guard lets it through); `model` (or `[fake:model]`, X6)
+//! is the test model of `rt_post::test_model`, the deterministic stand-in for an img2img model
+//! that acts in every band the guard separates (with the tile's own origin at 0, 0).
 
 use rt_app::ai::{b64, png};
 use rt_app::http::{read_request, write_response, Response};
@@ -246,7 +248,12 @@ fn tag<'a>(prompt: &'a str, name: &str) -> Option<&'a str> {
 }
 
 fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response {
-    let gain_mode = control().get("image").and_then(Value::as_str) == Some("gain");
+    let image_mode = control()
+        .get("image")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let gain_mode = image_mode.as_deref() == Some("gain");
+    let model_mode = image_mode.as_deref() == Some("model");
     let text = String::from_utf8_lossy(body);
     let Ok(v) = json::parse(&text) else {
         return Response::json(400, "{\"error\":\"invalid JSON\"}".into());
@@ -358,6 +365,7 @@ fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response 
         // Deterministic: the input brightened by the strength and shifted by the seed.
         let lift = (strength * 64.0).round() as u32 + (seed % 7) as u32;
         let gain = gain_mode || tag(&prompt, "gain").is_some();
+        let model = model_mode || tag(&prompt, "model").is_some();
         let mut rgb = Vec::with_capacity((w * h * 3) as usize);
         for y in 0..h {
             for x in 0..w {
@@ -377,6 +385,19 @@ fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response 
                     });
                 }
             }
+        }
+        if model && (w, h) == (src.width, src.height) {
+            let input: Vec<u8> = src
+                .rgba
+                .chunks_exact(4)
+                .flat_map(|px| [px[0], px[1], px[2]])
+                .collect();
+            let tile = rt_post::Rgb8Image {
+                width: w,
+                height: h,
+                rgb: input,
+            };
+            rgb = rt_post::test_model::apply(&tile, 0, 0, strength as f32, seed as u32).rgb;
         }
         let out = b64::encode(&rt_core::png::encode(w, h, &rgb));
         set(&|j| {

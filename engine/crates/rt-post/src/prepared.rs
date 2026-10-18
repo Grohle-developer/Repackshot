@@ -2,7 +2,7 @@
 //! attempt: the display image, the material regions and which of them each control may touch.
 
 use crate::image::{Display, LinearImage, Passes};
-use crate::job::{fraction, Job};
+use crate::job::{fraction, Job, BAND_GAIN_AT_100};
 use rt_core::passes::FLOOR_ID;
 use std::collections::BTreeSet;
 
@@ -27,7 +27,8 @@ pub(crate) struct Region {
     pub locked: bool,
 }
 
-/// The controls as fractions in `[0, 1]`.
+/// The band gains of the controls (X6): what each one multiplies the model's change in its band
+/// by, `BAND_GAIN_AT_100 × control / 100` (0 at 0, 1 at 50, 2 at 100).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Aspects {
     pub light: f32,
@@ -39,17 +40,20 @@ pub(crate) struct Aspects {
 impl Aspects {
     pub fn of(job: &Job) -> Aspects {
         let s = &job.settings;
+        let g = |v: u32| BAND_GAIN_AT_100 * fraction(v);
         Aspects {
-            light: fraction(s.light),
-            bounce: fraction(s.bounce),
-            style: fraction(s.style_strength),
-            wear: fraction(s.wear),
+            light: g(s.light),
+            bounce: g(s.bounce),
+            style: g(s.style_strength),
+            wear: g(s.wear),
         }
     }
 }
 
 /// The caps of one attempt: the most each aspect may change, natural log. `scale` is the
-/// attempt's strength over `MAX_STRENGTH` (Intervention, lowered by every retry).
+/// attempt's strength over `MAX_STRENGTH` (Intervention, lowered by every retry). The cap grows
+/// with the band's gain (X6), so the model's change is clamped at `scale × cap` *before* the gain:
+/// within the cap the result is linear in the control.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Caps {
     pub light: f32,
@@ -295,15 +299,34 @@ impl Histogram {
         }
     }
 
+    /// The bin of a value.
     #[inline]
-    pub fn add(&mut self, v: f32) {
+    pub fn bin_of(&self, v: f32) -> usize {
         let i = ((v - self.lo) / self.width).floor();
         let last = self.bins.len() - 1;
-        let i = if i.is_nan() || i < 0.0 {
+        if i.is_nan() || i < 0.0 {
             0
         } else {
             (i as usize).min(last)
-        };
+        }
+    }
+
+    /// The bin that holds the median (0 when empty).
+    pub fn median_bin(&self) -> usize {
+        let target = (self.count as f64 * 0.5).ceil().max(1.0) as u64;
+        let mut seen = 0u64;
+        for (i, &b) in self.bins.iter().enumerate() {
+            seen += u64::from(b);
+            if seen >= target {
+                return i;
+            }
+        }
+        0
+    }
+
+    #[inline]
+    pub fn add(&mut self, v: f32) {
+        let i = self.bin_of(v);
         self.bins[i] += 1;
         self.count += 1;
         if v > self.max {

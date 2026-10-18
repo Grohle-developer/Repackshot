@@ -2,9 +2,11 @@
 // the interface to be built against until the real pipeline (X3c) is connected. It is deterministic: the same
 // request gives the same pixels. What it does is deliberately mild and shaped like the real thing:
 //
-//   - Light lifts the shadows and rolls the highlights off, Bounces warm the low frequencies, Style tints
-//     the picture, Wear adds nothing (a synthetic service has no micro-detail to invent), and the seed
-//     only wobbles the gain a little, so "Another variation" shows something.
+//   - Light lifts the shadows and rolls the highlights off, Bounces warm the low frequencies, Style applies its own
+//     grade (X6: the guard's table, core/ai-style.ts; Natural too, it used to add nothing), Wear adds a seeded
+//     micro-variation inside the materials that allow wear and are in focus (X6: it used to add nothing, so the
+//     slider seemed dead), and the seed wobbles the gain a little and moves the micro-variation, so "Another
+//     variation" shows something.
 //   - Every change is a smooth gain on the engine image (original × gain, the shading-transfer rule of
 //     AI-POST.md §3.2), so edges, textures and the depth-of-field blur are kept by construction.
 //   - A control at 0 leaves its aspect alone, and with every aspect at 0 (or Intervention 0) the image
@@ -22,6 +24,7 @@ import { luminance } from '../core/ai-image';
 import { FLOOR_ID, type RenderPasses } from '../core/passes';
 import { AI_MODELS } from '../data/ai-models';
 import { deltaE2000, linearRgbToLab } from './color';
+import { STYLE_GRADES, styleGainAt } from '../core/ai-style';
 
 /** `GuardReport.modelKey` of this service. */
 export const SYNTHETIC_MODEL_KEY = 'SYNTHETIC';
@@ -63,31 +66,27 @@ export interface Weights {
   light: number;
   bounce: number;
   style: number;
+  /** X6: the micro-variation in the materials that allow wear (absent: none). */
+  wear?: number;
 }
 
-/** Wear has no weight: the synthetic service adds no micro-detail. */
-export function weightsOf(s: AiPipelineSettings, scale = 1): Weights {
+/** Every control has a weight (X6: Wear and the Natural style too), scaled by Intervention and a retry. */
+export function weightsOf(s: AiPipelineSettings, scale = 1): Required<Weights> {
   const pct = (v: number) => Math.max(0, Math.min(100, v)) / 100;
   const e = pct(s.intervention) * scale;
   return {
     light: pct(s.light) * e,
     bounce: pct(s.bounce) * e,
-    style: s.style === 'NATURAL' ? 0 : pct(s.styleStrength) * e,
+    style: pct(s.styleStrength) * e,
+    wear: pct(s.wear) * e,
   };
 }
 
+/** Amplitude of the micro-variation at full Wear and Intervention, natural log of the gain. */
+const WEAR_AMPLITUDE = 0.08;
+
 /** Warm light bounced between surfaces: more red, a little more green, less blue, strongest in the shadows. */
 const BOUNCE_WARMTH: readonly [number, number, number] = [0.12, 0.04, -0.08];
-
-/** A style's tint of the shadows and of the highlights, per channel, at full strength. */
-const STYLE_TINT: Readonly<Record<AiStyle, { shadow: readonly [number, number, number]; light: readonly [number, number, number] }>> = {
-  NATURAL: { shadow: [0, 0, 0], light: [0, 0, 0] },
-  CATALOGUE: { shadow: [0.02, 0.02, 0.02], light: [0.04, 0.04, 0.04] },
-  EDITORIAL: { shadow: [-0.04, -0.03, -0.02], light: [0.03, 0.02, 0] },
-  WARM: { shadow: [0.06, 0.02, -0.05], light: [0.08, 0.02, -0.07] },
-  COOL: { shadow: [-0.05, 0, 0.07], light: [-0.06, 0, 0.08] },
-  CINEMATIC: { shadow: [-0.06, 0.02, 0.06], light: [0.08, 0.01, -0.06] },
-};
 
 /** Separable box blur twice over (a soft bell), edges clamped: the low-frequency luminance the gains follow. */
 export function softLuminance(img: LinearImage, radius: number): Float32Array {
@@ -145,18 +144,28 @@ function wobble(x: number, y: number, w: number, h: number, seed: number): numbe
 }
 
 /**
- * The synthetic change: `input × gain`, a smooth gain per channel from the aspects' weights. With no weight
- * the pixels are copied untouched. Pixels the passes call background (`partId` 0) are left as they are when
- * the passes say so. The same input, weights and seed always give the same output.
+ * The synthetic change: `input × gain`, a smooth gain per channel from the aspects' weights, and (X6) a seeded
+ * micro-variation where `wearIn` names the material (the passes' `materialId`) and the circle of confusion says it is
+ * in focus. With no weight the pixels are copied untouched. Pixels the passes call background (`partId` 0) are left as
+ * they are when the passes say so. The same input, weights and seed always give the same output.
  */
-export function applySynthetic(input: LinearImage, passes: RenderPasses | null, w: Weights, style: AiStyle, seed: number): LinearImage {
+export function applySynthetic(input: LinearImage, passes: RenderPasses | null, w: Weights, style: AiStyle, seed: number, wearIn?: ReadonlySet<number>): LinearImage {
   const out: LinearImage = { width: input.width, height: input.height, rgba: new Float32Array(input.rgba) };
-  const any = Math.max(w.light, w.bounce, w.style);
+  const wear = wearIn && wearIn.size > 0 ? (w.wear ?? 0) : 0;
+  const any = Math.max(w.light, w.bounce, w.style, wear);
   if (!(any > 0)) return out;
   const { width, height, rgba } = input;
   const lum = softLuminance(input, blurRadius(width, height));
   const mask = passes?.partId && passes.partId.length === width * height ? passes.partId : null;
-  const tint = STYLE_TINT[style] ?? STYLE_TINT.NATURAL;
+  const mats = passes?.materialId && passes.materialId.length === width * height ? passes.materialId : null;
+  const coc = passes?.coc && passes.coc.length === width * height ? passes.coc : null;
+  const grade = STYLE_GRADES[style] ?? STYLE_GRADES.NATURAL;
+  // The guard's table at a quarter of the guard's amount (the guard's is twice Style strength × Intervention): this
+  // stand-in's crude edge check (luminance steps matched by shifting) reads a stronger per-channel gain on a finely
+  // striped surface as a moved edge, which the guard's real check, on the passes' discontinuities, does not.
+  const amount = 0.5 * w.style;
+  const low = amount > 0 ? softLuminance(input, 3 * blurRadius(width, height)) : lum;
+  const cell = Math.max(4, Math.round(Math.max(width, height) * 0.015));
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const p = y * width + x;
@@ -165,12 +174,15 @@ export function applySynthetic(input: LinearImage, passes: RenderPasses | null, 
       // Light: lifts the shadows (up to +50 %) and rolls the highlights off (down to -12 %).
       const light = 1 + w.light * (0.5 * sq(1 - clamp01(l / 0.45)) - 0.12 * sq(clamp01((l - 0.6) / 0.4)));
       const shade = 1 - clamp01(l / 0.6);
-      const mood = clamp01(l / 0.8);
-      const wob = 1 + 0.03 * any * wobble(x, y, width, height, seed);
+      // The seed's wobble follows the smooth aspects only, so Wear stays inside its materials.
+      const wob = 1 + 0.03 * Math.max(w.light, w.bounce, w.style) * wobble(x, y, width, height, seed);
+      const styled = amount > 0 ? styleGainAt(grade, low[p], amount) : null;
+      // Wear: a micro-variation of a few pixels, only in the materials that take it and in focus.
+      const worn = wear > 0 && mats && wearIn!.has(mats[p]) && (!coc || !(coc[p] > 1)) ? Math.exp(wear * WEAR_AMPLITUDE * wobble(x, y, cell * 4, cell * 4, seed + 7919)) : 1;
       for (let c = 0; c < 3; c++) {
         const bounce = 1 + w.bounce * shade * BOUNCE_WARMTH[c];
-        const styled = 1 + w.style * ((1 - mood) * tint.shadow[c] + mood * tint.light[c]);
-        const gain = f(light * bounce * styled * wob);
+        const st = styled ? Math.exp(styled[c]) : 1;
+        const gain = f(light * bounce * st * wob * worn);
         out.rgba[p * 4 + c] = f(rgba[p * 4 + c] * gain);
       }
     }
@@ -439,8 +451,10 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
       const base = { modelKey: SYNTHETIC_MODEL_KEY, runtime: SYNTHETIC_RUNTIME, seed: s.seed };
       const copy = (): LinearImage => ({ width: image.width, height: image.height, rgba: new Float32Array(image.rgba) });
       const asked = weightsOf(s);
+      // X6: the materials the request's table lets wear into.
+      const wearIn = new Set((request.materials ?? []).filter((m) => m.allowsWear && !m.locked).map((m) => m.materialId));
       // Nothing asked: the very same pixels, without a pass over them.
-      if (!(Math.max(asked.light, asked.bounce, asked.style) > 0)) {
+      if (!(Math.max(asked.light, asked.bounce, asked.style, wearIn.size > 0 ? asked.wear : 0) > 0)) {
         const m = measure(image, image, passes, limits, request.materials);
         report('GUARD', 1, 1);
         return { image: copy(), report: { verdict: 'ACCEPTED', usedFraction: 1, attempts: 1, size: m.size, outside: m.outside, edges: m.edges, detail: m.detail, focus: m.focus, materials: m.materials, ...base, seconds: Math.max(0, (now() - t0) / 1000) } };
@@ -451,7 +465,7 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
       let sentBack: string | undefined;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         report(attempt === 1 ? 'INFERENCE' : 'RETRY', at(attempt, 0.3), attempt, sentBack);
-        const out = applySynthetic(image, passes, weightsOf(s, scale), s.style, s.seed);
+        const out = applySynthetic(image, passes, weightsOf(s, scale), s.style, s.seed, wearIn);
         check();
         report('GUARD', at(attempt, 0.9), attempt, sentBack);
         const m = measure(image, out, passes, limits, request.materials);

@@ -59,8 +59,8 @@ export const MAX_USER_PROMPT = 400;
 /** Most AI images a job makes from its render (X4b). */
 export const MAX_VARIANTS = 8;
 
-/** The img2img strength at Intervention 100 (AI-POST.md §3.2 step 3). */
-export const MAX_STRENGTH = 0.4;
+/** The img2img strength at Intervention 100 (AI-POST.md §3.2 step 3). X6 raised it from 0.4 (◆). */
+export const MAX_STRENGTH = 0.6;
 /** Attempts before the guard gives up and the engine image is delivered unchanged (§7.2). */
 export const MAX_ATTEMPTS = 4;
 /** Each retry multiplies the strength by this (§7.2). */
@@ -108,6 +108,23 @@ export interface GuardMaterialCheck {
   /** Limit on the mean; the 95th percentile's limit is in the guard's tolerances. */
   limit: number;
   ok: boolean;
+  /**
+   * X6: the fraction of the region's local colour change (Bounces) the guard kept to stay within the limit, 0..1 (1: all
+   * of it). Absent from a report of before X6 and from the synthetic service, which has no such step.
+   */
+  kept?: number;
+}
+
+/**
+ * X6: the share of the image (0..1) where the guard's cap held each band's change back, whatever its control asked:
+ * where the guard, not the control, decided how much there is. `style` is 1 when the model's change common to the
+ * picture was held back, else 0. Absent when the service does not measure it (the synthetic one, a report of before).
+ */
+export interface GuardCapped {
+  light: number;
+  bounce: number;
+  wear: number;
+  style: number;
 }
 
 /**
@@ -133,6 +150,8 @@ export interface GuardReport {
   /** Worst per-tile sharpness deviation against the blur map (in focus stays sharp, out of focus stays soft). */
   focus: GuardCheck;
   materials: GuardMaterialCheck[];
+  /** Where the caps held the bands back (X6). */
+  capped?: GuardCapped;
   /** Why it was limited or rejected, in English, for the log; the interface words it from the checks. */
   reason?: string;
   /** ai-models.json key of the model that ran. */
