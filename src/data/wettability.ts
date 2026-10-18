@@ -4,7 +4,7 @@
 // `wet`). The keys are stable (rule 7: added, never renamed).
 //
 // S3c adds WOOD and FABRIC, how fast a porous family soaks a drop in (`soakMmPerS`) and how much a wet film darkens it
-// (`porosity`, rt-core `weather`), and which family a part's material wets as (`wettabilityOf`, ◆): the parts take the
+// (`porosity`, rt-core `weather`), and which family a part’s material wets as (`wettabilityFamilyOf`, ◆): the parts take the
 // table too now (engine/crates/rt-phys `wet_parts`).
 //
 // Every value is a typical one from the published ranges of each family, this phase's proposal for the lead's verdict
