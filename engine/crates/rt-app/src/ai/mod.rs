@@ -17,12 +17,14 @@
 //! is [`post`], on top of [`Ai::prepare_model`] and the same server.
 
 pub mod b64;
+pub mod backend;
 pub mod catalogue;
 pub mod download;
 pub mod inflate;
 pub mod png;
 pub mod post;
 pub mod proc;
+pub mod remote;
 pub mod runtimes;
 pub mod sidecar;
 pub mod zip;
@@ -436,6 +438,10 @@ pub struct Ai {
     posts: post::Posts,
     next_post: AtomicU32,
     post_orphan: Mutex<Duration>,
+    /// X7: the API keys of this computer (`<data>/ai/api-keys.json`).
+    pub api_keys: remote::ApiKeys,
+    /// X7: how a remote API is called (the system's `curl`).
+    pub transport: Arc<remote::Curl>,
     stop: Arc<AtomicBool>,
     watchdog: Mutex<Option<JoinHandle<()>>>,
 }
@@ -466,6 +472,11 @@ impl Ai {
         let sidecar = Arc::new(Sidecar::new(root.join("sidecar.json")));
         sidecar.clean_stale(runtimes.root());
         let stop = Arc::new(AtomicBool::new(false));
+        let api_keys = remote::ApiKeys::new(&root);
+        let transport = Arc::new(remote::Curl::new(
+            Downloader::system().program,
+            root.join("api-calls"),
+        ));
         let ai = Arc::new(Ai {
             root,
             runtimes: Arc::new(runtimes),
@@ -475,6 +486,8 @@ impl Ai {
             posts: Mutex::new(BTreeMap::new()),
             next_post: AtomicU32::new(1),
             post_orphan: Mutex::new(post::ORPHAN_AFTER),
+            api_keys,
+            transport,
             stop: Arc::clone(&stop),
             watchdog: Mutex::new(None),
         });
@@ -1241,6 +1254,46 @@ pub fn route(app: &App, req: &Request, parts: &[&str], body: &mut dyn Read) -> O
             }
             None => Response::error(404, "not-found", "no such post"),
         },
+        // X7: the API keys. Stored and forgotten here, listed masked; never sent back.
+        ("GET", ["apikeys"]) => Response::json(
+            200,
+            format!(
+                "{{\"keys\":{}}}",
+                json::array(ai.api_keys.list().into_iter().map(|(host, masked)| {
+                    json::Object::new()
+                        .str("host", &host)
+                        .str("masked", &masked)
+                        .build()
+                }))
+            ),
+        ),
+        ("PUT", ["apikeys"]) | ("POST", ["apikeys", "forget"]) => {
+            let v = match read_json(req, body, 64 << 10) {
+                Ok(v) => v,
+                Err(r) => return Some(r),
+            };
+            let Some(host) = v.get("host").and_then(Value::as_str) else {
+                return Some(Response::error(400, "bad-body", "expected {\"host\": …}"));
+            };
+            let done = if m == "PUT" {
+                match v.get("key").and_then(Value::as_str) {
+                    Some(key) => ai.api_keys.save(host, key),
+                    None => Err("expected {\"host\", \"key\"}".to_string()),
+                }
+            } else {
+                ai.api_keys.forget(host)
+            };
+            match done {
+                Ok(()) => {
+                    crate::log!(
+                        "AI API key {} for {host}",
+                        if m == "PUT" { "stored" } else { "removed" }
+                    );
+                    Response::empty(204)
+                }
+                Err(message) => Response::error(400, "bad-key", &message),
+            }
+        }
         ("DELETE", ["sidecar"]) => {
             if ai.sidecar.release() {
                 Response::empty(204)
@@ -1248,7 +1301,7 @@ pub fn route(app: &App, req: &Request, parts: &[&str], body: &mut dyn Read) -> O
                 Response::error(409, "busy", "a run is using the runtime")
             }
         }
-        (_, ["runtime" | "runtimes" | "run" | "post" | "sidecar", ..]) => {
+        (_, ["runtime" | "runtimes" | "run" | "post" | "sidecar" | "apikeys", ..]) => {
             Response::error(405, "method", "method not allowed")
         }
         _ => Response::error(404, "not-found", "no such endpoint"),

@@ -1,0 +1,1404 @@
+{
+ "note": "Shared by src/core/ai-remote.ts (tests/ai-remote.test.ts) and engine/crates/rt-app/src/ai/remote.rs: the same inputs must give the same outputs.",
+ "hosts": [
+  {
+   "url": "https://API.Stability.ai/v2beta/x",
+   "host": "api.stability.ai",
+   "loopback": false
+  },
+  {
+   "url": "https://a.b:443/",
+   "host": "a.b",
+   "loopback": false
+  },
+  {
+   "url": "http://127.0.0.1:8123/x?y",
+   "host": "127.0.0.1:8123",
+   "loopback": true
+  },
+  {
+   "url": "http://[::1]:9/",
+   "host": "[::1]:9",
+   "loopback": true
+  },
+  {
+   "url": "http://localhost/",
+   "host": "localhost",
+   "loopback": true
+  },
+  {
+   "url": "https://a.b:8443",
+   "host": "a.b:8443",
+   "loopback": false
+  },
+  {
+   "url": "ftp://a.b/",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "https://user@a.b/",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "https://a.b/#f",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "https://-a.b/",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "https://a.b:0/",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "https:///x",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "https://a..b/",
+   "host": null,
+   "loopback": false
+  },
+  {
+   "url": "http://127.0.0.1.example.com/",
+   "host": "127.0.0.1.example.com",
+   "loopback": false
+  }
+ ],
+ "fill": [
+  {
+   "body": "JSON",
+   "template": {
+    "image": "{{image_data_uri}}",
+    "prompt": "{{prompt}}",
+    "negative_prompt": "{{negative}}",
+    "strength": "{{strength}}",
+    "seed": "{{seed}}",
+    "width": "{{width}}",
+    "height": "{{height}}"
+   },
+   "values": {
+    "prompt": "a \"studio\" photo",
+    "negative": "blur, {{x}}",
+    "strength": 0.24000000953674316,
+    "seed": 4294967295,
+    "width": 1024,
+    "height": 640,
+    "image": "SU1H",
+    "depth": "REVQ",
+    "edges": "RURH"
+   },
+   "expect": {
+    "image": "data:image/png;base64,SU1H",
+    "prompt": "a \"studio\" photo",
+    "negative_prompt": "blur, {{x}}",
+    "strength": 0.24,
+    "seed": 4294967295,
+    "width": 1024,
+    "height": 640
+   }
+  },
+  {
+   "body": "JSON",
+   "template": {
+    "input": {
+     "image": "{{image}}",
+     "list": [
+      "{{seed}}",
+      "x{{seed}}",
+      3,
+      true,
+      null
+     ]
+    },
+    "text": "{{prompt}} / {{negative}} {{size}} {{strength}}",
+    "unknown": "{{nope}} {{ }} {{",
+    "depth": "{{depth_data_uri}}"
+   },
+   "values": {
+    "prompt": "a \"studio\" photo",
+    "negative": "blur, {{x}}",
+    "strength": 0.24000000953674316,
+    "seed": 4294967295,
+    "width": 1024,
+    "height": 640,
+    "image": "SU1H",
+    "depth": "REVQ",
+    "edges": "RURH"
+   },
+   "expect": {
+    "input": {
+     "image": "SU1H",
+     "list": [
+      4294967295,
+      "x4294967295",
+      3,
+      true,
+      null
+     ]
+    },
+    "text": "a \"studio\" photo / blur, {{x}} 1024x640 0.24",
+    "unknown": " {{ }} {{",
+    "depth": "data:image/png;base64,REVQ"
+   }
+  },
+  {
+   "body": "MULTIPART",
+   "template": {
+    "mode": "image-to-image",
+    "image": "{{image}}",
+    "prompt": "{{prompt}}",
+    "negative_prompt": "{{negative}}",
+    "strength": "{{strength}}",
+    "seed": "{{seed}}",
+    "model": "sd3.5-large",
+    "output_format": "png"
+   },
+   "values": {
+    "prompt": "a \"studio\" photo",
+    "negative": "blur, {{x}}",
+    "strength": 0.24000000953674316,
+    "seed": 4294967295,
+    "width": 1024,
+    "height": 640,
+    "image": "SU1H",
+    "depth": "REVQ",
+    "edges": "RURH"
+   },
+   "expect": [
+    {
+     "name": "mode",
+     "kind": "text",
+     "value": "image-to-image"
+    },
+    {
+     "name": "image",
+     "kind": "file",
+     "what": "image"
+    },
+    {
+     "name": "prompt",
+     "kind": "text",
+     "value": "a \"studio\" photo"
+    },
+    {
+     "name": "negative_prompt",
+     "kind": "text",
+     "value": "blur, {{x}}"
+    },
+    {
+     "name": "strength",
+     "kind": "text",
+     "value": "0.24"
+    },
+    {
+     "name": "seed",
+     "kind": "text",
+     "value": "4294967295"
+    },
+    {
+     "name": "model",
+     "kind": "text",
+     "value": "sd3.5-large"
+    },
+    {
+     "name": "output_format",
+     "kind": "text",
+     "value": "png"
+    }
+   ]
+  },
+  {
+   "body": "MULTIPART",
+   "template": {
+    "model": "gpt-image-1",
+    "image": "{{image}}",
+    "prompt": "{{prompt}} Avoid: {{negative}}",
+    "size": "{{size}}",
+    "n": "1"
+   },
+   "values": {
+    "prompt": "a \"studio\" photo",
+    "negative": "blur, {{x}}",
+    "strength": 0.24000000953674316,
+    "seed": 4294967295,
+    "width": 1024,
+    "height": 640,
+    "image": "SU1H",
+    "depth": "REVQ",
+    "edges": "RURH"
+   },
+   "expect": [
+    {
+     "name": "model",
+     "kind": "text",
+     "value": "gpt-image-1"
+    },
+    {
+     "name": "image",
+     "kind": "file",
+     "what": "image"
+    },
+    {
+     "name": "prompt",
+     "kind": "text",
+     "value": "a \"studio\" photo Avoid: blur, {{x}}"
+    },
+    {
+     "name": "size",
+     "kind": "text",
+     "value": "1024x640"
+    },
+    {
+     "name": "n",
+     "kind": "text",
+     "value": "1"
+    }
+   ]
+  },
+  {
+   "body": "MULTIPART",
+   "template": {
+    "image": "{{image}}",
+    "depth": "{{depth}}",
+    "b64": "{{image_base64}}",
+    "n": 4,
+    "flag": false,
+    "s": "{{strength}}"
+   },
+   "values": {
+    "prompt": "a \"studio\" photo",
+    "negative": "blur, {{x}}",
+    "strength": 0.24000000953674316,
+    "seed": 4294967295,
+    "width": 1024,
+    "height": 640,
+    "image": "SU1H",
+    "depth": "REVQ",
+    "edges": "RURH"
+   },
+   "expect": [
+    {
+     "name": "image",
+     "kind": "file",
+     "what": "image"
+    },
+    {
+     "name": "depth",
+     "kind": "file",
+     "what": "depth"
+    },
+    {
+     "name": "b64",
+     "kind": "text",
+     "value": "{{image_base64}}"
+    },
+    {
+     "name": "n",
+     "kind": "text",
+     "value": "4"
+    },
+    {
+     "name": "flag",
+     "kind": "text",
+     "value": "false"
+    },
+    {
+     "name": "s",
+     "kind": "text",
+     "value": "0.24"
+    }
+   ]
+  }
+ ],
+ "paths": [
+  {
+   "doc": {
+    "image": "AAAA"
+   },
+   "path": "image",
+   "expect": "AAAA"
+  },
+  {
+   "doc": {
+    "data": [
+     {
+      "b64_json": "QUJD"
+     }
+    ]
+   },
+   "path": "data.0.b64_json",
+   "expect": "QUJD"
+  },
+  {
+   "doc": {
+    "data": [
+     {
+      "b64_json": "QUJD"
+     }
+    ]
+   },
+   "path": "data.1.b64_json",
+   "expect": null
+  },
+  {
+   "doc": {
+    "data": {
+     "0": "x"
+    }
+   },
+   "path": "data.0",
+   "expect": "x"
+  },
+  {
+   "doc": {
+    "a": {
+     "b": 5
+    }
+   },
+   "path": "a.b",
+   "expect": 5
+  },
+  {
+   "doc": [
+    1,
+    2
+   ],
+   "path": "x",
+   "expect": null
+  },
+  {
+   "doc": {
+    "a": "x"
+   },
+   "path": "a.b",
+   "expect": null
+  }
+ ],
+ "base64": [
+  {
+   "value": "QUJD",
+   "expect": "QUJD"
+  },
+  {
+   "value": " QU\nJD ",
+   "expect": "QUJD"
+  },
+  {
+   "value": "data:image/png;base64,QUJD",
+   "expect": "QUJD"
+  },
+  {
+   "value": "DATA:image/png;base64,QUJD",
+   "expect": "QUJD"
+  },
+  {
+   "value": "data:image/png;charset=x;base64,QUJD",
+   "expect": "QUJD"
+  },
+  {
+   "value": "data:text/plain;base64,QUJD",
+   "expect": null
+  },
+  {
+   "value": "QU=JD",
+   "expect": null
+  },
+  {
+   "value": "QQ==",
+   "expect": "QQ=="
+  },
+  {
+   "value": "QQ===",
+   "expect": null
+  },
+  {
+   "value": "",
+   "expect": null
+  },
+  {
+   "value": "a-b_",
+   "expect": "a-b_"
+  },
+  {
+   "value": "héllo",
+   "expect": null
+  }
+ ],
+ "status": [
+  {
+   "status": 200,
+   "code": null,
+   "retryable": false
+  },
+  {
+   "status": 204,
+   "code": null,
+   "retryable": false
+  },
+  {
+   "status": 301,
+   "code": "api-redirect",
+   "retryable": false
+  },
+  {
+   "status": 302,
+   "code": "api-redirect",
+   "retryable": false
+  },
+  {
+   "status": 400,
+   "code": "api-refused",
+   "retryable": false
+  },
+  {
+   "status": 401,
+   "code": "api-auth",
+   "retryable": false
+  },
+  {
+   "status": 403,
+   "code": "api-auth",
+   "retryable": false
+  },
+  {
+   "status": 404,
+   "code": "api-refused",
+   "retryable": false
+  },
+  {
+   "status": 408,
+   "code": "api-timeout",
+   "retryable": true
+  },
+  {
+   "status": 413,
+   "code": "api-too-large",
+   "retryable": false
+  },
+  {
+   "status": 415,
+   "code": "api-refused",
+   "retryable": false
+  },
+  {
+   "status": 422,
+   "code": "api-refused",
+   "retryable": false
+  },
+  {
+   "status": 429,
+   "code": "api-rate-limit",
+   "retryable": true
+  },
+  {
+   "status": 500,
+   "code": "api-server",
+   "retryable": true
+  },
+  {
+   "status": 502,
+   "code": "api-server",
+   "retryable": true
+  },
+  {
+   "status": 503,
+   "code": "api-server",
+   "retryable": true
+  }
+ ],
+ "waits": [
+  {
+   "next": 2,
+   "retryAfter": null,
+   "expect": 1
+  },
+  {
+   "next": 3,
+   "retryAfter": null,
+   "expect": 2
+  },
+  {
+   "next": 4,
+   "retryAfter": null,
+   "expect": 4
+  },
+  {
+   "next": 9,
+   "retryAfter": null,
+   "expect": 30
+  },
+  {
+   "next": 2,
+   "retryAfter": "3",
+   "expect": 3
+  },
+  {
+   "next": 2,
+   "retryAfter": " 7 ",
+   "expect": 7
+  },
+  {
+   "next": 2,
+   "retryAfter": "30",
+   "expect": 30
+  },
+  {
+   "next": 2,
+   "retryAfter": "31",
+   "expect": null
+  },
+  {
+   "next": 2,
+   "retryAfter": "Wed, 21 Oct 2015 07:28:00 GMT",
+   "expect": 1
+  },
+  {
+   "next": 2,
+   "retryAfter": "",
+   "expect": 1
+  }
+ ],
+ "fits": [
+  {
+   "tile": [
+    1024,
+    640
+   ],
+   "maxSide": 1024,
+   "multipleOf": 16,
+   "sizes": [],
+   "expect": {
+    "width": 1024,
+    "height": 640,
+    "x": 0,
+    "y": 0,
+    "w": 1024,
+    "h": 640
+   }
+  },
+  {
+   "tile": [
+    1024,
+    640
+   ],
+   "maxSide": 1024,
+   "multipleOf": 64,
+   "sizes": [],
+   "expect": {
+    "width": 1024,
+    "height": 640,
+    "x": 0,
+    "y": 0,
+    "w": 1024,
+    "h": 640
+   }
+  },
+  {
+   "tile": [
+    1008,
+    1024
+   ],
+   "maxSide": 512,
+   "multipleOf": 64,
+   "sizes": [],
+   "expect": {
+    "width": 448,
+    "height": 512,
+    "x": 0,
+    "y": 0,
+    "w": 448,
+    "h": 512
+   }
+  },
+  {
+   "tile": [
+    96,
+    64
+   ],
+   "maxSide": 1024,
+   "multipleOf": 64,
+   "sizes": [],
+   "expect": {
+    "width": 64,
+    "height": 64,
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   }
+  },
+  {
+   "tile": [
+    40,
+    40
+   ],
+   "maxSide": 1024,
+   "multipleOf": 64,
+   "sizes": [],
+   "expect": {
+    "width": 64,
+    "height": 64,
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 64
+   }
+  },
+  {
+   "tile": [
+    1024,
+    640
+   ],
+   "maxSide": 1536,
+   "multipleOf": 16,
+   "sizes": [
+    [
+     1024,
+     1024
+    ],
+    [
+     1536,
+     1024
+    ],
+    [
+     1024,
+     1536
+    ]
+   ],
+   "expect": {
+    "width": 1536,
+    "height": 1024,
+    "x": 0,
+    "y": 32,
+    "w": 1536,
+    "h": 960
+   }
+  },
+  {
+   "tile": [
+    656,
+    112
+   ],
+   "maxSide": 1536,
+   "multipleOf": 16,
+   "sizes": [
+    [
+     1024,
+     1024
+    ],
+    [
+     1536,
+     1024
+    ],
+    [
+     1024,
+     1536
+    ]
+   ],
+   "expect": {
+    "width": 1536,
+    "height": 1024,
+    "x": 0,
+    "y": 381,
+    "w": 1536,
+    "h": 262
+   }
+  },
+  {
+   "tile": [
+    512,
+    1024
+   ],
+   "maxSide": 1536,
+   "multipleOf": 16,
+   "sizes": [
+    [
+     1024,
+     1024
+    ],
+    [
+     1536,
+     1024
+    ],
+    [
+     1024,
+     1536
+    ]
+   ],
+   "expect": {
+    "width": 1024,
+    "height": 1536,
+    "x": 128,
+    "y": 0,
+    "w": 768,
+    "h": 1536
+   }
+  },
+  {
+   "tile": [
+    1000,
+    1000
+   ],
+   "maxSide": 1536,
+   "multipleOf": 16,
+   "sizes": [
+    [
+     1536,
+     1024
+    ],
+    [
+     1024,
+     1536
+    ]
+   ],
+   "expect": {
+    "width": 1536,
+    "height": 1024,
+    "x": 256,
+    "y": 0,
+    "w": 1024,
+    "h": 1024
+   }
+  },
+  {
+   "tile": [
+    97,
+    61
+   ],
+   "maxSide": 1536,
+   "multipleOf": 16,
+   "sizes": [
+    [
+     1024,
+     1024
+    ]
+   ],
+   "expect": {
+    "width": 1024,
+    "height": 1024,
+    "x": 0,
+    "y": 190,
+    "w": 1024,
+    "h": 644
+   }
+  }
+ ],
+ "keys": [
+  {
+   "key": "sk-0123456789abcdef",
+   "mask": "••••cdef",
+   "valid": true
+  },
+  {
+   "key": "short",
+   "mask": "••••",
+   "valid": true
+  },
+  {
+   "key": "exactly12chr",
+   "mask": "••••2chr",
+   "valid": true
+  },
+  {
+   "key": " lead",
+   "mask": "••••",
+   "valid": false
+  },
+  {
+   "key": "tab\tkey",
+   "mask": "••••",
+   "valid": false
+  },
+  {
+   "key": "ünï",
+   "mask": "••••",
+   "valid": false
+  },
+  {
+   "key": "a",
+   "mask": "••••",
+   "valid": true
+  }
+ ],
+ "problems": [
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": []
+  },
+  {
+   "endpoint": {
+    "url": "http://api.example.com/",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "insecure"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "http://127.0.0.1:9/",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": []
+  },
+  {
+   "endpoint": {
+    "url": "nope",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "url"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "GET",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "method"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Bad Header",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "header"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Authorization": "x"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "reservedHeader"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "X-API-Key": "x"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "reservedHeader"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "X-Ok": "a\nb"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "header"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "[1]",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "template"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\"a\": \"{{prompt}} {{bogus}}\"}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "placeholder",
+    "noImage"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\"image\": \"{{image}}\", \"d\": \"{{depth}}\"}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "passes"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\"image\": \"{{image}}\", \"d\": \"{{depth}}\"}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": true,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": []
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "MULTIPART",
+    "template": "{\"image\": \"{{image}}\", \"o\": {\"a\": 1}}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "nested"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "path"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "a..b",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "path"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "IMAGE",
+    "responsePath": "",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": []
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 32,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "size"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": [
+     [
+      1024,
+      5000
+     ]
+    ]
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 2
+   },
+   "expect": [
+    "size"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 120,
+    "attempts": 6
+   },
+   "expect": [
+    "options"
+   ]
+  },
+  {
+   "endpoint": {
+    "url": "https://api.example.com/v1/img",
+    "method": "POST",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "headers": {
+     "Accept": "application/json"
+    },
+    "body": "JSON",
+    "template": "{\n  \"image\": \"{{image_data_uri}}\",\n  \"prompt\": \"{{prompt}}\",\n  \"negative_prompt\": \"{{negative}}\",\n  \"strength\": \"{{strength}}\",\n  \"seed\": \"{{seed}}\",\n  \"width\": \"{{width}}\",\n  \"height\": \"{{height}}\"\n}",
+    "response": "JSON",
+    "responsePath": "image",
+    "maxSide": 1024,
+    "multipleOf": 16,
+    "sizes": []
+   },
+   "options": {
+    "sendPasses": false,
+    "timeoutSeconds": 5,
+    "attempts": 2
+   },
+   "expect": [
+    "options"
+   ]
+  }
+ ],
+ "words": [
+  {
+   "body": "{\"message\":\"Invalid key sk-0123456789abcdef\"}",
+   "key": "sk-0123456789abcdef",
+   "expect": "Invalid key ••••cdef"
+  },
+  {
+   "body": "{\"error\":{\"message\":\"rate   limited\"}}",
+   "key": null,
+   "expect": "rate limited"
+  },
+  {
+   "body": "{\"errors\":[\"a\",\"b\"],\"name\":\"bad_request\"}",
+   "key": null,
+   "expect": "a; b"
+  },
+  {
+   "body": "plain\n  text",
+   "key": null,
+   "expect": "plain text"
+  },
+  {
+   "body": "{\"detail\": \"nope\"}",
+   "key": null,
+   "expect": "nope"
+  }
+ ]
+}

@@ -11,6 +11,7 @@
 
 import { PREVIEW_MAX_SIDE, type AiPostProgress, type AiPostRequest, type AiPostResult, type AiPostService, type AiPostStage, type AiRuntimeStatus, type AiUnavailableReason, type GuardReport, type LinearImage } from '../core/ai';
 import type { AiRuntimeQuery, AiRuntimeReport } from '../core/ai-runtimes';
+import { API_ERRORS, ApiCallError, type AiRemotePostRequest, type AiRemoteRequest, type ApiErrorCode } from '../core/ai-remote';
 import { PASS_CHANNELS, PASS_KEYS, type RenderPasses } from '../core/passes';
 import { statusQuery } from './ai-runtime';
 import { NativeError, type NativeClient } from './native';
@@ -58,6 +59,21 @@ export interface AiPostState {
   report: GuardReport | null;
   error: string | null;
   message: string | null;
+  /** X7: a failed API call's tries, HTTP status and the service's own words (short, never the key). */
+  apiAttempts?: number;
+  apiStatus?: number | null;
+  apiDetail?: string | null;
+}
+
+/** X7: the endpoint as the launcher reads it (`remote` of `POST /api/ai/post`): these fields and nothing else. */
+export function remoteJson(r: AiRemoteRequest): Record<string, unknown> {
+  const e = r.endpoint;
+  return {
+    endpoint: { url: e.url, method: e.method, authHeader: e.authHeader, authPrefix: e.authPrefix, headers: e.headers, body: e.body, template: e.template, response: e.response, responsePath: e.responsePath, maxSide: e.maxSide, multipleOf: e.multipleOf, sizes: e.sizes },
+    options: { sendPasses: r.options.sendPasses, timeoutSeconds: r.options.timeoutSeconds, attempts: r.options.attempts },
+    consentedHost: r.consentedHost,
+    provider: r.provider,
+  };
 }
 
 /** A post that could not start or did not finish: the launcher's code, and the reason the switch words. */
@@ -155,6 +171,8 @@ function requestJson(req: AiPostRequest, q: AiRuntimeQuery, inline: { tonemap?: 
     ...(req.tolerances ? { tolerances: { deltaEMean: req.tolerances.deltaEMean, deltaEP95: req.tolerances.deltaEP95, edgesPx: req.tolerances.edgesPx } } : {}),
     ...(q.cpu ? { device: 'cpu' } : {}),
     ...(q.force ? { force: q.force } : {}),
+    // X7: the model through an API (the launcher calls it with the key it keeps); absent, the local runtime as before.
+    ...((req as AiRemotePostRequest).remote ? { remote: remoteJson((req as AiRemotePostRequest).remote!) } : {}),
   });
 }
 
@@ -179,6 +197,8 @@ export class DesktopAiService implements AiPostService {
     }
     if (!res.ok) {
       const e = (body ?? {}) as { error?: string; message?: string; reason?: AiUnavailableReason };
+      // X7: the launcher refused an API post (no key for the host, a host not agreed, an endpoint it cannot use).
+      if (e.error && (API_ERRORS as readonly string[]).includes(e.error)) throw new ApiCallError(e.error as ApiErrorCode, e.message ?? e.error, 1, null, '');
       throw new AiPostError(e.error ?? 'http', e.message ?? `${res.status}`, e.reason ?? null, res.status);
     }
     return body as T;
@@ -228,6 +248,7 @@ export class DesktopAiService implements AiPostService {
         s = await this.state(id, s.version, signal);
       }
       if (s.state === 'CANCELLED') throw signal.aborted ? abortError() : new AiPostError('cancelled', 'the post was cancelled');
+      if (s.state === 'FAILED' && s.error && (API_ERRORS as readonly string[]).includes(s.error)) throw new ApiCallError(s.error as ApiErrorCode, s.message ?? s.error, s.apiAttempts ?? 1, s.apiStatus ?? null, s.apiDetail ?? '');
       if (s.state === 'FAILED' || !s.report) throw new AiPostError(s.error ?? 'failed', s.message ?? 'the post failed');
       const res = await this.native.request(`/api/ai/post/${id}/image`, { signal });
       if (!res.ok) throw new NativeError(res.status, 'image', await res.text());

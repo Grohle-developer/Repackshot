@@ -34,7 +34,11 @@ export function aiRuntimeQuery(u: UiState): AiRuntimeQuery {
  */
 export function aiStatusKey(u: UiState): string {
   const q = aiRuntimeQuery(u);
-  return [q.force ?? '', q.cpu ? 'cpu' : '', q.model ?? '', u.models?.ready ? 'ready' : '', u.models?.installed.join(',') ?? ''].join('|');
+  const local = [q.force ?? '', q.cpu ? 'cpu' : '', q.model ?? '', u.models?.ready ? 'ready' : '', u.models?.installed.join(',') ?? ''].join('|');
+  // X7: through an API, what is asked is the endpoint and whether its key is stored.
+  const s = u.settings;
+  if (s['ai.source'] !== 'API') return local;
+  return [local, 'API', s['ai.apiProvider'], JSON.stringify(s['ai.apiEndpoint']), s['ai.apiSendPasses'], s['ai.apiTimeout'], s['ai.apiAttempts'], u.aiApiKeys].join('|');
 }
 
 /**

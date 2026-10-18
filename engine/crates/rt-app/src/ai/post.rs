@@ -19,12 +19,19 @@
 //!    (up to `MAX_ATTEMPTS`), or rejected (the engine image, unchanged). A tile of another size
 //!    is a failed `size` check and rejects at once.
 //!
+//! X7 (`docs/AI-POST.md` §8): step 3 goes through a [`ModelBackend`]: the local runtime
+//! ([`LocalRuntime`], exactly as before) or, when the post carries `remote`, a remote API
+//! ([`RemoteApi`], the system's `curl`, the key from [`super::remote::ApiKeys`]). The guard, the
+//! retries and the report are the same for both.
+//!
 //! The job is followed like a render job: `GET /api/ai/post/<id>?after=<version>` (long poll) and
 //! cancelled with `DELETE`; its image is `GET /api/ai/post/<id>/image` ([`IMAGE_MAGIC`]). The
 //! contract is in this crate's `README.md`.
 
-use super::sidecar::{Job as SidecarJob, Progress, SidecarError, Stage};
-use super::{b64, png, Ai, ModelRun, Refusal, MAX_SIDE, MIN_SIDE, SIDE_MULTIPLE};
+use super::backend::{BackendError, LocalRuntime, ModelBackend, TilePass};
+use super::remote::{RemoteApi, RemoteSpec};
+use super::sidecar::{Progress, Stage};
+use super::{b64, Ai, Refusal, MAX_SIDE, MIN_SIDE, SIDE_MULTIPLE};
 use crate::json::{self, Value};
 use crate::kept::{read_passes, Look};
 use crate::recommend::valid_name;
@@ -33,7 +40,7 @@ use rt_core::passes::{
     Passes as EnginePasses, PASS_COC, PASS_DEPTH, PASS_MATERIAL_ID, PASS_NORMAL, PASS_PART_ID,
 };
 use rt_post::{
-    Job as GuardJob, LinearImage, MaterialInfo, Outcome, Passes, Plan, Rgb8Image, Settings, Tile,
+    Job as GuardJob, LinearImage, MaterialInfo, Outcome, Passes, Plan, Rgb8Image, Settings,
     Tonemap, MAX_ATTEMPTS, MAX_MATERIALS,
 };
 use std::collections::BTreeMap;
@@ -189,6 +196,8 @@ pub struct PostRequest {
     pub cpu: bool,
     /// Sampling steps in place of the family's.
     pub steps: Option<u32>,
+    /// X7: the model through a remote API (`remote`), in place of the local runtime.
+    pub remote: Option<RemoteSpec>,
 }
 
 fn control(v: &Value, key: &str) -> Result<u32, Refusal> {
@@ -341,7 +350,21 @@ impl PostRequest {
                     as u32,
             ),
         };
+        let remote = match v.get("remote") {
+            None | Some(Value::Null) => None,
+            Some(r) => Some(RemoteSpec::from_json(r).map_err(|message| Refusal {
+                status: 400,
+                code: if message.contains("was not allowed") {
+                    "api-consent"
+                } else {
+                    "api-config"
+                },
+                reason: None,
+                message,
+            })?),
+        };
         Ok(PostRequest {
+            remote,
             source,
             settings,
             prompt: prompt.to_string(),
@@ -428,6 +451,8 @@ struct PostState {
     verdict: Option<&'static str>,
     /// Calls made to the inference runtime.
     calls: u32,
+    /// X7: a failed API call's tries, HTTP status and the service's own words.
+    api: Option<(u32, Option<u16>, String)>,
 }
 
 /// One post-processing job.
@@ -591,6 +616,9 @@ impl Post {
             .raw("report", s.report.as_deref().unwrap_or("null"))
             .opt_str("error", s.error.as_ref().map(|e| e.0.as_str()))
             .opt_str("message", s.error.as_ref().map(|e| e.1.as_str()))
+            .opt_num("apiAttempts", s.api.as_ref().map(|a| f64::from(a.0)))
+            .opt_num("apiStatus", s.api.as_ref().and_then(|a| a.1).map(f64::from))
+            .opt_str("apiDetail", s.api.as_ref().map(|a| a.2.as_str()))
             .build()
     }
 }
@@ -600,16 +628,19 @@ struct Work {
     plan: Plan,
     original: LinearImage,
     passes: Arc<EnginePasses>,
-    /// How the runtime runs the model, when the plan runs it.
-    run: Option<ModelRun>,
+    /// What runs the model, when the plan runs it: the local runtime or a remote API.
+    backend: Option<Box<dyn ModelBackend>>,
     prompt: String,
     negative: String,
 }
 
-/// What the runtime is given for one tile: its image and its control image, PNG in base64.
+/// What the model is given for one tile: its image (and PNG in base64 for the local runtime), its
+/// control image for the local runtime, and its passes for an API that is sent them.
 struct TileInputs {
+    input: Rgb8Image,
     image: String,
     control: Option<String>,
+    passes: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 /// A PNG of 8-bit RGB, in base64.
@@ -624,26 +655,6 @@ fn control_image(kind: &str, input: &Rgb8Image, ctl: &rt_post::TileControl) -> V
         "depth" => ctl.depth.iter().flat_map(|&d| [d, d, d]).collect(),
         _ => ctl.edges.iter().flat_map(|&d| [d, d, d]).collect(),
     }
-}
-
-/// What a tile came back as: the image, or a stand-in of the size it came back at (the guard's
-/// size check rejects it and the engine image is delivered).
-enum TileOutcome {
-    Image(Rgb8Image),
-    Failed(SidecarError),
-}
-
-fn decode_tile(bytes: &[u8], tile: &Tile) -> Result<Rgb8Image, SidecarError> {
-    let img = png::decode(
-        bytes,
-        u64::from(tile.padded_width) * u64::from(tile.padded_height),
-    )
-    .map_err(|e| SidecarError::BadImage(e.to_string()))?;
-    Ok(Rgb8Image {
-        width: img.width,
-        height: img.height,
-        rgb: png::rgb_of(&img),
-    })
 }
 
 impl Ai {
@@ -694,6 +705,38 @@ impl Ai {
                 .map_err(|e| Refusal::bad(e.to_string()))?;
         }
         job.model_key.clone_from(&req.model);
+        if let Some(remote) = req.remote {
+            // X7: the model through an API. Its key stays here: the page never sends it with a post.
+            let key = self.api_keys.get(&remote.host);
+            if !remote.endpoint.auth_header.is_empty() && key.is_none() {
+                return Err(Refusal {
+                    status: 409,
+                    code: "api-no-key",
+                    reason: Some("NO_API_KEY"),
+                    message: format!("no API key is stored for {}", remote.host),
+                });
+            }
+            let api = RemoteApi::new(
+                remote,
+                key,
+                Arc::clone(&self.transport) as Arc<dyn super::remote::Transport>,
+            );
+            job.runtime = api.runtime().to_string();
+            let plan = rt_post::plan(&job).map_err(|e| Refusal::bad(e.to_string()))?;
+            let runtime = job.runtime.clone();
+            return self.start_post(
+                req.model,
+                original,
+                passes,
+                look,
+                render_id,
+                plan,
+                Some(Box::new(api)),
+                runtime,
+                req.prompt,
+                req.negative,
+            );
+        }
         let chosen = self
             .choice(gpu, req.force.as_deref())
             .and_then(|c| c.key)
@@ -731,6 +774,41 @@ impl Ai {
             None
         };
         let runtime = run.as_ref().map_or(chosen, |r| r.runtime.clone());
+        let backend = run.map(|run| {
+            Box::new(LocalRuntime {
+                sidecar: Arc::clone(&self.sidecar),
+                run,
+            }) as Box<dyn ModelBackend>
+        });
+        self.start_post(
+            req.model,
+            original,
+            passes,
+            look,
+            render_id,
+            plan,
+            backend,
+            runtime,
+            req.prompt,
+            req.negative,
+        )
+    }
+
+    /// Registers a post and starts its thread.
+    #[allow(clippy::too_many_arguments)]
+    fn start_post(
+        self: &Arc<Self>,
+        model: String,
+        original: LinearImage,
+        passes: Arc<EnginePasses>,
+        look: Look,
+        render_id: Option<u32>,
+        plan: Plan,
+        backend: Option<Box<dyn ModelBackend>>,
+        runtime: String,
+        prompt: String,
+        negative: String,
+    ) -> Result<Arc<Post>, Refusal> {
         let mut posts = lock(&self.posts);
         if posts.values().filter(|p| !p.finished()).count() >= MAX_POSTS {
             return Err(Refusal {
@@ -763,7 +841,7 @@ impl Ai {
             width: original.width,
             height: original.height,
             tiles: plan.tiles().len() as u32,
-            model: req.model.clone(),
+            model,
             runtime,
             look,
             cancel: AtomicBool::new(false),
@@ -786,6 +864,7 @@ impl Ai {
                 report: None,
                 verdict: None,
                 calls: 0,
+                api: None,
             }),
             changed: Condvar::new(),
             seen: Mutex::new(Instant::now()),
@@ -797,9 +876,9 @@ impl Ai {
             plan,
             original,
             passes,
-            run,
-            prompt: req.prompt,
-            negative: req.negative,
+            backend,
+            prompt,
+            negative,
         };
         let (ai, p) = (Arc::clone(self), Arc::clone(&post));
         std::thread::Builder::new()
@@ -835,7 +914,7 @@ impl Ai {
             plan,
             original,
             passes,
-            run,
+            backend,
             prompt,
             negative,
         } = work;
@@ -851,7 +930,7 @@ impl Ai {
             s.fraction = 1.0;
             s.ended = Some(Instant::now());
         };
-        let Some(run) = run.filter(|_| plan.runs_model()) else {
+        let Some(backend) = backend.filter(|_| plan.runs_model()) else {
             // Nothing may change: the guard's own answer (the engine image, bit for bit), and the
             // runtime is never asked.
             match rt_post::accept(&plan, &original, &view, &[], 0) {
@@ -868,14 +947,16 @@ impl Ai {
             s.base = 0.02;
             s.top = attempt_range(0).1;
         });
-        // Every tile's image and control image, as the runtime takes them (PNG in base64), once.
+        // Every tile's image and control image, as the runtime takes them (PNG in base64), once;
+        // for an API that is sent the passes, the tile's edges and depth.
+        let local = !backend.is_remote();
         let prepared: Result<Vec<TileInputs>, rt_post::PostError> = (|| {
             let planes = rt_post::control_planes(&plan, &view)?;
             (0..plan.tiles().len())
                 .map(|i| {
                     let input = rt_post::tile_input(&plan, &original, i)?;
-                    let control = match &run.control {
-                        Some((kind, _)) => {
+                    let control = match backend.control_kind() {
+                        Some(kind) => {
                             let ctl = rt_post::tile_control(&plan, &planes, i)?;
                             Some(png_b64(
                                 ctl.width,
@@ -885,9 +966,21 @@ impl Ai {
                         }
                         None => None,
                     };
+                    let passes = if backend.wants_passes() {
+                        let ctl = rt_post::tile_control(&plan, &planes, i)?;
+                        Some((ctl.edges, ctl.depth))
+                    } else {
+                        None
+                    };
                     Ok(TileInputs {
-                        image: png_b64(input.width, input.height, &input.rgb),
+                        image: if local {
+                            png_b64(input.width, input.height, &input.rgb)
+                        } else {
+                            String::new()
+                        },
+                        input,
                         control,
+                        passes,
                     })
                 })
                 .collect()
@@ -918,65 +1011,45 @@ impl Ai {
                 if post.reap_if_orphaned() || post.cancel.load(Ordering::Acquire) {
                     return self.cancel_post(post);
                 }
-                let job = SidecarJob {
-                    prompt: prompt.clone(),
-                    negative: negative.clone(),
-                    width: tile.padded_width,
-                    height: tile.padded_height,
-                    strength: f64::from(strength),
-                    seed: u64::from(plan.job().settings.seed),
-                    steps: run.steps,
-                    cfg_scale: run.cfg_scale,
-                    sampler: run.sampler.clone(),
-                    flow_shift: run.flow_shift,
-                    image_b64: inputs[i].image.clone(),
-                    as_reference: run.as_reference,
-                    control: match (&inputs[i].control, &run.control) {
-                        (Some(img), Some((_, s))) => Some((img.clone(), *s)),
-                        _ => None,
-                    },
-                };
                 let n = i as u32 + 1;
                 post.set(|s| s.calls += 1);
-                // Every tile says it started (a quick one may end between two looks at the
-                // runtime): loading while the model is not the one loaded, else inference.
-                let loaded = self.sidecar.info().label.as_deref() == Some(run.spec.label.as_str());
-                post.tile_progress(
-                    n,
-                    Progress {
-                        stage: if loaded {
-                            Stage::Queued
-                        } else {
-                            Stage::Loading
-                        },
-                        step: 0,
-                        steps: 0,
-                    },
-                );
-                let result = self.sidecar.run(&run.spec, &job, &post.cancel, &mut |p| {
+                let pass = TilePass {
+                    tile: n,
+                    tiles: plan.tiles().len() as u32,
+                    rect: tile,
+                    input: &inputs[i].input,
+                    input_b64: &inputs[i].image,
+                    control_b64: inputs[i].control.as_deref(),
+                    passes: inputs[i]
+                        .passes
+                        .as_ref()
+                        .map(|(e, d)| (e.as_slice(), d.as_slice())),
+                    prompt: &prompt,
+                    negative: &negative,
+                    strength,
+                    seed: plan.job().settings.seed,
+                };
+                let result = backend.run(&pass, &post.cancel, &mut |p: Progress| {
                     post.tile_progress(n, p)
                 });
-                let outcome = match result {
-                    Ok(bytes) => match decode_tile(&bytes, tile) {
-                        Ok(img) => TileOutcome::Image(img),
-                        Err(e) => TileOutcome::Failed(e),
-                    },
-                    Err(e) => TileOutcome::Failed(e),
-                };
-                match outcome {
-                    TileOutcome::Image(img) => outputs.push(img),
+                match result {
+                    Ok(img) => outputs.push(img),
                     // Another size: what the guard's size check is for (it rejects at once).
-                    TileOutcome::Failed(SidecarError::WrongSize { got, .. }) => {
+                    Err(e) if e.wrong_size().is_some() => {
+                        let got = e.wrong_size().unwrap_or_default();
                         outputs.push(Rgb8Image {
                             width: got.0,
                             height: got.1,
                             rgb: Vec::new(),
                         });
                     }
-                    TileOutcome::Failed(SidecarError::Cancelled) => return self.cancel_post(post),
-                    TileOutcome::Failed(e) => {
+                    Err(e) if e.is_cancel() => return self.cancel_post(post),
+                    Err(e) => {
                         if post.cancel.load(Ordering::Acquire) {
                             return self.cancel_post(post);
+                        }
+                        if let BackendError::Remote(r) = &e {
+                            post.set(|s| s.api = Some((r.attempts, r.status, r.detail.clone())));
                         }
                         return self.fail_post(post, e.code(), e.message());
                     }

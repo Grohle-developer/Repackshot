@@ -21,6 +21,9 @@ import { activeModel, allModels } from '../../core/models';
 import { AI_PERCENT_KEYS, type AiPercentKey, type AiSettings, type RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
 import { aiStatusKey, promptContext, recommendationOf } from '../ai-query';
+import { apiConnection, consented } from '../../core/ai-api-settings';
+import { consentPatch, consentQuestion } from '../ai-api';
+import { confirmBox } from '../components/widgets';
 import { hasModel, runtimeWatch } from '../ai-runtime-state';
 import { runtimeNotice } from './ai-runtime-notice';
 import { AiPreviewController, previewTriggers, sameTriggers, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
@@ -31,7 +34,7 @@ import { splitCompare, type SplitCompare } from '../components/split-compare';
 import { h, icon } from '../dom';
 import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
-import { formatNumber, getLang, L, t, type StringKey } from '../strings';
+import { formatNumber, getLang, L, lbl, t, type StringKey } from '../strings';
 import type { SplitMode } from '../ui-state';
 
 /** What the section needs from the render window: the settings it shows, and a way to change them. */
@@ -41,7 +44,7 @@ export interface AiSectionEnv {
   set(patch: Partial<RenderSettings>, gesture?: string, label?: Label): void;
 }
 
-const REASON_KEYS = ['NO_RUNTIME', 'NO_MODEL', 'MODEL_UNSUPPORTED', 'NO_WEBGPU', 'TOO_LITTLE_MEMORY', 'NOT_BUILT'] as const;
+const REASON_KEYS = ['NO_RUNTIME', 'NO_MODEL', 'MODEL_UNSUPPORTED', 'NO_WEBGPU', 'TOO_LITTLE_MEMORY', 'NOT_BUILT', 'API_NOT_SET', 'NO_API_KEY'] as const;
 
 /** The last time the pipeline took for one preview on this computer (measured), kept for the session. */
 const measured = new WeakMap<object, number>();
@@ -108,8 +111,10 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   const patchAi = (patch: Partial<AiSettings>, gesture: string | undefined, label: Label) => env.set({ ai: { ...ai(), ...patch } }, gesture, label);
   const collapsed = () => ui.get().sections['rw.ai'] ?? true;
   const animation = () => env.get().mode === 'ANIMATION';
-  /** The switch is on and can do its work: the person asked, the service can, and the job is an image. */
-  const live = () => ai().enabled && action.kind === 'SWITCH' && !animation();
+  /** X7: the model runs through an API whose host the person has not allowed yet (nothing is sent until they do). */
+  const needsConsent = () => status?.backend === 'API' && !consented(ui.get().settings, apiConnection(ui.get().settings).host);
+  /** The switch is on and can do its work: the person asked, the service can, the job is an image (and an API's host is allowed). */
+  const live = () => ai().enabled && action.kind === 'SWITCH' && !animation() && !needsConsent();
 
   // ------------------------------------------------------------------ the preview's brain
   const read = (): AiPreviewInput | null => {
@@ -149,12 +154,18 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   // ------------------------------------------------------------------ the switch
   const sw = toggle(false, () => {
     if (action.kind === 'OPEN_SETTINGS') {
-      // No runtime: the Runtime row has the Install button; no model: the model chooser.
-      cmd.openSettings(ctx, status?.reason === 'NO_RUNTIME' ? 'ai.runtime' : 'ai.models');
+      // No runtime: the Runtime row has the Install button; no model: the model chooser; X7: the API's endpoint or key.
+      const r = status?.reason;
+      cmd.openSettings(ctx, r === 'NO_RUNTIME' ? 'ai.runtime' : r === 'NO_API_KEY' ? 'ai.apiKey' : r === 'API_NOT_SET' ? 'ai.apiEndpoint' : 'ai.models');
       return;
     }
     if (action.kind === 'SWITCH' && !animation()) {
       const was = ai().enabled;
+      // X7: turning it on with an API whose host was never allowed asks first, in place (UI.md §4.3).
+      if (!was && needsConsent()) {
+        askConsent(true);
+        return;
+      }
       patchAi({ enabled: !was }, undefined, L('undo.aiSwitch'));
       // Off: the model gives its memory back now (AI-POST.md §7.3), unless a job still uses it (the launcher says no).
       if (was) void ctx.services.aiRuntime?.release().catch(() => undefined);
@@ -163,10 +174,46 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   sw.el.setAttribute('data-ai-switch', '');
   const aux = h('span', { class: 'aux rw-ai-line' });
   const why = h('p', { class: 'note rw-ai-note' });
+  // X7: the consent before the first render goes to a host (◆ the wording is the lead's to confirm).
+  const consentBox = h('div', { class: 'rw-ai-consent', 'data-ai-consent': '' });
+  let consentAsked = false;
+  const askConsent = (turnOn: boolean) => {
+    consentAsked = true;
+    const host = apiConnection(ui.get().settings).host;
+    if (!host) return;
+    consentBox.replaceChildren(
+      confirmBox(
+        {
+          message: consentQuestion(ui.get().settings),
+          options: [
+            {
+              label: t('ai.api.allow'),
+              primary: true,
+              run: () => {
+                cmd.setSetting(ctx, 'ai.apiConsent', consentPatch(ui.get().settings, host, true));
+                if (turnOn && !ai().enabled) patchAi({ enabled: true }, undefined, L('undo.aiSwitch'));
+              },
+            },
+          ],
+          cancelLabel: t('ai.api.dontAllow'),
+        },
+        () => {
+          consentAsked = false;
+          consentBox.replaceChildren();
+          // "Not now" with the switch already on: it goes off for this job (an undoable change), nothing is sent.
+          queueMicrotask(() => {
+            if (ai().enabled && needsConsent()) patchAi({ enabled: false }, undefined, L('undo.aiSwitch'));
+            sync();
+          });
+        },
+      ),
+    );
+  };
   const manage = h(
     'div',
     { class: 'rw-inline' },
-    h('button', { type: 'button', class: 'btn', 'data-settings-link': 'ai.models', onclick: () => cmd.openSettings(ctx, 'ai.models') }, t('rw.aiManage')),
+    // X7: through an API it leads to Model by API instead of the models.
+    h('button', { type: 'button', class: 'btn', 'data-settings-link': 'ai.models', onclick: (e: MouseEvent) => cmd.openSettings(ctx, (e.currentTarget as HTMLElement).dataset.settingsLink ?? 'ai.models') }, t('rw.aiManage')),
     h('span', { class: 'note rw-ai-default' }),
   );
   scope.watch(
@@ -353,6 +400,7 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     h('div', { class: 'rw-row' }, h('div', { class: 'rw-label' }, t('rw.ai')), h('div', { class: 'rw-ctrl' }, h('div', { class: 'rw-inline' }, sw.el, aux))),
     notice,
     why,
+    consentBox,
     grid,
     manage,
   );
@@ -376,9 +424,11 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     const s = env.get();
     const model = activeModelLine(ctx);
     const synthetic = status?.backend === 'SYNTHETIC';
-    action = status ? switchAction(status, model !== null || (ui.get().models?.installed.length ?? 0) > 0, !synthetic) : { kind: 'DISABLED', reason: 'NOT_BUILT' };
+    // X7: through an API no model of this computer is needed.
+    const api = status?.backend === 'API';
+    action = status ? switchAction(status, model !== null || (ui.get().models?.installed.length ?? 0) > 0, !synthetic && !api) : { kind: 'DISABLED', reason: 'NOT_BUILT' };
     const anim = s.mode === 'ANIMATION';
-    const on = s.ai.enabled && action.kind === 'SWITCH' && !anim;
+    const on = s.ai.enabled && action.kind === 'SWITCH' && !anim && !needsConsent();
     sw.set(on);
     (sw.el as HTMLButtonElement).disabled = status === null || action.kind === 'DISABLED' || anim;
     // The aux line: the model in use, or why the switch cannot be turned on.
@@ -393,11 +443,23 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     } else if (action.kind === 'OPEN_SETTINGS') {
       // With a model installed the notice above says what is missing and offers the fix; the line is for the rest.
       const noticed = status?.reason === 'NO_RUNTIME' && runtimeWatch(ctx) !== null && hasModel(ui.get());
-      reason = noticed ? '' : status?.reason === 'NO_RUNTIME' ? t('rw.aiNoRuntime') : t('rw.aiNoModel');
+      reason = noticed ? '' : status?.reason === 'NO_RUNTIME' ? t('rw.aiNoRuntime') : api ? t(dyn(`rw.aiWhy.${status?.reason ?? 'API_NOT_SET'}`)) : t('rw.aiNoModel');
     } else {
-      line = synthetic ? t('rw.aiSyntheticLine') : (model?.line ?? '');
+      const c = apiConnection(ui.get().settings);
+      line = synthetic ? t('rw.aiSyntheticLine') : api ? t('rw.aiApiLine', { provider: lbl(c.preset.label), host: c.host ?? '' }) : (model?.line ?? '');
+    }
+    // X7: switched on with an API whose host is not allowed (opened so, or allowed and then revoked): the question stays until answered.
+    const waiting = !anim && action.kind === 'SWITCH' && s.ai.enabled && needsConsent();
+    if (waiting && !consentAsked) askConsent(false);
+    if (!needsConsent() && consentAsked) {
+      consentAsked = false;
+      consentBox.replaceChildren();
     }
     aux.textContent = line;
+    const manageBtn = manage.querySelector('button')!;
+    const viaApi = ui.get().settings['ai.source'] === 'API';
+    manageBtn.textContent = t(viaApi ? 'rw.aiApiManage' : 'rw.aiManage');
+    manageBtn.dataset.settingsLink = viaApi ? 'ai.source' : 'ai.models';
     why.textContent = reason;
     why.style.display = reason ? '' : 'none';
     // The soft note of before X4 stays as the explanation while nothing can run.
@@ -464,6 +526,15 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   scope.watch(
     (_s, u) => aiStatusKey(u),
     () => void refreshStatus(),
+  );
+  // X7: allowing (or revoking) a host changes what the section shows, and makes the first preview.
+  scope.watch(
+    (_s, u) => u.settings['ai.apiConsent'].join(' '),
+    (_v, prev) => {
+      if (prev === undefined) return;
+      sync();
+      preview.refresh();
+    },
   );
   return host;
 }

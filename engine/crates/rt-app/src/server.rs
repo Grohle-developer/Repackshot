@@ -356,6 +356,8 @@ impl App {
                 .num("aiApi", 1.0)
                 // The AI post-processing pipeline of ai/post.rs (`/api/ai/post`, version 1).
                 .num("aiPost", 1.0)
+                // X7: a remote API in place of the local runtime, and its keys (`/api/ai/apikeys`).
+                .num("aiRemote", 1.0)
                 // Updating from inside the application (`/api/update/*`, version 1), and whether this
                 // launcher was started by an update (`--after-update`).
                 .num("updateApi", 1.0)

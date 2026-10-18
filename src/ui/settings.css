@@ -964,3 +964,56 @@ summary.sw-block-title {
 .sw-pl-file-status:empty {
   display: none;
 }
+
+/* X7: Settings ▸ AI post-processing ▸ Model by API. The endpoint's form in two columns (one on narrow windows),
+   the template in the monospace style, the key field and its buttons on one line, the allowed hosts as a list. */
+.sw-api-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.sw-api-form .is-wide {
+  grid-column: 1 / -1;
+}
+.sw-api-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sw-api-field .text-input,
+.sw-api-field select {
+  width: 100%;
+  min-width: 0;
+}
+.sw-api-template {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  white-space: pre;
+}
+.sw-api-status {
+  margin-top: 6px;
+}
+.sw-api-keybox .sw-inline {
+  flex-wrap: wrap;
+}
+.sw-api-key {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.sw-api-host {
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.sw-api-ask:empty {
+  display: none;
+}
+.sw-api-ask {
+  margin-top: 8px;
+}
+@media (max-width: 760px) {
+  .sw-api-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

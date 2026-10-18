@@ -22,6 +22,8 @@ import type { AiGuardTolerances } from './ai';
 import { DEFAULT_FAST_AA, DEFAULT_PIXEL_FILTER, FAST_AA, PIXEL_FILTERS, type FastAa, type PixelFilterSetting } from './antialias';
 import { QUALITY_KEYS, QUALITY_PRESETS } from '../data/quality';
 import { DEFAULT_SYSTEM_PROMPT, normaliseSystemPrompt } from './ai-prompt';
+import { API_ATTEMPTS_RANGE, API_BODIES, API_METHODS, API_PROVIDERS, API_RESPONSES, API_TIMEOUT_RANGE, DEFAULT_API_OPTIONS, hostOf, MAX_SIZES, MAX_TEMPLATE, type ApiEndpoint, type ApiProvider } from './ai-remote';
+import { GENERIC_ENDPOINT } from '../data/ai-api-presets';
 import { IMPORT_UNITS, LARGE_MODEL_MM, SMALL_MODEL_MM, TESSELLATION_PRESETS, UNIT_TO_MM, type ImportDetected, type ImportMessage, type ImportOptions, type ImportUnit } from './import-options';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
 import type { PreviousLights } from './previous-lights';
@@ -157,6 +159,23 @@ export interface Settings {
   'ai.guardEdgePx': number;
   /** Desktop: the inference runtime build, Automatic (Vulkan with a GPU, the CPU without one) or forced (AI-POST.md §7.1). */
   'ai.backend': 'AUTO' | 'VULKAN' | 'CPU';
+  /**
+   * X7: where the model runs, on this computer (the downloaded models and the local runtime) or through an API the
+   * person chose in Model by API (AI-POST.md §8). The guard runs here either way.
+   */
+  'ai.source': 'LOCAL' | 'API';
+  /** X7: which API: the generic HTTP endpoint or a preset (core/ai-remote.ts, data/ai-api-presets.ts). */
+  'ai.apiProvider': ApiProvider;
+  /** X7: the generic endpoint as the person wrote it (a preset's own is fixed). Never holds the key. */
+  'ai.apiEndpoint': ApiEndpoint;
+  /** X7: send the depth and edge passes too, to a template that asks for them (off: only the image leaves). */
+  'ai.apiSendPasses': boolean;
+  /** X7: seconds one call may take. */
+  'ai.apiTimeout': number;
+  /** X7: tries of one call, the first included (only timeouts, rate limits, network and server failures try again). */
+  'ai.apiAttempts': number;
+  /** X7: the hosts the person agreed to send renders to (asked once a host, revocable). */
+  'ai.apiConsent': string[];
 
   'storage.historyCount': number;
   'storage.historyMB': number;
@@ -294,6 +313,13 @@ export function defaultSettings(): Settings {
     'ai.guardDeltaE95': 6,
     'ai.guardEdgePx': 4,
     'ai.backend': 'AUTO',
+    'ai.source': 'LOCAL',
+    'ai.apiProvider': 'GENERIC',
+    'ai.apiEndpoint': { ...GENERIC_ENDPOINT, headers: { ...GENERIC_ENDPOINT.headers }, sizes: [] },
+    'ai.apiSendPasses': DEFAULT_API_OPTIONS.sendPasses,
+    'ai.apiTimeout': DEFAULT_API_OPTIONS.timeoutSeconds,
+    'ai.apiAttempts': DEFAULT_API_OPTIONS.attempts,
+    'ai.apiConsent': [],
 
     'storage.historyCount': 50,
     'storage.historyMB': 500,
@@ -486,6 +512,16 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // AI post-processing ▸ Runtime (desktop: stable-diffusion.cpp, X3b)
   row('ai.runtime', 'ai', 'runtime', kw('runtime, stable-diffusion.cpp, sd.cpp, vulkan, cpu, download, inference', 'motor de ejecución, stable-diffusion.cpp, sd.cpp, vulkan, cpu, descargar, inferencia'), { desktopOnly: true }),
   setting('ai.backend', 'ai', 'runtime', choice(['AUTO', 'VULKAN', 'CPU']), kw('run on, backend, vulkan, cpu, graphics card, force', 'ejecutar con, vulkan, cpu, tarjeta gráfica, forzar'), { aux: true, desktopOnly: true }),
+  // X7: Model by API (AI-POST.md §8): where the model runs, which API, its key (never a setting), what is sent, and
+  // the hosts the person allowed.
+  setting('ai.source', 'ai', 'api', choice(['LOCAL', 'API']), kw('api, remote, cloud, online, service, run the model, local, this computer', 'api, remoto, nube, en línea, servicio, ejecutar el modelo, local, este equipo'), { aux: true }),
+  setting('ai.apiProvider', 'ai', 'api', choice(API_PROVIDERS, true), kw('api, provider, service, generic, http, stability, stable diffusion, openai, preset', 'api, proveedor, servicio, genérico, http, stability, stable diffusion, openai, preajuste'), { aux: true }),
+  setting('ai.apiEndpoint', 'ai', 'api', { kind: 'custom' }, kw('endpoint, url, method, header, template, placeholder, response path, json, multipart', 'punto de acceso, url, método, cabecera, plantilla, marcador, ruta de la respuesta, json, multipart')),
+  row('ai.apiKey', 'ai', 'api', kw('api key, key, token, secret, bearer, password', 'clave de api, clave, token, secreto, bearer, contraseña'), { aux: true }),
+  setting('ai.apiSendPasses', 'ai', 'api', toggle, kw('passes, depth, edges, send, privacy', 'pases, profundidad, bordes, enviar, privacidad'), { aux: true }),
+  setting('ai.apiTimeout', 'ai', 'api', num(API_TIMEOUT_RANGE[0], API_TIMEOUT_RANGE[1], 5, 's'), kw('timeout, seconds, wait', 'tiempo límite, segundos, espera'), { aux: true }),
+  setting('ai.apiAttempts', 'ai', 'api', num(API_ATTEMPTS_RANGE[0], API_ATTEMPTS_RANGE[1], 1), kw('attempts, tries, retry, retries, rate limit', 'intentos, reintentos, reintentar, límite de peticiones'), { aux: true }),
+  setting('ai.apiConsent', 'ai', 'api', { kind: 'custom' }, kw('consent, allowed hosts, privacy, revoke, leaves this computer', 'consentimiento, servidores permitidos, privacidad, revocar, sale del equipo')),
   row('ai.hardware', 'ai', 'hardware', kw('hardware, gpu, vram, ram, webgpu, recommendation', 'equipo, gpu, vram, ram, webgpu, recomendación')),
 
   // Plugins (P6): the registry with Install, Update and Remove, and Install from file… (drawn by settings-plugins.ts)
@@ -554,6 +590,38 @@ function validDestination(v: unknown): Destination | null {
   return null;
 }
 
+/** X7: an endpoint as stored: every field of its type, within its limits (what it says is checked by `endpointProblems`). */
+function validEndpoint(v: unknown): ApiEndpoint | null {
+  if (!isRecord(v)) return null;
+  const str = (k: string, max: number) => (typeof v[k] === 'string' && (v[k] as string).length <= max ? (v[k] as string) : null);
+  const int = (k: string) => (typeof v[k] === 'number' && Number.isInteger(v[k]) ? (v[k] as number) : null);
+  const url = str('url', 2048);
+  const authHeader = str('authHeader', 64);
+  const authPrefix = str('authPrefix', 64);
+  const template = str('template', MAX_TEMPLATE);
+  const responsePath = str('responsePath', 256);
+  const maxSide = int('maxSide');
+  const multipleOf = int('multipleOf');
+  const method = (API_METHODS as readonly unknown[]).includes(v.method) ? (v.method as ApiEndpoint['method']) : null;
+  const body = (API_BODIES as readonly unknown[]).includes(v.body) ? (v.body as ApiEndpoint['body']) : null;
+  const response = (API_RESPONSES as readonly unknown[]).includes(v.response) ? (v.response as ApiEndpoint['response']) : null;
+  if (url === null || authHeader === null || authPrefix === null || template === null || responsePath === null || maxSide === null || multipleOf === null || !method || !body || !response) return null;
+  const headers: Record<string, string> = {};
+  if (isRecord(v.headers)) for (const [k, x] of Object.entries(v.headers).slice(0, 16)) if (typeof x === 'string' && k.length <= 64 && x.length <= 1024) headers[k] = x;
+  const sizes: [number, number][] = [];
+  if (Array.isArray(v.sizes))
+    for (const s of v.sizes.slice(0, MAX_SIZES)) if (Array.isArray(s) && s.length === 2 && s.every((n) => typeof n === 'number' && Number.isInteger(n) && n > 0 && n <= 4096)) sizes.push([s[0], s[1]]);
+  return { url, method, authHeader, authPrefix, headers, body, template, response, responsePath, maxSide: Math.max(64, Math.min(4096, maxSide)), multipleOf: Math.max(1, Math.min(256, multipleOf)), sizes };
+}
+
+/** X7: the hosts allowed, each as `hostOf` writes one, without repeats. */
+function validConsent(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: string[] = [];
+  for (const h of v.slice(0, 64)) if (typeof h === 'string' && hostOf(`https://${h}/`) === h && !out.includes(h)) out.push(h);
+  return out;
+}
+
 const MODEL_KEY_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
 
 /** A valid value for one setting, or null when `raw` cannot be one (the caller keeps or restores the factory value). */
@@ -563,6 +631,8 @@ export function validateValue<K extends SettingKey>(key: K, raw: unknown): Setti
   if (key === 'render.destination') return validDestination(raw) as Settings[K] | null;
   if (key === 'ai.active') return (typeof raw === 'string' && (raw === '' || (MODEL_KEY_RE.test(raw) && !raw.includes('..'))) ? raw : null) as Settings[K] | null;
   if (key === 'ai.systemPrompt') return normaliseSystemPrompt(raw) as Settings[K] | null;
+  if (key === 'ai.apiEndpoint') return validEndpoint(raw) as Settings[K] | null;
+  if (key === 'ai.apiConsent') return validConsent(raw) as Settings[K] | null;
   if (key === 'ai.gpu') return (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw < 16 ? raw : null) as Settings[K] | null;
   switch (c.kind) {
     case 'choice':
@@ -586,7 +656,7 @@ export function validateValue<K extends SettingKey>(key: K, raw: unknown): Setti
 
 export function sameValue(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
-  if (isRecord(a) && isRecord(b)) return JSON.stringify(a) === JSON.stringify(b);
+  if ((isRecord(a) && isRecord(b)) || (Array.isArray(a) && Array.isArray(b))) return JSON.stringify(a) === JSON.stringify(b);
   return false;
 }
 
