@@ -69,10 +69,10 @@ export class PhysicsClient {
     if (!run) return;
     switch (msg.type) {
       case 'started':
-        run.started.resolve({ ids: msg.ids, initial: msg.initial, bodies: msg.bodies, ...(msg.glass ? { glass: msg.glass } : {}), ...(msg.parts ? { parts: msg.parts } : {}) });
+        run.started.resolve({ ids: msg.ids, initial: msg.initial, bodies: msg.bodies, ...(msg.glass ? { glass: msg.glass } : {}), ...(msg.parts ? { parts: msg.parts } : {}), ...(msg.liquid ? { liquid: msg.liquid } : {}) });
         break;
       case 'progress':
-        run.onUpdate({ steps: msg.steps, awake: msg.awake, bodies: msg.bodies, settled: msg.settled, frames: msg.frames, ...(msg.glass ? { glass: msg.glass } : {}), ...(msg.parts ? { parts: msg.parts } : {}) });
+        run.onUpdate({ steps: msg.steps, awake: msg.awake, bodies: msg.bodies, settled: msg.settled, frames: msg.frames, ...(msg.glass ? { glass: msg.glass } : {}), ...(msg.parts ? { parts: msg.parts } : {}), ...(msg.liquid ? { liquid: msg.liquid } : {}) });
         this.worker?.postMessage({ type: 'ack', id, frames: msg.frames.length } satisfies PhysicsRequest);
         break;
       case 'done': {
@@ -95,7 +95,7 @@ export class PhysicsClient {
    * Simulates a PHY1 scene with `dynamic` dynamic bodies (null: none), and S3b's front glass of a WET1 spec with them
    * (null: none), and S3c's parts of a WPT1 spec (null: none).
    */
-  run(scene: Uint8Array | null, dynamic: number, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet: Uint8Array | null = null, parts: Uint8Array | null = null): PhysicsRunHandle {
+  run(scene: Uint8Array | null, dynamic: number, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet: Uint8Array | null = null, parts: Uint8Array | null = null, liquid: Uint8Array | null = null): PhysicsRunHandle {
     const id = this.next++;
     let started!: Pending['started'];
     let done!: Pending['done'];
@@ -129,8 +129,9 @@ export class PhysicsClient {
         const copy = scene ? scene.slice().buffer : null;
         const wetCopy = wet ? wet.slice().buffer : null;
         const partsCopy = parts ? parts.slice().buffer : null;
-        const transfer = [copy, wetCopy, partsCopy].filter((b): b is ArrayBuffer => b !== null);
-        this.worker!.postMessage({ type: 'run', id, scene: copy, dynamic, options, wet: wetCopy, parts: partsCopy } satisfies PhysicsRequest, transfer);
+        const liquidCopy = liquid ? liquid.slice().buffer : null;
+        const transfer = [copy, wetCopy, partsCopy, liquidCopy].filter((b): b is ArrayBuffer => b !== null);
+        this.worker!.postMessage({ type: 'run', id, scene: copy, dynamic, options, wet: wetCopy, parts: partsCopy, liquid: liquidCopy } satisfies PhysicsRequest, transfer);
         pending.sent = true;
         if (pending.paused) post('pause');
         if (pending.stopped) post('stop');

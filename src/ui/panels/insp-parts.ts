@@ -32,6 +32,7 @@ import { cameraFields } from './insp-scene';
 import { aimMenu } from './scene';
 import { texturesSection } from './insp-textures';
 import { physicsSection } from './insp-physics';
+import { liquidSection } from './insp-liquid';
 import * as phys from '../physics';
 import * as gc from '../graph-commands';
 
@@ -708,7 +709,9 @@ export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boo
   const primitive = !faces && ids.length === 1 ? dynamic(scope, (st) => st.scene.nodes[ids[0]]?.primitive?.kind ?? '', (sc, kind) => (kind ? primitiveSection(ctx, sc, ids[0]) : null)) : null;
   // Physics (S2) edits the nodes; at the Faces level, the part of the faces.
   const physTarget = faces && s.selection.faces ? [s.selection.faces.part] : ids;
-  return h('div', null, pattern, primitive, materialSection(ctx, scope, ids, faces), texturesSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces), physicsSection(ctx, scope, physTarget));
+  // S7: a liquid's preset and particles.
+  const liquids = !faces && ids.length > 0 && ids.every((id) => s.scene.nodes[id]?.liquid) ? liquidSection(ctx, scope, ids) : null;
+  return h('div', null, pattern, primitive, liquids, materialSection(ctx, scope, ids, faces), texturesSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces), physicsSection(ctx, scope, physTarget));
 }
 
 // --- Light -----------------------------------------------------------------------------

@@ -30,9 +30,10 @@ import type { ActionBase, ProjectState } from './store';
 import { cloneTransform, decomposeMatrix, isLocked } from './transform';
 import type { GlassTrack } from './wet';
 import type { PartsTrack } from './wet-parts';
+import type { LiquidTrack } from './liquid';
 
-/** What a part does in a simulation. Cloth (S9) and liquid (S7) come later. */
-export type PhysicsRole = 'STATIC' | 'DYNAMIC';
+/** What a part does in a simulation. LIQUID (S7): a part Convert to liquid made (core/liquid.ts). Cloth (S9) comes later. */
+export type PhysicsRole = 'STATIC' | 'DYNAMIC' | 'LIQUID';
 
 /** The Physics section of a node (all optional: absent is the default). */
 export interface PhysicsProps {
@@ -112,6 +113,8 @@ export interface PhysicsUpdate {
   glass?: Uint8Array[];
   /** S3c: with the parts wetted, the engine's record of each of those frames (rt_phys::wet_parts `frame`). */
   parts?: Uint8Array[];
+  /** S7: with liquids, per frame, each liquid's record (rt_phys::liquid `frame`) and its surface (`SurfaceMesh` bytes). */
+  liquid?: { records: Uint8Array[]; surfaces: Uint8Array[] }[];
 }
 
 /** When the world is built: where each body of the spec is among the poses, and the poses at step 0 (frame 0). */
@@ -123,6 +126,8 @@ export interface PhysicsStarted {
   glass?: Uint8Array;
   /** S3c: the engine's layout of the samples of the parts, and their record at step 0, when the run wets them. */
   parts?: { layout: Uint8Array; frame: Uint8Array };
+  /** S7: each liquid's record and surface at step 0, when the run has liquids. */
+  liquid?: { records: Uint8Array[]; surfaces: Uint8Array[] };
 }
 
 /** How a run ended: the frames not reported yet, and the poses of the last frame (what Stop commits). */
@@ -271,7 +276,8 @@ export function physicsSpec(state: ProjectState, drop?: readonly NodeId[]): Phys
   if (bodies.length === 0) return null;
   const statics: PhysicsStatic[] = [];
   for (const p of partsUnder(state, state.scene.roots)) {
-    if (moving.has(p) || !effectiveVisible(state, p)) continue;
+    // S7: a liquid is not a solid the bodies meet.
+    if (moving.has(p) || !effectiveVisible(state, p) || state.scene.nodes[p]?.liquid) continue;
     const piece = pieceOf(state, p, cache);
     if (!piece) continue;
     const node = state.scene.nodes[p];
@@ -638,7 +644,7 @@ export type PhysicsAction =
   /** A simulation starts: its PHYSICS clips (one frame each), and the roles Drop gives. */
   | ({ type: 'physics/begin'; clips: MotionClip[]; roles?: Record<NodeId, PhysicsRole> } & ActionBase)
   /** It runs: the clips' tracks so far (their durations follow), and S3b's glass tracks. Same gesture as `begin`. */
-  | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack>; glass?: Record<string, GlassTrack>; parts?: Record<string, PartsTrack> } & ActionBase)
+  | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack>; glass?: Record<string, GlassTrack>; parts?: Record<string, PartsTrack>; liquids?: Record<string, LiquidTrack> } & ActionBase)
   /**
    * It stopped (by itself or by Stop): the movers' final transforms, and the run's clips (`clips`) anchored to them.
    * Same gesture: one undo step for all.
@@ -708,6 +714,12 @@ export function reducePhysics(state: ProjectState, action: PhysicsAction): Proje
         if (parts && c.move === 'PHYSICS' && c.parts !== parts) {
           changed = true;
           return { ...c, parts, duration: Math.max(0, parts.frames - 1) / parts.fps };
+        }
+        // S7: a liquid's track.
+        const liquid = action.liquids?.[c.id];
+        if (liquid && c.move === 'PHYSICS' && c.liquid !== liquid) {
+          changed = true;
+          return { ...c, liquid, duration: Math.max(0, liquid.frames - 1) / liquid.fps };
         }
         const track = action.tracks[c.id];
         if (!track || c.move !== 'PHYSICS' || c.track === track) return c;

@@ -53,6 +53,8 @@ export interface PhysicsUi {
   glass?: { drops: number; motes: number } | null;
   /** S3c: the parts of the run in progress or the last one: the drops on them at the last frame, the drips so far. */
   parts?: { drops: number; drips: number; falling?: number } | null;
+  /** S7: the liquids of the run in progress or the last one: their particles (the engine's fill) and how many. */
+  liquid?: { particles: number; liquids: number } | null;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
@@ -256,6 +258,11 @@ export interface EngineInfo {
    * it the render draws them round, and the ambient section says so. Absent: not known.
    */
   wetShapes?: boolean;
+  /**
+   * S7: the engine resolves nested dielectrics (bit 14, render/engine.ts `readsNested`): without it the render draws a
+   * liquid against air where it touches its glass, and the Liquid section says so. Absent: not known.
+   */
+  nested?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

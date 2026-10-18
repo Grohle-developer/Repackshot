@@ -136,6 +136,19 @@ export function readsWetShapes(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_WET_SHAPES) !== 0;
 }
 
+/**
+ * S7: bit 14 of the engine's features (rt_core::FEATURE_NESTED_DIELECTRICS): it resolves nested dielectrics by priority
+ * (NEST): a liquid inside its glass meets the glass at the ratio of their indices. The page writes the priorities only
+ * for it (io/rsb.ts `SceneView.nested`); an engine without it draws every clear solid against the air, and the Liquid
+ * section says so.
+ */
+export const ENGINE_FEATURE_NESTED_DIELECTRICS = 16384;
+
+/** True when an engine of `features` resolves nested dielectrics (S7). */
+export function readsNested(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_NESTED_DIELECTRICS) !== 0;
+}
+
 /** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
 export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
   if (!readsPrograms(features)) return {};

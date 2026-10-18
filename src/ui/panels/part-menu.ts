@@ -8,11 +8,14 @@ import { primitivesUnder } from '../../core/primitive-ops';
 import * as anim from '../anim-commands';
 import * as cmd from '../commands';
 import * as phys from '../physics';
+import { convertToLiquid } from '../liquid';
+import { convertible } from '../../core/liquid';
+import { LIQUID_PRESETS } from '../../data/liquids';
 import type { MenuEntry, MenuItems } from '../components/widgets';
 import { dyn, lightName } from '../names';
 import type { Ctx } from '../reactive';
 import { kbdFor } from '../shortcuts';
-import { getLang, t } from '../strings';
+import { getLang, lbl, t } from '../strings';
 import { openMaterialEditor } from '../graph-commands';
 
 export interface PartMenuOptions {
@@ -91,6 +94,10 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('ops.centerRest'), disabled: fixed, run: () => cmd.centerAndRest(ctx, nodes) },
     // Physics (S2): the selection falls onto the floor and whatever is under it, and the bar opens.
     { label: t('ops.drop'), icon: 'drop', note: fixed ? undefined : t('ops.dropAux'), disabled: fixed || noParts, run: () => phys.drop(ctx, nodes) },
+    // S7: the part becomes a liquid of a preset (its shape filled with particles), hidden, and the bar opens.
+    convertible(s, nodes).length > 0
+      ? { label: t('ops.toLiquid'), icon: 'drop', note: t('ops.toLiquidAux'), submenu: LIQUID_PRESETS.map((p) => ({ label: lbl(p.label), run: () => convertToLiquid(ctx, nodes, p.key) })) }
+      : { label: t('ops.toLiquid'), icon: 'drop', disabled: true },
     { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
     { label: t('ops.pivot'), disabled: none, submenu: pivot },
     { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },

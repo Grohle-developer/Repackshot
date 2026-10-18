@@ -56,7 +56,7 @@ import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset }
 import { fitFactor } from '../core/live-frame';
 import { LivePicture } from './live-frame';
 import type { ProjectState } from '../core/store';
-import { programsView, readsCameras, readsDrops, readsGlassLayout, readsIes, readsWetFlight, readsWetParts, readsWetShapes, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
+import { programsView, readsCameras, readsDrops, readsGlassLayout, readsIes, readsWetFlight, readsWetParts, readsWetShapes, readsNested, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
 import { abortError, adaptiveProgress, budgetLimits, budgetOf, budgetProgress, runAdaptive, runPasses, type PassBudget } from './schedule';
@@ -986,6 +986,8 @@ export class PathTracerEngine implements RenderEngine {
         ...(readsWetParts(this.pool.features) ? { wetParts: true } : {}),
         ...(readsWetFlight(this.pool.features) ? { wetFlight: true } : {}),
         ...(readsWetShapes(this.pool.features) ? { wetShapes: true } : {}),
+        // S7: the nested dielectrics, when this engine resolves them.
+        ...(readsNested(this.pool.features) ? { nested: true } : {}),
     };
   }
 
@@ -1434,6 +1436,8 @@ export class PathTracerEngine implements RenderEngine {
         ...(readsWetParts(this.pool.features) ? { wetParts: true } : {}),
         ...(readsWetFlight(this.pool.features) ? { wetFlight: true } : {}),
         ...(readsWetShapes(this.pool.features) ? { wetShapes: true } : {}),
+        // S7: the nested dielectrics, when this engine resolves them.
+        ...(readsNested(this.pool.features) ? { nested: true } : {}),
       };
       // E5b-1: a denoised render also renders the guide passes and sums the squared luminance. U11b: at a strength
       // of 0 it is not denoised at all (the image is the noisy one).

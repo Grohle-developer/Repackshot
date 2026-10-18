@@ -1,6 +1,7 @@
 // Scene tree: nodes, hierarchy, four-level selection, bounds, rest on the
 // floor and centring (SPEC §3.1, §3.2). Pure functions over ProjectState.
 
+import type { LiquidProps } from './liquid';
 import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
 import { getMesh, transformedMeshBounds, type MeshId, type MeshRef, type TriangleRange } from './meshes';
@@ -158,6 +159,11 @@ export interface SceneNode {
    * plan view. Absent: seen, like every node of before K3.
    */
   cameraHidden?: boolean;
+  /**
+   * PART that Convert to liquid made (S7, core/liquid.ts): its preset, its particle spacing and the part it came from.
+   * Its mesh is that part's shape in world space; a recorded run shows the surface of its frame instead.
+   */
+  liquid?: LiquidProps;
 }
 
 /** What a part of a set's decoration is (L6). */

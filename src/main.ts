@@ -83,7 +83,9 @@ import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
 import { wetBytes } from './core/wet';
 import { engineGlassPane, hasGlassExports } from './render/glass-pane';
-import { readsGlassLayout, readsWetFlight, readsWetParts, readsWetShapes } from './render/engine';
+import { readsGlassLayout, readsNested, readsWetFlight, readsWetParts, readsWetShapes } from './render/engine';
+import { hasLiquidExports, liquidSurface } from './render/phys-wasm';
+import { setLiquidSurfacer, surfaceMesh } from './core/liquid';
 import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16 as exactWords16Of, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba as straightLinearRgbaOf, straightWords16 } from './render/tiles';
@@ -307,7 +309,20 @@ const pageEngine = (): Promise<WebAssembly.Exports | null> =>
   }));
 /** The page's rt.wasm once loaded (S3b: the front glass is asked for synchronously). */
 let pageExports: WebAssembly.Exports | null = null;
-void pageEngine().then((exports) => (pageExports = exports));
+void pageEngine().then((exports) => {
+  pageExports = exports;
+  // S7: the surface of a recorded liquid frame not in hand (a project opened, a frame scrubbed to) is rebuilt here, by the
+  // same function the physics worker uses.
+  setLiquidSurfacer(
+    exports && hasLiquidExports(exports)
+      ? (record) => {
+          const bytes = liquidSurface(exports, record);
+          return bytes ? surfaceMesh(bytes) : null;
+        }
+      : null,
+  );
+  preview?.refreshLiquids();
+});
 if (preview) {
   const p = preview;
   void pageEngine().then((exports) => {
@@ -492,6 +507,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
       wetParts: readsWetParts(i.features),
       wetFlight: readsWetFlight(i.features),
       wetShapes: readsWetShapes(i.features),
+      nested: readsNested(i.features),
       native: { threads: i.threads, isa: i.isa, simd: i.simd, os: i.os, arch: i.arch, engineVersion: i.engineVersion },
     });
     return;
@@ -513,7 +529,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
     }
     const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
     poolCfg = { backend: 'wasm', threads: cfg.threads, simd: cfg.simd };
-    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features), wetParts: readsWetParts(t.features), wetFlight: readsWetFlight(t.features), wetShapes: readsWetShapes(t.features) });
+    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features), wetParts: readsWetParts(t.features), wetFlight: readsWetFlight(t.features), wetShapes: readsWetShapes(t.features), nested: readsNested(t.features) });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`path tracer: ${reason}`);
@@ -1102,7 +1118,7 @@ const services: AppServices = {
   captureViewport: () => (full && tracer ? tracer.capture() : preview ? preview.capture() : Promise.resolve(null)),
   exportScene(state) {
     // M2b: with the textures `rt` reads (the images decoded since the materials took them); M3b: and the programs; L5: and the IES lights.
-    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true, programs: true, ies: true, drops: true, glassLayout: true, wetParts: true, wetFlight: true, wetShapes: true });
+    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true, programs: true, ies: true, drops: true, glassLayout: true, wetParts: true, wetFlight: true, wetShapes: true, nested: true });
     return new Blob([writeRsb(scene) as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
   },
   async importFile(file, options) {
@@ -1204,10 +1220,10 @@ const services: AppServices = {
   // The rigid body simulator (S2): rt-phys in a worker of its own, with the scalar rt.wasm (started on the first
   // simulation). In the desktop window too: the page serves the same module.
   physics: typeof Worker === 'undefined' ? null : {
-    run(spec, options, onUpdate, wet, parts) {
+    run(spec, options, onUpdate, wet, parts, liquid) {
       // S3b: the front glass fed by the scene steps with the bodies (or alone, without any). S3c: and the wet parts (their
-      // WPT1, written by ui/physics.ts: it needs the parts it wrote).
-      return physicsClient.run(spec.bodies.length > 0 ? writePhysicsScene(spec) : null, spec.bodies.length, options, onUpdate, wet ? wetBytes(wet) : null, parts ?? null);
+      // WPT1, written by ui/physics.ts: it needs the parts it wrote). S7: and the liquids (their LIQ1, likewise).
+      return physicsClient.run(spec.bodies.length > 0 ? writePhysicsScene(spec) : null, spec.bodies.length, options, onUpdate, wet ? wetBytes(wet) : null, parts ?? null, liquid ?? null);
     },
   },
   // S3b: the engine's front glass of a camera (the page's rt.wasm, once loaded).

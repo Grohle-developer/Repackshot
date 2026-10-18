@@ -281,3 +281,119 @@ export class PartsSim {
     this.handle = 0;
   }
 }
+
+/** S7: the exports of rt.wasm that simulate liquids (absent in an rt.wasm older than S7). */
+export interface LiquidExports {
+  memory: WebAssembly.Memory;
+  rt_alloc(len: number): number;
+  rt_free(ptr: number, len: number): void;
+  rt_scene_error_len(): number;
+  rt_scene_error_copy(ptr: number): void;
+  liq_new(ptr: number, len: number): number;
+  liq_free(handle: number): number;
+  liq_step(handle: number, n: number): number;
+  liq_steps(handle: number): number;
+  liq_liquids(handle: number): number;
+  liq_count(handle: number, i: number): number;
+  liq_hash(handle: number): number;
+  liq_frame(handle: number, i: number): number;
+  liq_surface(handle: number, i: number): number;
+  liq_copy(handle: number, out: number): number;
+  liq_mesh(ptr: number, len: number): number;
+  liq_mesh_copy(out: number): number;
+}
+
+/** True when a compiled engine simulates liquids (S7). */
+export function hasLiquidExports(x: unknown): x is LiquidExports {
+  const e = x as Partial<LiquidExports> | null;
+  return !!e && typeof e.liq_new === 'function' && typeof e.liq_frame === 'function' && typeof e.liq_surface === 'function' && typeof e.liq_mesh === 'function';
+}
+
+function engineError(rt: LiquidExports, fallback: string): Error {
+  const len = rt.rt_scene_error_len();
+  const at = rt.rt_alloc(Math.max(1, len));
+  rt.rt_scene_error_copy(at);
+  const message = new TextDecoder().decode(new Uint8Array(rt.memory.buffer, at, len).slice());
+  rt.rt_free(at, Math.max(1, len));
+  return new Error(message || fallback);
+}
+
+/** The liquids of a scene inside an instance of rt.wasm (rt_phys::liquid). */
+export class LiquidSim {
+  private handle: number;
+  /** The number of liquids (in the order of the LIQ1). */
+  readonly liquids: number;
+
+  /** Builds the liquids of a LIQ1 scene (core/liquid.ts); throws with the engine's message when the bytes are not one. */
+  constructor(
+    private readonly rt: LiquidExports,
+    spec: Uint8Array,
+  ) {
+    const ptr = rt.rt_alloc(spec.length);
+    new Uint8Array(rt.memory.buffer, ptr, spec.length).set(spec);
+    this.handle = rt.liq_new(ptr, spec.length);
+    rt.rt_free(ptr, spec.length);
+    if (this.handle === 0) throw engineError(rt, 'liq_new failed');
+    this.liquids = rt.liq_liquids(this.handle);
+  }
+
+  private live(): number {
+    if (this.handle === 0) throw new Error('the liquids were freed');
+    return this.handle;
+  }
+
+  step(n: number): void {
+    this.rt.liq_step(this.live(), Math.max(0, Math.floor(n)));
+  }
+
+  get steps(): number {
+    return this.rt.liq_steps(this.live());
+  }
+
+  /** The particles of liquid `i`. */
+  count(i: number): number {
+    return this.rt.liq_count(this.live(), i);
+  }
+
+  /** FNV-1a of the particles: the native tests pin it. */
+  get hash(): number {
+    return this.rt.liq_hash(this.live()) >>> 0;
+  }
+
+  private take(len: number): Uint8Array {
+    const out = this.rt.rt_alloc(Math.max(4, len));
+    this.rt.liq_copy(this.live(), out);
+    const bytes = new Uint8Array(this.rt.memory.buffer, out, len).slice();
+    this.rt.rt_free(out, Math.max(4, len));
+    return bytes;
+  }
+
+  /** The frame record of liquid `i` now (LQF1). */
+  frame(i: number): Uint8Array {
+    return this.take(this.rt.liq_frame(this.live(), i) >>> 0);
+  }
+
+  /** The surface of liquid `i` now (rebuilt from its frame record: core/liquid.ts `surfaceMesh` reads it). */
+  surface(i: number): Uint8Array {
+    return this.take(this.rt.liq_surface(this.live(), i) >>> 0);
+  }
+
+  free(): void {
+    if (this.handle !== 0) this.rt.liq_free(this.handle);
+    this.handle = 0;
+  }
+}
+
+/** S7: the surface of a frame record by an instance's `liq_mesh` (the bytes of core/liquid.ts `surfaceMesh`), or null. */
+export function liquidSurface(rt: LiquidExports, record: Uint8Array): Uint8Array | null {
+  const ptr = rt.rt_alloc(Math.max(4, record.length));
+  new Uint8Array(rt.memory.buffer, ptr, record.length).set(record);
+  const len = rt.liq_mesh(ptr, record.length) >>> 0;
+  rt.rt_free(ptr, Math.max(4, record.length));
+  if (len === 0xffffffff) return null;
+  const out = rt.rt_alloc(Math.max(4, len));
+  rt.liq_mesh_copy(out);
+  const bytes = new Uint8Array(rt.memory.buffer, out, len).slice();
+  rt.rt_free(out, Math.max(4, len));
+  return bytes;
+}

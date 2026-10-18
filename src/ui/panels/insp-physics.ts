@@ -13,6 +13,7 @@ import { section } from '../components/section';
 import { h, icon } from '../dom';
 import { dyn, targetLabel } from '../names';
 import * as phys from '../physics';
+import { convertToLiquid } from '../liquid';
 import type { Ctx, Scope } from '../reactive';
 import { L, formatNumber, getLang, lbl, t } from '../strings';
 
@@ -42,15 +43,17 @@ export function physicsSection(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLEleme
   const set = (patch: Partial<PhysicsProps>, gesture?: string) => store.dispatch({ type: 'physics/set', ids, patch, gesture, label: label() });
   const props = (s: ProjectState) => s.scene.nodes[first]?.physics ?? {};
 
+  // S7: a liquid part keeps its role (it is made of particles); the Liquid role of a solid part converts it.
+  const liquidOnly = ids.every((id) => store.get().scene.nodes[id]?.liquid);
   const role = segmented<PhysicsRoleKey>(
     PHYSICS_ROLES.map((r) => ({
       value: r,
       label: t(dyn(`phys.role.${r}`)),
       title: BUILT_ROLES.has(r) ? t(dyn(`phys.roleTip.${r}`)) : `${t(dyn(`phys.role.${r}`))}: ${t('phys.soon')}`,
-      disabled: !BUILT_ROLES.has(r),
+      disabled: !BUILT_ROLES.has(r) || (liquidOnly && r !== 'LIQUID'),
     })),
     null,
-    (r) => set({ role: r as PhysicsRole }),
+    (r) => (r === 'LIQUID' ? (liquidOnly ? undefined : convertToLiquid(ctx, ids)) : set({ role: r as PhysicsRole })),
     { full: true, ariaLabel: t('phys.role') },
   );
   role.el.setAttribute('data-field', 'phys.role');

@@ -40,6 +40,7 @@ import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aper
 import { filtersOf, frontGlassOf, glassFromScene, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
 import { paneAxes, recordedGlass, type GlassFrame, type PaneAxes } from '../core/wet';
 import { partWeather, recordedParts, ROUND_SHAPE } from '../core/wet-parts';
+import { posedLiquidMesh, renderedPriority } from '../core/liquid';
 import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
@@ -78,6 +79,11 @@ export const TAG_LENS = 'LENS';
 export const TAG_FXAM = 'FXAM';
 /** Q1: the section view's plane (written after the FXAM sections; absent without a section). */
 export const TAG_SECT = 'SECT';
+/**
+ * S7: the nested-dielectric priorities of the materials (`u32 count; u32 priority[count]`, written after SECT, only
+ * when one is above 0, for an engine with bit 14: render/engine.ts `readsNested`).
+ */
+export const TAG_NEST = 'NEST';
 /** `INST.flags` bit 1: the section view does not cut this instance (the studio, not the model). Written only with a section. */
 export const INSTANCE_NO_SECTION = 2;
 /** `INST.flags` bit 2 (K3): the camera does not see this instance; everything else does (rt-core `INSTANCE_NO_CAMERA`). */
@@ -608,6 +614,8 @@ export interface RsbScene {
   wetParts?: RsbWetPart[];
   /** S3d: the drops in the air (WETF, after the WETP sections), for an engine with bit 9. */
   wetFalling?: RsbFallingDrop[];
+  /** S7: each material's nested-dielectric priority (NEST), in MATL order; written only when one is above 0. */
+  priorities?: number[];
 }
 
 /** S3d: a drop in the air of a WETF section (rt-core `weather::FallingDrop`). */
@@ -988,6 +996,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   if (wetFalling.length > 0) size += 8 + 4 + 20 * wetFalling.length;
   for (const p of programs) size += 8 + 4 + p.bytes.length;
   if (section) size += 8 + SECT_BYTES;
+  // S7: the priorities, only when one is above 0 (a scene without is the bytes of before).
+  const priorities = (scene.priorities ?? []).some((p) => p > 0) ? scene.priorities! : null;
+  if (priorities) size += 8 + 4 + 4 * priorities.length;
 
   const w = new ByteWriter(size);
   w.tag(RSB_MAGIC);
@@ -1192,6 +1203,12 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(section.distance);
     });
   }
+  if (priorities) {
+    w.section(TAG_NEST, 4 + 4 * priorities.length, () => {
+      w.u32(priorities.length);
+      for (const p of priorities) w.u32(Math.max(0, Math.round(p)));
+    });
+  }
   if (withMeshes && images.length > 0) {
     w.section(TAG_IMGS, imagesBytes(images), () => {
       w.u32(images.length);
@@ -1381,6 +1398,12 @@ export interface SceneView {
   wetShapes?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
+  /**
+   * S7: write the materials' nested-dielectric priorities (NEST: core/liquid.ts `renderedPriority`, the liquid inside its
+   * glass) for an engine with bit 14 (render/engine.ts `readsNested`). Off by default: an engine of before skips the
+   * section and draws the liquid against air where it touches the glass, and the page writes what it reads.
+   */
+  nested?: boolean;
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -2259,10 +2282,13 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     // N1: a part faded out all the way is not there (nor its shadow), like a hidden one.
     const partOpacity = opacityOf(id);
     if (!(partOpacity > 0)) continue;
-    const data = getMesh(node.mesh.id);
+    // S7: a recorded liquid shows the surface of the frame the pose says (core/liquid.ts), its own mesh otherwise.
+    const posedMesh = node.liquid ? posedLiquidMesh(state, pose, id) : null;
+    const shown = posedMesh ? { ...node, mesh: { ...node.mesh, id: posedMesh } } : node;
+    const data = getMesh(shown.mesh!.id);
     if (!data || data.indices.length === 0) continue;
     const rows = matrixRows(worldOf(id));
-    for (const part of partMeshes(node, data)) {
+    for (const part of partMeshes(shown, data)) {
       const materialId = materialFor(part.material, partOpacity);
       let mi = meshIndex.get(part.key);
       if (mi === undefined) {
@@ -2446,8 +2472,11 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     }
   }
 
+  // S7: the nested-dielectric priority of every material, for an engine that reads them (none above 0: no NEST).
+  const priorities = view.nested ? materialOrder.map((key) => renderedPriority(state, key)) : [];
+
   return {
-    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}), ...(wetFalling.length > 0 ? { wetFalling } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}), ...(wetFalling.length > 0 ? { wetFalling } : {}), ...(priorities.some((p) => p > 0) ? { priorities } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

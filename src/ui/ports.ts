@@ -620,7 +620,7 @@ export interface PhysicsPort {
    * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
    * is not there (npm run engine:build), or with the engine's message when the scene does not load.
    */
-  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null): PhysicsRunHandle;
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null, liquid?: Uint8Array | null): PhysicsRunHandle;
 }
 
 /**
