@@ -1200,3 +1200,11 @@
   transform: translateX(-50%);
   z-index: 3;
 }
+
+/* X7: the question before the first render goes to an API's host, in place under the switch. */
+.rw-ai-consent:empty {
+  display: none;
+}
+.rw-ai-consent {
+  margin: 6px 0 10px;
+}

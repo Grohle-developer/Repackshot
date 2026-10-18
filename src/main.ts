@@ -50,6 +50,13 @@ import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
 import { AiRuntimeClient } from './io/ai-runtime';
 import { DesktopAiService } from './io/ai-post';
+import { ApiBackend } from './io/ai-api';
+import { BrowserKeyStore, LauncherKeyStore, type ApiKeyStore } from './io/api-keys';
+import { ApiPipeline, apiService, routeAiService } from './ai/api-service';
+import { PostGuard } from './ai/post-wasm';
+import { apiActive } from './core/ai-api-settings';
+import { ApiCallError } from './core/ai-remote';
+import { withApiConsent, withApiWords } from './ui/ai-api';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
@@ -689,12 +696,59 @@ const files = platform.files({
 // the switch can be on is what `status()` says.
 const aiServiceReady: Promise<AiPostService> =
   params.ai === 'synthetic' ? Promise.resolve(createSyntheticService()) : nativeReady.then((native) => (native && (native.info.aiPost ?? 0) >= 1 ? new DesktopAiService(native, () => aiRuntimeQuery(ui.get())) : notBuiltService));
-// C1: every request carries the guard's tolerances of Settings (the queue's and the preview's alike).
-const aiService: AiPostService = withGuardTolerances(
-  {
-    status: async () => (await aiServiceReady).status(),
-    post: async (request, onProgress, signal) => (await aiServiceReady).post(request, onProgress, signal),
+// X7: the model through an API, if the person chose one (Settings ▸ AI post-processing ▸ Model by API, AI-POST.md §8).
+// The keys stay on this computer: in the launcher's data folder on the desktop (the launcher calls the API itself, the
+// key never comes back to the page), in this site's local storage on the web (the page calls it with `fetch` and runs
+// the guard of post.wasm). The local service is untouched while the model runs here.
+const browserKeys = new BrowserKeyStore(
+  (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+);
+const apiKeysReady: Promise<ApiKeyStore | null> = nativeReady.then((native) => (native ? ((native.info.aiRemote ?? 0) >= 1 ? new LauncherKeyStore(native) : null) : browserKeys));
+let postGuardLoad: Promise<PostGuard> | null = null;
+const webApiPipeline = new ApiPipeline({
+  guard: () => (postGuardLoad ??= PostGuard.fromUrl(new URL('engine/post.wasm', base)).catch((err: unknown) => {
+    postGuardLoad = null;
+    throw err;
+  })),
+  backend: async (remote) => new ApiBackend(remote.endpoint, remote.options, browserKeys.key(remote.consentedHost), { fetch: (input, init) => fetch(input, init) }),
+});
+const aiApiService = apiService({
+  settings: () => ui.get().settings,
+  hasKey: async (host) => (await (await apiKeysReady)?.has(host)) ?? false,
+  run: async (request, onProgress, signal) => {
+    const [native, local] = await Promise.all([nativeReady, aiServiceReady]);
+    if (local instanceof DesktopAiService && (native?.info.aiRemote ?? 0) >= 1) return local.post(request, onProgress, signal);
+    if (native) throw new ApiCallError('api-config', 'this version of the application cannot call an API');
+    return webApiPipeline.post(request, onProgress, signal);
   },
+});
+void apiKeysReady.then((keys) => {
+  services.apiKeys = keys;
+  // What asked before the store was known (Settings, the AI section's status) asks again.
+  ui.set({ aiApiKeys: ui.get().aiApiKeys + 1 });
+});
+// C1: every request carries the guard's tolerances of Settings (the queue's and the preview's alike). X7: an API post
+// only to a host the person allowed, and its failures in the interface's words.
+const aiService: AiPostService = withGuardTolerances(
+  withApiWords(
+    withApiConsent(
+      routeAiService(
+        {
+          status: async () => (await aiServiceReady).status(),
+          post: async (request, onProgress, signal) => (await aiServiceReady).post(request, onProgress, signal),
+        },
+        aiApiService,
+        () => apiActive(ui.get().settings),
+      ),
+      () => ui.get().settings,
+    ),
+  ),
   () => ui.get().settings,
 );
 
@@ -1098,6 +1152,7 @@ const services: AppServices = {
     },
   },
   models: modelsService.manager,
+  apiKeys: null,
   // The launcher keeps what it detected on the desktop ("Detect again" asks it to look again); WebGPU on the web.
   hardware: (again) => platform.hardware(again),
   storage: platform.storage,

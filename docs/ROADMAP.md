@@ -9394,6 +9394,108 @@ own origin (0, 0): it does not know where the tile lies in the image. (6) The me
 lines. (7) `tools/ai-post-check.mjs` (X4) was adapted: its checks of the old preview
 (updated on release, the full-engine option) now check the example and *Preview my scene*.
 
+## X7 · The AI through an API — **Opus** — done
+
+**The person's request (2026-10-17):** "Let the AI be not only a local model,
+but also a connection through an API if the user wants it."
+
+**What.** `AI-POST.md` §8: one backend interface under the pipeline's model
+call, the local runtime as one implementation and remote APIs as another;
+*Settings ▸ AI post-processing ▸ Model by API* to choose local or API per
+installation, with a generic HTTP image-to-image endpoint and presets for two
+well-known services; the key on this computer only; consent per host before the
+first send; the guard on every result; bounded, worded failures.
+
+**Done** (2026-10-18). **The interface under the model call**:
+`AiModelBackend` (`src/core/ai-backend.ts`) and its Rust twin `ModelBackend`
+(`engine/crates/rt-app/src/ai/backend.rs`). The desktop pipeline's tile loop
+(`ai/post.rs`) now calls `backend.run(pass)`; the local runtime is
+`LocalRuntime` (the same `sd-server` job, the same "loading or queued" first
+progress, the same wrong-size stand-in and errors), and every existing
+`tests/ai_post.rs`, `tests/ai.rs` and `tests/ai-desktop*.test.ts` test passes
+unchanged. **Remote backends**: `RemoteApi` (`ai/remote.rs`, the system's
+`curl`: its configuration and the key's header through standard input after
+`-q`, the body through a scratch file removed after the call, no redirect,
+`https` or loopback `http`, a 64 MiB answer cap, kill on cancel) and
+`ApiBackend` (`src/io/ai-api.ts`, `fetch` with `redirect: 'manual'`, a time
+limit, a streamed byte cap). On the web the page runs the pipeline itself
+(`src/ai/api-service.ts`: `ApiPipeline` with the guard of `post.wasm` and
+`runGuarded`, `INLINE` sources), so the web gets an AI path before X3d. The
+shared rules (hosts, the template, the answer path, base64, statuses, retry
+waits, the size sent, masks, problems, the service's words) are in
+`src/core/ai-remote.ts` and `ai/remote.rs`, checked against the same
+`tests/fixtures/ai-remote-cases.json`. **Settings**: `ai.source`,
+`ai.apiProvider`, `ai.apiEndpoint`, `ai.apiSendPasses`, `ai.apiTimeout`,
+`ai.apiAttempts`, `ai.apiConsent` (`core/settings.ts`), the block *Model by
+API* (`ui/panels/settings-api.ts`: the generic endpoint's form with its
+problems, a preset's summary with the "not tried against the live service"
+note, the key row, the allowed hosts). **Presets**
+(`src/data/ai-api-presets.ts`): Stability AI SD 3.5 image-to-image and OpenAI
+image edits, each from the OpenAPI document the service publishes (read on
+2026-10-18), `verified: false`. **Keys** (`src/io/api-keys.ts`): the launcher's
+`/api/ai/apikeys` (`<data>/ai/api-keys.json`, 0600) on the desktop, the site's
+local storage on the web, one per host, listed masked. **Consent**
+(`src/ui/ai-api.ts`): `withApiConsent` refuses every post to a host not in
+`ai.apiConsent`; the render window asks in place when the switch is turned on
+(*Allow and send* · *Not now*), Settings lists and revokes; the launcher also
+refuses a post whose URL is not its `consentedHost`. **Status and words**:
+`apiService` says `API_NOT_SET` or `NO_API_KEY` (new `AiUnavailableReason`s,
+added) and the switch opens Settings at that row; `withApiWords` words every
+`api-*` failure in English and Spanish with the tries and the service's words.
+`main.ts` composes `withGuardTolerances(withApiWords(withApiConsent(
+routeAiService(local, api, …))))`. **Tests**: 9 new Rust integration tests
+(`tests/ai_remote.rs`, the real launcher and the real `curl` against a fake HTTP
+server: success through the guard, intervention 0 never calls, the Stability-
+and OpenAI-shaped forms and sizes and an image answer, a refused key, rate
+limits and server failures within the tries, a time-out, six malformed or
+oversize answers and a redirect, a rejected result delivering the engine image
+bit for bit after four calls, refusals before anything is sent) and 6 unit
+tests in `ai/remote.rs` (the shared cases among them); 22 vitest tests
+(`tests/ai-remote.test.ts`: the shared cases, the backend against a local fake
+server for the generic endpoint and each preset with every failure, the web
+pipeline with the real `post.wasm` accepting and rejecting, consent, the
+switch, the status, the desktop post's JSON, the key kept out of projects, the
+library, the settings document and the console); 11 browser checks
+(`tools/ai-api-check.mjs`, with a fake service: the settings, the key, the
+preset, consent asked in place and nothing sent before it, the preview through
+the guard, revoke, achromatic, Spanish). Each was checked to fail with its
+change undone: in TypeScript, the consent gate off, the key not masked in the
+service's words, a redirect followed, one try more than allowed, the answer's
+byte cap off, the local request copied on its way, a rejected result not left
+as the engine's, the key check off and the passes sent whatever the setting;
+in Rust, the `consentedHost` check off, the key logged and a redirect followed.
+
+**What did not fit the plan.** (1) `AiBackend` already names the runtime kind
+in `src/core/ai.ts` (`'VULKAN' | 'CPU' | …`), so the interface is
+`AiModelBackend` and the union gains `'API'`. (2) The page cannot run the
+desktop's model call: the pipeline lives in the launcher (X3c), so the desktop
+remote backend is Rust and the key never comes back to the page; the web one is
+TypeScript. (3) The web pipeline runs `post.wasm` on the page's own thread, not
+in a worker as X3d plans; a large render blocks the page while the guard works.
+(4) Only PNG answers are read (the launcher has no JPEG or WebP decoder): the
+presets ask for PNG, and a JPEG answer fails with `api-format` naming it. (5)
+An answer given as a URL (instead of base64) is not fetched: it would be a
+second host. (6) In the browser a service that does not allow cross-origin
+requests fails as a network error; nothing can be done from the page. (7) The
+generic endpoint's timeout is at least 10 s in the launcher (the page's tests
+use 1 s on the backend directly). (8) Consent is a setting of this computer
+(not of a project) and is asked in place, as UI.md §4.3 wants, not in a dialog.
+(9) The presets were never run against the live services (no keys, no
+network): they follow the published OpenAPI documents only. (10) A race of X3c found
+on the way: after the guard sent an attempt back, the post's state carried the
+guard's words a moment before the attempt moved on, and on a loaded machine
+`retries_lower_the_strength_by_the_retry_factor_then_deliver_the_engine_image`
+(`tests/ai_post.rs`) saw it and failed every time, on `main` too. The attempt
+now moves on in the same state as the words; the test passes, and fails again
+without the change.
+
+**For the verdict** ◆ (rule 11; the lead records them in *Judgement calls*): (1) which presets
+ship; (2) whether the passes may be sent (default off: only the image); (3) the
+default time limit and tries (120 s, 2) and the 30 s Retry-After cap — a render
+costs up to tiles × 4 attempts × tries calls; (4) the consent wording; (5)
+where the key lives in the browser (local storage, with the warning); (6) plain
+`http` only to this computer (a LAN service would need `https`).
+
 ## K1 · Scene type, interior lighting and interiors Doctor — **Sonnet** — done
 
 **What.** `scene.type ∈ {PRODUCT, INTERIOR, CATALOGUE}` in the store and in
@@ -14249,6 +14351,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3d** (drips and splashes through the air; the meter; the drops' part id). Accepted as it stands: ◆1, the drop in the air as a water sphere of its volume, without a streak (the engine has no shutter); ◆2, Atlas, Srivastava and Sekhon's terminal velocity with the linear rule below 0.6 mm and the quadratic drag, **but the wind must push the drops in the air: it goes to S3e**; ◆3, the splash at 30° with the reach decided in S3c; ◆4, the drip from an edge leaves at its sliding speed and the hanging one, from rest (**replaced in S3f**: a drop that reaches an open edge stops, hangs and lets go from rest); ◆5, the drop that reaches the studio floor is removed (the floor that gets wet is S3e) and the one that hits the back of a face goes through it; ◆6, `MAX_FALLING_DROPS` = 1024 and `MAX_FLIGHT_STEPS` = 2400 (10 s); ◆7, the meter's words, which counts only the parts that have something; ◆8, in the passes, a drop in the air carries the id of the part it came from. **Done in part in S3d**; the rest, S3e.
 - **X6** (the AI that shows and its stored preview). Accepted as it stands: ◆1, `MAX_STRENGTH` = 0.6 (an img2img strength of 0.3 at the default Intervention of 50, still well inside what keeps the geometry); ◆2, `BAND_GAIN_AT_100` = 2 for Light, Bounces, Wear and Style strength (none at 0, as made at 50, twice at 100, linear in between); ◆3, the caps stay (light 0.3, bounce 0.15, style 0.2, wear 0.15): the gains now make the controls visible and the caps keep them honest; ◆4, the six style grades and their amount of 2 × Style strength × Intervention, applied by the guard itself so they are the same with any model, and a quarter of it in the synthetic service; ◆5, the reference scene (the example bottle, closer and lower), the stored steps and the lookup rule (nearest step; the control moved last wins), with the example labelled as such; ◆6, the focus check skips in-focus pixels of wear materials: Wear's detail there is what Wear is allowed to do, and out-of-focus areas are still checked; ◆7, the test model's numbers, which only drive the stored example and the tests.
 - **S3f** (organic drops). Accepted as it stands: ◆1, the shape exaggeration (`PIN_STRETCH` 1, `SLIDE_STRETCH` 2, `SLIDE_TAPER` 0.45, `MAX_ASPECT` 4, `HANG_SAG` 0.6, the bulge without a gain): the running drop reads as a drop that runs, not as an ellipse, and the volume is kept; ◆2, the neck (`NECK_DEPTH` 0.5, profile (1−u²)²); ◆3, the hanging drop (`PINCH_TIMES` 3, `HANG_PINCH` 0.6, and Harkins–Brown's 60 % that falls); ◆4, `MERGE_TIMES` = 4 capillary times, so two drops visibly flow into one instead of jumping; ◆5, the rivulet (`RUN_REAR_SHARE` 0.8, `RUN_WIDTH` 0.2, `RUN_BEAD` 3, `RUN_RELAX_TIMES` 60, `COX_VOINOV_LOG` 12): a run on a steep face and none at 25°, as the strip shows; ◆6, every open edge holds the drop that reaches it, which hangs and lets go from rest, replacing S3d ◆4. **A drop that runs along a side edge** of a tilted plate, instead of stopping there, goes to **S3e** with the rest of the edges' behaviour.
+- **X7** (the AI through an API). Accepted as it stands: ◆1, both presets ship (Stability SD 3.5 image-to-image and OpenAI image edits), each written from the service's published OpenAPI document and marked *not verified* in the interface until a run against the live service confirms it; ◆2, the depth and edge passes stay off by default, so only the image leaves the computer unless the user asks; ◆3, 120 s per call, 2 tries and a 30 s cap on `Retry-After`: the cost of a render (tiles × attempts × tries) is bounded and the setting says each try may be charged; ◆4, the consent wording, asked in place under the switch, per host and revocable; ◆5, in the browser the key lives in local storage with the warning shown under it; ◆6, plain `http` only to this computer: a service on the local network needs `https`. Plain `http` to a private address, with its own warning, is left for a later phase if it is asked for.
 
 **1.9** (double bar in aintfilm's LUT carousel) belongs to another
 repository; the triage notes that Repackshot also draws the plugin's recipe

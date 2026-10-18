@@ -1888,6 +1888,20 @@ default, in the body of the window (`ui/panels/ai-post.ts`).
   *coming soon* while the version has no pipeline). In *Animation* it is
   disabled (*AI post-processing is for single images; for animations it is coming soon*). Manage models…
   and the default intervention from Settings, below.
+- **Through an API** (X7, `AI-POST.md` §8): with *Settings ▸ AI
+  post-processing ▸ Model by API ▸ Run the model ▸ Through an API*, the aux line
+  says *Through an API · <API> · <host>*; with the endpoint incomplete or no key
+  for its host, the switch opens *Settings* at that row (*The API endpoint is
+  not complete yet…*, *No API key is stored for this host yet…*), and *Manage
+  models…* becomes *API settings*. Turning the switch on for a host never
+  allowed asks first, **in place** under the switch (a `confirm` box, no
+  window): *Send renders to <host>? While the AI is on, each render, in tiles of
+  the image, leaves this computer for <host> (<API>) to be processed there.
+  Your projects and your key stay here.* — **Allow and send** (remembered for
+  that host, and the switch goes on) · **Not now** (it stays off; with the
+  switch already on, it goes off for the job). Until it is answered nothing is
+  sent, not even the preview. Captures: `docs/ui/ai-api-consent.png`,
+  `docs/ui/ai-api-section.png`.
 - **Runtime notice** (phase U10, `ui/panels/ai-runtime-notice.ts`):
   with a model installed and no inference runtime (or with its download
   paused, or with it not starting, or without Microsoft Visual C++ on Windows), a
@@ -2301,6 +2315,45 @@ unfolds below), *≈ 40 of the 77 tokens … reads* or *Too long for …:
 the end of this prompt is left out, after the scene’s description and the
 job’s prompt*. On desktop it goes in the data folder's `settings.json`, like
 all the settings (P3e). Capture: `docs/ui/settings-ai-prompt.png`.
+
+**AI post-processing ▸ Model by API** (X7, `AI-POST.md` §8,
+`ui/panels/settings-api.ts`), after *Active model*:
+
+- **Run the model**: *On this computer* · *Through an API* (`ai.source`, per
+  installation). Aux: *On this computer with the downloaded models, or through
+  an API chosen below. The guard checks every image either way, with the same
+  protections.*
+- **API**: a list, *Generic HTTP image-to-image*, *Stability AI · Stable
+  Diffusion 3.5*, *OpenAI · image edits*.
+- **Endpoint**: for a preset, its summary in the monospace style (*POST
+  https://api.stability.ai/v2beta/stable-image/generate/sd3 · Multipart form ·
+  image*), the note *Written from the service’s public API documentation and
+  not tried against the live service yet…* with a link to the documentation,
+  and for a service without strength or seed, the note that the guard limits
+  how much changes. For the generic endpoint, a form in two columns: *URL*,
+  *Method*, *Key header*, *Before the key*, *More headers* (one a line, *Name:
+  value*), *Body* (*JSON* · *Multipart form*), *Answer* (*JSON with the image* ·
+  *The image itself*), *Template* (monospace, with the list of placeholders
+  under it), *Image at*, *Longest side*, *Sides a multiple of*, *Fixed sizes*,
+  and *Start again from the example*. Under it, what is missing (one warning
+  line each: *Use https: plain http only reaches this computer*, *Unknown
+  placeholder: …*) or *Renders go to <host>*.
+- **API key**: *Stored for <host>: ••••7f3a* or *No key stored for <host>*, a
+  password field (*Paste the key*), **Save key** (the field empties at once) and
+  **Remove key**; the aux line says it is kept only on this computer and sent
+  only to its host; under it, where it is: *Stored in the data folder of this
+  computer, readable only by your user* (desktop) or *Stored in this browser’s
+  local storage for this site: anyone who uses this browser profile, or a page
+  of this site, can read it. Prefer a key you can revoke, with a spending limit.*
+  (web).
+- **Send the depth and edges too** (off), **Time limit of a call** (10–600 s,
+  120), **Tries of a call** (1–5, 2; the aux line says which failures try again
+  and that each try is a call the service may charge).
+- **Allowed hosts**: each host allowed with **Revoke**; *None yet: you are
+  asked before the first render is sent*; for the endpoint's own host when it is
+  not allowed, **Allow <host>…**, which asks the same question in place.
+
+Captures: `docs/ui/settings-ai-api.png`, `docs/ui/settings-ai-api-preset.png`.
 
 **AI post-processing ▸ Models**: the list of `src/data/ai-models.json`
 (the same models the installer offers) and the imported ones. Per row:

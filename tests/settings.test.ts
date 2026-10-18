@@ -46,6 +46,9 @@ function another(key: SettingKey): unknown {
   if (key === 'ai.active') return 'ZIMAGE_Q4';
   if (key === 'ai.gpu') return 1;
   if (key === 'ai.systemPrompt') return 'Clean studio product photograph.';
+  // X7: an endpoint of the person's, and one allowed host.
+  if (key === 'ai.apiEndpoint') return { ...(d as object), url: 'https://api.example.com/v1/img' };
+  if (key === 'ai.apiConsent') return ['api.example.com'];
   if (c.kind === 'choice') return c.options.find((o) => o !== d);
   if (c.kind === 'toggle') return !d;
   if (c.kind === 'number') return d === c.max ? c.min : c.max;

@@ -50,6 +50,7 @@ import type { UiState } from '../ui-state';
 import { formatDuration } from './render-window';
 import { infoRow, rowLabel, rowShell, settingRow } from './settings-rows';
 import { licenceDetails, MODEL_LICENCE_PATHS, type SettingsHooks } from './settings-sections';
+import { consentRow, endpointRow, keyRow } from './settings-api';
 
 const size = (bytes: number) => formatBytes(bytes, getLang());
 /** Why there is no model store, in words. */
@@ -872,7 +873,16 @@ function systemPromptRow(ctx: Ctx, scope: Scope): HTMLElement {
 }
 
 export const AI_HOOKS: SettingsHooks = {
-  rows: { 'ai.active': (ctx, scope) => activeRow(ctx, scope), 'ai.gpu': gpuRow, 'ai.runtime': (ctx, scope) => runtimeRow(ctx, scope), 'ai.systemPrompt': (ctx, scope) => systemPromptRow(ctx, scope) },
+  rows: {
+    'ai.active': (ctx, scope) => activeRow(ctx, scope),
+    'ai.gpu': gpuRow,
+    'ai.runtime': (ctx, scope) => runtimeRow(ctx, scope),
+    'ai.systemPrompt': (ctx, scope) => systemPromptRow(ctx, scope),
+    // X7: Model by API.
+    'ai.apiEndpoint': (ctx, scope) => endpointRow(ctx, scope),
+    'ai.apiKey': (ctx, scope) => keyRow(ctx, scope),
+    'ai.apiConsent': (ctx, scope) => consentRow(ctx, scope),
+  },
   blocks: { models: (ctx, scope) => modelsBlock(ctx, scope), hardware: (ctx, scope) => hardwareBlock(ctx, scope), guard: guardBlock },
   rowOptions: {},
   top: { ai: aiTop },

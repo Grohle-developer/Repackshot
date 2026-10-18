@@ -1818,6 +1818,25 @@ engine does none while nobody is looking); a waiting job says it
 has not started, and a finished one opens its result. The live view is interface
 state, not project state: it is neither saved nor undone.
 
+**The AI model through an API** (X7, `AI-POST.md` §8). Where the AI model runs
+is an application setting of this computer, not of the project:
+`ai.source` (`LOCAL` · `API`), `ai.apiProvider` (`GENERIC`, `STABILITY_SD3`,
+`OPENAI_EDIT`; stable keys), `ai.apiEndpoint` (the generic endpoint: URL,
+method, key header and prefix, more headers, body kind and template, answer
+kind and path, longest side, multiple, fixed sizes), `ai.apiSendPasses`
+(false), `ai.apiTimeout` (120 s), `ai.apiAttempts` (2) and `ai.apiConsent` (the
+hosts allowed). None of them holds a key: **the API key is stored apart, on
+this computer only** (the launcher's `<data>/ai/api-keys.json` on the desktop,
+the site's local storage on the web), one per host, sent only to that host,
+and never written in a `.repack`, the library, the settings document, a log or
+a message. A render goes to a host only after the person allowed that host
+(asked once, in place, revocable). The pipeline, its guard and its report are
+the same as with a local model; every result an API returns is guarded, and a
+rejected or failed one leaves the engine image as the result's own. A call
+that fails (a refused key, a rate limit, a time-out, an answer that is not an
+image or is far too large, a redirect) is tried again only when it can help,
+at most *Tries of a call* times, and then the AI step ends with the reason.
+
 **Passes, batches and ZIP** (N2). An image job can ask for, besides the
 image, the object **passes** that the engine renders with it (`RNDR.passes`,
 `ARCHITECTURE.md` §5.2): **alpha** (the objects' coverage from 0 to 1, with edges

@@ -12,11 +12,20 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **The preview is a stored example**: the reference scene rendered by the Full engine and passed through the guard with the test model at every step of every control, which changes as a slider moves without calling any model, says what it is and at which values it was made; *Preview my scene (Full engine)* runs the AI on the job's own scene, always drawn by the Full engine (X6).
 - **What the guard did, in plain words**: where its caps held Light, Bounces, Wear or the style's overall change back, how much of a material's colour change it kept, and which checks made it lower the strength; and under each control, what it acts on (X6).
 - Fixed: an AI model that changed nothing brightened the image by a hair (the guard's median of the overall change was half a histogram bin off); the focus check rejected the Wear a material in focus rightly took next to an out-of-focus floor (X6).
+- **The model through an API**, if you choose it: *Settings ▸ AI post-processing ▸ Model by API ▸ Run the model ▸ Through an API*, per installation. The render window's AI line says which is active (*Through an API · … · host*) (X7).
+- **A generic HTTP image-to-image endpoint**: URL, method, the key's header, more headers, a JSON or multipart template with placeholders for the image, the prompt, the negative prompt, the strength and the seed, and where the image is in the answer; the problems are listed until it can be used (X7).
+- **Two presets** written from the services' public API documentation and not yet tried against the live services: Stability AI Stable Diffusion 3.5 image-to-image and OpenAI image edits (X7).
+- **The API key stays on this computer**: in the desktop application's data folder (the launcher calls the API itself and the page never reads the key back) or in this browser's local storage, with a warning; shown masked, sent only to the host it was saved for, and never in a project, the library, the settings, a log or a message (X7).
+- **Consent before the first send**: turning the AI on with a host never allowed asks in place, *Allow and send* · *Not now*; remembered per host and revocable in *Allowed hosts*. Nothing is sent before, not even the preview (X7).
+- **The guard on every API result**, with the same protections and report as a local model; a rejected result keeps the engine image unchanged (X7).
+- **Failures worded and bounded**: a refused key, a rate limit, a time-out, a network or server failure, an answer that is not a PNG or is far too large, and a redirect each have their message in English and Spanish; only time-outs, rate limits, network and server failures try again, at most *Tries of a call* times (2), waiting what the service asks up to 30 s (X7).
+- **The size sent**: each tile at the service's longest side or fixed sizes, and its answer brought back to the tile's size (X7).
 
-### Engine
+### Engine and launcher
 
 - **`rt-post`**: the band gains (`BAND_GAIN_AT_100`), the styles' grades (`style.rs`), `MAX_STRENGTH` 0.6, the job's style (`RPJ2`; `RPJ1` still reads, as *Natural*), the report's `capped` and each material's `kept`, and a deterministic **test model** (`test_model.rs`) that `post.wasm` exports (`post_test_model`) and `rt-fake-sd` serves as its `model` image. `tests/fixtures/ai-guard.json` moves on purpose with the guard's new law (X6).
 - **`rt --ai-inputs <prefix>`** writes the linear image (`RPL1`) and the passes (`RPP1`) of a render, what the AI post-processing starts from (X6).
+- **`ModelBackend`** in `rt-app`: the desktop pipeline's model call goes through one interface, the local runtime as before and a remote API through the system's `curl` (key through standard input, no redirects); `/api/ai/apikeys` and `aiRemote: 1` in `/api/info` (X7).
 
 ### Tools
 

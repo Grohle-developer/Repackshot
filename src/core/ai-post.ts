@@ -53,7 +53,8 @@ export function aiFileName(name: string, variant = 1): string {
  * the interface does not know takes no text prompt (nothing of the job's own is sent) and has no known limit.
  */
 export function promptCaps(status: Pick<AiRuntimeStatus, 'backend'> | null, model: { textPrompt: boolean; maxPromptTokens: number | null } | null | undefined): PromptCaps {
-  if (status?.backend === 'SYNTHETIC') return { ...OPEN_PROMPT_CAPS };
+  // The synthetic service ignores words; a remote API (X7) reads the whole prompt (its own limits are thousands of characters).
+  if (status?.backend === 'SYNTHETIC' || status?.backend === 'API') return { ...OPEN_PROMPT_CAPS };
   if (!model) return { textPrompt: false, maxPromptTokens: null };
   return { textPrompt: model.textPrompt, maxPromptTokens: model.maxPromptTokens };
 }
@@ -87,7 +88,8 @@ export type SwitchAction = { kind: 'SWITCH' } | { kind: 'OPEN_SETTINGS' } | { ki
 
 export function switchAction(status: { available: boolean; reason?: AiUnavailableReason }, hasModel: boolean, needsModel: boolean): SwitchAction {
   if (!status.available) {
-    if (status.reason === 'NO_MODEL' || status.reason === 'NO_RUNTIME') return { kind: 'OPEN_SETTINGS' };
+    // X7: an API whose endpoint or key is missing is set up in Settings too.
+    if (status.reason === 'NO_MODEL' || status.reason === 'NO_RUNTIME' || status.reason === 'API_NOT_SET' || status.reason === 'NO_API_KEY') return { kind: 'OPEN_SETTINGS' };
     return { kind: 'DISABLED', reason: status.reason ?? 'NOT_BUILT' };
   }
   if (needsModel && !hasModel) return { kind: 'OPEN_SETTINGS' };

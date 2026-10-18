@@ -463,6 +463,8 @@ export interface UiState {
    * request of a job, never assumed; the model's loading included when it loaded then); null until measured.
    */
   aiThroughput: number | null;
+  /** X7: bumped when an API key is stored or forgotten, so what depends on whether one is stored asks again. */
+  aiApiKeys: number;
   queueRun: QueueRun;
   /** The application settings (core/settings.ts): not the project's, not undone. */
   settings: Settings;
@@ -630,6 +632,7 @@ export function defaultUiState(): UiState {
     video: null,
     noiseEstimate: null,
     aiThroughput: null,
+    aiApiKeys: 0,
     queueRun: 'IDLE',
     settings: defaultSettings(),
     settingsWindow: null,

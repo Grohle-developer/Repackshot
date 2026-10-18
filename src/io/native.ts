@@ -80,6 +80,8 @@ export interface NativeInfo {
   aiApi?: number;
   /** The AI post-processing pipeline of rt-app/src/ai/post.rs (`/api/ai/post`, X3c): its version, when there is one. */
   aiPost?: number;
+  /** X7: the launcher calls a remote API in place of the local runtime and keeps its keys (`/api/ai/apikeys`), version 1. */
+  aiRemote?: number;
   /** Updating from inside the application (`/api/update/*`, rt-app/src/update/, P5): its version, when there is one. */
   updateApi?: number;
   /** This launcher was started by an update (`--after-update`): the page says so once. */

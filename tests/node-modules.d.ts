@@ -58,3 +58,24 @@ declare module 'node:zlib' {
 declare module 'node:crypto' {
   export function createHash(algorithm: 'sha256'): { update(data: Uint8Array | string): { digest(encoding: 'hex'): string } };
 }
+// X7: tests/ai-remote.test.ts serves a fake image-to-image API on 127.0.0.1.
+declare module 'node:http' {
+  export interface IncomingMessage {
+    method?: string;
+    url?: string;
+    headers: Record<string, string | string[] | undefined>;
+    on(event: 'data', fn: (chunk: Uint8Array) => void): this;
+    on(event: 'end', fn: () => void): this;
+  }
+  export interface ServerResponse {
+    writeHead(status: number, headers?: Record<string, string>): this;
+    write(chunk: Uint8Array | string): boolean;
+    end(chunk?: Uint8Array | string): this;
+  }
+  export interface Server {
+    listen(port: number, host: string, cb: () => void): this;
+    address(): { port: number } | string | null;
+    close(): this;
+  }
+  export function createServer(handler: (req: IncomingMessage, res: ServerResponse) => void): Server;
+}

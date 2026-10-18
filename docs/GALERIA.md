@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 168 files: 166 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 172 files: 170 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,11 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 61 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 62 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI section's stored example and the preview of the job's own scene with the Full engine (X6), which re-records, without changing place, `ai-section-dark.png`, `ai-section-light.png` and `ai-section-prompt.png` (X4, X4b); organic drops (S3f).
+Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI section's stored example and the preview of the job's own scene with the Full engine (X6), which re-records, without changing place, `ai-section-dark.png`, `ai-section-light.png` and `ai-section-prompt.png` (X4, X4b); organic drops (S3f); the AI model through an API (X7).
 
 #### S3d · What remains of drops and dust on the parts (simulation)
 
@@ -51,6 +51,20 @@ Drips and splashes that fall through the air, and the meter that says what is on
 
 <a id="c-rain-organic"></a><img src="ui/rain-organic.png" width="480" alt="Six frames of a dark pane with water drops, at 0, 0.25, 0.5, 0.75, 1 and 1.25 s: a drop near the top slides down through smaller pinned drops, the path above it left clean, growing and getting longer with a rounder head as it speeds up; in the last frame a line of small beads runs down the pane where it passed."><br>
 `rain-organic.png` · `540471b` · The S3f parity scene (`rt_phys::example::s3f_organic_scene_at`) rendered by the native engine at 0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the pane: a drop past its critical size slides down a vertical pane through smaller pinned drops, gathers those on its path (the path above it is clean), grows and runs faster, stretched along its motion with a rounder head (S3f ◆1), and once fast enough leaves the beads of a rivulet (◆5), which the last frame shows above it. `tools/s3f-strip.mjs`.
+
+#### X7 · The AI through an API
+
+<a id="c-settings-ai-api"></a><img src="ui/settings-ai-api.png" width="480" alt="Settings, AI post-processing, the Model by API block: Run the model set to Through an API, the generic HTTP endpoint's form with a local test URL, the template with its placeholders, Renders go to the host, the API key stored and shown masked with the browser's warning, the passes off, the time limit, the tries and the allowed hosts."><br>
+`settings-ai-api.png` · `653b05a` · *Settings ▸ AI post-processing ▸ Model by API* with *Run the model ▸ Through an API* and the generic HTTP image-to-image endpoint pointed at a local test service: the form (URL, method, key header, template with its placeholders, where the image is in the answer, the sizes), *Renders go to 127.0.0.1:…*, the key stored and shown masked (*••••7f3a*) with the web's warning about local storage, *Send the depth and edges too* off, the time limit, the tries and *Allowed hosts*. `tools/ai-api-check.mjs`.
+
+<a id="c-settings-ai-api-preset"></a><img src="ui/settings-ai-api-preset.png" width="480" alt="The same block with the Stability AI preset: the endpoint's summary, the note that it was written from the public API documentation and not tried against the live service, and no key stored yet."><br>
+`settings-ai-api-preset.png` · `653b05a` · The same block with the *Stability AI · Stable Diffusion 3.5* preset: the endpoint's summary in monospace, the note that it was written from the service's public API documentation and not tried against the live service, and no key stored yet for *api.stability.ai*. `tools/ai-api-check.mjs`.
+
+<a id="c-ai-api-consent"></a><img src="ui/ai-api-consent.png" width="480" alt="The render window's AI post-processing section through an API: the switch off, the line Through an API, Generic HTTP image-to-image and the host, and under it the question asked in place before anything is sent, Send renders to the host?, with Allow and send and Not now."><br>
+`ai-api-consent.png` · `653b05a` · The render window's *AI post-processing* through an API: turning the switch on for a host never allowed asks first, in place under it and not in a window (*Send renders to 127.0.0.1:…? While the AI is on, each render, in tiles of the image, leaves this computer…*), with *Allow and send* and *Not now*; nothing has been sent yet. `tools/ai-api-check.mjs`.
+
+<a id="c-ai-api-section"></a><img src="ui/ai-api-section.png" width="480" alt="The same section after Allow and send: the switch on with the line Through an API, the six controls, the protections, and the preview made through the API with the divider and the guard's report Checked: geometry, materials, resolution, focus."><br>
+`ai-api-section.png` · `653b05a` · After *Allow and send*: the preview went through the test service and the guard, with the same report line as a local model (*Checked: geometry ✓ · materials ✓ · resolution ✓ · focus ✓*). `tools/ai-api-check.mjs`.
 
 ### v0.1.21 · 2026-10-18
 
@@ -922,6 +936,10 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`ai-x6-style.png`](#c-ai-x6-style) · Unreleased · X6
 - [`ai-x6-mine.png`](#c-ai-x6-mine) · Unreleased · X6
 - [`ai-x6-example-es.png`](#c-ai-x6-example-es) · Unreleased · X6
+- [`settings-ai-api.png`](#c-settings-ai-api) · Unreleased · X7
+- [`settings-ai-api-preset.png`](#c-settings-ai-api-preset) · Unreleased · X7
+- [`ai-api-consent.png`](#c-ai-api-consent) · Unreleased · X7
+- [`ai-api-section.png`](#c-ai-api-section) · Unreleased · X7
 - [`ai-section-prompt.png`](#c-ai-section-prompt) · v0.1.5 · X4b
 - [`ai-results-variants.png`](#c-ai-results-variants) · v0.1.5 · X4b
 - [`settings-ai-prompt.png`](#c-settings-ai-prompt) · v0.1.5 · X4b

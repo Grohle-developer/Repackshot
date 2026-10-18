@@ -701,6 +701,15 @@ export interface LensPort {
 /** O2c: what the engine says of a camera's traced lens: its numbers, its refusal and why, or nothing (no engine here). */
 export type LensCheck = { state: 'ready'; info: EngineLensInfo } | { state: 'refused'; reason: string } | { state: 'none' };
 
+/** X7: where the API keys are kept (io/api-keys.ts). */
+export interface ApiKeysPort {
+  readonly where: 'LAUNCHER' | 'BROWSER';
+  list(): Promise<{ host: string; masked: string }[]>;
+  has(host: string): Promise<boolean>;
+  save(host: string, key: string): Promise<void>;
+  forget(host: string): Promise<void>;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -739,6 +748,11 @@ export interface AppServices {
   models: ModelsService | null;
   /** The desktop launcher's inference runtime (X3b, src/io/ai-runtime.ts); absent or null elsewhere. */
   aiRuntime?: AiRuntimePort | null;
+  /**
+   * X7: the API keys of this computer (the launcher's data folder, or this browser's local storage): stored and
+   * forgotten here, listed masked, never read back by the interface. Null where the model cannot run through an API.
+   */
+  apiKeys?: ApiKeysPort | null;
   /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
   hardware(again?: boolean): Promise<HardwareInfo>;
   storage: StoragePort;

@@ -169,9 +169,12 @@ export type AiUnavailableReason =
   | 'MODEL_UNSUPPORTED' // the active model is not one the installed runtime loads
   | 'NO_WEBGPU' // web: no WebGPU adapter
   | 'TOO_LITTLE_MEMORY' // the active model does not fit
-  | 'NOT_BUILT'; // this build has no pipeline yet (the web before X3d)
+  | 'NOT_BUILT' // this build has no pipeline yet (the web before X3d)
+  | 'API_NOT_SET' // X7: the model runs through an API whose endpoint is not complete yet
+  | 'NO_API_KEY'; // X7: the API takes a key and none is stored for its host on this computer
 
-export type AiBackend = 'VULKAN' | 'CPU' | 'WEBGPU' | 'SYNTHETIC';
+/** What runs the model. X7: `API`, a remote service (Settings ▸ AI post-processing ▸ Model by API). */
+export type AiBackend = 'VULKAN' | 'CPU' | 'WEBGPU' | 'SYNTHETIC' | 'API';
 
 export interface AiRuntimeStatus {
   available: boolean;
