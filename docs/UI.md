@@ -771,9 +771,9 @@ except the two that build things: *Create studio* and *Render*.
    drops (the engine's outline, turned about its axis and stretched to its
    length) and a mix with each shape its own (the shape of each particle is
    given by the engine, `rt_particles_shapes`).
-   ![a rain of drops in Fast](ambient-drops.png)
-   ![the mix of shapes](ambient-mix.png)
-   ![the shape among the visible controls, with Advanced collapsed](ambient-shape.png)
+   ![a rain of drops in Fast](ui/ambient-drops.png)
+   ![the mix of shapes](ui/ambient-mix.png)
+   ![the shape among the visible controls, with Advanced collapsed](ui/ambient-shape.png)
 5. **Section** (phase Q1) — The section view (`SPEC.md` §3.1): a plane
    that removes one side of the part and caps the cut. It is **collapsed** by default,
    with the **switch in the header** (the first time it is switched on it makes a plane
@@ -894,7 +894,7 @@ except the two that build things: *Create studio* and *Render*.
    · 28 mm · 35 mm*, the active one marked. Everything is one undo entry; with
    the camera locked, disabled. The viewport's views gain *Elevation* and
    *Plan* (orthographic).
-   ![straight verticals](k3-verticals.png)
+   ![straight verticals](ui/k3-verticals.png)
    Below (O1, `src/ui/panels/insp-lens.ts`), the dropdowns of the optics:
    - **Lens** (open; O2, `src/ui/panels/insp-traced.ts`): *Lens model*
      (*Simple lens · Traced lens*; O4: the *thin lens* is now called
@@ -960,9 +960,9 @@ except the two that build things: *Create studio* and *Render*.
      apply** (they belong to the simple lens, O4). Each change is one
      undo entry (*Camera: Lens model*, *Camera: Lens*, *Camera:
      Coating*…).
-     ![lens editor](lens-editor.png)
-     ![what the engine computes](lens-section.png)
-     ![more options of the traced lens](o4-traced-more.png)
+     ![lens editor](ui/lens-editor.png)
+     ![what the engine computes](ui/lens-section.png)
+     ![more options of the traced lens](ui/o4-traced-more.png)
 
      **Elements window** (O2b, `src/ui/components/lens-peek.ts`,
      the logic in `src/ui/lens-peek.ts`): when the pointer rests for a moment
@@ -992,8 +992,8 @@ except the two that build things: *Create studio* and *Render*.
      go through it), it is linked to the entry with `aria-describedby`
      and does not leave the browser window (on a short screen it is
      clipped).
-     ![window of a lens in the list](lens-hover.png)
-     ![window of the lenses of a character](lens-hover-chip.png)
+     ![window of a lens in the list](ui/lens-hover.png)
+     ![window of the lenses of a character](ui/lens-hover-chip.png)
    - **Bokeh** (open; **only with the simple lens**, O4: with a traced
      lens it does not appear): a 4-column grid with the 17 types of the simple
      lens from `src/data/bokeh.json`, each with its **thumbnail rendered by
@@ -1016,7 +1016,7 @@ except the two that build things: *Create studio* and *Render*.
      control by hand unmarks the type and the note says *Custom*. *Plain
      disc* removes all the optics (the usual simple lens). Each
      choice is one undo entry (*Camera: Bokeh type*).
-     ![bokeh](camera-bokeh.png)
+     ![bokeh](ui/camera-bokeh.png)
    - **Advanced optics** (closed; **only with the simple lens**, O4):
      *Blades* (0 is *Round iris*,
      from 3 to 18), *Roundness*, *Rotation*, *Profile* and its *Intensity*,
@@ -1027,7 +1027,7 @@ except the two that build things: *Create studio* and *Render*.
      **Tilt and shift** block and under the
      **NOT PHYSICAL** mark *Chromatic aberration* and *Swirl*. A note reminds
      that all this shows in Full mode and in the render.
-     ![advanced optics](camera-optics.png)
+     ![advanced optics](ui/camera-optics.png)
 
      **Tilt and shift** (O4, `src/ui/panels/insp-tilt.ts`; the
      same block in the simple lens's *Advanced optics* and in the traced lens's *More
@@ -1066,8 +1066,8 @@ except the two that build things: *Create studio* and *Render*.
      Fast mode does not blur: the plane appears in the viewport while it is set and
      Full mode and the render focus on it. Each change is one undo entry
      (one drag of the slider or of the dial, a single one).
-     ![advanced optics of the simple lens](o4-simple-optics.png)
-     ![the plane of focus in the viewport](o4-tilt-overlay.png)
+     ![advanced optics of the simple lens](ui/o4-simple-optics.png)
+     ![the plane of focus in the viewport](ui/o4-tilt-overlay.png)
    - **Filters** (closed if the camera has none; O3a): the stack of
      effect filters in front of the lens, up to three, in order. With
      none it says *No filters*. **Add filter** puts a *Black diffusion*
@@ -1082,7 +1082,7 @@ except the two that build things: *Create studio* and *Render*.
      mode and the render trace them and that Fast draws an
      approximation; with filters, the Fast mode meter adds
      *Filters: approximation, the render is the engine’s*.
-     ![filters](lens-filters.png)
+     ![filters](ui/lens-filters.png)
      Below the stack, **Front glass** (S3; the subsection opens
      also if it is on): a switch *Front glass on*
      and, when on, *Drops* (%, the part of the glass they cover; those that
@@ -1122,8 +1122,8 @@ except the two that build things: *Create studio* and *Render*.
      that feeds it and a camera that is not panoramic), a note says so:
      *the render will show this glass clean*; *By hand*, it does not (that one is drawn by
      any engine).
-     ![the wet front glass in Full](lens-glass.png)
-     ![the glass approximation in Fast](lens-glass-fast.png)
+     ![the wet front glass in Full](ui/lens-glass.png)
+     ![the glass approximation in Fast](ui/lens-glass-fast.png)
 7. **Image** — Exposure (EV), view transform (Standard /
    Filmic / AgX), glow, sharpen, saturation, contrast, vignette. All with
    slider and value.
@@ -1542,7 +1542,7 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   **Simulation** clip of the *Camera* (*gets the rain and dust of the scene on its front glass, as
   simulated · 4 s*), in the same undo
   entry; *Reset* removes it too.
-  ![the rain on the glass, paused](physics-rain.png)
+  ![the rain on the glass, paused](ui/physics-rain.png)
 - **The parts** (S3c). With some effect *On the parts*, *Start* wets,
   dusts and snows the visible parts that the simulation does not move (the
   *Dynamic* ones not: they would be wet where they were), with the bodies or alone;
@@ -1563,8 +1563,8 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   air*, *Dust on 3 parts*, or *Nothing on the parts yet* before anything
   settles; *Full* and the render, with an engine that has bit 8 (the drops in the
   air, with bit 9).
-  ![the rain on the parts, paused](physics-rain-set.png)
-  ![the drops in the air, paused](physics-rain-air.png)
+  ![the rain on the parts, paused](ui/physics-rain-set.png)
+  ![the drops in the air, paused](ui/physics-rain-air.png)
 
 Captures (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (the bar
 paused, in the middle of a fall), `docs/ui/physics-drop.png` (three
@@ -2389,7 +2389,7 @@ size between sessions; a double click on the bar centres it again.
 `Esc` (with nothing selected) or the × close it. Achromatic like all the
 chrome: colour is only in the node spheres, the material's,
 the colours of values and the ramps' bar, which are content.
-![material editor](material-nodes.png)
+![material editor](ui/material-nodes.png)
 
 **Title bar**: *Material editor*, the name of the material,
 **Simple · Nodes** (as in the inspector, with the same question on returning
@@ -2464,8 +2464,8 @@ a source from the point with which (*The surface’s normal*, *The mesh’s UVs*
 coordinates (per 100 mm)*, *The point on the part (mm)*); *Duplicate* and
 *Delete*. With several nodes, *N nodes selected* and the two buttons;
 with none, a note on how to use it.
-![the bottle with the marble in Fast](material-nodes-preview.png)
-![the editor with the Wood node from the oak example](material-nodes-wood.png)
+![the bottle with the marble in Fast](ui/material-nodes-preview.png)
+![the editor with the Wood node from the oak example](ui/material-nodes-wood.png)
 
 **Footer**: *N nodes · M links · program of K instructions, F + V
 registers* (what the compiler says), or why it does not compile (*The graph
