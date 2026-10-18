@@ -22,6 +22,8 @@
 //          falling rain hidden from the camera, so the parts read;
 //   set    the same under a dust cloud's density without wind, on the parts, at 0, 30 and 120 s;
 //   snow   the same under Snow on the parts, at 0, 10 and 30 s.
+// S3d: each shot of the parts also carries the drops the frame has in the air (drips and splashes falling: the WETF
+// section), and says how many.
 //
 // Optional: REPACKSHOT_RAIN_DUST_SIZE (WxH, default 512x288), REPACKSHOT_RAIN_DUST_SPP (default 64).
 
@@ -80,8 +82,8 @@ interface Shot {
   dropCover: number;
   dustCover: number;
   samples: number;
-  /** S3c: the drops on the parts and the drips so far, the parts' samples wet, dusty, snowy (share of their samples). */
-  parts?: { drops: number; drips: number; wet: number; dust: number; snow: number };
+  /** S3c: the drops on the parts and the drips so far, the parts' samples wet, dusty, snowy (share of their samples). S3d: the drops in the air. */
+  parts?: { drops: number; drips: number; wet: number; dust: number; snow: number; falling: number };
 }
 
 describe.skipIf(!dir)('the rain and dust sheet: its scenes', () => {
@@ -92,7 +94,7 @@ describe.skipIf(!dir)('the rain and dust sheet: its scenes', () => {
     const rt = instance.exports;
     if (!hasWetExports(rt) || !hasGlassExports(rt)) throw new Error('this rt.wasm has no front glass (npm run engine:build)');
     const shots: Shot[] = [];
-    const view = { width, height, maxSamples: spp, maxSeconds: 0, drops: true, glassLayout: true, wetParts: true };
+    const view = { width, height, maxSamples: spp, maxSeconds: 0, drops: true, glassLayout: true, wetParts: true, wetFlight: true };
     if (!hasPartsExports(rt)) throw new Error('this rt.wasm does not wet the parts (npm run engine:build)');
 
     /** Simulates the glass of `s` for `seconds` at `fps`, records it into its clip, writes a shot at each of `times`. */
@@ -168,7 +170,7 @@ describe.skipIf(!dir)('the rain and dust sheet: its scenes', () => {
             for (let c = 0; c < 3; c++) if (p.values[i + c] > 0) share[c]++;
           }
         }
-        shots.push({ file, row, label: `${label}, ${t} s`, t, drops: 0, motes: 0, dropCover: 0, dustCover: 0, samples: spp, parts: { drops: fr.drops, drips: fr.drips, wet: share[0] / n, dust: share[1] / n, snow: share[2] / n } });
+        shots.push({ file, row, label: `${label}, ${t} s`, t, drops: 0, motes: 0, dropCover: 0, dustCover: 0, samples: spp, parts: { drops: fr.drops, drips: fr.drips, wet: share[0] / n, dust: share[1] / n, snow: share[2] / n, falling: fr.falling.length } });
       }
     };
     const bottle = apply(framed(), { type: 'studio/setPreset', key: 'PERFUME' }, { type: 'studio/build' });

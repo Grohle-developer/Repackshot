@@ -13,7 +13,7 @@
 //            the warning goes.
 //   rain     the example bottle under Rain switched On the parts (one undo entry), with a wind: ▶ Start in the physics
 //            bar wets the parts alone, the bar counts the engine's drops and drips, the Fast viewport draws the recorded
-//            frame (its meter says how many drops on how many parts, and its pixels change); paused a few seconds in for
+//            frame (its meter says the rain, on how many parts, and how many drops: S3d's words; its pixels change); paused a few seconds in for
 //            the screenshot physics-rain-set.png; Stop is one undo entry, Reset takes the recording away and Undo brings it
 //            back.
 //   parts    the example with Rain switched On the parts: with the real rt.wasm (bit 8) no note; with one patched without
@@ -404,8 +404,8 @@ async function rainCheck(browser) {
   log.paused = await bar(page);
   ok(/Parts: [1-9][\d,]* drops · [\d,]+ drips/.test(log.paused.parts), `the bar does not count the drops on the parts: ${JSON.stringify(log.paused)}`, f);
   await page.mouse.move(5, 500);
-  log.meter = await meterSays(page, /Rain on the parts: [1-9][\d,]* drops on [1-9]\d* parts/);
-  ok(/Rain on the parts: [1-9]/.test(log.meter ?? ''), `the Fast viewport does not draw the recorded parts: ${log.meter}`, f);
+  log.meter = await meterSays(page, /Rain on [1-9]\d* parts: [1-9][\d,]* drops/);
+  ok(/Rain on [1-9]\d* parts: [1-9]/.test(log.meter ?? ''), `the Fast viewport does not draw the recorded parts: ${log.meter}`, f);
   await settle(page, 1500);
   const after = await viewportPixels(page);
   log.pixelsChanged = changed(before, after);
@@ -418,11 +418,11 @@ async function rainCheck(browser) {
   await page.click('[data-action="phys.reset"]');
   await settle(page, 600);
   log.meterAfterReset = await engineMeter(page);
-  ok(!/Rain on the parts/.test(log.meterAfterReset ?? ''), `Reset did not take the recording away: ${log.meterAfterReset}`, f);
+  ok(!/Rain on [1-9]/.test(log.meterAfterReset ?? ''), `Reset did not take the recording away: ${log.meterAfterReset}`, f);
   await page.locator('canvas[aria-label="viewport"]').focus();
   await page.keyboard.press('Control+z');
-  log.meterAfterUndo = await meterSays(page, /Rain on the parts/);
-  ok(/Rain on the parts/.test(log.meterAfterUndo ?? ''), `Undo did not bring the recording back: ${log.meterAfterUndo}`, f);
+  log.meterAfterUndo = await meterSays(page, /Rain on [1-9]/);
+  ok(/Rain on [1-9]/.test(log.meterAfterUndo ?? ''), `Undo did not bring the recording back: ${log.meterAfterUndo}`, f);
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
   await context.close();
   results.rain = { ok: f.length === 0, failures: f, ...log };
