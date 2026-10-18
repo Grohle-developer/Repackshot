@@ -1,700 +1,698 @@
-# Post-procesado IA — decisión, protecciones e interfaz
+# AI post-processing — decision, protections and interface
 
-Un paso **opcional** después del render: un modelo de imagen de pesos
-abiertos, ejecutado en el equipo del usuario, mejora la imagen (luz más
-natural, rebotes, desgaste y microdetalle, o un estilo) **sin cambiar
-nunca la geometría, los materiales, la resolución, la profundidad de
-campo, el encuadre ni nada que no se haya pedido**. El usuario decide
-cuánto interviene el modelo con controles sencillos, lo ve antes en una
-vista previa, y al terminar tiene las dos imágenes —la del motor y la de
-la IA— para compararlas con un divisor deslizable. Fases **X1–X5** en
-`ROADMAP.md`. Investigación de modelos y motores de ejecución con fuentes
-a fecha 2026-10-13; las licencias se vuelven a verificar en X1 antes de
-publicar nada.
-
----
-
-## 1 · Principios
-
-1. **El render del motor es la verdad.** La IA es un acabado opcional y
-   nunca sustituye al motor: la imagen del motor se guarda siempre, y el
-   post-procesado se puede apagar, rehacer o descartar.
-2. **Nada que no se pida.** Cada aspecto que la IA puede tocar tiene su
-   control, y a 0 ese aspecto no cambia. Lo demás está **protegido** y no
-   se puede desproteger desde la interfaz normal: geometría, materiales
-   (color y acabado), resolución, profundidad de campo, encuadre, texto y
-   logotipos.
-3. **Las protecciones no dependen del modelo.** No se confía en que un
-   modelo generativo "obedezca": la imagen que sale del modelo pasa por
-   una **guarda determinista** (§3) que solo deja pasar los cambios
-   permitidos y comprueba el resultado con números. Cambiar de modelo no
-   afloja ninguna protección.
-4. **Local y privado.** Todo se ejecuta en el equipo; la imagen no sale
-   de él. Nada se sube a ningún servidor.
-5. **Honestidad.** Si el equipo no puede ejecutar el modelo, el
-   interruptor aparece deshabilitado con el motivo. Si la guarda tuvo que
-   limitar la intervención para respetar las protecciones, se dice cuánto.
+An **optional** step after the render: an open-weights image model, run on
+the user's own machine, improves the image (more natural light, bounces,
+wear and micro-detail, or a style) **without ever changing the geometry,
+the materials, the resolution, the depth of field, the framing or anything
+that was not asked for**. The user decides how much the model intervenes with
+simple controls, sees it first in a preview, and when it finishes has both
+images —the engine's and the AI's— to compare with a sliding divider. Phases
+**X1–X5** in `ROADMAP.md`. Research on models and execution engines with
+sources as of 2026-10-13; the licences are verified again in X1 before
+anything is published.
 
 ---
 
-## 2 · El modelo y dónde se ejecuta
+## 1 · Principles
 
-### 2.1 · Modelo por defecto: Z-Image-Turbo
+1. **The engine's render is the truth.** The AI is an optional finish and
+   never replaces the engine: the engine image is always kept, and
+   post-processing can be turned off, redone or discarded.
+2. **Nothing that is not asked for.** Every aspect the AI may touch has its
+   own control, and at 0 that aspect does not change. The rest is
+   **protected** and cannot be unprotected from the normal interface:
+   geometry, materials (colour and finish), resolution, depth of field,
+   framing, text and logos.
+3. **The protections do not depend on the model.** There is no trust that a
+   generative model will "obey": the image that comes out of the model goes through
+   a **deterministic guard** (§3) that lets only the permitted changes through
+   and checks the result with numbers. Changing the model does not
+   loosen any protection.
+4. **Local and private.** Everything runs on the machine; the image does not leave
+   it. Nothing is uploaded to any server.
+5. **Honesty.** If the machine cannot run the model, the
+   switch appears disabled with the reason. If the guard had to
+   limit the intervention to respect the protections, it says by how much.
 
-**Decisión provisional, a confirmar en X1** con una comparación visual
-propia (no hay ninguna prueba pública que mida "mejorar un render sin
-cambiar su estructura"):
+---
+
+## 2 · The model and where it runs
+
+### 2.1 · Default model: Z-Image-Turbo
+
+**Provisional decision, to be confirmed in X1** with an own visual
+comparison (there is no public test that measures "improving a render without
+changing its structure"):
 
 | | |
 | --- | --- |
-| Modelo | **Z-Image-Turbo** (Tongyi-MAI), transformador de difusión de 6,15 B parámetros con codificador Qwen3-4B, noviembre de 2025 |
-| Licencia | **Apache-2.0** en modelo, codificador y ControlNet: uso comercial y redistribución permitidos, así que no limita cómo distribuye el autor el producto (ni siquiera si lo vende) |
-| Por qué | Entre los modelos pequeños con licencia permisiva es el único que tiene a la vez *img2img* nativo con `strength` (la intervención se controla con un número) y **ControlNet de la misma licencia** (profundidad, bordes, *tile* hasta 2048²); el mejor de los Apache en las clasificaciones públicas de texto a imagen; versión ONNX cuantizada publicada para el navegador |
-| Cuantización | Escritorio: GGUF Q8_0 (6,6 GB) con ≥ 12 GB de VRAM, Q4_0 (3,7 GB) con 6–8 GB; codificador Q4_K_M (2,5 GB). Navegador: ONNX q4f16 (≈ 6 GB en total) |
-| Velocidad orientativa | Segundos por imagen de 1024² en una GPU de gama media-alta; *img2img* a intervención baja ejecuta solo una fracción de los pasos. Cifras sin verificar: se miden en X1 |
+| Model | **Z-Image-Turbo** (Tongyi-MAI), a 6.15 B-parameter diffusion transformer with a Qwen3-4B encoder, November 2025 |
+| Licence | **Apache-2.0** on model, encoder and ControlNet: commercial use and redistribution allowed, so it does not limit how the author distributes the product (not even if it is sold) |
+| Why | Among the small models with a permissive licence it is the only one that has both native *img2img* with `strength` (the intervention is controlled with a number) and a **ControlNet under the same licence** (depth, edges, *tile* up to 2048²); the best of the Apache ones in the public text-to-image rankings; a quantized ONNX version published for the browser |
+| Quantization | Desktop: GGUF Q8_0 (6.6 GB) with ≥ 12 GB of VRAM, Q4_0 (3.7 GB) with 6–8 GB; encoder Q4_K_M (2.5 GB). Browser: ONNX q4f16 (≈ 6 GB in total) |
+| Indicative speed | Seconds per 1024² image on a mid-to-high-end GPU; *img2img* at low intervention runs only a fraction of the steps. Unverified figures: they are measured in X1 |
 
-**Alternativas**, que el usuario puede descargar desde Ajustes:
-**FLUX.2 [klein] 4B** (Apache-2.0; más ligero, bueno en ediciones por
-instrucción, sin `strength` ni ControlNet oficial) y, solo en
-escritorio, **Qwen-Image-Edit-2511** (20 B, Apache-2.0; edición
-"profesional" con LoRA de iluminación, ≈ 18 GB cuantizado).
+**Alternatives**, which the user can download from Settings:
+**FLUX.2 [klein] 4B** (Apache-2.0; lighter, good at instruction-based
+edits, no `strength` or official ControlNet) and, on desktop only,
+**Qwen-Image-Edit-2511** (20 B, Apache-2.0; "professional" editing
+with a lighting LoRA, ≈ 18 GB quantized).
 
-**No pueden ser modelo por defecto** porque su licencia prohíbe el uso
-comercial o la redistribución de los pesos: Qwen-Image-2.1 (el mejor en
-las clasificaciones abiertas, licencia de investigación), FLUX.1
-Kontext/Krea/dev, FLUX.2 dev y klein 9B, SD-Turbo y SDXL-Turbo, IC-Light
-V2, SD 3.5 (tope de ingresos). Un usuario puede importarlos por su cuenta
-(§5): quedan marcados *no apto para uso comercial* y la licencia es
-suya.
+**They cannot be the default model** because their licence forbids commercial
+use or redistribution of the weights: Qwen-Image-2.1 (the best in
+the open rankings, research licence), FLUX.1
+Kontext/Krea/dev, FLUX.2 dev and klein 9B, SD-Turbo and SDXL-Turbo, IC-Light
+V2, SD 3.5 (revenue cap). A user can import them on their own
+(§5): they are marked *not for commercial use* and the licence is
+theirs.
 
-### 2.2 · El instalador elige el modelo, con una recomendación por equipo
+### 2.2 · The installer chooses the model, with a recommendation per machine
 
-Los pesos ocupan varios GB, así que **no van en el repositorio ni en la
-página web**: el repositorio no contiene pesos. El modelo **se elige al
-instalar**:
+The weights take up several GB, so they **do not go in the repository or on the
+web page**: the repository contains no weights. The model **is chosen
+at install time**:
 
-- **Instalador de escritorio (P2)**: un paso *Modelos de IA* muestra la
-  lista recomendada de §2.4, **detecta el equipo** (GPU y su VRAM, o la
-  RAM si se elige ejecutar en CPU) y **marca uno como *Recomendado para
-  tu equipo***. El usuario puede elegir ese, otro, varios o **ninguno**
-  (instalar sin IA). Cada fila dice tamaño de descarga, licencia, calidad
-  esperada y velocidad orientativa; la licencia se muestra antes de
-  descargar. La detección y la recomendación las hace el propio lanzador
-  de la aplicación (`repackshot --hardware`), con los mismos datos y la
-  misma regla que la interfaz, así que el instalador y *Ajustes*
-  recomiendan siempre lo mismo.
-- **El motor de ejecución va con los modelos** (fase U10). Con cualquier
-  modelo elegido, el mismo paso marca también **el motor de ejecución**
-  que le hace falta para ejecutarlo (*Motor de ejecución de los modelos:
-  compilación Vulkan, para la tarjeta gráfica · 29 MB — Recomendado para tu
-  equipo*): la compilación de `src/data/ai-runtimes.json` que elige la
-  regla de §7.1 para este sistema (Vulkan con una GPU que usar, CPU sin
-  ella; con *Ejecutar en el procesador* elegido, la de CPU), con la misma
-  entrada y los mismos datos que usa la aplicación (`repackshot --hardware`
-  escribe una sección `[runtime]` con su clave y su tamaño). Se marca sola
-  al elegir el primer modelo, **se puede desmarcar**, se deshabilita
-  mientras no haya modelo, y no se anota nunca sin modelos. La casilla va
-  a `pending-models.json` como `"runtime": "SDCPP_WIN_VULKAN"`
-  (`{"device": "gpu", "keys": [...], "runtime": "..."}`), y **el propio
-  lanzador la descarga en el primer arranque** (los modelos los empieza la
-  página): con progreso, pausa y `sha256`, en *Ajustes ▸ Post-procesado IA ▸
-  Motor de ejecución*. El *Ejecutar en* del instalador pasa a ser el de
-  *Ajustes* (hoy solo el procesador cambia algo). Una clave desconocida,
-  de otro sistema o ya instalada no hace nada.
-- **Decidido: el instalador elige, la aplicación descarga.** El
-  instalador deja la elección en la carpeta de datos y termina en
-  segundos; la aplicación empieza a descargar lo elegido desde el primer
-  arranque, en *Ajustes ▸ Post-procesado IA ▸ Modelos* (`UI.md` §2.9),
-  con progreso, pausa, reanudación tras cerrar y `sha256` por fichero
-  (fijado en `src/data/ai-models.json`). Varios GB dentro de un
-  instalador no se pueden pausar ni reanudar, lo bloquean, y un corte lo
-  deja a medias; así además la descarga es la misma en web y escritorio.
-- **Versiones portables** (escritorio sin instalar): no hay instalador,
-  así que el mismo selector aparece una vez en el primer arranque, como
-  en la web, y **ofrece también el motor de ejecución** (marcado, y
-  desmarcable) que baja con el primer modelo que se empieza a descargar.
-- **Versión web**: no hay instalador, así que la misma lista y la misma
-  recomendación aparecen la primera vez que se activa el post-procesado y
-  en *Ajustes ▸ Modelos de IA*, filtradas a lo que puede ejecutarse en el
-  navegador (WebGPU); se guarda en el almacenamiento privado del navegador
-  (OPFS, con `navigator.storage.persist()` para que no lo borre).
-- Después, en todos los casos, *Ajustes ▸ Post-procesado IA ▸ Modelos*
-  permite descargar **los mismos modelos que ofrecía el instalador**,
-  importar uno propio (§5), configurar el activo o borrar.
+- **Desktop installer (P2)**: an *AI models* step shows the
+  recommended list from §2.4, **detects the machine** (GPU and its VRAM, or
+  RAM if running on CPU is chosen) and **marks one as *Recommended for
+  your computer***. The user can choose that one, another, several or **none**
+  (install without AI). Each row gives the download size, licence, expected
+  quality and indicative speed; the licence is shown before
+  downloading. The detection and the recommendation are done by the application's
+  own launcher (`repackshot --hardware`), with the same data and the
+  same rule as the interface, so the installer and *Settings*
+  always recommend the same thing.
+- **The runtime ships with the models** (phase U10). With any chosen
+  model, the same step also marks the **inference runtime** it needs
+  to run it (*Inference runtime for the models:
+  Vulkan build, for the graphics card · 29 MB — Recommended for your
+  computer*): the build from `src/data/ai-runtimes.json` that the
+  rule in §7.1 picks for this system (Vulkan with a GPU to use, CPU without
+  one; with *Run on the processor* chosen, the CPU one), with the same
+  input and the same data the application uses (`repackshot --hardware`
+  writes a `[runtime]` section with its key and size). It is ticked by itself
+  when the first model is chosen, **can be unticked**, is disabled
+  while there is no model, and is never recorded without models. The checkbox goes
+  to `pending-models.json` as `"runtime": "SDCPP_WIN_VULKAN"`
+  (`{"device": "gpu", "keys": [...], "runtime": "..."}`), and **the launcher
+  itself downloads it on first start** (the models are started by the
+  page): with progress, pause and `sha256`, in *Settings ▸ AI post-processing ▸
+  Runtime*. The installer's *Run on* becomes the one in
+  *Settings* (today only the processor changes anything). An unknown key,
+  one for another system or one already installed does nothing.
+- **Decided: the installer chooses, the application downloads.** The
+  installer leaves the choice in the data folder and finishes in
+  seconds; the application starts downloading what was chosen from the first
+  start, in *Settings ▸ AI post-processing ▸ Models* (`UI.md` §2.9),
+  with progress, pause, resume after closing and a per-file `sha256`
+  (pinned in `src/data/ai-models.json`). Several GB inside an
+  installer cannot be paused or resumed, they block it, and a cut leaves it
+  half done; this way the download is also the same on web and desktop.
+- **Portable versions** (desktop without installing): there is no installer,
+  so the same selector appears once on first start, as on
+  the web, and **also offers the inference runtime** (ticked, and
+  can be unticked), which is downloaded with the first model that starts downloading.
+- **Web version**: there is no installer, so the same list and the same
+  recommendation appear the first time post-processing is turned on and
+  in *Settings ▸ AI models*, filtered to what can run in the
+  browser (WebGPU); it is kept in the browser's private storage
+  (OPFS, with `navigator.storage.persist()` so that it is not deleted).
+- Afterwards, in every case, *Settings ▸ AI post-processing ▸ Models*
+  allows downloading **the same models the installer offered**,
+  importing one's own (§5), setting the active one or deleting.
 
-### 2.3 · Motores de ejecución
+### 2.3 · Execution engines
 
-- **Navegador**: **ONNX Runtime Web** (MIT) con WebGPU, en workers (uno
-  por etapa: codificador de texto, transformador, VAE, que se terminan al
-  acabar para liberar la GPU), pesos troceados en fragmentos de ≤ 1 GiB
-  (los navegadores limitan los búferes a 1–2 GiB y ONNX Runtime Web a
-  4 GB por modelo). WebGPU está en Chrome y Edge (Windows, macOS,
-  ChromeOS, Android; Linux solo con ciertas GPU), Safari 26 y Firefox en
-  Windows y macOS; donde no hay WebGPU, no hay post-procesado.
-- **Escritorio (P2)**: **decidido (2026-10-13, §7.1)**: todo en nativo.
-  La inferencia la hace **stable-diffusion.cpp** (MIT, ggml: Vulkan y
-  CPU) como **proceso auxiliar** que gobierna el lanzador y que lee los
-  GGUF fijados en `ai-models.json` y los que importe el usuario; la
-  guarda y todo el trabajo con píxeles, el *crate* `rt-post` (§7.2).
-  ONNX Runtime nativo queda descartado en escritorio: los ficheros
-  fijados son GGUF.
-- **Separado del motor de render.** El post-procesado vive en
-  `engine/crates/rt-post` (la guarda, Rust sin dependencias), en el
-  lanzador (la tubería de escritorio y el proceso auxiliar) y en
-  `src/ai/` (el conductor web y el *prompt*). `rt-core` sigue sin saber
-  que la IA existe; su única aportación son los **pases** (§3.1).
-- **Lo que no es posible y se dice**: un modelo de 12–20 B en una pestaña
-  del navegador (supera los límites de memoria), ni el post-procesado sin
-  WebGPU en un tiempo razonable. Mensaje: *"El post-procesado IA necesita
-  una tarjeta gráfica con WebGPU y varios GB de memoria libre. Este
-  navegador o este equipo no pueden ejecutarlo. Tu imagen nunca se sube a
-  ningún sitio. Usa la aplicación de escritorio, elige un modelo más
-  ligero o deja la IA apagada: tu render no cambia."*
+- **Browser**: **ONNX Runtime Web** (MIT) with WebGPU, in workers (one
+  per stage: text encoder, transformer, VAE, which are terminated when
+  done to free the GPU), weights split into fragments of ≤ 1 GiB
+  (browsers limit buffers to 1–2 GiB and ONNX Runtime Web to
+  4 GB per model). WebGPU is in Chrome and Edge (Windows, macOS,
+  ChromeOS, Android; Linux only with certain GPUs), Safari 26 and Firefox on
+  Windows and macOS; where there is no WebGPU, there is no post-processing.
+- **Desktop (P2)**: **decided (2026-10-13, §7.1)**: all native.
+  Inference is done by **stable-diffusion.cpp** (MIT, ggml: Vulkan and
+  CPU) as an **auxiliary process** governed by the launcher, which reads the
+  GGUFs pinned in `ai-models.json` and those the user imports; the
+  guard and all the pixel work, the `rt-post` crate (§7.2).
+  Native ONNX Runtime is ruled out on desktop: the pinned files
+  are GGUF.
+- **Separate from the render engine.** Post-processing lives in
+  `engine/crates/rt-post` (the guard, Rust with no dependencies), in the
+  launcher (the desktop pipeline and the auxiliary process) and in
+  `src/ai/` (the web driver and the prompt). `rt-core` still does not know
+  that the AI exists; its only contribution is the **passes** (§3.1).
+- **What is not possible, and is said so**: a 12–20 B model in a browser
+  tab (it exceeds the memory limits), nor post-processing without
+  WebGPU in a reasonable time. Message: *"AI post-processing needs
+  a graphics card with WebGPU and several GB of free memory. This
+  browser or machine cannot run it. Your image is never uploaded
+  anywhere. Use the desktop application, choose a lighter
+  model or leave the AI off: your render does not change."*
 
-### 2.4 · Lista recomendada y regla de recomendación
+### 2.4 · Recommended list and recommendation rule
 
-La lista sale de la investigación del 2026-10-13. Vive como datos en
-`src/data/ai-models.json` (claves estables, ficheros con URL, tamaño y
-`sha256`, licencia, requisitos, y la regla de recomendación como tabla),
-para que X1 corrija umbrales y tiempos con medidas reales sin tocar
-código. Es JSON y no TypeScript porque lo leen dos programas: la
-interfaz y el lanzador de escritorio que usa el instalador; los dos
-evalúan la tabla igual y lo prueba un mismo fichero de casos. Tamaños de descarga aproximados, sumando transformador,
-codificador de texto y VAE.
+The list comes from the 2026-10-13 research. It lives as data in
+`src/data/ai-models.json` (stable keys, files with URL, size and
+`sha256`, licence, requirements, and the recommendation rule as a table),
+so that X1 can correct thresholds and times with real measurements without touching
+code. It is JSON and not TypeScript because two programs read it: the
+interface and the desktop launcher used by the installer; both
+evaluate the table the same way and one file of cases tests it. Approximate download sizes, adding transformer,
+text encoder and VAE.
 
-| Clave | Modelo y cuantización | Descarga | Licencia | Para qué |
+| Key | Model and quantization | Download | Licence | Used for |
 | --- | --- | --- | --- | --- |
-| `ZIMAGE_Q8` | Z-Image-Turbo GGUF Q8_0 + Qwen3-4B Q4_K_M | ≈ 9,3 GB | Apache-2.0 | **Calidad máxima del modelo por defecto** |
-| `ZIMAGE_Q4` | Z-Image-Turbo GGUF Q4_0 + Qwen3-4B Q4_K_M | ≈ 6,4 GB | Apache-2.0 | Equilibrio calidad / memoria |
-| `ZIMAGE_Q2` | Z-Image-Turbo GGUF Q2_K + Qwen3-4B Q4_K_M | ≈ 5,3 GB | Apache-2.0 | GPU pequeñas; algo menos de calidad |
-| `ZIMAGE_WEB` | Z-Image-Turbo ONNX q4f16 (navegador) | ≈ 6 GB | Apache-2.0 | La versión web. **No disponible todavía** (X1 parte A): la única exportación publicada no trae el codificador del VAE, así que no puede hacer imagen a imagen; X3 tiene que exportarlo desde el `ae.safetensors` Apache-2.0 |
-| `KLEIN4B_Q4` | FLUX.2 [klein] 4B GGUF Q4_K_M + Qwen3-4B Q4_K_M | ≈ 5,3 GB | Apache-2.0 | Alternativa: ediciones por instrucción ("más luz cálida") |
-| `QWENEDIT_Q4` | Qwen-Image-Edit-2511 GGUF Q4_K_M + Qwen2.5-VL-7B Q4_K_M + proyector de visión Q8_0 | ≈ 19 GB | Apache-2.0 | *Pro*, solo escritorio: edición fuerte por instrucciones (una LoRA de iluminación, si se añade, será otra fila con su licencia) |
-| `SD15_LIGHT` | Stable Diffusion 1.5 + ControlNet 1.1 *tile* y *depth* (fp16) | ≈ 3,6 GB | CreativeML OpenRAIL-M (uso comercial con restricciones de uso que se muestran y se aceptan) | Equipos muy modestos |
+| `ZIMAGE_Q8` | Z-Image-Turbo GGUF Q8_0 + Qwen3-4B Q4_K_M | ≈ 9.3 GB | Apache-2.0 | **Maximum quality of the default model** |
+| `ZIMAGE_Q4` | Z-Image-Turbo GGUF Q4_0 + Qwen3-4B Q4_K_M | ≈ 6.4 GB | Apache-2.0 | Quality / memory balance |
+| `ZIMAGE_Q2` | Z-Image-Turbo GGUF Q2_K + Qwen3-4B Q4_K_M | ≈ 5.3 GB | Apache-2.0 | Small GPUs; somewhat lower quality |
+| `ZIMAGE_WEB` | Z-Image-Turbo ONNX q4f16 (browser) | ≈ 6 GB | Apache-2.0 | The web version. **Not available yet** (X1 part A): the only published export does not ship the VAE encoder, so it cannot do image-to-image; X3 has to export it from the Apache-2.0 `ae.safetensors` |
+| `KLEIN4B_Q4` | FLUX.2 [klein] 4B GGUF Q4_K_M + Qwen3-4B Q4_K_M | ≈ 5.3 GB | Apache-2.0 | Alternative: instruction-based edits ("warmer light") |
+| `QWENEDIT_Q4` | Qwen-Image-Edit-2511 GGUF Q4_K_M + Qwen2.5-VL-7B Q4_K_M + vision projector Q8_0 | ≈ 19 GB | Apache-2.0 | *Pro*, desktop only: strong instruction-based editing (a lighting LoRA, if added, will be another row with its own licence) |
+| `SD15_LIGHT` | Stable Diffusion 1.5 + ControlNet 1.1 *tile* and *depth* (fp16) | ≈ 3.6 GB | CreativeML OpenRAIL-M (commercial use with use restrictions that are shown and accepted) | Very modest machines |
 
-**Ficheros fijados (X1 parte A, 2026-10-13).** Cada clave lista en el
-JSON sus ficheros con URL fijada a un *commit* de Hugging Face, tamaño
-exacto y `sha256` (comprobados contra la API y contra la etiqueta del
-CDN, sin descargar los pesos); todos los repositorios son públicos y sin
-acceso restringido. Las licencias, citadas al pie de la letra, están en
-`docs/ai-licences.md`. Tamaños medidos: Q8 9,41 GB, Q4 6,52 GB, Q2
-5,43 GB, klein 5,44 GB, Qwen-Edit 19,03 GB, SD 1.5 3,58 GB. Ningún
-componente es no comercial; SD 1.5 lleva las restricciones de uso de
-OpenRAIL-M, que se muestran y se aceptan antes de descargar. **Los
-ficheros se guardan una sola vez por su `sha256`** (el codificador
-Qwen3-4B, 2,5 GB, lo comparten cuatro claves): borrar un modelo solo
-borra lo que ningún otro instalado usa. Que stable-diffusion.cpp cargue
-cada combinación está sin probar: lo prueba X1 parte B antes de quitar
-la marca *provisional*.
+**Pinned files (X1 part A, 2026-10-13).** Each key lists in the
+JSON its files with a URL pinned to a Hugging Face *commit*, exact size
+and `sha256` (checked against the API and against the CDN tag,
+without downloading the weights); all repositories are public and have no
+restricted access. The licences, quoted verbatim, are in
+`docs/ai-licences.md`. Measured sizes: Q8 9.41 GB, Q4 6.52 GB, Q2
+5.43 GB, klein 5.44 GB, Qwen-Edit 19.03 GB, SD 1.5 3.58 GB. No
+component is non-commercial; SD 1.5 carries the use restrictions of
+OpenRAIL-M, which are shown and accepted before downloading. **Files
+are stored only once by their `sha256`** (the Qwen3-4B encoder,
+2.5 GB, is shared by four keys): deleting a model only
+deletes what no other installed model uses. Whether stable-diffusion.cpp loads
+each combination is untested: X1 part B tests it before removing
+the *provisional* mark.
 
-La memoria se evalúa como **medida / 0,94**: los equipos muestran menos
-memoria útil que la nominal (un equipo de "16 GB" da 15,6 GiB) y sin el
-factor caerían una fila más abajo. Se prefiere la RAM instalada cuando se
-puede leer.
+Memory is evaluated as **measured / 0.94**: machines show less
+useful memory than the nominal (a "16 GB" machine gives 15.6 GiB) and without the
+factor they would fall one row lower. Installed RAM is preferred when it
+can be read.
 
-**Regla de recomendación** (valores de partida, a calibrar en X1 con el
-pico real de memoria a 1024² y un margen del 20–30 % para activaciones):
+**Recommendation rule** (starting values, to be calibrated in X1 with the
+real memory peak at 1024² and a margin of 20–30 % for activations):
 
-| Equipo detectado | Recomendado | También se ofrece |
+| Detected machine | Recommended | Also offered |
 | --- | --- | --- |
-| GPU con **≥ 24 GB** de VRAM | `ZIMAGE_Q8` | `QWENEDIT_Q4` (*Pro*), `KLEIN4B_Q4` |
-| GPU con **12–24 GB** | `ZIMAGE_Q8` | `KLEIN4B_Q4` |
-| GPU con **6–12 GB** | `ZIMAGE_Q4` | `KLEIN4B_Q4` |
-| GPU con **4–6 GB** | `ZIMAGE_Q2` (codificador de texto en RAM) | `SD15_LIGHT` |
-| GPU con **< 4 GB** | `SD15_LIGHT` | ninguno |
-| **CPU** con **≥ 32 GB** de RAM | `ZIMAGE_Q8` | `ZIMAGE_Q4` |
-| **CPU** con **16–32 GB** | `ZIMAGE_Q4` | `SD15_LIGHT` |
-| **CPU** con **8–16 GB** | `SD15_LIGHT` | ninguno |
-| **CPU** con **< 8 GB** | ninguno (instalar sin IA) | — |
-| **Navegador** con WebGPU y búferes de ≥ 1 GiB | `ZIMAGE_WEB` (hoy ninguno: no disponible todavía) | — |
-| Navegador sin WebGPU | ninguno, con el mensaje de §2.3 | — |
+| GPU with **≥ 24 GB** of VRAM | `ZIMAGE_Q8` | `QWENEDIT_Q4` (*Pro*), `KLEIN4B_Q4` |
+| GPU with **12–24 GB** | `ZIMAGE_Q8` | `KLEIN4B_Q4` |
+| GPU with **6–12 GB** | `ZIMAGE_Q4` | `KLEIN4B_Q4` |
+| GPU with **4–6 GB** | `ZIMAGE_Q2` (text encoder in RAM) | `SD15_LIGHT` |
+| GPU with **< 4 GB** | `SD15_LIGHT` | none |
+| **CPU** with **≥ 32 GB** of RAM | `ZIMAGE_Q8` | `ZIMAGE_Q4` |
+| **CPU** with **16–32 GB** | `ZIMAGE_Q4` | `SD15_LIGHT` |
+| **CPU** with **8–16 GB** | `SD15_LIGHT` | none |
+| **CPU** with **< 8 GB** | none (install without AI) | — |
+| **Browser** with WebGPU and buffers of ≥ 1 GiB | `ZIMAGE_WEB` (today none: not available yet) | — |
+| Browser without WebGPU | none, with the message of §2.3 | — |
 
-En CPU el instalador avisa de que cada imagen tarda **minutos** (cifra
-medida en X1, no estimada), y la vista previa del configurador se hace a
-menos resolución. La detección usa la API nativa en escritorio (VRAM
-dedicada de la GPU elegida; en Apple, la memoria unificada recomendada
-para GPU) y los límites del adaptador WebGPU en el navegador. Si la
-detección falla, no se recomienda nada y se muestra la tabla.
-
----
-
-## 3 · Cómo se garantiza que no cambia lo que no se pide
-
-### 3.1 · Lo que el motor le da a la IA
-
-El motor emite, junto a la imagen, **pases exactos** (fase X2):
-profundidad, normales, albedo del primer rebote no especular, **id de
-pieza** e **id de material**, y el **mapa de desenfoque** (círculo de
-confusión por píxel, de la profundidad de campo de la cámara). Además, el
-texto de la escena: materiales por región (nombre, familia, si admite
-desgaste), luces y entorno, para el *prompt*.
-
-### 3.2 · Tubería
-
-1. **Entrada**: la imagen del motor con su curva de tono, al tamaño del
-   trabajo.
-2. **Condicionamiento**: profundidad exacta y bordes **calculados de los
-   cambios de id y de normal** (no de la imagen: son exactos) al ControlNet
-   del modelo, cuando el motor de ejecución lo soporte; *tile* para
-   salidas grandes; *prompt* generado de los materiales y las luces, con un
-   negativo fijo ("no cambiar formas, texto ni logotipos"); semilla fija.
-3. **Intervención baja**: `strength` acotado (≤ 0,4 en el máximo del
-   control), en mosaicos de ~1024² con solape y fusión suave para salidas
-   grandes, y relleno a múltiplo de 16 que se recorta después: **la
-   resolución de salida es exactamente la del trabajo**.
-4. **Guarda determinista**, siempre, de más fuerte a más débil:
-   - **Transferencia de sombreado**: la salida es *original ×
-     limitar(desenfocar(modelo) / desenfocar(original))* en dominio
-     logarítmico, con radio de 8–32 px por megapíxel. Texturas, aristas,
-     texto y el desenfoque de la profundidad de campo **se conservan por
-     construcción**; el modelo solo aporta luz y color de baja frecuencia.
-   - **Separación de frecuencias**: las bandas altas del original se
-     mantienen; el microdetalle del modelo (desgaste) solo entra en banda
-     media y solo dentro de las regiones de materiales que admiten
-     desgaste, con un tope.
-   - **Regiones por id**: intervención por región, y límite de cambio de
-     color por material (ΔE₀₀ medio y percentil 95; punto de partida 4 y 6,
-     el doble del ≤ 2–3 del principio por la decisión 2.1 de C1, a calibrar
-     en X1). Las tres tolerancias son las de *Ajustes ▸ Post-procesado IA ▸
-     Avanzado*: cada petición lleva las de ese momento, y la guarda (el
-     lanzador y el `post.wasm`) mide contra ellas.
-5. **Comprobación y retroceso**: medidas sobre el resultado —tamaño
-   exacto; píxeles idénticos fuera de las regiones permitidas; coincidencia
-   de bordes en discontinuidades de id y normal (4 px desde C1; eran 1,5 en
-   la guarda y 2 en *Ajustes*); SSIM sobre la
-   banda alta; ΔE₀₀ por región; nitidez por mosaico frente al mapa de
-   desenfoque (ni se emborrona lo enfocado ni se enfoca lo desenfocado)—.
-   Si alguna falla, la intervención baja sola y se repite hasta que pasen
-   todas, y se informa.
-
-Lo que esto garantiza: **resolución, encuadre, texto, aristas, color de
-los materiales y profundidad de campo dentro de las tolerancias medidas,
-para cualquier modelo**. Lo que no garantiza: que el resultado sea
-físicamente correcto; por eso la imagen del motor se conserva siempre.
+On CPU the installer warns that each image takes **minutes** (a figure
+measured in X1, not estimated), and the configurator's preview is made at
+lower resolution. Detection uses the native API on desktop (dedicated
+VRAM of the chosen GPU; on Apple, the unified memory recommended
+for the GPU) and the WebGPU adapter limits in the browser. If
+detection fails, nothing is recommended and the table is shown.
 
 ---
 
-## 4 · Interfaz (en la ventana de render)
+## 3 · How it is guaranteed that what is not asked for does not change
 
-Sección **Post-procesado IA** de la ventana de render (`UI.md` §2.7),
-plegada y apagada por defecto.
+### 3.1 · What the engine gives the AI
 
-**Interruptor** *Post-procesado IA* con una línea auxiliar del modelo
-activo (*Z-Image-Turbo Q4 · Apache-2.0 · descargado*). Si no hay ningún
-modelo descargado, el interruptor abre el selector de §2.2 con la
-recomendación para el equipo; si el equipo no puede ejecutar ninguno,
-aparece deshabilitado con el motivo.
+The engine emits, along with the image, **exact passes** (phase X2):
+depth, normals, albedo of the first non-specular bounce, **part
+id** and **material id**, and the **blur map** (circle of
+confusion per pixel, from the camera's depth of field). It also emits the
+scene text: materials per region (name, family, whether they admit
+wear), lights and environment, for the prompt.
 
-**Configurador**, debajo, con controles de 0 a 100 y una frase cada uno.
-A 0, el aspecto correspondiente no cambia:
+### 3.2 · Pipeline
 
-| Control | Qué hace | Por defecto |
+1. **Input**: the engine image with its tone curve, at the size of the
+   job.
+2. **Conditioning**: exact depth and edges **computed from the
+   id and normal changes** (not from the image: they are exact) fed to the model's
+   ControlNet, when the runtime supports it; *tile* for large
+   outputs; prompt generated from the materials and lights, with a
+   fixed negative ("do not change shapes, text or logos"); fixed seed.
+3. **Low intervention**: bounded `strength` (≤ 0.4 at the maximum of the
+   control), in tiles of ~1024² with overlap and soft blending for large
+   outputs, and padding to a multiple of 16 that is cropped afterwards: **the
+   output resolution is exactly the job's**.
+4. **Deterministic guard**, always, from strongest to weakest:
+   - **Shading transfer**: the output is *original ×
+     clamp(blur(model) / blur(original))* in the logarithmic domain, with a radius of 8–32 px per megapixel. Textures, edges,
+     text and the depth-of-field blur **are preserved by
+     construction**; the model contributes only low-frequency light and colour.
+   - **Frequency separation**: the high bands of the original are
+     kept; the model's micro-detail (wear) enters only in the mid
+     band and only inside the regions of materials that admit
+     wear, with a cap.
+   - **Regions by id**: intervention per region, and a colour-change
+     limit per material (mean and 95th-percentile ΔE₀₀; starting point 4 and 6,
+     double the ≤ 2–3 of the beginning because of decision 2.1 of C1, to be calibrated
+     in X1). The three tolerances are those of *Settings ▸ AI post-processing ▸
+     Advanced*: each request carries the ones in force at that moment, and the guard (the
+     launcher and `post.wasm`) measures against them.
+5. **Check and fallback**: measurements on the result —exact
+   size; identical pixels outside the permitted regions; edge match
+   at id and normal discontinuities (4 px since C1; they were 1.5 in
+   the guard and 2 in *Settings*); SSIM on the
+   high band; ΔE₀₀ per region; sharpness per tile against the blur
+   map (what is in focus is not blurred and what is out of focus is not sharpened)—.
+   If any fails, the intervention drops by itself and is repeated until all
+   pass, and the user is told.
+
+What this guarantees: **resolution, framing, text, edges, colour of
+the materials and depth of field within the measured tolerances,
+for any model**. What it does not guarantee: that the result is
+physically correct; that is why the engine image is always kept.
+
+---
+
+## 4 · Interface (in the render window)
+
+The **AI post-processing** section of the render window (`UI.md` §2.7),
+collapsed and off by default.
+
+**Switch** *AI post-processing* with an auxiliary line for the active
+model (*Z-Image-Turbo Q4 · Apache-2.0 · downloaded*). If no model has
+been downloaded, the switch opens the selector of §2.2 with the
+recommendation for the machine; if the machine cannot run any,
+it appears disabled with the reason.
+
+**Configurator**, below, with controls from 0 to 100 and one sentence each.
+At 0, the corresponding aspect does not change:
+
+| Control | What it does | Default |
 | --- | --- | --- |
-| **Intervención** | Cuánto puede cambiar la IA la imagen, en total | 50 (30 hasta C1) |
-| **Luz** | Luz más natural: penumbras, brillos suaves, rodillo de altas luces | 50 |
-| **Rebotes** | Luz rebotada y color de ambiente entre superficies | 40 |
-| **Desgaste y microdetalle** | Micro-variación y huellas creíbles, solo en materiales que admiten desgaste | 20 |
-| **Estilo** | Desplegable: *Natural fotográfico* (por defecto), *Catálogo limpio*, *Editorial*, *Cálido*, *Frío*, *Cinematográfico* | Natural |
-| **Fuerza del estilo** | Cuánto se aplica el estilo (solo color y ambiente de luz) | 30 |
+| **Intervention** | How much the AI may change the image, in total | 50 (30 until C1) |
+| **Light** | More natural light: penumbras, soft highlights, highlight roll-off | 50 |
+| **Bounces** | Bounced light and ambient colour between surfaces | 40 |
+| **Wear and micro-detail** | Believable micro-variation and fingerprints, only in materials that admit wear | 20 |
+| **Style** | Dropdown: *Natural photographic* (default), *Clean catalogue*, *Editorial*, *Warm*, *Cool*, *Cinematic* | Natural |
+| **Style strength** | How much the style applies (colour and light mood only) | 30 |
 
-**Prompt propio** (X4b), debajo de los controles: un campo de varias líneas,
-vacío por defecto, de hasta 400 caracteres, con la nota *Describe la luz o el
-ambiente; la geometría, los materiales y el enfoque siguen protegidos*. Es del
-trabajo (se guarda en el proyecto, se deshace de una vez al salir del campo y
-cada trabajo de la cola lleva el suyo). Solo se envía a un modelo que lo admite
-(capacidad `textPrompt`); si no, el campo se ve deshabilitado con el motivo.
+**Own prompt** (X4b), below the controls: a multi-line field,
+empty by default, of up to 400 characters, with the note *Describe the light or the
+mood; the geometry, the materials and the focus stay protected*. It belongs to the
+job (it is saved in the project, undone in one step when leaving the field, and
+each job in the queue carries its own). It is only sent to a model that accepts it
+(capability `textPrompt`); otherwise the field is shown disabled with the reason.
 
-Debajo, las **protecciones**, como fichas fijas con un candado y sin
-interruptor: *Geometría · Materiales · Resolución · Profundidad de campo
-· Encuadre · Texto y logotipos*. Un botón **Otra variación** cambia la
-semilla, y a su lado **Variantes** (X4b): de 1 a 8, una por defecto. Un
-trabajo con N variantes hace un solo render del motor y N pasadas de la IA
-con semillas consecutivas (semilla, semilla + 1…), el modelo cargado una
-vez; cada una con su informe y su archivo (`_AI`, `_AI_2`…). Se avisa del
-tiempo estimado (N × lo medido) cuando hay medida.
+Below, the **protections**, as fixed chips with a padlock and no
+switch: *Geometry · Materials · Resolution · Depth of field
+· Framing · Text and logos*. An **Another variation** button changes the
+seed, and next to it **Variants** (X4b): from 1 to 8, one by default. A
+job with N variants makes a single engine render and N AI passes
+with consecutive seeds (seed, seed + 1…), with the model loaded once;
+each with its own report and its own file (`_AI`, `_AI_2`…). The estimated
+time (N × what was measured) is shown when there is a measurement.
 
-**Las palabras que van al modelo** (X4b), en este orden: el **prompt del
-sistema** de *Ajustes ▸ Post-procesado IA* (general para todas las imágenes,
-del líder por defecto), el de la **escena** (`src/ai/prompt.ts`: materiales,
-luces, controles y estilo) y el **propio del trabajo**; el negativo fijo va
-aparte, siempre el mismo. Ninguna de ellas protege nada: lo protegido lo
-garantiza la guarda con números (§1.3, §3.2), digan lo que digan. Para un
-modelo que lee un número limitado de *tokens* (capacidad `maxPromptTokens`:
-SD 1.5 y SDXL leen 77 con CLIP) se usa la **versión corta** del predeterminado
-mientras la persona no lo cambie (si lo cambió, el suyo), y lo que no cabe se
-recorta palabra a palabra desde el final, **primero el propio del trabajo,
-luego el de la escena y por último el del sistema**, con una línea bajo el
-campo que dice qué se quedó fuera. La cuenta es una **estimación prudente**
-(`estimatePromptTokens`, `src/core/ai-prompt.ts`) que puede contar de más y
-nunca de menos, para que el modelo no corte nunca por su cuenta: el texto se
-parte como lo parte CLIP antes de sus fusiones (letras seguidas, dígitos
-sueltos, signos) y cuenta un *token* por cada 5 letras ASCII o fracción, uno
-más por cada letra fuera de ASCII, uno por dígito y uno por signo, más los dos
-de inicio y fin. La versión corta del predeterminado cuenta 65 de los 77 (con
-CLIP real son unos 45): a un modelo así le queda poco sitio para la escena y
-casi ninguno para el propio.
+**The words that go to the model** (X4b), in this order: the **system
+prompt** from *Settings ▸ AI post-processing* (general for all images,
+the lead's by default), the **scene** one (`src/ai/prompt.ts`: materials,
+lights, controls and style) and the **job's own**; the fixed negative goes
+separately, always the same. None of them protects anything: what is protected is
+guaranteed by the guard with numbers (§1.3, §3.2), whatever they say. For a
+model that reads a limited number of *tokens* (capability `maxPromptTokens`:
+SD 1.5 and SDXL read 77 with CLIP) the **short version** of the default is used
+as long as the person has not changed it (if they did, theirs), and what does not fit is
+trimmed word by word from the end, **first the job's own,
+then the scene's and last the system's**, with a line under the
+field saying what was left out. The count is a **prudent estimate**
+(`estimatePromptTokens`, `src/core/ai-prompt.ts`) that may count too much and
+never too little, so that the model never cuts on its own: the text is
+split the way CLIP splits it before its merges (consecutive letters, single digits,
+signs) and counts one *token* per 5 ASCII letters or fraction, one
+more for each non-ASCII letter, one per digit and one per sign, plus the two
+for start and end. The short version of the default counts 65 of the 77 (with
+real CLIP it is about 45): a model like that has little room left for the scene and
+almost none for the job's own.
 
-**Vista previa**, a la derecha del configurador (o debajo en ventanas
-estrechas): un fotograma del **modo Rápido** desde la cámara del trabajo,
-a 384–512 px, con la IA aplicada, y un **divisor deslizable** para ver
-antes y después. Se actualiza **al soltar** un control (no mientras se
-arrastra: cada vista previa cuesta segundos), con el tiempo medido en
-auxiliar (*≈ 9 s por cambio en este equipo*) y la nota *La vista previa
-parte del modo Rápido; el resultado final parte del render completo*.
-Opción *Usar el motor completo para la vista previa (más lento)*.
+**Preview**, to the right of the configurator (or below in narrow
+windows): a frame in **Fast mode** from the job's camera,
+at 384–512 px, with the AI applied, and a **sliding divider** to see
+before and after. It updates **on release** of a control (not while
+dragging: each preview costs seconds), with the time measured in an
+auxiliary line (*≈ 9 s per change on this computer*) and the note *The preview
+starts from Fast mode; the final result starts from the full render*.
+Option *Use the full engine for the preview (slower)*.
 
-**Al terminar** el trabajo, el visor de resultados (`UI.md` §2.8) abre
-las dos imágenes con el divisor deslizable, y el informe de la guarda en
-una línea: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) ·
-resolución ✓ · enfoque ✓*, más *La IA se limitó al 23 % para respetar
-las protecciones* cuando ocurra. Se pueden guardar las dos imágenes; la
-cola y el historial muestran las dos miniaturas. Con varias variantes
-(X4b), una tira de miniaturas elige la que el divisor compara con el
-render (con su informe), *Guardar esta variante* o *Guardar todas*, y la
-cola y el historial dicen cuántas hay.
-
----
-
-## 5 · Ajustes ▸ Post-procesado IA
-
-En la ventana de **Ajustes** (`UI.md` §2.9), sección *Post-procesado IA*,
-con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
-
-- **Lista de modelos**: el de origen (*Z-Image-Turbo*, marcado *De
-  origen*), las alternativas ofrecidas, y los importados; por fila
-  nombre, arquitectura, licencia, tamaño, estado (*No descargado ·
-  Descargando 42 % · Listo · En uso*), y acciones *Usar*, *Descargar*,
-  *Eliminar*.
-- **Importar modelo…**: acepta `.safetensors` (carpeta *diffusers* con
-  `model_index.json` o fichero único), `.gguf` y ONNX con fragmentos y
-  manifiesto; **rechaza** formatos *pickle* (`.ckpt`, `.pt`, `.bin`).
-  Exige un fichero `model.repackshot.json` al lado (o lo pide rellenando
-  un formulario en línea): licencia SPDX y su URL, si permite uso
-  comercial, arquitectura base (`z-image`, `flux2-klein`,
-  `qwen-image-edit`, `sdxl`, `sd15`), papel (*img2img*, edición,
-  ControlNet, LoRA, VAE, codificador), cuantización, ficheros
-  acompañantes, capacidades (`strength`, edición por referencia, tipos de
-  control; X4b: `textPrompt`, si sigue un *prompt* de texto, y
-  `maxPromptTokens`, cuántos *tokens* lee; sin `textPrompt` no se le envía el
-  *prompt* propio del trabajo, y SD 1.5 o SDXL sin `maxPromptTokens` leen 77),
-  `sha256` y origen. Un modelo de licencia desconocida o no
-  comercial se puede usar en local, queda marcado *no apto para uso
-  comercial* y nunca es el de por defecto.
-- **Equipo**: GPU detectada, memoria disponible estimada, WebGPU sí o no,
-  y el aviso si el modelo activo no cabe.
-- **Almacenamiento**: espacio usado por modelos y resultados, y *Liberar*.
-- **Prompt del sistema** (X4b): las palabras generales que van antes de las
-  de la escena y del *prompt* propio de cada trabajo, con *Restablecer el
-  predeterminado* y la nota de que las protecciones de la guarda no dependen de
-  ellas (§4, *Las palabras que van al modelo*).
+**When the job finishes**, the results viewer (`UI.md` §2.8) opens
+the two images with the sliding divider, and the guard's report in
+one line: *Checked: geometry ✓ · materials ✓ (ΔE max 1.8) ·
+resolution ✓ · focus ✓*, plus *The AI was limited to 23 % to respect
+the protections* when that happens. Both images can be saved; the
+queue and the history show both thumbnails. With several variants
+(X4b), a strip of thumbnails picks the one the divider compares with the
+render (with its report), *Save this variant* or *Save all*, and the
+queue and the history say how many there are.
 
 ---
 
-## 6 · Fases (detalle en `ROADMAP.md`)
+## 5 · Settings ▸ AI post-processing
 
-| Fase | Responsable | Qué |
+In the **Settings** window (`UI.md` §2.9), *AI post-processing* section,
+with its blocks *Active model*, *Models* and *Hardware*:
+
+- **Model list**: the original one (*Z-Image-Turbo*, marked *Default*),
+  the alternatives offered, and the imported ones; per row
+  name, architecture, licence, size, state (*Not downloaded ·
+  Downloading 42 % · Ready · In use*), and actions *Use*, *Download*,
+  *Delete*.
+- **Import model…**: accepts `.safetensors` (*diffusers* folder with
+  `model_index.json` or a single file), `.gguf` and ONNX with fragments and
+  manifest; **rejects** *pickle* formats (`.ckpt`, `.pt`, `.bin`).
+  It requires a `model.repackshot.json` file next to it (or asks for it by filling in
+  an online form): SPDX licence and its URL, whether it allows commercial
+  use, base architecture (`z-image`, `flux2-klein`,
+  `qwen-image-edit`, `sdxl`, `sd15`), role (*img2img*, edit,
+  ControlNet, LoRA, VAE, encoder), quantization, companion
+  files, capabilities (`strength`, reference-based editing, control
+  types; X4b: `textPrompt`, whether it follows a text prompt, and
+  `maxPromptTokens`, how many tokens it reads; without `textPrompt` the job's own
+  prompt is not sent to it, and SD 1.5 or SDXL without `maxPromptTokens` read 77),
+  `sha256` and origin. A model with an unknown or non-commercial
+  licence can be used locally, is marked *not for commercial
+  use* and is never the default.
+- **Hardware**: detected GPU, estimated available memory, WebGPU yes or no,
+  and the warning if the active model does not fit.
+- **Storage**: space used by models and results, and *Free up*.
+- **System prompt** (X4b): the general words that go before those of the
+  scene and the job's own prompt, with *Restore default* and the note that the guard's
+  protections do not depend on
+  them (§4, *The words that go to the model*).
+
+---
+
+## 6 · Phases (detail in `ROADMAP.md`)
+
+| Phase | Executor | What |
 | --- | --- | --- |
-| **X1** | **Fable** (Sonnet prepara) | **Parte A, hecha** (la necesitaba U6): ficheros exactos, URL, tamaños y `sha256` de cada clave de §2.4 en `src/data/ai-models.json` y licencias releídas al pie de la letra. **Parte B**, tras X3c: confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU) con una comparación propia Z-Image-Turbo frente a FLUX.2 klein 4B (8 renders × 3 intervenciones, métricas de la guarda) que genera una herramienta y se ejecuta **en el equipo del usuario** (aquí no hay GPU); Vulkan frente a CPU en stable-diffusion.cpp |
-| **X2** | Opus | Pases del motor (§7.4): albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm, el lanzador y el lado TypeScript. **Tras fusionar E5** (los dos tocan el integrador) |
-| **X3a** | Opus | `engine/crates/rt-post` y `post.wasm` (§7.2): condicionamiento, mosaicos, relleno y recorte, **guarda determinista** con comprobaciones y la máquina de pasos con retroceso; envoltura TypeScript y el *prompt* de la escena (`src/ai/`). Probado con el "modelo" sintético |
-| **X3b** | Opus | stable-diffusion.cpp en escritorio (§7.1): `src/data/ai-runtimes.json` fijado, descarga e instalación desde *Ajustes*, proceso auxiliar en `rt-app`, `/api/ai/runtime` y `/api/ai/run` (una inferencia sin guarda), con un proceso auxiliar falso en los tests |
-| **X3c** | Opus | **Hecha.** La tubería completa de escritorio (§7.3), tras X2, X3a y X3b: `/api/ai/post` en el lanzador (mosaicos → stable-diffusion.cpp → `rt-post` → retroceso), el servicio de escritorio en `src/io/`, integración en la cola con las dos imágenes y el informe; `AI_AVAILABLE` ya no existe: lo dice `status()` |
-| **X3d** | Opus | La web, tras X3c: ONNX Runtime Web con WebGPU en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, conductor en worker con `post.wasm`, caché OPFS con `sha256` y fragmentos de ≤ 1 GiB |
-| **X4** | Sonnet | **Hecha.** La interfaz de §4 contra `AiPostService` (`src/core/ai.ts`), con un servicio sintético hasta X3c: sección de la ventana de render, configurador, fichas, vista previa en modo Rápido con los pases dibujados por three.js y divisor, informe de la guarda y divisor en el visor de resultados, dos miniaturas en la cola, ajustes en el *store* (`ROADMAP.md` X4) |
-| **X4b** | Opus | **Hecha.** Prompt propio del trabajo (si el modelo lo admite: `textPrompt`), variantes (1 a 8, un render y N pasadas con semillas consecutivas, tira de miniaturas en el visor) y prompt del sistema en Ajustes, con la versión corta y el recorte para modelos de 77 *tokens* (§4, §7.5b) |
-| ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |
+| **X1** | **Fable** (Sonnet prepares) | **Part A, done** (U6 needed it): exact files, URL, sizes and `sha256` of each key of §2.4 in `src/data/ai-models.json` and licences re-read verbatim. **Part B**, after X3c: confirm the model and calibrate the table of §2.4 (memory peak and time per entry on GPU and CPU) with an own comparison of Z-Image-Turbo against FLUX.2 klein 4B (8 renders × 3 interventions, guard metrics) that a tool generates and that is run **on the user's own machine** (there is no GPU here); Vulkan against CPU in stable-diffusion.cpp |
+| **X2** | Opus | Engine passes (§7.4): albedo, normal, depth, part and material id, blur map, in `rt-core`, the RSB, the wasm, the launcher and the TypeScript side. **After merging E5** (both touch the integrator) |
+| **X3a** | Opus | `engine/crates/rt-post` and `post.wasm` (§7.2): conditioning, tiles, padding and cropping, **deterministic guard** with checks and the step machine with fallback; TypeScript wrapper and the scene prompt (`src/ai/`). Tested with the synthetic "model" |
+| **X3b** | Opus | stable-diffusion.cpp on desktop (§7.1): pinned `src/data/ai-runtimes.json`, download and installation from *Settings*, auxiliary process in `rt-app`, `/api/ai/runtime` and `/api/ai/run` (an inference without the guard), with a fake auxiliary process in the tests |
+| **X3c** | Opus | **Done.** The full desktop pipeline (§7.3), after X2, X3a and X3b: `/api/ai/post` in the launcher (tiles → stable-diffusion.cpp → `rt-post` → fallback), the desktop service in `src/io/`, integration into the queue with both images and the report; `AI_AVAILABLE` no longer exists: `status()` says it |
+| **X3d** | Opus | The web, after X3c: ONNX Runtime Web with WebGPU in workers, **export the VAE encoder to ONNX** so that `ZIMAGE_WEB` exists, driver in a worker with `post.wasm`, OPFS cache with `sha256` and fragments of ≤ 1 GiB |
+| **X4** | Sonnet | **Done.** The interface of §4 against `AiPostService` (`src/core/ai.ts`), with a synthetic service until X3c: render-window section, configurator, chips, Fast-mode preview with the passes drawn by three.js and divider, guard report and divider in the results viewer, two thumbnails in the queue, settings in the *store* (`ROADMAP.md` X4) |
+| **X4b** | Opus | **Done.** The job's own prompt (if the model accepts it: `textPrompt`), variants (1 to 8, one render and N passes with consecutive seeds, thumbnail strip in the viewer) and system prompt in Settings, with the short version and the trimming for 77-*token* models (§4, §7.5b) |
+| ~~X5~~ | — | **Absorbed into U6** (Settings window, `ROADMAP.md`): the model manager of §5 and the selector of §2.2–§2.4 do not need the pipeline, so they arrive earlier. What is left for after X3 (checking live that the active model fits, and a one-image test) goes into X4 |
 
 ---
 
-## 7 · Construcción: decisiones y contratos (líder, 2026-10-13)
+## 7 · Construction: decisions and contracts (lead, 2026-10-13)
 
-Lo que fija el líder para que X2, X3a, X3b y X4 avancen en paralelo sin
-pisarse. Los contratos de código están en `src/core/ai.ts` y
-`src/core/passes.ts`: las fases **añaden**, no cambian lo que hay; si algo
-no encaja, se anota en el PR y se sigue (regla 12).
+What the lead fixes so that X2, X3a, X3b and X4 can advance in parallel without
+stepping on each other. The code contracts are in `src/core/ai.ts` and
+`src/core/passes.ts`: the phases **add to** what is there, they do not change it; if something
+does not fit, it is noted in the PR and work goes on (rule 12).
 
-### 7.1 · En escritorio todo es nativo
+### 7.1 · On desktop everything is native
 
-La interfaz es lo único HTML. En escritorio, la inferencia, la guarda y
-todo el trabajo con píxeles se ejecutan fuera de la página, en código
-nativo que gobierna el lanzador.
+The interface is the only HTML. On desktop, inference, the guard and
+all the pixel work run outside the page, in native
+code governed by the launcher.
 
-- **Inferencia: stable-diffusion.cpp** (MIT, sobre ggml, MIT) como
-  **proceso auxiliar**: un ejecutable aparte, nunca enlazado, nunca
-  copiado a `engine/`, que el lanzador arranca, alimenta y para. Lee
-  directamente los GGUF que ya fija `ai-models.json`.
-- Sus compilaciones se fijan como los modelos, en
-  **`src/data/ai-runtimes.json`**: versión de la *release* oficial, URL,
-  tamaño, `sha256`, licencia citada y qué claves de §2.4 carga de verdad
-  (`supports`, comprobado en X3b; lo no comprobado no se marca). Dos por
-  sistema (Windows y Linux x86_64): **Vulkan** (NVIDIA, AMD e Intel, con
-  el controlador de la tarjeta) y **CPU** (AVX2). La regla elige Vulkan
-  cuando hay GPU y CPU si no; el usuario puede forzar una en *Ajustes*.
-- **No van en el instalador ni en los portables**: se descargan desde
-  *Ajustes ▸ Post-procesado IA* la primera vez que se activa la IA (o
-  junto al modelo elegido en el instalador), con progreso, reanudación y
-  `sha256`, a `<datos>/ai/runtimes/<sha256>/`, igual que los modelos.
-  El paquete sigue pequeño y la compilación depende del equipo. **CUDA**
-  queda anotado como mejora (sus bibliotecas pesan cientos de MB).
-- Una clave que la compilación instalada no carga aparece en *Ajustes*
-  como *No disponible con este motor de ejecución*, con el motivo.
-- **Hecho en X3b** (2026-10-13): *release* `master-959-d637cfb`, el modo
-  servidor (`sd-server`, el modelo queda cargado), la API `/api/ai/runtime`
-  y `/api/ai/run` (`engine/crates/rt-app/README.md`). **No encajó**: la
-  descarga no la puede hacer la página como la de los modelos, porque las
-  descargas de *releases* de GitHub no mandan cabeceras CORS; la hace el
-  lanzador con el `curl` del sistema (mismo progreso, pausa, reanudación y
-  `sha256`, misma carpeta), con *Instalar desde un archivo…* de respaldo.
-  Las compilaciones de Windows necesitan el entorno de Visual C++
-  2015–2022, que no traen. **X3c**: cuando no arrancan por eso (una DLL que
-  falta y alguna del entorno de Visual C++ ausente de su carpeta y de
-  `System32`), *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* enseña
-  *Instalar el entorno de Microsoft Visual C++…*, que abre la página
-  oficial de Microsoft en el navegador del sistema (`openExternal`), y
-  *Comprobar de nuevo*: no redistribuimos sus DLL. *Acerca de* lista
-  stable-diffusion.cpp y ggml con sus licencias MIT.
+- **Inference: stable-diffusion.cpp** (MIT, on top of ggml, MIT) as an
+  **auxiliary process**: a separate executable, never linked, never
+  copied into `engine/`, which the launcher starts, feeds and stops. It reads
+  directly the GGUFs that `ai-models.json` already pins.
+- Its builds are pinned like the models, in
+  **`src/data/ai-runtimes.json`**: version of the official *release*, URL,
+  size, `sha256`, quoted licence and which keys of §2.4 it really loads
+  (`supports`, verified in X3b; what is not verified is not marked). Two per
+  system (Windows and Linux x86_64): **Vulkan** (NVIDIA, AMD and Intel, with
+  the graphics card driver) and **CPU** (AVX2). The rule picks Vulkan
+  when there is a GPU and CPU if not; the user can force one in *Settings*.
+- **They do not go in the installer or the portables**: they are downloaded from
+  *Settings ▸ AI post-processing* the first time the AI is turned on (or
+  together with the model chosen in the installer), with progress, resume and
+  `sha256`, to `<data>/ai/runtimes/<sha256>/`, like the models.
+  The package stays small and the build depends on the machine. **CUDA**
+  is noted as an improvement (its libraries weigh hundreds of MB).
+- A key that the installed build does not load appears in *Settings*
+  as *{name}: not available with this runtime ({reason})*.
+- **Done in X3b** (2026-10-13): *release* `master-959-d637cfb`, the server
+  mode (`sd-server`, the model stays loaded), the API `/api/ai/runtime`
+  and `/api/ai/run` (`engine/crates/rt-app/README.md`). **What did not fit**: the
+  download cannot be done by the page like the models' one, because
+  GitHub *release* downloads do not send CORS headers; the launcher does it
+  with the system `curl` (same progress, pause, resume and
+  `sha256`, same folder), with *Install from a file…* as a fallback.
+  The Windows builds need the Visual C++ 2015–2022
+  runtime, which they do not ship. **X3c**: when they do not start because of that (a missing DLL and
+  some Visual C++ runtime DLL absent from their folder and from
+  `System32`), *Settings ▸ AI post-processing ▸ Runtime* shows
+  *Install Microsoft Visual C++ runtime…*, which opens Microsoft's
+  official page in the system browser (`openExternal`), and
+  *Check again*: we do not redistribute their DLLs. *About* lists
+  stable-diffusion.cpp and ggml with their MIT licences.
 
-### 7.2 · La guarda y los píxeles: el *crate* `rt-post`
+### 7.2 · The guard and the pixels: the `rt-post` crate
 
-Todo el trabajo determinista con imágenes de §3.2 vive en
-**`engine/crates/rt-post`**: condicionamiento (bordes calculados de los
-cambios de id y de normal, profundidad normalizada), plan de mosaicos con
-solape y fusión suave, relleno a múltiplo de 16 y recorte, la **guarda**
-(transferencia de sombreado, separación de frecuencias, regiones por id
-con ΔE₀₀), las comprobaciones y la decisión de retroceso. Rust desde
-cero, solo `std`, `f32`, sin `unsafe`, determinista, con las mismas
-reglas y puertas que el motor. `rt-core` no lo usa ni sabe que existe.
-En escritorio lo enlaza `rt-app`; en la web es un **módulo wasm aparte**
-(`rt-post-wasm` → `public/engine/post.wasm`, generado como `rt.wasm` y
-sin subirse al repositorio), para que el wasm del motor no crezca.
+All the deterministic image work of §3.2 lives in
+**`engine/crates/rt-post`**: conditioning (edges computed from the
+id and normal changes, normalized depth), tile plan with
+overlap and soft blending, padding to a multiple of 16 and cropping, the **guard**
+(shading transfer, frequency separation, regions by id
+with ΔE₀₀), the checks and the fallback decision. Rust from
+scratch, only `std`, `f32`, no `unsafe`, deterministic, with the same
+rules and gates as the engine. `rt-core` does not use it or know it exists.
+On desktop `rt-app` links it; on the web it is a **separate wasm module**
+(`rt-post-wasm` → `public/engine/post.wasm`, generated like `rt.wasm` and
+not committed to the repository), so that the engine's wasm does not grow.
 
-Es una **máquina de pasos**, no un bucle con *callbacks*:
+It is a **step machine**, not a loop with callbacks:
 
-1. `plan(trabajo) → Plan`: mosaicos, tamaño con relleno, fuerza del
-   intento (Intervención × `MAX_STRENGTH`, por `RETRY_FACTOR` en cada
-   reintento).
-2. `conditioning(plan, pases) → imágenes de control` por mosaico.
-3. `accept(plan, original, pases, salidas de los mosaicos, intento) →
-   Aceptado{imagen, informe} | Repetir{fuerza} | Rechazado{informe}`.
+1. `plan(job) → Plan`: tiles, padded size, strength of the
+   attempt (Intervention × `MAX_STRENGTH`, times `RETRY_FACTOR` on each
+   retry).
+2. `conditioning(plan, passes) → control images` per tile.
+3. `accept(plan, original, passes, tile outputs, attempt) →
+   Accepted{image, report} | Retry{strength} | Rejected{report}`.
 
-El conductor que llama al modelo entre pasos es trivial y existe dos
-veces: en Rust en `rt-app` (escritorio) y en TypeScript en un worker
-(web). Todo lo que decide está en `rt-post` y se prueba una vez.
-Máximo `MAX_ATTEMPTS` = 4 intentos; si ninguno pasa, se entrega la
-imagen del motor **sin cambios** con el informe `REJECTED` y el motivo.
-El progreso que sale de la tubería (`AiPostProgress`) cuenta los intentos
-desde 1 y dice de cuántos (`maxAttempts`, el tope de arriba) y por qué se
-devolvió el anterior (`reason`, las palabras de la guarda; en el lanzador,
-`lastFailure` del estado del *post*); su barra se reparte por intentos, un
-cuarto cada uno, y solo llega al final cuando el trabajo acaba (B1). En el
-registro del lanzador, cada intento devuelto deja *AI post N: attempt k of 4
-failed: <motivo>*.
-Con Intervención 0 la salida es la entrada bit a bit, sin llamar al
-modelo.
+The driver that calls the model between steps is trivial and exists twice:
+in Rust in `rt-app` (desktop) and in TypeScript in a worker
+(web). Everything that decides is in `rt-post` and is tested once.
+At most `MAX_ATTEMPTS` = 4 attempts; if none passes, the
+engine image is delivered **unchanged** with the report `REJECTED` and the reason.
+The progress that comes out of the pipeline (`AiPostProgress`) counts attempts
+from 1 and says out of how many (`maxAttempts`, the cap above) and why the
+previous one was returned (`reason`, the guard's words; in the launcher,
+`lastFailure` of the *post* state); its bar is divided by attempts, a
+quarter each, and only reaches the end when the job finishes (B1). In the
+launcher's log, each returned attempt leaves *AI post N: attempt k of 4
+failed: <reason>*.
+With Intervention 0 the output is the input bit for bit, without calling the
+model.
 
-### 7.3 · La tubería de escritorio vive en el lanzador
+### 7.3 · The desktop pipeline lives in the launcher
 
-Los píxeles no hacen viajes de ida y vuelta. El lanzador guarda la imagen
-lineal y los pases del render final de cada trabajo (por id del render,
-en memoria y en `<datos>/cache/ai/`), y **`POST /api/ai/post`** recibe
-solo `{renderId, ajustes, prompt, negativo, modelo}`; para la vista
-previa del modo Rápido, la imagen y los pases van en línea (≤
-`PREVIEW_MAX_SIDE` = 512 px de lado). Mosaicos → stable-diffusion.cpp →
-`rt-post` → reintentos ocurren en nativo, y el progreso y el resultado se
-publican como los trabajos de render (`GET /api/ai/post/<id>`,
-cancelar con `DELETE`). La página construye el *prompt* con los
-materiales y las luces del *store* (`src/ai/prompt.ts`), lo envía con
-los ajustes y recibe las dos imágenes y el informe. El modelo se carga
-una vez y queda cargado mientras se use (vista previa tras vista previa);
-se descarga al cerrar *Post-procesado IA* o tras un rato sin uso, para
-devolver la memoria.
+Pixels do not make round trips. The launcher keeps the linear image
+and the passes of each job's final render (by render id,
+in memory and in `<data>/cache/ai/`), and **`POST /api/ai/post`** receives
+only `{renderId, settings, prompt, negative, model}`; for the
+Fast-mode preview, the image and the passes go inline (≤
+`PREVIEW_MAX_SIDE` = 512 px on a side). Tiles → stable-diffusion.cpp →
+`rt-post` → retries happen natively, and the progress and the result are
+published like render jobs (`GET /api/ai/post/<id>`,
+cancel with `DELETE`). The page builds the prompt with the
+materials and lights from the *store* (`src/ai/prompt.ts`), sends it with
+the settings and receives the two images and the report. The model is loaded
+once and stays loaded while in use (preview after preview);
+it is unloaded when *AI post-processing* is closed or after a while without use, to
+give the memory back.
 
-- **Hecho en X3c** (2026-10-13). En el lanzador, `rt-app/src/ai/post.rs`:
-  `POST /api/ai/post` con `{source: {kind: RENDER, renderId}, settings,
-  prompt, negative, modelKey, materials}` (JSON), o la fuente `INLINE`
-  (cuerpo binario `RPI1`: el JSON, la imagen `RPL1` y los pases `RPP1`,
-  ≤ 512 px); progreso y cancelación como los trabajos de render
-  (`GET /api/ai/post/<id>?after=n`, `DELETE`), imagen en
-  `GET /api/ai/post/<id>/image` (`RPL1`: lineal `f32` con alfa recto) y
-  `aiPost: 1` en `/api/info`. El conductor nativo es el de §7.2: `plan`,
-  por mosaico `tile_input` y la imagen de control, el `sd-server` de X3b
-  (un servidor, el modelo cargado entre llamadas), `accept`, reintentos a
-  `RETRY_FACTOR` hasta `MAX_ATTEMPTS`. **Con Intervención 0 no se arranca
-  el motor de ejecución** (ni hace falta que esté instalado) y la imagen
-  es la del motor bit a bit. El render guarda con su imagen lineal su
-  exposición y su curva (`Look`), así que el modelo ve lo que ve la
-  persona. Contrato completo en `engine/crates/rt-app/README.md`. En la
-  página: `src/io/ai-post.ts` (`DesktopAiService`, el servicio del
-  escritorio cuando el lanzador dice `aiPost`; la web sigue con
-  `notBuiltService` hasta X3d y `?ai=synthetic` con el sintético); la cola
-  pide al render que deje los pases en el lanzador (`aiPasses`), manda el
-  id, enseña el progreso por mosaico y por intento (*IA · mosaico 2 de 4 · intento 2 de 4*, y debajo, tras un reintento, por qué la guarda devolvió el anterior: B1) y
-  escribe la imagen de la IA **desde la luz lineal del render** con su
-  propia exposición y curva (`straightBytes`, `straightWords16`,
-  `straightExr` de `src/render/tiles.ts`): un PNG de 16 bits o un EXR lo
-  siguen siendo, y con Intervención 0 el fichero de la IA es el del motor
-  byte a byte. Detener o pausar durante la IA deja la imagen del motor en
-  el historial (solo se pierde la de la IA). El *prompt* es el de
-  `src/ai/prompt.ts` y la tabla de materiales de la guarda, `guardMaterials`
-  sobre el orden de materiales que exporta `io/rsb.ts`
-  (`ProjectScene.materialOrder`). Lo que corre de verdad aquí y lo que es
-  falso, y lo que no encajó: `ROADMAP.md` X3c.
+- **Done in X3c** (2026-10-13). In the launcher, `rt-app/src/ai/post.rs`:
+  `POST /api/ai/post` with `{source: {kind: RENDER, renderId}, settings,
+  prompt, negative, modelKey, materials}` (JSON), or the `INLINE` source
+  (binary body `RPI1`: the JSON, the `RPL1` image and the `RPP1` passes,
+  ≤ 512 px); progress and cancellation like render jobs
+  (`GET /api/ai/post/<id>?after=n`, `DELETE`), image at
+  `GET /api/ai/post/<id>/image` (`RPL1`: linear `f32` with straight alpha) and
+  `aiPost: 1` in `/api/info`. The native driver is the one from §7.2: `plan`,
+  per tile `tile_input` and the control image, the X3b `sd-server`
+  (one server, the model loaded between calls), `accept`, retries at
+  `RETRY_FACTOR` up to `MAX_ATTEMPTS`. **With Intervention 0 the runtime is not
+  started** (nor does it need to be installed) and the image
+  is the engine's, bit for bit. The render stores with its linear image its
+  exposure and its curve (`Look`), so the model sees what the
+  person sees. Full contract in `engine/crates/rt-app/README.md`. On the
+  page: `src/io/ai-post.ts` (`DesktopAiService`, the desktop
+  service when the launcher says `aiPost`; the web continues with
+  `notBuiltService` until X3d and `?ai=synthetic` with the synthetic one); the queue
+  asks the render to leave the passes in the launcher (`aiPasses`), sends the
+  id, shows the progress per tile and per attempt (*AI · tile 2 of 4 · attempt 2 of 4*, and below, after a retry, why the guard returned the previous one: B1) and
+  writes the AI image **from the render's linear light** with its
+  own exposure and curve (`straightBytes`, `straightWords16`,
+  `straightExr` of `src/render/tiles.ts`): a 16-bit PNG or an EXR stay
+  that way, and with Intervention 0 the AI file is the engine's byte
+  for byte. Stopping or pausing during the AI leaves the engine image in
+  the history (only the AI one is lost). The prompt is the one from
+  `src/ai/prompt.ts` and the guard's material table, `guardMaterials`
+  over the material order that `io/rsb.ts` exports
+  (`ProjectScene.materialOrder`). What really runs here and what is
+  fake, and what did not fit: `ROADMAP.md` X3c.
 
-### 7.4 · Pases (X2)
+### 7.4 · Passes (X2)
 
-Formato único para el motor, el wasm, el lanzador y la vista previa de
-three.js (`src/core/passes.ts`): un plano por pase, `ancho × alto`, por
-filas desde arriba a la izquierda, como la imagen.
+A single format for the engine, the wasm, the launcher and the three.js preview
+(`src/core/passes.ts`): one plane per pass, `width × height`, in
+rows from top left, like the image.
 
-| Pase | Tipo | Contenido | Fondo |
+| Pass | Type | Content | Background |
 | --- | --- | --- | --- |
-| `albedo` | 3 × f32 lineal | Color base del material del primer impacto, sin seguir rebotes especulares (un difuso: su color; un vidrio: su tinte), promediado sobre las muestras del píxel | 0 |
-| `normal` | 3 × f32 | Normal de sombreado unitaria del primer impacto, en el espacio del mundo (Z arriba), vuelta hacia la cámara (cuentan las dos caras del triángulo) | 0 |
-| `depth` | f32 | Distancia a lo largo del eje de la cámara, en unidades de escena | +∞ |
-| `partId` | u32 | Índice de instancia del RSB + 1: `io/rsb.ts` lo traduce a la pieza, como `pick`; el suelo del estudio, `FLOOR_ID` | 0 |
-| `materialId` | u32 | Índice de material del RSB + 1; el suelo, `FLOOR_ID` | 0 |
-| `coc` | f32 | Diámetro del círculo de confusión en píxeles de salida, de la lente fina | 0 (también sin DoF) |
+| `albedo` | 3 × f32 linear | Base colour of the material at the first hit, without following specular bounces (a diffuse: its colour; a glass: its tint), averaged over the pixel's samples | 0 |
+| `normal` | 3 × f32 | Unit shading normal at the first hit, in world space (Z up), turned towards the camera (both faces of the triangle count) | 0 |
+| `depth` | f32 | Distance along the camera axis, in scene units | +∞ |
+| `partId` | u32 | RSB instance index + 1: `io/rsb.ts` translates it to the part, like `pick`; the studio floor, `FLOOR_ID` | 0 |
+| `materialId` | u32 | RSB material index + 1; the floor, `FLOOR_ID` | 0 |
+| `coc` | f32 | Diameter of the circle of confusion in output pixels, from the thin lens | 0 (also without DoF) |
 
-**Corrección del líder (tras X4, 2026-10-13).** El albedo es el del
-primer impacto, sin seguir rebotes especulares (como lo dibuja la vista
-previa de three.js y más simple de igualar), y la normal se vuelve hacia
-la cámara. **El suelo del estudio no es fondo**: lleva `FLOOR_ID`
-(`0xFFFFFFFF`) en los dos ids, porque sus sombras de contacto y su luz
-rebotada son justo lo que mejoran *Luz* y *Rebotes*; el fondo (0) es el
-entorno, la imagen de fondo, la transparencia y los paneles de luz vistos
-por la cámara, y no cambia nunca. El círculo de confusión sigue la misma
-fórmula que `src/core/lens-coc.ts` (X4), que reproduce
-`Camera::generate_ray`. X2 lo emite así en el motor; X3c ajusta la guarda
-(`rt-post`), el servicio sintético y los pases de three.js a `FLOOR_ID`.
+**Lead's correction (after X4, 2026-10-13).** The albedo is that of the
+first hit, without following specular bounces (as the three.js preview
+draws it and simpler to match), and the normal is turned towards
+the camera. **The studio floor is not background**: it carries `FLOOR_ID`
+(`0xFFFFFFFF`) in both ids, because its contact shadows and its
+bounced light are exactly what *Light* and *Bounces* improve; the background (0)
+is the environment, the background image, the transparency and the light panels seen
+by the camera, and it never changes. The circle of confusion follows the same
+formula as `src/core/lens-coc.ts` (X4), which reproduces
+`Camera::generate_ray`. X2 emits it like this in the engine; X3c adjusts the guard
+(`rt-post`), the synthetic service and the three.js passes to `FLOOR_ID`.
 
-`normal`, `depth`, `partId` y `materialId` salen de **un rayo por el
-centro del píxel, sin *jitter***: son exactos y nunca mezclan dos lados de
-una arista, que es lo que necesita la guarda. Los pases se piden con una
-máscara en `RNDR` (bit *i* = `PASS_KEYS[i]`), se acumulan como la imagen,
-no cambian ni un píxel de la imagen (la paridad y el *hash* de
-determinismo siguen iguales) y salen por `rt-wasm` y por el lanzador
-(`/api/render` con `passes=…` en los trabajos finales, que los guarda
-para §7.3, y `GET /api/render/<id>/passes` en binario con cabecera).
+`normal`, `depth`, `partId` and `materialId` come from **one ray through the
+pixel centre, without jitter**: they are exact and never mix two sides of
+an edge, which is what the guard needs. The passes are requested with a
+mask in `RNDR` (bit *i* = `PASS_KEYS[i]`), accumulate like the image,
+do not change a single pixel of the image (parity and the determinism
+*hash* stay the same) and come out through `rt-wasm` and through the launcher
+(`/api/render` with `passes=…` on final jobs, which stores them
+for §7.3, and `GET /api/render/<id>/passes` in binary with a header).
 
-- **Hecho en X2** (2026-10-13): `rt_core::passes`, `rt_render_tile_passes`
-  y `rt_render_tile_albedo` en `rt.wasm`, `PassAccumulator` en el pool y
-  `parsePasses` para el fichero `RPP1` del lanzador
-  (`src/render/pass-planes.ts`), `passes=` y `GET /api/render/<id>/passes`
-  con el almacén de los cuatro últimos renders (`<datos>/cache/ai/` para
-  los de más de 64 MiB). Detalle en `ARCHITECTURE.md` §5.2 y §5.5 y en
-  `engine/crates/rt-app/README.md`. Decisiones de X2 donde el contrato no
-  decía nada: el albedo de un emisor es su `base_color` (no su emisión);
-  el del suelo, `FLOR.color` también en el atrapasombras; con
-  profundidad de campo el albedo sigue el rayo de cada muestra por la
-  lente (se emborrona como la imagen); un recorte o un vidrio paran el
-  rayo de los pases como paran `pick`; una instancia con un índice de
-  material fuera de rango lleva `materialId` 0. Los pases de three.js
-  coinciden con los del motor en ids y profundidad salvo en el suelo, que
-  sigue siendo fondo para ellos hasta X3c
+- **Done in X2** (2026-10-13): `rt_core::passes`, `rt_render_tile_passes`
+  and `rt_render_tile_albedo` in `rt.wasm`, `PassAccumulator` in the pool and
+  `parsePasses` for the launcher's `RPP1` file
+  (`src/render/pass-planes.ts`), `passes=` and `GET /api/render/<id>/passes`
+  with the store of the last four renders (`<data>/cache/ai/` for
+  those above 64 MiB). Detail in `ARCHITECTURE.md` §5.2 and §5.5 and in
+  `engine/crates/rt-app/README.md`. X2 decisions where the contract
+  said nothing: an emitter's albedo is its `base_color` (not its emission);
+  the floor's, `FLOR.color`, also in the shadow catcher; with
+  depth of field the albedo follows each sample's ray through the
+  lens (it blurs like the image); a cutout or a glass stops the
+  passes' ray as they stop `pick`; an instance with an out-of-range
+  material index carries `materialId` 0. The three.js passes
+  match the engine's in ids and depth except on the floor, which
+  is still background for them until X3c
   (`tests/ai-passes-browser.test.ts`).
-- **Hecho en X3c**: el suelo con `FLOOR_ID` en todas partes. En la guarda
-  (`rt-post`) es una región más, que se reilumina y tiene su comprobación
-  de color (*Floor*), y se encontró un fallo de verdad: `FLOOR_ID`
-  (`u32::MAX`) era también el valor inicial de la caché de regiones, así
-  que un suelo visto antes que cualquier pieza caía al fondo. La
-  profundidad del control se normaliza sobre las piezas y el suelo se
-  dibuja a esa escala, recortado (su plano llega al horizonte y aplastaba
-  el producto en unos pocos niveles). En el servicio sintético, región
-  *Floor*. En los pases de three.js, el suelo no se dibuja: se lanza el
-  rayo central del motor en cada píxel contra su plano (`floorHits`, la
-  cámara de `Camera::generate_ray`, también ortográfica) y es `FLOOR_ID`
-  donde está delante de las piezas, con la normal hacia la cámara y su
-  color como albedo; coincide con los pases del motor en cada píxel del
-  suelo, horizonte incluido (`tests/ai-passes.test.ts`,
+- **Done in X3c**: the floor with `FLOOR_ID` everywhere. In the guard
+  (`rt-post`) it is one more region, which is relit and has its colour
+  check (*Floor*), and a real bug was found: `FLOOR_ID`
+  (`u32::MAX`) was also the initial value of the region cache,
+  so a floor seen before any part fell to the background. The
+  control's depth is normalized over the parts and the floor is
+  drawn at that scale, clipped (its plane reaches the horizon and squashed
+  the product into a few levels). In the synthetic service, region
+  *Floor*. In the three.js passes, the floor is not drawn: the engine's
+  central ray is cast at each pixel against its plane (`floorHits`, the
+  camera of `Camera::generate_ray`, orthographic too) and it is `FLOOR_ID`
+  where it is in front of the parts, with the normal towards the camera and its
+  colour as albedo; it matches the engine's passes at every pixel of the
+  floor, horizon included (`tests/ai-passes.test.ts`,
   `tests/ai-passes-browser.test.ts`).
 
-### 7.5 · Ajustes en el *store* (X4)
+### 7.5 · Settings in the *store* (X4)
 
-`RenderSettings.ai` (`src/core/render.ts`) pasa de `{ enabled }` a
-`{ enabled, previewFullEngine } & AiPipelineSettings`, con los valores
-por defecto de `DEFAULT_AI_PIPELINE`; los proyectos antiguos se abren con
-esos valores. Cambiar un control es una acción del *store* y se deshace;
-cada trabajo copia sus ajustes. `AI_AVAILABLE` deja de ser una
-constante en X3c: lo dice `AiPostService.status()`. **Hecho**: la constante
-ya no existe.
+`RenderSettings.ai` (`src/core/render.ts`) goes from `{ enabled }` to
+`{ enabled, previewFullEngine } & AiPipelineSettings`, with the default values
+of `DEFAULT_AI_PIPELINE`; old projects open with
+those values. Changing a control is a *store* action and can be undone;
+each job copies its settings. `AI_AVAILABLE` stops being a
+constant in X3c: `AiPostService.status()` says it. **Done**: the constant
+no longer exists.
 
-### 7.5b · Prompt propio, variantes y prompt del sistema (X4b)
+### 7.5b · Own prompt, variants and system prompt (X4b)
 
-**Hecho** (2026-10-13). Contrato añadido, sin cambiar nada de lo que había:
+**Done** (2026-10-13). Contract added, changing nothing of what was there:
 
-- `AiPipelineSettings.userPrompt?` (cadena recortada de hasta `MAX_USER_PROMPT` = 400
-  caracteres) y `variants?` (entero de 1 a `MAX_VARIANTS` = 8), opcionales en el
-  contrato (`src/core/ai.ts`) y siempre presentes en el *store* (`AiSettings` es
-  `Required<…>`); `DEFAULT_AI_PIPELINE` los trae vacío y 1. Un proyecto anterior se
-  abre sin *prompt* y con una variante. El lanzador no los lee: cada petición es una
-  imagen con su semilla y el *prompt* ya compuesto.
-- `src/core/ai-prompt.ts`: `DEFAULT_SYSTEM_PROMPT` y `SHORT_SYSTEM_PROMPT` (los textos
-  del líder), `composePrompt` (sistema → escena → propio, y el recorte), la estimación
-  de *tokens* y `PromptCaps`. `buildPrompt(state, settings, context?)` compone con un
-  contexto y, sin él, sigue dando solo el de la escena. El ajuste `ai.systemPrompt` de
-  `src/core/settings.ts` (puede quedarse vacío).
-- `ai-models.json` gana `capabilities: { textPrompt, maxPromptTokens? }` en cada
-  modelo (todos con `textPrompt`; `SD15_LIGHT` con 77) y `ModelView` los lleva; un
-  importado los declara en su manifiesto.
-- La cola (`src/ui/render-queue.ts`, `aiStep`): un render, N peticiones del mismo
-  origen (`RENDER` con el mismo `renderId`, o la misma imagen decodificada una vez) con
-  `variantSettings` (semilla + n − 1), cada imagen con `aiFileName(nombre, n)`.
-  `RenderProgress.ai` gana `variant` y `variants`.
-- Resultados: `ResultMeta.aiMore` (las variantes 2 y siguientes; `ai` es la primera),
-  `ResultsStore.add(…, ai, aiMore)`, y en el lanzador `<id>.ai.<n>.<ext>` con
-  `PUT/GET /api/store/results/<id>/ai/<n>` (`engine/crates/rt-app/src/appdata.rs`; el
-  `<id>.ai.<ext>` de antes es la variante 1).
+- `AiPipelineSettings.userPrompt?` (trimmed string of up to `MAX_USER_PROMPT` = 400
+  characters) and `variants?` (integer from 1 to `MAX_VARIANTS` = 8), optional in the
+  contract (`src/core/ai.ts`) and always present in the *store* (`AiSettings` is
+  `Required<…>`); `DEFAULT_AI_PIPELINE` brings them empty and 1. An earlier project
+  opens without a prompt and with one variant. The launcher does not read them: each request is one
+  image with its seed and the prompt already composed.
+- `src/core/ai-prompt.ts`: `DEFAULT_SYSTEM_PROMPT` and `SHORT_SYSTEM_PROMPT` (the lead's
+  texts), `composePrompt` (system → scene → own, and the trimming), the
+  *token* estimate and `PromptCaps`. `buildPrompt(state, settings, context?)` composes with a
+  context and, without it, still gives only the scene's. The `ai.systemPrompt` setting of
+  `src/core/settings.ts` (it may stay empty).
+- `ai-models.json` gains `capabilities: { textPrompt, maxPromptTokens? }` in each
+  model (all with `textPrompt`; `SD15_LIGHT` with 77) and `ModelView` carries them; an
+  imported one declares them in its manifest.
+- The queue (`src/ui/render-queue.ts`, `aiStep`): one render, N requests from the same
+  source (`RENDER` with the same `renderId`, or the same image decoded once) with
+  `variantSettings` (seed + n − 1), each image with `aiFileName(name, n)`.
+  `RenderProgress.ai` gains `variant` and `variants`.
+- Results: `ResultMeta.aiMore` (variants 2 onwards; `ai` is the first),
+  `ResultsStore.add(…, ai, aiMore)`, and in the launcher `<id>.ai.<n>.<ext>` with
+  `PUT/GET /api/store/results/<id>/ai/<n>` (`engine/crates/rt-app/src/appdata.rs`; the
+  earlier `<id>.ai.<ext>` is variant 1).
 
-### 7.6 · Orden
+### 7.6 · Order
 
-**Ya**: X3a, X3b y X4 en paralelo (cada uno en sus ficheros nuevos; donde
-tocan ficheros comunes —`server.rs`, `ports.ts`, `strings.ts`, la
-ventana de render— lo mínimo, para que la fusión sea mecánica). **X2**
-en cuanto se fusione E5. **X3c** cuando estén X2, X3a y X3b; **X3d** y
-**X1 parte B** detrás. Dependencias nuevas, en `ARCHITECTURE.md` §1:
-stable-diffusion.cpp (escritorio, proceso aparte, X3b) y ONNX Runtime
+**Now**: X3a, X3b and X4 in parallel (each in its own new files; where
+they touch shared files —`server.rs`, `ports.ts`, `strings.ts`, the
+render window— as little as possible, so that the merge is mechanical). **X2**
+as soon as E5 is merged. **X3c** when X2, X3a and X3b are in; **X3d** and
+**X1 part B** after it. New dependencies, in `ARCHITECTURE.md` §1:
+stable-diffusion.cpp (desktop, separate process, X3b) and ONNX Runtime
 Web (web, X3d).
 
-### 7.7 · Lista de comprobación en tu equipo (tras X3c, para X1 parte B)
+### 7.7 · Checklist on a real machine (after X3c, for X1 part B)
 
-Aquí no hay GPU ni se pueden bajar los modelos grandes: la tubería se probó
-de punta a punta con un motor de ejecución falso y una sola vez con SD 1.5
-de verdad en CPU (`ROADMAP.md` X3c). La primera imagen real con Z-Image se
-hace en tu equipo:
+The build environment has no GPU and the large models cannot be downloaded: the pipeline was
+tested end to end with a fake runtime and just once with real SD 1.5
+on CPU (`ROADMAP.md` X3c). The first real image with Z-Image is
+made on a test machine:
 
-1. **Requisitos.** Windows 10 u 11 x64 (o Linux x86_64 con glibc ≥ 2.38) y
-   el controlador de la tarjeta gráfica al día (trae Vulkan). En Windows,
-   además, el entorno de **Microsoft Visual C++ 2015–2022 (x64)**: si falta,
-   *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y el botón
-   *Instalar el entorno de Microsoft Visual C++…* abre la página de
-   Microsoft; instala el paquete x64 y pulsa *Comprobar de nuevo*.
-2. **El motor de ejecución Vulkan.** En esa misma fila, *Descargar* (con GPU
-   la regla elige Vulkan). Tiene que acabar en *Instalado ·
-   stable-diffusion.cpp version …, commit d637cfb* y *se ejecuta en* el
-   nombre de tu tarjeta. Si dice CPU teniendo GPU, apúntalo.
-3. **El modelo.** *Ajustes ▸ Post-procesado IA ▸ Modelos*: **Z-Image-Turbo
-   Q4** (`ZIMAGE_Q4`, ≈ 6,5 GB) y *Usar*. En un equipo modesto o sin GPU,
-   **SD 1.5 ligero** (`SD15_LIGHT`, ≈ 3,6 GB).
-4. **Un render final de 1024² con IA.** Abre el ejemplo (o un proyecto
-   tuyo), ventana de render: 1024 × 1024, PNG de 16 bits, el presupuesto de
-   siempre; enciende *Post-procesado IA* con los valores por defecto y
-   *Render*. La cola dice *IA · cargando el modelo* y luego *IA · mosaico 1
-   de 1 · intento 1 de 4* (y *· intento 2 de 4*, con el motivo debajo, si la guarda
-pidió repetir).
-5. **Apunta los tiempos**: el del render del motor, y el de la IA la primera
-   vez (carga el modelo) y una segunda seguida (ya cargado). El informe trae
-   los segundos de la IA (`seconds`).
-6. **Apunta el informe de la guarda**: en el visor de resultados, la línea
-   *Comprobado: …* y, si sale, *La IA se limitó al N %* o el rechazo (al
-   pasar el ratón por la línea salen los números). Compara con el divisor
-   *Render | IA*: ¿cambió algo que no debía (formas, texto, color de un
-   material, enfoque)?
-7. **Intervención 0**: el mismo render con Intervención 0 tiene que dar un
-   `…_AI.png` idéntico byte a byte al del motor, y el motor de ejecución no
-   debe arrancar (la fila sigue sin *cargado:*).
-8. **Qué mandar**: las dos imágenes (`…_0001.png` y `…_0001_AI.png`), la
-   entrada del resultado en `<datos>/results/index.json` (lleva el informe
-   completo, `ai.report`), el registro del lanzador (`<datos>/logs/`), una
-   captura de la fila *Motor de ejecución*, tu GPU y su VRAM (*Ajustes ▸
-   Post-procesado IA ▸ Equipo*), los tiempos del paso 5 y, si algo falla, el
-   mensaje tal cual.
+1. **Requirements.** Windows 10 or 11 x64 (or Linux x86_64 with glibc ≥ 2.38) and
+   an up-to-date graphics card driver (it brings Vulkan). On Windows,
+   also the **Microsoft Visual C++ 2015–2022 (x64)** runtime: if it is missing,
+   *Settings ▸ AI post-processing ▸ Runtime* says so and the button
+   *Install Microsoft Visual C++ runtime…* opens the Microsoft
+   page; install the x64 package and press *Check again*.
+2. **The Vulkan runtime.** In that same row, *Download* (with a GPU
+   the rule picks Vulkan). It has to end up at *Installed ·
+   stable-diffusion.cpp version …, commit d637cfb* and *runs on* the
+   name of the graphics card. If it says CPU while a GPU is present, note it.
+3. **The model.** *Settings ▸ AI post-processing ▸ Models*: **Z-Image-Turbo
+   Q4** (`ZIMAGE_Q4`, ≈ 6.5 GB) and *Use*. On a modest machine or one without a GPU,
+   **SD 1.5 light** (`SD15_LIGHT`, ≈ 3.6 GB).
+4. **A final 1024² render with AI.** Open the example (or a project of
+   one's own), render window: 1024 × 1024, 16-bit PNG, the usual
+   budget; turn on *AI post-processing* with the default values and
+   *Render*. The queue says *AI · loading the model* and then *AI · tile 1
+   of 1 · attempt 1 of 4* (and *· attempt 2 of 4*, with the reason below, if the guard
+   asked for a retry).
+5. **Note the times**: the engine render's, and the AI's the first
+   time (it loads the model) and a second one straight after (already loaded). The report carries
+   the AI seconds (`seconds`).
+6. **Note the guard's report**: in the results viewer, the line
+   *Checked: …* and, if it appears, *The AI was limited to N %* or the rejection (hovering over
+   the line shows the numbers). Compare with the divider
+   *Render | AI*: did anything change that should not have (shapes, text, colour of a
+   material, focus)?
+7. **Intervention 0**: the same render with Intervention 0 has to give an
+   `…_AI.png` identical byte for byte to the engine's, and the runtime must not
+   start (the row still has no *loaded:*).
+8. **What to record**: the two images (`…_0001.png` and `…_0001_AI.png`), the
+   result entry in `<data>/results/index.json` (it carries the full report,
+   `ai.report`), the launcher log (`<data>/logs/`), a screenshot of the
+   *Runtime* row, the GPU and its VRAM (*Settings ▸ AI post-processing ▸
+   Hardware*), the times from step 5 and, if anything fails, the message
+   verbatim.
