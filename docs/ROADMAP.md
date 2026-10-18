@@ -12934,6 +12934,15 @@ without):
 - `tests/s3c-parts.test.ts`: a *Dynamic* part now gets wet where its body takes
   it (S3c left it out; on purpose; mutation: the bodies not passed);
   `tests/s3d-flight.test.ts` and `tests/s3f-organic.test.ts`: the key is `wpt4:`.
+- `tools/s3e-check.mjs` (the built app in Chromium, not part of `npm run qa`):
+  `floor`: the example bottle with its set's backdrop and floor switched off
+  under Rain *On the parts* with a 3 m/s wind, paused at 2 s: *Fast* draws the
+  studio floor wet (the median of the floor in front of the bottle moves from the
+  frame before Start; with *Fast*'s floor not drawn it does not move, checked on a
+  build with that mutation); `note`: with an engine patched without bits 11 and
+  13, the effect's editor says the floor will show dry and the dust without its
+  grains, in English and Spanish, and with the real `rt.wasm` says nothing;
+  `chrome`: the notes are achromatic in both themes.
 
 **Captures** (`tools/s3e-strip.mjs`, the native engine): `docs/ui/rain-moving.png`
 (the drop scene's box under rain at 0, 0.15, 0.25, 0.35, 0.5 and 2 s: it gets
@@ -12941,7 +12950,10 @@ wet as it falls and lands), `docs/ui/rain-floor.png` (the S3e scene at 1, 3 and
 5 s over the studio floor, and close on the dry patch the ledge keeps from the
 rain with the drips that fell on it), `docs/ui/dust-motes.png` (the bottle on the
 set's card at 30 and 120 s of dust with its motes, and the edge of its dust
-shadow at 120 s without and with the fine samples).
+shadow at 120 s without and with the fine samples). And from the page
+(`tools/s3e-check.mjs --only floor`): `docs/ui/physics-rain-floor.png`, the
+example's rain with the set's backdrop and floor off, paused at 2 s, the studio
+floor wet in *Fast* around the bottle.
 
 **What did not fit the plan.**
 - **Dust and snow settle only on the parts that stay.** A part that moves gets
@@ -12955,8 +12967,11 @@ shadow at 120 s without and with the fine samples).
   not the page's bottle on the *Fragrance* set (`tools/rain-dust-sheet.mjs` does
   not have the floor, the motes or a moving part); the capture of a *Dynamic*
   part getting wet is the drop scene's box, not a screenshot of the application.
-- **No new browser check:** the notes of bits 11 and 13 and *Fast*'s floor and
-  motes are covered by `tests/s3e-floor.test.ts` in Node.
+- **Under a set with its own floor the studio floor stays dry**: the set's floor
+  and backdrop are parts, and they keep the rain off the studio floor beneath
+  them (the example's *Fragrance* set does); the browser check switches them off.
+  *Fast*'s motes are checked in Node only (`tests/s3e-floor.test.ts`), not in the
+  browser.
 - **At a macro framing a 2 mm sawtooth remains** along a shadow edge: the grid
   is triangular and read linearly, so a binary edge (open or not) still zigzags
   by a cell. Halving the cell costs four times the samples (◆7).

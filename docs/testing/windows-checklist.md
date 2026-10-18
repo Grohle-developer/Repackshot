@@ -9,7 +9,7 @@ Tick the points as you go. When reporting an issue, state the version and the nu
 For moving parts, the studio floor, the set's fine samples and the dust's grains (S3e).
 
 162. [ ] **A falling part gets wet.** Raise the example bottle (or any part) a little above the floor, set its role to *Dynamic*, add *Rain* with *On the parts* and click *Start*. Pause just after it lands: in *Fast* it must have drops on the faces that met the rain while it fell, and they must move with it in the clip.
-163. [ ] **The studio floor.** With *Studio ▸ Floor* and *Shadow* on and *Rain* with *On the parts*, run for a few seconds and pause: in *Fast* and in a render in *Full* the floor around the product must look darker and glossy where wet, and a dry patch must stay under the product (and under anything that shelters the floor).
+163. [ ] **The studio floor.** With *Studio ▸ Floor* and *Shadow* on, no set floor over it (on the example, switch off *Backdrop* and *Set floor* under *Scene ▸ In the set*) and *Rain* with *On the parts*, run for a few seconds and pause: in *Fast* and in a render in *Full* the floor around the product must look darker and glossy where wet, and a dry patch must stay under the product (and under anything that shelters the floor).
 164. [ ] **Dust on the set and its grains.** Put the product on a set with a large floor card (for example *Fragrance*), add *Dust cloud* with *On the parts* and run for a minute: in a render in *Full*, the edge of the dust shadow on the card must be smooth, not in steps, and close up the dust must show small grains over its layer.
 165. [ ] **What to record when reporting.** A screenshot of 162 in *Fast*, and the renders of 163 and 164. If something fails, the message verbatim and the `<data>\logs\` folder.
 
