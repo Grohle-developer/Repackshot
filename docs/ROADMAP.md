@@ -4522,7 +4522,7 @@ hace `tests/fabric-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1` y el
 `rt.wasm`: el punto, la lona y el algodón de la familia en la bola, en
 *Rápido* antes de M3e, en *Rápido* ahora y en *Completo*.
 
-No encajó con el plan:
+No encajó con el plan (lo marcado ◆ está decidido en *Decisiones de criterio*):
 
 1. ◆ **El umbral deja fuera el lino y el fieltro.** El informe de M3d los
    contaba entre las telas que se leen (2,4 y 2,1 téxeles por hilo en una
@@ -12834,6 +12834,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **O2c** (editor de elementos de la lente). Se acepta tal como está: el elemento nuevo por defecto (radios ±4 f, 4 % de f de grosor, el vidrio de la lente simple del catálogo, tan ancho como el vecino más estrecho, centrado en el hueco), los márgenes (1 % de f de aire, 5 % delante y detrás, 1e-3 mm en los bordes), el paso del 10 % de *Más pequeño · Más grande* y el umbral del círculo de imagen (luz relativa 0,001). Un círculo que no cubre el encuadre **no impide aplicar** (el viñeteo fuerte es un aspecto que se puede querer, y el render lo enseña). La lente editada **conserva el recorrido del diafragma** de la del catálogo. **Hecho en O2c.**
 - **M3c** (nodos *Madera* y *Tela*). ◆1, la pelusa: se queda como está, una salida numérica de la *Tela* que se puede usar en el grafo; la entrada de pelusa de la salida de material (la 16 del programa) llega con **M5**, cuando el motor pinte la pelusa, no antes. ◆2, la tela bajo un bisel: se acepta como está (fuera del radio de bisel, los mismos bits que la familia; su propio fijado). ◆3, la madera de la familia en *Rápido*: **sí**, que se hornee por el mismo camino que el nodo, para que la madera en escena se vea como en las esferas también en *Rápido*: **M3d**. Lo demás (vista desde dentro, el bit de la normal, los nudos contra la caja en *Rápido*, el color medio, la semilla copiada al convertir), como está. **Hecho en M3c**, salvo M3d y lo que va a M5.
 - **M3d** (la madera de la familia en *Rápido*). Se acepta como está: la familia se hornea por el camino del nodo y da sus mismos píxeles. ◆1, los nudos: **(b)**, la capa de nudos de E6 (la de cada pieza, la que coincide con *Completo*) encima de un horneado sin nudos, para la familia y para el nodo; que los nudos de *Rápido* caigan donde los pone el render pesa más que el horneado los traiga. ◆2, la tela: **(b)**, se hornea solo cuando un hilo ocupa al menos 2,5 texels, con la pelusa (*sheen*) encima; por debajo se queda como hoy, sin moiré. Los dos, en **M3e**. **Hecho en M3d**, salvo M3e.
+- **M3e** (los nudos y la tela en *Rápido*). Se acepta como está. ◆1, el umbral: **se queda en 2,5 texels por hilo**; a 2 se roza el límite donde sale el moiré, y el lino y el fieltro sin hornear se leen bien en *Rápido*. ◆2, el nudo encima: **se queda el disco oscurecido**; *Rápido* es una vista previa, y la testa, la grieta y la veta alrededor salen en *Completo*. **Hecho en M3e.**
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
