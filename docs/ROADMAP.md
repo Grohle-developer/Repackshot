@@ -11385,7 +11385,7 @@ vidrio; material vidrio con absorción. Barra, *Grabar* y caché de S2.
 ± 3 %; la miel tarda ≥ 5× más que el agua en nivelarse (test); nada
 atraviesa el vaso; determinismo; hoja `out/liquid-sheet.html`.
 
-### S3 · Lluvia y polvo sobre el set y sobre la lente — **Opus** (tras S4a y S2) — hecha la primera parte (la gota, la mezcla de formas y el cristal frontal); el resto, S3b
+### S3 · Lluvia y polvo sobre el set y sobre la lente — **Opus** (tras S4a y S2) — hecha la primera parte (la gota, la mezcla de formas y el cristal frontal); la segunda, S3b (el cristal alimentado por la escena); el resto, S3c
 
 Petición del usuario (14-10): la lluvia de S4a cayendo sobre el set y la
 pieza y **resbalando** de forma realista; el polvo **asentándose**; y que
@@ -11706,7 +11706,7 @@ lado):
 9. ◆ El cristal en *Rápido*: nada ahora; con S3b, una aproximación (manchas
    blandas) o seguir sin dibujarlo.
 
-### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación) — **Opus** (tras S3) — propuesta
+### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación) — **Opus** (tras S3) — hecha en parte (el cristal frontal alimentado por la escena, ◆5 y ◆9); el resto, S3c
 
 Lo que queda de S3, tal como lo pide su apartado de arriba y sobre lo que deja
 hecho la primera parte:
@@ -11745,6 +11745,262 @@ hecho la primera parte:
    `out/rain-dust-sheet.html` (la botella bajo lluvia a 0, 2, 5 y 15 s, polvo
    a 0, 30 y 120 s, y la foto con el cristal mojado y con polvo) y
    `docs/ui/physics-rain.png`.
+
+**Hecho (S3b: el cristal frontal alimentado por la escena; lo de las piezas,
+S3c, abajo).** La propuesta entera no cabía en un PR sin bajar la calidad.
+Entran las dos decisiones (S3 ◆5 y ◆9) y, de la simulación, todo lo que pasa
+**en el cristal frontal**: es un plano, así que el modelo entero (aterrizajes
+por flujo, mojabilidad, anclaje de Furmidge, resbalar con rastro, juntarse,
+polvo con ángulo de reposo, el rastro que limpia) se construye y se prueba
+sobre él, con el *worker*, la barra, la caché y el clip; los criterios
+numéricos de S3 (el vidrio a 30°, la cara a 60°, el rastro que limpia, juntar
+± 1 %) se cumplen sobre ese modelo. Llevarlo a las mallas de las piezas
+(gotas sobre superficies curvas, la máscara de humedad del material, la
+cobertura por téxel, gotear en las aristas, salpicar, la nieve) es S3c.
+
+**1. La *Forma* fuera de *Avanzado* (S3 ◆5).** En *Ambiente*, la *Forma* es un
+mando visible justo después del *Tamaño*, con los pesos de la *Mezcla* debajo
+cuando la hay; el largo y la punta de la gota y la variación de forma siguen en
+*Avanzado*. `tools/s3b-check.mjs --only shape` (la lista dentro de los mandos,
+fuera de *Avanzado*, que sigue plegado; *Mezcla*, una entrada de deshacer, y sus
+pesos ahí) y la captura `docs/ui/ambient-shape.png`; `ambient-drops.png` y
+`ambient-mix.png` se regraban (la forma ya no está en *Avanzado*).
+
+**2. El cristal en *Rápido* (S3 ◆9).** `render/glass-overlay.ts` y el paso
+`GLASS` de `render/lens-filter-pass.ts`: con las gotas y motas **del motor**
+(`rt_scene_glass_len` / `_copy` sobre una escena de solo la cámara y su cristal,
+`io/rsb.ts` `glassPaneRsb`; de la escena, el fotograma grabado), tres mapas sobre
+el cristal en sus milímetros (la parte bajo gotas; bajo su borde, donde un rayo a
+lo largo del eje vuelve por reflexión total, desde `1 / (n sin θ)` del radio:
+0,87 a 60°, sin ◆, de la física; bajo polvo, por su opacidad) desenfocados por
+la huella de un píxel en el cristal, `R = (f / N / 2) |1 − d / s|`; cada píxel
+toma la imagen desenfocada (por las dos caras del agua) por las gotas y se
+oscurece por el borde y el polvo. Las gotas son discos suaves de borde oscuro;
+el polvo, un tinte (o motas, si son más nítidas que la huella). No dibuja la
+escena del revés dentro de cada gota. El medidor: *Cristal frontal: aproximación
+de las N gotas y M motas del motor* (sin `rt.wasm`, que lo dibuja con el motor).
+Captura `docs/ui/lens-glass-fast.png` (gotas de 8 mm a 150 mm, f/16).
+
+**3. La simulación (`rt_phys::wet`, §5.2 novendecies de ARCHITECTURE).**
+- **Llegadas.** Por paso de 1/240 s y efecto, un sorteo de Poisson de media
+  `densidad × máx(0, −v·n) × área × dt`: lo que cruza la cara de fuera del
+  cristal. Densidad = lo que pide el efecto entre su volumen (las densidades
+  fotográficas de los presets); `v`, su viento más su caída, en los ejes del
+  cristal (los de la cámara). Uniforme en el cuadrado del cristal que cruzan los
+  rayos del render (el del motor). Qué deja cada efecto: `GLASS_FEED`
+  (`src/data/front-glass.ts`: *Lluvia* y *Gotas de agua*, gotas; *Motas de
+  polvo*, *Polen*, *Polvareda*, *Ceniza*, polvo; nieve, burbujas y confeti,
+  nada).
+- **Gotas.** Casquetes de su volumen `π D³ / 6` al ángulo medio de avance y
+  retroceso; se juntan con `optics::glass::merge_drops` (la regla de S3, por
+  volumen); se quedan ancladas por **Furmidge**
+  (`ρ g V sin α ≤ γ 2a (cos θ_R − cos θ_A)`), resbalan por encima según el
+  *arriba* de la cámara a `v = exceso / (C μ a)` y dejan un **rastro** (una
+  película que les quita agua, así que una gota que corre acaba parando) que se
+  lleva el polvo; la que sale del cristal se va (gotea).
+- **Polvo.** Una mota se queda con probabilidad 1 por debajo del ángulo de
+  reposo menos 5°, 0 por encima más 5°, una rampa suave entre medias; nunca en
+  una cara que mira hacia abajo.
+- **Mojabilidad.** `src/data/wettability.ts` (claves nuevas: `GLASS`,
+  `PLASTIC`, `METAL`, `PAPER`, `PAINT`): ángulos de avance y de retroceso; el
+  vidrio, 70° y 50°, de media los 60° del cristal de S3. En S3b solo la usa el
+  cristal.
+- **WET1**, el formato de la página al motor (`core/wet.ts` `wetBytes`); cada
+  fotograma vuelve como su registro (`WetPane::frame`: las gotas, las motas
+  que llegaron y las que se fueron).
+- **Coste**: los 5 s de la escena de paridad (189 gotas al final), 1 200 pasos
+  con un fotograma cada 10, en el `rt.wasm` real, 12–16 ms.
+
+**4. En el *worker*, con caché y clip.** `render/physics-worker.ts` corre el
+PHY1 y el WET1 a la vez (los mismos pasos) o solo uno; cada fotograma lleva las
+poses y el registro del cristal. *Iniciar* (no *Dejar caer*) lleva el cristal de
+la cámara activa cuando está en *Gotas y polvo ▸ De la escena* y algún efecto lo
+alimenta, también sin ningún cuerpo *Dinámico*; con cristal la simulación no se
+para al dormirse los cuerpos (sigue lloviendo): la para *Parar* o 120 s
+(`MAX_GLASS_SECONDS`). *Pausar* y *Reanudar*, los de S2. **La caché** es la pista
+del cristal del clip `PHYSICS` de la cámara (`MotionClip.glass`: las gotas de
+cada fotograma y cada mota con el fotograma en que llegó y en el que se fue, en
+base64, y la **clave**, el FNV-1a del WET1 y la versión del formato): se guarda
+con el proyecto, el render y *Rápido* leen el fotograma que el cabezal dice
+(`Pose.glass`), y una simulación de la misma clave da la misma pista, bit a bit
+(test con el `rt.wasm` real). El inspector dice qué efectos lo alimentan, qué hay
+en el cabezal (*Grabado: 97 fotogramas, 215 gotas y 0 motas*) y si la escena ya
+no da la clave grabada. El clip nace al iniciar, es la misma entrada de deshacer
+que la simulación, y *Reiniciar* lo quita (deshacible). La barra dice *Cristal:
+215 gotas · 0 motas*.
+
+**5. Motor, capacidades y fijados.** El final de `GLAS` (desde el byte 48: `u32
+1`, gotas, motas, `(x y a)`, `(x y r)`; `optics::glass::GlassLayout`,
+`FrontGlass::laid_out`: tal cual, sin esparcir ni juntar), **bit 7**,
+`FEATURE_GLASS_LAYOUT` (128); la página lo escribe solo para un motor con él
+(`SceneView.glassLayout`) y con la cobertura a 0, así que un motor de S3 dibuja
+el cristal limpio. `rt_phys::example::wet_spec` (el cristal de la escena de S3 a
+28 mm f/8 bajo la lluvia del preset empujada por 3 m/s de viento hacia la lente,
+y polen) y `s3b_wet_scene`; `rt --write-s3b-wet-example` y
+`--write-s3b-wet-spec` (`tests/fixtures/s3b-wet.rsb`, `s3b-wet.wet1`); `rt-cli`
+depende ahora de `rt-phys`. **Fijados nuevos**: `PINNED_WET_PANE = 0x5e511523` y
+`PINNED_S3B_WET_4SPP = 0x6e6e370c`, los mismos en escalar, SSE2 y AVX2 (el
+segundo), con 1, 4 y 16 hilos (`rt-cli/tests/example.rs`), en `wasm32-wasip1`
+escalar y simd128 (`cargo test -p rt-phys --test wet`, nuevo en CI) y en el
+`rt.wasm` real (`tools/wasm-parity.mjs`, con los pases intercalados;
+`tests/s3b-wet.test.ts` en el paso de CI que pasa los tests con el `rt.wasm`
+real). **Ningún fijado anterior se mueve.** `rt-app`: `/api/info` dice 255.
+
+**Tests** (cada uno comprobado con su mutación: 23, 10 del motor y 13 de la
+página, lo hacen fallar y pasan sin ella; dos sobrevivieron a la primera pasada
+y se cerraron: el diario de motas sin vaciar entre fotogramas pasaba porque el
+test de los fotogramas usaba el cristal de paridad, que no limpia ninguna mota
+—ahora usa un cristal a 30° con lluvia y polvo y exige que cada mota se vaya una
+sola vez—, y *Reiniciar* mientras corre sin el clip del cristal, que solo se
+probaba tras *Parar*):
+- `rt-phys/tests/wet.rs`: el vidrio a 30° (el radio crítico ± 0,5 % del cálculo
+  de Furmidge en `f64`; a 0,97 y 0,995 se queda, a 1,005 y 1,05 resbala; plano,
+  nunca), resbala más deprisa más empinado y pierde en el rastro el agua que
+  dice, la que sale se va; juntar suma el volumen (± 1 %) en el centro de masas;
+  el rastro limpia el polvo (una banda limpia, el resto con su polvo; y la lluvia
+  en un cristal a 30° deja menos de 0,9 del polvo que sin lluvia); el polvo a 60°
+  < 10 % del horizontal, a 30° el coseno (± 10 %), mirando abajo nada; la lluvia
+  llega a su flujo (± 4σ) y nunca a una cara que mira al otro lado; el mismo
+  cristal por pasos sueltos y juntos y reconstruido de sus fotogramas; los dos
+  fijados. Mutaciones: media histéresis; sin juntar; el rastro que no limpia;
+  sin ángulo de reposo; el flujo sin mirar la cara; el rastro sin perder agua;
+  el diario sin vaciar.
+- `rt-core`: `optics::glass::tests` (el final de `GLAS` va y vuelve, sus rangos
+  y sus cuentas; un cristal colocado toma sus gotas y motas tal cual y su mota
+  para el rayo); `render::s3_tests` (un cristal colocado sin nada, también por un
+  RSB, no cambia un bit del ejemplo). Mutaciones: la lista ignorada (se
+  esparce); juntarla otra vez; el escritor sin la lista. `rt-wasm`: el
+  registro de cristales es el nativo; `scene_glass` es lo que el motor coloca.
+  `rt-cli`: la escena con 1, 4 y 16 hilos y tras un RSB, los dos `--write-*`.
+- `tests/s3b-wet.test.ts` (18): la tabla y que vidrio y reposo son los del
+  motor; qué efectos alimentan; los ejes del cristal y una cámara que mira abajo
+  seca; las fuentes (densidad, viento y caída en los ejes); el WET1 byte a byte
+  con el del motor y su clave; la pista reconstruye cada fotograma y rechaza un
+  registro que no sigue; con el `rt.wasm` real, el cristal fijado y dos
+  ejecuciones con la misma pista; el clip de la cámara (el fotograma de la pose,
+  la cámara quieta, también en 0), guardado y abierto, uno roto se quita; el
+  `GLAS` gota a gota solo para el bit 7 y con grabación; la barra corre el
+  cristal solo (una entrada; *Reiniciar*, otra, deshacible; también mientras
+  corre); *Dejar caer* y *A mano* no lo corren; la huella, los mapas (nítido,
+  desenfocado, el borde, el polvo) y la proyección; con el `rt.wasm` real, el
+  cristal a mano que coloca el motor y la imagen de paridad. Mutaciones (13): el
+  WET1 con una palabra de más; las motas que no se van; el clip que mueve la
+  cámara; sin cristal en 0; la lista para cualquier motor; el cristal a mano
+  corre; *Reiniciar* (en marcha y tras parar) sin el clip; un proyecto que tira
+  el clip; la velocidad en ejes del mundo; sin desenfoque; la huella sin el
+  foco; la pista que no crece.
+- `tools/s3b-check.mjs` (Chromium y SwiftShader): la *Forma* (arriba); el
+  cristal en *Rápido* (los píxeles cambian, 74 980; el medidor; *De la escena*
+  sin grabar, seco); la lluvia con viento de 6 m/s hacia una cámara de 35 mm a
+  f/11: *Iniciar*, en pausa a los 4 s con *Cristal: 148 gotas*, la grabación en el
+  inspector, el visor la dibuja, *Parar* (una entrada), *Reiniciar* la quita y
+  *Deshacer* la devuelve; el cromo acromático en los dos temas. Capturas
+  `docs/ui/ambient-shape.png`, `lens-glass-fast.png` y `physics-rain.png`.
+- La hoja `out/rain-dust-sheet.html` (`tools/rain-dust-sheet.mjs`, con
+  `tests/rain-dust-dump.test.ts`): el ejemplo a 28 mm f/8 con la lluvia empujada
+  por 6 m/s hacia la lente a 0, 2, 5 y 15 s (unas 175 gotas: se llena en un par
+  de segundos y luego corren tantas como llegan), y la lente mirando 60° hacia
+  arriba bajo *Motas de polvo* (143 motas a 30 s, 522 a 120 s: no se ve) y bajo
+  la densidad de una *Polvareda* sin viento (5 866 y 23 113: un velo moteado),
+  cada foto con el dibujo del cristal al lado, y las fotos sin cristal.
+
+**No encajó con el plan.**
+- **La fase partida otra vez.** S3b es el cristal; lo de las piezas es S3c
+  (abajo). Por eso la hoja no tiene la botella bajo la lluvia (gotas, rastros y
+  goteo sobre ella) ni el polvo sobre el set, y `physics-rain.png` enseña la
+  lluvia en el cristal.
+- **Los aterrizajes no siguen a cada partícula del efecto**: el plan decía
+  buscar el instante en que el recorrido de forma cerrada de cada partícula
+  cruza el cristal. La región de un efecto es una caja alrededor del producto
+  que la cámara casi nunca está dentro, y las partículas se envuelven en ella;
+  lo que llega al cristal es el **flujo** del efecto (su densidad por su
+  velocidad a través de la cara), por Poisson. El cristal recibe la lluvia de la
+  escena esté donde esté la cámara (◆ si la región debe contar).
+- **La física deja seca una cámara que mira abajo**: con lluvia vertical nada
+  cruza la cara de fuera de su cristal; hace falta viento hacia la lente (o
+  mirar hacia arriba). El polvo, igual, solo se queda en un cristal que mira
+  hacia arriba por debajo de 35°. Para el veredicto (◆).
+- **La caché es la pista del clip**, como en S2 (no un archivo aparte «junto al
+  proyecto»): va dentro del proyecto, y la clave (`wetKey`) dice cuándo la
+  escena ya no es la grabada. No se vuelve a simular sola: el inspector lo dice
+  y *Iniciar* la rehace.
+- **El clip es de la cámara** (`target` *Cámara*, todos los planos), con el id
+  de la cámara en su pista, y no la mueve; `evaluate` lo deja fuera de los clips
+  que mueven la cámara.
+- **El rastro no se ve en el render**: en el cristal es una película fina (como
+  la lámina, ideal) y lo que hace es quitar agua a la gota y llevarse el polvo.
+  La máscara de humedad del material (menos rugosidad, más oscuro lo poroso) es
+  de las piezas, S3c.
+- **Gotear y salpicar**: en el cristal, una gota que sale del cuadrado se va; no
+  vuelve a caer como partícula ni salpica (S3c). Una gota que cuelga de un
+  cristal que mira hacia abajo no se desprende (S3c).
+- **La nieve no alimenta el cristal** (se fundiría en gotas o se apilaría; S3c),
+  ni las burbujas (suben) ni el confeti (no se pega) (◆).
+- **El borde oscuro de *Rápido*** sale de la física (la reflexión total de un
+  rayo a lo largo del eje), sin ◆; la escena del revés dentro de la gota no se
+  dibuja (lo hacen *Completo* y el render).
+- **Un motor sin el bit 7** (un lanzador de escritorio de antes) no recibe el
+  cristal de la escena: el render lo enseña limpio. El inspector no lo avisa (la
+  página no sabe aquí las capacidades del motor del render); el medidor de
+  *Completo* tampoco.
+- **`rt-cli` depende de `rt-phys`** para escribir la escena de paridad desde la
+  simulación (el ejemplo de `rt-core` no puede: `rt-phys` depende de él).
+- **El fijado de la imagen vive en `rt-phys/tests/wet.rs`**, no en
+  `rt-core/src/render`, por lo mismo; recorre `Isa::available()` con la API
+  pública de `rt-core`.
+- `rt-app/tests/server.rs` comprobaba `features == 127`; ahora 255.
+
+**Para el veredicto** (regla 11, ◆):
+1. ◆ La mojabilidad por familia (`src/data/wettability.ts`): vidrio 70°/50°
+   (media 60°, la del cristal de S3), plástico 90°/65°, metal 80°/50°, papel
+   100°/20°, pintura 85°/60°; con ellos el radio crítico en vidrio vertical es
+   2,1 mm de huella (una gota de unos 4 mm resbala) y 3,0 mm a 30°.
+2. ◆ El resbalar: el arrastre `C = 300` (una gota un 50 % por encima de su
+   tamaño crítico en vidrio vertical va a unos 40 mm/s), el tope de 250 mm/s y la
+   película del rastro de 2 µm (cuánto corre una gota antes de pararse).
+3. ◆ El polvo: el ángulo de reposo de 35° con su rampa de ±5°, y que una cara
+   vertical no guarde nada (en un cristal real algo se pega).
+4. ◆ Qué efecto alimenta el cristal y como qué (`GLASS_FEED`): la nieve, las
+   burbujas y el confeti, nada.
+5. ◆ Si la región del efecto debe contar (ahora la lluvia llega al cristal
+   esté donde esté la cámara) y si una cámara que mira hacia abajo debería
+   mojarse algo sin viento (salpicaduras, la mano del fotógrafo).
+6. ◆ Lo fuerte que se ve: con las densidades fotográficas de los presets, la
+   *Lluvia* llena el cristal en un par de segundos y las *Motas de polvo* no se
+   ven en 120 s (la *Polvareda*, sí). Aceptarlo, o un mando de intensidad (no
+   físico, marcado) para el polvo del cristal.
+7. ◆ Lo fuerte de la aproximación de *Rápido*: los discos suaves desenfocados
+   por la huella real; con el 85 mm f/5,6 de un proyecto nuevo, un velo (como el
+   render, ◆7 de S3).
+8. ◆ `MAX_GLASS_SECONDS = 120`.
+
+### S3c · Gotas y polvo sobre las piezas (simulación) — **Opus** (tras S3b) — propuesta
+
+Lo que queda de S3 tras S3b, sobre el modelo de `rt_phys::wet` (que ya hace el
+cristal):
+
+1. **Gotas sobre las superficies**: los aterrizajes de la lluvia sobre las
+   mallas (el flujo del efecto sobre cada triángulo que mira a la lluvia, o el
+   cruce de cada partícula con la BVH de `rt-phys`), la gota en el plano
+   tangente de su punto (el mismo casquete, con la normal de la malla), el
+   anclaje y el resbalar con la gravedad tangente (el mismo Furmidge, con la
+   **mojabilidad** de la familia del material: `src/data/wettability.ts` y una
+   tabla de la categoría del material a la familia, ◆), siguiendo la superficie
+   de triángulo en triángulo; **gotear** en las aristas (cuando la curvatura
+   gira la normal más allá de lo que el ángulo de contacto aguanta, la gota
+   vuelve a ser una partícula que cae, con el `rt-sim` de S4a) y **salpicar**
+   (gotas secundarias); la **nieve** como capa que no resbala.
+2. **El rastro mojado como máscara del material**: un canal de humedad por
+   pieza (téxeles o vértices) que baja la rugosidad y oscurece lo poroso, en el
+   motor (una sección o un canal del programa de M3b) y en *Rápido*.
+3. **Polvo asentado**: la cobertura por pieza (téxeles o vértices) con el
+   ángulo de reposo de S3b y la lluvia que la limpia por donde pasa el rastro; la
+   capa en el sombreado y las motas donde la cobertura es alta.
+4. **Caché y clip**: las gotas y la cobertura por fotograma en el clip
+   `PHYSICS` (o un clip por pieza mojada), con la clave de S3b.
+5. **Criterios** que quedan de S3: la hoja con la botella bajo la lluvia a 0, 2,
+   5 y 15 s (gotas, rastros, goteo) y el polvo sobre el set a 0, 30 y 120 s;
+   `docs/ui/physics-rain-set.png`.
 
 ## M5 · Tejido hilo a hilo y pelusa real — **Opus**, veredicto **Fable** (tras E6 y E9; la pelusa tras S8)
 
@@ -13039,7 +13295,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
 - El 1.2 entra en **S3**. (hecho en S3)
-- **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9).
+- **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9). **Hecha en parte**: la *Forma*, el cristal en *Rápido* y todo lo que pasa en el cristal frontal; lo de las piezas, **S3c** (ver S3b y S3c, tras S3).
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
   - qué lentes dan ojo de gato, burbuja, cremoso y remolino;

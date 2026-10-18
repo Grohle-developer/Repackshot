@@ -19,10 +19,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Preset nuevo, **Gotas de agua**: gotas transparentes que caen con su forma de gota y largos distintos (S3).
 - La forma ya es una lista (*Punto · Copo · Estela · Gota · Mezcla*): los cinco botones no cabían en el inspector (S3).
 - *Rápido* dibuja las gotas como gotas y cada partícula de una mezcla con su forma, la que da el motor (S3).
+- **La *Forma* sale de *Avanzado***: es uno de los mandos siempre visibles de un efecto, justo después del *Tamaño*, con los pesos de la *Mezcla* debajo (S3b).
 
 ### Cámara y lente
 
 - **Cristal frontal** en *Cámara ▸ Lente ▸ Filtros*: una lámina delante del objetivo con gotas de agua y polvo encima, como una lente bajo la lluvia o una ventana mojada. Mandos: *Gotas* (la parte del cristal que cubren), *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia* (automática, donde está el elemento frontal, o hasta 200 mm). El motor lo traza como geometría real: cada gota refracta como la lente que es (un disco blando con la escena del revés dentro y el borde oscuro), las que se tocan se juntan en una con su volumen, y el polvo son motas oscuras y suaves. Sin gotas ni polvo, la imagen no cambia un bit. Se ve en *Completo* y en los renders; *Rápido* no lo dibuja y lo dice (S3).
+- **El cristal frontal en *Rápido***: una aproximación hecha con las gotas y motas que coloca el motor, las gotas como discos suaves de borde oscuro y el polvo como un tinte o unas motas, tan desenfocados como los deja la apertura; el medidor dice que es una aproximación y de cuántas gotas y motas (S3b).
+- **El cristal frontal alimentado por la escena** (*Gotas y polvo ▸ De la escena*): *Iniciar* en la barra de físicas simula la lluvia y el polvo de los efectos de *Ambiente* cayendo en el cristal. Las gotas se posan donde la lluvia lo cruza (una cámara que mira hacia abajo no se moja con lluvia vertical; con viento hacia ella, sí), se juntan, se quedan ancladas hasta su tamaño crítico y resbalan según el arriba de la cámara, y su rastro se lleva el polvo; el polvo se queda donde el cristal mira hacia arriba. La simulación se graba en un clip de *Físicas* de la cámara que se guarda con el proyecto; el inspector dice qué efectos lo alimentan, qué hay en el cabezal y si la escena ha cambiado desde que se grabó (S3b).
 
 ### Motor
 
@@ -30,10 +33,14 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El **cristal frontal** (`GLAS`, `rt_core::optics::glass`): gotas como casquetes esféricos que se juntan por volumen y refractan los rayos de cámara con su Fresnel y su reflexión total, y motas de polvo; las gotas están en el cristal, no en el encuadre (S3).
 - Bit 6 de las capacidades del motor (`FEATURE_DROPS`): un motor sin él recibe una gota como esfera, una mezcla como su forma de más peso y ningún cristal frontal (S3).
 - Dos escenas de paridad nuevas con sus *hashes* (`rt --write-s3-drops-example` y `--write-s3-glass-example`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos y en el `rt.wasm` real. Ningún *hash* fijado antes se mueve (S3).
+- **`rt_phys::wet`**, la lluvia y el polvo en el cristal frontal, a paso fijo y determinista: llegadas por el flujo de cada efecto a través de la cara del cristal, gotas que se juntan por volumen, ancladas por la histéresis de su línea de contacto (Furmidge) y que resbalan con su rastro, polvo con ángulo de reposo que el rastro limpia; el formato WET1 y `wet_*` en `rt.wasm` (S3b).
+- **El cristal gota a gota**: el final de `GLAS` lleva las gotas y motas de un cristal simulado, y el motor las toma tal cual; bit 7 de las capacidades (`FEATURE_GLASS_LAYOUT`, `/api/info` dice 255). `rt_scene_glass_len` / `_copy` dan a la página el cristal tal como lo coloca el motor (S3b).
+- Fijados nuevos: el cristal de paridad tras 5 s de lluvia (`PINNED_WET_PANE`) y el ejemplo a través de él (`PINNED_S3B_WET_4SPP`, `rt --write-s3b-wet-example`; el WET1, `--write-s3b-wet-spec`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos, en `wasm32-wasip1` y en el `rt.wasm` real. Ningún *hash* fijado antes se mueve (S3b).
 
 ### Herramientas
 
 - `tools/s3-check.mjs`: la gota y la mezcla en *Rápido* y el cristal frontal en *Completo* en Chromium, con sus tres capturas; `tools/wasm-parity.mjs --expect-shapes` (S3).
+- `tools/s3b-check.mjs`: la *Forma* entre los mandos visibles, el cristal en *Rápido* y la lluvia en el cristal con la barra de físicas, con sus tres capturas; `tools/rain-dust-sheet.mjs`, la hoja `out/rain-dust-sheet.html` (la lluvia a 0, 2, 5 y 15 s y el polvo a 0, 30 y 120 s en el cristal, con el dibujo del cristal al lado) (S3b).
 
 ## v0.1.19 — 2026-10-17
 

@@ -271,7 +271,8 @@ como mucho y a unos pocos fotogramas (1/8 s) de lo que la interfaz ya ha
 recibido, así que en una máquina cargada va más despacio en vez de acabar
 sin que se vea; un cuerpo quieto durante
 0,5 s **duerme** y, con todos dormidos, la simulación se para sola; si no,
-a los 30 s simulados. La misma escena da las mismas poses en cualquier
+a los 30 s simulados (S3b: con el cristal frontal alimentado por la escena,
+que sigue lloviendo, no se para sola; a los 120 s). La misma escena da las mismas poses en cualquier
 máquina (*hash* de las poses fijado en los tests, igual en nativo y en
 wasm y con cualquier número de hilos).
 
@@ -1308,8 +1309,51 @@ están en el cristal, no en el encuadre: cambiar la focal o el tamaño de la
 imagen no las mueve. Solo los modos Completo y Render lo trazan, y solo un
 motor con el bit 6 de sus capacidades; una cámara panorámica no tiene
 elemento frontal y no lo usa. Se guarda con cada cámara, en el proyecto y en
-los estudios. Las gotas que caen de la lluvia de la escena y resbalan por el
-cristal son de S3b.
+los estudios.
+
+**Cristal frontal alimentado por la escena (S3b).** `frontGlass.source`
+(opcional; sin él, `MANUAL`, las gotas y el polvo de los mandos, como en S3):
+`SCENE` hace que las gotas y el polvo vengan de los efectos de *Ambiente* que
+caen en el cristal (`src/data/front-glass.ts` `GLASS_FEED`: *Lluvia* y *Gotas
+de agua* mojan; *Motas de polvo*, *Polen*, *Polvareda* y *Ceniza* echan polvo;
+la nieve, las burbujas y el confeti no dejan nada) tal como los simula la barra
+de físicas (`engine/crates/rt-phys` `wet`, en el *worker* de S2). El motor dice
+dónde está el cristal y qué cuadrado de él cruzan los rayos del render
+(`rt_scene_glass`); la página le da, en los ejes del cristal (derecha, arriba y
+hacia fuera, los de la cámara), la gravedad y por cada efecto su densidad (las
+partículas que pide entre el volumen que llenan) y su velocidad media (su
+viento y su caída), su tamaño, los ángulos de avance y de retroceso del agua
+sobre vidrio (`src/data/wettability.ts`, una tabla por familia: vidrio,
+plástico, metal, papel, pintura) y el ángulo de reposo del polvo (35°). En el
+cristal llegan las partículas que cruzan su cara de fuera (`densidad × máx(0,
+−v·n)` por mm² y s: una cámara que mira hacia abajo bajo una lluvia vertical
+no se moja; un viento que sopla hacia ella, sí), por un sorteo de Poisson por
+paso de 1/240 s. **Las gotas** son casquetes de su volumen al ángulo medio,
+**se juntan** por volumen en su centro de masas, se quedan **ancladas** hasta
+el radio crítico de Furmidge (`ρ g V sin α = γ 2a (cos θ_R − cos θ_A)`) y
+**resbalan** por encima según el *arriba* de la cámara, dejando un **rastro**
+(una película de 2 µm del ancho de la gota cuya agua pierden) que **limpia el
+polvo** por donde pasa; una gota que sale del cristal se va. **El polvo** se
+queda donde la cara mira hacia arriba por debajo del ángulo de reposo (una
+rampa suave de ±5°). Cada fotograma de la simulación se graba en un clip
+`PHYSICS` de la cámara (§3.7, `glass`: la caché), y el render y el modo Rápido
+leen el fotograma del cabezal: el motor recibe el cristal gota a gota (el final
+de `GLAS`, bit 7 de sus capacidades; a un motor sin él no se le manda, porque
+lo dibujaría limpio). Sin grabación, el cristal está seco. Las gotas que caen y
+resbalan por las piezas, el polvo que se asienta en ellas y la nieve son de
+S3c.
+
+**El cristal en Rápido (S3b).** El modo Rápido dibuja una aproximación del
+cristal con las gotas y las motas que coloca el motor (a mano, `rt_scene_glass`;
+de la escena, el fotograma grabado): cada punto de la imagen recoge la luz de
+un disco del cristal, el cono de la apertura cortado por él (radio
+`(f / N / 2) |1 − d / s|`); la parte de ese disco bajo las gotas toma la imagen
+desenfocada (atenuada por las dos caras del agua), la parte bajo su borde (donde
+un rayo a lo largo del eje vuelve por reflexión total, desde `1 / (n sin θ)` del
+radio) es oscura, y la parte bajo el polvo, por su opacidad, la oscurece: las
+gotas son discos suaves de borde oscuro y el polvo un tinte o unas motas. La
+escena del revés dentro de cada gota no se dibuja. El medidor dice que es una
+aproximación de las N gotas y M motas del motor.
 
 **Lente trazada (O2).** `CameraOptics.traced` (opcional; sin él o `null`,
 la lente simple, y los proyectos anteriores no cambian ni un byte): una
@@ -1551,6 +1595,19 @@ escena se enseña como se edita (N1, N6), **salvo los nodos
 que una simulación grabada sostiene**, que enseñan su fotograma también
 ahí (una caída desde 0 empieza en 0, y la pose editada ya es la final);
 mientras un nodo está así, el *gizmo* no aparece sobre él.
+**El cristal frontal (S3b).** Una simulación que lleva el cristal frontal de
+la cámara activa alimentado por la escena le da un clip `PHYSICS` a la
+**cámara** (`target` *Cámara*, todos los planos), en la misma entrada de
+deshacer: no mueve la cámara, dice qué fotograma de su cristal se ve en cada
+instante (el más cercano; las gotas no se interpolan), también en 0 sin
+reproducir. Lleva la **pista del cristal** (`glass`: la cámara, los fps y los
+fotogramas, la **clave** de la simulación —el FNV-1a de sus bytes `WET1` y la
+versión del formato—, el ángulo de contacto con que se dibujan sus gotas, las
+gotas de cada fotograma y cada mota con el fotograma en que llegó y en el que
+se fue, `f32` y `u32` *little endian* en base64): es la caché que se guarda con
+el proyecto. Una simulación con la misma clave da los mismos fotogramas, bit a
+bit; el inspector avisa cuando la escena ya no da la clave grabada. Una pista
+que no se lee se quita al abrir, como la de un nodo.
 
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,

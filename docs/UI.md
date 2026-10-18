@@ -727,17 +727,19 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    (desplegable de presets; cambiarlo es una entrada de deshacer) y
    **Nombre**, una línea con sus partículas, y los **ocho mandos de
    fotógrafo**, siempre visibles: *Cantidad* (partículas/m³ o cuenta),
-   *Tamaño* (mm), *Energía* (m/s), *Caos* (%), *Viento* (m/s) y
+   *Tamaño* (mm), **Forma** (S3b, decisión S3 ◆5: fuera de *Avanzado*, justo
+   después del tamaño; una lista, S3: *Punto · Copo · Estela · Gota ·
+   Mezcla*, cinco no caben como botones en el ancho del inspector) y, con
+   *Mezcla*, debajo de ella un peso por forma (*Puntos*, *Copos*, *Estelas*,
+   *Gotas*, 0..4, deslizador y valor) y una línea con la parte que da cada
+   uno (*Punto 20 % · Copo 20 % · Estela 20 % · Gota 40 %* al elegir
+   *Mezcla* por primera vez; sin ningún peso, *Da peso a alguna forma*);
+   *Energía* (m/s), *Caos* (%), *Viento* (m/s) y
    *Dirección del viento* (°), *Gravedad* (× g), *Variación* (%) y
    *Semilla* con *Barajar*. **Avanzado**, plegado: región (*Alrededor de
    la escena* con margen en mm, o *Caja propia* con centro y tamaño),
-   banda de alturas, *Cantidad por* (*Densidad · Cuenta*), **Forma** (una lista,
-   S3: *Punto · Copo · Estela · Gota · Mezcla*; cinco no caben como botones
-   en el ancho del inspector) y, según la forma: con *Mezcla*, un peso por
-   forma (*Puntos*, *Copos*, *Estelas*, *Gotas*, 0..4, deslizador y valor) y
-   una línea con la parte que da cada uno (*Punto 20 % · Copo 20 % · Estela
-   20 % · Gota 40 %* al elegir *Mezcla* por primera vez; sin ningún peso,
-   *Da peso a alguna forma*); con gotas, *Largo de la gota* (×, del centro
+   banda de alturas, *Cantidad por* (*Densidad · Cuenta*) y, según la
+   forma: con gotas, *Largo de la gota* (×, del centro
    del cuerpo a la punta, en radios del cuerpo) y *Punta* (% del cuerpo); con
    gotas o estelas, *Variación de forma* (%); cada uno es una entrada de
    deshacer. Variación de tamaño, velocidad de caída ± variación, giro
@@ -758,6 +760,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    da el motor, `rt_particles_shapes`).
    ![una lluvia de gotas en Rápido](ambient-drops.png)
    ![la mezcla de formas](ambient-mix.png)
+   ![la forma entre los mandos visibles, con Avanzado plegado](ambient-shape.png)
 5. **Sección** (fase Q1) — La vista en sección (`SPEC.md` §3.1): un plano
    que quita un lado de la pieza y tapa el corte. Va **plegada** por defecto,
    con el **interruptor en la cabecera** (el primer encendido hace un plano
@@ -1075,10 +1078,33 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      elemento frontal, o en mm desde el centro del objetivo, hasta 200: una
      ventana delante de la cámara). Cada cambio es una entrada de deshacer
      (*Cámara: Cristal frontal activado*, *Cámara: Tamaño de gota*…). Una
-     nota dice que el modo Completo y el render lo trazan y que el Rápido no
-     lo dibuja; con una cámara panorámica, otra dice que no tiene elemento
-     frontal y el cristal no hace nada.
+     nota dice que el modo Completo y el render lo trazan y que el Rápido
+     dibuja una aproximación (S3b, decisión S3 ◆9: las gotas como discos
+     suaves de borde oscuro, el polvo como un tinte o motas, hechos con las
+     gotas y motas que coloca el motor, `rt_scene_glass`); con el cristal
+     encendido, el medidor del modo Rápido añade *Cristal frontal:
+     aproximación de las N gotas y M motas del motor* (sin `rt.wasm`,
+     *Cristal frontal: Rápido lo dibuja con el motor*). Con una cámara
+     panorámica, otra nota dice que no tiene elemento frontal y el cristal no
+     hace nada.
+     **Gotas y polvo** (S3b), segmentado *A mano · De la escena*, una entrada
+     de deshacer (*Cámara: Gotas y polvo*). *A mano* son los mandos de arriba
+     (una foto fija). *De la escena* quita *Gotas*, *Tamaño de gota* y
+     *Polvo* (la *Semilla* y la *Distancia* se quedan) y dice: que
+     *Iniciar* en la barra de físicas simula la lluvia y el polvo de los
+     efectos de la escena cayendo en el cristal (las gotas se posan, se
+     juntan, resbalan según el arriba de la cámara y se llevan el polvo; el
+     polvo se queda donde el cristal mira hacia arriba) y que la grabación es
+     un clip de *Físicas* de la cámara; qué efectos lo alimentan (*Lo
+     alimentan: Lluvia*, o que ninguno: *añade Lluvia, Gotas de agua, Motas de
+     polvo, Polen, Polvareda o Ceniza*); qué tiene la grabación en el cabezal
+     (*Grabado: 97 fotogramas, 215 gotas y 0 motas en el cabezal*, los números
+     del motor; sin grabación, *el cristal está seco hasta que corra una
+     simulación*), y, si la escena ha cambiado desde que se grabó (otra clave
+     de simulación: la cámara, los efectos, la semilla), *inicia otra vez
+     para poner el cristal al día*.
      ![el cristal frontal mojado en Completo](lens-glass.png)
+     ![la aproximación del cristal en Rápido](lens-glass-fast.png)
 7. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
@@ -1455,7 +1481,8 @@ un material— y el asistente en el paso 1), `docs/ui/animation-n1-cards.png`
 `docs/ui/animation-n1-curve.png` (la curva personalizada con un asa movida).
 
 **Cajón Físicas, la barra de físicas** (fase S2; `SPEC.md` §3.1 y §3.7):
-**▶ Iniciar** (simula las piezas cuyo papel es *Dinámico*) · **⏸ Pausar**,
+**▶ Iniciar** (simula las piezas cuyo papel es *Dinámico* y, S3b, el
+cristal frontal de la cámara activa si lo alimenta la escena) · **⏸ Pausar**,
 que pasa a **▶ Reanudar** mientras está en pausa · **■ Parar** · **↺
 Reiniciar**; después, lo que el simulador dice —**tiempo simulado**
 (*Simulado 0,42 s*) y **cuerpos despiertos** (*2 de 3 despiertos*)— y el
@@ -1486,6 +1513,17 @@ nota: cómo empezar, y mientras corre, que el visor la enseña en *Rápido*
   proyecto. Deshacer mientras corre la abandona sin confirmar nada.
 - Una simulación nueva mientras otra corre para la primera (que confirma
   su pose) y arranca desde ahí.
+- **El cristal frontal** (S3b). Con el cristal de la cámara activa en *De la
+  escena* y algún efecto que llueve o echa polvo, *Iniciar* lo simula con
+  los cuerpos (o solo, sin ninguno *Dinámico*); *Dejar caer* simula solo lo
+  que deja caer. La barra añade lo que dice el motor del último fotograma
+  (*Cristal: 215 gotas · 0 motas*) y no lo cuenta como cuerpos; una
+  simulación con cristal no se para sola al dormirse los cuerpos (sigue
+  lloviendo): la para *Parar* o sus 120 s simulados. Su grabación es un
+  clip **Simulación** de la *Cámara* (*recibe en su cristal frontal la
+  lluvia y el polvo de la escena, según la simulación · 4 s*), en la misma
+  entrada de deshacer; *Reiniciar* lo quita también.
+  ![la lluvia en el cristal, en pausa](physics-rain.png)
 
 Capturas (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (la barra
 en pausa, en mitad de una caída), `docs/ui/physics-drop.png` (tres
