@@ -38,3 +38,24 @@ export const MAX_PARTS_SECONDS = 120;
 
 /** The pieces of a set (backdrop, floor, cards) take no drops one by one: they wet as a film (◆). */
 export const SET_PIECES_AS_FILM = true;
+
+/**
+ * S3e: the least side of a cell of the studio floor, mm (◆): the floor under the product, a film of square cells that the
+ * rain, the drips, the dust and the snow fall on.
+ */
+export const FLOOR_CELL_MM = 2;
+
+/** S3e: the most cells of the studio floor (◆): its cells grow until they keep under it. */
+export const FLOOR_MAX_CELLS = 250_000;
+
+/** S3e: how much a wet film darkens the studio floor (◆: the WETG porosity; on a shadow catcher, a grey of 0.5 darkened). */
+export const FLOOR_POROSITY = 0.5;
+
+/**
+ * S3e: the cell of the set's film triangles that a shadow edge crosses, mm (◆): those triangles take it, so the edge of a
+ * snow or dust shadow on the set is no coarser than this.
+ */
+export const PARTS_EDGE_CELL_MM = 2;
+
+/** S3e: the most samples the refined triangles take together, on top of the budget (◆; the cell grows to keep under it). */
+export const PARTS_EDGE_BUDGET = 300_000;

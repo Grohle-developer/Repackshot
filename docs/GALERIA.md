@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 172 files: 170 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 176 files: 174 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,25 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 62 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 63 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Nothing yet: every screenshot in `docs/ui/` is already in a published version (the latest is v0.1.22).
+Dust motes, moving parts, the studio floor and the set's fine samples (S3e).
+
+#### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation)
+
+<a id="c-physics-rain-floor"></a><img src="ui/physics-rain-floor.png" width="480" alt="The example bottle in Fast with its set's backdrop and floor switched off, in the rain with a 3 m/s wind and On the parts switched on, paused at 2 s: the dark studio floor mottled with wet spots in a square around the bottle, drops as caps on the bottle; the physics bar says Parts: 1,000 drops, 0 drips, 32 in the air; the status bar, Rain on 5 parts."><br>
+`physics-rain-floor.png` · `5fda2be` · The example's rain with a 3 m/s wind and *On the parts* switched on, with the set's backdrop and floor switched off so the rain reaches the studio floor, paused at 2 simulated seconds (*Parts: 1,000 drops · 0 drips · 32 in the air*): *Fast* draws the studio floor's cells where the rain wet them, in the square under the effect's region around the bottle (S3e ◆2, ◆3), darker and glossier than the dry floor, and the drops on the bottle as caps. `tools/s3e-check.mjs --only floor`.
+
+<a id="c-rain-moving"></a><img src="ui/rain-moving.png" width="960" alt="Six frames of a red box falling under rain next to a grey block on a light grey floor, at 0, 0.15, 0.25, 0.35, 0.5 and 2 s: at 0 s the box is in the air and dry; from 0.15 s it lies by the block, its top and sides speckled with drops like the block's; at 2 s both tops carry larger beads."><br>
+`rain-moving.png` · `112c98e` · The S3e moving scene (`rt_phys::example::moving_scene_at`) rendered by the native engine at 0, 0.15, 0.25, 0.35, 0.5 and 2 s: the drop scene's box is a *Dynamic* part, which the engine steps with its body's poses, and it gets wet where it is: dry as it starts to fall, wet on its top and its sides once it has landed by the static block, the drops grown into beads at 2 s; the rain falls at 6.5 m/s with a 0.6 m/s wind across (S3e ◆1, ◆9). `tools/s3e-strip.mjs`.
+
+<a id="c-rain-floor"></a><img src="ui/rain-floor.png" width="960" alt="Four frames of a dark bottle, a red plate leaning at an angle and a grey ledge in the air over a light studio floor in the rain, at 1, 3 and 5 s: the floor darkens and is speckled with drops, except a dry patch under the ledge and a pale dry shadow of the bottle's side; the last frame, close on the dry patch under the ledge, with the bright drips that fell on it."><br>
+`rain-floor.png` · `112c98e` · The S3e floor scene (`rt_phys::example::s3e_scene_at`) rendered by the native engine at 1, 3 and 5 s: the studio floor as a shadow catcher gets wet where the rain reaches it (darker, the drops on it as wet spots, S3e ◆4, ◆5, ◆6), stays dry under the ledge and on the side the wind keeps from the bottle, and the plate's drops run down its sloping side edge to gather at its lowest corner, dark at 5 s (◆10); the last frame, close on the dry patch under the ledge at 5 s, with the drips that fell from it. `tools/s3e-strip.mjs`.
+
+<a id="c-dust-motes"></a><img src="ui/dust-motes.png" width="960" alt="Four frames of a dark glass bottle on a large light card under a dust cloud: at 30 and 120 s, the card and the bottle's foot covered with small bright grains, the side out of the dust's way clean; the last two, close on the edge of the dust's shadow on the card at 120 s, a coarse staircase of steps without the fine samples and a fine 2 mm sawtooth with them."><br>
+`dust-motes.png` · `112c98e` · The S3e dust scene (`rt_phys::example::dust_scene_at`) rendered by the native engine: the bottle on a 700 mm card of the set under a dust cloud at 30 and 120 s, with the motes (grains of dust the engine scatters where the dust is thick, S3e ◆8); then close on the edge of the dust's shadow on the card at 120 s, coarse (the card's own samples: steps of about 7 mm) and with the fine samples (2 mm where the edge crosses, ◆7), where a 2 mm sawtooth remains. `tools/s3e-strip.mjs`.
 
 ### v0.1.22 · 2026-10-18
 
@@ -918,6 +932,10 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
 - [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
+- [`physics-rain-floor.png`](#c-physics-rain-floor) · Unreleased · S3e
+- [`rain-moving.png`](#c-rain-moving) · Unreleased · S3e
+- [`rain-floor.png`](#c-rain-floor) · Unreleased · S3e
+- [`dust-motes.png`](#c-dust-motes) · Unreleased · S3e
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

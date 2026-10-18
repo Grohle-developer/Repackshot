@@ -256,6 +256,16 @@ export interface EngineInfo {
    * it the render draws them round, and the ambient section says so. Absent: not known.
    */
   wetShapes?: boolean;
+  /**
+   * S3e: the engine draws the studio floor's rain, dust and snow (bit 11, render/engine.ts `readsWetFloor`): without it the
+   * render draws the floor dry, and the ambient section says so. Absent: not known.
+   */
+  wetFloor?: boolean;
+  /**
+   * S3e: the engine draws the dust's motes (bit 13, `readsWetMotes`): without it the render draws the dust's layer alone,
+   * and the ambient section says so. Absent: not known.
+   */
+  wetMotes?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

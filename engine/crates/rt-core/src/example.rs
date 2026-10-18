@@ -216,6 +216,9 @@ pub fn scene() -> Scene {
         wet_falling: Vec::new(),
         caps: None,
         cap_owners: Vec::new(),
+        wet_floor: None,
+        motes: None,
+        mote_owners: Vec::new(),
     }
 }
 

@@ -223,6 +223,18 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3f-organic.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3f-organic.rsb" --expect "$expected" --passes
+          # S3e: the studio floor's weather (WETG, bit 11) with drips and splashes on it, a part that moved with
+          # its body (its weather follows its instance), and the dust on the set with the fine samples of its card
+          # (WTP2, bit 12) and its motes (the motes tail, bit 13), each alone and with the passes interleaved.
+          for scene in floor:S3E_FLOOR moving:S3E_MOVING dust:S3E_DUST; do
+            name=${scene%%:*}; pin=${scene##*:}
+            flag=--write-s3e-${name}-example; [ "$name" = floor ] && flag=--write-s3e-example
+            cargo run --release -p rt-cli -- $flag "$RUNNER_TEMP/s3e-$name.rsb"
+            expected=$(sed -n "s/.*PINNED_${pin}_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-phys/tests/wet_parts_s3e.rs | tr -d _)
+            test -n "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3e-$name.rsb" --expect "$expected"
+            node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3e-$name.rsb" --expect "$expected" --passes
+          done
           # E11: the example with the fine filter and twice the samples on its edges (the module finds
           # each tile's edges from its centre rays).
           cargo run --release -p rt-cli -- --write-e11-example "$RUNNER_TEMP/e11.rsb"
@@ -362,7 +374,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts tests/s3e-floor.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
@@ -379,6 +391,10 @@ jobs:
           # image of their shapes.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts
+          # S3e: moving parts, the studio floor, the set's fine samples, the motes, the wind and the edge runs, and
+          # their pinned parts and images.
+          cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3e
+          RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3e
 
       - name: Ray throughput (smoke run of rt-bench)
         run: cargo run --release -p rt-cli --bin rt-bench -- --rays 200000 --triangles 200000

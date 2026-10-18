@@ -102,7 +102,7 @@ use crate::wet::{
     cap_constants, cbrt, poisson, unit, MAX_LANDINGS, MAX_SLIDE_SPEED, POISSON_PART,
     REPOSE_SPREAD_DEG, SLIDE_DRAG, SURFACE_TENSION, TRAIL_FILM_MM, WATER_VISCOSITY, WATER_WEIGHT,
 };
-use crate::world::{Transform, STEP, STEPS_PER_SECOND};
+use crate::world::{Pose, Transform, STEP, STEPS_PER_SECOND};
 use rt_core::fmath;
 use rt_core::math::{Aabb, Vec3};
 use rt_core::rng::mix64;
@@ -110,8 +110,15 @@ use rt_core::weather::DropShape;
 
 /// The magic number of a `WPT1` spec.
 pub const PARTS_MAGIC: &[u8; 4] = b"WPT1";
-/// The version this reader understands.
-pub const PARTS_VERSION: u32 = 1;
+/// The version this writer writes when the spec needs it (S3e: moving parts, the wind, the studio
+/// floor, the set's fine samples); a spec without any of them is written as version 1, and both are
+/// read.
+pub const PARTS_VERSION: u32 = 2;
+/// S3e: [`WetPartSpec::body`] of a part that does not move.
+pub const NO_BODY: u32 = u32::MAX;
+/// S3e: most steps of a film triangle's grid per side when the shadow edge refines it (its
+/// resolution is two bytes then: `rt_core::weather`'s `WTP2`).
+pub const MAX_FINE_RESOLUTION: u32 = rt_core::weather::MAX_FINE_RESOLUTION;
 /// Most parts in a spec.
 pub const MAX_PARTS: usize = 1024;
 /// Most sources in a spec.
@@ -205,6 +212,9 @@ const RAY_OFFSET: f32 = 0.01;
 const MIN_VOLUME: f32 = 1.0e-4;
 /// Most triangles a walk crosses in one step.
 const MAX_CROSSINGS: u32 = 64;
+/// S3e: the most steps per side of the grid of points a film triangle is probed at for a shadow
+/// edge.
+const EDGE_PROBES: u32 = 24;
 // Salts of the counter hashes (fixed forever).
 const SALT_STEP: u64 = 0x53c0_0000_0000_0001;
 const SALT_COUNT: u64 = 0x53c0_0000_0000_0002;
@@ -212,6 +222,7 @@ const SALT_PLACE: u64 = 0x53c0_0000_0000_0003;
 const SALT_SPLASH: u64 = 0x53c0_0000_0000_0004;
 const SALT_FILM: u64 = 0x53c0_0000_0000_0005;
 const SALT_FLIGHT: u64 = 0x53d0_0000_0000_0001;
+const SALT_FLOOR: u64 = 0x53e0_0000_0000_0001;
 
 /// What a source leaves on the parts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,17 +295,53 @@ pub struct WetPartSpec {
     pub soak_mm_s: f32,
     /// [`PART_FILM`]; other bits are kept and ignored.
     pub flags: u32,
+    /// S3e: the dynamic body of the rigid-body scene (`PHY1`) it moves with, by its order among the
+    /// scene's dynamic bodies, or [`NO_BODY`]: it stays where it stands.
+    pub body: u32,
+}
+
+/// S3e: the studio floor (the plane `z`, which is not a mesh) as the simulation takes it: a film of
+/// square cells over the rectangle `min..max` (world XY, mm), the cell growing from `cell_mm` until
+/// there are at most `max_cells`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FloorSpec {
+    /// Height of the plane, mm.
+    pub z: f32,
+    /// The corner of the rectangle with the lower X and Y.
+    pub min: [f32; 2],
+    /// The opposite corner.
+    pub max: [f32; 2],
+    /// The side of a cell, mm (the least).
+    pub cell_mm: f32,
+    /// The most cells.
+    pub max_cells: u32,
+}
+
+/// S3e: what version 2 of the spec adds after the sources (all of it absent in version 1).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PartsExtras {
+    /// The air the drops in the air are in (the effects' wind), world, mm/s.
+    pub wind: Vec3,
+    /// The studio floor, or none.
+    pub floor: Option<FloorSpec>,
+    /// The cell of a film triangle that a shadow edge crosses, mm (0: no refinement).
+    pub edge_cell_mm: f32,
+    /// The most samples the refined triangles may take together.
+    pub edge_budget: u32,
 }
 
 /// Everything the simulation of the parts is given (the `WPT1` bytes):
 ///
 /// ```text
-/// "WPT1"  u32 version (1); u32 seed; f32 cell_mm; u32 max_samples; f32 repose_deg snow_repose_deg;
+/// "WPT1"  u32 version (1 or 2); u32 seed; f32 cell_mm; u32 max_samples; f32 repose_deg snow_repose_deg;
 /// u32 meshes; per mesh: u32 vertices indices; f32 positions[3 × vertices]; u32 indices[]
 /// u32 parts; per part: u32 mesh; f32 rows[12] (the 3 × 4 object-to-world matrix by rows);
-///            f32 advancing_deg receding_deg soak_mm_s; u32 flags (1: a film)
+///            f32 advancing_deg receding_deg soak_mm_s; u32 flags (1: a film);
+///            v2: u32 body (the PHY1 dynamic body it moves with; 0xffffffff: it stays)
 /// u32 sources; per source: u32 kind (0 drops, 1 dust, 2 snow); f32 density (per mm³);
 ///              f32 velocity[3] (world, mm/s); f32 size_mm size_var
+/// v2: f32 wind[3] (world, mm/s); u32 floor (0, 1); [f32 z x0 y0 x1 y1 cell_mm; u32 max_cells];
+///     f32 edge_cell_mm; u32 edge_budget
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartsSpec {
@@ -314,6 +361,8 @@ pub struct PartsSpec {
     pub parts: Vec<WetPartSpec>,
     /// What falls on them.
     pub sources: Vec<PartsSource>,
+    /// S3e: the wind on the drops in the air, the studio floor and the set's fine samples.
+    pub extras: PartsExtras,
 }
 
 struct Words<'a> {
@@ -360,9 +409,12 @@ impl PartsSpec {
         }
         let mut w = Words { bytes, at: 4 };
         let version = w.u32()?;
-        if version != PARTS_VERSION {
-            return Err(format!("WPT1: version {version} is not {PARTS_VERSION}"));
+        if version != 1 && version != PARTS_VERSION {
+            return Err(format!(
+                "WPT1: version {version} is not 1 or {PARTS_VERSION}"
+            ));
         }
+        let v2 = version == PARTS_VERSION;
         let seed = w.u32()?;
         let cell_mm = w.f32()?;
         let max_samples = w.u32()?;
@@ -402,7 +454,7 @@ impl PartsSpec {
             }
             meshes.push(PartsMesh { positions, indices });
         }
-        let part_count = w.count(68)?;
+        let part_count = w.count(if v2 { 72 } else { 68 })?;
         if part_count > MAX_PARTS {
             return Err(format!("WPT1: more than {MAX_PARTS} parts"));
         }
@@ -422,6 +474,7 @@ impl PartsSpec {
                 receding_deg: w.f32()?,
                 soak_mm_s: w.f32()?,
                 flags: w.u32()?,
+                body: if v2 { w.u32()? } else { NO_BODY },
             };
             let ok_angle = |v: f32| (0.0..=180.0).contains(&v);
             if mesh as usize >= meshes.len()
@@ -461,6 +514,46 @@ impl PartsSpec {
             }
             sources.push(source);
         }
+        let mut extras = PartsExtras::default();
+        if v2 {
+            extras.wind = Vec3::new(w.f32()?, w.f32()?, w.f32()?);
+            if extras.wind.abs().max_component() > 1.0e6 {
+                return Err("WPT1: the wind is out of its range".to_string());
+            }
+            extras.floor = match w.u32()? {
+                0 => None,
+                1 => {
+                    let f = FloorSpec {
+                        z: w.f32()?,
+                        min: [w.f32()?, w.f32()?],
+                        max: [w.f32()?, w.f32()?],
+                        cell_mm: w.f32()?,
+                        max_cells: w.u32()?,
+                    };
+                    if !(f.max[0] > f.min[0] && f.max[1] > f.min[1])
+                        || f.min
+                            .iter()
+                            .chain(&f.max)
+                            .chain([&f.z])
+                            .any(|v| v.abs() > 1.0e6)
+                        || !(0.01..=1000.0).contains(&f.cell_mm)
+                        || f.max_cells == 0
+                        || f.max_cells > MAX_SAMPLE_BUDGET
+                    {
+                        return Err("WPT1: the floor is out of its range".to_string());
+                    }
+                    Some(f)
+                }
+                _ => return Err("WPT1: an unknown kind of floor".to_string()),
+            };
+            extras.edge_cell_mm = w.f32()?;
+            extras.edge_budget = w.u32()?;
+            if !(extras.edge_cell_mm == 0.0 || (0.01..=1000.0).contains(&extras.edge_cell_mm))
+                || extras.edge_budget > MAX_SAMPLE_BUDGET
+            {
+                return Err("WPT1: the fine samples are out of their range".to_string());
+            }
+        }
         if w.at != bytes.len() {
             return Err("WPT1: bytes after the end".to_string());
         }
@@ -473,13 +566,21 @@ impl PartsSpec {
             meshes,
             parts,
             sources,
+            extras,
         })
     }
 
-    /// The `WPT1` bytes of this spec.
+    /// S3e: true when the spec needs version 2 (a part that moves, or any of the extras).
+    pub fn needs_v2(&self) -> bool {
+        self.parts.iter().any(|p| p.body != NO_BODY) || self.extras != PartsExtras::default()
+    }
+
+    /// The `WPT1` bytes of this spec: version 1 when it does not need 2 ([`PartsSpec::needs_v2`]),
+    /// so a spec of before keeps its bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
+        let v2 = self.needs_v2();
         let mut words: Vec<u32> = vec![
-            PARTS_VERSION,
+            if v2 { PARTS_VERSION } else { 1 },
             self.seed,
             self.cell_mm.to_bits(),
             self.max_samples,
@@ -509,6 +610,9 @@ impl PartsSpec {
                 p.soak_mm_s.to_bits(),
                 p.flags,
             ]);
+            if v2 {
+                words.push(p.body);
+            }
         }
         words.push(self.sources.len() as u32);
         for s in &self.sources {
@@ -521,6 +625,25 @@ impl PartsSpec {
                 s.size_mm.to_bits(),
                 s.size_var.to_bits(),
             ]);
+        }
+        if v2 {
+            let e = &self.extras;
+            words.extend_from_slice(&[e.wind.x.to_bits(), e.wind.y.to_bits(), e.wind.z.to_bits()]);
+            match e.floor {
+                None => words.push(0),
+                Some(f) => words.extend_from_slice(&[
+                    1,
+                    f.z.to_bits(),
+                    f.min[0].to_bits(),
+                    f.min[1].to_bits(),
+                    f.max[0].to_bits(),
+                    f.max[1].to_bits(),
+                    f.cell_mm.to_bits(),
+                    f.max_cells,
+                ]),
+            }
+            words.push(e.edge_cell_mm.to_bits());
+            words.push(e.edge_budget);
         }
         let mut out = Vec::with_capacity(4 + 4 * words.len());
         out.extend_from_slice(PARTS_MAGIC);
@@ -644,7 +767,13 @@ struct Part {
     receding: f32,
     soak: f32,
     film: bool,
+    /// World to object: S3e: where a part that moves stands now.
     to_object: Transform,
+    /// S3e: the effective gravity on its drops over `g` (−Z for a part that stays; for one that
+    /// moves, less the acceleration of its centre: in free fall it is nothing).
+    gravity: Vec3,
+    /// S3e: its index among the parts that move, or none.
+    mover: Option<u32>,
 }
 
 /// A drop on a part.
@@ -682,6 +811,9 @@ struct Drop {
     edge: bool,
     /// S3f: how far it ran since the last bead of its rivulet, mm.
     run: f32,
+    /// S3e: the open edge it is held at (`3 × triangle + k`, the edge from corner `k` to `k + 1`), or
+    /// [`NEVER`].
+    edge_at: u32,
 }
 
 /// S3f: a merge a drop relaxes from (see [`WetParts::merge`]): its outline first spans the two drops
@@ -749,6 +881,7 @@ impl Drop {
             pinch: 0.0,
             edge: false,
             run: 0.0,
+            edge_at: NEVER,
         }
     }
 }
@@ -917,8 +1050,13 @@ const RAY_LEAF: usize = 4;
 
 impl RayTree {
     fn build(tris: &[Tri]) -> RayTree {
+        RayTree::build_where(tris, |_| true)
+    }
+
+    /// The tree over the triangles `keep` takes (S3e: the parts that stay).
+    fn build_where(tris: &[Tri], keep: impl Fn(&Tri) -> bool) -> RayTree {
         let mut order: Vec<u32> = (0..tris.len() as u32)
-            .filter(|&i| tris[i as usize].area > 0.0)
+            .filter(|&i| tris[i as usize].area > 0.0 && keep(&tris[i as usize]))
             .collect();
         let mut nodes = Vec::new();
         if order.is_empty() {
@@ -1156,8 +1294,9 @@ struct SourceState {
 /// What [`WetParts::walk`] does with a drop's direction.
 #[derive(Clone, Copy, Debug)]
 enum Course {
-    /// Down the slope of each triangle it is on.
-    Downhill,
+    /// Down the slope of each triangle it is on, under the gravity given (S3e: a part that moves
+    /// has its own).
+    Downhill(Vec3),
     /// Straight on along the surface (a splash, a merge).
     Straight(Vec3),
 }
@@ -1169,7 +1308,125 @@ struct WalkEnd {
     p: Vec3,
     /// It left the mesh over an open edge, there.
     off: bool,
+    /// S3e: that edge (`3 × triangle + k`), or [`NEVER`].
+    edge: u32,
     moved: f32,
+}
+
+/// S3e: a part that moves with a body of the rigid-body scene: its geometry where it stood at the
+/// start (its rest, world), with its own trees for rays and samples there, and where it stands now.
+#[derive(Clone, Debug)]
+struct Mover {
+    part: u32,
+    /// The dynamic body of the `PHY1` scene it moves with (its order among the dynamic bodies).
+    body: u32,
+    /// Its triangles at rest (indices local to the part) and a tree over them.
+    rest_tris: Vec<Tri>,
+    tree: RayTree,
+    /// Its samples at rest, and a grid over them.
+    rest_pos: Vec<Vec3>,
+    grid: SampleGrid,
+    /// The centre of its triangles at rest (the point whose acceleration its drops feel).
+    centre: Vec3,
+    /// Rest to now, now and the two steps before; now to rest.
+    now: Transform,
+    prev: Transform,
+    prev2: Transform,
+    now_inv: Transform,
+    /// Object to rest (its spec's transform) inverted: world to object at rest.
+    to_object0: Transform,
+    /// The pose of its body at the start, inverted (rest = start), once the poses began.
+    start_inv: Option<Transform>,
+}
+
+/// S3e: the studio floor as a film of square cells (see [`FloorSpec`]).
+#[derive(Clone, Debug)]
+struct FloorGrid {
+    z: f32,
+    x0: f32,
+    y0: f32,
+    cell: f32,
+    nx: u32,
+    ny: u32,
+    /// The step each cell was first wet in ([`NEVER`]).
+    wet: Vec<u32>,
+    dust_rate: Vec<f32>,
+    snow_rate: Vec<f32>,
+    /// The cells by the step the rain wets them in (the film), and how many are done.
+    film: Vec<(u32, u32)>,
+    film_done: usize,
+    /// First wet since the last frame.
+    new_wet: Vec<u32>,
+    /// Water that landed on it from the air, mm³, and how many drops.
+    water: f32,
+    landed: u32,
+}
+
+impl FloorGrid {
+    fn cells(&self) -> usize {
+        (self.nx * self.ny) as usize
+    }
+
+    /// The centre of cell `c`, world.
+    fn centre(&self, c: u32) -> Vec3 {
+        let (i, j) = (c % self.nx, c / self.nx);
+        Vec3::new(
+            self.x0 + (i as f32 + 0.5) * self.cell,
+            self.y0 + (j as f32 + 0.5) * self.cell,
+            self.z,
+        )
+    }
+
+    /// The cells whose centre is within `r` of `(x, y)`.
+    fn disc(&self, x: f32, y: f32, r: f32, out: &mut Vec<u32>) {
+        out.clear();
+        let lo = |v: f32, o: f32, n: u32| {
+            (((v - r - o) / self.cell - 0.5).ceil().max(0.0) as u32).min(n)
+        };
+        let hi = |v: f32, o: f32, n: u32| {
+            let k = ((v + r - o) / self.cell - 0.5).floor();
+            if k < 0.0 {
+                None
+            } else {
+                Some((k as u32).min(n - 1))
+            }
+        };
+        let (Some(i1), Some(j1)) = (hi(x, self.x0, self.nx), hi(y, self.y0, self.ny)) else {
+            return;
+        };
+        let (i0, j0) = (lo(x, self.x0, self.nx), lo(y, self.y0, self.ny));
+        for j in j0..=j1 {
+            for i in i0..=i1 {
+                let c = j * self.nx + i;
+                let q = self.centre(c);
+                let (dx, dy) = (q.x - x, q.y - y);
+                if dx * dx + dy * dy <= r * r {
+                    out.push(c);
+                }
+            }
+        }
+    }
+
+    /// True when `(x, y)` is over the floor's rectangle.
+    fn covers(&self, x: f32, y: f32) -> bool {
+        x >= self.x0
+            && y >= self.y0
+            && x <= self.x0 + self.nx as f32 * self.cell
+            && y <= self.y0 + self.ny as f32 * self.cell
+    }
+}
+
+/// `a` after `b` (`a ∘ b`).
+fn compose(a: &Transform, b: &Transform) -> Transform {
+    let (ra, rb) = (&a.rows, &b.rows);
+    let mut rows = [[0.0f32; 4]; 3];
+    for (i, row) in rows.iter_mut().enumerate() {
+        for (j, v) in row.iter_mut().enumerate() {
+            *v = ra[i][0] * rb[0][j] + ra[i][1] * rb[1][j] + ra[i][2] * rb[2][j];
+        }
+        row[3] += ra[i][3];
+    }
+    Transform { rows }
 }
 
 /// The state of the parts under their sources.
@@ -1192,6 +1449,7 @@ pub struct WetParts {
     has_dust: bool,
     has_snow: bool,
     grid: SampleGrid,
+    /// Rays: the triangles of the parts that stay (S3e: each part that moves has its own).
     tree: RayTree,
     sources: Vec<SourceState>,
     drops: Vec<Drop>,
@@ -1221,6 +1479,19 @@ pub struct WetParts {
     floor_z: f32,
     /// Drops that landed from the air so far.
     flown: u32,
+    /// S3e: the air the drops in the air are in, and whether it moves.
+    wind: Vec3,
+    windy: bool,
+    /// S3e: the parts that move, and whether their poses began.
+    movers: Vec<Mover>,
+    posed: bool,
+    /// S3e: for each open edge (`3 × triangle + k`), the open edge of the same part at its first
+    /// corner and at its second ([`NEVER`]: none, or the edge is not open).
+    edge_next: Vec<[u32; 2]>,
+    /// S3e: the studio floor, or none.
+    floor: Option<FloorGrid>,
+    /// S3e: film triangles a shadow edge refined.
+    refined: u32,
 }
 
 impl WetParts {
@@ -1229,6 +1500,7 @@ impl WetParts {
         // The triangles, world space.
         let mut parts = Vec::with_capacity(spec.parts.len());
         let mut tris: Vec<Tri> = Vec::new();
+        let mut movers: Vec<Mover> = Vec::new();
         for (pi, ps) in spec.parts.iter().enumerate() {
             let mesh = &spec.meshes[ps.mesh as usize];
             let first_tri = tris.len() as u32;
@@ -1259,6 +1531,37 @@ impl WetParts {
             link(&mut tris[first_tri as usize..], first_tri, mesh);
             let (k, hysteresis) = cap_constants(ps.advancing_deg, ps.receding_deg);
             let cap_deg = (0.5 * (ps.advancing_deg + ps.receding_deg)).clamp(1.0, 179.0);
+            let moves = ps.body != NO_BODY;
+            let to_object = inverse(&ps.transform);
+            let mover = if moves {
+                let rest_tris: Vec<Tri> = tris[first_tri as usize..].to_vec();
+                let tree = RayTree::build(&rest_tris);
+                let mut centre = Vec3::ZERO;
+                for t in &rest_tris {
+                    centre += (t.v[0] + t.v[1] + t.v[2]) * (1.0 / 3.0);
+                }
+                if !rest_tris.is_empty() {
+                    centre *= 1.0 / rest_tris.len() as f32;
+                }
+                movers.push(Mover {
+                    part: pi as u32,
+                    body: ps.body,
+                    rest_tris,
+                    tree,
+                    rest_pos: Vec::new(),
+                    grid: SampleGrid::default(),
+                    centre,
+                    now: Transform::IDENTITY,
+                    prev: Transform::IDENTITY,
+                    prev2: Transform::IDENTITY,
+                    now_inv: Transform::IDENTITY,
+                    to_object0: to_object,
+                    start_inv: None,
+                });
+                Some(movers.len() as u32 - 1)
+            } else {
+                None
+            };
             parts.push(Part {
                 first_tri,
                 tris: tris.len() as u32 - first_tri,
@@ -1271,13 +1574,76 @@ impl WetParts {
                 advancing: ps.advancing_deg.clamp(1.0, 179.0) * fmath::DEG_TO_RAD,
                 receding: ps.receding_deg.clamp(0.0, 179.0) * fmath::DEG_TO_RAD,
                 soak: ps.soak_mm_s,
-                film: ps.flags & PART_FILM != 0,
-                to_object: inverse(&ps.transform),
+                // S3e: a part that moves takes its drops one by one.
+                film: ps.flags & PART_FILM != 0 && !moves,
+                to_object,
+                gravity: Vec3::new(0.0, 0.0, -1.0),
+                mover,
             });
         }
-        // The cells that keep every triangle's grid under the budget: the film parts (a set: large,
-        // flat, shaded, never walked) take a third of it at most when there are parts that take
-        // drops, which take the rest; a sliver's steps follow its area, not its longest edge.
+        // Rays: the parts that stay (each part that moves has its own tree, at rest).
+        let tree = RayTree::build_where(&tris, |t| parts[t.part as usize].mover.is_none());
+        let edge_next = open_edges(&tris);
+        let wind = spec.extras.wind;
+        let mut this = WetParts {
+            steps: 0,
+            cell: spec.cell_mm,
+            parts,
+            tris,
+            pos: Vec::new(),
+            sample_tri: Vec::new(),
+            wet: Vec::new(),
+            wiped: Vec::new(),
+            dust_rate: Vec::new(),
+            snow_rate: Vec::new(),
+            has_dust: false,
+            has_snow: false,
+            grid: SampleGrid::default(),
+            tree,
+            sources: Vec::new(),
+            drops: Vec::new(),
+            film: Vec::new(),
+            film_done: 0,
+            new_wet: Vec::new(),
+            new_wiped: Vec::new(),
+            wiped_mark: Vec::new(),
+            frame_no: 0,
+            drips_since: 0,
+            landed: 0,
+            splashes: 0,
+            drips: 0,
+            shed: 0.0,
+            lost_water: 0.0,
+            scratch: Vec::new(),
+            dirty: false,
+            next_id: 0,
+            gone_ids: Vec::new(),
+            falling: Vec::new(),
+            floor_z: 0.0,
+            flown: 0,
+            wind,
+            windy: wind != Vec3::ZERO,
+            movers,
+            posed: false,
+            edge_next,
+            floor: None,
+            refined: 0,
+            spec,
+        };
+        this.place_samples();
+        this.place_floor();
+        this.prepare_sources();
+        this
+    }
+
+    /// The samples of every triangle: the cells that keep every triangle's grid under the budget
+    /// (the film parts, a set: large, flat, shaded, never walked, take a third of it at most when
+    /// there are parts that take drops, which take the rest; a sliver's steps follow its area, not
+    /// its longest edge); S3e: the film triangles a shadow edge crosses, finer.
+    fn place_samples(&mut self) {
+        let spec = &self.spec;
+        let tris = &self.tris;
+        let parts = &self.parts;
         let longest = |t: &Tri| {
             let e = [t.v[1] - t.v[0], t.v[2] - t.v[1], t.v[0] - t.v[2]];
             e[0].length().max(e[1].length()).max(e[2].length())
@@ -1303,11 +1669,90 @@ impl WetParts {
         let any_drops = tris.iter().any(|t| !is_film(t));
         let (film_cell, film_total) = fit(true, if any_drops { budget / 3 } else { budget });
         let (cell, _) = fit(false, budget.saturating_sub(film_total));
+        let mut res: Vec<u32> = tris
+            .iter()
+            .map(|t| res_of(t, if is_film(t) { film_cell } else { cell }))
+            .collect();
+        // S3e: a film triangle whose coarse grid sees a source's shadow edge (some of its points in
+        // the open, some under something) takes the fine cell, as long as the refined ones keep to
+        // their budget.
+        let edge_cell = spec.extras.edge_cell_mm;
+        if edge_cell > 0.0 && spec.extras.edge_budget > 0 {
+            let dirs: Vec<Vec3> = spec
+                .sources
+                .iter()
+                .filter(|s| s.density > 0.0 && s.size_mm > 0.0 && s.velocity.length() > 0.0)
+                .map(|s| s.velocity / s.velocity.length())
+                .collect();
+            let mut edge = Vec::new();
+            for (ti, t) in tris.iter().enumerate() {
+                if !is_film(t) || !above(t.area, 0.0) {
+                    continue;
+                }
+                let r = res[ti].clamp(1, EDGE_PROBES);
+                let inv = 1.0 / r as f32;
+                let (e1, e2) = (t.v[1] - t.v[0], t.v[2] - t.v[0]);
+                let crossed = dirs.iter().any(|&dir| {
+                    if !above(-dir.dot(t.n), 0.0) {
+                        return false;
+                    }
+                    let (mut open, mut shut) = (false, false);
+                    for j in 0..=r {
+                        for i in 0..=r - j {
+                            let p = t.v[0] + e1 * (i as f32 * inv) + e2 * (j as f32 * inv);
+                            if self.blocked(p + t.n * RAY_OFFSET, -dir) {
+                                shut = true;
+                            } else {
+                                open = true;
+                            }
+                            if open && shut {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                });
+                if crossed {
+                    edge.push(ti);
+                }
+            }
+            let fine = |t: &Tri, c: f32, coarse: u32| {
+                let r = (longest(t) / c)
+                    .ceil()
+                    .min((2.0 * t.area.max(0.0).sqrt() / c).ceil());
+                let r = if r.is_nan() || r < 1.0 {
+                    1
+                } else {
+                    (r as u32).min(MAX_FINE_RESOLUTION)
+                };
+                r.max(coarse)
+            };
+            let mut c = edge_cell;
+            for _ in 0..200 {
+                let total: u64 = edge
+                    .iter()
+                    .map(|&ti| u64::from(samples_of(fine(&tris[ti], c, res[ti]))))
+                    .sum();
+                if total <= u64::from(spec.extras.edge_budget) {
+                    break;
+                }
+                c *= 1.25;
+            }
+            let mut refined = 0;
+            for &ti in &edge {
+                let r = fine(&tris[ti], c, res[ti]);
+                if r > res[ti] {
+                    res[ti] = r;
+                    refined += 1;
+                }
+            }
+            self.refined = refined;
+        }
         // The samples.
         let mut pos = Vec::new();
         let mut sample_tri = Vec::new();
-        for (ti, t) in tris.iter_mut().enumerate() {
-            t.res = res_of(t, if is_film(t) { film_cell } else { cell });
+        for (ti, t) in self.tris.iter_mut().enumerate() {
+            t.res = res[ti];
             t.first = pos.len() as u32;
             let r = t.res;
             let inv = 1.0 / r as f32;
@@ -1319,63 +1764,95 @@ impl WetParts {
                 }
             }
         }
-        for p in parts.iter_mut() {
-            p.first_sample = tris
+        for p in self.parts.iter_mut() {
+            p.first_sample = self
+                .tris
                 .get(p.first_tri as usize)
                 .map_or(pos.len() as u32, |t| t.first);
-            let end = tris
+            let end = self
+                .tris
                 .get((p.first_tri + p.tris) as usize)
                 .map_or(pos.len() as u32, |t| t.first);
             p.samples = end - p.first_sample;
         }
+        // S3e: the samples of the parts that move, at rest, with a grid of their own.
+        let grid_cell = (2.0 * cell).max(4.0);
+        for m in self.movers.iter_mut() {
+            let p = &self.parts[m.part as usize];
+            let range = p.first_sample as usize..(p.first_sample + p.samples) as usize;
+            m.rest_pos = pos[range].to_vec();
+            m.grid = SampleGrid::new(&m.rest_pos, grid_cell);
+            for (rt, t) in m
+                .rest_tris
+                .iter_mut()
+                .zip(&self.tris[p.first_tri as usize..])
+            {
+                rt.res = t.res;
+                rt.first = t.first;
+            }
+        }
         let n = pos.len();
-        let floor_z = tris
+        self.floor_z = self
+            .tris
             .iter()
             .flat_map(|t| t.v)
             .fold(0.0f32, |m, v| m.min(v.z))
             - 1.0;
-        let tree = RayTree::build(&tris);
-        let grid = SampleGrid::new(&pos, (2.0 * cell).max(4.0));
-        let mut this = WetParts {
-            steps: 0,
+        if !self.movers.is_empty() {
+            // S3e: a part that moves may come down to the studio floor.
+            self.floor_z = self.floor_z.min(-1.0);
+        }
+        self.grid = SampleGrid::new(&pos, grid_cell);
+        self.cell = cell;
+        self.pos = pos;
+        self.sample_tri = sample_tri;
+        self.wet = vec![NEVER; n];
+        self.wiped = vec![0; n];
+        self.dust_rate = vec![0.0; n];
+        self.snow_rate = vec![0.0; n];
+        self.wiped_mark = vec![NEVER; n];
+    }
+
+    /// S3e: the studio floor's cells, when the spec has a floor.
+    fn place_floor(&mut self) {
+        let Some(f) = self.spec.extras.floor else {
+            return;
+        };
+        let (w, h) = (f.max[0] - f.min[0], f.max[1] - f.min[1]);
+        let mut cell = f.cell_mm;
+        let dims = |c: f32| {
+            (
+                ((w / c).ceil() as u32).clamp(1, 1 << 16),
+                ((h / c).ceil() as u32).clamp(1, 1 << 16),
+            )
+        };
+        let (mut nx, mut ny) = dims(cell);
+        for _ in 0..200 {
+            if u64::from(nx) * u64::from(ny) <= u64::from(f.max_cells) {
+                break;
+            }
+            cell *= 1.25;
+            (nx, ny) = dims(cell);
+        }
+        let n = (nx * ny) as usize;
+        self.floor = Some(FloorGrid {
+            z: f.z,
+            x0: f.min[0],
+            y0: f.min[1],
             cell,
-            parts,
-            tris,
-            pos,
-            sample_tri,
+            nx,
+            ny,
             wet: vec![NEVER; n],
-            wiped: vec![0; n],
             dust_rate: vec![0.0; n],
             snow_rate: vec![0.0; n],
-            has_dust: false,
-            has_snow: false,
-            grid,
-            tree,
-            sources: Vec::new(),
-            drops: Vec::new(),
             film: Vec::new(),
             film_done: 0,
             new_wet: Vec::new(),
-            new_wiped: Vec::new(),
-            wiped_mark: vec![NEVER; n],
-            frame_no: 0,
-            drips_since: 0,
+            water: 0.0,
             landed: 0,
-            splashes: 0,
-            drips: 0,
-            shed: 0.0,
-            lost_water: 0.0,
-            scratch: Vec::new(),
-            dirty: false,
-            next_id: 0,
-            gone_ids: Vec::new(),
-            falling: Vec::new(),
-            floor_z,
-            flown: 0,
-            spec,
-        };
-        this.prepare_sources();
-        this
+        });
+        // The drops in the air are gone below it.
+        self.floor_z = self.floor_z.min(f.z - 1.0);
     }
 
     /// The flux of every source: the drops' landing tables, the film's wet times, the rates of
@@ -1396,7 +1873,9 @@ impl WetParts {
                     let mut sum = 0.0f32;
                     for (ti, t) in self.tris.iter().enumerate() {
                         let cos = -dir.dot(t.n);
-                        if !(cos > 0.0 && t.area > 0.0) || self.parts[t.part as usize].film {
+                        // S3e: a part that moves takes its share step by step, where it stands.
+                        let p = &self.parts[t.part as usize];
+                        if !(cos > 0.0 && t.area > 0.0) || p.film || p.mover.is_some() {
                             continue;
                         }
                         sum += cos * t.area;
@@ -1452,9 +1931,14 @@ impl WetParts {
                         self.spec.snow_repose_deg
                     };
                     for smp in 0..self.pos.len() as u32 {
-                        let n = self.tris[self.sample_tri[smp as usize] as usize].n;
+                        let t = &self.tris[self.sample_tri[smp as usize] as usize];
+                        let n = t.n;
                         let cos = -dir.dot(n);
-                        if !above(cos, 0.0) || n.z <= 0.0 {
+                        // S3e: dust and snow settle on the parts that stay.
+                        if !above(cos, 0.0)
+                            || n.z <= 0.0
+                            || self.parts[t.part as usize].mover.is_some()
+                        {
                             continue;
                         }
                         let alpha = fmath::acos(n.z.clamp(-1.0, 1.0)) / fmath::DEG_TO_RAD;
@@ -1474,17 +1958,120 @@ impl WetParts {
                 }
             }
             self.sources.push(state);
+            self.prepare_floor(si, s);
         }
         self.film.sort_unstable();
+        if let Some(f) = self.floor.as_mut() {
+            f.film.sort_unstable();
+        }
+    }
+
+    /// S3e: what source `si` leaves on the studio floor's cells in the open (it is level: dust and
+    /// snow rest on all of it): the rain as a film (each cell wet at its first landing, an
+    /// exponential time), the rates of dust and snow.
+    fn prepare_floor(&mut self, si: usize, s: &PartsSource) {
+        let Some(mut f) = self.floor.take() else {
+            return;
+        };
+        let speed = s.velocity.length();
+        if s.density > 0.0 && speed > 0.0 && s.size_mm > 0.0 {
+            let dir = s.velocity / speed;
+            let cos = -dir.z;
+            let var = s.size_var.clamp(0.0, 1.0);
+            if above(cos, 0.0) {
+                let each = match s.kind {
+                    PartsSourceKind::Drops => {
+                        let spread = 0.5 * LANDING_SPREAD * s.size_mm;
+                        fmath::PI * spread * spread * (1.0 + var * var / 3.0)
+                    }
+                    PartsSourceKind::Dust => {
+                        let r = 0.5 * s.size_mm;
+                        fmath::PI * r * r * (1.0 + var * var / 3.0)
+                    }
+                    PartsSourceKind::Snow => {
+                        fmath::PI / 6.0 * s.size_mm * s.size_mm * s.size_mm * (1.0 + var * var)
+                            / SNOW_PACKING
+                    }
+                };
+                let keep = match s.kind {
+                    PartsSourceKind::Drops => 1.0,
+                    PartsSourceKind::Dust => kept_at(0.0, self.spec.repose_deg),
+                    PartsSourceKind::Snow => kept_at(0.0, self.spec.snow_repose_deg),
+                };
+                let rate = s.density * speed * cos * keep * each;
+                for c in 0..f.cells() as u32 {
+                    let origin = f.centre(c) + Vec3::new(0.0, 0.0, RAY_OFFSET);
+                    if !above(rate, 0.0) || self.blocked(origin, -dir) {
+                        continue;
+                    }
+                    match s.kind {
+                        PartsSourceKind::Drops => {
+                            let u = unit(mix64(
+                                u64::from(self.spec.seed) << 32
+                                    ^ SALT_FLOOR
+                                    ^ (u64::from(c) << 8)
+                                    ^ si as u64,
+                            ));
+                            let seconds = -fmath::ln(1.0 - u) / rate;
+                            let step = (seconds * STEPS_PER_SECOND as f32).ceil();
+                            if step.is_finite() && step < 1.0e9 {
+                                f.film.push(((step as u32).max(1), c));
+                            }
+                        }
+                        PartsSourceKind::Dust => f.dust_rate[c as usize] += rate,
+                        PartsSourceKind::Snow => f.snow_rate[c as usize] += rate,
+                    }
+                }
+            }
+        }
+        self.floor = Some(f);
     }
 
     /// True when nothing of the parts is in the way of sample `smp` upstream of `dir`.
     fn open(&self, smp: u32, dir: Vec3) -> bool {
         let n = self.tris[self.sample_tri[smp as usize] as usize].n;
         let origin = self.pos[smp as usize] + n * RAY_OFFSET;
-        self.tree
-            .cast(&self.tris, origin, -dir, f32::INFINITY, true, |_| true)
-            .is_none()
+        !self.blocked(origin, -dir)
+    }
+
+    /// True when the ray from `origin` along `dir` meets a part.
+    fn blocked(&self, origin: Vec3, dir: Vec3) -> bool {
+        self.cast(origin, dir, f32::INFINITY, true, |_| true)
+            .is_some()
+    }
+
+    /// The nearest triangle of the parts the ray meets within `(0, t_max)` that `accept` takes: its
+    /// index and distance; with `any`, the first one found. S3e: the parts that stay, then each part
+    /// that moves where it stands now (its tree at rest, the ray carried there: the motion is rigid,
+    /// so the distances are the world's).
+    fn cast(
+        &self,
+        origin: Vec3,
+        dir: Vec3,
+        t_max: f32,
+        any: bool,
+        accept: impl Fn(u32) -> bool,
+    ) -> Option<(u32, f32)> {
+        let mut best = self.tree.cast(&self.tris, origin, dir, t_max, any, &accept);
+        if self.movers.is_empty() || (any && best.is_some()) {
+            return best;
+        }
+        for m in &self.movers {
+            let first = self.parts[m.part as usize].first_tri;
+            let o = m.now_inv.apply(origin);
+            let d = vector(&m.now_inv, dir);
+            let limit = best.map_or(t_max, |b| b.1);
+            if let Some((li, t)) = m
+                .tree
+                .cast(&m.rest_tris, o, d, limit, any, |li| accept(first + li))
+            {
+                best = Some((first + li, t));
+                if any {
+                    return best;
+                }
+            }
+        }
+        best
     }
 
     /// The spec.
@@ -1656,6 +2243,19 @@ impl WetParts {
             self.film_done += 1;
             self.mark_wet(smp);
         }
+        // S3e: the studio floor's cells whose time has come.
+        if let Some(f) = self.floor.as_mut() {
+            while let Some(&(due, c)) = f.film.get(f.film_done) {
+                if due > self.steps {
+                    break;
+                }
+                f.film_done += 1;
+                if f.wet[c as usize] == NEVER {
+                    f.wet[c as usize] = self.steps;
+                    f.new_wet.push(c);
+                }
+            }
+        }
         changed |= self.soak();
         changed |= self.slide();
         if changed && self.drops.len() > 1 {
@@ -1663,15 +2263,56 @@ impl WetParts {
         }
     }
 
-    /// The drops of source `si` that land in step `step`; true when one came.
+    /// S3e: the velocity of the centre of triangle `ti`, mm/s (nothing for a part that stays).
+    fn tri_velocity(&self, ti: u32) -> Vec3 {
+        let t = &self.tris[ti as usize];
+        let part = &self.parts[t.part as usize];
+        let Some(mi) = part.mover else {
+            return Vec3::ZERO;
+        };
+        let m = &self.movers[mi as usize];
+        let rest = &m.rest_tris[(ti - part.first_tri) as usize];
+        let c = (rest.v[0] + rest.v[1] + rest.v[2]) * (1.0 / 3.0);
+        (m.now.apply(c) - m.prev.apply(c)) * STEPS_PER_SECOND as f32
+    }
+
+    /// The drops of source `si` that land in step `step`; true when one came. S3e: on a part that
+    /// moves, under the rain as it sees it (the rain's velocity less its own) where it stands now.
     fn land(&mut self, step: u32, si: usize) -> bool {
-        let lambda = self.sources[si].lambda;
-        let total = self.sources[si].cdf.last().copied().unwrap_or(0.0);
+        let s = self.spec.sources[si];
+        let speed = s.velocity.length();
+        let still = self.sources[si].cdf.last().copied().unwrap_or(0.0);
+        // S3e: the triangles of the parts that move, by their share of the flux they see.
+        let mut moving: Vec<(u32, f32, Vec3)> = Vec::new();
+        let mut moving_total = 0.0f32;
+        if !self.movers.is_empty() && s.density > 0.0 && speed > 0.0 && s.size_mm > 0.0 {
+            for m in &self.movers {
+                let p = &self.parts[m.part as usize];
+                for ti in p.first_tri..p.first_tri + p.tris {
+                    let t = &self.tris[ti as usize];
+                    let rel = s.velocity - self.tri_velocity(ti);
+                    let sp = rel.length();
+                    if !(above(t.area, 0.0) && above(sp, 0.0)) {
+                        continue;
+                    }
+                    let cos = -(rel / sp).dot(t.n);
+                    if !above(cos, 0.0) {
+                        continue;
+                    }
+                    moving_total += sp * cos * t.area;
+                    moving.push((ti, moving_total, rel));
+                }
+            }
+        }
+        let (lambda, total) = if moving.is_empty() {
+            (self.sources[si].lambda, still)
+        } else {
+            let total = speed * still + moving_total;
+            (s.density * total * STEP, total)
+        };
         if !(lambda > 0.0 && total > 0.0) {
             return false;
         }
-        let s = self.spec.sources[si];
-        let speed = s.velocity.length();
         let dir = s.velocity / speed;
         let base = mix64(
             (u64::from(self.spec.seed) << 32)
@@ -1698,12 +2339,25 @@ impl WetParts {
                 unit(h)
             };
             let pick = draw() * total;
-            let state = &self.sources[si];
-            let at = state
-                .cdf
-                .partition_point(|&c| c <= pick)
-                .min(state.cdf.len() - 1);
-            let ti = state.tris[at];
+            let (ti, along, rate) = if moving.is_empty() || pick < speed * still {
+                let state = &self.sources[si];
+                let pick = if moving.is_empty() {
+                    pick
+                } else {
+                    pick / speed
+                };
+                let at = state
+                    .cdf
+                    .partition_point(|&c| c <= pick)
+                    .min(state.cdf.len() - 1);
+                (state.tris[at], dir, speed)
+            } else {
+                let q = pick - speed * still;
+                let at = moving.partition_point(|e| e.1 <= q).min(moving.len() - 1);
+                let (ti, _, rel) = moving[at];
+                let sp = rel.length();
+                (ti, rel / sp, sp)
+            };
             let t = self.tris[ti as usize];
             let (r1, r2) = (draw().sqrt(), draw());
             let p = t.v[0] * (1.0 - r1) + t.v[1] * (r1 * (1.0 - r2)) + t.v[2] * (r1 * r2);
@@ -1711,15 +2365,11 @@ impl WetParts {
             let seed = h;
             // In the open, or something else of the scene took it first.
             let origin = p + t.n * RAY_OFFSET;
-            if self
-                .tree
-                .cast(&self.tris, origin, -dir, f32::INFINITY, true, |_| true)
-                .is_some()
-            {
+            if self.blocked(origin, -along) {
                 continue;
             }
             self.landed += 1;
-            let normal_speed = speed * (-dir.dot(t.n)).max(0.0);
+            let normal_speed = rate * (-along.dot(t.n)).max(0.0);
             came |= self.impact(ti, p, d, normal_speed, seed);
         }
         came
@@ -1810,21 +2460,38 @@ impl WetParts {
         for f in flying {
             let d = diameter_of(f.volume);
             let vt = terminal_speed(d);
-            let speed = f.v.length();
+            // S3e: the drag is against the air, which the wind moves.
+            let rel = if self.windy { f.v - self.wind } else { f.v };
+            let speed = rel.length();
             let drag = if above(vt, 0.0) {
                 GRAVITY_MM * speed / (vt * vt)
             } else {
                 0.0
             };
             // The acceleration held over the step (exact for gravity alone).
-            let accel = Vec3::new(0.0, 0.0, -GRAVITY_MM) - f.v * drag;
+            let accel = Vec3::new(0.0, 0.0, -GRAVITY_MM) - rel * drag;
             let v = f.v + accel * STEP;
             let mv = f.v * STEP + accel * (0.5 * STEP * STEP);
             let len = mv.length();
             if above(len, 0.0) {
                 let dir = mv / len;
+                // S3e: the studio floor takes what crosses its plane over its rectangle, unless a
+                // part does first.
+                let mut limit = len;
+                let mut floor_at = None;
+                if let Some(fl) = &self.floor {
+                    let end = f.p + mv;
+                    if f.p.z > fl.z && end.z <= fl.z {
+                        let share = (f.p.z - fl.z) / (f.p.z - end.z);
+                        let at = f.p + mv * share;
+                        if fl.covers(at.x, at.y) {
+                            limit = len * share;
+                            floor_at = Some(at);
+                        }
+                    }
+                }
                 let tris = &self.tris;
-                let hit = self.tree.cast(tris, f.p, dir, len, false, |i| {
+                let hit = self.cast(f.p, dir, limit, false, |i| {
                     tris[i as usize].n.dot(dir) < 0.0
                 });
                 if let Some((ti, t)) = hit {
@@ -1837,7 +2504,17 @@ impl WetParts {
                             ^ u64::from(self.steps).wrapping_mul(0x9E37_79B9_7F4A_7C15),
                     );
                     self.flown += 1;
-                    came |= self.impact(ti, at, d, (-v.dot(n)).max(0.0), seed);
+                    // S3e: against a part that moves, at the speed between them.
+                    let vn = if self.movers.is_empty() {
+                        v
+                    } else {
+                        v - self.tri_velocity(ti)
+                    };
+                    came |= self.impact(ti, at, d, (-vn.dot(n)).max(0.0), seed);
+                    continue;
+                }
+                if let Some(at) = floor_at {
+                    self.on_floor(at, d, f.volume);
                     continue;
                 }
             }
@@ -1857,6 +2534,26 @@ impl WetParts {
         kept.append(&mut self.falling);
         self.falling = kept;
         came
+    }
+
+    /// S3e: a drop of diameter `d` and `volume` lands on the studio floor at `at`: it wets the cells
+    /// where it spreads, and its water stays there (the floor is a film: no drop, no splash).
+    fn on_floor(&mut self, at: Vec3, d: f32, volume: f32) {
+        let Some(mut f) = self.floor.take() else {
+            return;
+        };
+        let mut cells = std::mem::take(&mut self.scratch);
+        f.disc(at.x, at.y, 0.5 * LANDING_SPREAD * d, &mut cells);
+        for &c in &cells {
+            if f.wet[c as usize] == NEVER {
+                f.wet[c as usize] = self.steps;
+                f.new_wet.push(c);
+            }
+        }
+        f.water += volume;
+        f.landed += 1;
+        self.scratch = cells;
+        self.floor = Some(f);
     }
 
     /// The number of a new drop.
@@ -1915,7 +2612,6 @@ impl WetParts {
         if self.drops.is_empty() {
             return false;
         }
-        let gravity = Vec3::new(0.0, 0.0, -1.0);
         let mut moved = false;
         let mut keep = vec![true; self.drops.len()];
         let mut drips: Vec<(u32, Vec3, Vec3, f32)> = Vec::new();
@@ -1926,6 +2622,14 @@ impl WetParts {
             let mut d = was;
             d.from = d.p;
             let part = self.parts[d.part as usize];
+            // S3e: the gravity its part feels (−Z, or on a part that moves, less its acceleration).
+            let gravity = part.gravity;
+            let gk = gravity.length();
+            let down = if above(gk, 0.0) {
+                gravity / gk
+            } else {
+                Vec3::new(0.0, 0.0, -1.0)
+            };
             // S3f: a merge relaxes: on towards the centre of volume, the neck filling.
             if d.merging.left > 0.0 {
                 let decay = fmath::exp(-STEP / (MERGE_TIMES * capillary_time(d.a)).max(STEP));
@@ -1958,10 +2662,42 @@ impl WetParts {
             let t = self.tris[d.tri as usize];
             let a = d.a;
             let gn = gravity.dot(t.n);
+            // S3e: held at a sloping open edge, it runs along it while its weight along the edge
+            // beats the hold of its contact line; a level edge, or the lowest corner, holds it, and
+            // there it hangs as below.
+            if d.edge {
+                if let Some((p, edge, run, speed)) = self.run_edge(&d, gravity, &part, &mut path) {
+                    moved = true;
+                    let film = (TRAIL_FILM_MM * 2.0 * a * run).min(d.volume);
+                    self.shed += film;
+                    let left = d.volume - film;
+                    for w in path.windows(2) {
+                        self.wipe(d.part, w[0], w[1], a, t.n);
+                    }
+                    d.vel = (p - d.p) * STEPS_PER_SECOND as f32;
+                    d.ca = WATER_VISCOSITY * speed / SURFACE_TENSION;
+                    d.load = 1.0;
+                    d.hang = 0.0;
+                    d.pinch = 0.0;
+                    d.p = p;
+                    d.edge_at = edge;
+                    d.tri = edge / 3;
+                    d.volume = left;
+                    d.a = cbrt(left / part.k);
+                    d.touched = true;
+                    d.fresh = true;
+                    if left < MIN_VOLUME {
+                        *kept = false;
+                        continue;
+                    }
+                    self.put(i, d, &was);
+                    continue;
+                }
+            }
             // A drop on a face that looks down, or held at an open edge, hangs until its weight beats
             // its contact line; S3f: then it necks and lets go of a share of its water.
             if gn > HANG_MIN || d.edge {
-                let pull = WATER_WEIGHT * d.volume * if d.edge { 1.0 } else { gn };
+                let pull = WATER_WEIGHT * d.volume * if d.edge { gk } else { gn };
                 let hold = PENDANT_HOLD * 2.0 * fmath::PI * a * SURFACE_TENSION * part.sin_cap;
                 d.hang = if hold > 0.0 { pull / hold } else { 2.0 };
                 if d.hang > 1.0 {
@@ -1972,7 +2708,7 @@ impl WetParts {
                         let off = d.volume * PINCH_OFF_SHARE;
                         let left = d.volume - off;
                         let tip = if d.edge {
-                            d.p + gravity * a + t.n * RAY_OFFSET
+                            d.p + down * a + t.n * RAY_OFFSET
                         } else {
                             d.p + t.n * a
                         };
@@ -1993,6 +2729,12 @@ impl WetParts {
                     d.touched = true;
                 }
                 if d.edge {
+                    if d.ca > 0.0 {
+                        // It came to the lowest point of its edge: at rest there.
+                        d.ca = 0.0;
+                        d.vel = Vec3::ZERO;
+                        d.touched = true;
+                    }
                     self.put(i, d, &was);
                     continue;
                 }
@@ -2030,7 +2772,13 @@ impl WetParts {
             let speed = (excess / (SLIDE_DRAG * WATER_VISCOSITY * a)).min(MAX_SLIDE_SPEED);
             path.clear();
             path.push(d.p);
-            let end = self.walk(d.tri, d.p, Course::Downhill, speed * STEP, &mut path);
+            let end = self.walk(
+                d.tri,
+                d.p,
+                Course::Downhill(gravity),
+                speed * STEP,
+                &mut path,
+            );
             path.push(end.p);
             moved = true;
             // The film it leaves behind, and the dust it takes.
@@ -2058,6 +2806,7 @@ impl WetParts {
                 d.volume = left;
                 d.a = cbrt(left / part.k);
                 d.edge = true;
+                d.edge_at = end.edge;
                 d.vel = Vec3::ZERO;
                 d.ca = 0.0;
                 d.run = 0.0;
@@ -2134,6 +2883,81 @@ impl WetParts {
         moved
     }
 
+    /// S3e: drop `d`, held at an open edge, runs along it when its weight along the edge beats the
+    /// hold of its contact line (Furmidge's balance with the component of its weight along the edge
+    /// instead of along the face; a level edge holds it), down, at the speed a drop slides with that
+    /// excess, from edge to edge of its part's open boundary, and stops at a corner past which the
+    /// boundary rises (the lowest point of the edge), where it hangs and lets go from rest as S3f's
+    /// drops do. Its new point, its edge, how far it went and its speed, with its way in `path`;
+    /// `None` when it holds.
+    fn run_edge(
+        &self,
+        d: &Drop,
+        gravity: Vec3,
+        part: &Part,
+        path: &mut Vec<Vec3>,
+    ) -> Option<(Vec3, u32, f32, f32)> {
+        if d.edge_at == NEVER {
+            return None;
+        }
+        let ends = |e: u32| {
+            let t = &self.tris[(e / 3) as usize];
+            let k = (e % 3) as usize;
+            (t.v[k], t.v[(k + 1) % 3])
+        };
+        let (a0, b0) = ends(d.edge_at);
+        let ab = b0 - a0;
+        let len = ab.length();
+        if !above(len, 0.0) {
+            return None;
+        }
+        let e = ab / len;
+        let weight = WATER_WEIGHT * d.volume * gravity.dot(e).abs();
+        let hold = 2.0 * SURFACE_TENSION * part.hysteresis * d.a;
+        if weight <= hold {
+            return None;
+        }
+        let speed = ((weight - hold) / (SLIDE_DRAG * WATER_VISCOSITY * d.a)).min(MAX_SLIDE_SPEED);
+        let mut left = speed * STEP;
+        // On the edge (a merge may have left its centre off it).
+        let mut p = a0 + e * (d.p - a0).dot(e).clamp(0.0, len);
+        path.clear();
+        path.push(d.p);
+        path.push(p);
+        let mut cur = d.edge_at;
+        let mut went = 0.0f32;
+        for _ in 0..MAX_CROSSINGS {
+            let (a, b) = ends(cur);
+            let to_b = gravity.dot(b - a) >= 0.0;
+            let end = if to_b { b } else { a };
+            let room = (end - p).length();
+            if left <= room {
+                if above(room, 0.0) {
+                    p += (end - p) * (left / room);
+                }
+                went += left;
+                break;
+            }
+            went += room;
+            left -= room;
+            p = end;
+            path.push(p);
+            let next = self.edge_next[cur as usize][usize::from(to_b)];
+            if next == NEVER {
+                break;
+            }
+            let (na, nb) = ends(next);
+            let far = if na == end { nb } else { na };
+            if gravity.dot(far - end) <= 0.0 {
+                // A corner the boundary rises from on both sides: the lowest point.
+                break;
+            }
+            cur = next;
+        }
+        path.push(p);
+        above(went, 1.0e-6).then_some((p, cur, went, speed))
+    }
+
     /// S3f: puts drop `d` back at `i`, changed (for the frame) when what makes its shape changed from
     /// `was`.
     fn put(&mut self, i: usize, mut d: Drop, was: &Drop) {
@@ -2162,7 +2986,10 @@ impl WetParts {
     /// Walks a point of triangle `ti` along the surface by `dist`, from triangle to triangle,
     /// appending the corners of its path (the edges it crosses) to `path`.
     fn walk(&self, ti: u32, p: Vec3, course: Course, dist: f32, path: &mut Vec<Vec3>) -> WalkEnd {
-        let gravity = Vec3::new(0.0, 0.0, -1.0);
+        let gravity = match course {
+            Course::Downhill(g) => g,
+            Course::Straight(_) => Vec3::new(0.0, 0.0, -1.0),
+        };
         let mut tri = ti;
         let mut p = p;
         let mut left = dist;
@@ -2170,7 +2997,7 @@ impl WetParts {
         let mut stalls = 0;
         let dir_on = |t: &Tri| -> Option<Vec3> {
             let want = match course {
-                Course::Downhill => gravity,
+                Course::Downhill(g) => g,
                 Course::Straight(d) => d,
             };
             let d = want - t.n * want.dot(t.n);
@@ -2223,6 +3050,7 @@ impl WetParts {
                     tri,
                     p: at,
                     off: true,
+                    edge: 3 * tri + k as u32,
                     moved,
                 };
             }
@@ -2240,7 +3068,7 @@ impl WetParts {
                 continue;
             }
             p = at;
-            if let (Course::Downhill, Some(false)) = (course, into) {
+            if let (Course::Downhill(_), Some(false)) = (course, into) {
                 // Down the crease, as far as its end.
                 let e = (b - a).normalize();
                 let g = gravity.dot(e);
@@ -2261,6 +3089,7 @@ impl WetParts {
             tri,
             p,
             off: false,
+            edge: NEVER,
             moved,
         }
     }
@@ -2308,6 +3137,10 @@ impl WetParts {
     /// Puts in `scratch` the samples of `part` within `r` of the segment `p0 p1` whose face looks
     /// the way `n` does.
     fn near(&mut self, part: u32, p0: Vec3, p1: Vec3, r: f32, n: Vec3) {
+        if let Some(mi) = self.parts[part as usize].mover {
+            self.near_moving(mi as usize, part, p0, p1, r, n);
+            return;
+        }
         let mut found = std::mem::take(&mut self.scratch);
         found.clear();
         let pad = Vec3::new(r, r, r);
@@ -2339,6 +3172,142 @@ impl WetParts {
             }
         }
         self.scratch = found;
+    }
+
+    /// S3e: [`WetParts::near`] on a part that moves: the segment and the normal carried to its rest,
+    /// where its samples and their grid are.
+    fn near_moving(&mut self, mi: usize, part: u32, p0: Vec3, p1: Vec3, r: f32, n: Vec3) {
+        let mut found = std::mem::take(&mut self.scratch);
+        found.clear();
+        let m = &self.movers[mi];
+        let (q0, q1) = (m.now_inv.apply(p0), m.now_inv.apply(p1));
+        let nn = vector(&m.now_inv, n);
+        let pad = Vec3::new(r, r, r);
+        let mut cands = Vec::new();
+        m.grid.query(q0.min(q1) - pad, q0.max(q1) + pad, &mut cands);
+        let pr = &self.parts[part as usize];
+        let seg = q1 - q0;
+        let len2 = seg.length_squared();
+        for local in cands {
+            let smp = pr.first_sample + local;
+            let rest = &m.rest_tris[(self.sample_tri[smp as usize] - pr.first_tri) as usize];
+            if rest.n.dot(nn) <= 0.3 {
+                continue;
+            }
+            let w = m.rest_pos[local as usize] - q0;
+            let s = if len2 > 0.0 {
+                (w.dot(seg) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            if (w - seg * s).length_squared() <= r * r {
+                found.push(smp);
+            }
+        }
+        self.scratch = found;
+    }
+
+    /// S3e: the parts that move.
+    pub fn moving_parts(&self) -> usize {
+        self.movers.len()
+    }
+
+    /// S3e: the poses the bodies start from: the pose of each dynamic body of the `PHY1` scene, by
+    /// their order (`None` for one without a pose: it stays). [`WetParts::step_posed`] takes the
+    /// first poses it is given as these when it was not called; [`WetParts::step_with`] calls it.
+    pub fn begin_poses(&mut self, poses: &[Option<Pose>]) {
+        for m in self.movers.iter_mut() {
+            m.start_inv = poses
+                .get(m.body as usize)
+                .copied()
+                .flatten()
+                .map(|p| inverse(&Transform::from_pose(p.translation, p.rotation)));
+        }
+        self.posed = true;
+    }
+
+    /// S3e: one step with the bodies where `poses` puts them (after the bodies' step): each part
+    /// that moves stands where its body takes it, with its drops on it, then the step.
+    pub fn step_posed(&mut self, poses: &[Option<Pose>]) {
+        if !self.posed {
+            self.begin_poses(poses);
+        }
+        self.move_parts(poses);
+        self.step_once();
+    }
+
+    /// S3e: `n` steps of `world`'s bodies and of these parts together, one after the other (`ids`:
+    /// the pose of each dynamic body of the world's scene, `crate::scene::Scene::build`'s).
+    pub fn step_with(&mut self, world: &mut crate::world::World, ids: &[Option<u32>], n: u32) {
+        let poses = |w: &crate::world::World| -> Vec<Option<Pose>> {
+            ids.iter().map(|id| id.and_then(|i| w.pose(i))).collect()
+        };
+        if !self.posed {
+            let p = poses(world);
+            self.begin_poses(&p);
+        }
+        for _ in 0..n {
+            world.step(1);
+            let p = poses(world);
+            self.move_parts(&p);
+            self.step_once();
+        }
+    }
+
+    /// S3e: every part that moves where its body is now (rest to now: the body's pose after its pose
+    /// at the start), its triangles, samples and drops with it; the gravity its drops feel, less the
+    /// acceleration of its centre.
+    fn move_parts(&mut self, poses: &[Option<Pose>]) {
+        for mi in 0..self.movers.len() {
+            let m = &self.movers[mi];
+            let now = match (m.start_inv, poses.get(m.body as usize).copied().flatten()) {
+                (Some(start), Some(p)) => {
+                    compose(&Transform::from_pose(p.translation, p.rotation), &start)
+                }
+                _ => m.now,
+            };
+            let delta = compose(&now, &m.now_inv);
+            let m = &mut self.movers[mi];
+            m.prev2 = m.prev;
+            m.prev = m.now;
+            m.now = now;
+            m.now_inv = inverse(&now);
+            let c = m.centre;
+            let k = (STEPS_PER_SECOND * STEPS_PER_SECOND) as f32;
+            let accel =
+                (m.now.apply(c) - m.prev.apply(c) * 2.0 + m.prev2.apply(c)) * (k / GRAVITY_MM);
+            let pi = m.part as usize;
+            let part = &mut self.parts[pi];
+            part.gravity = Vec3::new(0.0, 0.0, -1.0) - accel;
+            part.to_object = compose(&m.to_object0, &m.now_inv);
+            let (t0, s0) = (part.first_tri as usize, part.first_sample as usize);
+            for (li, rest) in m.rest_tris.iter().enumerate() {
+                let t = &mut self.tris[t0 + li];
+                t.v = [
+                    now.apply(rest.v[0]),
+                    now.apply(rest.v[1]),
+                    now.apply(rest.v[2]),
+                ];
+                let n = vector(&now, rest.n);
+                t.n = if above(n.length(), 0.0) {
+                    n.normalize()
+                } else {
+                    n
+                };
+            }
+            for (ls, &q) in m.rest_pos.iter().enumerate() {
+                self.pos[s0 + ls] = now.apply(q);
+            }
+            for d in self.drops.iter_mut().filter(|d| d.part as usize == pi) {
+                let t = &self.tris[d.tri as usize];
+                d.p = onto(t, delta.apply(d.p));
+                d.from = delta.apply(d.from);
+                d.vel = vector(&delta, d.vel);
+                d.merging.pull = vector(&delta, d.merging.pull);
+                d.merging.axis = vector(&delta, d.merging.axis);
+                d.bead.axis = vector(&delta, d.bead.axis);
+            }
+        }
     }
 
     /// Merges the drops of a part that touch into one of their volume, until none touch. Only a drop
@@ -2452,6 +3421,7 @@ impl WetParts {
         out.ca = lead.ca;
         out.load = lead.load;
         out.edge = k.edge || g.edge;
+        out.edge_at = if k.edge { k.edge_at } else { g.edge_at };
         out.run = lead.run;
         out
     }
@@ -2467,7 +3437,7 @@ impl WetParts {
             part.receding / fmath::DEG_TO_RAD,
         );
         let mut s = DropShape::ROUND;
-        let gravity = Vec3::new(0.0, 0.0, -1.0);
+        let gravity = part.gravity;
         let downhill = gravity - n * gravity.dot(n);
         let axis = if d.ca > 0.0 {
             d.vel
@@ -2541,9 +3511,12 @@ impl WetParts {
     ///
     /// ```text
     /// u32 parts; f32 cell_mm;
-    /// per part: u32 triangles samples; u32 flags (1: dust rates follow, 2: snow rates follow);
-    ///           f32 cap_angle_deg; u8 resolution[triangles], zero padding to 4;
+    /// per part: u32 triangles samples; u32 flags (1: dust rates follow, 2: snow rates follow,
+    ///           4: S3e, the resolutions take two bytes); f32 cap_angle_deg;
+    ///           u8 resolution[triangles] (flag 4: u16), zero padding to 4;
     ///           [f32 dust_rate[samples] (per second)] [f32 snow_rate[samples] (mm per second)]
+    /// S3e, with the studio floor: u32 nx ny; f32 x0 y0 cell z; u32 flags (1 dust, 2 snow);
+    ///           [f32 dust_rate[nx × ny]] [f32 snow_rate[nx × ny]]
     /// ```
     ///
     /// A sample's global index (the frames') is its part's first sample (the samples of the parts
@@ -2561,12 +3534,21 @@ impl WetParts {
             );
             let dust = self.dust_rate[s0..s1].iter().any(|&r| r > 0.0);
             let snow = self.snow_rate[s0..s1].iter().any(|&r| r > 0.0);
+            let tris = &self.tris[p.first_tri as usize..(p.first_tri + p.tris) as usize];
+            let wide = tris.iter().any(|t| t.res > MAX_RESOLUTION);
             word(p.tris, &mut out);
             word(p.samples, &mut out);
-            word(u32::from(dust) | u32::from(snow) << 1, &mut out);
+            word(
+                u32::from(dust) | u32::from(snow) << 1 | u32::from(wide) << 2,
+                &mut out,
+            );
             word(p.cap_deg.to_bits(), &mut out);
-            for t in &self.tris[p.first_tri as usize..(p.first_tri + p.tris) as usize] {
-                out.push(t.res as u8);
+            for t in tris {
+                if wide {
+                    out.extend_from_slice(&(t.res as u16).to_le_bytes());
+                } else {
+                    out.push(t.res as u8);
+                }
             }
             while out.len() % 4 != 0 {
                 out.push(0);
@@ -2578,6 +3560,32 @@ impl WetParts {
             }
             if snow {
                 for &r in &self.snow_rate[s0..s1] {
+                    word(r.to_bits(), &mut out);
+                }
+            }
+        }
+        // S3e: the studio floor.
+        if let Some(f) = &self.floor {
+            let dust = f.dust_rate.iter().any(|&r| r > 0.0);
+            let snow = f.snow_rate.iter().any(|&r| r > 0.0);
+            for w in [
+                f.nx,
+                f.ny,
+                f.x0.to_bits(),
+                f.y0.to_bits(),
+                f.cell.to_bits(),
+                f.z.to_bits(),
+                u32::from(dust) | u32::from(snow) << 1,
+            ] {
+                word(w, &mut out);
+            }
+            if dust {
+                for &r in &f.dust_rate {
+                    word(r.to_bits(), &mut out);
+                }
+            }
+            if snow {
+                for &r in &f.snow_rate {
                     word(r.to_bits(), &mut out);
                 }
             }
@@ -2600,6 +3608,8 @@ impl WetParts {
     ///              u32 id part (the part it left); f32 x y z (world) r (the radius of its sphere)
     /// u32 shaped (S3f: = changed); per changed drop, in the order above:
     ///              f32 shape[15] (rt_core::weather::DropShape, axes in the part's object space)
+    /// S3e, with the studio floor: u32 floor_wetted; u32 cells[floor_wetted] (first wet since the
+    ///              last frame, ascending)
     /// ```
     ///
     /// A drop's number is the order it came in; one that came and went between two frames is in
@@ -2664,6 +3674,13 @@ impl WetParts {
         for shape in &shapes {
             words.extend(shape.to_floats().iter().map(|v| v.to_bits()));
         }
+        // S3e: the studio floor's cells first wet since the last frame.
+        if let Some(f) = self.floor.as_mut() {
+            f.new_wet.sort_unstable();
+            words.push(f.new_wet.len() as u32);
+            words.extend_from_slice(&f.new_wet);
+            f.new_wet.clear();
+        }
         self.gone_ids.clear();
         self.new_wet.clear();
         self.new_wiped.clear();
@@ -2686,7 +3703,7 @@ impl WetParts {
                 Weather {
                     resolution: self.tris[p.first_tri as usize..(p.first_tri + p.tris) as usize]
                         .iter()
-                        .map(|t| t.res as u8)
+                        .map(|t| t.res as u16)
                         .collect(),
                     wet: (s0..s1).map(|s| self.wet[s] <= self.steps).collect(),
                     dust: (s0..s1).map(|s| self.dust_at(s)).collect(),
@@ -2763,7 +3780,86 @@ impl WetParts {
                 eat(v.to_bits());
             }
         }
+        // S3e: where the parts that move stand, and the studio floor.
+        for m in &self.movers {
+            for v in m.now.rows.iter().flatten() {
+                eat(v.to_bits());
+            }
+        }
+        if let Some(f) = &self.floor {
+            eat(f.nx);
+            eat(f.ny);
+            for (k, &w) in f.wet.iter().enumerate() {
+                eat(w);
+                eat(f.dust_rate[k].to_bits());
+                eat(f.snow_rate[k].to_bits());
+            }
+            eat(f.water.to_bits());
+        }
         h
+    }
+
+    /// S3e: the studio floor as the renderer takes it now (its cells' wetness, dust and snow), for
+    /// a floor whose wet film darkens it by `porosity`; none without a floor.
+    pub fn floor_weather(&self, porosity: f32) -> Option<rt_core::weather::FloorWeather> {
+        let f = self.floor.as_ref()?;
+        let t = self.seconds();
+        let values = (0..f.cells())
+            .map(|c| {
+                [
+                    wet_byte(f.wet[c] <= self.steps),
+                    dust_byte(1.0 - fmath::exp(-f.dust_rate[c] * t)),
+                    snow_byte(f.snow_rate[c] * t),
+                ]
+            })
+            .collect();
+        Some(rt_core::weather::FloorWeather {
+            nx: f.nx,
+            ny: f.ny,
+            x0: f.x0,
+            y0: f.y0,
+            cell: f.cell,
+            z: f.z,
+            porosity: porosity.clamp(0.0, 1.0),
+            values,
+        })
+    }
+
+    /// S3e: the studio floor's cells (along X and Y) and their side, mm; none without a floor.
+    pub fn floor_cells(&self) -> Option<(u32, u32, f32)> {
+        self.floor.as_ref().map(|f| (f.nx, f.ny, f.cell))
+    }
+
+    /// S3e: the step a cell of the studio floor was first wet in ([`NEVER`]).
+    pub fn floor_wet_step(&self, cell: usize) -> u32 {
+        self.floor.as_ref().map_or(NEVER, |f| f.wet[cell])
+    }
+
+    /// S3e: the water that landed on the studio floor from the air, mm³, and how many drops.
+    pub fn floor_water(&self) -> (f32, u32) {
+        self.floor
+            .as_ref()
+            .map_or((0.0, 0), |f| (f.water, f.landed))
+    }
+
+    /// S3e: the film triangles a shadow edge refined.
+    pub fn refined_triangles(&self) -> u32 {
+        self.refined
+    }
+
+    /// S3e: where part `part` stands now, object to world (its spec's transform; for a part that
+    /// moves, carried where its body took it).
+    pub fn placement(&self, part: usize) -> Transform {
+        let t = self.spec.parts[part].transform;
+        match self.parts[part].mover {
+            Some(mi) => compose(&self.movers[mi as usize].now, &t),
+            None => t,
+        }
+    }
+
+    /// S3e: the effective gravity the drops of part `part` feel, over `g`.
+    pub fn part_gravity(&self, part: usize) -> Vec3 {
+        self.parts[part].gravity
     }
 }
 
@@ -2771,8 +3867,8 @@ impl WetParts {
 /// [`sample_index`]) and their state, its drops.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Weather {
-    /// The resolution of each triangle, in the mesh's order.
-    pub resolution: Vec<u8>,
+    /// The resolution of each triangle, in the mesh's order (S3e: up to [`MAX_FINE_RESOLUTION`]).
+    pub resolution: Vec<u16>,
     /// Wet now.
     pub wet: Vec<bool>,
     /// The share under dust.
@@ -2934,6 +4030,42 @@ fn link(tris: &mut [Tri], first: u32, mesh: &PartsMesh) {
         }
         s = e;
     }
+}
+
+/// S3e: for each open edge of `tris` (`3 × triangle + k`: no neighbour across it), the open edge of
+/// the same part that shares its first corner and the one that shares its second (positions equal
+/// by their bits), [`NEVER`] where there is none; the lowest index wins where there are more.
+fn open_edges(tris: &[Tri]) -> Vec<[u32; 2]> {
+    let mut out = vec![[NEVER; 2]; 3 * tris.len()];
+    let bits = |v: Vec3| (v.x.to_bits(), v.y.to_bits(), v.z.to_bits());
+    /// An end of an open edge: its part, its corner's bits, the edge, which end.
+    type End = (u32, (u32, u32, u32), u32, u8);
+    let mut ends: Vec<End> = Vec::new();
+    for (ti, t) in tris.iter().enumerate() {
+        for k in 0..3 {
+            if t.nb[k] == NEVER && above(t.area, 0.0) {
+                let e = 3 * ti as u32 + k as u32;
+                ends.push((t.part, bits(t.v[k]), e, 0));
+                ends.push((t.part, bits(t.v[(k + 1) % 3]), e, 1));
+            }
+        }
+    }
+    ends.sort_unstable();
+    let mut s = 0;
+    while s < ends.len() {
+        let mut e = s + 1;
+        while e < ends.len() && ends[e].0 == ends[s].0 && ends[e].1 == ends[s].1 {
+            e += 1;
+        }
+        for a in s..e {
+            let other = (s..e).find(|&b| ends[b].2 != ends[a].2);
+            if let Some(b) = other {
+                out[ends[a].2 as usize][ends[a].3 as usize] = ends[b].2;
+            }
+        }
+        s = e;
+    }
+    out
 }
 
 #[cfg(test)]

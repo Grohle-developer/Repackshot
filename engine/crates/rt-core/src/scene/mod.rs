@@ -990,6 +990,14 @@ pub struct Scene {
     /// S3d: the instance each cap lies on, then the instance each drop in the air left, in the
     /// order of the caps' mesh ([`Scene::pass_instance`]).
     pub cap_owners: Vec<u32>,
+    /// S3e: the rain, dust and snow on the studio floor (`WETG`, [`crate::weather::FloorWeather`]),
+    /// which the floor of `FLOR` shades; none.
+    pub wet_floor: Option<crate::weather::FloorWeather>,
+    /// S3e: where the mesh of the dust's motes, its instance and its material (dust) are, after the
+    /// caps': none without motes.
+    pub motes: Option<Caps>,
+    /// S3e: the instance each mote lies on, in the order of their mesh.
+    pub mote_owners: Vec<u32>,
 }
 
 /// S3c: the mesh of the drops' caps, its instance and its material, each the last of its list
@@ -1078,8 +1086,9 @@ impl Scene {
     /// The materials say which instances are not capped (a thin wall has no inside). Call it
     /// after anything that rebuilds the geometry or changes the instances or the materials.
     pub fn apply_section(&mut self) {
-        // S3c: the drops' caps are open shells: cut, never capped.
+        // S3c: the drops' caps are open shells: cut, never capped; S3e: so are the motes.
         let caps = self.caps.map(|c| c.instance as usize);
+        let motes = self.motes.map(|c| c.instance as usize);
         let capped: Vec<bool> = self
             .geometry
             .instances()
@@ -1087,6 +1096,7 @@ impl Scene {
             .enumerate()
             .map(|(k, i)| {
                 Some(k) != caps
+                    && Some(k) != motes
                     && self
                         .materials
                         .get(i.material_id as usize)
@@ -1115,6 +1125,16 @@ impl Scene {
     /// instance `instance`: for a drop's cap the instance it lies on, for a drop in the air the
     /// instance it left; any other hit, `instance` itself.
     pub fn pass_instance(&self, instance: u32, triangle: u32) -> u32 {
+        // S3e: a mote counts as the instance it lies on.
+        if self.motes.is_some_and(|m| m.instance == instance) {
+            return match self
+                .mote_owners
+                .get((triangle / crate::weather::MOTE_TRIANGLES) as usize)
+            {
+                Some(&owner) => owner,
+                None => instance,
+            };
+        }
         let Some(c) = self.caps.filter(|c| c.instance == instance) else {
             return instance;
         };
@@ -1131,23 +1151,50 @@ impl Scene {
         }
     }
 
-    /// S3c: the instances of the file (all of them but the caps').
+    /// S3e: where the weather's own meshes, instances and materials begin (the caps', then the
+    /// motes'), after the file's.
+    fn weather_start(&self) -> Option<Caps> {
+        self.caps.or(self.motes)
+    }
+
+    /// S3c: the instances of the file (all of them but the caps'; S3e: and the motes').
     pub fn file_instances(&self) -> &[Instance] {
         let all = self.geometry.instances();
-        &all[..self.caps.map_or(all.len(), |c| c.instance as usize)]
+        &all[..self
+            .weather_start()
+            .map_or(all.len(), |c| c.instance as usize)]
     }
 
-    /// S3c: the meshes of the file (all of them but the caps').
+    /// S3c: the meshes of the file (all of them but the caps'; S3e: and the motes').
     pub fn file_meshes(&self) -> &[Mesh] {
         let all = self.geometry.meshes();
-        &all[..self.caps.map_or(all.len(), |c| c.mesh as usize)]
+        &all[..self.weather_start().map_or(all.len(), |c| c.mesh as usize)]
     }
 
-    /// S3c: the materials of the file (all of them but the caps' water).
+    /// S3c: the materials of the file (all of them but the caps' water; S3e: and the motes' dust).
     pub fn file_materials(&self) -> &[Material] {
         &self.materials[..self
-            .caps
+            .weather_start()
             .map_or(self.materials.len(), |c| c.material as usize)]
+    }
+
+    /// S3e: the mesh, instance and material of the dust's motes, after the caps'; `None` without
+    /// motes.
+    pub fn motes(&self) -> Option<Caps> {
+        self.motes
+    }
+
+    /// S3e: sets the rain, dust and snow on the studio floor ([`crate::weather::FloorWeather`]).
+    /// Fails, leaving the scene as it was, when its numbers are out of range.
+    pub fn set_wet_floor(
+        &mut self,
+        floor: Option<crate::weather::FloorWeather>,
+    ) -> Result<(), &'static str> {
+        if let Some(f) = &floor {
+            f.check()?;
+        }
+        self.wet_floor = floor;
+        Ok(())
     }
 
     /// S3c: sets the rain, dust and snow on the instances ([`crate::weather`]) and meshes their
@@ -1191,10 +1238,14 @@ impl Scene {
         Ok(())
     }
 
-    /// Takes the caps' mesh, instance and material out.
+    /// Takes the caps' mesh, instance and material out (S3e: and the motes').
     fn detach_caps(&mut self) {
         self.cap_owners.clear();
-        let Some(c) = self.caps.take() else { return };
+        self.mote_owners.clear();
+        let start = self.weather_start();
+        self.caps = None;
+        self.motes = None;
+        let Some(c) = start else { return };
         let width = crate::geometry::BvhWidth::native();
         let sets = self.geometry.take_particles();
         let mut instances = self.geometry.instances().to_vec();
@@ -1222,6 +1273,7 @@ impl Scene {
             .collect();
         let shapes: Vec<crate::weather::Cap> = caps.iter().map(|c| c.1).collect();
         let Some(mesh) = crate::weather::water_mesh(&shapes, &spheres) else {
+            self.attach_motes();
             return;
         };
         let owners: Vec<u32> = caps
@@ -1251,6 +1303,47 @@ impl Scene {
             }
             Err(_) => {
                 self.materials.pop();
+            }
+        }
+        self.attach_motes();
+    }
+
+    /// S3e: meshes the motes of [`Scene::wet_parts`] after the caps (or after the file's own
+    /// instances without caps).
+    fn attach_motes(&mut self) {
+        let file = self
+            .caps
+            .map_or(self.geometry.instances().len(), |c| c.instance as usize);
+        let motes = crate::weather::motes_of(
+            &self.wet_parts,
+            &self.geometry.instances()[..file],
+            self.geometry.meshes(),
+        );
+        let grains: Vec<(Vec3, Vec3, f32)> = motes.iter().map(|m| (m.1, m.2, m.3)).collect();
+        if let Some(mesh) = crate::weather::mote_mesh(&grains) {
+            let width = crate::geometry::BvhWidth::native();
+            let sets = self.geometry.take_particles();
+            let mut instances = self.geometry.instances().to_vec();
+            let mut meshes = std::mem::take(&mut self.geometry).into_meshes();
+            let at = Caps {
+                mesh: meshes.len() as u32,
+                instance: instances.len() as u32,
+                material: self.materials.len() as u32,
+                caps: motes.len() as u32,
+                cap_triangles: crate::weather::MOTE_TRIANGLES,
+            };
+            meshes.push(mesh);
+            instances.push(Instance::new(at.mesh, Transform::IDENTITY, at.material));
+            self.materials.push(crate::weather::dust());
+            match Geometry::with_particles(meshes, instances, sets, width) {
+                Ok(g) => {
+                    self.geometry = g;
+                    self.motes = Some(at);
+                    self.mote_owners = motes.iter().map(|m| m.0).collect();
+                }
+                Err(_) => {
+                    self.materials.pop();
+                }
             }
         }
         self.apply_section();
