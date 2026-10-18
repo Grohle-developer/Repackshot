@@ -2662,6 +2662,38 @@ impl WetParts {
             let t = self.tris[d.tri as usize];
             let a = d.a;
             let gn = gravity.dot(t.n);
+            // S3e: held at a sloping open edge, it runs along it while its weight along the edge
+            // beats the hold of its contact line; a level edge, or the lowest corner, holds it, and
+            // there it hangs as below.
+            if d.edge {
+                if let Some((p, edge, run, speed)) = self.run_edge(&d, gravity, &part, &mut path) {
+                    moved = true;
+                    let film = (TRAIL_FILM_MM * 2.0 * a * run).min(d.volume);
+                    self.shed += film;
+                    let left = d.volume - film;
+                    for w in path.windows(2) {
+                        self.wipe(d.part, w[0], w[1], a, t.n);
+                    }
+                    d.vel = (p - d.p) * STEPS_PER_SECOND as f32;
+                    d.ca = WATER_VISCOSITY * speed / SURFACE_TENSION;
+                    d.load = 1.0;
+                    d.hang = 0.0;
+                    d.pinch = 0.0;
+                    d.p = p;
+                    d.edge_at = edge;
+                    d.tri = edge / 3;
+                    d.volume = left;
+                    d.a = cbrt(left / part.k);
+                    d.touched = true;
+                    d.fresh = true;
+                    if left < MIN_VOLUME {
+                        *kept = false;
+                        continue;
+                    }
+                    self.put(i, d, &was);
+                    continue;
+                }
+            }
             // A drop on a face that looks down, or held at an open edge, hangs until its weight beats
             // its contact line; S3f: then it necks and lets go of a share of its water.
             if gn > HANG_MIN || d.edge {
@@ -2697,34 +2729,8 @@ impl WetParts {
                     d.touched = true;
                 }
                 if d.edge {
-                    // S3e: held at an open edge, it runs along it while its weight along the edge
-                    // beats the hold of its contact line (a level edge holds it).
-                    if let Some((p, edge, run, speed)) =
-                        self.run_edge(&d, gravity, &part, &mut path)
-                    {
-                        moved = true;
-                        let film = (TRAIL_FILM_MM * 2.0 * a * run).min(d.volume);
-                        self.shed += film;
-                        let left = d.volume - film;
-                        for w in path.windows(2) {
-                            self.wipe(d.part, w[0], w[1], a, t.n);
-                        }
-                        d.vel = (p - d.p) * STEPS_PER_SECOND as f32;
-                        d.ca = WATER_VISCOSITY * speed / SURFACE_TENSION;
-                        d.load = 1.0;
-                        d.p = p;
-                        d.edge_at = edge;
-                        d.tri = edge / 3;
-                        d.volume = left;
-                        d.a = cbrt(left / part.k);
-                        d.touched = true;
-                        d.fresh = true;
-                        if left < MIN_VOLUME {
-                            *kept = false;
-                            continue;
-                        }
-                    } else if d.ca > 0.0 {
-                        // It came to the lowest point of the edge: at rest there.
+                    if d.ca > 0.0 {
+                        // It came to the lowest point of its edge: at rest there.
                         d.ca = 0.0;
                         d.vel = Vec3::ZERO;
                         d.touched = true;
