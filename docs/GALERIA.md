@@ -37,7 +37,7 @@ Drips and splashes that fall through the air, and the meter that says what is on
 
 The *Shape* among the visible controls of *Ambient*, the front glass in *Fast* and the rain the scene leaves on the glass (S3b), which re-record, without changing place, `ambient-drops.png` and `ambient-mix.png` (S3); rain on the parts (S3c).
 
-#### S3b · Rain and dust that settle, slide and fall on the lens (simulation)
+#### S3b · Rain and dust that settle, run down and fall on the lens (simulation)
 
 <a id="c-ambient-shape"></a><img src="ui/ambient-shape.png" width="480" alt="The bottle in Fast with Water drops in a mix of shapes; in the inspector, the effect's controls with the Shape, Mix, right after the Size, its four weights and the share each gives below, and Advanced folded."><br>
 `ambient-shape.png` · `fe3f101` · The bottle in *Fast* with *Water drops* in a mix of shapes; in the inspector, the effect's controls with the **Shape** (*Mix*) right after the *Size*, its four weights and the share each gives below, and *Advanced* folded (decision S3 ◆5). `tools/s3b-check.mjs --only shape`.
@@ -57,12 +57,12 @@ The *Shape* among the visible controls of *Ambient*, the front glass in *Fast* a
 
 The wood of the *Wood* family in *Fast* through the *Wood* node's path (M3d), with its knots where *Full* puts them, and the family's fabric woven in *Fast* when its threads can be read (M3e); the drop shape and the mix of shapes in *Ambient*, and the camera's front glass (S3).
 
-#### M3d · The family's wood in *Fast* through the *Wood* node's path
+#### M3d · The family's wood in *Fast* through the path of the *Wood* node
 
 <a id="c-m3d-wood-fast"></a><img src="ui/m3d-wood-fast.png" width="480" alt="Six wooden balls in two rows, oak on top and knotty pine below: on the left the Fast view before M3d, a flat colour with the pine's knots; in the middle the Fast view now, with the rings baked like the Wood node and the pine's knots at top left, bottom right and bottom; on the right Full mode, with the engine's rings and knots."><br>
 `m3d-wood-fast.png` · `305db3e` · The family's wood on a 100 mm ball, oak (top) and knotty pine (bottom): on the left, *Fast* before M3d (its average colour and the knots of E6's layer); in the middle, *Fast* now, baked through the graph of *Simple → Nodes* like the *Wood* node (the same pixels as the wood switched to nodes), with its rings; on the right, *Full* (the `rt.wasm`). The background of the three columns is the same grey. `tests/wood-fast-browser.test.ts` with `REPACK_WRITE_CAPTURES=1`. *(re-recorded in v0.1.20: M3e, the pine's knots in *Fast*, now on top of the bake, fall where *Full* puts them; in M3d they were those of the bake, in another place)*
 
-#### M3e · The knots of *Fast* where *Full* puts them and the fabric baked when its threads can be read
+#### M3e · *Fast* knots where *Full* puts them and fabric baked when its threads are readable
 
 <a id="c-m3e-fabric-fast"></a><img src="ui/m3e-fabric-fast.png" width="480" alt="Nine fabric balls in three rows, knit on top, canvas in the middle and cotton below: on the left the Fast view before M3e, a flat colour; in the middle the Fast view now, with the knit's stitches and the canvas's weft baked and the cotton flat as before; on the right Full mode, with its weave."><br>
 `m3e-fabric-fast.png` · `8a5591a` · The family's fabric on a 100 mm ball, knit (top, 12.8 texels per thread), canvas (middle, 3.7) and cotton (bottom, 1.3): on the left, *Fast* before M3e (the average colour of its weave and its fuzz); in the middle, *Fast* now, the knit and the canvas baked by the *Fabric* node with the fuzz on top, the cotton, below 2.5 texels per thread, the same as before; on the right, *Full* (the `rt.wasm`). *Fast* comes out lighter than *Full* in the three columns, like any material under the white world. `tests/fabric-fast-browser.test.ts` with `REPACK_WRITE_CAPTURES=1`.
@@ -120,7 +120,7 @@ The simple and the traced lens, each with its own options: tilt with a dial, the
 <a id="c-f1-focus-sheet"></a><img src="ui/f1-focus-sheet.png" width="480" alt="Three clicks, before F1 on the left and after on the right, in 480 × 270 final renders of a 1.3 mm checkerboard tilted 45° seen with 135 mm at f/1.4 from 600 mm; a ring marks the click's pixel. Top and middle, the lens with 6° of tilt and the click in the corners: before, the sharp band passed about 35 pixels from the ring, after, it passes through it. Bottom, the traced double Gauss wide open and the click in the centre: before, the band was to the upper left of the ring, after, it crosses it."><br>
 `f1-focus-sheet.png` · `ed0e937` · Three clicks, before F1 on the left and after on the right (*before*: `319614b`), in 480 × 270 final renders of a 1.3 mm checkerboard tilted 45° seen with 135 mm at f/1.4 from 600 mm; a ring marks the click's pixel. Top and middle, the lens with 6° of tilt and the click in the corners: before, the sharp band passed about 35 pixels from the ring, after, it passes through it. Bottom, the traced double Gauss wide open and the click in the centre: before, the band was to the upper left of the ring, after, it crosses it. Made with `tools/focus-sheet.mjs` from the renders of `tests/focus-measure.test.ts` (`REPACK_FOCUS_MEASURE=1`, with `rt`).
 
-#### O4 · Simple and traced lens: options of each
+#### O4 · Simple and traced lens: options for each
 
 <a id="c-o4-simple-optics"></a><img src="ui/o4-simple-optics.png" width="331" alt="The simple lens's advanced optics with the new Tilt and shift block: the tilt at 7.2°, the “Plane runs to” dial pointing up (like the floor) with its four shortcuts and the angle, Through two points…, Square, Show the plane and the H and V shift."><br>
 `o4-simple-optics.png` · `f4f5e12` · The simple lens's advanced optics with the new Tilt and shift block: the tilt at 7.2°, the “Plane runs to” dial pointing up (like the floor) with its four shortcuts and the angle, Through two points…, Square, Show the plane and the H and V shift.
@@ -171,7 +171,7 @@ The light catalogue in Sets and Lights, with its filters, the question about the
 <a id="c-batch-queue"></a><img src="ui/batch-queue.png" width="480" alt="The queue drawer with the 2 × 2 batch finished: four jobs (each camera in each studio, in that order) with its studio next to the camera and “+3 passes · ZIP” at the end of the name, and the history with the four images."><br>
 `batch-queue.png` · `8816f19` · The queue drawer with the 2 × 2 batch finished: four jobs (each camera in each studio, in that order) with its studio next to the camera and “+3 passes · ZIP” at the end of the name, and the history with the four images.
 
-#### K3 · Interior camera
+#### K3 · Interiors camera
 
 <a id="c-k3-verticals"></a><img src="ui/k3-verticals.png" width="480" alt="The test room in Full with the camera at 1.5 m looking 10° down and straight verticals on: the corner of the walls comes out vertical. In the Camera section, the projection, the Straight verticals switch with its note (shift of −4.2 mm for 10° of tilt), the eye height with Standing and Seated and the 24, 28 and 35 mm interior lenses; the automatic exposure measured in the status bar."><br>
 `k3-verticals.png` · `0082860` · The test room in Full with the camera at 1.5 m looking 10° down and straight verticals on: the corner of the walls comes out vertical. In the Camera section, the projection, the Straight verticals switch with its note (shift of −4.2 mm for 10° of tilt), the eye height with Standing and Seated and the 24, 28 and 35 mm interior lenses; the automatic exposure measured in the status bar.
@@ -195,7 +195,7 @@ The light catalogue in Sets and Lights, with its filters, the question about the
 
 Animation and video: the three-step wizard with the grid of types, the custom curve, fades between shots and the encoded video in the render window.
 
-#### N1 · Animation and video in KeyShot's style
+#### N1 · Animation and video in the KeyShot style
 
 <a id="c-animation-n1-wizard"></a><img src="ui/animation-n1-wizard.png" width="480" alt="The timeline with three tracks (the camera with three shots and a fade to black at the second one's cut, the model that spins and the Gloss ABS material that changes colour with a custom curve) and the “+ Animate…” wizard at step 1 of 3, with “A part or a group” and the lid chosen. The animations also appear under their target in the scene tree."><br>
 `animation-n1-wizard.png` · `b2eeab6` · The timeline with three tracks (the camera with three shots and a fade to black at the second one's cut, the model that spins and the Gloss ABS material that changes colour with a custom curve) and the “+ Animate…” wizard at step 1 of 3, with “A part or a group” and the lid chosen. The animations also appear under their target in the scene tree.
@@ -213,7 +213,7 @@ Animation and video: the three-step wizard with the grid of types, the custom cu
 
 Scene type (Product, Interior, Catalogue), the Interior light style with seven recipes, the Interior Doctor and the Engine Doctor.
 
-#### K1 · Scene type, interior light and Interior Doctor
+#### K1 · Scene type, interior lighting and interiors Doctor
 
 <a id="c-scene-type-interior"></a><img src="ui/scene-type-interior.png" width="480" alt="The Interior scene type chosen (Product · Interior · Catalogue) and the Interior light style with its seven recipes: morning, midday and afternoon window, overcast, night lamps, blue hour and white studio room. The part looks small because Interior sets 28 mm."><br>
 `scene-type-interior.png` · `431e7b8` · The Interior scene type chosen (Product · Interior · Catalogue) and the Interior light style with its seven recipes: morning, midday and afternoon window, overcast, night lamps, blue hour and white studio room. The part looks small because Interior sets 28 mm. *(re-recorded in v0.1.17: Interior is a style of L7's Lights group)* *(re-recorded in v0.1.18: C1, *Interior* starts with the *Midday window* recipe; the product type's set decoration stays)*
@@ -304,7 +304,7 @@ The window with a lens's elements when the pointer rests on it.
 
 Wood, fabric and edge bevel in Full, materials with more realism, traced lens with 16 lenses, effect filters on the lens, 88 setup thumbnails redone and the fixes from the bug report of 2026-10-14.
 
-#### O3a · Effect filters on the lens: black, white and gold diffusion, glow, net, star, streaks
+#### O3a · Lens effect filters: black, white and gold diffusion, glimmer, net, star, streaks
 
 <a id="c-lens-filters"></a><img src="ui/lens-filters.png" width="331" alt="Camera ▸ Filters: a black diffusion and an 8-point star stacked, each with its strength, points and angle."><br>
 `lens-filters.png` · `304696f` · Camera ▸ Filters: a black diffusion and an 8-point star stacked, each with its strength, points and angle.
@@ -346,12 +346,12 @@ Textures and labels, node-based material editor, studio sets, bokeh chooser, TIF
 <a id="c-label-placed"></a><img src="ui/label-placed.png" width="480" alt="A label placed with click and drag on the example bottle: a red stripe on paper."><br>
 `label-placed.png` · `14cf9bc` · A label placed with click and drag on the example bottle: a red stripe on paper.
 
-#### U11 · Live denoising
+#### U11 · Live noise reduction
 
 <a id="c-denoise-live"></a><img src="ui/denoise-live.png" width="480" alt="The viewport in Full mode with Denoise in the top bar: the image cleans up as it accumulates, and “Denoised” in the meter."><br>
 `denoise-live.png` · `b5434b8` · The viewport in Full mode with Denoise in the top bar: the image cleans up as it accumulates, and “Denoised” in the meter.
 
-#### P5 · Update from the app
+#### P5 · Update from within the application
 
 <a id="c-update-install"></a><img src="ui/update-install.png" width="480" alt="Settings ▸ Updates downloading the new version (45 %), with “Cancel the update”; the progress also shows in the status bar."><br>
 `update-install.png` · `f93955b` · Settings ▸ Updates downloading the new version (45 %), with “Cancel the update”; the progress also shows in the status bar.
@@ -374,7 +374,7 @@ Textures and labels, node-based material editor, studio sets, bokeh chooser, TIF
 <a id="c-render-format-tiff"></a><img src="ui/render-format-tiff.png" width="480" alt="The render window with 32-bit floating-point TIFF output (linear light), next to PNG, JPEG, EXR and RAW (DNG)."><br>
 `render-format-tiff.png` · `a424a31` · The render window with 32-bit floating-point TIFF output (linear light), next to PNG, JPEG, EXR and RAW (DNG).
 
-#### O1 · Improved thin lens and bokeh chooser
+#### O1 · Improved thin lens and bokeh selector
 
 <a id="c-camera-bokeh"></a><img src="ui/camera-bokeh.png" width="300" alt="The bokeh chooser: twenty types with a thumbnail rendered by the engine; those that need the traced lens say “coming soon”."><br>
 `camera-bokeh.png` · `0830f93` · The bokeh chooser: twenty types with a thumbnail rendered by the engine; those that need the traced lens say “coming soon”. *(re-recorded in v0.1.7, and in v0.1.18: seventeen types, without the three of the traced lens, O4)*
@@ -417,7 +417,7 @@ Textures and labels, node-based material editor, studio sets, bokeh chooser, TIF
 <a id="c-physics-drop-strip"></a><img src="ui/physics-drop-strip.png" width="960" alt="Six instants of the recorded clip of the fall, from 0 to 0.83 s."><br>
 `physics-drop-strip.png` · `79a3d24` · Six instants of the recorded clip of the fall, from 0 to 0.83 s.
 
-#### M3a · Node-based material editor: model, editor and preview
+#### M3a · Node material editor: model, editor and preview
 
 <a id="c-material-nodes"></a><img src="ui/material-nodes.png" width="480" alt="The node-based material editor with the marble example: nodes with their preview, connections, result sphere, Examples and Add node."><br>
 `material-nodes.png` · `15a6d96` · The node-based material editor with the marble example: nodes with their preview, connections, result sphere, Examples and Add node.
@@ -430,7 +430,7 @@ Textures and labels, node-based material editor, studio sets, bokeh chooser, TIF
 <a id="c-denoise-strength"></a><img src="ui/denoise-strength.png" width="480" alt="Render ▸ Advanced ▸ Denoise (Off, Viewport, Render or Both) with the Strength at 50 % and the caustic quality."><br>
 `denoise-strength.png` · `920afb9` · Render ▸ Advanced ▸ Denoise (Off, Viewport, Render or Both) with the Strength at 50 % and the caustic quality.
 
-#### E11 · Edge smoothing, from less to more cost
+#### E11 · Edge smoothing, from cheaper to costlier
 
 <a id="c-settings-aa"></a><img src="ui/settings-aa.png" width="480" alt="Settings ▸ Render engine ▸ Edge smoothing: Fast mode's MSAA and Full mode's six pixel filters, from None to “Fine + edges ×4”."><br>
 `settings-aa.png` · `920afb9` · Settings ▸ Render engine ▸ Edge smoothing: Fast mode's MSAA and Full mode's six pixel filters, from None to “Fine + edges ×4”.
@@ -591,7 +591,7 @@ Desktop fixes (own window, data that survives a restart), dragging a material an
 <a id="c-ai-queue"></a><img src="ui/ai-queue.png" width="480" alt="The queue with a job finished with AI (“AI” column): two thumbnails, the render's and the AI's, in the row and in the history."><br>
 `ai-queue.png` · `693762d` · The queue with a job finished with AI (“AI” column): two thumbnails, the render's and the AI's, in the row and in the history. *(re-recorded in v0.1.5)*
 
-#### E5 · Dielectrics, emitters, clear coat, sky, HDRI
+#### E5 · Dielectrics, emitters, clearcoat, sky, HDRI
 
 <a id="c-engine-e5-glass-bottle"></a><img src="ui/engine-e5-glass-bottle.png" width="480" alt="Engine render: a solid glass bottle with a gold cap, with refraction and colour absorption, on a light background."><br>
 `engine-e5-glass-bottle.png` · `e1b9087` · Engine render: a solid glass bottle with a gold cap, with refraction and colour absorption, on a light background.

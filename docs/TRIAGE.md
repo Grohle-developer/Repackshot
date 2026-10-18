@@ -39,10 +39,10 @@ rule 11: the lead takes it, only the data is prepared here).
   whoever changes the mapping in the default mode sees no effect.
 - There is no projection called “triplanar”: *Box* is the triplanar blend by
   |n|⁴ in *Fast* (`render/texture-shader.ts`), and in a node program it takes
-  only the dominant face (M3a, “did not fit” 2). No blend-width control.
+  only the dominant face (M3a, “What did not fit the plan” 2). No blend-width control.
 - The inspector edits only the shared mapping; each slot's own mapping can
   only be returned to the shared one (`insp-textures.ts:117-126`), although
-  the *store* already supports it (M2a, “did not fit” 3).
+  the *store* already supports it (M2a, “What did not fit the plan” 3).
 - There is no interactive mapping tool in the viewport (move, rotate or scale
   the projection on the part): only the labels move
   (`ui/panels/viewport-labels.ts`).
@@ -138,9 +138,9 @@ lenses traced surface by surface, distortion, vignetting, cat's eye, bubble,
 creamy and swirl from the lens itself, bokeh types of the traced lens, and in
 *Fast* approximate distortion and vignetting (Repackshot-o1, ROADMAP §O2
 “Done”; UI.md *Camera ▸ Lens*). What remains: the merge, Fable's verdict on
-the sheet (O2, “did not fit” 11), the noise of the traced bokeh (about five
-times the variance of the thin lens with the same samples, “did not fit” 2)
-and the untraced tilt (“did not fit” 3).
+the sheet (O2, “What did not fit the plan” 11), the noise of the traced bokeh (about five
+times the variance of the thin lens with the same samples, “What did not fit the plan” 2)
+and the untraced tilt (“What did not fit the plan” 3).
 
 **Reproduction.** Confirmed by code on main.
 
@@ -222,7 +222,7 @@ round-trip tests and a test that a lens reversed twice is the same.
 - **Nodes in *Fast***: the graph is baked into 512² maps that enter through
   M2a's slots (colour, roughness, metal, normal, alpha, emission); the other
   outputs go with their mean, Fresnel at 60° and curvature 0; the 3D parts are
-  a front cross-section drawn as a box (M3a “Done” and “did not fit” 3;
+  a front cross-section drawn as a box (M3a “Done” and “What did not fit the plan” 3;
   `src/render/graph-preview.ts`).
 - **Nodes in *Full* and *Render*** (until M3b; see *Status after M3b*): only
   the mean of each output (`src/io/rsb.ts:1057`, `flattenGraph`), and a node
@@ -276,7 +276,7 @@ the *Wood* and *Fabric* nodes (the decision above; M3b does not add them and
 says how the interpreter makes them easier), the resemblance of the wood
 example to the *Wood* family (`docs/ui/m3b-wood.png`: they do not look alike),
 and the `NORMAL_MAP` of the metallic paint flakes, which turns half of their
-normals inward (decisions for Fable). The fabric bug when switching to nodes
+normals inward (judgement calls). The fabric bug when switching to nodes
 is separate (1.6b, already fixed: `fabricMeanColor`).
 
 **Classification.** **missing** (M3b; *Fast* approximates), with a loose
@@ -726,7 +726,7 @@ tests). K8 (light groups after the render) is a neighbour.
 - **SPEC l. 456** contradicts SPEC l. 101 and E6 on the scale of the
   procedural (5.1).
 - **M2a** promised “mm or part sizes” and only did mm, without noting it in
-  “did not fit” (5.1).
+  “What did not fit the plan” (5.1).
 - **Launcher**: `WRITABLE_EXTENSIONS` does not admit `repack` (4.1).
 
 ## Table

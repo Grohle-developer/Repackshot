@@ -4,7 +4,7 @@
 
 # Physically based lens simulation for Repackshot: research report (read-only; nothing written to the repo)
 
-Scratch material (scripts, patent PDFs, micro-benchmarks) is in `/tmp/claude-0/-home-user/9292497e-ab76-5535-bdee-b9953657075e/scratchpad/` (`pat/`, `bench/`, `papers/`, `bokeh/`, `wiki/`). It is not needed to use this report.
+The scratch material (scripts, patent PDFs, micro-benchmarks) was not kept in the repository. It is not needed to use this report.
 
 ## 0. Method, confidence, headline findings
 

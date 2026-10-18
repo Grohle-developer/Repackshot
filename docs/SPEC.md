@@ -33,7 +33,7 @@ neutral material. Nothing has to be chosen to start working; the
 product types and the rest of the presets are shortcuts on top of that state,
 not a requirement.
 
-1. **Import or load the example.** Drag a file (see §6: glTF,
+1. **Import or load the example.** Drag a file (see §5: glTF,
    OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE, USD) or press *Load
    example part*: an original procedural part, with several grouped
    parts, which lets you see a finished result without bringing anything.

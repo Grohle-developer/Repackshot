@@ -438,7 +438,7 @@ code governed by the launcher.
   as *{name}: not available with this runtime ({reason})*.
 - **Done in X3b** (2026-10-13): *release* `master-959-d637cfb`, the server
   mode (`sd-server`, the model stays loaded), the API `/api/ai/runtime`
-  and `/api/ai/run` (`engine/crates/rt-app/README.md`). **What did not fit**: the
+  and `/api/ai/run` (`engine/crates/rt-app/README.md`). **What did not fit the plan**: the
   download cannot be done by the page like the models' one, because
   GitHub *release* downloads do not send CORS headers; the launcher does it
   with the system `curl` (same progress, pause, resume and

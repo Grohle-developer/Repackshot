@@ -532,7 +532,7 @@ wasm (loaded in Node) gives the same tile hash, and a test pins it.
 Brute force over 322 triangles on 4 threads: 1.4 M rays/s, which is the
 number E2 has to multiply.
 
-What did not fit or was left open, for E2–E4: the RNG seed is
+What did not fit the plan, or was left open, for E2–E4: the RNG seed is
 per (scene, pixel, sample) and not per tile, so the film is
 identical with any tile size, not just any order;
 `MATL.kind`, `ENVR.background_mode` and `LGHT.flags` are stored raw
@@ -1916,7 +1916,7 @@ example and the white furnace; by eye, no sparks and the same photo.
 - **Per-point selection** (`rt_core::light`, with the citation of Conty Estevez
   and Kulla, HPG 2018, §4.3, in the module comment; nothing from another
   renderer). Weights at `x`, all in irradiance units (W/m²,
-  distances in metres; see *What did not fit*): point and spot
+  distances in metres; see *What did not fit the plan*): point and spot
   `lum(I) · mask(x) / max(d², r²)`; rectangle and disc
   `lum(L) · A · cos θ' / max(d², A)` with the reference's orientation bound
   (`θo` = 0, `θe` = π/2, `θu` of the radius of the sphere enclosing the
@@ -2020,7 +2020,7 @@ example and the white furnace; by eye, no sparks and the same photo.
   noise drops (16 spp, two seeds, RMS in sRGB): variance ×0.57
   (STRIP_EDGE), ×0.25 (BLACK_ON_BLACK), ×0.69 (WARM_COOL_CINEMA), ×0.40
   (example); at equal noise, the time ×0.61, ×0.27, ×0.74 and ×0.42.
-  See *What did not fit*.
+  See *What did not fit the plan*.
 - **Sheet** `out/light-select-sheet.html`: STRIP_EDGE, BLACK_ON_BLACK and
   WARM_COOL_CINEMA at 96 spp before (d1f356f binary) and after, with
   *denoise* and the unfiltered image below, the time of each one;
@@ -3772,7 +3772,7 @@ veins on white, believable scale on the jar): it stays. The wood is not
 judged here: when E6 arrives with its procedural wood (grain, knots at 45°),
 the wood example in `MATERIAL_GRAPHS` has to give the same look as
 the catalogue's *Wood* family with the same controls, and M3b looks at that
-when connecting the engine. The rest of the “did not fit” items (1–7, 9): accepted as is; the RSB's `PROG`
+when connecting the engine. The rest of the “What did not fit the plan” items (1–7, 9): accepted as is; the RSB's `PROG`
 contract is written in M3b over the linear program of §5.2
 quater, not before. The trailers of this phase's *commits* were rewritten
 on merging (same authorship, the line required by the session).
@@ -3908,7 +3908,7 @@ Seven graphs match in place (100 % of the settled pixels, correlation
 0.99 or more, the control collapses) and in tone (within 9–25 of *Fast*, within the
 difference of the two renderers with a flat material, 25: *Fast* comes out
 lighter with any material). The brushed metal and the glass are compared
-by tone (see “did not fit” 6 and 7); the flakes, by place (8). With the
+by tone (see “What did not fit the plan” 6 and 7); the flakes, by place (8). With the
 programs switched off in the writer (the engine with the mean), the eight place
 tests fail.
 
@@ -4354,7 +4354,7 @@ What did not fit the plan (what is marked ◆ is decided in *Judgement calls*: b
 
 1. ◆ **The knots in *Fast* change place.** Before, E6's layer put them per part, in 3D and with the mesh test, where
    *Full* puts them; now they are those of the node's baking, placed in the box of
-   the parts with the box as the surface (M3c, “What did not fit” 6) and seen in
+   the parts with the box as the surface (M3c, “What did not fit the plan” 6) and seen in
    the cut through the part's plane y = 0, projected onto the faces. On a flat front
    face (the plate, a box) they coincide; on the 100 mm pine ball,
    *Full* has three small knots (top left,
@@ -5686,7 +5686,7 @@ gold 1 + streaks); by eye. Captures `docs/ui/lens-filters.png`.
   warms the halo and leaves the frame neutral, the net is a modest cross
   over its softening, the star's streaks grow with the grade and
   remain thin, the streaks are a line with the image neutral and glimmer
-  is a soft halo with grain. On the “What did not fit” points: (9) the
+  is a soft halo with grain. On the “What did not fit the plan” points: (9) the
   lengths in angle calibrated on the sheet's 85 mm are right (a real
   filter is angular; that with a 50 mm the star looks shorter relative to the frame
   is what really happens): they stay so, not scaled
@@ -7772,7 +7772,7 @@ brief and the acceptance criteria; N6 and U5 had already built part of it):
   frames (`shotFadeAt`) and the track, and the shot name starts after the
   mark (one test of the span and one in Chromium, which fail without the fix).
 - **Gallery**: the four captures, with their entry in `docs/GALERIA.md` under
-  *Unreleased* (by version and by feature) and a row in “Without capture” with what
+  *Unreleased* (by version and by feature) and a row in “No screenshot” with what
   of N1 has no image (the fade in the viewport and in a frame, a part that
   fades, the pivot, the solar arc, a frame of the video and the MP4).
 - **U1 migration**: `tests/fixtures/u1-hero-poses.json`, taken with U1's
@@ -9268,7 +9268,7 @@ Product and of the memory only the slots this version knows are kept, with value
 (`normalizeSceneType`, `normalizeTypeBase`).
 
 *The table of `INTERIORS.md` §3.1, as applied* (what Product does not write is what the project already has; the
-rows that name something that does not exist yet are under “What did not fit”):
+rows that name something that does not exist yet are under “What did not fit the plan”):
 
 | Row | Product | Interior | Catalogue |
 | --- | --- | --- | --- |
@@ -9290,7 +9290,7 @@ as all of them are (a test with the 16 types: error < 10⁻⁶). A recipe that m
 the `specIrradiance` scale (a sun counts its irradiance in W/m² and a panel its watts over 4π d²): the *share* of a
 panel that gives `r` times what the sun does is 4 d² r times the sun's (hence the windows carry 5 to 14 against the sun's 1; the
 calculation is in the comment in `light-setups.ts`). The figures of the seven recipes are a proposal (◆ pending Fable: the
-table is under “What did not fit”, 1). Looking at the thumbnails (`SPHERES`, 256 × 256, 96 samples) the morning leans warm, midday is
+table is under “What did not fit the plan”, 1). Looking at the thumbnails (`SPHERES`, 256 × 256, 96 samples) the morning leans warm, midday is
 neutral, the afternoon is amber, *Overcast* and *White room* are soft and bright, the lamps leave the room dark and the blue
 hour splits warm on the left and blue on the right. **Thumbnails**: the seven were rendered with the native engine
 (`node tools/setup-thumbs.mjs --keys INT_WINDOW_MORNING,…`: 21 s of rendering in total) and are in
@@ -9961,7 +9961,7 @@ kept in sync with what was done (README, SPEC) after each milestone.
 - **Strings.** All 2,997 strings reviewed in both languages: no missing accents, no missing opening marks, no detectable typos, and the Spanish uses the informal “tú” throughout. One change: *Center* becomes *Centre*. Two guards in `tests/strings.test.ts`.
 - **Documentation.** SPEC §6 (accessibility), README (one line and the two new tests), CHANGELOG (*Unreleased*).
 
-**What did not fit:**
+**What did not fit the plan:**
 
 - **Fable decision: auxiliary greys.** For 7:1 on all their surfaces, `ink-2` and `ink-3` would have to be `#434343` or darker in light and `#b5b5b5` or lighter in dark; that equalises the three greys and the hierarchy then depends on weight and size. Alternative: 7:1 only on `bg-0`, `bg-1` and the *hover*, with `ink-2` of `#4e4e4e` or darker in light and `#afafaf` or lighter in dark, and no text on `bg-2`, `bg-3`, *soft* or *overlay*. In high contrast, `ink-3` of `#434343` or darker (light) and `#c1c1c1` or lighter (dark). When a token changes, its pairs are removed from `PENDING` in the test.
 - English strings with a space before the % (`10 %`) follow the SI convention that Spanish also uses: they are left as is.
@@ -10308,7 +10308,7 @@ card remains, DXGI's. Found while running everything under Wine: a test in
 `rt-app/tests/ai.rs` assumed the machine has no GPU (a request
 without `"device":"cpu"` asked for the Vulkan build, which is not installed, and was
 rejected for that before the image was read); it failed the same on Linux with a
-GPU (`REPACKSHOT_TEST_GPUS`) and now asks for the CPU like the others. What did not fit: it is still untested on a real Windows
+GPU (`REPACKSHOT_TEST_GPUS`) and now asks for the CPU like the others. What did not fit the plan: it is still untested on a real Windows
 (if it still fails, `logs/repackshot.log` says what each source answered); that
 `reg /s` stops at the first error is not verified, which is why it is queried
 key by key; the installer reads the same `--hardware` and now sees the cards,
@@ -13573,7 +13573,7 @@ bytes, `sha256`
 0.1.0 (not published yet). Tests: 9 new (`plugins-filters`, and one in
 `plugins-film`), 15 mutations checked; the browser check
 drags the slider, moves it with the wheel and with the keyboard, and applies two
-filters (`f_scrub_slider`, `f_two_filters`). **What did not fit.** (1) The app has a
+filters (`f_scrub_slider`, `f_two_filters`). **What did not fit the plan.** (1) The app has a
 third filter, **BRAND**, and it is not there: those are manufacturer names (its D112); the
 fourth, **ORIGIN** (from the app, mine, others'), would have only one here. There are no
 more facets in the app (format, process, era): none were invented. (2) *Colour /
@@ -13665,7 +13665,7 @@ is only redone if the installed models or `ready` change
 download snapshots give 1 request and not 40). Each fix with its test, and each test
 fails on reintroducing the failure (mutations checked one by one).
 
-**What did not fit.** (1) **The cap is 4 everywhere** (`MAX_ATTEMPTS` of
+**What did not fit the plan.** (1) **The cap is 4 everywhere** (`MAX_ATTEMPTS` of
 `rt-post/job.rs` and `core/ai.ts`, the launcher's `maxAttempts`, the
 synthetic one's loop): there is no endless loop, and with N variants it is up to 4 × N attempts. But
 the wasm driver (`runGuarded`) counted attempts from 0 in the progress
@@ -14055,7 +14055,7 @@ sharp band in render pixels from the click, and focus error in mm:
 | shift | 0.00 mm | 0.00 mm |
 | double Gauss f/1.4 (O2) | band at −31 px in the centre, −42 and −50.5 px in the corners, the click outside it | +5, −14.5 and −13 px, the click inside the band in all three (its contrast, 88 % of the maximum) |
 | Petzval (O2) | −31.5 px in the centre, −32.5 and −44.5 in the corners | −2, +14 and +11 px, the click inside the band |
-| distortion +1 (O2) | *Full* −2.28 mm and the final −0.97 mm in the corner (the viewport was not the render); band −31, −16.5 and −52.5 px | both at 0.00 mm from the engine's focus; band +5.5 and −15.5 px, the click inside; bottom right, −38.5 px (see “did not fit”) |
+| distortion +1 (O2) | *Full* −2.28 mm and the final −0.97 mm in the corner (the viewport was not the render); band −31, −16.5 and −52.5 px | both at 0.00 mm from the engine's focus; band +5.5 and −15.5 px, the click inside; bottom right, −38.5 px (see “What did not fit the plan”) |
 | 1:1 and 9:16 active | 0.00 mm | 0.00 mm |
 | looking through, 9:16 | *Full* up to 34.8 mm and 15 px of circle of confusion in the corner; the final, fine | 0.00 mm and 0.1 px in both |
 | timeline, t = 1 with orbit | ±6.5 mm, 3–4 px of circle; band −24.5 and +19.5 px | 0.00 mm; band 0 and −1.5 px |

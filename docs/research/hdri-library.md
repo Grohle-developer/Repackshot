@@ -7,7 +7,7 @@
 Nothing was written into the repository. I read `CLAUDE.md`, `docs/ROADMAP.md` (E5, K4, K7), `docs/INTERIORS.md`, `docs/ARCHITECTURE.md` §5, `src/data/light-setups.ts`, `src/data/studios.ts`, `src/core/photometry.ts` and `engine/crates/rt-core/src/fmath.rs`, all read-only. I put downloads (the Hošek–Wilkie archive, PDFs, API JSON) in the scratchpad only. I opened no HDRI image or thumbnail from any library. From Poly Haven I used only public metadata (categories, tags, attributes).
 
 **Tags used below.** Numbers in brackets such as [12] refer to the source list in §9.
-- **[D]** = I derived it and checked it numerically in a throwaway script (`/tmp/claude-0/.../scratchpad/chk.py`, `lib.py`, `lib2.py`).
+- **[D]** = I derived it and checked it numerically in a throwaway script (`chk.py`, `lib.py`, `lib2.py`, not kept in the repository).
 - **[P]** = my design proposal, not a fact. Items touching architecture or photographic taste are for the lead, per CLAUDE.md rule 11.
 - **[T]** = common practitioner convention with no citable source; treat as a starting value.
 

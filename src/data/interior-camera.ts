@@ -1,6 +1,6 @@
 // K3 (INTERIORS.md §3.4): the presets of the interior camera. The keys are stable: they are added, never renamed.
 //
-// Every number here is a proposal pending the lead's decision (ROADMAP K3, "Qué no encajó"): the eye heights, the
+// Every number here is a proposal pending the lead's decision (ROADMAP K3, "What did not fit the plan"): the eye heights, the
 // interior lenses and the brightness presets are the ones §3.4 names; the calibration of a photographic EV against the
 // engine's radiance, the metering and the largest tilt the straight verticals correct are this phase's.
 

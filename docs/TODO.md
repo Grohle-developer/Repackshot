@@ -2,7 +2,7 @@ Translated from the owner's original notes.
 
 # Deferred TODO — documents saved as they were (2026-10-14/16)
 
-Work requested for **after** everything in progress is finished (see `ROADMAP.md` and `SESSION-STATE.md`). It is not implemented yet; when its turn comes, each section becomes phases in `ROADMAP.md` with a brief and lead's verdicts. Saved at the owner's request without changes. It contains two documents, one after the other: the Room Builder and walkthroughs specification (2026-10-14) and the serious bug report (AI Render and earlier; added on 2026-10-16). The bug report takes priority over the specification: they are regressions and gaps in the published version, not new work. Its point-by-point triage is in `TRIAGE.md`, and what comes out of it (B1, U14, the decisions for Fable) is in `ROADMAP.md`, section “Owner's bug report”.
+Work requested for **after** everything in progress is finished (see `ROADMAP.md` and `SESSION-STATE.md`). It is not implemented yet; when its turn comes, each section becomes phases in `ROADMAP.md` with a brief and lead's verdicts. Saved at the owner's request without changes. It contains two documents, one after the other: the Room Builder and walkthroughs specification (2026-10-14) and the serious bug report (AI Render and earlier; added on 2026-10-16). The bug report takes priority over the specification: they are regressions and gaps in the published version, not new work. Its point-by-point triage is in `TRIAGE.md`, and what comes out of it (B1, U14, the judgement calls) is in `ROADMAP.md`, section “Owner's bug report”.
 
 ---
 
