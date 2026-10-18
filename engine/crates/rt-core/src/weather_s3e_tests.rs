@@ -233,6 +233,9 @@ fn a_wtp2_section_carries_two_byte_resolutions_and_a_wetp_keeps_its_bytes() {
     assert_eq!(read.wet_parts, vec![w]);
 }
 
+/// The motes of `dusty(230, 40)` on the 100 mm plate (the page's test reads this number).
+const DUSTY_MOTES: usize = 828;
+
 /// A square plate of `half` mm at z = 0 facing up, two triangles.
 fn plate(half: f32) -> Mesh {
     let p = [
@@ -294,6 +297,8 @@ fn motes_lie_where_the_dust_is_thick_and_name_the_part_they_lie_on() {
     assert!(motes_on(&dusty(50, 40), corners, 100_000).is_empty());
     let w = dusty(230, 40);
     let motes = motes_on(&w, corners, 100_000);
+    // The page's twin (src/core/wet-parts.ts `motesOn`, tests/s3e-floor.test.ts) places as many.
+    assert_eq!(motes.len(), DUSTY_MOTES);
     let share = 230.0f32 / 255.0;
     let grain = std::f32::consts::PI * 0.0625 * (1.0 + 0.16 / 3.0);
     // Half the rows' samples: (r/2)(r/2 + ... ) of them, about a third of the triangle's area.
