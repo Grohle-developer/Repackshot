@@ -200,18 +200,39 @@ describe('focus on a point: it stays on the point', () => {
 });
 
 describe('focus on an object', () => {
-  it('follows the centre of the bounds of a part, a group or the model (◆ the default)', () => {
+  it('follows the surface the camera sees at the centre of the outline of a part, a group or the model (the default)', () => {
     const s0 = exampleState();
     const ids = keyIds(s0);
     for (const id of [ids.cap, ids.closure, ids.model]) {
       const s = apply(s0, focusObjectAction(s0, null, id)!);
       const cam = activeCamera(s);
       expect(cam.focusMode).toBe('OBJECT');
-      expect(cam.focusDistance).toBeCloseTo(depthOf(cam, boxCenter(posedBounds(s, id, null))), 9);
+      const seen = objectFocusPoint(s, cam, id, null, 'SILHOUETTE')!;
+      expect(cam.focusDistance).toBeCloseTo(depthOf(cam, seen), 9);
+      // In front of the centre of its box: the face the camera sees, not the inside of the part.
+      expect(depthOf(cam, seen)).toBeLessThan(depthOf(cam, boxCenter(posedBounds(s, id, null))));
       const moved = apply(s, { type: 'camera/set', id: cam.id, patch: orbitPatch(cam, { azimuth: cam.azimuth + 40, elevation: cam.elevation, distance: cam.distance * 0.8, target: cam.target })! });
       const c = activeCamera(moved);
-      expect(c.focusDistance).toBeCloseTo(depthOf(c, boxCenter(posedBounds(moved, id, null))), 9);
+      expect(c.focusDistance).toBeCloseTo(depthOf(c, objectFocusPoint(moved, c, id, null, 'SILHOUETTE')!), 9);
     }
+  });
+
+  it('wide open, the face of the object the camera sees is in focus (owner’s report, 2026-10-18, at f/1)', () => {
+    // The bottle's body at f/1: the thin lens's circle of confusion, in pixels of a 1920-wide frame, of the surface the
+    // camera sees at the centre of the body's outline. Focused on the centre of the body's box (the first rule), that
+    // surface was some 30 mm in front of the focus and more than ten pixels across; on the surface, none.
+    const s0 = apply(exampleState(), { type: 'camera/set', id: 'cam1', patch: { fstop: 1 } });
+    const ids = keyIds(s0);
+    const s = apply(s0, focusObjectAction(s0, null, ids.body)!);
+    const cam = activeCamera(s);
+    const seen = objectFocusPoint(s, cam, ids.body, null, 'SILHOUETTE')!;
+    const cocPx = (focus: number, z: number) => {
+      const f = cam.focalMm;
+      return (((f * f) / (cam.fstop * (focus - f))) * (Math.abs(z - focus) / z) * 1920) / 36;
+    };
+    const z = depthOf(cam, seen);
+    expect(cocPx(cam.focusDistance, z)).toBeLessThan(0.01);
+    expect(cocPx(depthOf(cam, boxCenter(posedBounds(s, ids.body, null))), z)).toBeGreaterThan(10);
   });
 
   it('the other candidates for Fable: the nearest vertex along the axis and the surface at the centre of the outline', () => {

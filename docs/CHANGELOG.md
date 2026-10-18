@@ -5,6 +5,10 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Camera and lens
+
+- Fixed: *Focus ▸ Object* focused on the centre of the object's box, which lies inside a solid product: wide open (f/1) the face the camera sees was out of focus. It now focuses on the surface the camera sees at the centre of the object's outline (F1).
+
 ## v0.1.22 — 2026-10-18
 
 ### Scene and ambient
