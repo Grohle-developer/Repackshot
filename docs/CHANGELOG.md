@@ -5,6 +5,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Materiales
+
+- **La madera de la familia *Madera* enseña sus anillos, poros y nudos en *Rápido***, como la misma madera con el nodo *Madera*: la vista previa la hornea por el grafo que da *Simple → Nodos*, el mismo camino, y salen los mismos píxeles. Antes, en *Rápido*, solo tenía su color medio y sus nudos; en *Completo* y en los renders no cambia nada. La tela sigue con el color medio de su tejido en *Rápido* (M3d).
+
 ## v0.1.19 — 2026-10-17
 
 ### Cola y proyecto
