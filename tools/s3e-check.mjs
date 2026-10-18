@@ -7,9 +7,11 @@
 //
 // Without --url it serves dist/ with `vite preview` on port 4199 and stops it at the end.
 //
-//   floor    the example bottle under Rain switched On the parts with a wind and the studio floor on: ▶ Start in the
-//            physics bar; paused at 3 s, the Fast viewport draws the wet floor around the bottle (pixels of the floor
-//            change against the dry frame), without a shader error; the screenshot physics-rain-floor.png.
+//   floor    the example bottle with its set's backdrop and floor switched off (so the rain reaches the studio floor)
+//            under Rain switched On the parts with a wind: ▶ Start in the physics bar; paused at 2 s, the Fast viewport
+//            draws the studio floor wet (the median of a box of the floor in front of the bottle moves from the frame
+//            before Start, which the rain's thin streaks do not), without a shader error; the screenshot
+//            physics-rain-floor.png.
 //   note     with an engine whose features are patched without bits 11 and 13 (tools/wasm-features.mjs, as an engine of
 //            S3f reports them) the effect's editor says the floor will show dry (Rain) and the dust will show without its
 //            grains (Dust cloud), in English and in Spanish; with the real rt.wasm, no such note.
@@ -254,7 +256,7 @@ const needEngine = (name) => {
 };
 
 /** Starts the physics bar with `preset` switched On the parts (and a wind), pausing from inside the page once `when` holds. */
-async function startOnParts(page, preset, wind, when) {
+async function startOnParts(page, preset, wind, when, beforeStart = null) {
   await page.locator(SECTION).scrollIntoViewIfNeeded();
   await addFromGallery(page, preset);
   if (wind) await typeIn(page, page.locator('[data-knob="ambient.wind"] [role="spinbutton"]'), wind);
@@ -273,8 +275,17 @@ async function startOnParts(page, preset, wind, when) {
       }
     }).observe(document.querySelector('.phys'), { subtree: true, childList: true, characterData: true });
   }, when);
+  if (beforeStart) await beforeStart();
   await page.click('[data-action="phys.start"]');
-  await page.waitForFunction(() => document.querySelector('[data-field="phys.state"]')?.textContent === 'Paused', null, { timeout: 240000 });
+  // The run is slow under swiftshader on a loaded machine: say where it is every 15 s, and what it said when it gives up.
+  const start = Date.now();
+  for (;;) {
+    const now = await bar(page);
+    if (now.state === 'Paused') return;
+    if (Date.now() - start > 600000) throw new Error(`the run did not pause in 600 s: ${JSON.stringify(now)}`);
+    console.log(`  ${Math.round((Date.now() - start) / 1000)} s: ${now.state} · ${now.time} · ${now.parts}`);
+    await page.waitForTimeout(15000);
+  }
 }
 
 /** A note of S3e in the effect's editor: shown (its text) or null. */
@@ -284,6 +295,22 @@ const note = (page, which) =>
     return el && el.getBoundingClientRect().height > 0 ? el.textContent : null;
   }, which);
 
+/** The median of R+G+B over a box of the viewport's pixels (x0, y0, x1, y1 as shares of its width and height): the
+ * floor's own look, which the rain's thin bright streaks over it do not move. */
+function medianIn(px, width, box) {
+  const height = px.length / 4 / width;
+  const [x0, y0, x1, y1] = [box[0] * width, box[1] * height, box[2] * width, box[3] * height].map(Math.round);
+  const v = [];
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = 4 * (y * width + x);
+      v.push(px[i] + px[i + 1] + px[i + 2]);
+    }
+  }
+  v.sort((a, b) => a - b);
+  return v.length > 0 ? v[v.length >> 1] : 0;
+}
+
 async function floorCheck(browser) {
   const f = [];
   const log = {};
@@ -291,22 +318,40 @@ async function floorCheck(browser) {
   const { page, context, errors } = await open(browser, 'example=1&theme=dark&lang=en&mode=fast&tour=0');
   log.ready = await engineReady(page);
   ok(log.ready, 'the engine did not get ready', f);
-  await settle(page, 800);
-  const before = await viewportPixels(page);
-  await startOnParts(page, 'RAIN', 3, 'time >= 3');
+  // The example's set lays its backdrop and its own floor over the studio's: switched off, the rain reaches the studio
+  // floor (the part of it under the effect's region, about 250 mm square around the bottle).
+  for (const piece of ['Backdrop', 'Set floor']) {
+    const sw = page.locator(`[role="switch"][aria-label="${piece}: on or off"]`);
+    await sw.scrollIntoViewIfNeeded();
+    await sw.click();
+    await settle(page, 800);
+    log[piece] = await sw.getAttribute('aria-checked');
+    ok(log[piece] === 'false', `the set's ${piece} did not switch off: ${log[piece]}`, f);
+  }
+  const width = Math.round((await page.locator('canvas[aria-label="viewport"]').boundingBox()).width);
+  // Two boxes of the studio floor in front of the bottle's foot, either side of it.
+  const boxes = [[0.24, 0.785, 0.38, 0.83], [0.62, 0.785, 0.76, 0.83]];
+  // The dry floor under the rain's streaks: the effect added and On the parts, before Start.
+  await startOnParts(page, 'RAIN', 3, 'time >= 2', async () => {
+    await settle(page, 800);
+    const dry = await viewportPixels(page);
+    log.dry = boxes.map((b) => medianIn(dry, width, b));
+  });
   await settle(page, 1500);
   log.paused = await page.evaluate(() => window.__paused);
   log.bar = await bar(page);
   ok(/Parts:/.test(log.bar.parts), `the bar does not count the parts: ${log.bar.parts}`, f);
-  const after = await viewportPixels(page);
-  log.changed = changed(before, after);
-  ok(log.changed > 5000, `the wet floor and the drops change too few pixels: ${log.changed}`, f);
+  const wet = await viewportPixels(page);
+  log.wet = boxes.map((b) => medianIn(wet, width, b));
+  // Wet, the floor changes its look (darker as a porous grey and glossier with the film: on the dark theme's floor the
+  // gloss wins); its median moves where it was dry before Start.
+  ok(log.wet.some((v, k) => Math.abs(v - log.dry[k]) > 12), `the studio floor does not change where the rain reaches it: ${log.dry} → ${log.wet}`, f);
   await page.screenshot({ path: join(SHOTS, 'physics-rain-floor.png') });
   log.shot = 'physics-rain-floor.png';
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
   await context.close();
   results.floor = { ok: f.length === 0, failures: f, ...log };
-  console.log(`floor: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
+  console.log(`floor: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`} (${log.dry} → ${log.wet})`);
 }
 
 async function noteCheck(browser) {
