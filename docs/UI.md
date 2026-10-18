@@ -1,58 +1,58 @@
-# Interfaz — especificación para quien la construye
+# Interface — specification for whoever builds it
 
-Este documento describe la interfaz de Repackshot con el detalle suficiente
-para construirla leyendo solo esto, `ARCHITECTURE.md` y los catálogos de
-`src/data/`. Es la entrega de la fase **U1** del roadmap, asignada a
-**Opus**. Las decisiones de diseño están tomadas; lo que queda abierto se
-dice explícitamente.
+This document describes the Repackshot interface in enough detail to
+build it from this file alone, plus `ARCHITECTURE.md` and the catalogues in
+`src/data/`. It is the deliverable of phase **U1** of the roadmap, assigned to
+**Opus**. The design decisions are made; whatever remains open is
+stated explicitly.
 
-Las capturas de `docs/ui/`, reunidas por versión y por función, están en
+The captures in `docs/ui/`, grouped by version and by feature, are in
 [`GALERIA.md`](GALERIA.md).
 
-Lo que persigue: la **misma potencia que un renderizador de producto
-comercial, con la mitad de interfaz**. Una sola idea organiza todo:
+What it aims for: **the same power as a commercial product renderer,
+with half the interface**. A single idea organises everything:
 
-> **A la izquierda, lo que hay en la escena. En el centro, la imagen. A la
-> derecha, lo que estás editando.** Y abajo, el único botón que de verdad
-> importa: *Render*.
+> **On the left, what is in the scene. In the centre, the image. On the
+> right, what you are editing.** And at the bottom, the one button that really
+> matters: *Render*.
 
 ---
 
-## 1 · Estética: blanco y negro, sobria, minimalista
+## 1 · Aesthetics: black and white, sober, minimalist
 
-**Regla absoluta: el cromo de la interfaz es acromático.** Ningún elemento
-de la interfaz lleva color: ni acentos azules, ni semáforos verde/rojo, ni
-iconos de colores. Solo blanco, negro y grises neutros (`hue = 0`,
-`saturation = 0`). El único color en pantalla es el **contenido**: el
-render del visor y las miniaturas de materiales y montajes de luz. Esa
-asimetría es a propósito: con el cromo mudo, el ojo juzga el color de la
-imagen sin interferencias, que es lo que se hace en un estudio de
-fotografía.
+**Absolute rule: the interface chrome is achromatic.** No element
+of the interface carries colour: no blue accents, no green/red traffic
+lights, no coloured icons. Only white, black and neutral greys (`hue = 0`,
+`saturation = 0`). The only colour on screen is the **content**: the
+viewport render and the thumbnails of materials and light setups. That
+asymmetry is deliberate: with the chrome silent, the eye judges the colour of
+the image without interference, which is what is done in a photography
+studio.
 
-Dónde otros usan color, aquí se usa **contraste, peso y espacio**:
+Where others use colour, here **contrast, weight and space** are used:
 
-| Necesidad | Solución acromática |
+| Need | Achromatic solution |
 | --- | --- |
-| Botón primario (*Render*, *Crear estudio*) | Relleno invertido: negro sobre blanco en tema claro, blanco sobre negro en tema oscuro |
-| Selección (pieza, miniatura, pestaña) | Borde de 1.5 px en el color de tinta + fondo invertido suave |
-| Error / aviso del Doctor | Punto relleno + texto en peso 600; nunca rojo |
-| Estado "activo" de un toggle | Relleno invertido del propio toggle |
-| Enlace o acción secundaria | Subrayado fino a 1 px, sin color |
-| Hover | Fondo un escalón más claro (oscuro) o más oscuro (claro) |
+| Primary button (*Render*, *Create studio*) | Inverted fill: black on white in the light theme, white on black in the dark theme |
+| Selection (part, thumbnail, tab) | 1.5 px border in the ink colour + soft inverted background |
+| Doctor error / warning | Filled dot + text at weight 600; never red |
+| "Active" state of a toggle | Inverted fill of the toggle itself |
+| Link or secondary action | Thin 1 px underline, no colour |
+| Hover | Background one step lighter (dark) or darker (light) |
 
-**Dos temas, los dos acromáticos.** Por defecto **oscuro**: el visor es el
-protagonista y una imagen se juzga mejor con un entorno oscuro y neutro.
-Tema **claro** como alternativa, respetando `prefers-color-scheme` al
-arrancar y con conmutador manual en el menú de la cabecera. Los dos se
-definen como *tokens* en `:root` y `:root[data-theme]`; ningún color se
-escribe en un componente.
+**Two themes, both achromatic.** **Dark** by default: the viewport is the
+protagonist and an image is judged better against a dark, neutral
+surround. **Light** theme as an alternative, respecting `prefers-color-scheme` at
+startup and with a manual switch in the header menu. Both are
+defined as tokens in `:root` and `:root[data-theme]`; no colour is
+written in a component.
 
 ```css
-:root {                       /* tema claro */
+:root {                       /* light theme */
   --bg-0: #ffffff;  --bg-1: #f4f4f4;  --bg-2: #e9e9e9;  --bg-3: #d9d9d9;
   --ink-0: #000000; --ink-1: #333333; --ink-2: #5f5f5f; --ink-3: #9a9a9a;
   --line: #d0d0d0;  --line-strong: #000000;
-  --viewport-bg: #8c8c8c;     /* gris neutro 18 % de reflectancia perceptual */
+  --viewport-bg: #8c8c8c;     /* neutral grey, 18 % perceptual reflectance */
 }
 :root[data-theme="dark"] {
   --bg-0: #0e0e0e;  --bg-1: #161616;  --bg-2: #1f1f1f;  --bg-3: #2a2a2a;
@@ -62,2901 +62,2887 @@ escribe en un componente.
 }
 ```
 
-(Los valores son el punto de partida; se pueden afinar, pero siempre con
-`saturation = 0`. Un test de la suite comprueba que ningún color del CSS
-tiene saturación.)
+(The values are the starting point; they can be refined, but always with
+`saturation = 0`. A test in the suite checks that no colour in the CSS
+has saturation.)
 
-**Tipografía.** Una sola familia: `Inter, system-ui, -apple-system, "Segoe
-UI", Roboto, sans-serif`, sin cargar fuentes de red (la aplicación tiene
-que funcionar sin conexión). Tamaños: 13 px cuerpo, 12 px etiquetas de
-campo, 11 px texto auxiliar en mayúsculas espaciadas (`letter-spacing:
-0.06em`), 15 px títulos de sección. **Numerales tabulares**
-(`font-variant-numeric: tabular-nums`) en todo campo numérico, para que las
-cifras no bailen al cambiar.
+**Typography.** A single family: `Inter, system-ui, -apple-system, "Segoe
+UI", Roboto, sans-serif`, loading no network fonts (the application has to
+work offline). Sizes: 13 px body, 12 px field
+labels, 11 px auxiliary text in spaced capitals (`letter-spacing:
+0.06em`), 15 px section titles. **Tabular numerals**
+(`font-variant-numeric: tabular-nums`) in every numeric field, so the
+digits do not dance when they change.
 
-**Iconos.** SVG en línea, monocromos, trazo de 1.5 px, caja de 16 px (20 px
-en la barra del visor). Nada de fuentes de iconos ni emojis. Cada icono va
-con `aria-label`. Si un concepto no tiene un icono claro, se usa texto: un
-botón con la palabra *Render* se entiende mejor que cualquier glifo.
+**Icons.** Inline SVG, monochrome, 1.5 px stroke, 16 px box (20 px
+in the viewport bar). No icon fonts or emoji. Every icon carries
+an `aria-label`. If a concept has no clear icon, text is used: a
+button with the word *Render* is understood better than any glyph.
 
-**Espaciado.** Rejilla de 4 px. Paneles con 12 px de margen interior;
-secciones separadas por una línea de 1 px (`--line`), no por cajas.
-Esquinas de 4 px en controles, 0 en paneles. Sin sombras paralelas salvo
-en menús flotantes y la paleta de comandos (una sombra neutra suave).
+**Spacing.** 4 px grid. Panels with 12 px inner padding;
+sections separated by a 1 px line (`--line`), not by boxes.
+4 px corners on controls, 0 on panels. No drop shadows except
+on floating menus and the command palette (a soft neutral shadow).
 
-**Movimiento.** Transiciones de 120 ms en hover y despliegues, ninguna en
-cambios de valor. `prefers-reduced-motion` las apaga todas.
+**Motion.** 120 ms transitions on hover and expansions, none on
+value changes. `prefers-reduced-motion` turns them all off.
 
 ---
 
-## 2 · Disposición
+## 2 · Layout
 
-Escritorio, mínimo 1280 px de ancho. Cinco regiones fijas:
+Desktop, 1280 px wide at minimum. Five fixed regions:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ CABECERA  44 px                                                      │
+│ HEADER  44 px                                                        │
 ├──────────┬──────────────────────────────────────────┬────────────────┤
-│ ESCENA   │ VISOR                                     │ INSPECTOR      │
-│ 260 px   │ (ocupa todo lo que queda)                 │ 340 px         │
+│ SCENE    │ VIEWPORT                                  │ INSPECTOR      │
+│ 260 px   │ (takes everything that is left)           │ 340 px         │
 │          │                                           │                │
 ├──────────┴──────────────────────────────────────────┴────────────────┤
-│ BARRA DE RENDER  56 px (desplegable: Animación · Cola)               │
+│ RENDER BAR  56 px (expandable: Animation · Queue)                    │
 ├──────────────────────────────────────────────────────────────────────┤
-│ ESTADO  24 px                                                        │
+│ STATUS  24 px                                                        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- Los paneles laterales se pueden **plegar** (botón en su cabecera y
-  tecla `Tab` pliega los dos a la vez: *modo imagen*). Plegados, dejan un
-  carril de 36 px con sus iconos para volver a abrirlos.
-- Los anchos laterales se pueden arrastrar entre 220 y 480 px; se
-  recuerdan en `localStorage` (envuelto en `try/catch`).
-- Por debajo de 1100 px los laterales pasan a ser cajones superpuestos al
-  visor; nunca hay desplazamiento horizontal de página. El móvil no es
-  objetivo, pero nada debe romperse.
+- The side panels can be **collapsed** (a button in their header and the
+  `Tab` key collapses both at once: *image mode*). Collapsed, they leave
+  a 36 px rail with their icons to reopen them.
+- The side widths can be dragged between 220 and 480 px; they are
+  remembered in `localStorage` (wrapped in `try/catch`).
+- Below 1100 px the side panels become drawers overlaid on the
+  viewport; there is never horizontal page scrolling. Mobile is not a
+  target, but nothing should break.
 
-### 2.1 · Cabecera
+### 2.1 · Header
 
-De izquierda a derecha:
+From left to right:
 
-1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
-   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack`,
-   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó; Abrir también lee los
-   `.repack.json` de antes de v0.1.6), Guardar proyecto
-   como… (`Ctrl/⌘ ⇧ S`), Importar modelo, **Añadir ▸** (fase U9: bajo el
-   rótulo *Primitiva*, las doce formas del catálogo —*Caja*, *Plano*,
-   *Disco*, *Cilindro*, *Pedestal*, *Esfera*, *Cono*, *Toro*, *Cápsula*,
-   *Tubo*, *Escalones*, *Fondo infinito*—, cada una con su icono y un
-   *tooltip* que dice dónde nace),
-   Exportar imagen, separador, Idioma (Inglés / Español), Tema (Oscuro /
-   Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador y **Ayuda ▸**
-   (fase U10): *Recorrido guiado*, *Guía* (la de seis pasos de §4.6),
-   *Atajos de teclado* y *Acerca de*.
-2. **Nombre del proyecto**, editable al hacer clic (texto plano, sin caja
-   hasta que se edita). Un punto delante cuando hay cambios sin guardar.
-3. Centro: **Deshacer / Rehacer** con el nombre de la acción en el
-   tooltip ("Deshacer: asignar Oro a Cuerpo").
-4. A la derecha del centro: el **modo del visor**, un segmento de dos
-   posiciones **Rápido · Completo** (atajo `Ctrl/⌘ ⇧ R`). *Rápido* es la
-   vista previa rasterizada: responde al instante y sirve para colocar
-   luces, pintar materiales y encuadrar. *Completo* es el motor de verdad
-   simulándolo todo en el propio visor, también mientras se mueve la
-   cámara (baja la resolución durante el gesto y vuelve a converger al
-   soltar). El tooltip lo dice en una frase. Mientras el motor no está
-   cargado (sin `rt.wasm`), *Completo* se ve deshabilitado con el motivo
-   en auxiliar (*Completo: el motor no está construido*), y *Render* lo
-   dice también y no renderiza: la vista previa nunca se hace pasar por
-   un render. **Render usa siempre el motor completo**, esté el visor
-   en el modo que esté: el conmutador solo decide qué se ve mientras se
-   trabaja.
+1. **Application menu** (three-line icon + "Repackshot"): New,
+   Open project (`Ctrl/⌘ O`), Save project (`.repack`,
+   `Ctrl/⌘ S`, to the same file if it was already saved; Open also reads the
+   `.repack.json` files from before v0.1.6), Save project
+   as… (`Ctrl/⌘ ⇧ S`), Import model, **Add ▸** (phase U9: under the
+   heading *Primitive*, the twelve shapes of the catalogue —*Box*, *Plane*,
+   *Disc*, *Cylinder*, *Pedestal*, *Sphere*, *Cone*, *Torus*, *Capsule*,
+   *Tube*, *Steps*, *Infinity sweep*—, each with its icon and a
+   tooltip that says where it is born),
+   Export image, separator, Language (English / Spanish), Theme (Dark /
+   Light / System), **Settings…** (`Ctrl/⌘ ,`), separator and **Help ▸**
+   (phase U10): *Guided tour*, *Guide* (the six-step one in §4.6),
+   *Keyboard shortcuts* and *About*.
+2. **Project name**, editable on click (plain text, no box
+   until it is edited). A dot in front when there are unsaved changes.
+3. Centre: **Undo / Redo** with the name of the action in the
+   tooltip ("Undo: Assign Gold to Body").
+4. To the right of the centre: the **viewport mode**, a two-position
+   segment **Fast · Full** (shortcut `Ctrl/⌘ ⇧ R`). *Fast* is the
+   rasterised preview: it responds instantly and is for placing
+   lights, painting materials and framing. *Full* is the real engine
+   simulating everything in the viewport itself, also while the
+   camera moves (it lowers the resolution during the gesture and converges again
+   on release). The tooltip says it in one sentence. While the engine is not
+   loaded (no `rt.wasm`), *Full* appears disabled with the reason
+   in auxiliary text (*Full: the engine is not built*), and *Render* says
+   so too and does not render: the preview never passes itself off as
+   a render. **Render always uses the full engine**, whatever mode the
+   viewport is in: the switch only decides what is seen while
+   working.
 
-   A su derecha, en la misma zona (la que rodea el paso *Rápido y
-   Completo* del recorrido guiado), el interruptor **Reducir ruido**
-   (fase U11, atajo `D`): un botón de una posición, en negativo cuando
-   está encendido, que reduce el ruido del visor *Completo* **en
-   directo**, mientras se acumulan las muestras. Es el mismo estado que
-   el botón *Reducir ruido* del medidor y que la parte *Visor* de
-   *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*, *Visor* ↔
-   *Apagada*): una sola verdad, la del proyecto, deshacible (*Deshacer:
-   Dejar de reducir el ruido del visor*) y guardada con él, también
-   cuando la ventana de render está editando un trabajo de la cola. El
-   *tooltip* lo dice en una frase. En *Rápido* se ve deshabilitado con
-   la ayuda *Se aplica al modo Completo*, y `D` no hace más que decirlo.
-   Encenderlo reduce el ruido de lo acumulado en ese momento (también con
-   el visor ya convergido) y apagarlo enseña en el fotograma siguiente
-   la imagen ruidosa; ninguna de las dos cosas vuelve a empezar la
-   imagen. Mientras se acumula, la imagen limpia se refresca tan a
-   menudo como cuesta un *denoise* (§2.3, medidor) y los gestos de
-   cámara siguen a resolución reducida, sin *denoise*.
-5. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
-   la paleta de comandos; icono de **Guía**; icono de **Tema**.
+   To its right, in the same area (the one the *Fast and Full* step of the
+   guided tour rings), is the **Denoise** switch
+   (phase U11, shortcut `D`): a one-position button, inverted when
+   on, that denoises the *Full* viewport **live**, while the
+   samples accumulate. It is the same state as the
+   *Denoise* button of the meter and as the *Viewport* part of
+   *Advanced ▸ Denoise* (*Both* ↔ *Render*, *Viewport* ↔
+   *Off*): a single truth, the project's, undoable (*Undo:
+   Stop denoising the viewport*) and saved with it, also
+   when the render window is editing a job of the queue. The
+   tooltip says it in one sentence. In *Fast* it appears disabled with
+   the help *Applies to Full mode*, and `D` does nothing but say so.
+   Turning it on denoises what has accumulated at that moment (even with
+   the viewport already converged) and turning it off shows the noisy image on the
+   next frame; neither restarts the
+   image. While accumulating, the clean image refreshes as often
+   as a denoise costs (§2.3, meter) and camera gestures
+   continue at reduced resolution, without denoise.
+5. Right: **Search or run…** (`Ctrl/⌘ K`), a 240 px field that opens
+   the command palette; **Guide** icon; **Theme** icon.
 
-Nada más. Ni cinta de iconos ni pestañas de espacio de trabajo.
+Nothing else. No icon ribbon or workspace tabs.
 
-### 2.2 · Escena (izquierda)
+### 2.2 · Scene (left)
 
-Pestañas en la cabecera del panel, con icono y texto corto: **Piezas ·
-Cámaras · Luces · Estudios**.
+Tabs in the panel header, with icon and short text: **Parts ·
+Cameras · Lights · Studios**.
 
-**Piezas**: árbol del modelo. Cada fila: triángulo de despliegue, icono
-de nivel (modelo / grupo / pieza), nombre, y a la derecha, al pasar el
-ratón, tres acciones en icono: ojo (ocultar), diana (encuadrar), candado
-(bloquear). Clic selecciona; `Ctrl` clic añade; `Shift` clic extiende;
-doble clic encuadra la pieza en el visor. Cada pieza muestra bajo su
-nombre, en texto auxiliar, el material que lleva. Arrastrar un material
-(una miniatura del catálogo o de *Míos*, o la esfera de la tarjeta del
-material, §2.4) sobre una fila lo asigna a esa fila y a todo lo que
-cuelga de ella (una pieza, un grupo, el modelo): la fila se marca con un
-borde discontinuo y el visor contornea lo que alcanzaría la suelta. Es una
-sola entrada de deshacer (*Deshacer: asignar Oro a Cuerpo*), `Alt` al
-soltar da una copia propia del material, `Esc` cancela y, si el destino
-lleva materiales distintos, antes se pregunta en línea (§4.1). Menú contextual
-(botón derecho): Aislar, Ocultar, Mostrar todo, Renombrar, Apoyar en el
-suelo, Centrar, Eliminar.
+**Parts**: tree of the model. Each row: expand triangle, level icon
+(model / group / part), name, and on the right, on hover, three actions as icons: eye (hide), target (frame), padlock
+(lock). Click selects; `Ctrl` click adds; `Shift` click extends;
+double click frames the part in the viewport. Each part shows under its
+name, in auxiliary text, the material it carries. Dragging a material
+(a thumbnail from the catalogue or from *Mine*, or the sphere of the
+material card, §2.4) onto a row assigns it to that row and to everything
+hanging from it (a part, a group, the model): the row is marked with a
+dashed border and the viewport outlines what the drop would reach. It is a
+single undo entry (*Undo: Assign Gold to Body*), `Alt` on
+dropping gives the part its own copy of the material, `Esc` cancels and, if the target
+carries different materials, an inline question comes first (§4.1). Context menu
+(right button): Isolate, Hide, Show all, Rename, Rest on the floor,
+Centre, Delete.
 
-Encima del árbol, un campo de **filtro** por nombre con un botón **`+`** a
-su derecha (fase U9: abre el mismo *Añadir ▸ Primitiva* de la cabecera) y,
-debajo, el **selector de nivel** de la selección (ver §4.1).
+Above the tree, a **filter** field by name with a **`+`** button to
+its right (phase U9: it opens the same *Add ▸ Primitive* as the header) and,
+below, the **level selector** of the selection (see §4.1).
 
-El **menú contextual** completo de una fila (fase U3, con las acciones de
-`SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · **Escalar…**
-(fase U9: el panel en línea de §2.3, junto a la fila) · Apoyar en el
-suelo · Centrar · Centrar y apoyar · **Dejar caer** (fase S2) ·
-Restablecer transformación ·
-Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
-objetivo de cámara · **Mantener enfocado** (F1: la cámara que se ve pasa a
-*Enfoque ▸ Objeto* sobre la fila o la pieza, al nivel de la selección) ·
-separador · Ocultar · Aislar · Mostrar todo ·
-Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
-circular) · Agrupar · Desagrupar · Mover a grupo ▸ · separador ·
-Material ▸ (Desenlazar, Enlazar con…, Copiar, Pegar, Seleccionar por
-material) · Geometría ▸ (Invertir normales, Suavizado…, Separar por
-caras CAD, Separar por material, **Convertir en malla**, fase U9: activo
-solo si la selección tiene primitivas) · separador · Renombrar · Eliminar.
-En U1 existen las que ya están en §2.2 y el resto se añade en U3 sin
-cambiar la estructura del menú.
+The full **context menu** of a row (phase U3, with the actions of
+`SPEC.md` §3.1): Frame · Move (activates the gizmo) · **Scale…**
+(phase U9: the inline panel of §2.3, next to the row) · Rest on the
+floor · Centre · Centre and rest · **Drop** (phase S2) ·
+Reset transform ·
+Set pivot ▸ (centre, base, origin, picked point) · Set as
+camera target · **Keep in focus** (F1: the camera in view switches to
+*Focus ▸ Object* on the row or the part, at the level of the selection) ·
+separator · Hide · Isolate · Show all ·
+Lock · separator · Duplicate · Duplicate linked · Pattern ▸ (linear,
+circular) · Group · Ungroup · Move to group ▸ · separator ·
+Material ▸ (Unlink, Link with…, Copy, Paste, Select by
+material) · Geometry ▸ (Flip normals, Smoothing…, Separate by
+CAD faces, Separate by material, **Convert to mesh**, phase U9: enabled
+only if the selection has primitives) · separator · Rename · Delete.
+In U1 the ones already in §2.2 exist and the rest are added in U3 without
+changing the structure of the menu.
 
-**Dejar caer** (fase S2; el mismo menú en el visor, el botón de la
-sección *Físicas* y de la sección *Pieza* del inspector, y la paleta,
-*Dejar caer la selección*) simula la selección al momento: lo
-seleccionado pasa a *Dinámico* y cae sobre el suelo y lo que tenga debajo
-(el resto de la escena, quieto), se abre el cajón **Físicas** (§2.5) y la
-simulación se para sola cuando todo está quieto. Un grupo o un modelo cae
-como un cuerpo salvo que tenga *Como piezas*. Está desactivado con la
-selección bloqueada. Toda la caída es **una** entrada de deshacer
-(*Deshacer: Dejar caer 3 piezas*). No hay un menú *Pieza* en la cabecera
-en esta versión: su sitio es este menú contextual.
+**Drop** (phase S2; the same menu in the viewport, the button of the
+*Physics* section and of the *Part* section of the inspector, and the palette,
+*Drop the selection*) simulates the selection at once: what is
+selected becomes *Dynamic* and falls onto the floor and whatever is under it
+(the rest of the scene, still), the **Physics** drawer opens (§2.5) and the
+simulation stops by itself when everything is at rest. A group or a model falls
+as one body unless it has *As parts*. It is disabled with the
+selection locked. The whole fall is **one** undo entry
+(*Undo: Drop 3 parts*). There is no *Part* menu in the header
+in this version: its place is this context menu.
 
-**Cámaras**: lista de cámaras guardadas con la activa marcada. Botones:
-*Nueva desde la vista actual*, *Duplicar*, *Eliminar*. Clic activa la
-cámara en el visor.
+**Cameras**: list of saved cameras with the active one marked. Buttons:
+*New from current view*, *Duplicate*, *Delete*. Click activates the
+camera in the viewport.
 
-**Luces**: la lista de focos del montaje activo (Principal, Relleno,
-Contra, Cenital…) más los **focos propios** (con la marca *propio*), con su
-potencia relativa en una barra fina y un interruptor cada uno. Clic
-selecciona el foco y el inspector lo edita. Botón **+ Añadir luz** con menú:
-*Área · rectángulo*, *Área · disco*, *Área · esfera*, *Punto*, *Foco
-direccional*, *Sol* e *IES…* (fase L5: abre un archivo de perfil, ver abajo),
-cada una con su icono y un *tooltip* de lo que da; el mismo menú está en *Añadir ▸* de la cabecera
-(bajo las primitivas) y en el clic derecho del visor en vacío, y cada tipo
-en la paleta (*Añadir luz: foco direccional*…). Un foco nuevo aparece
-delante y arriba de la pieza, encendido y seleccionado (fase L4). Acciones
-por fila, en la fila del foco seleccionado (al pasar el ratón se moverían
-bajo el clic que selecciona la fila): **duplicar**, **apuntar a…** (el centro
-del producto, un punto, una pieza) y **eliminar**. Como la selección es el
-foco, *apuntar a la selección* está del otro lado: el menú contextual de una
-pieza tiene **Apuntar un foco aquí ▸** con la lista de focos. Debajo,
-**Guardar montaje como…** (nombre; va a la pestaña *Míos* del catálogo con
-miniatura renderizada) y **Restablecer al montaje** cuando el rig está
-modificado (quita los focos propios).
+**Lights**: the list of lights of the active setup (Key, Fill,
+Rim, Top…) plus the **own lights** (marked *own*), with their
+relative power on a thin bar and a switch each. Click
+selects the light and the inspector edits it. A **+ Add light** button with a menu:
+*Area · rectangle*, *Area · disc*, *Area · sphere*, *Point*, *Spot*,
+*Sun* and *IES…* (phase L5: it opens a profile file, see below),
+each with its icon and a tooltip of what it gives; the same menu is in *Add ▸* of the header
+(under the primitives) and in the viewport's right click on empty space, and each type
+in the palette (*Add light: spot*…). A new light appears
+in front of and above the part, on and selected (phase L4). Actions
+per row, on the row of the selected light (on hover they would move
+under the click that selects the row): **duplicate**, **aim at…** (the centre
+of the product, a point, a part) and **delete**. Since the selection is the
+light, *aim at the selection* is on the other side: the context menu of a
+part has **Aim a light here ▸** with the list of lights. Below,
+**Save setup as…** (name; it goes to the *Mine* tab of the catalogue with a
+rendered thumbnail) and **Reset to setup** when the rig is
+modified (it removes the own lights).
 
-**Luz IES** (fase L5). *IES…* abre el diálogo de archivos (`.ies`; en el
-navegador, el selector de archivos; en el escritorio, el diálogo del sistema)
-y, con un perfil que el motor sabe leer, crea una luz de tipo *IES* (delante y
-arriba de la pieza, encendida y seleccionada, una entrada de deshacer:
-*Añadir foco IES <nombre del perfil>*); soltar un `.ies` sobre la ventana
-hace lo mismo y la paleta lo tiene (*Añadir luz: perfil IES…*). Con un
-archivo que no sirve (de fotometría tipo B o A, con `TILT=INCLUDE`, cortado,
-con las cuentas mal, con ángulos que no crecen, con candelas negativas…) no
-se añade nada y un aviso dice por qué, con los números del archivo y qué
-hacer («expórtalo como tipo C», «con TILT=NONE»). En el inspector, bajo el
-tipo (*Área · Punto · Foco · Sol · IES*; *IES* solo lo ofrece una luz que
-tiene perfil, y cambiar a *Punto* o *Foco* y volver lo conserva):
+**IES light** (phase L5). *IES…* opens the file dialog (`.ies`; in the
+browser, the file picker; on the desktop, the system dialog)
+and, with a profile the engine can read, creates a light of type *IES* (in front of and
+above the part, on and selected, one undo entry:
+*Add IES light <profile name>*); dropping an `.ies` on the window
+does the same and the palette has it (*Add light: IES profile…*). With a
+file that is no good (photometric type B or A, with `TILT=INCLUDE`, cut short,
+with the counts wrong, with angles that do not increase, with negative candelas…) nothing
+is added and a notice says why, with the numbers from the file and what to
+do ("export it as type C", "with TILT=NONE"). In the inspector, under the
+type (*Area · Point · Spot · Sun · IES*; *IES* is only offered by a light that
+has a profile, and switching to *Point* or *Spot* and back keeps it):
 
-- **Perfil**: su nombre (la descripción de la luminaria del archivo o, si no la
-  trae, el nombre del archivo) y, en auxiliar, el pico en cd, el ángulo del haz
-  (el doble del ángulo en que cae a la mitad) y la simetría del archivo.
-- **Gráfico polar**, dibujado desde el archivo que lee el motor: la intensidad
-  sobre el pico contra el ángulo desde el eje (0° abajo, 180° arriba), en los
-  planos C0–C180 (continuo; C0 a la derecha) y C90–C270 (discontinuo), con
-  anillos al 25, 50, 75 y 100 %; un perfil redondo tiene una sola curva. En
-  tintas del tema, sin color.
-- **Cambiar…**: otro archivo para la misma luz, que conserva su sitio, su
-  apunte y su nivel (una entrada de deshacer: *Cambiar el perfil IES de
-  <foco>*).
-- **Multiplicador** (× 1,00 al entrar), en lugar de la potencia en vatios: ×2
-  duplica la luz. Debajo, los lúmenes (el flujo del punto del pico por la parte
-  de la esfera que llena el perfil).
-- Una nota: *Rápido dibuja este perfil como un foco de N° con la misma
-  intensidad en su eje: una aproximación. Completo y Render usan el archivo
-  entero.* (el medidor de cada luz dice lo que el motor no hace en Rápido, regla
-  10). Si el texto del perfil no se pudiera leer, otra nota dice que el foco se
-  dibuja como un punto.
-- Radio de la bombilla, posición, **giro** (el ángulo horizontal 0° del perfil:
-  girar la luz gira el patrón), color, *visible en reflejos*, *visible a
-  cámara*, *proyecta sombra* y encendido, como cualquier foco.
+- **Profile**: its name (the luminaire description from the file or, if it
+  has none, the file name) and, in auxiliary text, the peak in cd, the beam angle
+  (twice the angle at which it falls to half) and the symmetry of the file.
+- **Polar plot**, drawn from the file the engine reads: the intensity
+  over the peak against the angle from the axis (0° down, 180° up), in the
+  planes C0–C180 (solid; C0 on the right) and C90–C270 (dashed), with
+  rings at 25, 50, 75 and 100 %; a round profile has a single curve. In
+  theme inks, no colour.
+- **Change…**: another file for the same light, which keeps its place, its
+  aim and its level (one undo entry: *Change the IES profile of
+  <light>*).
+- **Multiplier** (× 1.00 on entry), instead of the power in watts: ×2
+  doubles the light. Below, the lumens (the flux of the peak point times the
+  part of the sphere that the profile fills).
+- A note: *Fast draws this profile as a spot light of N° with the same
+  intensity on its axis: an approximation. Full and Render use the whole
+  file.* (the meter of each light says what the engine does not do in Fast, rule
+  10). If the text of the profile could not be read, another note says that the light is
+  drawn as a point.
+- Bulb radius, position, **roll** (the horizontal 0° angle of the profile:
+  turning the light turns the pattern), colour, *visible in reflections*, *visible to
+  camera*, *casts shadows* and on/off, like any light.
 
-La fila de la luz en la pestaña lleva *IES* (su nombre) y, en el *tooltip*, el
-perfil y que *Rápido* lo aproxima. Los glifos del visor dibujan su haz (el
-cono del ángulo del haz), y *Mirar a través* encuadra ese cono, como un foco.
-**No se entrega ningún perfil**: cada persona trae los suyos.
+The light's row in the tab carries *IES* (its name) and, in the tooltip, the
+profile and that *Fast* approximates it. The viewport glyphs draw its beam (the
+cone of the beam angle), and *Look through* frames that cone, like a spot.
+**No profile is shipped**: each person brings their own.
 
-**Estudios**: combinaciones guardadas de cámara + montaje de luz + entorno
-+ set de materiales, como en KeyShot pero sin pantalla aparte: *Guardar
-como estudio* toma la escena actual; clic en un estudio la restaura.
+**Studios**: saved combinations of camera + light setup + environment
++ material set, as in KeyShot but without a separate screen: *Save
+as studio* takes the current scene; clicking a studio restores it.
 
-### 2.3 · Visor (centro)
+### 2.3 · Viewport (centre)
 
-El visor **es** el render: no hay modo "vista previa" distinto del modo
-"render". Lo que se ve es lo que saldrá, a menos muestras.
+The viewport **is** the render: there is no "preview" mode distinct from the
+"render" mode. What is seen is what will come out, at fewer samples.
 
-Capas sobre el visor, siempre con fondo semitransparente del tema y sin
-tapar la pieza:
+Layers over the viewport, always with a semi-transparent theme background and without
+covering the part:
 
-- **Arriba a la izquierda, barra de vista**: Seleccionar (`V`), Orbitar
-  (`O`), **Luces y cámaras** (fase L4, a la izquierda de *Desplazar*: así
-  *Escalar* sigue a su derecha), Desplazar (`P`), **Escalar (`S`)** (fase
-  U9, junto a *Desplazar*), Zoom (`Z`), Mover (`M`), separador, Encuadrar
-  todo (`F`), Vistas (menú: tres cuartos, frontal, lateral, cenital,
-  trasera), Perspectiva / Ortográfica, separador, Bloquear cámara. Con
-  *Mover* o *Escalar* aparece el conmutador de ejes *Global · Local*
-  (`G`/`L`). Con *Seleccionar*, *Mover* o *Escalar* y el nivel *Caras*,
-  junto a las herramientas aparece el botón de texto **Rayos X** (la caja
-  de selección coge también las caras ocultas). Con una luz o una cámara
-  guardada seleccionada aparece el botón de texto **Mirar a través**
-  (`Ctrl/⌘ ⇧ L`), que mientras se mira dice *Volver a la cámara activa*.
-- **Arriba a la derecha**: nombre de la cámara activa (clic: la lista de
-  cámaras, con la activa marcada, la óptica de cada una en pequeño, *85 mm
-  · f/5.6*, y un **lápiz** al final de cada fila que abre la ficha de esa
-  cámara en el inspector: nombre, *Activar*, *Mirar a través*, óptica y
-  posición; la pestaña *Cámaras* se abre con ella marcada; `→` desde la
-  fila va al lápiz y `←` vuelve) y la proporción de la cámara activa con
-  la resolución de salida actual (*16:9 · 1920 × 1080*; clic: abre la
-  barra de render). En la lista, la proporción de cada cámara sigue a su
-  óptica (*85 mm · f/5.6 · 4:3*).
-- **El marco del visor** (la imagen que se renderiza, con lo de fuera
-  atenuado) es **de la cámara que se está viendo**: la activa, o la que se
-  mira a través (*Mirar a través*), con **su** proporción (U13). Cambiar la
-  proporción de la cámara activa cambia el marco al instante; cada cámara
-  guardada se dibuja en el visor con la pirámide de su propia proporción.
-  Con una animación en marcha el marco sigue siendo el de la cámara
-  activa: la salida tiene un solo tamaño y el Doctor avisa si un plano
-  usa una cámara con otra proporción.
-- **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
-  muestras acumuladas, tiempo, y un pequeño indicador de progreso. En
-  *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
-  *Completo* dice *Completo · 128 muestras · 00:12* y, durante un gesto
-  de cámara, *Completo · ¼ de resolución*. Una segunda línea dice *3
-  workers · SIMD* en *Completo* (*Nativo · 16 hilos · AVX2* en
-  escritorio) y *x ms por fotograma* en *Rápido*. Mientras corre un
-  *Render*, el visor sigue vivo y lo dice con lo que usa: *Completo ·
-  compartido con el render · 4 de 16 hilos* (o *1 de 3 workers*); si en
-  *Ajustes* se eligió pausarlo, *Completo · en pausa mientras se
-  renderiza*. Si el motor no contesta, rechaza la vista o el *watchdog*
-  tuvo que volver a arrancarla, una nota bajo la barra lo dice (*Esperando
-  al motor · 5 s*; *El motor rechazó la vista: <su motivo> · se vuelve a
-  intentar en 2 s*; *La vista se había parado y se ha vuelto a arrancar*),
-  con las palabras del motor en el *tooltip*: nunca «0 muestras» en
-  silencio. **Nunca se inventa un número.** En *Completo* (E5b-1), una
-  línea más dice lo que el motor dice de la imagen: *Ruido reducido*
-  cuando lo que se ve es la imagen filtrada por el *denoise* (y entonces
-  las muestras son las de esa imagen) y *Cáusticas · 16 384 fotones por
-  muestra* cuando el motor las renderiza, y **Adaptativo · 16–512 muestras**
-  (E10) cuando el visor muestrea adaptativamente (*Terminar por Ruido*):
-  las muestras del píxel que menos y del que más tiene en lo acumulado, las
-  del motor (la primera línea sigue diciendo las de la imagen que se ve: con
-  *Ruido reducido*, las de la imagen filtrada, que va una pasada o más por
-  detrás); y el botón **Reducir ruido**
-  (pulsado o no) enciende o apaga el *denoise* del visor: el mismo
-  interruptor que *Reducir ruido* de la barra superior (§2.1, atajo `D`),
-  la parte del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔
-  *Render*, *Visor* ↔ *Apagada*), deshacible. Desde U11 el *denoise* es
-  **en directo**: un carril aparte (un hilo del lanzador, que toma uno de
-  los hilos del visor mientras trabaja; en la web, los *workers* del
-  visor por bandas entre sus baldosas) reduce el ruido de la última
-  pasada con el ajuste ligero del visor, la imagen limpia sale en cuanto
-  está y el siguiente arranca entonces sobre la pasada más nueva: el
-  visor la refresca al menos cada `max(2 × lo que cuesta un denoise,
-  0,5 s)` y nunca enseña una limpia de hace más de un *denoise*. Las
-  muestras del medidor son las de la imagen limpia que se ve. Para las
-  comprobaciones de navegador el medidor lleva además, en atributos
-  `data-*`, cuántas imágenes limpias ha enseñado, cuándo la última, lo
-  que costó el último *denoise* (en la web) y las muestras de la pasada
-  más nueva.
-- **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
-  monocromos) y el tamaño de la pieza en mm.
-- **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
-  tinta) y una etiqueta pequeña con su nombre sigue al cursor. Clic
-  selecciona; `Esc` deselecciona.
+- **Top left, view bar**: Select (`V`), Orbit
+  (`O`), **Lights and cameras** (phase L4, to the left of *Pan*: so
+  *Scale* stays to its right), Pan (`P`), **Scale (`S`)** (phase
+  U9, next to *Pan*), Zoom (`Z`), Move (`M`), separator, Frame
+  all (`F`), Views (menu: three-quarter, front, side, top,
+  back), Perspective / Orthographic, separator, Lock camera. With
+  *Move* or *Scale* the axes switch *Global · Local* appears
+  (`G`/`L`). With *Select*, *Move* or *Scale* and the *Faces* level,
+  next to the tools appears the text button **X-ray** (the selection box
+  also takes hidden faces). With a light or a saved camera selected,
+  the text button **Look through** appears
+  (`Ctrl/⌘ ⇧ L`), which while looking says *Back to the active camera*.
+- **Top right**: name of the active camera (click: the list of
+  cameras, with the active one marked, the optics of each in small type, *85 mm
+  · f/5.6*, and a **pencil** at the end of each row that opens that camera's
+  card in the inspector: name, *Activate*, *Look through*, optics and
+  position; the *Cameras* tab opens with it marked; `→` from the
+  row goes to the pencil and `←` goes back) and the aspect ratio of the active camera with
+  the current output resolution (*16:9 · 1920 × 1080*; click: opens the
+  render bar). In the list, each camera's aspect ratio follows its
+  optics (*85 mm · f/5.6 · 4:3*).
+- **The viewport frame** (the image that is rendered, with the outside
+  dimmed) is **the frame of the camera being viewed**: the active one, or the one
+  being looked through (*Look through*), with **its** aspect ratio (U13). Changing the
+  aspect ratio of the active camera changes the frame instantly; each saved
+  camera is drawn in the viewport with the pyramid of its own aspect ratio.
+  With an animation running the frame is still that of the active
+  camera: the output has a single size and the Doctor warns if a shot
+  uses a camera with another aspect ratio.
+- **Bottom left, quality meter**: active mode and engine,
+  accumulated samples, time, and a small progress indicator. In
+  *Fast* it literally says *Fast · rasterised preview*; in
+  *Full* it says *Full · 128 samples · 00:12* and, during a camera
+  gesture, *Full · ¼ resolution*. A second line says *3
+  workers · SIMD* in *Full* (*Native · 16 threads · AVX2* on the
+  desktop) and *x ms per frame* in *Fast*. While a
+  *Render* runs, the viewport stays live and says so with what it uses: *Full ·
+  sharing with Render · 4 of 16 threads* (or *1 of 3 workers*); if in
+  *Settings* pausing it was chosen, *Full · paused while Render
+  runs*. If the engine does not answer, refuses the view or the watchdog
+  had to restart it, a note under the bar says so (*Waiting
+  for the engine · 5 s*; *The engine refused the view: <its reason> · trying
+  again in 2 s*; *The view had stopped and was started again*),
+  with the engine's words in the tooltip: never a silent "0 samples".
+  **A number is never invented.** In *Full* (E5b-1), one more
+  line says what the engine says about the image: *Denoised*
+  when what is seen is the image filtered by the denoise (and then
+  the samples are those of that image) and *Caustics · 16 384 photons per
+  sample* when the engine renders them, and **Adaptive · 16–512 samples**
+  (E10) when the viewport samples adaptively (*Finish by Noise*):
+  the samples of the pixel with the fewest and of the one with the most in what is accumulated, those
+  of the engine (the first line still says those of the image that is seen: with
+  *Denoised*, those of the filtered image, which runs one pass or more
+  behind); and the **Denoise** button
+  (pressed or not) turns the viewport's denoise on or off: the same
+  switch as *Denoise* in the top bar (§2.1, shortcut `D`),
+  the viewport part of *Advanced ▸ Denoise* (*Both* ↔
+  *Render*, *Viewport* ↔ *Off*), undoable. Since U11 the denoise is
+  **live**: a separate lane (a thread of the launcher, which takes one of
+  the viewport's threads while it works; on the web, the viewport's
+  workers by bands between their tiles) denoises the latest
+  pass with the viewport's light setting, the clean image comes out as soon as it
+  is ready and the next one then starts on the newest pass: the
+  viewport refreshes it at least every `max(2 × what a denoise costs,
+  0.5 s)` and never shows a clean one older than one denoise. The
+  samples in the meter are those of the clean image that is seen. For
+  browser checks the meter also carries, in `data-*` attributes, how many clean images it has shown, when the last one was, what
+  the last denoise cost (on the web) and the samples of the newest
+  pass.
+- **Bottom right**: orientation axes (three thin strokes X Y Z,
+  monochrome) and the size of the part in mm.
+- **On hover over a part**: its outline lights up (1 px silhouette in
+  ink) and a small label with its name follows the cursor. Click
+  selects; `Esc` deselects.
 
-**Estado vacío** (sin modelo): zona de arrastre con borde discontinuo y
-dos botones: *Importar modelo* (glTF, OBJ, STL, FBX, 3DM, STEP, IGES, 3MF,
-PLY, DAE, USD; en U1 solo glTF funciona y el resto dice *próximamente*) y
-*Cargar pieza de ejemplo*. Arrastrar un archivo sobre cualquier punto del
-visor también importa. El estudio *Estándar* ya está construido detrás:
-la pieza aparece iluminada, apoyada y encuadrada sin tocar nada.
+**Empty state** (no model): drop zone with a dashed border and
+two buttons: *Import model* (glTF, OBJ, STL, FBX, 3DM, STEP, IGES, 3MF,
+PLY, DAE, USD; in U1 only glTF works and the rest say *coming soon*) and
+*Load example part*. Dragging a file onto any point of the
+viewport also imports. The *Standard* studio is already built behind:
+the part appears lit, resting and framed without touching anything.
 
-**Hoja de importación** (fase I3): al soltar o elegir un archivo, el
-inspector muestra una hoja en línea con las opciones de `SPEC.md` §5
-(unidades, eje arriba, centrar, apoyar, encuadrar, añadir o sustituir,
-agrupar por, mantener materiales, separar piezas, calidad de teselado) con
-los valores detectados ya puestos y un botón primario *Importar*. `Enter`
-importa con los valores por defecto. Desde M2a la hoja tiene una sección
-**Texturas**: *N imágenes guardadas · X MB*, una línea por cada imagen que
-no se guarda con el porqué (*pesa más de 16 MB*, *no es PNG ni JPEG*, *no
-estaba entre los archivos elegidos con el modelo*, *el proyecto ya lleva 64
-MB de texturas*) y por cada mapa sin ranura (*mapa de oclusión ambiental,
-sin ranura*), *El archivo no trae imágenes de textura* cuando no las hay, o
-*Con el material predeterminado no se importa ninguna textura*, y una nota
-con los límites. Un modelo se elige o se suelta **con sus archivos**
-(imágenes, `.mtl`, `.bin`): no se importan solos, el lector del modelo
-encuentra en ellos lo que nombra (*Importar modelo…* deja elegir varios).
+**Import sheet** (phase I3): when a file is dropped or chosen, the
+inspector shows an inline sheet with the options of `SPEC.md` §5
+(units, up axis, centre, rest, frame, add or replace,
+group by, keep materials, split parts, tessellation quality) with
+the detected values already set and a primary button *Import*. `Enter`
+imports with the default values. Since M2a the sheet has a
+**Textures** section: *N images kept · X MB*, one line for each image that
+is not kept with the reason (*it is larger than 16 MB*, *it is not a PNG or JPEG*, *it
+was not among the files chosen with the model*, *the project already holds 64
+MB of textures*) and for each map without a slot (*ambient occlusion map,
+no slot*), *The file brings no texture images* when there are none, or
+*With the Default material, no texture is imported*, and a note
+with the limits. A model is chosen or dropped **with its files**
+(images, `.mtl`, `.bin`): they are not imported on their own, the model's reader
+finds in them what it names (*Import model…* allows choosing several).
 
-**Herramienta de etiqueta** (fase M2a): tras *Añadir etiqueta…* el visor
-dice *Pulsa en una pieza con Pintura donde va la etiqueta y arrastra su
-ancho · Esc cancela*: la pulsación sobre una pieza que lleva el material
-pone el centro de la etiqueta (plana desde la normal de la superficie,
-derecha, con el arriba del modelo donde la superficie lo deja), el
-arrastre fija su ancho (desde el centro, en su plano) y soltar termina; un
-clic sin arrastre le da un cuarto del lado mayor de la pieza. Toda la
-colocación es una entrada de deshacer (*Deshacer: Añadir la etiqueta
-logo.png a Pintura*). Sobre una pieza que no lleva el material, un aviso
-(*Esa pieza no lleva Pintura*). **Mover etiqueta**: arrastrar sobre la
-pieza desliza la etiqueta por la superficie bajo el cursor, conservando
-tamaño y giro (una entrada por arrastre), hasta `Esc` o el botón. Mientras
-la herramienta está activa, la pulsación es suya: ni orbita, ni el
-*gizmo*, ni selecciona.
+**Label tool** (phase M2a): after *Add label…* the viewport
+says *Press on a part with Paint where the label goes and drag out its
+width · Esc cancels*: pressing on a part that carries the material
+sets the centre of the label (flat from the surface normal,
+upright, with the model's up where the surface allows it), dragging
+sets its width (from the centre, in its plane) and releasing finishes; a
+click without dragging gives it a quarter of the part's longer side. The whole
+placement is one undo entry (*Undo: Add label
+logo.png to Paint*). On a part that does not carry the material, a notice
+(*That part does not carry Paint*). **Move label**: dragging over the
+part slides the label across the surface under the cursor, keeping
+size and roll (one entry per drag), until `Esc` or the button. While
+the tool is active, the press is its own: it neither orbits, nor
+the gizmo, nor selects.
 
-**Herramienta de mover** (fase U3): con una selección y la herramienta
-*Mover* (`M`) activa, un *gizmo* sobre el pivote con asas de traslación
-(flechas por eje y planos), rotación (anillos) y escala (cubos), en ejes
-locales o globales (`L`/`G` o el conmutador de la barra de vista),
-incrementos con `Shift`, y los campos del inspector actualizándose en
-vivo. Arrastrar es una sola entrada de deshacer. Las luces y las cámaras
-guardadas se mueven y giran con el mismo *gizmo*, sin cubos de escala (fase
-L4): sobre su posición, en ejes globales o los suyos (derecha, arriba,
-atrás), con el **asa de apuntar** (una línea a su objetivo con un punto al
-final): mover una luz no cambia a dónde apunta, girarla gira a dónde apunta
-(y un panel alrededor de su eje), el asa mueve su objetivo; lo mismo una
-cámara con el suyo (*Deshacer: Mover foco Foco*, *Mover cámara Cámara 2*).
-Una cámara bloqueada no tiene *gizmo*.
+**Move tool** (phase U3): with a selection and the
+*Move* tool (`M`) active, a gizmo on the pivot with handles for translation
+(arrows per axis and planes), rotation (rings) and scale (cubes), in
+local or global axes (`L`/`G` or the switch in the view bar),
+increments with `Shift`, and the inspector fields updating
+live. Dragging is a single undo entry. Lights and saved
+cameras move and turn with the same gizmo, without scale cubes (phase
+L4): on their position, in global axes or their own (right, up,
+back), with the **aim handle** (a line to its target with a dot at the
+end): moving a light does not change where it aims, turning it turns where it aims
+(and a panel around its axis), the handle moves its target; the same for a
+camera with its own (*Undo: Move light Spot*, *Undo: Move camera Camera 2*).
+A locked camera has no gizmo.
 
-**Luces y cámaras en el visor** (fase L4): glifos acromáticos en la tinta
-del tema, sobre todo, discontinuos (el seleccionado, continuo): el contorno
-del panel con una marca hacia donde ilumina, la esfera, el punto con una
-estrella, el cono del foco (y su cono interior), la flecha del sol y la
-pirámide de cada cámara guardada (no la activa). El botón *Luces y cámaras*
-los muestra todos mientras se trabaja con ellos (la pestaña *Luces* o
-*Cámaras* abierta, una luz o una cámara seleccionada, o mirando a través de
-una); con *Piezas* y una pieza, ninguno, para que un panel del montaje que
-cruza el producto no parezca parte de él. Apagado (se recuerda), solo el
-seleccionado. Al pasar sobre un glifo, una etiqueta con su nombre y el
-cursor de mano; un clic lo selecciona por delante de la pieza que tenga
-detrás (`Ctrl/⌘` o `Alt` sobre el seleccionado lo quita), doble clic mira a
-través, clic derecho: *Mirar a través*, *Duplicar*, *Apuntar a… ▸* y
-*Eliminar* (en una cámara, *Activar* y *Eliminar*). La caja de selección no
-los coge y *Escalar* no les pone *gizmo*.
+**Lights and cameras in the viewport** (phase L4): achromatic glyphs in the ink
+of the theme, mostly dashed (the selected one, solid): the outline
+of the panel with a mark toward where it lights, the sphere, the point with a
+star, the cone of the spot (and its inner cone), the arrow of the sun and the
+pyramid of each saved camera (not the active one). The *Lights and cameras* button
+shows them all while working with them (the *Lights* or
+*Cameras* tab open, a light or a camera selected, or looking through
+one); with *Parts* and a part, none, so that a panel of the setup that
+crosses the product does not look like part of it. Off (remembered), only the
+selected one. On hovering over a glyph, a label with its name and the
+hand cursor; a click selects it in front of the part behind it
+(`Ctrl/⌘` or `Alt` on the selected one removes it), double click looks
+through, right click: *Look through*, *Duplicate*, *Aim at… ▸* and
+*Delete* (on a camera, *Activate* and *Delete*). The selection box does not
+take them and *Scale* does not give them a gizmo.
 
-**Mirar a través** (fase L4): el visor mira desde la luz o la cámara
-seleccionada (desde una luz, hacia su objetivo, con la óptica de la cámara
-activa; un foco direccional ajusta la focal a su cono), en *Rápido* y en
-*Completo*, con un aviso bajo la barra: *Mirando a través de Foco ·
-orbitar, desplazar y zoom la mueven · Esc vuelve* y el enlace *Volver a la
-cámara activa*. Orbitar, Desplazar y Zoom (las herramientas, el ratón y la
-rueda) mueven ese objeto (la luz apunta a donde mira el visor), en vivo y
-en una entrada de deshacer por gesto (*Deshacer: Mover Foco desde su
-vista*); la cámara activa no se mueve. Una cámara bloqueada no se mueve
-(*… bloqueada: desbloquéala para moverla*). `Esc`, el botón o el enlace
-vuelven a la cámara activa; borrar lo que se mira, también.
+**Look through** (phase L4): the viewport looks from the selected
+light or camera (from a light, toward its target, with the optics of the active
+camera; a spot sets the focal length to its cone), in *Fast* and in
+*Full*, with a notice under the bar: *Looking through Spot ·
+orbit, pan and zoom move it · Esc returns* and the link *Back to the
+active camera*. Orbit, Pan and Zoom (the tools, the mouse and the
+wheel) move that object (the light aims where the viewport looks), live and
+in one undo entry per gesture (*Undo: Move Spot from its
+view*); the active camera does not move. A locked camera does not move
+(*… locked: unlock it to move it*). `Esc`, the button or the link
+return to the active camera; deleting what is being looked through does too.
 
-**Herramienta de escalar** (fase U9, `S`): el mismo *gizmo* sobre el
-pivote, pero **solo con las asas de escala**: un eje fino por dirección con
-un cubo más grande en su extremo (escala en ese eje; el eje entero se
-puede coger, y llevar el puntero una longitud de cubo más allá duplica la
-escala) y un punto en el centro (escala uniforme, hacia la derecha o arriba
-crece). Sin flechas, anillos ni planos. Ejes locales o globales como
-*Mover*, incrementos del 10 % con `Shift`, los campos de escala del
-inspector en vivo, un arrastre es una entrada de deshacer (*Deshacer:
-Escalar Caja*), un clic donde no hay asa selecciona y `Ctrl/⌘` + arrastrar
-dibuja la caja de selección como con *Mover*; `Esc` vuelve a *Seleccionar*.
-El *tooltip* del botón lo cuenta.
+**Scale tool** (phase U9, `S`): the same gizmo on the
+pivot, but **with only the scale handles**: a thin axis per direction with
+a larger cube at its end (scale on that axis; the whole axis can
+be grabbed, and carrying the pointer one cube length beyond doubles the
+scale) and a dot in the centre (uniform scale, to the right or up it
+grows). No arrows, rings or planes. Local or global axes as with
+*Move*, 10 % increments with `Shift`, the inspector's scale fields
+live, one drag is one undo entry (*Undo:
+Scale Box*), a click where there is no handle selects and `Ctrl/⌘` + drag
+draws the selection box as with *Move*; `Esc` returns to *Select*.
+The button's tooltip explains it.
 
-**Clic derecho ▸ Escalar…** (fase U9, en una pieza del visor o en una fila
-del árbol): un **panel en línea** propio junto al punto o a la fila (nunca
-un diálogo del navegador; `Esc` o un clic fuera lo cierran) con un
-segmento *Uniforme · Por eje · A medida*: *Uniforme* un campo en %, *Por
-eje* X, Y y Z en %, *A medida* el ancho, el fondo y el alto en mm (las
-unidades de la interfaz) con un candado de **proporción**, cerrado por
-defecto (cambiar uno arrastra los otros dos; un eje sin espesor, como el
-alto de un plano, no se toca). Debajo, en auxiliar, el pivote y los ejes
-con que actúa (*Alrededor del pivote (Centro) · ejes Global*), y los
-botones **Aplicar** (una entrada de deshacer), **Restablecer escala** (cada
-nodo vuelve a la escala con que entró en la escena, alrededor de su propio
-pivote) y *Cancelar*. Actúa sobre la selección al nivel vigente (la pieza,
-el grupo o el modelo sobre el que se abrió el menú), alrededor de su
-pivote, en los ejes de *Mover* y *Escalar*.
+**Right click ▸ Scale…** (phase U9, on a part in the viewport or on a row
+of the tree): its own **inline panel** next to the point or the row (never
+a browser dialog; `Esc` or a click outside closes it) with a
+segment *Uniform · Per axis · Custom*: *Uniform* one field in %, *Per
+axis* X, Y and Z in %, *Custom* the width, depth and height in mm (the
+interface units) with a **proportion** padlock, closed by
+default (changing one drags the other two; an axis with no thickness, such as the
+height of a plane, is not touched). Below, in auxiliary text, the pivot and the axes
+it acts with (*About the pivot (Centre) · Global axes*), and the
+buttons **Apply** (one undo entry), **Reset scale** (each
+node returns to the scale it entered the scene with, about its own
+pivot) and *Cancel*. It acts on the selection at the current level (the part,
+the group or the model on which the menu was opened), about its
+pivot, in the axes of *Move* and *Scale*.
 
-**Menú contextual en vacío** (fase U9): un clic derecho sobre el visor
-donde no hay pieza abre *Añadir ▸ (Primitiva)*, *Encuadrar selección o
-todo* y *Mostrar todo*.
+**Context menu on empty space** (phase U9): a right click on the viewport
+where there is no part opens *Add ▸ (Primitive)*, *Frame selection or
+all* and *Show all*.
 
-**Dónde nace una primitiva** (fase U9, `SPEC.md` §3.1): con un producto en
-la escena, la *Caja* y el *Pedestal* nacen **como base**: bajo el
-producto, apoyados en el suelo, con 1,4 veces su huella (los lados de la
-caja; el radio del pedestal sobre el punto del producto más lejano a su
-eje), y el producto sube a apoyarse encima, todo en una sola entrada de
-deshacer (*Deshacer: Añadir Caja bajo Frasco de ejemplo*). El *Plano* y el
-*Disco* se tienden en el suelo bajo el producto; el *Fondo infinito* se
-**ajusta a la cámara activa**: girado en Z hacia ella, con la pared detrás
-del producto a 1,75 veces su fondo (o más atrás, para que el contraluz y
-los focos traseros del montaje queden entre el producto y el papel), tan ancho como 1,3 veces lo que abarca
-el encuadre donde lo toca, más alto que lo más alto que el encuadre
-alcanza en la pared, con el suelo hasta delante de lo que el encuadre ve
-de él y una curva de 0,3 veces su alto (todo el encuadre de salida, con
-la óptica y el formato de la cámara, cae sobre el fondo); y el resto
-de formas se apoya en el suelo **junto** a lo que hay (a +X), a las
-proporciones del catálogo respecto al producto. Sin producto, la primera
-nace en el origen al tamaño de pieza declarado (200 mm en un proyecto
-nuevo) y encuadrada; las siguientes, al lado. Llevan el material neutro
-*Blanco estudio* del catálogo, compartido. Los planos y el fondo infinito
-se quedan una milésima del tamaño por encima del suelo del estudio para no
-parpadear contra él.
+**Where a primitive is born** (phase U9, `SPEC.md` §3.1): with a product in
+the scene, the *Box* and the *Pedestal* are born **as a base**: under the
+product, resting on the floor, at 1.4 times its footprint (the sides of the
+box; the radius of the pedestal over the point of the product farthest from its
+axis), and the product rises to rest on top, all in a single undo
+entry (*Undo: Add Box under Example bottle*). The *Plane* and the
+*Disc* lie on the floor under the product; the *Infinity sweep*
+**fits to the active camera**: turned in Z toward it, with the wall behind
+the product at 1.75 times its depth (or further back, so that the backlight and
+the rear lights of the setup stay between the product and the paper), as wide as 1.3 times what the
+framing covers where it touches it, taller than the highest the framing
+reaches on the wall, with the floor out to in front of what the framing sees
+of it and a curve of 0.3 times its height (the whole output framing, with
+the optics and the format of the camera, falls on the sweep); and the rest
+of the shapes rest on the floor **beside** what is there (at +X), at the
+catalogue proportions relative to the product. With no product, the first one
+is born at the origin at the declared part size (200 mm in a new
+project) and framed; the following ones, beside it. They carry the neutral
+*Studio white* material from the catalogue, shared. Planes and the infinity sweep
+stay one thousandth of the size above the studio floor so as not to
+flicker against it.
 
-**Arrastrar un material** (la misma fuente que en §2.2) sobre una pieza
-del visor lo asigna **al nivel de selección vigente**, igual que lo
-seleccionaría un clic en ese punto: con *Pieza*, la pieza; con *Grupo*,
-su ensamblaje (la pieza si no tiene); con *Modelo*, el modelo entero; con
-*Caras*, la cara entera bajo el cursor (la cara CAD, o la superficie que
-continúa, §4.1). Mientras se arrastra, una miniatura fantasma, arriba y a
-la derecha del puntero, lleva el nombre del material y dice *Copia* si se
-pulsa `Alt`; lo que alcanzaría la suelta se resalta (contorno en las
-piezas, tinte en las caras; se ve aunque *Contorno al pasar* esté
-apagado) y el cursor dice si se puede soltar. Soltar asigna con **una sola
-acción** y una entrada de deshacer; `Esc`, soltar fuera o salir de la
-ventana cancelan, y un clic sin mover en la miniatura sigue asignando a la
-selección. Un preset del catálogo o un elemento de *Míos* entra con la
-instancia que la escena ya tiene (la misma que un clic); la esfera de la
-selección **enlaza** el destino con su instancia (las piezas que la llevan
-comparten los cambios); con `Alt`, cualquiera de las tres da una **copia
-propia**. Si el destino lleva materiales distintos, se pregunta en línea
-antes de sobrescribir (§4.1). Un dedo no arrastra; el lápiz hace lo que el
-ratón.
+**Dragging a material** (the same source as in §2.2) onto a part
+in the viewport assigns it **at the current selection level**, just as a click
+at that point would select it: with *Part*, the part; with *Group*,
+its assembly (the part if it has none); with *Model*, the whole model; with
+*Faces*, the whole face under the cursor (the CAD face, or the surface that
+continues, §4.1). While dragging, a ghost thumbnail, above and to
+the right of the pointer, carries the name of the material and says *Copy* if
+`Alt` is pressed; what the drop would reach is highlighted (outline on
+parts, tint on faces; visible even if *Outline on hover* is
+off) and the cursor says whether it can be dropped. Dropping assigns with **a single
+action** and one undo entry; `Esc`, dropping outside or leaving the
+window cancel, and a click without moving on the thumbnail still assigns to the
+selection. A catalogue preset or an item of *Mine* enters with the
+instance the scene already has (the same as a click); the selection's
+sphere **links** the target with its instance (the parts that carry it
+share the changes); with `Alt`, any of the three gives an **own
+copy**. If the target carries different materials, an inline question is asked
+before overwriting (§4.1). A finger does not drag; the pen does what the
+mouse does.
 
-**Selección por caja** (herramientas *Seleccionar* y *Mover*, esta
-última donde no hay un asa del *gizmo* bajo el puntero): **`Ctrl/⌘` +
-arrastrar** con el botón izquierdo dibuja un rectángulo que **sustituye**
-la selección; con `Shift` además (`Ctrl/⌘ ⇧` + arrastrar) **añade**, y con
-`Alt` (`Ctrl/⌘ Alt` + arrastrar) **quita**. De izquierda a derecha es una
-**ventana** (coge lo que queda entero dentro; contorno continuo), de
-derecha a izquierda es un **cruce** (coge lo que toca; contorno
-discontinuo); los dos en tinta, sin color. Actúa al nivel vigente (§4.1):
-*Modelo*, *Grupo* y *Pieza* prueban la geometría proyectada de cada
-nodo (las piezas ocultas no cuentan, y no se mira qué tapa a qué: una
-pieza detrás de otra también se coge); *Caras* coge las caras enteras de **una pieza** (la seleccionada o,
-si no hay, la que está en el centro de la caja) que **se ven** dentro del
-rectángulo, y el botón **Rayos X** de la barra de vista (solo a ese nivel)
-las coge también aunque otras las tapen. Un arrastre de pocos píxeles es
-un clic (con sus teclas), `Esc` cancela, la caja solo dibuja el
-rectángulo (la selección cambia al soltar) y, como toda selección, no deja
-entrada de deshacer. La cámara no pierde nada: sin tecla, el botón
-izquierdo sigue orbitando, y `Shift` o `Alt` + arrastrar sin `Ctrl/⌘`
-son de la cámara como siempre; con *Seleccionar* y *Mover*, `Ctrl/⌘` +
-arrastrar ya no desplaza (quedan el botón derecho, la rueda y la
-herramienta *Desplazar*). Con el esquema *Alt + botón izquierdo orbita*
-o *Botón central orbita* (§2.9) el botón izquierdo está libre y **un
-arrastre sin más** dibuja la caja: `Shift` añade, con el central `Alt`
-quita y con *Alt + izquierdo* quitar es `Ctrl/⌘ Alt`. El lápiz es un
-ratón; un dedo sigue orbitando. El tooltip de *Seleccionar* lo cuenta, y
-funciona igual en *Rápido* y en *Completo*. Los **clics** no cambian: sin
-tecla sustituye, `Shift` añade, `Ctrl/⌘` mete o saca, `Alt` quita (salvo
-con *Alt + botón izquierdo orbita*, donde `Alt` es de la cámara), y un
-clic en vacío limpia.
+**Box selection** (tools *Select* and *Move*, the latter
+where there is no gizmo handle under the pointer): **`Ctrl/⌘` +
+drag** with the left button draws a rectangle that **replaces**
+the selection; with `Shift` as well (`Ctrl/⌘ ⇧` + drag) it **adds**, and with
+`Alt` (`Ctrl/⌘ Alt` + drag) it **removes**. Left to right is a
+**window** (takes what lies entirely inside; solid outline), right to
+left is a **crossing** (takes what it touches; dashed
+outline); both in ink, no colour. It acts at the current level (§4.1):
+*Model*, *Group* and *Part* test the projected geometry of each
+node (hidden parts do not count, and what covers what is not looked at: a
+part behind another is taken too); *Faces* takes the whole faces of **one part** (the selected one or,
+if there is none, the one at the centre of the box) that **can be seen** inside the
+rectangle, and the **X-ray** button in the view bar (only at that level)
+takes them even when others cover them. A drag of a few pixels is
+a click (with its keys), `Esc` cancels, the box only draws the
+rectangle (the selection changes on release) and, like any selection, leaves no
+undo entry. The camera loses nothing: with no key, the left
+button still orbits, and `Shift` or `Alt` + drag without `Ctrl/⌘`
+belong to the camera as always; with *Select* and *Move*, `Ctrl/⌘` +
+drag no longer pans (the right button, the wheel and the
+*Pan* tool remain). With the scheme *Alt + left button orbits*
+or *Middle button orbits* (§2.9) the left button is free and **a plain
+drag** draws the box: `Shift` adds, with the middle one `Alt`
+removes and with *Alt + left* removing is `Ctrl/⌘ Alt`. The pen is a
+mouse; a finger still orbits. The tooltip of *Select* explains it, and
+it works the same in *Fast* and in *Full*. **Clicks** do not change: with no
+key it replaces, `Shift` adds, `Ctrl/⌘` toggles, `Alt` removes (except
+with *Alt + left button orbits*, where `Alt` belongs to the camera), and a
+click on empty space clears.
 
-### 2.4 · Inspector (derecha)
+### 2.4 · Inspector (right)
 
-Es **contextual**: edita lo que está seleccionado, y cuando no hay nada
-seleccionado edita la escena. Cabecera con una **miga de pan** que dice
-qué se está editando (*Escena* · *Cuerpo* · *3 piezas* · *Principal*) y,
-con una pieza seleccionada, el **selector de nivel** (§4.1).
+It is **contextual**: it edits what is selected, and when nothing is
+selected it edits the scene. A header with a **breadcrumb** that says
+what is being edited (*Scene* · *Body* · *3 parts* · *Key*) and,
+with a part selected, the **level selector** (§4.1).
 
-El contenido se organiza en **secciones desplegables** con título en
-mayúsculas espaciadas, una línea separadora y el estado de despliegue
-recordado. Cada control aplica **al instante**; no hay botones *Aplicar*
-salvo los dos que construyen cosas: *Crear estudio* y *Render*.
+The content is organised in **collapsible sections** with a title in
+spaced capitals, a separator line and the expansion state
+remembered. Every control applies **instantly**; there are no *Apply* buttons
+except the two that build things: *Create studio* and *Render*.
 
-**Con la escena seleccionada (nada seleccionado):**
+**With the scene selected (nothing selected):**
 
-1. **Producto** — **Tipo de escena** (K1; encima del tipo de producto): un
-   control segmentado *Producto · Interior · Catálogo* (`SCENE_TYPES`, la
-   intención de cada uno en su ayuda) con una nota debajo: «Fija los valores
-   de partida (entorno, rebotes, transformada, muestras, óptica). Todos los
-   controles siguen ahí; al volver se queda lo que cambiaste». Cambiarlo es
-   una entrada de deshacer y **no quita ni mueve ningún control** (la captura
-   `docs/ui/scene-type-interior.png` lo muestra con *Interior*): reescribe
-   los valores de partida de `INTERIORS.md` §3.1 que existen hoy (el
-   entorno, los rebotes, las cáusticas, la sombra de contacto, la
-   transformada, las muestras, el terminar por ruido y el *denoise*, la focal),
-   *Interior* pone además la receta *Ventana de mediodía* sobre los focos del
-   tipo de producto sin tocar (C1; unos focos elegidos o editados se quedan), y
-   al volver a *Producto* deja lo que no se tocó como estaba. Con
-   *Interior* la sección *Luz* se abre en el grupo *Luces* con su estilo;
-   al dejarlo el estilo vuelve a *Todos*. Tipo de producto (desplegable con los 16
-   `STUDIO_PRESETS`, *Estándar* el primero y activo por defecto, con su
-   etiqueta y, debajo en auxiliar, focal y diafragma que trae; más los
-   tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
-   editable). Interruptores *Suelo* y *Sombra de contacto*. Botón
-   primario **Crear estudio**: monta luces, suelo, cámara y ajustes de
-   motor del preset y, si el tipo es un set (L6: 15 de los 16), su
-   decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
-   ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
-   modal): "Sustituir el estudio actual · Sí / No".
-2. **Luz** — El **catálogo de montajes**, en **dos grupos** (L7), *Sets ·
-   Luces*, un control segmentado a todo el ancho arriba de la sección:
-   - **Sets**: lo que monta algo además de los focos (fondo, suelo,
-     tarjetas, charco de luz: la decoración de L6). Son los 16 sets y
-     *El del tipo de producto* (`PRESET`) cuando el tipo en vigor es un set
-     (15 de los 16; con *Mobiliario exterior*, que conserva su sol, está en
-     *Luces*): 17 entradas.
-   - **Luces**: lo que solo coloca focos (algunos eligen además un cielo,
-     una exposición y la intensidad del entorno, como las siete recetas de
-     *Interior* y el sol de *Cinematográfico*, pero no ponen nada en la
-     escena): los 71 montajes de antes y las 7 recetas, 78 entradas.
+1. **Product** — **Scene type** (K1; above the product type): a
+   segmented control *Product · Interior · Catalogue* (`SCENE_TYPES`, the
+   intent of each in its help) with a note below: "Sets the starting values
+   (environment, bounces, view transform, samples, optics). All the
+   controls are still there; on switching back, what you changed stays". Changing it is
+   one undo entry and **removes or moves no control** (the capture
+   `docs/ui/scene-type-interior.png` shows it with *Interior*): it rewrites
+   the starting values of `INTERIORS.md` §3.1 that exist today (the
+   environment, the bounces, the caustics, the contact shadow, the
+   view transform, the samples, finish by noise and the denoise, the focal length),
+   *Interior* also puts the *Midday window* recipe on the lights of the
+   untouched product type (C1; lights that were chosen or edited stay), and
+   on returning to *Product* it leaves what was not touched as it was. With
+   *Interior* the *Light* section opens in the *Lights* group with its style;
+   on leaving it the style goes back to *All*. Product type (a dropdown with the 16
+   `STUDIO_PRESETS`, *Standard* the first and active by default, with its
+   label and, below in auxiliary text, the focal length and aperture it brings; plus the
+   own types from the *Mine* tab and *Save as product type…*). Part size in mm (detected on import,
+   editable). *Floor* and *Contact shadow* switches. The
+   primary button **Create studio**: builds the lights, floor, camera and engine settings
+   of the preset and, if the type is a set (L6: 15 of the 16), its
+   decoration and its look (backdrop, cards, floor, pool of light); the
+   example and an imported model arrive already dressed with the set in force. If a studio already exists, it asks for inline confirmation (not
+   modal): "Replace the current studio · Yes / No".
+2. **Light** — The **catalogue of setups**, in **two groups** (L7), *Sets ·
+   Lights*, a full-width segmented control at the top of the section:
+   - **Sets**: what builds something besides the lights (backdrop, floor,
+     cards, pool of light: the decoration of L6). They are the 16 sets and
+     *The product type's own* (`PRESET`) when the type in force is a set
+     (15 of the 16; with *Outdoor furniture*, which keeps its sun, it is in
+     *Lights*): 17 entries.
+   - **Lights**: what only places lights (some also choose a sky,
+     an exposure and the environment intensity, like the seven recipes of
+     *Interior* and the sun of *Cinematic*, but they put nothing in the
+     scene): the 71 setups from before and the 7 recipes, 78 entries.
 
-   El grupo se decide por lo que hace la entrada al aplicarla
-   (`core/setup-groups.ts`, con `hasDecoration` de `core/sets.ts`), no por
-   su estilo; ninguna clave ni ningún orden cambia. Cada grupo tiene sus
-   **filtros**, filas de *chips* como las de las recetas de un plugin
-   (P6b, el mismo componente, `ui/components/filter-chips.ts`): el nombre
-   del filtro, *Todos* y sus valores, combinados (Y). **Sets**: *Tipo de
-   producto* (los 16; un tipo deja el set que es su rig propio, y el rig
-   propio del tipo en vigor; *Mobiliario exterior* no deja ninguno) y
-   *Sujeto* (*Frasco, Caja, Anillo, Cromado, Zapato, Esferas*, el héroe de
-   cada set). **Luces**: *Estilo* (los nueve estilos de antes salvo *Sets*,
-   *Interior* el último, y *Míos*, los montajes propios de la biblioteca,
-   con sus tarjetas de siempre). Debajo, la cuenta (*7 de 17 sets*,
-   *78 montajes*) o, si los filtros no dejan nada, *Ningún set cumple estos
-   filtros.* / *Ningún montaje cumple estos filtros.* La entrada en vigor
-   que los filtros dejan fuera sigue en la rejilla, la primera, atenuada y
-   con *Fuera de los filtros* en su ayuda. Grupo, filtros y estilo se
-   recuerdan por persona (el `layout` de los ajustes, como el estilo de
-   antes); un documento de antes de L7 abre *Sets* si su estilo era *Sets*
-   o *Todos*, y *Luces* con su estilo si no.
+   The group is decided by what the entry does when applied
+   (`core/setup-groups.ts`, with `hasDecoration` of `core/sets.ts`), not by
+   its style; no key and no order changes. Each group has its
+   **filters**, rows of *chips* like those of a plugin's recipes
+   (P6b, the same component, `ui/components/filter-chips.ts`): the name
+   of the filter, *All* and its values, combined (AND). **Sets**: *Product
+   type* (the 16; a type leaves the set that is its own rig, and the own
+   rig of the type in force; *Outdoor furniture* leaves none) and
+   *Subject* (*Bottle, Box, Ring, Chrome, Shoe, Spheres*, the hero of
+   each set). **Lights**: *Style* (the nine styles from before except *Sets*,
+   *Interior* last, and *Mine*, the own setups of the library,
+   with their usual cards). Below, the count (*7 of 17 sets*,
+   *78 setups*) or, if the filters leave nothing, *No set matches these
+   filters.* / *No setup matches these filters.* The entry in force
+   that the filters leave out stays in the grid, first, dimmed and
+   with *Outside the filters* in its help. Group, filters and style are
+   remembered per person (the settings `layout`, like the style from
+   before); a document from before L7 opens *Sets* if its style was *Sets*
+   or *All*, and *Lights* with its style if not.
 
-   La **rejilla de miniaturas** (`public/thumbs/setups/thumb_<clave>.png`,
-   256 × 256, renderizadas por el motor: §6) lleva la etiqueta debajo y la
-   activa con borde de selección; **todas del mismo tamaño**, 4:3, en los
-   dos grupos (L7: los sets dejan de ir en dos columnas cuadradas). A la
-   **derecha de la cabecera** de la sección, un botón de icono cambia el
-   tamaño, en vuelta: *pequeñas* (cuatro columnas, solo la imagen; el
-   nombre va en la ayuda y en la etiqueta accesible), *medianas* (tres, el
-   tamaño que tenían todos los montajes, *Campo oscuro* incluido; el de
-   partida) y *grandes* (dos). La etiqueta se parte en las líneas que haga
-   falta: no se corta nada. El tamaño se recuerda por persona. La **ayuda**
-   de la miniatura de un set dice su intención y su **razón fotográfica**
-   (`why`, dos frases); la de un montaje, su intención. Debajo, la
-   **intención** del montaje activo en una frase. Flechas *anterior /
-   siguiente* dentro de lo que dejan grupo y filtros.
+   The **thumbnail grid** (`public/thumbs/setups/thumb_<key>.png`,
+   256 × 256, rendered by the engine: §6) carries the label below and marks the
+   active one with a selection border; **all the same size**, 4:3, in both
+   groups (L7: sets no longer go in two square columns). To the
+   **right of the header** of the section, an icon button changes the
+   size, cycling: *small* (four columns, only the image; the
+   name goes in the help and in the accessible label), *medium* (three, the
+   size all the setups had, *Dark field* included; the
+   default) and *large* (two). The label breaks into as many lines as
+   needed: nothing is cut. The size is remembered per person. The **help**
+   of a set's thumbnail says its intent and its **photographic reason**
+   (`why`, two sentences); that of a setup, its intent. Below, the
+   **intent** of the active setup in one sentence. *Previous /
+   next* arrows within what the group and filters leave.
 
-   **Con focos en la escena**, elegir un set o un montaje (también uno
-   propio, y desde la paleta) **pregunta qué pasa con ellos** —salvo si son
-   los del tipo de producto sin tocar (los que pone, sin un foco añadido ni
-   editado desde entonces): esos se sustituyen sin preguntar (C1)—, en línea
-   sobre la rejilla: «Hay focos en la escena. ¿Qué pasa con ellos al entrar
-   *Rembrandt*?» (o «Los focos se han editado…» si estaban modificados),
-   con **Sustituir** (los borra: lo de siempre), **Ocultar** (los conserva
-   apagados; la lista *Luces* los enciende uno a uno), **Añadir** (los
-   conserva encendidos y añade los nuevos), *Cancelar* y la casilla
-   **Recordar mi elección**, que la guarda en *Ajustes ▸ Preferencias ▸
-   Luces*. Es una entrada de deshacer con la respuesta en su nombre
-   (*Montaje de luz: Rembrandt (ocultar los focos que había)*). Los focos
-   conservados pasan a ser propios, con el nombre de donde venían
-   («Principal · Rembrandt»), y *Restablecer montaje* los quita. Un set que
-   entra sustituye la decoración del set anterior sea cual sea la
-   respuesta; un montaje de *Luces* con *Ocultar* o *Añadir* deja la
-   decoración, el charco y el aspecto del set como estaban (y *En el set*
-   sigue con sus filas, sin *Usar la cámara del set*). Sin focos en la
-   escena, o eligiendo otra vez el montaje en vigor, no pregunta.
-   Las siete
-   recetas de **Interior** (*Ventana de mañana*, *de mediodía*, *de tarde*,
-   *Nublado*, *Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*)
-   traen cada una su mundo, su
-   exposición y la intensidad del entorno (a diferencia de los montajes de
-   los demás estilos, elegirla sí cambia el brillo), y ninguna trae
-   decoración: no aparece *En el set*.
-   Con un **set** en vigor, debajo: **Usar la cámara del set** (solo si
-   sugiere una; la ayuda dice cuál, «8° de altura, 85 mm»; desactivado con
-   la cámara bloqueada; una entrada de deshacer) y **En el set**: una fila
-   por pieza de su decoración (cada tarjeta, el fondo del set, el suelo
-   del set) con su nombre y un interruptor que la oculta o la muestra
-   (`scene/setVisible`, deshacible); un fondo de color o degradado sin
-   barrido es una fila que pone el fondo del set o devuelve el del tipo de
-   producto (`env/set`). Un fondo que el set hace barrido (`SWEEP`, o
-   cualquier fondo con charco de luz) es una pieza, nunca esa fila: tras
-   *Restablecer montaje* no queda nada que encender (`setBackground`). El
-   charco de luz es un foco: aparece en *Afinar focos* con su nombre.
-   Desplegable secundario **Afinar focos**: lista de focos con potencia
-   (en % del total), tamaño, temperatura en K y ángulo; cambiar algo
-   aquí no cambia de montaje, lo marca como *modificado*. Botón
-   **Colocar por reflejo**: el cursor cambia y el siguiente clic sobre
-   la pieza coloca el foco seleccionado de modo que su reflejo caiga ahí
-   (en U1 basta con el modo y la mecánica; el cálculo exacto es de la
-   fase del motor).
-3. **Entorno** — Tipo: *Cúpula de estudio* (procedural, por defecto),
-   *Cielo* (sol y cielo procedurales), *Plano* (color liso), *Archivo
-   HDRI*. Con *Archivo HDRI*, botón *Cargar HDRI…* (`.hdr`, `.exr`) y
-   debajo el nombre y el tamaño del archivo, o *Sin HDRI cargado: ilumina
-   la cúpula de estudio*; soltar un `.hdr` o `.exr` en la ventana hace lo
-   mismo. Con *Cielo*, *Modelo* (*Físico · Clásico*, segmentado, con una
-   ayuda en cada opción: *Físico* es el cielo propio de E5c, ajustado a
-   nuestra simulación de la atmósfera, y el de por defecto; *Clásico*, el de
-   Preetham de E5), *Bruma* (turbidez, de 1 a 10; el clásico la sujeta a 1,7
-   como mínimo) y, si el montaje no tiene foco de sol, *Azimut del sol* y
-   *Altura del sol*; si lo tiene, una nota dice que el sol del montaje
-   coloca el del cielo. Intensidad, rotación (se
-   oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
-   *Color* (muestra), *Degradado* (L6: *Arriba* y *Abajo*, dos muestras;
-   lo ponen los sets de fondo degradado), *Transparente*, *Imagen de
-   fondo*; con esta última,
-   *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
-   (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
-   que se ve alrededor de la imagen encajada o en su lugar mientras no hay
-   ninguna. Un archivo que no se puede leer se avisa en un *toast* que
-   dice qué le pasa. Sombra en el suelo y reflejo en el suelo
-   (intensidad).
-4. **Ambiente** (fase S4a) — Los efectos de partículas del aire. En la
-   cabecera, **Añadir**, que abre una **galería de tarjetas** en la propia
-   sección (nombre e intención de cada preset: *Motas de polvo*, *Polen*,
-   *Lluvia*, *Nieve*, *Polvareda*, *Ceniza*, *Burbujas que suben*,
-   *Confeti que cae* y, desde S3, *Gotas de agua*; *Calima*, *Haces de luz* y *Niebla baja* atenuadas y
-   deshabilitadas, *próximamente*, y *Cancelar*). Debajo, la **lista** de
-   efectos (vacía: una frase que invita a añadir uno): nombre, partículas
-   que pide (o *Pide N partículas; el motor evalúa M* si pasa del tope),
-   ojo para encender/apagar y papelera; un clic edita ese efecto, y el
-   visor dibuja la caja de su región. El efecto editado: **Efecto**
-   (desplegable de presets; cambiarlo es una entrada de deshacer) y
-   **Nombre**, una línea con sus partículas, y los **ocho mandos de
-   fotógrafo**, siempre visibles: *Cantidad* (partículas/m³ o cuenta),
-   *Tamaño* (mm), **Forma** (S3b, decisión S3 ◆5: fuera de *Avanzado*, justo
-   después del tamaño; una lista, S3: *Punto · Copo · Estela · Gota ·
-   Mezcla*, cinco no caben como botones en el ancho del inspector) y, con
-   *Mezcla*, debajo de ella un peso por forma (*Puntos*, *Copos*, *Estelas*,
-   *Gotas*, 0..4, deslizador y valor) y una línea con la parte que da cada
-   uno (*Punto 20 % · Copo 20 % · Estela 20 % · Gota 40 %* al elegir
-   *Mezcla* por primera vez; sin ningún peso, *Da peso a alguna forma*);
-   *Energía* (m/s), *Caos* (%), *Viento* (m/s) y
-   *Dirección del viento* (°), *Gravedad* (× g), *Variación* (%) y
-   *Semilla* con *Barajar*. Con un efecto que deja algo en las piezas (S3c:
-   *Lluvia* y *Gotas de agua*, gotas; *Motas de polvo*, *Polen*, *Polvareda* y
-   *Ceniza*, polvo; *Nieve*, nieve; las burbujas y el confeti, nada), detrás de
-   la semilla el interruptor **Sobre las piezas**, una entrada de deshacer
-   (*Deshacer: Lluvia: Sobre las piezas*, con el nombre del efecto), apagado por defecto y guardado con el
-   proyecto; su ayuda dice qué hace *Iniciar* en la barra de físicas con ese
-   efecto (la lluvia: las gotas se posan y salpican, se juntan, resbalan y
-   gotean por las aristas, y dejan las superficies mojadas; el polvo se posa
-   donde la pieza es lo bastante plana y la lluvia que resbala se lo lleva; la
-   nieve se acumula donde la sostiene) y que la grabación es un clip de
-   *Físicas* de la escena. Encendido, si el motor del render no dibuja el
-   tiempo de las piezas (le falta el bit 8: un motor anterior), una nota debajo
-   lo dice: *el render las enseñará secas y limpias*. **Avanzado**, plegado: región (*Alrededor de
-   la escena* con margen en mm, o *Caja propia* con centro y tamaño),
-   banda de alturas, *Cantidad por* (*Densidad · Cuenta*) y, según la
-   forma: con gotas, *Largo de la gota* (×, del centro
-   del cuerpo a la punta, en radios del cuerpo) y *Punta* (% del cuerpo); con
-   gotas o estelas, *Variación de forma* (%); cada uno es una entrada de
-   deshacer. Variación de tamaño, velocidad de caída ± variación, giro
-   (copo, o una mezcla con copos), largo de estela (estela, o una mezcla con
-   estelas), viento como vector, turbulencia
-   (escala y velocidad), nube (centro, radio, suavidad), material (*El
-   propio del efecto* o uno del catálogo), variación de tinte y tintes (hasta
-   4), *Congelar en* (s), *Visible a cámara*, *Visible en reflejos* y *Proyecta
-   sombra*, y el tope propio (*El del motor (N)* por defecto). Una nota
-   recuerda que *Rápido* dibuja hasta 50 000 partículas por efecto y
-   *Completo* y *Render* todas, iluminadas como el producto. Desde S4b, en
-   *Completo* y *Render* el polvo, el polen y la polvareda se encienden a
-   contraluz (su lóbulo hacia delante, sin mando propio: lo trae el
-   material del preset) y la lluvia y las burbujas no dejan cáusticas; los
-   puntos de *Rápido* no cambian. Desde S3, *Rápido* dibuja las gotas como
-   gotas (el contorno del motor, girado alrededor de su eje y estirado a su
-   largo) y una mezcla con cada forma la suya (la forma de cada partícula la
-   da el motor, `rt_particles_shapes`).
-   ![una lluvia de gotas en Rápido](ambient-drops.png)
-   ![la mezcla de formas](ambient-mix.png)
-   ![la forma entre los mandos visibles, con Avanzado plegado](ambient-shape.png)
-5. **Sección** (fase Q1) — La vista en sección (`SPEC.md` §3.1): un plano
-   que quita un lado de la pieza y tapa el corte. Va **plegada** por defecto,
-   con el **interruptor en la cabecera** (el primer encendido hace un plano
-   por el centro del producto, de cara a la cámara; *Sección activada*
-   es una entrada de deshacer). Dentro: **Cortar según**, segmentado *X · Y ·
-   Z · Superficie*; dos botones que arman el siguiente clic del visor,
-   **Clic en la pieza** (el plano pasa por el punto y es perpendicular al
-   eje elegido, o a la normal de la superficie; se quita el lado que mira
-   al espectador) y **Dos puntos** (dos clics: el plano contiene la línea
-   y la dirección de la vista, y se quita lo que queda a la izquierda de la
-   línea del primero al segundo); mientras uno está armado el visor lo dice
-   en la franja de arriba (*Sección: haz clic en la pieza para cortar según
-   Z · Esc cancela*), pulsar otra vez el botón o `Esc` lo baja, un clic que
-   no hace plano se avisa y se espera otro, y el clic que hace el plano deja
-   **una** entrada (*Colocar el plano de sección*; el primero de los dos
-   puntos solo se recuerda y no deja ninguna). Con plano hay **Punto**
-   y **Normal** en números (la normal se normaliza y una que no sea nada no
-   se toma), **Tapar el corte**, **Cambiar de lado** y **Quitar el plano**;
-   sin plano, una frase dice cómo hacer uno. Una nota enumera las piezas
-   cortadas que son mallas abiertas (el corte enseña su interior, sin
-   tapa), otra dice cómo animarlo (un movimiento *Sección* sobre el
-   Entorno en la línea de tiempo, §2.5) y otra que *Rápido* dibuja la tapa
-   de un vidrio como vidrio transparente y *Completo* y *Render*
-   refractan a su través. El fondo, el suelo y las tarjetas de un set no se
-   cortan. **Por qué aquí y no en la barra del visor**: es un objeto de la
-   escena, que se guarda con el proyecto, se anima y se ve en Completo y en
-   Render, como el entorno y el ambiente; las herramientas de la barra son
-   de navegación y transformación y no dejan nada en el proyecto. El
-   recorrido guiado (§4.7) no lista *Ambiente* ni *Sección*, y no gana paso.
-   La paleta (§3) tiene *Vista en sección: activar o desactivar* y *Vista en
-   sección: cambiar de lado*. Capturas: `docs/ui/section-fast.png` y
-   `docs/ui/section-full.png`; la comprobación en el navegador es
-   `tools/section-check.mjs` (orden de las secciones, cada camino de
-   ponerla, `Esc`, deshacer y rehacer, guardar y abrir, *Completo*, y el
-   cromo acromático en los dos temas).
-6. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
-   su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
-   (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
-   cámara tiene su óptica y su posición. Preset de óptica (8
-   `LENS_PRESETS`), focal en mm (campo arrastrable), debajo el interruptor
-   **Mantener el tamaño de lo enfocado** (C2, ver abajo), diafragma (f/),
-   **Enfoque** (F1, `src/ui/panels/insp-focus.ts`), interruptor
-   Perspectiva / Ortográfica, **Proporción** (U13), *Encuadrar*, y
-   *Guardar como cámara*. **Enfoque** es un control segmentado *Distancia ·
-   Punto · Objeto* (cada segmento con su ayuda) y, debajo, la **distancia de
-   enfoque** como un deslizador con su campo al lado (el `slider` de
-   siempre, en las unidades de la interfaz; el campo tendrá las flechas
-   arriba y abajo de U15). El deslizador es **logarítmico** y abarca la
-   profundidad de la escena desde la cámara: de la mitad de la esquina más
-   cercana de la caja del producto a lo largo del eje de la vista al doble
-   de la más lejana, al menos una década, y siempre con la distancia dentro
-   (decidido). Con *Distancia* se edita (una entrada
-   de deshacer por gesto, *Cámara: Distancia de enfoque*). Con *Punto* y
-   *Objeto* enseña la distancia que la cámara calcula para el punto o el
-   objeto donde están ahora (el cabezal incluido), y **moverlo pasa la cámara a
-   *Distancia*** desde ahí, en la misma entrada de deshacer (decidido); debajo, en *Punto*, el botón ***Enfocar
-   con clic*** (icono de enfoque, pulsado mientras se pica; deshacer
-   *Enfocar con clic*) y *En «pieza»* (o *Nada elegido todavía*); en
-   *Objeto*, ***Elegir qué enfocar*** (icono de diana) y *En «nombre»*; y
-   una nota: la distancia sigue al punto (o al objeto) vaya donde vaya la
-   cámara. Pulsar *Punto* u *Objeto* vuelve al punto o al objeto que la
-   cámara guardaba; si no hay ninguno, empieza a picarlo (el segmento se
-   ve pulsado mientras tanto, con el aviso del visor *Haz clic en la pieza
-   para enfocar ahí* o *Haz clic en lo que se queda enfocado…*; `Esc`
-   cancela). Pulsar *Distancia* deja la distancia a la que estaba enfocada
-   (deshacer *Enfoque: Distancia*) y guarda el punto o el objeto para
-   volver. El clic de *Enfocar con clic* sale del píxel exacto: el rayo
-   principal del motor para ese píxel en la vista que hay (`rt_scene_pick`:
-   la cámara mirada a través, el cuadro, la pose del cabezal, la lente
-   trazada con su distorsión), lanzado contra la geometría del visor por las
-   dos caras; sin `rt.wasm`, el pico de la vista previa. Si se borra la
-   pieza del punto o el objeto, la cámara vuelve a *Distancia* con la última
-   distancia y un aviso lo dice (*El enfoque de Cámara 1 estaba en Tapón,
-   que ya no está: se queda a 612 mm*). Con la cámara **seleccionada** (su
-   pirámide, o el lápiz de esta cabecera), el visor marca su punto de
-   enfoque con un glifo pequeño del mismo estilo que los de luces y cámaras:
-   un anillo con cuatro marcas en *Punto* y cuatro esquinas en *Objeto*,
-   con un punto en el centro, donde el punto está en el cabezal.
-   **Mantener el tamaño de lo enfocado** (C2, `core/focal.ts`; captura
-   `docs/ui/c2-focal-switch.png`) es un interruptor justo debajo de la
-   focal, apagado en una cámara nueva. Apagado (como en una cámara), cambiar
-   la focal deja la cámara donde está y cambia el encuadre; encendido, la
-   cámara se acerca o se aleja por su eje para que el plano enfocado
-   (la distancia de *Distancia*, el punto de *Punto*, el objeto de *Objeto*)
-   conserve su tamaño en la imagen: cambia la perspectiva, no el tamaño. La
-   línea auxiliar de debajo dice cuál está activo y cómo es el otro
-   (*Apagado: al cambiar la focal la cámara se queda donde está y cambia el
-   encuadre, como en una cámara. Encendido, …*), y en tres casos lo cambia:
-   con la cámara **bloqueada** (*se queda donde está y cambia el encuadre;
-   desbloquéala…*), con la **ortográfica** y con las **panorámicas** (*la
-   focal no cambia el encuadre y no hay nada que mantener*). Cada paso de
-   las flechas de la focal (pulsarlas y mantenerlas es un solo paso), cada
-   arrastre del campo y cada valor tecleado es **una entrada de deshacer**
-   (*Cámara: Focal*), con el movimiento de la cámara dentro; el interruptor,
-   otra (*Cámara: Mantener el tamaño de lo enfocado*). Las ópticas de
-   interior (K3) lo siguen; elegir un preset de *Óptica* encuadra la pieza,
-   como antes. **Proporción** es una lista (*3:2 · Foto 35 mm*,
-   *4:3*, *16:9 · Vídeo*, *1:1 · Cuadrado*, *5:4*, *4:5 · Retrato*,
-   *9:16 · Vertical*, *21:9 · Ultra ancho*, *2:1*, *65:24 · Panorámica* y
-   *Propia*) y, debajo, los campos `w : h`, que se pueden editar con
-   *Propia* (con un preset enseñan sus términos, apagados; elegir *Propia*
-   parte de la proporción que había). Cada cambio es una entrada de
-   deshacer (*Cámara: Proporción*; arrastrar un término es un solo
-   gesto). Cambiarla no recoloca la cámara: *Encuadrar* la ajusta a la
-   nueva imagen.
-   **Cámara de interiores** (K3, `interiorCameraFields` en
-   `src/ui/panels/insp-scene.ts`): el interruptor Perspectiva / Ortográfica
-   es ahora la lista **Proyección** (*Perspectiva · Ortográfica ·
-   Panorámica 360° (2:1) · Ojo de pez*); con una panorámica, una nota dice
-   que el modo Rápido la dibuja con seis caras de cubo y que no se dibuja
-   nada encima, y el *ojo de pez* añade **Campo de visión** (60°–360° en la
-   diagonal del encuadre). **Verticales rectas** (interruptor; apagado salvo
-   en *Interior*) con su nota debajo: *Desplazamiento de −4,2 mm para 10° de
-   inclinación*, *La cámara está nivelada: nada que corregir* o, en una
-   panorámica, *La panorámica se renderiza nivelada*. **Altura de ojo**
-   (campo en mm) con los chips *De pie · 1,5 m* y *Sentado · 1,1 m*
-   (*Cámara: altura de ojo De pie*), y **Ópticas de interior**: chips *24 mm
-   · 28 mm · 35 mm*, el activo marcado. Todo es una entrada de deshacer; con
-   la cámara bloqueada, deshabilitado. Las vistas del visor ganan *Alzado* y
-   *Planta* (ortográficas).
-   ![verticales rectas](k3-verticals.png)
-   Debajo (O1, `src/ui/panels/insp-lens.ts`), los desplegables de la óptica:
-   - **Lente** (abierto; O2, `src/ui/panels/insp-traced.ts`): *Modelo de
-     lente* (*Lente simple · Lente trazada*; O4: la *lente fina* se llama
-     ahora **lente simple**, y el proyecto la sigue guardando como `thin`),
-     con la etiqueta encima y los dos botones a todo el ancho (en español
-     no cabían al lado). Con la lente simple, una nota dice lo que es (una
-     lente ideal, con el bokeh de los mandos de abajo). Cambiar de modelo
-     **no borra nada**: el bokeh elegido y la *Óptica avanzada* de la lente
-     simple se quedan en la cámara y vuelven tal cual al volver a ella; la
-     lente trazada entra como la de partida (la doble Gauss). Con una
-     trazada: *Carácter*, una fila de
-     chips (*Clínica · Suave · Remolino · Vintage · Anamórfica · Macro · Gran
-     angular · Tele · Míos*) que filtra la lista *Lente* (las lentes del
-     catálogo de ese carácter, por su nombre genérico); *Míos* enseña las
-     lentes propias en filas con *Renombrar* y *Eliminar*, y elegir una la
-     pone en la cámara. La lista *Lente* es la propia de la interfaz (O2b:
-     un botón con la flecha de un desplegable que abre el menú de la
-     interfaz, con la lente puesta marcada; flechas, Intro y Esc; no un
-     `select` del navegador, que no dice a la página sobre qué entrada está
-     el puntero). Debajo, la **fuente** de la lente (la patente o el
-     libro, el año y lo que se ha comprobado), y lo suyo: *Objetivo detrás*
-     (solo el adaptador anamórfico: la lente sobre la que va), *Tratamiento*
-     (*El de la lente · Sin tratar · Monocapa · Multicapa*), el hueco
-     variable de la lente blanda con *Normal*, *Láminas* (el mismo mando que
-     en *Óptica avanzada*) y el recorrido de su diafragma (*Su diafragma: f/2
-     a f/22*). **Lo que calcula el motor**: el **corte** de la lente en SVG
-     (el vidrio en gris, el diafragma en su sitio, el sensor a la derecha;
-     escalada a la focal y enfocada, como se traza) y los números del motor
-     para esa cámara: *Focal* (a infinito y al foco), *Tiraje*,
-     *Diafragma* (el f/ en uso y el T-stop), *Elementos · grupos*,
-     *Longitud*, *Pupila de entrada* y, en un anamórfico, *Compresión al
-     foco*; y dos curvas pequeñas, *Distorsión* y *Luz hacia la esquina*, con
-     su valor en la esquina. Mientras el motor contesta dice *Preguntando al
-     motor…*; sin motor, *El motor no está disponible aquí*; si no forma
-     imagen, lo dice; con la lente inclinada, una fila más, *Inclinación de
-     la lente*: el ángulo que el motor gira la lente para dar el plano
-     pedido. **Más opciones** (plegado; era *Avanzado*, O4): primero
-     **Inclinación y desplazamiento**, el mismo bloque que en la *Óptica
-     avanzada* de la lente simple (abajo), con la inclinación propia de la
-     lente trazada y una nota (*la lente trazada gira hasta que su plano es
-     el que tendría la lente simple; lejos del centro su propia curvatura de
-     campo lo dobla un poco*); con el adaptador anamórfico, que tiene
-     cilindros y no se inclina, el bloque dice eso en vez de los mandos;
-     luego **Diafragma** (*Redondez*, *Giro*, *Obstrucción*: los mismos
-     valores que la *Óptica avanzada*, ahora a mano también con una lente
-     trazada, que los usa en su diafragma) y, bajo **NO FÍSICO**,
-     *Distorsión*, *Viñeteo*, *Carácter de la esférica*, *Respiración*,
-     *Aberración cromática* y *Remolino*. **Editar elementos…** (O2c) abre
-     el **editor de lente** (§2.11) sobre una copia de la lente; con el
-     adaptador anamórfico o la lente de espejo el botón está apagado y dice
-     por qué. Una lente con los elementos editados lo dice bajo la fuente
-     (*Lente editada: su nombre*; elegir una lente de la lista vuelve a poner
-     la del catálogo), y una edición abierta sin aplicar también (*Hay una
-     edición de esta lente abierta en el editor de lente*). **Guardar lente
-     como…** pide un nombre en el sitio y la guarda en *Míos* (una lente
-     editada, con sus elementos). Dos notas: el modo Rápido
-     dibuja la distorsión y el viñeteo como aproximación (y el medidor añade
-     *Lente trazada: distorsión y viñeteo aproximados, el render la traza*;
-     el contorno, el *gizmo* y los glifos van con ella, y los clics, la caja
-     y el *gizmo* cogen lo que se ve bajo el cursor),
-     y con una lente trazada la lente hace su propia pupila, su ojo de gato,
-     su bokeh y sus flecos: **el Bokeh y la Óptica avanzada no salen** (son
-     de la lente simple, O4). Cada cambio es una entrada de
-     deshacer (*Cámara: Modelo de lente*, *Cámara: Lente*, *Cámara:
-     Tratamiento*…).
-     ![editor de lente](lens-editor.png)
-     ![lo que calcula el motor](lens-section.png)
-     ![más opciones de la lente trazada](o4-traced-more.png)
+   **With lights in the scene**, choosing a set or a setup (also an
+   own one, and from the palette) **asks what happens to them** —except if they are
+   the lights of the untouched product type (those it puts, with no light added
+   or edited since): those are replaced without asking (C1)—, inline
+   above the grid: "There are lights in the scene. What happens to them when
+   *Rembrandt* comes in?" (or "The lights were edited…" if they were modified),
+   with **Replace** (deletes them: the usual behaviour), **Hide** (keeps them
+   switched off; the *Lights* list turns them on one by one), **Add** (keeps them
+   on and adds the new ones), *Cancel* and the checkbox
+   **Remember my choice**, which saves it in *Settings ▸ Preferences ▸
+   Lights*. It is one undo entry with the answer in its name
+   (*Light setup: Rembrandt (hide the lights there were)*). The kept
+   lights become own lights, named after where they came from
+   ("Key · Rembrandt"), and *Reset setup* removes them. A set that
+   comes in replaces the decoration of the previous set whatever the
+   answer; a *Lights* setup with *Hide* or *Add* leaves the
+   decoration, the pool and the look of the set as they were (and *In the set*
+   keeps its rows, without *Use the set’s camera*). With no lights in the
+   scene, or choosing the setup in force again, it does not ask.
+   The seven
+   **Interior** recipes (*Morning window*, *Midday window*, *Afternoon window*,
+   *Overcast*, *Night lamps*, *Blue hour*, *White studio room*)
+   each bring their world, their
+   exposure and the environment intensity (unlike the setups of
+   the other styles, choosing one does change the brightness), and none brings
+   decoration: *In the set* does not appear.
+   With a **set** in force, below: **Use the set’s camera** (only if it
+   suggests one; the help says which, "8° high, 85 mm"; disabled with
+   the camera locked; one undo entry) and **In the set**: one row
+   per piece of its decoration (each card, the set's backdrop, the set's
+   floor) with its name and a switch that hides or shows it
+   (`scene/setVisible`, undoable); a colour or gradient background with no
+   sweep is a row that sets the set's background or returns that of the product
+   type (`env/set`). A background that the set makes a sweep (`SWEEP`, or
+   any background with a pool of light) is a piece, never that row: after
+   *Reset setup* there is nothing left to switch on (`setBackground`). The
+   pool of light is a light: it appears in *Tune lights* with its name.
+   Secondary dropdown **Tune lights**: list of lights with power
+   (in % of the total), size, temperature in K and angle; changing something
+   here does not change setup, it marks it as *modified*. Button
+   **Place by reflection**: the cursor changes and the next click on
+   the part places the selected light so that its reflection falls there
+   (in U1 the mode and the mechanics are enough; the exact calculation belongs to the
+   engine phase).
+3. **Environment** — Type: *Studio dome* (procedural, default),
+   *Sky* (procedural sun and sky), *Flat* (plain colour), *HDRI
+   file*. With *HDRI file*, a *Load HDRI…* button (`.hdr`, `.exr`) and
+   below it the name and size of the file, or *No HDRI loaded: the studio dome
+   lights*; dropping a `.hdr` or `.exr` on the window does the
+   same. With *Sky*, *Model* (*Physical · Classic*, segmented, with a
+   help on each option: *Physical* is the E5c sky of our own, fitted to
+   our simulation of the atmosphere, and the default; *Classic*, the
+   Preetham one of E5), *Haze* (turbidity, from 1 to 10; the classic one clamps it to 1.7
+   at least) and, if the setup has no sun light, *Sun azimuth* and
+   *Sun elevation*; if it has one, a note says that the setup's sun
+   places that of the sky. Intensity, rotation (hidden
+   with *Sky*: its sun places it). Background: *Same as environment*,
+   *Colour* (swatch), *Gradient* (L6: *Top* and *Bottom*, two swatches;
+   set by the gradient-background sets), *Transparent*, *Background
+   image*; with the latter,
+   *Load image…* (PNG, JPEG, WebP), its name and size, *Fit*
+   (*Fill · Fit · Stretch*, inside the output frame) and the colour,
+   which shows around the fitted image or in its place while there is
+   none. A file that cannot be read is reported in a toast that
+   says what is wrong with it. Floor shadow and floor reflection
+   (intensity).
+4. **Ambient** (phase S4a) — The particle effects of the air. In the
+   header, **Add**, which opens a **gallery of cards** in the section itself
+   (name and intent of each preset: *Dust motes*, *Pollen*,
+   *Rain*, *Snow*, *Dust cloud*, *Ash*, *Rising bubbles*,
+   *Falling confetti* and, since S3, *Water drops*; *Haze*, *Light shafts* and *Ground fog* dimmed and
+   disabled, *coming soon*, and *Cancel*). Below, the **list** of
+   effects (empty: a sentence that invites adding one): name, particles
+   it asks for (or *Asks for N particles; the engine evaluates M* if it exceeds the cap),
+   an eye to switch on/off and a bin; a click edits that effect, and the
+   viewport draws the box of its region. The edited effect: **Effect**
+   (preset dropdown; changing it is one undo entry) and
+   **Name**, a line with its particles, and the **eight photographer
+   controls**, always visible: *Amount* (particles/m³ or a count),
+   *Size* (mm), **Shape** (S3b, decision S3 ◆5: outside *Advanced*, right
+   after the size; a list, S3: *Point · Flake · Streak · Drop ·
+   Mix*, five do not fit as buttons in the width of the inspector) and, with
+   *Mix*, below it a weight per shape (*Points*, *Flakes*, *Streaks*,
+   *Drops*, 0..4, slider and value) and a line with the share each one gets
+   (*Point 20 % · Flake 20 % · Streak 20 % · Drop 40 %* on choosing
+   *Mix* for the first time; with no weight at all, *Give some shape a weight*);
+   *Energy* (m/s), *Chaos* (%), *Wind* (m/s) and
+   *Wind direction* (°), *Gravity* (× g), *Variation* (%) and
+   *Seed* with *Shuffle*. With an effect that leaves something on the parts (S3c:
+   *Rain* and *Water drops*, drops; *Dust motes*, *Pollen*, *Dust cloud* and
+   *Ash*, dust; *Snow*, snow; the bubbles and the confetti, nothing), after
+   the seed the switch **On the parts**, one undo entry
+   (*Undo: Rain: On the parts*, with the name of the effect), off by default and saved with the
+   project; its help says what *Start* in the physics bar does with that
+   effect (rain: the drops settle and splash, merge, slide down and
+   drip off the edges, and leave the surfaces wet; dust settles
+   where the part is flat enough and the rain that runs down carries it away;
+   snow piles up where it is held) and that the recording is a clip of the scene's
+   *Physics*. When on, if the render engine does not draw the
+   wetness of the parts (it lacks bit 8: an older engine), a note below
+   says so: *the render will show them dry and clean*. **Advanced**, collapsed: region (*Around
+   the scene* with a margin in mm, or *Own box* with centre and size),
+   height band, *Amount by* (*Density · Count*) and, depending on the
+   shape: with drops, *Drop length* (×, from the centre
+   of the body to the tip, in body radii) and *Tip* (% of the body); with
+   drops or streaks, *Shape variation* (%); each is one undo
+   entry. Size variation, fall speed ± variation, spin
+   (flake, or a mix with flakes), streak length (streak, or a mix with
+   streaks), wind as a vector, turbulence
+   (scale and speed), cloud (centre, radius, softness), material (*The
+   effect’s own* or one from the catalogue), tint variation and tints (up to
+   4), *Freeze at* (s), *Visible to camera*, *Visible in reflections* and *Casts
+   shadows*, and the own cap (*The engine’s (N)* by default). A note
+   reminds that *Fast* draws up to 50 000 particles per effect and
+   *Full* and *Render* all of them, lit like the product. Since S4b, in
+   *Full* and *Render* dust, pollen and dust cloud light up
+   when backlit (their forward lobe, with no control of its own: it comes with the
+   preset's material) and rain and bubbles leave no caustics; the
+   *Fast* points do not change. Since S3, *Fast* draws the drops as
+   drops (the engine's outline, turned about its axis and stretched to its
+   length) and a mix with each shape its own (the shape of each particle is
+   given by the engine, `rt_particles_shapes`).
+   ![a rain of drops in Fast](ambient-drops.png)
+   ![the mix of shapes](ambient-mix.png)
+   ![the shape among the visible controls, with Advanced collapsed](ambient-shape.png)
+5. **Section** (phase Q1) — The section view (`SPEC.md` §3.1): a plane
+   that removes one side of the part and caps the cut. It is **collapsed** by default,
+   with the **switch in the header** (the first time it is switched on it makes a plane
+   through the centre of the product, facing the camera; *Section on*
+   is one undo entry). Inside: **Cut across**, segmented *X · Y ·
+   Z · Surface*; two buttons that arm the next click in the viewport,
+   **Click on the model** (the plane passes through the point and is perpendicular to the
+   chosen axis, or to the surface normal; the side facing
+   the viewer is removed) and **Two points** (two clicks: the plane contains the line
+   and the direction of the view, and what lies to the left of the
+   line from the first to the second is removed); while one is armed the viewport says so
+   in the strip at the top (*Section: click on the model to cut across
+   Z · Esc cancels*), pressing the button again or `Esc` disarms it, a click that
+   makes no plane is reported and another is awaited, and the click that makes the plane leaves
+   **one** entry (*Set the section plane*; the first of the two
+   points is only remembered and leaves none). With a plane there are **Point**
+   and **Normal** as numbers (the normal is normalised and one that is nothing
+   is not accepted), **Cap the cut**, **Flip side** and **Remove the plane**;
+   with no plane, a sentence says how to make one. A note lists the cut
+   parts that are open meshes (the cut shows their inside, without a
+   cap), another says how to animate it (a *Section* movement on the
+   Environment in the timeline, §2.5) and another that *Fast* draws the cap
+   of a glass as transparent glass and *Full* and *Render*
+   refract through it. The backdrop, the floor and the cards of a set are not
+   cut. **Why here and not in the viewport bar**: it is an object of the
+   scene, saved with the project, animated and seen in Full and in
+   Render, like the environment and the ambient; the bar's tools are
+   for navigation and transformation and leave nothing in the project. The
+   guided tour (§4.7) lists neither *Ambient* nor *Section*, and gains no step.
+   The palette (§3) has *Section view on or off* and *Section
+   view: flip side*. Captures: `docs/ui/section-fast.png` and
+   `docs/ui/section-full.png`; the browser check is
+   `tools/section-check.mjs` (order of the sections, each way of
+   placing it, `Esc`, undo and redo, save and open, *Full*, and the
+   achromatic chrome in both themes).
+6. **Camera** — It edits the **active camera**, and says so: the header carries
+   its name (*Camera 1*) and a pencil that opens that camera's card
+   (name, *Activate*, *Look through*); a note reminds that each
+   camera has its own optics and position. Lens preset (8
+   `LENS_PRESETS`), focal length in mm (draggable field), below it the switch
+   **Keep the size of what is in focus** (C2, see below), aperture (f/),
+   **Focus** (F1, `src/ui/panels/insp-focus.ts`), a
+   Perspective / Orthographic switch, **Aspect ratio** (U13), *Frame*, and
+   *Save as camera*. **Focus** is a segmented control *Distance ·
+   Point · Object* (each segment with its help) and, below, the **focus
+   distance** as a slider with its field beside it (the usual `slider`,
+   in the interface units; the field will have the up and down arrows
+   of U15). The slider is **logarithmic** and spans the
+   depth of the scene from the camera: from half of the nearest corner of the
+   product's box along the view axis to twice the farthest one,
+   at least a decade, and always with the distance inside
+   (decided). With *Distance* it is edited (one undo entry
+   per gesture, *Camera: Focus distance*). With *Point* and
+   *Object* it shows the distance the camera works out for the point or the
+   object where they are now (the playhead included), and **moving it switches the camera to
+   *Distance*** from there, in the same undo entry (decided); below, in *Point*, the button ***Focus
+   with a click*** (focus icon, pressed while picking; undo
+   *Focus with a click*) and *On “part”* (or *Nothing picked yet*); in
+   *Object*, ***Pick what to focus on*** (target icon) and *On “name”*; and
+   a note: the distance follows the point (or the object) wherever the
+   camera goes. Pressing *Point* or *Object* returns to the point or object the
+   camera was keeping; if there is none, it starts picking it (the segment
+   appears pressed meanwhile, with the viewport notice *Click on the part
+   to focus there* or *Click on what stays in focus…*; `Esc`
+   cancels). Pressing *Distance* leaves the distance it was focused at
+   (undo *Focus: Distance*) and keeps the point or object to
+   return to. The click of *Focus with a click* comes from the exact pixel: the engine's
+   primary ray for that pixel in the view as it is (`rt_scene_pick`:
+   the camera looked through, the frame, the playhead pose, the traced
+   lens with its distortion), cast against the viewport geometry on
+   both faces; without `rt.wasm`, the preview's pick. If the part of the point
+   or the object is deleted, the camera returns to *Distance* with the last
+   distance and a notice says so (*The focus of Camera 1 was on Cap,
+   which is gone: it stays at 612 mm*). With the camera **selected** (its
+   pyramid, or the pencil of this header), the viewport marks its
+   focus point with a small glyph in the same style as those of lights and cameras:
+   a ring with four marks in *Point* and four corners in *Object*,
+   with a dot in the centre, where the point is at the playhead.
+   **Keep the size of what is in focus** (C2, `core/focal.ts`; capture
+   `docs/ui/c2-focal-switch.png`) is a switch just below the
+   focal length, off on a new camera. Off (as on a camera), changing
+   the focal length leaves the camera where it is and changes the framing; on, the
+   camera moves closer or further along its axis so that the focused plane
+   (the distance of *Distance*, the point of *Point*, the object of *Object*)
+   keeps its size in the image: the perspective changes, not the size. The
+   auxiliary line below says which one is active and what the other is like
+   (*Off: changing the focal length leaves the camera where it is and the
+   framing changes, as on a camera. On, …*), and in three cases it changes:
+   with the camera **locked** (*it stays where it is and the framing changes;
+   unlock it…*), with the **orthographic** and with the **panoramas** (*the
+   focal length does not change the framing, so there is nothing to keep*). Each step of
+   the focal length arrows (pressing and holding is a single step), each
+   drag of the field and each typed value is **one undo entry**
+   (*Camera: Focal length*), with the camera movement inside; the switch,
+   another (*Camera: Keep the size of what is in focus*). The interior
+   lenses (K3) follow it; choosing a *Lens preset* frames the part,
+   as before. **Aspect ratio** is a list (*3:2 · 35 mm photo*,
+   *4:3*, *16:9 · Video*, *1:1 · Square*, *5:4*, *4:5 · Portrait*,
+   *9:16 · Tall*, *21:9 · Ultrawide*, *2:1*, *65:24 · Panoramic* and
+   *Custom*) and, below, the `w : h` fields, which can be edited with
+   *Custom* (with a preset they show its terms, disabled; choosing *Custom*
+   starts from the ratio there was). Each change is one undo
+   entry (*Camera: Aspect ratio*; dragging a term is a single
+   gesture). Changing it does not reposition the camera: *Frame* fits it to the
+   new image.
+   **Interior camera** (K3, `interiorCameraFields` in
+   `src/ui/panels/insp-scene.ts`): the Perspective / Orthographic switch
+   becomes the **Projection** list (*Perspective · Orthographic ·
+   Panorama 360° (2:1) · Fisheye*); with a panorama, a note says
+   that Fast mode draws it with six cube faces and that nothing is drawn
+   over it, and the *fisheye* adds **Field of view** (60°–360° across the
+   diagonal of the frame). **Straight verticals** (switch; off except
+   in *Interior*) with its note below: *Shift −4.2 mm for 10° of
+   tilt*, *The camera is level: nothing to correct* or, on a
+   panorama, *The panorama renders level*. **Eye height**
+   (field in mm) with the chips *Standing · 1.5 m* and *Seated · 1.1 m*
+   (*Camera: eye height Standing*), and **Interior lenses**: chips *24 mm
+   · 28 mm · 35 mm*, the active one marked. Everything is one undo entry; with
+   the camera locked, disabled. The viewport's views gain *Elevation* and
+   *Plan* (orthographic).
+   ![straight verticals](k3-verticals.png)
+   Below (O1, `src/ui/panels/insp-lens.ts`), the dropdowns of the optics:
+   - **Lens** (open; O2, `src/ui/panels/insp-traced.ts`): *Lens model*
+     (*Simple lens · Traced lens*; O4: the *thin lens* is now called
+     **simple lens**, and the project still saves it as `thin`),
+     with the label above and the two buttons full width (in Spanish
+     they did not fit side by side). With the simple lens, a note says what it is (an ideal
+     lens, with the bokeh of the controls below). Changing model
+     **deletes nothing**: the chosen bokeh and the simple lens's *Advanced
+     optics* stay on the camera and come back unchanged when returning to it; the
+     traced lens comes in as the default one (the double Gauss). With
+     a traced one: *Character*, a row of
+     chips (*Clinical · Soft · Swirl · Vintage · Anamorphic · Macro · Wide ·
+     Tele · Mine*) that filters the *Lens* list (the catalogue lenses of that
+     character, by their generic name); *Mine* shows the own
+     lenses in rows with *Rename* and *Delete*, and choosing one
+     puts it on the camera. The *Lens* list is the interface's own (O2b:
+     a button with a dropdown arrow that opens the interface's
+     menu, with the lens in use marked; arrows, Enter and Esc; not a browser
+     `select`, which does not tell the page which entry
+     the pointer is over). Below, the lens **source** (the patent or
+     book, the year and what has been checked), and its own controls: *Lens behind*
+     (only the anamorphic adapter: the lens it goes on), *Coating*
+     (*The lens’s own · Uncoated · Single layer · Multi-layer*), the variable
+     gap of the soft lens with *Normal*, *Blades* (the same control as
+     in *Advanced optics*) and the range of its iris (*Its iris: f/2
+     to f/22*). **What the engine computes**: the lens **section** in SVG
+     (the glass in grey, the iris in place, the sensor on the right;
+     scaled to the focal length and focused, as it is traced) and the engine's numbers
+     for that camera: *Focal length* (at infinity and at the focus), *Back focus*,
+     *Aperture* (the f/ in use and the T-stop), *Elements · groups*,
+     *Length*, *Entrance pupil* and, on an anamorphic, *Squeeze at the
+     focus*; and two small curves, *Distortion* and *Light towards the corner*, with
+     their value at the corner. While the engine answers it says *Asking the
+     engine…*; without an engine, *The engine is not available here*; if it forms no
+     image, it says so; with the lens tilted, one more row, *Tilt of
+     the lens*: the angle the engine turns the lens to give the requested
+     plane. **More options** (collapsed; it was *Advanced*, O4): first
+     **Tilt and shift**, the same block as in the simple lens's *Advanced
+     optics* (below), with the traced lens's own tilt
+     and a note (*the traced lens turns until its plane is the one the
+     simple lens would have; away from the centre its own field curvature bends it a
+     little*); with the anamorphic adapter, which has
+     cylinders and does not tilt, the block says that instead of the controls;
+     then **Iris** (*Roundness*, *Rotation*, *Obstruction*: the same
+     values as *Advanced optics*, now by hand also with a traced
+     lens, which uses them in its iris) and, under **NOT PHYSICAL**,
+     *Distortion*, *Vignetting*, *Spherical character*, *Breathing*,
+     *Chromatic aberration* and *Swirl*. **Edit elements…** (O2c) opens
+     the **lens editor** (§2.11) on a copy of the lens; with the
+     anamorphic adapter or the mirror lens the button is disabled and says
+     why. A lens with edited elements says so under the source
+     (*Edited lens: its name*; choosing a lens from the list puts back
+     the catalogue one), and an edit left open without applying does too (*An
+     edit of this lens is open in the lens editor*). **Save lens
+     as…** asks for a name in place and saves it in *Mine* (an
+     edited lens, with its elements). Two notes: Fast mode
+     draws the distortion and the vignetting as an approximation (and the meter adds
+     *Traced lens: distortion and falloff approximated, the render traces it*;
+     the outline, the gizmo and the glyphs go with it, and the clicks, the box
+     and the gizmo pick what is seen under the cursor),
+     and with a traced lens the lens makes its own pupil, its cat's eye,
+     its bokeh and its fringes: **the Bokeh and the Advanced optics do not
+     apply** (they belong to the simple lens, O4). Each change is one
+     undo entry (*Camera: Lens model*, *Camera: Lens*, *Camera:
+     Coating*…).
+     ![lens editor](lens-editor.png)
+     ![what the engine computes](lens-section.png)
+     ![more options of the traced lens](o4-traced-more.png)
 
-     **Ventana de los elementos** (O2b, `src/ui/components/lens-peek.ts`,
-     la lógica en `src/ui/lens-peek.ts`): al dejar el puntero un momento
-     (300 ms: cruzar la lista no abre nada) sobre una lente de la lista
-     abierta, o al llegar a ella con el teclado, se abre a un lado de la
-     lista y a la altura de la entrada una ventana con el **corte** de esa
-     lente (el mismo dibujo, `components/lens-section.ts`, que la sección
-     *Lo que calcula el motor*), su **nombre**, su **fuente** (la patente o
-     el libro, el año, lo comprobado) y los números que **el motor** da
-     para ella con la focal, el diafragma, el foco y el encuadre de la
-     cámara: *Focal*, *Diafragma* (f/ y T-stop), *Elementos · grupos*,
-     *Longitud* y, en el adaptador anamórfico, *Compresión al foco*. Sobre
-     un chip de **carácter** abre la ventana de las lentes de ese carácter
-     (hasta cuatro, en dos columnas, con el nombre del carácter arriba);
-     *Míos* no abre ventana. Al motor se le pregunta por la lente señalada
-     (`rt.wasm` de la página, o `/api/lens/info` en el escritorio), sin
-     bloquear nada: mientras contesta la tarjeta dice *Preguntando al
-     motor…*; sin motor (la versión web sin `rt.wasm`) dice *El motor no
-     está cargado: sin corte ni números para esta lente* y deja solo el
-     nombre y la fuente (regla 10: ningún número que no sea del motor); si
-     no forma imagen con esa lente y esos ajustes, lo dice. Cada lente se
-     pregunta una sola vez por cada focal, foco, diafragma y encuadre de la
-     cámara, así que volver a pasar no vuelve a preguntar; la lente puesta
-     se dibuja con lo que ya preguntó la sección. La ventana se cierra al
-     sacar el puntero o el foco, con Esc (que no hace nada más) y al
-     elegir la lente o pulsar el chip; no toma el foco ni el puntero (se
-     pulsa a través de ella), se vincula a la entrada con `aria-describedby`
-     y no sale de la ventana del navegador (en una pantalla baja se
-     recorta).
-     ![ventana de una lente de la lista](lens-hover.png)
-     ![ventana de las lentes de un carácter](lens-hover-chip.png)
-   - **Bokeh** (abierto; **solo con la lente simple**, O4: con una lente
-     trazada no sale): rejilla de 4 columnas con los 17 tipos de la lente
-     simple de `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
-     el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
-     doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
-     descripción del tipo va en el *tooltip* y, del elegido, en una nota.
-     Los tres de la lente trazada (O2: cometa de coma, respiración de
-     foco, aberración esférica variable) **no están en la rejilla** (O4:
-     son de sus lentes en *Lente ▸ Lente trazada*, y en las opciones de la
-     lente simple no se mezcla nada de la trazada); el de
-     difracción sale apagado con *Próximamente* (*Necesita óptica de
-     ondas*). Ningún camino aplica un bokeh a una cámara con lente trazada
-     ni la saca de ella: todos pasan por la orden `applyBokeh`
-     (`src/ui/lens-commands.ts`), que con una lente trazada no toca la
-     cámara y avisa *El bokeh es una opción de la lente simple: esta cámara
-     tiene una lente trazada, que hace el suyo*. Un tipo
-     con variantes (polígono recto o curvo, obstrucción pequeña o
-     grande, polvo, rayas o malla, las estrellas y el corazón, 7 o 19
-     agujeros) muestra *Variante* y su miniatura en la casilla. Mover un
-     mando a mano desmarca el tipo y la nota dice *A medida*. *Disco
-     sencillo* quita toda la óptica (la lente simple de siempre). Cada
-     elección es una entrada de deshacer (*Cámara: Tipo de bokeh*).
+     **Elements window** (O2b, `src/ui/components/lens-peek.ts`,
+     the logic in `src/ui/lens-peek.ts`): when the pointer rests for a moment
+     (300 ms: crossing the list opens nothing) on a lens of the open
+     list, or when the keyboard reaches it, a window opens beside the
+     list at the height of the entry with the **section** of that
+     lens (the same drawing, `components/lens-section.ts`, as the
+     *What the engine computes* section), its **name**, its **source** (the patent or
+     book, the year, what has been checked) and the numbers **the engine** gives
+     for it with the camera's focal length, aperture, focus and frame: *Focal length*, *Aperture* (f/ and T-stop),
+     *Elements · groups*,
+     *Length* and, on the anamorphic adapter, *Squeeze at the focus*. On
+     a **character** chip it opens the window of the lenses of that character
+     (up to four, in two columns, with the name of the character on top);
+     *Mine* opens no window. The engine is asked about the lens pointed at
+     (the page's `rt.wasm`, or `/api/lens/info` on the desktop), without
+     blocking anything: while it answers the card says *Asking the
+     engine…*; without an engine (the web version without `rt.wasm`) it says *The engine is
+     not loaded: no section or numbers for this lens* and leaves only the
+     name and the source (rule 10: no number that is not the engine's); if
+     it forms no image with that lens and those settings, it says so. Each lens is
+     asked about only once for each focal length, focus, aperture and frame of the
+     camera, so passing over again does not ask again; the lens in use
+     is drawn with what the section has already asked. The window closes when
+     the pointer or the focus leaves, with Esc (which does nothing else) and on
+     choosing the lens or pressing the chip; it takes neither the focus nor the pointer (clicks
+     go through it), it is linked to the entry with `aria-describedby`
+     and does not leave the browser window (on a short screen it is
+     clipped).
+     ![window of a lens in the list](lens-hover.png)
+     ![window of the lenses of a character](lens-hover-chip.png)
+   - **Bokeh** (open; **only with the simple lens**, O4: with a traced
+     lens it does not appear): a 4-column grid with the 17 types of the simple
+     lens from `src/data/bokeh.json`, each with its **thumbnail rendered by
+     the engine itself** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
+     twelve defocused points of light on black) and the name below; the
+     description of the type goes in the tooltip and, for the chosen one, in a note.
+     The three of the traced lens (O2: coma comet, focus
+     breathing, variable spherical aberration) are **not in the grid** (O4:
+     they belong to its lenses in *Lens ▸ Traced lens*, and in the options of the
+     simple lens nothing of the traced one is mixed in); the
+     diffraction one appears disabled with *Coming soon* (*Needs wave
+     optics*). No path applies a bokeh to a camera with a traced lens
+     or takes it out of one: all go through the `applyBokeh` command
+     (`src/ui/lens-commands.ts`), which with a traced lens does not touch the
+     camera and warns *Bokeh is an option of the simple lens: this camera
+     has a traced lens, which makes its own*. A type
+     with variants (straight or curved polygon, small or large
+     obstruction, dust, scratches or mesh, the stars and the heart, 7 or 19
+     holes) shows *Variant* and its thumbnail in the cell. Moving a
+     control by hand unmarks the type and the note says *Custom*. *Plain
+     disc* removes all the optics (the usual simple lens). Each
+     choice is one undo entry (*Camera: Bokeh type*).
      ![bokeh](camera-bokeh.png)
-   - **Óptica avanzada** (cerrado; **solo con la lente simple**, O4):
-     *Láminas* (0 es *Diafragma redondo*,
-     de 3 a 18), *Redondez*, *Giro*, *Perfil* y su *Intensidad*,
-     *Obstrucción*, *Ojo de gato* (oscurece las esquinas como los bordes
-     de una lente real; lo dice el *tooltip*), *Anamórfico* (*No · 1,33× ·
-     2×*; la imagen sale ya desestirada, y el *tooltip* avisa de que el
-     bokeh ovalado concentra más luz al mismo diafragma), el bloque
-     **Inclinación y desplazamiento** y bajo la marca
-     **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
-     que todo esto se ve en el modo Completo y en el render.
-     ![óptica avanzada](camera-optics.png)
+   - **Advanced optics** (closed; **only with the simple lens**, O4):
+     *Blades* (0 is *Round iris*,
+     from 3 to 18), *Roundness*, *Rotation*, *Profile* and its *Intensity*,
+     *Obstruction*, *Cat's eye* (darkens the corners like the edges
+     of a real lens; the tooltip says so), *Anamorphic* (*None · 1.33× ·
+     2×*; the image comes out already desqueezed, and the tooltip warns that the
+     oval bokeh gathers more light at the same aperture), the
+     **Tilt and shift** block and under the
+     **NOT PHYSICAL** mark *Chromatic aberration* and *Swirl*. A note reminds
+     that all this shows in Full mode and in the render.
+     ![advanced optics](camera-optics.png)
 
-     **Inclinación y desplazamiento** (O4, `src/ui/panels/insp-tilt.ts`; el
-     mismo bloque en la *Óptica avanzada* de la lente simple y en *Más
-     opciones* de la trazada, cada modelo con su inclinación):
-     *Inclinación*, un deslizador de 0° a 12° (cuánto gira el plano de
-     enfoque alrededor del punto de enfoque; a 0° queda de frente);
-     *El plano se aleja hacia*: un **dial** (arrastrar la aguja; Mayús
-     ajusta de 15° en 15°; con el foco, las flechas giran 15° y Mayús +
-     flechas 1°), **cuatro atajos** (*Arriba: como el suelo*, *Abajo: como
-     el techo*, *Izquierda: como una pared a la derecha*, *Derecha: como una
-     pared a la izquierda*; con la inclinación a 0, un atajo la pone a 2°
-     hacia ese lado) y el ángulo en grados (0 derecha, 90 arriba). Es la
-     lectura de fotógrafo del par guardado (inclinación con signo y eje):
-     hacia dónde de la imagen se aleja el plano y cuánto, nunca un número
-     negativo. **Por dos puntos…**: arma el visor; el primer clic en el
-     producto (*Haz clic en el primer punto que tiene que salir nítido*) y
-     el segundo (*…el plano de enfoque pasará por los dos*) ajustan la
-     inclinación **y la distancia de enfoque** para que los dos salgan
-     nítidos, en **una sola entrada de deshacer** (*Inclinar el plano de
-     enfoque por dos puntos*): de los planos que pasan por los dos, el menos
-     inclinado (dos puntos a la misma profundidad solo enfocan). Si no hay
-     inclinación que llegue (más de 12°), los puntos están en línea con la
-     vista o el plano pasaría por detrás, un aviso lo dice y espera otro
-     segundo punto; Esc o volver a pulsar lo sueltan. *De frente* quita la
-     inclinación. **Ver el plano** dibuja el plano de enfoque en el visor:
-     un cuadrado translúcido con su rejilla y su contorno, en la tinta de
-     la interfaz (grises), alrededor del producto y en perspectiva (un
-     trapecio cuando el plano se tumba), con el punto de enfoque; sale
-     también mientras el puntero o el foco están en estos mandos y mientras
-     se eligen los dos puntos (con el primero marcado), en Rápido y en
-     Completo. *Desplazamiento* H y V en mm (mueve el encuadre sin cambiar
-     la perspectiva; el modo Rápido lo muestra) es de la cámara, sea cual
-     sea su lente; las *Verticales rectas* de K3 suman el suyo al
-     renderizar, sin escribir en estos campos, y el plano dibujado y *Por
-     dos puntos* son los de la cámara nivelada que se renderiza. Una nota recuerda que el modo
-     Rápido no desenfoca: el plano sale en el visor mientras se ajusta y el
-     modo Completo y el render enfocan en él. Cada cambio es una entrada de
-     deshacer (un arrastre del deslizador o del dial, uno solo).
-     ![óptica avanzada de la lente simple](o4-simple-optics.png)
-     ![el plano de enfoque en el visor](o4-tilt-overlay.png)
-   - **Filtros** (cerrado si la cámara no tiene ninguno; O3a): la pila de
-     filtros de efecto delante del objetivo, hasta tres, en orden. Sin
-     ninguno dice *Sin filtros*. **Añadir filtro** pone una *Difusión
-     negra* de grado 1/2 (o una *Estrella* si ya hay una difusión negra);
-     con tres, el botón se apaga y dice *Tres filtros como máximo*. Por
-     filtro: *Filtro* (lista con los ocho tipos) con la frase de lo que
-     hace fotográficamente debajo, una **×** para quitarlo, *Grado*
-     (*1/8 · 1/4 · 1/2 · 1 · 2*) y, según el tipo, *Tinte* (muestra de
-     color y *Tinte propio* para volver al del tipo), *Puntas* (*4 · 6 ·
-     8*) y *Ángulo*. Cada cambio es una entrada de deshacer (*Cámara:
-     Añadir filtro*, *Cámara: Grado*…). Una nota dice que el modo
-     Completo y el render los trazan y que el Rápido dibuja una
-     aproximación; con filtros, el medidor del modo Rápido añade
-     *Filtros: aproximación, el render lo hace el motor*.
-     ![filtros](lens-filters.png)
-     Debajo de la pila, **Cristal frontal** (S3; la subsección se abre
-     también si está encendido): un interruptor *Cristal frontal activado*
-     y, encendido, *Gotas* (%, la parte del cristal que cubren; las que se
-     tocan se juntan), *Tamaño de gota* (mm), *Polvo* (%), *Semilla* con
-     *Otras gotas* (barajar) y *Distancia* (*Automática*, donde está el
-     elemento frontal, o en mm desde el centro del objetivo, hasta 200: una
-     ventana delante de la cámara). Cada cambio es una entrada de deshacer
-     (*Cámara: Cristal frontal activado*, *Cámara: Tamaño de gota*…). Una
-     nota dice que el modo Completo y el render lo trazan y que el Rápido
-     dibuja una aproximación (S3b, decisión S3 ◆9: las gotas como discos
-     suaves de borde oscuro, el polvo como un tinte o motas, hechos con las
-     gotas y motas que coloca el motor, `rt_scene_glass`); con el cristal
-     encendido, el medidor del modo Rápido añade *Cristal frontal:
-     aproximación de las N gotas y M motas del motor* (sin `rt.wasm`,
-     *Cristal frontal: Rápido lo dibuja con el motor*). Con una cámara
-     panorámica, otra nota dice que no tiene elemento frontal y el cristal no
-     hace nada.
-     **Gotas y polvo** (S3b), segmentado *A mano · De la escena*, una entrada
-     de deshacer (*Cámara: Gotas y polvo*). *A mano* son los mandos de arriba
-     (una foto fija). *De la escena* quita *Gotas*, *Tamaño de gota* y
-     *Polvo* (la *Semilla* y la *Distancia* se quedan) y dice: que
-     *Iniciar* en la barra de físicas simula la lluvia y el polvo de los
-     efectos de la escena cayendo en el cristal (las gotas se posan, se
-     juntan, resbalan según el arriba de la cámara y se llevan el polvo; el
-     polvo se queda donde el cristal mira hacia arriba) y que la grabación es
-     un clip de *Físicas* de la cámara; qué efectos lo alimentan (*Lo
-     alimentan: Lluvia*, o que ninguno: *añade Lluvia, Gotas de agua, Motas de
-     polvo, Polen, Polvareda o Ceniza*); qué tiene la grabación en el cabezal
-     (*Grabado: 97 fotogramas, 215 gotas y 0 motas en el cabezal*, los números
-     del motor; sin grabación, *el cristal está seco hasta que corra una
-     simulación*), y, si la escena ha cambiado desde que se grabó (otra clave
-     de simulación: la cámara, los efectos, la semilla), *inicia otra vez
-     para poner el cristal al día*.
-     Si el motor del render no lee el cristal gota a gota (le falta el bit 7,
-     S3c: un motor anterior, como un lanzador de escritorio de antes) y la
-     escena alimenta el cristal (encendido, *De la escena*, con algún efecto
-     que lo alimenta y una cámara que no es panorámica), una nota lo dice:
-     *el render enseñará este cristal limpio*; *A mano*, no (ese lo dibuja
-     cualquier motor).
-     ![el cristal frontal mojado en Completo](lens-glass.png)
-     ![la aproximación del cristal en Rápido](lens-glass-fast.png)
-7. **Imagen** — Exposición (EV), transformada de vista (Estándar /
-   Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
-   deslizador y valor.
-   K3: **Modo de exposición**, segmentado *A mano · Automática*; en
-   automática el campo pasa a llamarse **Brillo (EV)** (la compensación
-   sobre lo medido, 0 al encenderla) y una nota dice lo medido (*Medida de
-   la imagen del motor: +4,64 EV*, o *aún sin medir* hasta que el modo
-   Completo o el render dan imagen; la barra de estado lo repite).
-   **Presets de brillo**: chips *Día luminoso · EV 7* y *Tarde de lámparas ·
-   EV 5*, que ponen la exposición a mano (*Exposición: Día luminoso*).
-   **Exterior (rayo de cámara)**, deslizador 0,05–1 (1, sin efecto, por
-   defecto): oscurece lo que la cámara ve del entorno, también por las
-   ventanas, sin oscurecer la habitación.
+     **Tilt and shift** (O4, `src/ui/panels/insp-tilt.ts`; the
+     same block in the simple lens's *Advanced optics* and in the traced lens's *More
+     options*, each model with its own tilt):
+     *Tilt*, a slider from 0° to 12° (how far the plane of
+     focus turns about the focus point; at 0° it is square to the view);
+     *Plane runs to*: a **dial** (drag the needle; Shift
+     snaps from 15° to 15°; with the focus, the arrows turn 15° and Shift +
+     arrows 1°), **four shortcuts** (*Up: like the floor*, *Down: like
+     the ceiling*, *Left: like a wall on the right*, *Right: like a
+     wall on the left*; with the tilt at 0, a shortcut sets it to 2°
+     toward that side) and the angle in degrees (0 right, 90 up). It is the
+     photographer's reading of the stored pair (signed tilt and axis):
+     toward which side of the image the plane runs away and how much, never a
+     negative number. **Through two points…**: arms the viewport; the first click on the
+     product (*Click on the first point that must come out sharp*) and
+     the second (*…the plane of focus will pass through both*) set the
+     tilt **and the focus distance** so that both come out
+     sharp, in **a single undo entry** (*Tilt the plane of
+     focus through two points*): of the planes that pass through both, the least
+     tilted (two points at the same depth only focus). If no
+     tilt reaches (more than 12°), the points are in line with the
+     view or the plane would pass behind, a notice says so and awaits another
+     second point; Esc or pressing again releases it. *Square* removes the
+     tilt. **Show the plane** draws the plane of focus in the viewport:
+     a translucent square with its grid and its outline, in the interface's
+     ink (greys), around the product and in perspective (a
+     trapezoid when the plane lies back), with the focus point; it also appears
+     while the pointer or the focus is on these controls and while
+     the two points are chosen (with the first one marked), in Fast and in
+     Full. *Shift* H and V in mm (moves the frame without changing
+     the perspective; Fast mode shows it) belongs to the camera, whatever
+     its lens; K3's *Straight verticals* add theirs when
+     rendering, without writing into these fields, and the drawn plane and *Through
+     two points* are those of the level camera that is rendered. A note reminds that
+     Fast mode does not blur: the plane appears in the viewport while it is set and
+     Full mode and the render focus on it. Each change is one undo entry
+     (one drag of the slider or of the dial, a single one).
+     ![advanced optics of the simple lens](o4-simple-optics.png)
+     ![the plane of focus in the viewport](o4-tilt-overlay.png)
+   - **Filters** (closed if the camera has none; O3a): the stack of
+     effect filters in front of the lens, up to three, in order. With
+     none it says *No filters*. **Add filter** puts a *Black diffusion*
+     of grade 1/2 (or a *Star* if there is already a black diffusion);
+     with three, the button turns off and says *Three filters at most*. Per
+     filter: *Filter* (list of the eight types) with the sentence of what it
+     does photographically below, a **×** to remove it, *Grade*
+     (*1/8 · 1/4 · 1/2 · 1 · 2*) and, depending on the type, *Tint* (colour
+     swatch and *Own tint* to return to the type's), *Points* (*4 · 6 ·
+     8*) and *Angle*. Each change is one undo entry (*Camera:
+     Add filter*, *Camera: Grade*…). A note says that Full
+     mode and the render trace them and that Fast draws an
+     approximation; with filters, the Fast mode meter adds
+     *Filters: approximation, the render is the engine’s*.
+     ![filters](lens-filters.png)
+     Below the stack, **Front glass** (S3; the subsection opens
+     also if it is on): a switch *Front glass on*
+     and, when on, *Drops* (%, the part of the glass they cover; those that
+     touch merge), *Drop size* (mm), *Dust* (%), *Seed* with
+     *Other drops* (shuffle) and *Distance* (*Automatic*, where the front
+     element is, or in mm from the centre of the lens, up to 200: a
+     window in front of the camera). Each change is one undo entry
+     (*Camera: Front glass on*, *Camera: Drop size*…). A
+     note says that Full mode and the render trace it and that Fast
+     draws an approximation (S3b, decision S3 ◆9: the drops as soft
+     discs with a dark edge, the dust as a tint or motes, made from the
+     drops and motes the engine places, `rt_scene_glass`); with the glass
+     on, the Fast mode meter adds *Front glass:
+     approximation of the engine’s N drops and M motes* (without `rt.wasm`,
+     *Front glass: Fast draws it with the engine*). With a
+     panoramic camera, another note says that it has no front element and the glass
+     does nothing.
+     **Drops and dust** (S3b), segmented *By hand · From the scene*, one undo entry
+     (*Camera: Drops and dust*). *By hand* are the controls above
+     (a still picture). *From the scene* removes *Drops*, *Drop size* and
+     *Dust* (the *Seed* and the *Distance* stay) and says: that
+     *Start* in the physics bar simulates the rain and the dust of the
+     scene's effects falling on the glass (the drops settle, merge,
+     slide down according to the camera's up and carry the dust away; the
+     dust stays where the glass faces up) and that the recording is
+     a *Physics* clip of the camera; which effects feed it (*Fed by:
+     Rain*, or that none: *add Rain, Water drops, Dust motes,
+     Pollen, a Dust cloud or Ash*); what the recording holds at the playhead
+     (*Recorded: 97 frames, 215 drops and 0 motes at the playhead*, the
+     engine's numbers; with no recording, *the glass is dry until a
+     simulation runs*), and, if the scene has changed since it was recorded (another
+     simulation key: the camera, the effects, the seed), *Start again
+     to bring the glass up to date*.
+     If the render engine does not read the glass drop by drop (it lacks bit 7,
+     S3c: an older engine, like a desktop launcher from before) and the
+     scene feeds the glass (on, *From the scene*, with some effect
+     that feeds it and a camera that is not panoramic), a note says so:
+     *the render will show this glass clean*; *By hand*, it does not (that one is drawn by
+     any engine).
+     ![the wet front glass in Full](lens-glass.png)
+     ![the glass approximation in Fast](lens-glass-fast.png)
+7. **Image** — Exposure (EV), view transform (Standard /
+   Filmic / AgX), glow, sharpen, saturation, contrast, vignette. All with
+   slider and value.
+   K3: **Exposure mode**, segmented *By hand · Automatic*; in
+   automatic the field is renamed **Brightness (EV)** (the compensation
+   over what is metered, 0 when switched on) and a note says what was metered (*Metered
+   from the engine’s image: +4.64 EV*, or *not metered yet* until Full mode
+   or the render give an image; the status bar repeats it).
+   **Brightness presets**: chips *Bright day · EV 7* and *Evening lamps ·
+   EV 5*, which set the exposure by hand (*Exposure: Bright day*).
+   **Exterior (camera ray)**, slider 0.05–1 (1, no effect, the
+   default): darkens what the camera sees of the environment, through the
+   windows too, without darkening the room.
 
-**Con una o varias piezas seleccionadas:**
+**With one or several parts selected:**
 
-1. **Material** — Tarjeta del material actual: miniatura esférica,
-   nombre, categoría, y botón *Cambiar…* que despliega el **catálogo**:
-   pestañas de categoría (`MATERIAL_CATEGORIES`), rejilla de esferas de
-   4 columnas con el nombre debajo, filtro por texto. Clic asigna a la
-   selección al nivel elegido (§4.1); **arrastrar también vale**: la
-   miniatura se suelta sobre una pieza del visor (§2.3) o una fila del
-   árbol (§2.2), y `Alt` al soltar da una copia propia. La esfera de la
-   tarjeta del material se arrastra igual (salvo la del material neutro
-   por defecto, que no es nada que repartir) y **enlaza** el destino con
-   esa instancia. A nivel *Caras* el catálogo aparece cuando hay una cara
-   seleccionada (mientras no, el inspector dice *Haz clic en una cara…*) y
-   la suelta cae en la cara bajo el cursor. Debajo, los
-   **parámetros** de la familia del material: color, metal, rugosidad,
-   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
-   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm,
-   *Paredes*: *Macizo · Pared fina*, y bajo ellos, E9, *Dispersión
-   interna* en mm —lo que recorre la luz dentro entre dos rebotes; 0,
-   transparente—, *Color de dispersión* —lo que conserva cada rebote de
-   cada color— y *Dirección*, de −0,9 a 0,9, con la ayuda «hacia delante /
-   hacia atrás»; la ayuda de *Dispersión interna* dice que el modo Rápido
-   la aproxima; y, E9c, *Número de Abbe*, de 0 a 100 —la dispersión
-   cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
-   ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
-   (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
-   anillos*, variación, ruidos, *Poros*, *Nudos*, *Tamaño de los nudos* en
-   mm, *Variación de tamaño* y *Oscuridad de los nudos*: desde M3d la
-   vista Rápida los enseña todos, horneados como los hornea el nodo
-   *Madera* —un corte por el frente de las piezas, proyectado en cada
-   cara—, y ya no llevan el punto «·»; desde M3e los nudos no van en el
-   horneado sino encima, en cada pieza donde los pone el modo Completo (la
-   capa de E6, también en un material de nodos con el nodo *Madera*); el
-   modo Completo y los renders pintan la madera en tres dimensiones; los
-   nudos, en el bambú, el MDF y el ébano, están desactivados y su ayuda
-   dice por qué); tela (dos colores de hilo, tipo de tejido, *Hilos por cm*
-   (2–200, físicos), relieve, pelusa: el tejido, su densidad y su relieve
-   los pintan el modo Completo y los renders, con su punto «·»; desde M3e
-   la vista Rápida también los teje, horneados por el nodo *Tela*, cuando
-   un hilo ocupa al menos 2,5 téxeles del horneado de 512² en las piezas
-   del material —un tejido grueso o una pieza pequeña: en una de 120 mm,
-   la lona, la malla, el carbono y el punto—, con la pelusa encima; si no,
-   muestra su color medio, sin muaré; la ayuda del punto «·» y la nota de
-   la familia lo dicen); emisor (tipo, temperatura,
-   potencia).
-   Solo se pintan los que la familia usa. Un botón *Convertir en material
-   propio* separa la instancia del preset cuando se edita (el nombre pasa
-   a "Oro (editado)").
-   Sobre los parámetros, una fila **Simple · Nodos** y el botón **Nodos…**
-   (fase M3a). *Nodos* convierte el material en su grafo mínimo (una
-   entrada de deshacer); *Nodos…* hace lo mismo si hace falta y abre el
-   **editor de material** (§2.10). En modo *Nodos* los parámetros dejan
-   sitio a unas líneas que dicen cuántos nodos tiene el grafo, cómo lo
-   dibuja *Rápido* y qué aproxima, y qué hacen *Completo* y *Render* (el
-   motor ejecuta el grafo en cada punto; uno anterior, el valor medio de
-   cada salida; fase M3b). Volver a
-   *Simple* desde un grafo que no es el mínimo pregunta en línea (§4.3):
-   *¿Volver a Simple? Simple guarda solo los valores propios de la salida:
-   se van N nodos y sus conexiones (Deshacer los recupera)* · **Volver a
-   Simple** · *Cancelar*. El menú contextual de la pieza tiene en
-   *Material ▸* la entrada **Editar con nodos…**, y la paleta de comandos
-   *Abrir el editor de material*.
-2. **Texturas** (fase M2a) — Una nota dice que *Rápido*, *Completo* y
-   *Render* dibujan las texturas y las etiquetas en el mismo sitio (el motor
-   las pinta desde M2b). Una fila por **ranura**: *Color*,
-   *Rugosidad*, *Metal*, *Normal*, *Alfa*, *Emisión*, cada una con la
-   vista previa de su imagen (un cuadrado rayado sin imagen), su nombre y
-   debajo el archivo y su tamaño en píxeles (o *Sin imagen*), **Cargar…**
-   (*Cambiar…* con imagen; el diálogo del sistema en escritorio, el
-   selector de archivos en el navegador; PNG o JPEG) y la papelera
-   (*Quitar*). La ayuda de cada ranura dice qué hace la imagen (*multiplica
-   el color base*…). Con imagen, lo suyo: *Canal* (*R · G · B · A · Lum*) e
-   *Invertir* en rugosidad, metal y alfa (y en un mapa de alturas);
-   *Mapa de alturas* e *Intensidad* (con mapa de alturas, en mm del
-   blanco) en normal; *Como recorte* y su *Umbral* en alfa; *Tinte* e
-   *Intensidad* en emisión. Una ranura con mapeado propio (del archivo) lo
-   dice, con *Usar el común*. Con alguna imagen, el bloque **Mapeado**
-   (el común): *Proyección* (*UV · Caja · Plana · Cilíndrica · Esférica*),
-   *Eje* (plana, cilíndrica, esférica), *Juego UV* (*1 · 2*, en UV),
-   *Tamaño* en las unidades de la interfaz con *Ajustar a la pieza* (no
-   en UV ni en esférica; una nota dice qué es, y en la cilíndrica que es
-   la circunferencia), *Giro*, *Desplazamiento* y *Repetición* (U y V),
-   *Bordes* (*Repetir · Estirar el borde · Espejo*); si alguna pieza del
-   material no tiene UV, con *UV* una nota lo dice y propone *Caja*.
-   Después, **Etiquetas**: una fila por etiqueta, la de encima arriba, con
-   su imagen, su nombre y su tamaño en mm, *Traer delante* y *Enviar
-   atrás*, la papelera, **Mover etiqueta** (activa la herramienta del visor;
-   pulsado mientras lo está) y, desplegable, *Ancho*, *Giro*, *Alcance*
-   (con su nota), *Rugosidad*, *Barniz* y *Relieve del papel*; *Aún no hay
-   etiquetas* si no hay; una nota cuando el material lo comparten varias
-   piezas (*Sale en las 3 piezas que comparten este material*) y otra
-   cuando hay más de las que dibuja *Rápido* (seis). Al pie,
-   **Añadir etiqueta…**: elige la imagen y activa la herramienta. Todo es
-   una acción del *store*: un arrastre de un campo, una entrada de
-   deshacer (*Deshacer: Mapeado de Oro*, *Cargar tex.png en Color de
-   Pintura*, *Añadir la etiqueta logo.png a Pintura*).
-3. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
-   básicos de `WEAR_PRESETS` en una fila de chips, el mando maestro, y
-   un deslizador por tipo (solo los de `WEAR_FAMILY_TYPES` para la familia
-   actual) que despliega sus mandos al activarse. Escala, semilla, *variar
-   por pieza*, y *Aplicar a toda la pieza*.
-4. **Pieza** — Nombre, visible, **visible a cámara** (K3: apagado, la
-   cámara no la ve y sigue dando luz, reflejos y sombra; *Ocultar Techo a la
-   cámara*; es lo que quita el techo de una planta), bloqueada, posición / rotación / escala
-   (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
-   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado. El
-   bisel es del material (lo dice la nota bajo el campo: *Es del material.
-   El modo Completo redondea las aristas vivas en el sombreado, como un
-   redondeo de este radio; la vista Rápida las muestra vivas*): lo dibuja el
-   motor desde E6 (`ARCHITECTURE.md` §5.2 septies); three.js no puede hacerlo
-   barato y la vista *Rápida* no lo intenta.
-5. **Físicas** (fase S2; `SPEC.md` §3.1) — **Papel**, segmentado:
-   *Estático · Dinámico · Tela · Líquido*, con *Tela* y *Líquido*
-   desactivados y un *tooltip* que dice *próximamente*; con varios nodos de
-   papeles distintos, ninguno marcado. Si la pieza cae con un grupo
-   dinámico que no cae *como piezas*, una nota lo dice (*Cae con Tapón,
-   como un cuerpo*). **Densidad** en kg/m³, arrastrable; debajo, en
-   auxiliar, de dónde sale (*Del material (Metal): 7 800 kg/m³*, *Sin
-   material: 1 000 kg/m³ (agua)* o *Densidad propia*, con el botón *Usar
-   la del material*). **Rozamiento** (0–2) y **Rebote** (0–1),
-   con deslizador y valor (U15). Con un grupo o un modelo, el interruptor **Como piezas**
-   y su nota. Una nota dice que la masa es la densidad por el volumen de
-   la envolvente convexa, y el botón **Dejar caer**. Cada cambio es una
-   acción del *store* y un arrastre una sola entrada de deshacer
-   (*Deshacer: Físicas de Cuerpo*). En el nivel *Caras*, la sección edita
-   la pieza de la cara.
+1. **Material** — Card of the current material: spherical thumbnail,
+   name, category, and a *Change…* button that unfolds the **catalogue**:
+   category tabs (`MATERIAL_CATEGORIES`), a 4-column grid of spheres
+   with the name below, text filter. Click assigns to the
+   selection at the chosen level (§4.1); **dragging also works**: the
+   thumbnail is dropped onto a part in the viewport (§2.3) or a row of the
+   tree (§2.2), and `Alt` on dropping gives an own copy. The sphere of the
+   material card is dragged the same way (except that of the default neutral
+   material, which is nothing to distribute) and **links** the target with
+   that instance. At the *Faces* level the catalogue appears when a face is
+   selected (until then, the inspector says *Click on a face…*) and
+   the drop lands on the face under the cursor. Below, the
+   **parameters** of the material's family: colour, metal, roughness,
+   clear coat, IOR, transmission, opacity, anisotropy, subsurface; glass
+   (colour, roughness, IOR, transmission, *Absorption distance* in mm,
+   *Walls*: *Solid · Thin wall*, and below them, E9, *Internal
+   scattering* in mm —how far the light travels inside between two bounces; 0,
+   clear—, *Scattering colour* —what each bounce keeps of
+   each colour— and *Direction*, from −0.9 to 0.9, with the help "forwards /
+   backwards"; the help of *Internal scattering* says that Fast mode
+   approximates it; and, E9c, *Abbe number*, from 0 to 100 —the chromatic
+   dispersion of solid glass: the lower, the more it splits the colours; 0,
+   none—, whose help also says that Fast approximates it); wood
+   (two colours, ring density per 100 mm, *Scale*, *Ring
+   contrast*, variation, noises, *Pores*, *Knots*, *Knot size* in
+   mm, *Size variation* and *Knot darkness*: since M3d the
+   Fast view shows them all, baked as the *Wood* node
+   bakes them —a slice through the front of the parts, projected onto every
+   face—, and they no longer carry the "·" dot; since M3e the knots are not in the
+   bake but on top, on each part where Full mode puts them (the
+   E6 layer, also in a node material with the *Wood* node); Full
+   mode and the renders paint the wood in three dimensions; the
+   knots, on bamboo, MDF and ebony, are disabled and their help
+   says why); fabric (two thread colours, weave type, *Threads per cm*
+   (2–200, physical), relief, fuzz: the weave, its density and its relief
+   are painted by Full mode and the renders, with their "·" dot; since M3e
+   the Fast view also weaves them, baked by the *Fabric* node, when
+   a thread spans at least 2.5 texels of the 512² bake on the parts
+   of the material —a coarse weave or a small part: on one of 120 mm,
+   canvas, mesh, carbon and knit—, with the fuzz on top; otherwise it
+   shows its mean colour, without moiré; the help of the "·" dot and the note of
+   the family say so); emitter (type, temperature,
+   power).
+   Only those the family uses are drawn. A *Make it my own material* button
+   separates the instance from the preset when edited (the name becomes
+   "Gold (edited)").
+   Above the parameters, a **Simple · Nodes** row and the **Nodes…** button
+   (phase M3a). *Nodes* converts the material into its minimal graph (one
+   undo entry); *Nodes…* does the same if needed and opens the
+   **material editor** (§2.10). In *Nodes* mode the parameters give way
+   to a few lines saying how many nodes the graph has, how
+   *Fast* draws it and what it approximates, and what *Full* and *Render* do (the
+   engine runs the graph at each point; an older one, the mean value of
+   each output; phase M3b). Going back to
+   *Simple* from a graph that is not the minimal one asks inline (§4.3):
+   *Go back to Simple? Simple keeps only the output's own values:
+   N nodes and their connections go (Undo brings them back)* · **Back to
+   Simple** · *Cancel*. The part's context menu has, under
+   *Material ▸*, the entry **Edit with nodes…**, and the command palette
+   *Open the material editor*.
+2. **Textures** (phase M2a) — A note says that *Fast*, *Full* and
+   *Render* draw the textures and labels in the same place (the engine
+   paints them since M2b). One row per **slot**: *Colour*,
+   *Roughness*, *Metal*, *Normal*, *Alpha*, *Emission*, each with the
+   preview of its image (a striped square without an image), its name and
+   below it the file and its size in pixels (or *No image*), **Load…**
+   (*Replace…* with an image; the system dialog on the desktop, the
+   file picker in the browser; PNG or JPEG) and the bin
+   (*Remove*). The help of each slot says what the image does (*multiplies
+   the base colour*…). With an image, its own controls: *Channel* (*R · G · B · A · Lum*) and
+   *Invert* on roughness, metal and alpha (and on a height map);
+   *Height map* and *Strength* (with a height map, in mm of the
+   white) on normal; *As cut-out* and its *Threshold* on alpha; *Tint* and
+   *Strength* on emission. A slot with its own mapping (from the file) says
+   so, with *Use the shared one*. With any image, the **Mapping** block
+   (the shared one): *Projection* (*UV · Box · Planar · Cylindrical · Spherical*),
+   *Axis* (planar, cylindrical, spherical), *UV set* (*1 · 2*, in UV),
+   *Size* in the interface units with *Fit to part* (not
+   in UV or spherical; a note says what it is, and in cylindrical that it is
+   the circumference), *Rotation*, *Offset* and *Repeat* (U and V),
+   *Edges* (*Repeat · Stretch the edge · Mirror*); if any part of the
+   material has no UVs, with *UV* a note says so and suggests *Box*.
+   Then, **Labels**: one row per label, the top one first, with
+   its image, its name and its size in mm, *Bring forward* and *Send
+   back*, the bin, **Move label** (activates the viewport tool;
+   pressed while it is) and, collapsible, *Width*, *Rotation*, *Reach*
+   (with its note), *Roughness*, *Varnish* and *Paper relief*; *No labels
+   yet* if there are none; a note when the material is shared by several
+   parts (*It shows on the 3 parts that share this material*) and another
+   when there are more than Fast draws (six). At the foot,
+   **Add label…**: chooses the image and activates the tool. Everything is
+   a store action: a drag of a field, one undo entry
+   (*Undo: Mapping of Gold*, *Load tex.png into Colour of
+   Paint*, *Add label logo.png to Paint*).
+3. **Wear** — Three quick buttons (*New · Used · Old*), the 9
+   basics of `WEAR_PRESETS` in a row of chips, the master control, and
+   a slider per type (only those of `WEAR_FAMILY_TYPES` for the current
+   family) that unfolds its controls when activated. Scale, seed, *vary
+   per part*, and *Apply to the whole model*.
+4. **Part** — Name, visible, **visible to camera** (K3: off, the
+   camera does not see it and it still gives light, reflections and shadow; *Hide Ceiling from the
+   camera*; it is what removes the ceiling from a plan), locked, position / rotation / scale
+   (three fields per row, draggable), *Rest on the floor*, *Centre*,
+   *Drop* (phase S2), edge bevel radius (mm), smoothing. The
+   bevel belongs to the material (the note under the field says so: *Belongs to the material.
+   Full mode rounds the sharp edges in the shading, as a fillet of this
+   radius; the Fast preview shows them sharp*): the engine draws it since E6
+   (`ARCHITECTURE.md` §5.2 septies); three.js cannot do it
+   cheaply and the *Fast* view does not try.
+5. **Physics** (phase S2; `SPEC.md` §3.1) — **Role**, segmented:
+   *Static · Dynamic · Cloth · Liquid*, with *Cloth* and *Liquid*
+   disabled and a tooltip saying *coming soon*; with several nodes of
+   different roles, none marked. If the part falls with a dynamic
+   group that does not fall *as parts*, a note says so (*Falls with Cap,
+   as one body*). **Density** in kg/m³, draggable; below it, in
+   auxiliary text, where it comes from (*From the material (Metal): 7 800 kg/m³*, *Without a
+   material: 1 000 kg/m³ (water)* or *Its own density*, with the button *Use
+   the material’s*). **Friction** (0–2) and **Bounciness** (0–1),
+   with slider and value (U15). With a group or a model, the **As parts** switch
+   and its note. A note says that the mass is the density times the volume of
+   the convex hull, and the **Drop** button. Each change is a
+   store action and a drag a single undo entry
+   (*Undo: Physics of Body*). At the *Faces* level, the section edits
+   the part of the face.
 
-**Con una primitiva seleccionada** (fase U9), antes de *Material*, la
-sección **Primitiva**: *Forma* (el nombre, en texto), y un campo por
-medida del catálogo, arrastrable, en mm (las unidades de la interfaz) o en
-número entero: ancho, fondo, alto, radio, radio de bisel y sus segmentos,
-segmentos, radio del tubo, radio interior, escalones; con las palabras de
-cada forma donde las tiene (*Radio del anillo* del toro, *Radio exterior*
-del tubo, *Alto total* de la cápsula, *Radio de la curva* y *Segmentos de
-la curva* del fondo infinito). Cambiar una medida regenera la malla al
-momento con una acción del *store*; un arrastre es una sola entrada de
-deshacer (*Deshacer: Cambiar Alto de Caja*) y la pieza conserva su apoyo
-(el centro de la base de su caja no se mueve: una base que crece, crece
-hacia arriba). Las medidas fuera de lo que da una forma se acotan (un
-bisel no pasa de la mitad del lado menor). Una nota dice que las medidas
-van en los ejes de la pieza y que su escala las multiplica, otra cuántas
-copias enlazadas cambian con ella, y el botón **Convertir en malla** la
-congela (la sección desaparece; deshacer la devuelve). En el *Fondo
-infinito*, además, **Ajustar a la cámara** lo vuelve a girar y dimensionar
-para la cámara activa y el formato de salida de ahora, en una entrada de
-deshacer (*Deshacer: Ajustar Fondo infinito a la cámara*).
+**With a primitive selected** (phase U9), before *Material*, the
+**Primitive** section: *Shape* (the name, as text), and one field per
+measure in the catalogue, draggable, in mm (the interface units) or as a
+whole number: width, depth, height, radius, bevel radius and its segments,
+segments, tube radius, inner radius, steps; with the words of
+each shape where it has them (*Ring radius* of the torus, *Outer radius*
+of the tube, *Total height* of the capsule, *Curve radius* and *Curve segments* of
+the infinity sweep). Changing a measure regenerates the mesh at once
+with a store action; a drag is a single undo entry
+(*Undo: Change Height of Box*) and the part keeps its footing
+(the centre of the base of its box does not move: a base that grows, grows
+upward). Measures outside what a shape allows are clamped (a
+bevel does not exceed half the shorter side). A note says that the measures
+are along the part's axes and that its scale multiplies them, another how many
+linked copies change with it, and the **Convert to mesh** button
+freezes it (the section disappears; undo brings it back). On the *Infinity
+sweep*, in addition, **Fit to camera** turns and sizes it again
+for the current active camera and output format, in one undo
+entry (*Undo: Fit Infinity sweep to the camera*).
 
-**Con un foco seleccionado:** nombre (vacío: el de por defecto, en gris),
-la nota *Foco propio* en los propios, rol (si viene de un montaje), tipo
-(*Área · Punto · Foco · Sol*), forma (área: rectángulo, cuadrado, disco,
-elipse, esfera), tamaño (ancho y alto; diámetro en la esfera) o radio
-(punto y foco), **posición** (acimut y elevación relativos a cámara, y
-distancia; y **Coordenadas** X, Y, Z en las unidades de la interfaz, que
-mueven el foco sin cambiar a dónde apunta), **apuntar a** (botón con menú:
-el centro del producto, un punto…, una pieza…; debajo, a qué apunta ahora),
-giro (paneles no redondos), dispersión (área) o ángulo de cono y
-**transición** en % (foco), disco del sol, temperatura o color, potencia en
-vatios (W/m² en el sol) con el equivalente en lúmenes (lux en el sol) en
-auxiliar y lo que significan los vatios, *visible en reflejos*, *visible a
-cámara*, *proyecta sombra*, encendido; botones *Colocar por reflejo*,
-*Colocar sobre superficie*, *Mirar a través*, *Duplicar*, *Eliminar* (fase
-L4). Acimut, elevación, giro, dispersión, cono, transición y disco del sol
-van con deslizador y valor (U15, §4.4).
+**With a light selected:** name (empty: the default one, in grey),
+the note *Own light* on the own ones, role (if it comes from a setup), type
+(*Area · Point · Spot · Sun*), shape (area: rectangle, square, disc,
+ellipse, sphere), size (width and height; diameter on the sphere) or radius
+(point and spot), **position** (azimuth and elevation relative to the camera, and
+distance; and **Coordinates** X, Y, Z in the interface units, which
+move the light without changing where it aims), **aim at** (button with menu:
+the centre of the product, a point…, a part…; below, what it aims at now),
+roll (non-round panels), spread (area) or cone angle and
+**soft edge** in % (spot), sun disc, temperature or colour, power in
+watts (W/m² on the sun) with the equivalent in lumens (lux on the sun) in
+auxiliary text and what the watts mean, *visible in reflections*, *visible to
+camera*, *casts shadows*, on/off; buttons *Place by reflection*,
+*Place on surface*, *Look through*, *Duplicate*, *Delete* (phase
+L4). Azimuth, elevation, roll, spread, cone, soft edge and sun disc
+come with slider and value (U15, §4.4).
 
-**Pestaña *Míos*** en cada catálogo (materiales, montajes de luz, tipos de
-producto, estudios): lo guardado por el usuario, con miniatura, renombrar
-y eliminar al pasar el ratón, y los botones *Exportar biblioteca* e
-*Importar biblioteca* (JSON) al pie. Fase U4.
+**The *Mine* tab** in each catalogue (materials, light setups, product types,
+studios): what the user has saved, with thumbnail, rename
+and delete on hover, and the *Export library* and
+*Import library* (JSON) buttons at the foot. Phase U4.
 
-**Con una cámara seleccionada:** lo mismo que la sección Cámara de la
-escena, con su **Proporción** (la de *esa* cámara: editarla no toca el
-tamaño de la ventana de render mientras no sea la activa), más nombre,
-*Activar* y, si no es la activa, *Mirar a través* (fase L4).
+**With a camera selected:** the same as the Camera section of the
+scene, with its **Aspect ratio** (that of *that* camera: editing it does not touch the
+size of the render window while it is not the active one), plus name,
+*Activate* and, if it is not the active one, *Look through* (phase L4).
 
-### 2.5 · Barra inferior: Animación · Físicas · Cola · Render
+### 2.5 · Bottom bar: Animation · Physics · Queue · Render
 
-Siempre visible, 48 px. La configuración del render **no vive aquí**:
-vive en la **ventana de render** (§2.7), que se abre con el botón
-*Render…*. La barra queda con tres cosas:
+Always visible, 48 px. The render configuration **does not live here**:
+it lives in the **render window** (§2.7), which opens with the
+*Render…* button. The bar keeps three things:
 
-- A la izquierda, los cajones **Animación**, **Físicas** (fase S2) y
-  **Cola** (abren un cajón de 240 px sobre la barra; el de *Físicas*, solo
-  lo que ocupa). *Físicas* lleva, mientras una simulación corre, cuántos
-  cuerpos siguen despiertos. *Cola* lleva un contador de trabajos pendientes
-  y, mientras hay uno en marcha, una barra de progreso fina en su borde
-  inferior con el nombre del trabajo y el tiempo restante en el tooltip.
-- En el centro, en texto auxiliar, el último resultado (*Joyería_Cámara 1
-  · 1920 × 1080 · hace 2 min*); clic lo abre en el visor de resultados
+- On the left, the **Animation**, **Physics** (phase S2) and
+  **Queue** drawers (they open a 240 px drawer above the bar; the *Physics* one, only
+  as tall as it needs). *Physics* shows, while a simulation runs, how many
+  bodies are still awake. *Queue* shows a counter of pending jobs
+  and, while one is running, a thin progress bar on its lower
+  edge with the name of the job and the time remaining in the tooltip.
+- In the centre, in auxiliary text, the last result (*Jewellery_Camera 1
+  · 1920 × 1080 · 2 min ago*); a click opens it in the results viewer
   (§2.8).
-- A la derecha, **Render…** (botón primario, el más grande de la
-  pantalla; `Ctrl/⌘ ⏎`), que abre la ventana de render. `Ctrl/⌘ ⇧ ⏎`
-  renderiza directamente con los últimos ajustes, sin abrir la ventana.
+- On the right, **Render…** (primary button, the largest on the
+  screen; `Ctrl/⌘ ⏎`), which opens the render window. `Ctrl/⌘ ⇧ ⏎`
+  renders directly with the last settings, without opening the window.
 
-**Cajón Animación** (N6): una línea de tiempo de **tres zonas**, como el
-espacio de animación de KeyShot y las tiras de Blender o After Effects
-(sin copiar nada), para que quede claro **qué** se anima (izquierda),
-**cuándo** (centro) y **cómo** (derecha). Mide al menos 300 px de alto;
-la versión de U1 con planos y tarjetas queda sustituida.
+**Animation drawer** (N6): a timeline of **three zones**, like the
+animation space of KeyShot and the strips of Blender or After Effects
+(copying nothing), so that it is clear **what** is animated (left),
+**when** (centre) and **how** (right). It is at least 300 px tall;
+the U1 version with shots and cards is superseded.
 
-- **Cabecera** (transporte): *Reproducir / Pausar* (`Espacio`), *Ir al
-  principio* (`Inicio`), *Ir al final* (`Fin`), **Bucle** (encendido, al
-  acabar vuelve a empezar; apagado, se para al final); el cabezal en `s`
-  y su total (*2 s / 7 s*), el fotograma (*Fotograma 48*); los **fps**
-  (campo numérico); el **zoom** de la línea de tiempo (*Alejar*, *Ver
-  toda la animación*, *Acercar*: con zoom las pistas se desplazan en
-  horizontal bajo el árbol, que no se mueve); a la derecha **+ Animar…**
-  (botón primario, contextual: *Animar Tapón…* con una pieza elegida en
-  la escena, *Animar…* sin nada), **Presets ▾** (`SEQUENCE_PRESETS`, que
-  sustituyen la animación de una vez; deshacer la recupera),
-  *Renderizar animación…* (la ventana de render en modo *Animación*) y
-  cerrar.
-- **Izquierda, el árbol de lo animado** (*qué*). Una fila por objetivo,
-  en este orden: la **pista de cámara** (siempre, aunque no haya planos),
-  el modelo, sus grupos y piezas en el orden del árbol de la escena, los
-  focos, el entorno y los **materiales** (N1: el color o el fundido de un
-  material; clic en su fila elige las piezas que lo llevan); cada una con su icono, su nombre, cuántas
-  animaciones lleva, un triángulo para plegarla y un **+** al pasar por
-  encima (*Animar Tapón…*). Debajo, sus animaciones, cada una con el icono
-  de su tipo y su **frase corta** (*orbita 90° · 4 s · suave*; *se
-  despieza desde su centro 1,5 × tamaño · 3 s · suave*; la frase entera,
-  en la ayuda). **Clic en una animación** la elige (`Ctrl/⌘` la añade o la
-  quita, `Mayús` la añade): el visor **resalta su objetivo** con el
-  contorno de la pieza bajo el puntero y dibuja su **pista**. **Clic en un
-  objetivo** lo elige en la escena (la pieza, el grupo, el modelo, el
-  foco) junto con todas sus animaciones. Al revés, **elegir una pieza en
-  la escena** pone en negrita las filas de lo que la mueve (sus
-  animaciones, las de sus grupos y las del modelo; no las de un despiece
-  del que es excepción). **Menú contextual** de una animación:
-  *Duplicar* (`Ctrl/⌘ D`), *Invertir*, *Partir en el cabezal* (solo una
-  animación que se reproduce una vez y hacia delante, con el cabezal
-  dentro, de un tipo que suma —giros, distancias, despiece a la vez— o
-  multiplica —escala, acercamiento—: las dos mitades siguen una de otra),
-  *Fijar la selección en este despiece* (en un despiece) y *Eliminar*
-  (`Supr`). De un objetivo: *Animar…*, *Seleccionar*, *Plegar /
-  Desplegar* y *Borrar sus animaciones*. Sin nada animado, una nota dice
-  cómo empezar.
-- **Centro, la línea de tiempo** (*cuándo*). Arriba la **regla**: los
-  segundos con su número de fotograma debajo, con marcas intermedias;
-  clic o arrastre en ella mueven el **cabezal** (fotograma a fotograma),
-  una línea con su triángulo que cruza todas las pistas, y el visor
-  enseña ese instante. Cada fila del árbol tiene su pista a la misma
-  altura: la **pista de cámara** con sus **tramos** (*Plano 1 · Cámara 1*;
-  sin planos, uno discontinuo, *Cámara activa*), cuyo borde derecho se
-  arrastra para cambiar la duración del plano y cuyo menú contextual
-  elige la cámara del plano o lo quita, con **+** al final para añadir
-  otro; **clic en un tramo** abre a la derecha las **propiedades del plano**
-  (N1): cabecera *Plano 2 · Cámara 1 · 4–7 s*, *Cámara del plano*,
-  *Duración*, **Cambio de cámara** (*Corte · Fundido a negro · Fundido a
-  blanco · Fundido cruzado*, este último deshabilitado, *próximamente*: dos
-  cámaras a la vez) con la **Duración del fundido** y una nota de qué hace
-  (en el primer plano: la animación empieza en el color), y *Quitar el
-  plano*; el tramo elegido lleva borde grueso. Un fundido se dibuja sobre el
-  corte, medio en cada plano y con lo que dura en los fotogramas (nunca más
-  de la mitad de uno de los dos), como una marca que sube hasta el color en
-  el corte y baja después (negro o blanco puros, con un borde gris); el
-  nombre del plano empieza pasada la marca; la de un objetivo, una franja tenue de su primera a su última
-  animación (plegado, las barras de todas, finas); la de una animación,
-  su **barra** con la frase corta (las repeticiones, con marcas
-  discontinuas; invertida, con una flecha a la izquierda). Una barra se
-  **arrastra para moverla** (todas las elegidas a la vez) y se **estira
-  por cualquiera de sus extremos**; el **imán** la lleva a los bordes de
-  las otras barras, al cabezal, a los cortes de plano y a los segundos
-  enteros cuando está a menos de 6 px (una línea discontinua enseña dónde
-  ha pegado), y si no, a fotogramas enteros; con `Mayús`, sin imán. Un
-  arrastre es una sola entrada de deshacer. Elegida, la barra se invierte
-  (fondo de tinta); con un choque (dos del mismo tipo sobre el mismo
-  objetivo a la vez), borde discontinuo y una marca en el árbol; si la
-  mueve la pieza elegida en la escena, borde fuerte. Clic en el vacío de
-  una pista quita la selección de animaciones.
-- **Derecha, las propiedades** (*cómo*) de la animación elegida. Arriba
-  la **cabecera** de una línea —*objetivo · tipo · cantidad ·
-  inicio–fin*: «Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»— y la
-  frase entera. Después, en secciones plegables:
-  - **Movimiento**: los mandos del tipo (la cantidad con su unidad, el
-    plano de una animación de cámara; N1: el **Color** de un tinte o de un
-    color de material; en un giro o un vuelco de una pieza o grupo, el
-    **Pivote** —*Su propio origen · Otra pieza · Un punto*— con la pieza o
-    el punto; en un **fundido**, la *Opacidad final* en % y la nota de que
-    invertido aparece). En un **despiece**: *Qué se
-    despieza* (el modelo o un grupo), **Tipo** (*Lineal · Radial ·
-    Esférica*), en lineal **Cómo** (*Separar · Apilar*), en lineal y
-    radial el **Eje** o la **Dirección** (*X · Y · Z · Propio*, con sus
-    tres componentes), **Jerarquía** (*Piezas · Un nivel · Todos*),
-    **Distancia** con su unidad (*× tamaño · mm*; cambiar de unidad
-    conserva la longitud), **Reparto** (*Igual · Por distancia*; no en
-    apilar), **Proporcional al tamaño de la pieza**, **Centro** (*Del
-    conjunto · Una pieza · Pivote · Un punto*, con la pieza o el punto),
-    **Orden** (*A la vez · Por distancia · Por profundidad*) con su
-    **Solape** en % y **Conservar la orientación**.
-  - **Excepciones** (en un despiece): las piezas fijas, cada una con su
-    × para soltarla, y **Fijar la selección** (las piezas elegidas en la
-    escena); sin ninguna, *se mueven todas*.
-  - **Tiempo**: *Inicio*, *Duración*, *Fin* (cambiarlo cambia la
-    duración), *Repetir* (× n) e **Invertir** (en un despiece, *Invertir:
-    montar*).
-  - **Curva**: la **curva de tiempo** (`EASING_KINDS`) o, en un despiece,
-    la **Suavidad** (0 % lineal, 50 % suave, 100 % muy suave), con una
-    **vista previa** de la curva que sigue a cada cambio. Con
-    **Personalizada** (N1), en lugar de la vista previa, el **editor de la
-    curva**: la curva de (0, 0) a (1, 1), la diagonal discontinua y las
-    **dos asas** con su brazo, que se arrastran (un arrastre es una entrada
-    de deshacer) o se mueven con las flechas con el foco en ellas (← → la x,
-    ↑ ↓ la y, `Mayús` diez veces más), y debajo sus números, *Primera asa*
-    x1 y1 y *Segunda asa* x2 y2, para teclearlos; la x de cada asa se queda
-    entre 0 y 1 y la y entre −0,25 y 1,25.
-  - *Duplicar* y *Eliminar*.
+- **Header** (transport): *Play / Pause* (`Space`), *Back to
+  start* (`Home`), *Go to the end* (`End`), **Loop** (on, at the end
+  it starts again; off, it stops at the end); the playhead in `s`
+  and its total (*2 s / 7 s*), the frame (*Frame 48*); the **fps**
+  (numeric field); the timeline **zoom** (*Zoom out*, *Fit the
+  whole animation*, *Zoom in on the timeline*: when zoomed the tracks scroll
+  horizontally under the tree, which does not move); on the right **+ Animate…**
+  (primary button, contextual: *Animate Cap…* with a part selected in
+  the scene, *Animate…* with nothing), **Presets ▾** (`SEQUENCE_PRESETS`, which
+  replace the animation in one go; undo brings it back),
+  *Render animation…* (the render window in *Animation* mode) and
+  close.
+- **Left, the tree of what is animated** (*what*). One row per target,
+  in this order: the **camera track** (always, even without shots),
+  the model, its groups and parts in the order of the scene tree, the
+  lights, the environment and the **materials** (N1: the colour or the fade of a
+  material; clicking its row selects the parts that carry it); each with its icon, its name, how many
+  animations it holds, a triangle to collapse it and a **+** on hover
+  (*Animate Cap…*). Below, its animations, each with the icon
+  of its type and its **short sentence** (*orbits 90° · 4 s · smooth*;
+  *comes apart from its centre by 1.5 × size · 3 s · smooth*; the full sentence
+  in the help). **Clicking an animation** selects it (`Ctrl/⌘` adds or
+  removes it, `Shift` adds it): the viewport **highlights its target** with the
+  outline of the part under the pointer and draws its **track**. **Clicking a
+  target** selects it in the scene (the part, the group, the model, the
+  light) together with all its animations. Conversely, **selecting a part in
+  the scene** puts in bold the rows of what moves it (its
+  animations, those of its groups and those of the model; not those of an exploded
+  view of which it is an exception). **Context menu** of an animation:
+  *Duplicate* (`Ctrl/⌘ D`), *Reverse*, *Split at the playhead* (only an
+  animation that plays once and forwards, with the playhead
+  inside, of a type that adds up —turns, distances, exploded view at
+  once— or multiplies —scale, push-in—: the two halves follow one another),
+  *Pin the selection in this exploded view* (in an exploded view) and *Delete*
+  (`Del`). Of a target: *Animate…*, *Select*, *Collapse /
+  Expand* and *Delete its animations*. With nothing animated, a note says
+  how to start.
+- **Centre, the timeline** (*when*). At the top the **ruler**: the
+  seconds with their frame number below, with intermediate marks;
+  a click or drag on it moves the **playhead** (frame by frame),
+  a line with its triangle that crosses all the tracks, and the viewport
+  shows that instant. Each row of the tree has its track at the same
+  height: the **camera track** with its **segments** (*Shot 1 · Camera 1*;
+  with no shots, a dashed one, *Active camera*), whose right edge is
+  dragged to change the duration of the shot and whose context menu
+  chooses the shot's camera or removes it, with a **+** at the end to add
+  another; **clicking a segment** opens on the right the **shot properties**
+  (N1): header *Shot 2 · Camera 1 · 4–7 s*, *Camera of the shot*,
+  *Duration*, **Change of camera** (*Cut · Fade to black · Fade to
+  white · Cross-fade*, the last one disabled, *coming soon*: two
+  cameras at once) with the **Fade length** and a note on what it does
+  (on the first shot: the animation starts on the colour), and *Remove the
+  shot*; the selected segment carries a thick border. A fade is drawn over the
+  cut, half on each shot and with its length in frames (never more
+  than half of either), as a mark that rises to the colour at
+  the cut and falls afterwards (pure black or white, with a grey edge); the
+  name of the shot starts after the mark; that of a target, a faint strip from its first to its last
+  animation (collapsed, the bars of all of them, thin); that of an animation,
+  its **bar** with the short sentence (repeats, with dashed
+  marks; reversed, with an arrow on the left). A bar is
+  **dragged to move it** (all the selected ones at once) and **stretched
+  by either end**; the **magnet** takes it to the edges of
+  the other bars, to the playhead, to the shot cuts and to whole
+  seconds when it is within 6 px (a dashed line shows where
+  it snapped), and otherwise to whole frames; with `Shift`, no magnet. A
+  drag is a single undo entry. When selected, the bar is inverted
+  (ink background); with a collision (two of the same kind on the same
+  target at once), a dashed border and a mark in the tree; if
+  the part selected in the scene moves it, a strong border. A click on the empty space of
+  a track clears the animation selection.
+- **Right, the properties** (*how*) of the selected animation. At the top
+  a one-line **header** —*target · type · amount ·
+  start–end*: "Cap · Spherical exploded view · 1.5 × size · 0–3 s"— and the
+  full sentence. Then, in collapsible sections:
+  - **Movement**: the controls of the type (the amount with its unit, the
+    shot of a camera animation; N1: the **Colour** of a tint or of a
+    material colour; on a spin or tumble of a part or group, the
+    **Pivot** —*Its own origin · Another part · A point*— with the part or
+    the point; on a **fade**, the *Final opacity* in % and the note that
+    reversed it appears). On an **exploded view**: *What comes
+    apart* (the model or a group), **Type** (*Linear · Radial ·
+    Spherical*), in linear **How** (*Separate · Stack*), in linear and
+    radial the **Axis** or the **Direction** (*X · Y · Z · Own*, with its
+    three components), **Hierarchy** (*Parts · One level · All levels*),
+    **Distance** with its unit (*× size · mm*; changing the unit
+    keeps the length), **Spacing** (*Even · By distance*; not in
+    stack), **Proportional to the part size**, **Centre** (*Of the
+    whole · A part · Pivot · A point*, with the part or the point),
+    **Order** (*At once · By distance · By depth*) with its
+    **Overlap** in % and **Keep the orientation**.
+  - **Exceptions** (on an exploded view): the pinned parts, each with its
+    × to free it, and **Pin the selection** (the parts selected in the
+    scene); with none, *None: every part moves*.
+  - **Time**: *Start*, *Duration*, *End* (changing it changes the
+    duration), *Repeat* (× n) and **Reverse** (on an exploded view, *Reverse:
+    assemble*).
+  - **Curve**: the **time curve** (`EASING_KINDS`) or, on an exploded view,
+    the **Smoothness** (0 % linear, 50 % smooth, 100 % very smooth), with a
+    **preview** of the curve that follows every change. With
+    **Custom** (N1), instead of the preview, the **curve
+    editor**: the curve from (0, 0) to (1, 1), the dashed diagonal and the
+    **two handles** with their arm, which are dragged (a drag is one undo entry)
+    or moved with the arrows when they have the focus (← → the x,
+    ↑ ↓ the y, `Shift` ten times more), and below their numbers, *First handle*
+    x1 y1 and *Second handle* x2 y2, to type them; the x of each handle stays
+    between 0 and 1 and the y between −0.25 and 1.25.
+  - *Duplicate* and *Delete*.
 
-  Con varias elegidas, cuántas y *Duplicar · Invertir · Eliminar*. Sin
-  ninguna, qué hacer y los **presets** en su lista. **+ Animar…** abre
-  aquí el **asistente** en **tres pasos** (N1), uno a la vista cada vez, con
-  *Paso 1 de 3* y tres puntos arriba, y *Atrás* · *Siguiente* (en el último,
-  *Añadir*) · *Cancelar* abajo: **1 · ¿Qué se mueve?** con el objetivo ya
-  puesto (*Cámara · Toda la pieza · Una pieza o grupo · Foco · Entorno · Un
-  material*, y la lista de piezas, focos o materiales); **2 · ¿Cómo?**, una
-  **rejilla de tarjetas** (icono, nombre y la frase del tipo) agrupada como
-  `SPEC.md` §3.7 agrupa los tipos —*Piezas*, *Cámara*, *Luz y entorno*,
-  *Materiales*—, solo con los tipos del objetivo y su grupo primero
-  (*Despiece* solo para el modelo o un grupo con dos piezas o más; el
-  *Recorrido*, reservado, nunca); doble clic en una tarjeta pasa al paso
-  siguiente; **3 · ¿Cuánto y cuánto tiempo?** (la cantidad con su unidad o
-  el color, inicio, duración, curva y, en una cámara con planos, el plano),
-  y *Añadir* deja la animación nueva elegida.
-- **Visor**: con una animación elegida se resalta su objetivo y se dibuja
-  su pista en la tinta del tema, sobre todo lo demás: el **arco** de una
-  órbita (un anillo alrededor del objetivo con el ángulo que barre y un
-  punto donde está la cámara), el de una elevación, la **flecha** de un
-  desplazamiento, un **vector por pieza** de un despiece (de donde está a
-  donde llega, con un punto donde está en el cabezal), el **eje** y el
-  giro de un *giro propio* o un *vuelco*; un tipo que no conoce, solo su
-  objetivo resaltado. El cabezal mueve la previa: también los fundidos (una
-  copia translúcida de cada pieza que se funde), los colores de material y
-  el sol del arco solar, y el **fundido a color** de la pista de cámara, que
-  cubre el encuadre con su color en la medida del instante mientras se
-  reproduce o el cabezal no está en 0 (en 0 la escena se enseña como se
-  edita).
-- **Teclado**, con el foco en el cajón (un clic en el árbol o en las
-  pistas lo pone ahí): `Espacio` reproduce o pausa, `Inicio` / `Fin`,
-  `←` / `→` un fotograma (`Mayús`: diez), `↑` / `↓` la animación de arriba
-  o de abajo (N1), `Supr` borra las animaciones elegidas y `Ctrl/⌘ D` las
-  duplica. En un campo, el campo se queda sus teclas. El árbol es un
-  `tree` con nombre que guarda el foco y dice la fila activa con
-  `aria-activedescendant`; la regla es para el puntero (oculta a las ayudas
-  técnicas); los presets son botones dentro de una lista.
-- **En el árbol de la escena** (N1, como en KeyShot): bajo cada pieza o
-  grupo, sus animaciones (las del modelo entero, bajo el modelo), cada una
-  con el icono de su tipo y su frase corta en tinta secundaria, y la frase
-  entera en la ayuda; clic abre el cajón con ella elegida.
-- En el **menú contextual de una pieza** (árbol de la escena y visor):
-  **Animar Tapón…** (el asistente con ella de objetivo) y **Fijar en el
-  despiece** / **Soltar del despiece** (en los despieces que la
-  contienen; desactivado si no hay ninguno).
-- El vídeo se renderiza desde la **ventana de render** en modo
-  *Animación* (§2.7), con los mismos botones *Render* y *+ Añadir a la
-  cola* que una imagen.
+  With several selected, how many and *Duplicate · Reverse · Delete*. With
+  none, what to do and the **presets** in their list. **+ Animate…** opens
+  here the **wizard** in **three steps** (N1), one in view at a time, with
+  *Step 1 of 3* and three dots at the top, and *Back* · *Next* (on the last,
+  *Add*) · *Cancel* at the bottom: **1 · What moves?** with the target already
+  set (*Camera · Whole model · A part or group · Light · Environment · A
+  material*, and the list of parts, lights or materials); **2 · How?**, a
+  **grid of cards** (icon, name and the sentence of the type) grouped the
+  way `SPEC.md` §3.7 groups the types —*Parts*, *Camera*, *Light and environment*,
+  *Materials*—, only with the types of the target and its group first
+  (*Exploded view* only for the model or a group with two or more parts; the
+  *Path*, reserved, never); double click on a card goes to the next
+  step; **3 · How much and for how long?** (the amount with its unit or
+  the colour, start, duration, curve and, on a camera with shots, the shot),
+  and *Add* leaves the new animation selected.
+- **Viewport**: with an animation selected its target is highlighted and
+  its track is drawn in the theme ink, over everything else: the **arc** of an
+  orbit (a ring around the target with the angle it sweeps and a
+  dot where the camera is), that of a rise, the **arrow** of a
+  pan, a **vector per part** of an exploded view (from where it is to
+  where it arrives, with a dot where it is at the playhead), the **axis** and the
+  turn of a *spin* or a *tumble*; a type it does not know gets only its
+  target highlighted. The playhead moves the preview: also the fades (a
+  translucent copy of each part that fades), the material colours and
+  the sun of the solar arc, and the camera track's **fade to colour**, which
+  covers the frame with its colour by the measure of the instant while it
+  plays or the playhead is not at 0 (at 0 the scene is shown as it
+  is edited).
+- **Keyboard**, with the focus in the drawer (a click in the tree or in the
+  tracks puts it there): `Space` plays or pauses, `Home` / `End`,
+  `←` / `→` one frame (`Shift`: ten), `↑` / `↓` the animation above
+  or below (N1), `Del` deletes the selected animations and `Ctrl/⌘ D`
+  duplicates them. In a field, the field keeps its keys. The tree is a
+  named `tree` that keeps the focus and announces the active row with
+  `aria-activedescendant`; the ruler is for the pointer (hidden from assistive
+  technology); the presets are buttons inside a list.
+- **In the scene tree** (N1, as in KeyShot): under each part or
+  group, its animations (those of the whole model, under the model), each
+  with the icon of its type and its short sentence in secondary ink, and the full
+  sentence in the help; a click opens the drawer with it selected.
+- In the **context menu of a part** (scene tree and viewport):
+  **Animate Cap…** (the wizard with it as the target) and **Pin in the
+  exploded view** / **Free from the exploded view** (in the exploded views that
+  contain it; disabled if there is none).
+- The video is rendered from the **render window** in *Animation*
+  mode (§2.7), with the same *Render* and *+ Add to
+  queue* buttons as an image.
 
-Capturas de N1 (`tools/video-check.mjs`): `docs/ui/animation-n1-wizard.png`
-(la línea de tiempo con tres pistas —la de cámara con un fundido, el modelo y
-un material— y el asistente en el paso 1), `docs/ui/animation-n1-cards.png`
-(el paso 2, la rejilla de tipos de un material) y
-`docs/ui/animation-n1-curve.png` (la curva personalizada con un asa movida).
+N1 captures (`tools/video-check.mjs`): `docs/ui/animation-n1-wizard.png`
+(the timeline with three tracks —the camera one with a fade, the model and
+a material— and the wizard at step 1), `docs/ui/animation-n1-cards.png`
+(step 2, the grid of types for a material) and
+`docs/ui/animation-n1-curve.png` (the custom curve with a handle moved).
 
-**Cajón Físicas, la barra de físicas** (fase S2; `SPEC.md` §3.1 y §3.7):
-**▶ Iniciar** (simula las piezas cuyo papel es *Dinámico* y, S3b, el
-cristal frontal de la cámara activa si lo alimenta la escena) · **⏸ Pausar**,
-que pasa a **▶ Reanudar** mientras está en pausa · **■ Parar** · **↺
-Reiniciar**; después, lo que el simulador dice —**tiempo simulado**
-(*Simulado 0,42 s*) y **cuerpos despiertos** (*2 de 3 despiertos*)— y el
-**estado**: *Parado* por defecto, *Arrancando…*, *En marcha*, *En pausa*,
-y al acabar cómo acabó (*Se paró sola: todo está quieto*, *Parada donde
-estaba*, *Parada tras 30 s simulados*, *El simulador necesita el motor*).
-Nada corre hasta que se inicia o se deja caer algo. Antes de que el
-simulador diga nada, ni tiempo ni cuerpos: no se inventan. Debajo, una
-nota: cómo empezar, y mientras corre, que el visor la enseña en *Rápido*
-(el modo *Completo* espera a que pare).
+**Physics drawer, the physics bar** (phase S2; `SPEC.md` §3.1 and §3.7):
+**▶ Start** (simulates the parts whose role is *Dynamic* and, S3b, the
+front glass of the active camera if the scene feeds it) · **⏸ Pause**,
+which becomes **▶ Resume** while paused · **■ Stop** · **↺
+Reset**; then, what the simulator says —**simulated time**
+(*Simulated 0.42 s*) and **awake bodies** (*2 of 3 awake*)— and the
+**state**: *Stopped* by default, *Starting…*, *Running*, *Paused*,
+and at the end how it ended (*It stopped by itself: everything is at rest*, *Stopped where
+it was*, *Stopped after 30 s of simulated time*, *The simulator needs the engine*).
+Nothing runs until something is started or dropped. Before the
+simulator says anything, no time and no bodies: they are not invented. Below, a
+note: how to start, and while it runs, that the viewport shows it in *Fast*
+(the *Full* mode waits for it to stop).
 
-- **Pausar** congela la simulación donde el visor la enseña (lo que el
-  simulador mande mientras tanto espera a *Reanudar*); **Parar** confirma
-  la pose que se ve; dormirse todos los cuerpos, o 30 s simulados, la
-  paran y confirman el último fotograma.
-- **Toda simulación se graba**: al empezar, cada cuerpo tiene un clip
-  **Simulación** en la línea de tiempo (cajón *Animación*) que crece
-  fotograma a fotograma a los fps del proyecto mientras corre, con el
-  cabezal detrás; se queda donde se para. En la línea de tiempo (N6) su
-  fila del árbol dice *cae según la simulación · 0,83 s*; la barra se
-  mueve en el tiempo y se estira para ralentizarla, y sus propiedades son
-  las de tiempo (inicio, duración, fin, repetir, invertir) y una nota:
-  ni cantidad ni curva. *Animar…* no lo ofrece y no se parte: solo lo
-  crea una simulación. No hay botón de grabar.
-- **Reiniciar** quita los clips de la última simulación y devuelve las
-  piezas a donde estaban, como otra entrada de deshacer (*Deshacer:
-  Reiniciar la simulación*); está activo mientras esos clips sigan en el
-  proyecto. Deshacer mientras corre la abandona sin confirmar nada.
-- Una simulación nueva mientras otra corre para la primera (que confirma
-  su pose) y arranca desde ahí.
-- **El cristal frontal** (S3b). Con el cristal de la cámara activa en *De la
-  escena* y algún efecto que llueve o echa polvo, *Iniciar* lo simula con
-  los cuerpos (o solo, sin ninguno *Dinámico*); *Dejar caer* simula solo lo
-  que deja caer. La barra añade lo que dice el motor del último fotograma
-  (*Cristal: 215 gotas · 0 motas*) y no lo cuenta como cuerpos; una
-  simulación con cristal no se para sola al dormirse los cuerpos (sigue
-  lloviendo): la para *Parar* o sus 120 s simulados. Su grabación es un
-  clip **Simulación** de la *Cámara* (*recibe en su cristal frontal la
-  lluvia y el polvo de la escena, según la simulación · 4 s*), en la misma
-  entrada de deshacer; *Reiniciar* lo quita también.
-  ![la lluvia en el cristal, en pausa](physics-rain.png)
-- **Las piezas** (S3c). Con algún efecto *Sobre las piezas*, *Iniciar* moja,
-  empolva y nieva las piezas visibles que la simulación no mueve (las
-  *Dinámicas* no: se mojarían donde estaban), con los cuerpos o solo;
-  *Dejar caer* no. La barra añade lo que dice el motor (*Piezas: 1.443 gotas
-  · 0 goteos*: las gotas sobre las piezas en el último fotograma y las que
-  han goteado hasta ahora); como con el cristal, no se para sola al dormirse
-  los cuerpos: la para *Parar* o sus 120 s simulados. Su grabación es un clip
-  **Simulación** de la *Escena* (*Las piezas reciben la lluvia, el polvo y la
-  nieve de los efectos de la escena, según la simulación*), que no mueve
-  nada: dice qué fotograma enseñan las piezas, y *Reiniciar* lo quita. El
-  modo *Rápido* dibuja el fotograma del cabezal (las gotas como casquetes de
-  agua, la película mojada más brillante y lo poroso más oscuro, el polvo y la
-  nieve encima) y el medidor añade *Lluvia en las piezas: 1.443 gotas en 7
-  piezas*; *Completo* y el render, con un motor que tiene el bit 8.
-  ![la lluvia sobre las piezas, en pausa](physics-rain-set.png)
+- **Pause** freezes the simulation where the viewport shows it (whatever the
+  simulator sends meanwhile waits for *Resume*); **Stop** confirms
+  the pose that is seen; all bodies going to sleep, or 30 s simulated, stop
+  it and confirm the last frame.
+- **Every simulation is recorded**: on starting, each body has a
+  **Simulation** clip on the timeline (*Animation* drawer) that grows
+  frame by frame at the project's fps while it runs, with the
+  playhead behind it; it stays where it stops. On the timeline (N6) its
+  row in the tree says *falls as simulated · 0.83 s*; the bar
+  moves in time and stretches to slow it down, and its properties are
+  those of time (start, duration, end, repeat, reverse) and a note:
+  no amount and no curve. *Animate…* does not offer it and it cannot be split: only
+  a simulation creates it. There is no record button.
+- **Reset** removes the clips of the last simulation and returns the
+  parts to where they were, as another undo entry (*Undo:
+  Reset the simulation*); it is enabled while those clips remain in the
+  project. Undoing while it runs abandons it without confirming anything.
+- A new simulation while another runs stops the first (which confirms
+  its pose) and starts from there.
+- **The front glass** (S3b). With the active camera's glass on *From the
+  scene* and some effect that rains or drops dust, *Start* simulates it with
+  the bodies (or alone, with none *Dynamic*); *Drop* simulates only what
+  it drops. The bar adds what the engine says of the last frame
+  (*Glass: 215 drops · 0 motes*) and does not count it as bodies; a
+  simulation with glass does not stop by itself when the bodies fall asleep (it keeps
+  raining): *Stop* or its 120 s simulated stop it. Its recording is a
+  **Simulation** clip of the *Camera* (*gets the rain and dust of the scene on its front glass, as
+  simulated · 4 s*), in the same undo
+  entry; *Reset* removes it too.
+  ![the rain on the glass, paused](physics-rain.png)
+- **The parts** (S3c). With some effect *On the parts*, *Start* wets,
+  dusts and snows the visible parts that the simulation does not move (the
+  *Dynamic* ones not: they would be wet where they were), with the bodies or alone;
+  *Drop* does not. The bar adds what the engine says (*Parts: 1,443 drops
+  · 0 drips*: the drops on the parts in the last frame and those that
+  have dripped so far); as with the glass, it does not stop by itself when the bodies
+  fall asleep: *Stop* or its 120 s simulated stop it. Its recording is a clip
+  **Simulation** of the *Scene* (*The parts get the rain, dust and
+  snow of the scene’s effects, as simulated*), which moves
+  nothing: it says which frame the parts show, and *Reset* removes it. The
+  *Fast* mode draws the frame at the playhead (the drops as water
+  caps, the wet film brighter and the porous parts darker, the dust and the
+  snow on top) and the meter adds *Rain on the parts: 1,443 drops on 7
+  parts*; *Full* and the render, with an engine that has bit 8.
+  ![the rain on the parts, paused](physics-rain-set.png)
 
-Capturas (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (la barra
-en pausa, en mitad de una caída), `docs/ui/physics-drop.png` (tres
-primitivas antes y después de *Dejar caer*) y
-`docs/ui/physics-drop-strip.png` (seis instantes del clip grabado).
+Captures (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (the bar
+paused, in the middle of a fall), `docs/ui/physics-drop.png` (three
+primitives before and after *Drop*) and
+`docs/ui/physics-drop-strip.png` (six instants of the recorded clip).
 
-**Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
-tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
-reordenar; con un estudio de lote, su nombre sigue al de la cámara (*Cámara 1 · Estudio A*),
-y el nombre lleva al final lo que el trabajo añade (*+3 pases · ZIP*, con los pases en
-el texto emergente); por trabajo: *Editar* (reabre la ventana de render con sus
-ajustes), *Duplicar*, *Quitar* (*Detener* el que se renderiza: acaba *Cancelado* y la
-cola sigue con el siguiente); arriba *Vaciar terminados* y un botón
-que sigue el estado de la cola: **Pausar** mientras corre (para el trabajo
-en curso y libera el motor al momento; el trabajo vuelve a *En espera*),
-**Reanudar** tras una pausa (sigue con lo pausado, y el trabajo pausado
-vuelve a empezar: un render no se reanuda a medias) e **Iniciar cola** si
-no, desactivado cuando no hay nada en espera. Un *Reanudar* pulsado
-mientras el trabajo pausado aún se está parando no se pierde. Los
-terminados quedan en la lista con su miniatura; clic abre el visor de
-resultados. **Estudios que vinieron con el proyecto** (N2b): por cada estudio que los
-trabajos llevan dentro del proyecto y no está en la biblioteca (un proyecto abierto en
-otro equipo u otro perfil), una línea entre la cabecera y la lista: *El estudio «Estudio
-A» vino con el proyecto; no está en tu biblioteca* con el botón **Añadir a mi
-biblioteca**, que lo guarda en *Míos* con su id (el aviso *Guardado «Estudio A» en Míos*)
-y quita la línea. Sin añadirlo, los trabajos se renderizan igual, con la copia.
+**Queue drawer**: list of jobs in order (thumbnail, name, camera,
+size, *Finish by*, AI yes or no, state and progress), draggable to
+reorder; with a batch studio, its name follows the camera's (*Camera 1 · Studio A*),
+and the name carries at the end what the job adds (*+3 passes · ZIP*, with the passes in
+the tooltip); per job: *Edit* (reopens the render window with its
+settings), *Duplicate*, *Remove* (*Stop* the one being rendered: it ends *Stopped* and the
+queue goes on with the next); at the top *Clear finished* and a button
+that follows the state of the queue: **Pause** while it runs (stops the job
+in progress and frees the engine at once; the job goes back to *Waiting*),
+**Resume** after a pause (goes on with what was paused, and the paused job
+starts over: a render is not resumed halfway) and **Start queue** if
+not, disabled when nothing is waiting. A *Resume* pressed
+while the paused job is still stopping is not lost. The
+finished ones stay in the list with their thumbnail; a click opens the results
+viewer. **Studios that came with the project** (N2b): for each studio that the
+jobs carry inside the project and that is not in the library (a project opened on
+another machine or another profile), a line between the header and the list: *The studio “Studio
+A” came with the project; it is not in your library* with the button **Add to my
+library**, which saves it in *Mine* with its id (the notice *Saved “Studio A” to Mine*)
+and removes the line. Without adding it, the jobs render just the same, with the copy.
 
-**Vista en vivo** (U14, petición del usuario: «al irme a queue quiero poder
-ver un preview en tiempo real de un render seleccionado»). Clic (o `⏎`) en la
-fila de un trabajo que **se renderiza** abre su imagen **mientras se hace**: el
-visor de resultados en modo *en curso* (§2.8), sobre el visor, con el cajón
-abierto debajo; la fila elegida se marca (fondo de pasar el ratón y una barra
-de tinta a la izquierda) y su texto emergente dice *Ver cómo se renderiza*.
-Clic en uno **en espera** abre lo mismo con una línea en lugar de la imagen:
-*Este trabajo aún no ha empezado: su imagen aparecerá aquí en cuanto se
-renderice*; cuando la cola llega a él, la imagen aparece sola. Un **terminado**
-sigue abriendo su resultado, y un trabajo que acaba con la vista en vivo
-abierta sobre él **pasa a ser su resultado** en el visor (como *Mostrar al
-terminar*). Uno detenido o que falló lo dice (*Este trabajo se detuvo antes de
-terminar*, *El render falló: <motivo>*); uno que se quita de la cola se lleva
-su vista. Se ve como mucho **una imagen nueva cada medio segundo** (en el
-escritorio, una por pasada del lanzador: más espaciadas en un render grande), y
-solo mientras la vista está abierta sobre ese trabajo y la pestaña se ve:
-cerrarla (*Cerrar*, `Esc`) o elegir otro trabajo hace que el motor deje de
-hacerlas.
-Captura (`tools/queue-live-check.mjs`): `docs/ui/queue-live.png` y
+**Live view** (U14, request: "when I go to the queue I want to be able to
+see a real-time preview of a selected render"). A click (or `⏎`) on the
+row of a job that **is rendering** opens its image **while it is being made**: the
+results viewer in *in progress* mode (§2.8), over the viewport, with the drawer
+open below; the chosen row is marked (hover background and an ink bar
+on the left) and its tooltip says *Watch it render*.
+A click on one that is **waiting** opens the same with a line in place of the image:
+*This job has not started yet: its picture appears here as soon as it renders*; when the queue reaches it, the image appears by itself. A **finished** one
+still opens its result, and a job that ends with the live view
+open on it **becomes its result** in the viewer (like *Show when
+done*). A stopped or failed one says so (*This job was stopped before it
+finished*, *The render failed: <reason>*); one removed from the queue takes
+its view with it. At most **one new image every half second** is shown (on the
+desktop, one per launcher pass: more spaced out on a large render), and
+only while the view is open on that job and the tab is visible:
+closing it (*Close*, `Esc`) or choosing another job makes the engine stop
+producing them.
+Capture (`tools/queue-live-check.mjs`): `docs/ui/queue-live.png` and
 `docs/ui/queue-live-dark.png`.
 
-### 2.6 · Barra de estado
+### 2.6 · Status bar
 
-24 px, texto auxiliar: a la izquierda el **Doctor** (un punto relleno y
-"2 avisos", o un punto hueco y "Todo en orden"); clic abre su popover.
-Luego: piezas · triángulos · motor y dispositivo · muestras y tiempo del
-visor y, en *Rápido* con algún efecto de *Ambiente* (S4a), *Partículas N
-de M* (las que dibuja de las que el motor evalúa) o, sin `rt.wasm`,
-*Partículas: solo las regiones (el motor no está compilado)*; con una
-cámara panorámica en *Rápido* (K3), *Panorámica: dibujada con seis caras de
-cubo, el render la traza*; con la exposición automática (K3), *Exposición
-automática +4,64 EV* (lo que mide la página de la imagen del motor) o
-*Exposición automática: aún sin medir*. A la
-derecha: idioma y versión.
+24 px, auxiliary text: on the left the **Doctor** (a filled dot and
+"2 warnings", or a hollow dot and "All good"); a click opens its popover.
+Then: parts · triangles · engine and device · samples and time of the
+viewport and, in *Fast* with some *Ambient* effect (S4a), *Particles N
+of M* (those it draws of those the engine evaluates) or, without `rt.wasm`,
+*Particles: regions only (the engine is not built)*; with a
+panoramic camera in *Fast* (K3), *Panorama: drawn from six cube faces,
+the render traces it*; with auto exposure (K3), *Auto exposure
++4.64 EV* (what the page meters from the engine's image) or
+*Auto exposure: not metered yet*. On the
+right: language and version.
 
-**Nota del motor de ejecución** (fase U10, solo escritorio): si al
-arrancar hay un modelo de IA instalado y el motor de ejecución no
-(`AI-POST.md` §7.1: no está, la descarga está en pausa, no arranca, o en
-Windows falta el entorno de Microsoft Visual C++), una línea discreta a
-la derecha, **una sola vez por sesión** y nunca una ventana: *IA: el motor
-de ejecución no está instalado* con *Instalar* (descarga la compilación que
-elige la regla, o abre la página de Microsoft si lo que falta es Visual
-C++), *Más tarde* (la quita hasta el próximo arranque) y, en el texto, un
-enlace a *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución*. Un motor que
-ya se está descargando (lo marcó el instalador) no es un aviso. Es la
-misma línea que la de las actualizaciones, en el mismo sitio.
+**Runtime note** (phase U10, desktop only): if at startup
+an AI model is installed and the runtime is not
+(`AI-POST.md` §7.1: it is missing, its download is paused, it does not start, or on
+Windows the Microsoft Visual C++ environment is missing), a discreet line on
+the right, **once per session** and never a window: *AI: the inference runtime
+is not installed* with *Install* (downloads the build chosen
+by the rule, or opens Microsoft's page if what is missing is Visual
+C++), *Later* (removes it until the next startup) and, in the text, a
+link to *Settings ▸ AI post-processing ▸ Inference runtime*. A runtime that
+is already downloading (marked by the installer) is not a notice. It is the
+same line as that of the updates, in the same place.
 
-**Popover del Doctor**: la lista de `DOCTOR_CHECKS` con estado, una frase
-de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba.
-Los chequeos de escena (escala, origen, suavizado, bisel, clipping) se
-implementan sobre el modelo de datos. Una comprobación de U13 es
-**Proporción de la animación**: avisa de los planos cuya cámara
-tiene otra proporción que el tamaño de salida (*Planos con otra
-proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
-(4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
-tamaño de salida.
+**Doctor popover**: the list of `DOCTOR_CHECKS` with state, a sentence
+saying what is happening and a *Fix* button per row, plus *Fix all* at the top.
+The scene checks (scale, origin, smoothing, bevel, clipping) are
+implemented over the data model. A check from U13 is
+**Animation aspect ratio**: it warns of the shots whose camera
+has another aspect ratio than the output size (*Shots with another aspect
+ratio than the animation (1920 × 1080): 1. The first uses Camera 2
+(4:3).*) and its fix sets the cameras of those shots to the aspect ratio of the
+output size.
 
-**Los chequeos de motor** (D1) salen en las mismas filas, con el título del
-catálogo (*Motor*, *SIMD*, *Denoise*, *Tono*, *Fireflies*, *Formato de
-salida*, *Presupuesto de tiempo*) y la frase de lo que el motor dice (*El
-motor corre con un solo worker: el sistema no le da más, así que un render usa
-un solo núcleo.*; *SIMD está desactivado en Ajustes ▸ Motor de renderizado: se
-usa la compilación escalar.*; *El denoise está en el visor pero apagado en el
-render: la imagen saldrá con ruido.*; *7 fireflies tras 64 muestras…*; *Un
-presupuesto de 5 s llega solo a 1 de las 64 muestras de un Borrador a la velocidad
-medida aquí. Unos 5 min llegarían.*). La acción de cada fila es una de
-cuatro: **Arreglar** cuando el proyecto puede cambiar (una entrada de
-deshacer, *Doctor: Denoise*); **Ajustes** cuando lo que lo limita es una fila
-de *Ajustes* (*Hilos*, *SIMD*): abre la ventana en esa fila, resaltada, y cierra
-el popover, porque el Doctor no cambia los ajustes de la aplicación;
-*No se arregla aquí* cuando ni el proyecto ni los ajustes lo arreglan (falta
-`rt.wasm`, el sistema no tiene simd128, el motor sin *denoiser*, *fireflies* que
-solo más muestras quitan); y *Bien* si está sano. Un chequeo que no se puede
-decir ahora sale apagado con su motivo en lugar de *No disponible aún: necesita
-el motor*: *El motor todavía está cargando*, *Necesita el motor, que no está en
-marcha*, *Necesita el visor en Completo: lee la imagen que el motor acumula*,
-*Midiendo: el visor Completo lee la imagen cuando lleva unas muestras*, *Aún sin
-medir: el visor Completo, o Ajustes ▸ Motor de renderizado ▸ Medir rendimiento,
-miden la velocidad*, *Light tree*: *El motor aún no tiene árbol de luces* y
-*Persistent data*: *No se aplica a este motor*. *Arreglar todo* hace en una
-entrada de deshacer (*Doctor: arreglar todo*) lo que el proyecto puede y deja
-los demás con su explicación. Captura (`tools/doctor-engine-check.mjs`):
-`docs/ui/doctor-engine.png`, el popover con *SIMD* en *Desactivado*, el
-*denoise* solo en el visor y un presupuesto de 5 s.
+**The engine checks** (D1) appear in the same rows, with the title from the
+catalogue (*Engine*, *SIMD*, *Denoising*, *View transform*, *Fireflies*, *Output
+format*, *Time budget*) and the sentence of what the engine says (*The engine runs on one
+worker: this system gives it no more, so a render uses one core.*; *SIMD is Off in
+Settings ▸ Render engine: the scalar build runs.*; *Denoise is on in the
+viewport but off for the Render: the image will come out noisy.*; *7 fireflies after 64 samples…*; *A
+budget of 5 s reaches only 1 of the 64 samples of a Draft at the speed
+measured here. About 5 min would.*). The action of each row is one of
+four: **Fix** when the project can change (one undo
+entry, *Doctor: Denoising*); **Settings** when what holds it back is a row
+of *Settings* (*Threads*, *SIMD*): it opens the window at that row, highlighted, and closes
+the popover, because the Doctor does not change the application settings;
+*Not fixable here* when neither the project nor the settings fix it (`rt.wasm` is
+missing, the system has no simd128, the engine has no denoiser, fireflies that
+only more samples remove); and *OK* if it is healthy. A check that cannot be
+told right now appears disabled with its reason instead of *Not available yet: needs
+the engine*: *The engine is still loading*, *Needs the engine, which is not
+running*, *Needs the Full viewport: it reads the image the engine accumulates*,
+*Measuring: the Full viewport reads the image once it has a few samples*, *Not
+measured yet: the Full viewport, or Settings ▸ Render engine ▸ Measure performance,
+measures the speed*, *Light tree*: *The engine has no light tree yet* and
+*Persistent data*: *Does not apply to this engine*. *Fix all* does in one
+undo entry (*Doctor: fix all*) what the project can and leaves
+the others with their explanation. Capture (`tools/doctor-engine-check.mjs`):
+`docs/ui/doctor-engine.png`, the popover with *SIMD* *Off*, the
+denoise only in the viewport and a 5 s budget.
 
-**Doctor de interiores** (K1): con el tipo de escena *Interior*, siete filas
-más al final de la lista, cada una con su *Arreglar* (y entran en *Arreglar
-todo*); con otro tipo no están. *Escala y unidades* (el tamaño de un mueble
-o una habitación, un archivo en metros leído como milímetros), *Abertura para
-el sol y el cielo* (la cámara dentro de un espacio cerrado con sol o cielo y
-sin vidrio), *Vidrio de ventana* (un panel grueso o refractivo: el arreglo lo
-hace fino), *Óptica demasiado angular* (menos de 18 mm: 24 mm), *Altura de ojo*
-(fuera de 0,3 a 2,2 m: 1,5 m), *Recorte cercano* (el de una cámara dentro de
-la habitación llega a la pared más próxima) y *Normales de las paredes*
-(una superficie cerrada o una pared plana que mira al lado equivocado: las
-invierte). En *Interior* la comprobación de escala del Doctor no compara con
-el tamaño del tipo de producto.
+**Interior Doctor** (K1): with the scene type *Interior*, seven more
+rows at the end of the list, each with its *Fix* (and they join *Fix all*);
+with another type they are not there. *Scale and units* (the size of a piece of furniture
+or a room, a file in metres read as millimetres), *Opening for the sun and sky*
+(the camera inside a closed space with sun or sky and
+no glass), *Window glass* (a thick or refractive pane: the fix makes it
+thin), *Lens too wide* (under 18 mm: 24 mm), *Eye height*
+(outside 0.3 to 2.2 m: 1.5 m), *Near clipping* (that of a camera inside
+the room reaches the nearest wall) and *Wall normals*
+(a closed surface or a flat wall facing the wrong way: it flips
+them). In *Interior* the Doctor's scale check does not compare with
+the size of the product type.
 
 ---
 
-### 2.7 · Ventana de render, al estilo de KeyShot
+### 2.7 · Render window, KeyShot style
 
-Se abre con **Render…** o `Ctrl/⌘ ⏎`. Es una ventana flotante de unos
-760 × 640 px centrada sobre la aplicación, con el visor visible detrás
-(atenuado un 40 %), que se mueve arrastrando su barra de título y se
-cierra con `Esc` o con la ×, conservando los ajustes. Los ajustes son
-del proyecto (`state.render`) y se recuerdan. Toda la ventana es
-acromática, como el resto del cromo.
+It opens with **Render…** or `Ctrl/⌘ ⏎`. It is a floating window of about
+760 × 640 px centred over the application, with the viewport visible behind it
+(dimmed 40 %), moved by dragging its title bar and
+closed with `Esc` or the ×, keeping the settings. The settings belong
+to the project (`state.render`) and are remembered. The whole window is
+achromatic, like the rest of the chrome.
 
-**Barra de título**: *Render* y un segmento **Imagen · Animación** que
-decide qué se va a renderizar. Debajo, tres secciones desplegables.
+**Title bar**: *Render* and an **Image · Animation** segment that
+decides what is going to be rendered. Below, three collapsible sections.
 
-**1 · Salida**
+**1 · Output**
 
-- **Nombre**: plantilla con fichas insertables (`{proyecto}`,
-  `{cámara}`, `{estudio}`, `{fecha}`, `{n}`) y la vista previa del nombre
-  resultante en auxiliar (*Botella_Cámara 1_0001.png*). `{estudio}` es el estudio
-  guardado del trabajo en un lote (N2) y, en cualquier otro, el tipo de producto;
-  las claves de las fichas son las mismas en todos los idiomas (`{project}`,
-  `{camera}`, `{studio}`, `{date}`, `{n}`), solo cambia lo que dice cada ficha.
-- **Carpeta al terminar**: dónde se guarda. En el navegador, *Descargas*
-  por defecto o **Elegir carpeta…** (con el acceso al sistema de
-  archivos del navegador donde exista; el permiso se recuerda y la
-  carpeta se muestra por su nombre); donde no exista, el selector dice
-  *Este navegador solo permite descargar* y se usa *Descargas*. En el
-  escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
-- **Formato**: PNG (8 o 16 bits), JPEG (calidad, deslizador con su campo), EXR, **TIFF** (8, 16
-  o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
-  el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
-  dice por qué). Cada formato
-  que necesita explicación lleva **una línea de ayuda** bajo el
-  selector, la misma que el texto emergente del botón: *EXR: lineal en
-  coma flotante de 32 bits, para composición*; *TIFF: sin compresión, 8/16
-  bits sRGB o 32 bits lineal*; *DNG lineal en coma flotante: se revela
-  como un raw de cámara*. La profundidad de bits sale a la derecha del
-  selector solo donde se elige: PNG ofrece *8 bits* y *16 bits*; TIFF,
-  *8 bits*, *16 bits* y *32 bits flotante* (lineal, con la exposición del
-  render y sin curva, como el EXR); RAW (DNG) no ofrece nada que elegir y
-  dice *32 bits flotante*. TIFF lleva los DPI de la ventana como
-  resolución; el TIFF de 8 y 16 bits y el DNG se leen como sRGB y como
-  primarios sRGB lineales, sin perfil ICC. El nombre del archivo acaba en
-  `.tif` o `.dng`. Al terminar, el visor de resultados y las miniaturas
-  usan una **copia PNG de 8 bits** del mismo render (Chromium y Firefox no
-  muestran TIFF ni DNG, como no muestran EXR), y *Guardar de nuevo* escribe
-  el archivo, no la copia. El resumen del pie lo dice: *TIFF 32 bits
-  flotante → Descargas*. Captura: `docs/ui/render-format-tiff.png`
-  (`tools/render-format-check.mjs`). Una configuración antigua o ajena con un formato
-  que esta versión no escribe se abre como PNG.
-- **Pases** (N2): cuatro fichas que se encienden y se apagan, *Alfa*, *Profundidad*,
-  *Normales* y *Id de pieza* (cada una con su frase en el texto emergente), y, con alguna
-  encendida, el segmento del formato de los archivos: *EXR de 32 bits flotantes* (por
-  defecto) o *PNG de 16 bits*. Una nota dice qué archivos salen junto a la imagen
-  (*Un archivo por pase junto a la imagen: _alpha.exr, _depth.exr, _partId.exr,
-  _partId.json*). En *Animación* las fichas están deshabilitadas (*Los pases son para
-  imágenes: una animación escribe solo sus fotogramas*).
-- **Cámara**: desplegable con *La activa*, cada cámara guardada y
-  **Todas las cámaras** (un trabajo por cámara).
-- **Estudio** (N2): desplegable con *La escena como está*, cada estudio guardado (los de
-  la pestaña *Estudios* y los de un proyecto antiguo) y **Todos los estudios (N)**
-  (deshabilitado sin estudios guardados, que lo dice: *Guarda un estudio en la pestaña
-  Estudios para renderizar con él*, y al editar un trabajo de la cola, que es de un
-  estudio). Con *Todas las cámaras* y *Todos los estudios* la ventana dice que es un
-  **lote** (*Lote de 4 imágenes: cámaras 2 × estudios 2*) y, si la plantilla daría el mismo
-  nombre a dos archivos, lo avisa (*4 archivos tendrían el mismo nombre (Botella.png):
-  añade {camera}, {studio} o {n} al nombre*). En *Animación* está deshabilitado. El estudio
-  se pone sobre una copia del proyecto al renderizar: la escena abierta no cambia. N2b:
-  el trabajo guarda en el proyecto una copia del estudio, que es lo que renderiza; al
-  editar un trabajo cuyo estudio ya no está en la biblioteca pero sí en el proyecto, la
-  lista lo nombra *Estudio A (en el proyecto)* (sin copia tampoco: *(ya no está guardado)*).
-- **ZIP** (N2): interruptor *Empaquetar los archivos en un ZIP* con una nota (*Cuando
-  termina el último trabajo de este Render: una sola descarga, sin comprimir*); sin él,
-  cada archivo se guarda como antes. El resumen del pie añade lo que hay (*4 imágenes ·
-  3 pases · ZIP*).
-- **Tamaño**: desplegable de presets (`RESOLUTION_PRESETS` y
-  *Personalizado*), **ancho × alto en píxeles** con candado de
-  proporción, y **tamaño de impresión** en mm, cm o pulgadas con su
-  **resolución en ppp (DPI)**. Los píxeles mandan: cambiar el tamaño de
-  impresión recalcula los píxeles a los ppp actuales, cambiar los ppp
-  recalcula el tamaño de impresión. Los ppp se escriben en el archivo
-  (PNG y JPEG) para que la imprenta lea el tamaño correcto. Presets de
-  impresión: A4, A3, carta, 10 × 15 cm a 300 ppp.
+- **Name**: template with insertable chips (`{project}`,
+  `{camera}`, `{studio}`, `{date}`, `{n}`) and the preview of the resulting
+  name in auxiliary text (*Bottle_Camera 1_0001.png*). `{studio}` is the saved
+  studio of the job in a batch (N2) and, in any other, the product type;
+  the keys of the chips are the same in every language (`{project}`,
+  `{camera}`, `{studio}`, `{date}`, `{n}`), only what each chip says changes.
+- **Folder when done**: where it is saved. In the browser, *Downloads*
+  by default or **Choose folder…** (with the browser's file system
+  access where it exists; the permission is remembered and the
+  folder is shown by its name); where it does not exist, the picker says
+  *This browser can only download* and *Downloads* is used. On the
+  desktop (P2), a normal path. *Show when done* switch.
+- **Format**: PNG (8 or 16 bits), JPEG (quality, slider with its field), EXR, **TIFF** (8, 16
+  or 32-bit float) and **RAW (DNG)** (U12); *Transparent background* when
+  the format allows it (PNG, EXR and TIFF; JPEG and DNG do not, and the switch
+  says why). Each format
+  that needs an explanation carries **a help line** under the
+  selector, the same as the tooltip of the button: *EXR: linear
+  32-bit float, for compositing*; *TIFF: uncompressed, 8/16-bit
+  sRGB or 32-bit linear*; *Linear floating-point DNG: a raw developer opens it
+  like a camera raw*. The bit depth appears to the right of the
+  selector only where it is chosen: PNG offers *8-bit* and *16-bit*; TIFF,
+  *8-bit*, *16-bit* and *32-bit float* (linear, with the exposure of the
+  render and no curve, like the EXR); RAW (DNG) offers nothing to choose and
+  says *32-bit float*. TIFF carries the DPI of the window as its
+  resolution; the 8 and 16-bit TIFF and the DNG are read as sRGB and as
+  linear sRGB primaries, with no ICC profile. The file name ends in
+  `.tif` or `.dng`. When it finishes, the results viewer and the thumbnails
+  use an **8-bit PNG copy** of the same render (Chromium and Firefox do not
+  show TIFF or DNG, as they do not show EXR), and *Save again* writes
+  the file, not the copy. The summary at the foot says so: *TIFF 32-bit
+  float → Downloads*. Capture: `docs/ui/render-format-tiff.png`
+  (`tools/render-format-check.mjs`). An old or foreign configuration with a format
+  that this version does not write opens as PNG.
+- **Passes** (N2): four chips that switch on and off, *Alpha*, *Depth*,
+  *Normals* and *Part ID* (each with its sentence in the tooltip), and, with any
+  on, the segment for the files' format: *EXR 32-bit float* (the
+  default) or *PNG 16-bit*. A note says which files come out beside the image
+  (*One file per pass beside the image: _alpha.exr, _depth.exr, _partId.exr,
+  _partId.json*). In *Animation* the chips are disabled (*Passes are for
+  images: an animation writes its frames only*).
+- **Camera**: dropdown with *Active (Camera 1)*, each saved camera and
+  **All cameras** (one job per camera).
+- **Studio** (N2): dropdown with *The scene as it is*, each saved studio (those of
+  the *Studios* tab and those of an old project) and **All studios (N)**
+  (disabled without saved studios, which says so: *Save a studio in the Studios
+  tab to render with it*, and when editing a queue job, which belongs to a
+  studio). With *All cameras* and *All studios* the window says it is a
+  **batch** (*Batch of 4 images: cameras 2 × studios 2*) and, if the template would give the same
+  name to two files, it warns (*4 files would have the same name (Bottle.png):
+  add {camera}, {studio} or {n} to the name*). In *Animation* it is disabled. The studio
+  is put on a copy of the project when rendering: the open scene does not change. N2b:
+  the job keeps in the project a copy of the studio, which is what it renders; when
+  editing a job whose studio is no longer in the library but is in the project, the
+  list names it *Studio A (in the project)* (without a copy either: *(no longer saved)*).
+- **ZIP** (N2): switch *Pack the files in one ZIP* with a note (*When the last
+  job of this Render ends: one download, stored without compression*); without it,
+  each file is saved as before. The summary at the foot adds what there is (*4 images ·
+  3 passes · ZIP*).
+- **Size**: dropdown of presets (`RESOLUTION_PRESETS` and
+  *Custom*), **width × height in pixels** with a proportion
+  padlock, and **print size** in mm, cm or inches with its
+  **resolution in DPI**. The pixels rule: changing the print
+  size recalculates the pixels at the current DPI, changing the DPI
+  recalculates the print size. The DPI is written into the file
+  (PNG and JPEG) so that the printer reads the right size. Print
+  presets: A4, A3, Letter, 10 × 15 cm at 300 DPI.
 
-  **La proporción es de la cámara** (U13). En una imagen, el tamaño sigue a
-  la proporción de la **cámara activa**: el ancho se conserva y el alto sale
-  de ella (con 4:3, 1920 de ancho dan 1440 de alto). Con el candado
-  cerrado, teclear un lado hace que el otro siga esa proporción; con el
-  candado abierto, un tamaño que la rompe la **reescribe en la cámara**
-  (*Propia*, con esos píxeles como `w : h`, o el preset de la lista si el
-  tamaño es exactamente uno), y teclear los dos lados a la vez, o elegir un
-  preset de tamaño con otra proporción, hace lo mismo con el candado que
-  sea. Una línea discreta bajo los píxeles dice cuál manda (*El alto sigue
-  la proporción de Cámara 1, 4:3*; con el candado abierto, *Un tamaño
-  tecleado pasa a ser la proporción de Cámara 1*) y, justo después de
-  cambiarla, qué ha pasado (*La proporción de Cámara 1 pasa a 4:3*). Todo
-  es una sola entrada de deshacer, la de la ventana (*Ajustes de render*),
-  que devuelve cámara y tamaño. Un trabajo para otra cámara con otra
-  proporción (*Cámara: una concreta*, o *Todas las cámaras*) sale con el
-  ancho de la ventana y el alto de **esa** cámara. Al editar un trabajo
-  de la cola la ventana enseña su tamaño tal cual y no toca ninguna
-  cámara.
-- **Región** (*próximamente*): un recuadro dibujado en el visor.
+  **The aspect ratio belongs to the camera** (U13). On an image, the size follows
+  the aspect ratio of the **active camera**: the width is kept and the height comes
+  from it (with 4:3, a width of 1920 gives a height of 1440). With the padlock
+  closed, typing one side makes the other follow that ratio; with the
+  padlock open, a size that breaks it **rewrites it on the camera**
+  (*Custom*, with those pixels as `w : h`, or the preset in the list if the
+  size is exactly one), and typing both sides at once, or choosing a
+  size preset with another aspect ratio, does the same with either padlock
+  state. A discreet line under the pixels says which rules (*The height follows
+  Camera 1's aspect ratio, 4:3*; with the padlock open, *A size you type becomes
+  Camera 1's aspect ratio*) and, right after
+  changing it, what has happened (*Camera 1's aspect becomes 4:3*). It is all
+  a single undo entry, that of the window (*Render settings*),
+  which returns camera and size. A job for another camera with another
+  aspect ratio (*Camera: a specific one*, or *All cameras*) comes out with the
+  width of the window and the height of **that** camera. When editing a job
+  of the queue the window shows its size as it is and touches no
+  camera.
+- **Region** (*coming soon*): a box drawn in the viewport.
 
-**2 · Calidad**
+**2 · Quality**
 
-- **Terminar por**: segmento **Muestras · Tiempo · Ruido**. *Muestras*: campo con
-  atajos *Borrador 64 · Previa 256 · Final 1024* y valor libre. *Tiempo*:
-  campo `hh:mm:ss` con sus flechas (un minuto por paso, §4.4). En *Avanzado*, la opción *Lo que llegue antes* con
-  los dos campos. **Ruido** (E10): el deslizador *Ruido* con su campo (U15; 0,5–5 %, por defecto
-  1 %, en décimas: *1,5 %*), con la nota *Cada píxel termina por debajo de este ruido
-  (el error relativo de su media): las muestras van a las partes ruidosas,
-  nunca más que Muestras*, y el campo de *Muestras* debajo, a la vista, como tope; el
-  motor muestrea adaptativamente (`RNDR.adaptive`, `RNDR.noise_threshold`) y
-  el render acaba cuando ningún bloque de 8 × 8 pasa del umbral (o todos llegan
-  al tope). El visor *Completo* que sigue las muestras de la salida muestrea
-  igual (y vuelve a empezar al cambiar el umbral).
-- **Estimación** en auxiliar, a partir de las muestras por segundo que
-  mide el motor en el visor (*≈ 4 min en este equipo*); si el motor no
-  ha medido todavía, dice *Estimación al cabo de unos segundos en modo
-  Completo*. Nunca un número inventado. Por *Ruido* (E10) el tiempo sale de
-  la **última pasada del visor *Completo*** que muestrea al mismo umbral: lo que
-  lleva más lo que el motor espera que le falte (el trabajo que la última
-  decisión dice que queda, al ritmo de la última pasada), escalado a los
-  píxeles de la salida (*≈ 3 min hasta 1 % en este equipo, según la última
-  pasada del visor Completo*); sin eso, *El tiempo sale de las pasadas: en modo
-  Completo, o mientras se renderiza*. Mientras corre el render, el progreso de
-  la cola es la parte del tiempo que el motor dice que lleva.
-- **Cáusticas** (E5b-1): segmento **Automático · Encendidas · Apagadas**
-  (por defecto *Automático*) con una nota de lo que hace cada uno:
-  *Automático* las enciende cuando la escena tiene vidrio o metal pulido y
-  una luz pequeña (un sol, un panel o disco pequeño, un filamento
-  encendido; los puntos y focos direccionales todavía no mandan fotones);
-  *Apagadas*, la sombra del vidrio macizo queda oscura. El visor *Completo* sigue el
-  mismo interruptor.
-- **Avanzado** (plegado): rebotes máximos, recorte de indirecta,
-  semilla, **Calidad de cáusticas** (*Baja · Media · Alta*, con la nota de
-  sus fotones por muestra y su radio inicial, y de que más fotones son una
-  cáustica más fina y más tiempo por muestra, también en *Completo*),
-  **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por
-  defecto *Los dos*, con la nota de que es el filtro del motor guiado por
-  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
-  parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
-  del medidor, U11, y el render final usa siempre el filtro completo),
-  con su **Intensidad** debajo (fase U11b; deslizador con su campo desde U15; 0–100 %, por defecto 100 %, oculta
-  con la reducción *Apagada*): la imagen entregada es la mezcla
-  `ruidosa × (1 − s) + filtrada × s`, por canal y en luz lineal, hecha en el
-  motor; vale a la vez para el render y para el visor *Completo* (un solo
-  mando, guardado en el proyecto y deshacible), y con 0 % no se filtra nada.
-  Cambiarla vuelve a empezar la imagen del visor, como cualquier ajuste del
-  motor. Y,
-  cuando el render se filtra, **Guardar también sin reducción de ruido**
-  (un segundo archivo con «-noisy» en el nombre).
+- **Finish by**: segment **Samples · Time · Noise**. *Samples*: field with
+  shortcuts *Draft 64 · Preview 256 · Final 1024* and a free value. *Time*:
+  `hh:mm:ss` field with its arrows (one minute per step, §4.4). In *Advanced*, the option *Whichever comes first* with
+  both fields. **Noise** (E10): the *Noise* slider with its field (U15; 0.5–5 %, default
+  1 %, in tenths: *1.5 %*), with the note *Every pixel ends under this noise
+  (the relative error of its mean): the samples go to the noisy parts,
+  never more than Samples*, and the *Samples* field below, in view, as a cap; the
+  engine samples adaptively (`RNDR.adaptive`, `RNDR.noise_threshold`) and
+  the render ends when no 8 × 8 block exceeds the threshold (or all reach
+  the cap). The *Full* viewport that follows the output's samples samples
+  the same way (and starts over when the threshold changes).
+- **Estimate** in auxiliary text, from the samples per second that the
+  engine measures in the viewport (*≈ 4 min on this machine*); if the engine
+  has not measured yet, it says *Estimate after a few seconds in Full
+  mode*. Never an invented number. For *Noise* (E10) the time comes from
+  the **last pass of the *Full* viewport** that samples at the same threshold: what it
+  has already taken plus what the engine expects it to need (the work that the last
+  decision says remains, at the pace of the last pass), scaled to the
+  pixels of the output (*≈ 3 min to 1 % on this machine, from the last
+  pass of the Full view*); without that, *The time comes from the passes: in Full
+  mode, or as the render runs*. While the render runs, the progress of
+  the queue is the part of the time that the engine says it has taken.
+- **Caustics** (E5b-1): segment **Automatic · On · Off**
+  (default *Automatic*) with a note on what each does:
+  *Automatic* switches them on when the scene has glass or polished metal and
+  a small light (a sun, a small panel or disc, a lit filament; points and spots
+  do not yet send photons);
+  *Off*, the shadow of solid glass stays dark. The *Full* viewport follows the
+  same switch.
+- **Advanced** (collapsed): max bounces, indirect clamp,
+  seed, **Caustic quality** (*Low · Medium · High*, with the note of
+  its photons per sample and its first radius, and that more photons are a
+  finer caustic and more time per sample, also in *Full*),
+  **Denoise** (*Off · Viewport · Render · Both*, default
+  *Both*, with the note that it is the engine's filter guided by
+  albedo, normals, depth and part, which never blends two parts; its
+  *Viewport* part is the *Denoise* switch of the top bar and
+  of the meter, U11, and the final render always uses the full filter),
+  with its **Strength** below (phase U11b; slider with its field since U15; 0–100 %, default 100 %, hidden
+  with denoise *Off*): the image delivered is the mix
+  `noisy × (1 − s) + filtered × s`, per channel and in linear light, done in the
+  engine; it holds both for the render and for the *Full* viewport (a single
+  control, saved in the project and undoable), and with 0 % nothing is filtered.
+  Changing it restarts the viewport's image, like any engine setting. And,
+  when the render is filtered, **Also save without denoise**
+  (a second file with "-noisy" in the name).
 
-**2 bis · Animación** (en lugar de *Tamaño*, con una fila *Tamaño del
-fotograma* solo en píxeles, y encima de *Calidad*, cuando
-el segmento está en *Animación*; el tamaño de una animación es **suyo**:
-no sigue a la cámara, un vídeo tiene un solo tamaño, y al volver a
-*Imagen* el ancho se conserva y el alto sale de la cámara activa. El
-Doctor avisa —*Proporción de la animación*— cuando la cámara de un plano
-tiene otra proporción que ese tamaño, y su arreglo da a esas cámaras la
-proporción de la salida): **rango** (*Todo* o de–a en
-fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
-**salida** *Vídeo* (MP4 H.264 o WebM VP9) o *Fotogramas*
-(secuencia PNG o JPEG con numeración `0001`), *Terminar por* aplicado
-**a cada fotograma**, y la estimación del total. La cámara es la pista de
-cámara de la línea de tiempo. **Vídeo** (N1): solo lo que este sistema
-codifica, preguntado al arrancar (*Preguntando a este sistema qué vídeo puede
-codificar…* mientras tanto); sin ningún códec, *Vídeo* queda deshabilitado
-con *Este sistema no puede codificar vídeo: los fotogramas siempre se pueden
-renderizar*. Con *Vídeo*, el segmento del contenedor: **MP4 H.264** y **WebM
-VP9** (*WebM VP8* donde VP9 no está), el que no se codifica aquí
-deshabilitado con *Este sistema no puede codificar MP4 H.264* en su ayuda; y
-una nota: *Un solo archivo: Botella_Cámara 1_0001.webm, WebM VP9, 48
-fotogramas a 24 fps* (o, si el contenedor elegido no se codifica aquí,
-*Este sistema no puede codificar …*), con *Un vídeo tiene un tamaño par:
-1920 × 1080* cuando el tamaño es impar. El formato de *Salida* sigue siendo
-el de los fotogramas; el resumen del pie dice el del vídeo (*WebM VP9 →
-Descargas*). Captura: `docs/ui/render-window-video.png`.
+**2 bis · Animation** (in place of *Size*, with a *Frame size* row in
+pixels only, and above *Quality*, when
+the segment is on *Animation*; the size of an animation is **its own**:
+it does not follow the camera, a video has a single size, and on returning to
+*Image* the width is kept and the height comes from the active camera. The
+Doctor warns —*Animation aspect ratio*— when a shot's camera
+has another aspect ratio than that size, and its fix gives those cameras the
+aspect ratio of the output): **range** (*All* or from–to in
+frames or seconds), **fps** (24, 25, 30, 60), resulting duration,
+**output** *Video* (MP4 H.264 or WebM VP9) or *Frames*
+(PNG or JPEG sequence numbered `0001`), *Finish by* applied
+**to each frame**, and the estimate of the total. The camera is the camera
+track of the timeline. **Video** (N1): only what this system
+encodes, asked at startup (*Asking this system which videos it can
+encode…* meanwhile); with no codec, *Video* is disabled
+with *This system cannot encode video: the frames can always be
+rendered*. With *Video*, the container segment: **MP4 H.264** and **WebM
+VP9** (*WebM VP8* where VP9 is not available), the one not encoded here
+disabled with *This system cannot encode MP4 H.264* in its help; and
+a note: *One file: Bottle_Camera 1_0001.webm, WebM VP9, 48
+frames at 24 fps* (or, if the chosen container is not encoded here,
+*This system cannot encode …*), with *A video has an even size:
+1920 × 1080* when the size is odd. The *Output* format is still
+that of the frames; the summary at the foot says that of the video (*WebM VP9 →
+Downloads*). Capture: `docs/ui/render-window-video.png`.
 
-**3 · Post-procesado IA** (X4; `AI-POST.md` §4): plegada y apagada por
-defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
+**3 · AI post-processing** (X4; `AI-POST.md` §4): collapsed and off by
+default, in the body of the window (`ui/panels/ai-post.ts`).
 
-- **Interruptor** con su línea auxiliar: el modelo en uso, con los datos
-  del gestor de Ajustes (*Z-Image-Turbo · Q4 · Apache-2.0 · descargado*).
-  Si no hay ningún modelo (o falta el motor de inferencia), activarlo
-  abre *Ajustes ▸ Post-procesado IA ▸ Modelos*; si el servicio dice que no
-  puede (`AiUnavailableReason`), queda deshabilitado con el motivo en una
-  nota (sin WebGPU, poca memoria, modelo que el motor instalado no carga,
-  *próximamente* mientras la versión no tenga tubería). En *Animación* queda
-  deshabilitado (*para animaciones llega más adelante*). Gestionar modelos…
-  y la intervención por defecto de Ajustes, debajo.
-- **Aviso del motor de ejecución** (fase U10, `ui/panels/ai-runtime-notice.ts`):
-  con un modelo instalado y sin motor de ejecución (o con la descarga en
-  pausa, o sin que arranque, o sin Microsoft Visual C++ en Windows), un
-  recuadro bajo el interruptor lo dice con su título y su frase y los
-  botones que lo arreglan: **Instalar · 26 MB** (el mismo flujo que la fila
-  del motor de Ajustes: el lanzador descarga la compilación que eligió la
-  regla), *Reanudar*, *Pausar* mientras baja (con barra), **Instalar el
-  entorno de Microsoft Visual C++…** y *Comprobar de nuevo*, y *Ajustes…*.
-  Con la sección plegada, su título lleva la marca *Falta el motor* para
-  que se vea. Todo lo muestra el lanzador (se pregunta cada pocos segundos,
-  y cada 0,4 s mientras algo baja); si el lanzador rechaza un botón, lo dice
-  en el recuadro. Sin modelo no se dice nada del motor (lo primero es
-  elegir un modelo), y con un motor que arranca tampoco.
-- **Configurador** (solo con el interruptor encendido), a la izquierda: seis
-  controles de 0 a 100 con su frase —*Intervención*, *Luz*, *Rebotes*,
-  *Desgaste y microdetalle*, la lista de *Estilo* (`AI_STYLES`) y *Fuerza del
-  estilo*—, las **protecciones** como seis fichas fijas con candado (sin
-  interruptor ni botón: *Geometría · Materiales · Resolución · Profundidad
-  de campo · Encuadre · Texto y logotipos*) y **Otra variación**, que cambia
-  la semilla. Cada cambio es una acción del *store*, deshacible; arrastrar un
-  control es **un** paso de deshacer. En un trabajo de la cola que se edita,
-  los controles cambian el borrador del trabajo.
-- **Vista previa**, a la derecha (debajo en una ventana estrecha; queda a la
-  vista mientras se recorren los controles): un fotograma del **modo Rápido**
-  desde la cámara del trabajo a 384–512 px, con la IA aplicada y el **divisor
-  deslizable** de U5 (*Antes · Después*). Se actualiza **al soltar** un
-  control, nunca mientras se arrastra (los cambios de una tecla o de una
-  lista esperan una pausa corta), y abandona la vista previa en curso si
-  llega otro cambio. Debajo: el tamaño, **la línea del informe de la guarda**
-  (la misma del visor), *≈ 0,4 s por cambio en este equipo* —**medido**
-  alrededor de la llamada a la tubería, sin cifra hasta la primera vista
-  previa—, la nota *La vista previa parte del modo Rápido; el resultado final
-  parte del render completo* y la opción *Usar el motor completo para la
-  vista previa (más lento)*, que parte del trazador con el presupuesto del
-  trabajo. El fotograma y sus pases de `AI-POST.md` §7.4 (dibujados con
-  three.js: ids de pieza y de material del propio RSB, profundidad, normales
-  en el mundo con Z arriba, albedo, círculo de confusión de la lente simple) se
-  calculan una vez y se reutilizan mientras cambian solo los controles.
-- **De dónde sale** (X3c): en la aplicación de escritorio, de la tubería del
-  lanzador (`src/io/ai-post.ts`): el interruptor puede encenderse cuando
-  `/api/ai/runtime` dice que el motor de ejecución y el modelo activo están
-  listos (si no, el motivo: sin motor, sin modelo, modelo que este motor no
-  carga), y la vista previa manda su fotograma y sus pases al lanzador. En la
-  web, hasta X3d, el interruptor dice *próximamente*; con `?ai=synthetic`
-  corre el servicio sintético de `src/ai/synthetic.ts` (sin modelo,
-  determinista) para capturas, demos y pruebas. Apagar el interruptor
-  devuelve la memoria del modelo (si ningún trabajo lo usa). Capturas:
-  `docs/ui/ai-section-dark.png` y `docs/ui/ai-section-light.png`.
-- **Prompt propio** (X4b), bajo los seis controles y sobre las protecciones: un
-  campo de varias líneas, vacío por defecto, de hasta 400 caracteres (contador
-  *n / 400*), con la nota *Describe la luz o el ambiente; la geometría, los
-  materiales y el enfoque siguen protegidos*. Es del trabajo: se guarda en el
-  proyecto, cada trabajo de la cola lleva el suyo y se deshace **de una vez por
-  visita al campo** (se guarda al dejar de escribir y al salir de él; todo lo de
-  una visita es una entrada de deshacer, nunca una por tecla). Se añade al final
-  del *prompt* que se genera de la escena, que va tras el *prompt del sistema*
-  de Ajustes; el negativo fijo sigue aparte. Si el modelo que va a ejecutarse no
-  admite un *prompt* de texto (`textPrompt` de `ai-models.json`, o el manifiesto
-  de un importado), el campo se ve deshabilitado y la línea de debajo lo dice
-  (*… no admite un prompt de texto: lo que se escriba aquí no se envía*). Con un
-  modelo que lee pocos *tokens* (SD 1.5: 77) la línea dice cuántos usa
-  (*≈ 64 de los 77 tokens que lee este modelo*) o qué se queda fuera
-  (*Demasiado largo para este modelo (77 tokens); no entra: tu prompt, el final de
-  la descripción de la escena*), con la estimación prudente de `AI-POST.md` §4.
-- **Variantes** (X4b), junto a *Otra variación*: un número de 1 a 8, **1 por
-  defecto**, deshacible (un arrastre, una entrada). Debajo, *Un render y después 4
-  imágenes de IA con las semillas 12 a 15; la vista previa enseña la primera ·
-  ≈ 2 min de IA en este equipo* (el tiempo es N × lo medido por píxel en el último
-  trabajo con IA de este equipo; sin medida, *el tiempo de la IA se mide con el
-  primer render con IA*). Cambiar el número no rehace la vista previa, que sigue
-  siendo de una sola imagen. El resumen del pie dice *IA activada · 4 variantes*.
-  Captura: `docs/ui/ai-section-prompt.png`.
+- **Switch** with its auxiliary line: the model in use, with the data
+  from the Settings manager (*Z-Image-Turbo · Q4 · Apache-2.0 · downloaded*).
+  If there is no model (or the inference engine is missing), turning it on
+  opens *Settings ▸ AI post-processing ▸ Models*; if the service says it
+  cannot (`AiUnavailableReason`), it is disabled with the reason in
+  a note (no WebGPU, little memory, a model that the installed runtime does not load,
+  *coming soon* while the version has no pipeline). In *Animation* it is
+  disabled (*AI post-processing is for single images; for animations it is coming soon*). Manage models…
+  and the default intervention from Settings, below.
+- **Runtime notice** (phase U10, `ui/panels/ai-runtime-notice.ts`):
+  with a model installed and no inference runtime (or with its download
+  paused, or with it not starting, or without Microsoft Visual C++ on Windows), a
+  box under the switch says so with its title and its sentence and the
+  buttons that fix it: **Install · 26 MB** (the same flow as the
+  runtime row in Settings: the launcher downloads the build the
+  rule chose), *Resume*, *Pause* while it downloads (with a bar), **Install
+  Microsoft Visual C++ runtime…** and *Check again*, and *Settings…*.
+  With the section collapsed, its title carries the mark *Needs the runtime* so that
+  it is seen. The launcher shows everything (it is asked every few seconds,
+  and every 0.4 s while something downloads); if the launcher rejects a button, it says so
+  in the box. With no model nothing is said of the runtime (first
+  choose a model), and with a runtime that starts neither.
+- **Configurator** (only with the switch on), on the left: six
+  controls from 0 to 100 with their sentence —*Intervention*, *Light*, *Bounces*,
+  *Wear and micro-detail*, the *Style* list (`AI_STYLES`) and *Style
+  strength*—, the **protections** as six fixed chips with a padlock (no
+  switch or button: *Geometry · Materials · Resolution · Depth
+  of field · Framing · Text and logos*) and **Another variation**, which changes
+  the seed. Each change is a store action, undoable; dragging a
+  control is **one** undo step. In a queue job being edited,
+  the controls change the job's draft.
+- **Preview**, on the right (below in a narrow window; it stays in
+  view while the controls are scrolled): a frame in **Fast mode**
+  from the job's camera at 384–512 px, with the AI applied and the sliding
+  **divider** of U5 (*Before · After*). It updates **on release** of a
+  control, never while dragging (changes by a key or from a
+  list wait a short pause), and abandons the preview in progress if
+  another change arrives. Below: the size, **the guard's report line**
+  (the same as the viewport's), *≈ 0.4 s per change on this computer* —**measured**
+  around the pipeline call, with no figure until the first
+  preview—, the note *The preview starts from Fast mode; the final result
+  starts from the full render* and the option *Use the full engine for the
+  preview (slower)*, which starts from the tracer with the job's
+  budget. The frame and its passes from `AI-POST.md` §7.4 (drawn with
+  three.js: part and material ids from the RSB itself, depth, normals
+  in world space with Z up, albedo, circle of confusion of the simple lens) are
+  computed once and reused while only the controls change.
+- **Where it comes from** (X3c): in the desktop application, from the launcher's
+  pipeline (`src/io/ai-post.ts`): the switch can be turned on when
+  `/api/ai/runtime` says that the runtime and the active model are
+  ready (if not, the reason: no runtime, no model, a model this runtime does not
+  load), and the preview sends its frame and its passes to the launcher. On
+  the web, until X3d, the switch says *coming soon*; with `?ai=synthetic`
+  the synthetic service of `src/ai/synthetic.ts` runs (no model,
+  deterministic) for captures, demos and tests. Turning the switch off
+  gives back the model's memory (if no job uses it). Captures:
+  `docs/ui/ai-section-dark.png` and `docs/ui/ai-section-light.png`.
+- **Your prompt** (X4b), under the six controls and above the protections: a
+  multi-line field, empty by default, up to 400 characters (counter
+  *n / 400*), with the note *Describe the light or the mood; the geometry, the
+  materials and the focus stay protected*. It belongs to the job: it is saved in the
+  project, each queue job carries its own and it is undone **all at once per
+  visit to the field** (saved when typing stops and on leaving it; everything in
+  a visit is one undo entry, never one per key). It is added at the end
+  of the prompt generated from the scene, which comes after the *system prompt*
+  from Settings; the fixed negative stays separate. If the model about to run does not
+  take a text prompt (`textPrompt` in `ai-models.json`, or the manifest
+  of an imported one), the field appears disabled and the line below says so
+  (*… does not take a text prompt: what is written here is not sent*). With a
+  model that reads few tokens (SD 1.5: 77) the line says how many it uses
+  (*≈ 64 of the 77 tokens this model reads*) or what is left out
+  (*Too long for this model (77 tokens); left out: your prompt, the end of
+  the scene’s description*), with the prudent estimate of `AI-POST.md` §4.
+- **Variants** (X4b), next to *Another variation*: a number from 1 to 8, **1 by
+  default**, undoable (one drag, one entry). Below, *One render, then 4
+  AI images with the seeds 12 to 15; the preview shows the first ·
+  ≈ 2 min of AI on this computer* (the time is N × what was measured per pixel on the last
+  job with AI on this computer; with no measurement, *the AI’s time is measured with the
+  first render with AI*). Changing the number does not redo the preview, which is still
+  a single image. The summary at the foot says *AI on · 4 variants*.
+  Capture: `docs/ui/ai-section-prompt.png`.
 
-**4 · Plugins** (P6; `ui/panels/plugins.ts`), después de *Post-procesado IA*:
-un bloque por cada plugin instalado con el *slot* `render.plugins`, dibujado
-**solo desde su manifiesto** (ARCHITECTURE §9): la interfaz no conoce ningún
-plugin. Plegada al principio mientras no hay ninguno instalado; sin plugins,
-una línea: *No hay ningún plugin instalado: los plugins se instalan en Ajustes ▸
-Plugins* y **Gestionar plugins…**, que abre esa sección. En un trabajo de la
-cola que se edita, la sección no se muestra (no hay un resultado sobre el que
-trabajar).
+**4 · Plugins** (P6; `ui/panels/plugins.ts`), after *AI post-processing*:
+one block for each installed plugin with the `render.plugins` slot, drawn
+**only from its manifest** (ARCHITECTURE §9): the interface knows no
+plugin. Collapsed at first while none is installed; with no plugins,
+one line: *No plugin is installed: plugins are installed in Settings ▸
+Plugins* and **Manage plugins…**, which opens that section. In a queue
+job being edited, the section is not shown (there is no result to
+work on).
 
-- **Cabecera**: el logo del plugin (de su paquete, sobre una tesela negra en los
-  dos temas: es contenido, el color es suyo), el nombre, *versión 0.1.0*, la
-  ficha **Licencia cerrada** y, debajo, su línea `notice` con **Página del
-  proyecto ↗**. Para el de película: *Adelanto de una app de edición de fotos y
-  simulación de película del mismo desarrollador, en desarrollo*.
-- **Receta**, debajo de la cabecera y a todo lo ancho (decisión 8;
-  `ui/panels/plugin-recipes.ts`): un **carrusel horizontal**, como la tira de
-  película de la app móvil, con una tarjeta por receta en el orden y por las
-  categorías **del plugin**: la imagen arriba, **su nombre público** debajo (el
-  de película no enseña marcas de fabricantes ni de películas: su regla D112)
-  y la categoría como etiqueta pequeña; la primera tarjeta es *Sin receta ·
-  Solo los mandos* (el punto de partida del propio plugin). Se desplaza de lado
-  con la rueda o el *trackpad* (una tarjeta por paso; en un extremo la rueda
-  vuelve a ser de la ventana) y con **← →** (también ↑ ↓, Inicio y Fin), que
-  eligen la tarjeta de al lado; un clic elige una. La elegida lleva un
-  contorno de la tinta; el carrusel se ajusta a las tarjetas y se funde en el
-  extremo donde hay más. Cada elección es una acción del *store*, deshacible.
-  La imagen de cada tarjeta es **la imagen base del plugin** (la escena de
-  prueba que trae su paquete: para el de película, el frasco junto a la
-  lámpara encendida de `rt --write-film-thumb`) por esa receta con los mandos
-  por defecto, a 160 × 100 y ampliada por CSS; mientras no llega, un hueco
-  rayado gris (*Se está haciendo su imagen*). Se hacen **una vez** en este
-  equipo (IndexedDB, por versión del plugin y receta), de una en una y solo
-  cuando no hay una vista previa esperando; mientras, *Imágenes de las recetas
-  12 de 128, hechas una vez en este equipo*. **Encima del carrusel, sus
-  filtros** (P6b), los del plugin, como los de la búsqueda de películas de la
-  app de aintfilm: una fila de *chips* por filtro, con su nombre, **Todos** y
-  sus valores (para el de película: **Tipo** —*Color* (negativo en color),
-  *B&W*, *Diapositiva*, *Cine*—, **ISO** en las tres bandas de la app —*≤ 100*,
-  *200–400*, *≥ 800*, cortadas en 100 y 400— y **Grupo** —*Películas*, *Color de
-  una película*, *Grano*, *Difusión*, *Objetivo*—; la fila de marcas de la app no
-  está: son nombres de fabricantes). Un filtro elige un valor (o *Todos*); los
-  filtros se combinan (todos a la vez) y una receta que no dice nada de uno (un
-  grano no tiene ISO) solo está en su *Todos*. Debajo, la cuenta: *23 de 127
-  recetas* (*Ninguna de las 127 recetas coincide con estos filtros*). La receta
-  elegida sigue elegida aunque los filtros la dejen fuera: su tarjeta va
-  **primera**, atenuada, con *Fuera de los filtros* en lugar de su categoría;
-  *Sin receta* va siempre. Cada filtro es una acción del *store*, deshacible, y
-  se guarda con los ajustes del plugin (`filters`); cambiarlo no rehace la
-  vista previa. **Debajo del carrusel, un deslizador** fino de su mismo ancho
-  para recorrer las recetas, atado al desplazamiento en los dos sentidos:
-  arrastrarlo desplaza el carrusel tarjeta a tarjeta (al soltarlo se ajusta a
-  la tarjeta) y desplazar el carrusel lo mueve; una marca en su pista dice
-  dónde está la tarjeta elegida; se enfoca con el teclado y ← → mueven una
-  tarjeta (*Recorrer las recetas*); sin nada que desplazar, no se ve. Debajo,
-  la elegida con su categoría (*CN-01 · Películas · negativo en color*). A la
-  izquierda, **los mandos del manifiesto** por grupos, cada grupo con
-  su título: deslizador con su campo numérico (y su unidad; un deslizador con
-  `minLabel` dice *Receta* en su tope izquierdo: ahí el plugin conserva el
-  valor de la receta), lista o interruptor, cada uno con su frase cuando la
-  trae. **Restaurar valores por defecto** al final. Cada cambio es una acción
-  del *store* (`RenderSettings.plugins`), deshacible; arrastrar es **un**
-  paso; se guarda con el proyecto.
-- **Vista previa**, a la derecha (debajo en una ventana estrecha): **el
-  resultado actual** —el abierto en el visor de resultados, si no el último; el
-  de un resultado hecho por un plugin es su origen— a **480 px** de ancho por el
-  plugin en su *worker*, con el divisor *Render · el plugin* de U5. Se rehace
-  **300 ms** después del último cambio (al soltar, en un deslizador) y la que
-  está en curso se cancela con la siguiente. Debajo: el tamaño, qué recibió
-  el plugin (*luz lineal del EXR* o *imagen de 8 bits*) y de qué resultado;
-  **la línea del plugin**: lo que el propio plugin dice de esa vista previa
-  (para el de película: *Negativo por píxel 75 µm · Grano Gaussian · Etapas 5 ·
-  Motor wasm 0.1.0*), nada que la interfaz calcule ni invente; y *El plugin
-  tardó 1,1 s*, medido alrededor de su render. Sin resultados, **la imagen base
-  del plugin** por él (*Escena de prueba · el plugin*; *de la escena de prueba
-  del plugin*) con la línea *Aún no hay resultado: la vista previa enseña la
-  escena de prueba del plugin; Aplicar necesita un render terminado*; un plugin
-  sin imagen base dice *Renderiza antes una imagen: un plugin trabaja sobre un
-  resultado terminado*.
-- **Aplicar**: el resultado a su tamaño por el plugin (*Aplicando a 1920 ×
-  1080…*, con **Cancelar**, que para el *worker*) y **un resultado nuevo** en el
-  historial junto a su origen, como la imagen de la IA: PNG (JPEG para un
-  resultado JPEG) con los ppp del origen, guardado donde se guardó el origen,
-  con el nombre *<origen>_<plugin>.png* y su procedencia (`provenance: { plugin,
-  version, recipe, controls }`). Se abre en el visor comparado con su origen,
-  que dice *Hecho con aintfilm · simulación de película 0.1.0, receta CN-01, a
-  partir de Botella_Cámara 1_0001.png*; un plugin con semilla guarda además
+- **Header**: the plugin's logo (from its package, on a black tile in both
+  themes: it is content, the colour is its own), the name, *version 0.1.0*, the
+  **Closed licence** chip and, below, its `notice` line with **Project
+  page ↗**. For the film one: *Preview of a photo editing and film simulation
+  app by the same developer, in development*.
+- **Recipe**, below the header and full width (decision 8;
+  `ui/panels/plugin-recipes.ts`): a **horizontal carousel**, like the film strip of
+  the mobile app, with one card per recipe in the order and by the
+  categories **of the plugin**: the image on top, **its public name** below (the
+  film one shows no manufacturers' or film brands: its rule D112)
+  and the category as a small label; the first card is *No recipe ·
+  The controls alone* (the plugin's own starting point). It scrolls sideways
+  with the wheel or the trackpad (one card per step; at an end the wheel
+  goes back to the window) and with **← →** (also ↑ ↓, Home and End),
+  which choose the neighbouring card; a click chooses one. The chosen one carries an
+  ink outline; the carousel snaps to the cards and fades at the
+  end where there is more. Each choice is a store action, undoable.
+  The image of each card is **the plugin's base image** (the test scene its
+  package carries: for the film one, the bottle beside the lit lamp of
+  `rt --write-film-thumb`) through that recipe with the default controls,
+  at 160 × 100 and enlarged by CSS; until it arrives, a grey striped
+  placeholder (*Its picture is being made*). They are made **once** on this
+  computer (IndexedDB, per plugin version and recipe), one at a time and only
+  when no preview is waiting; meanwhile, *Recipe pictures
+  12 of 128, made once on this computer*. **Above the carousel, its
+  filters** (P6b), those of the plugin, like the film search of the
+  aintfilm app: one row of chips per filter, with its name, **All** and
+  its values (for the film one: **Type** —*Colour* (colour negative),
+  *B&W*, *Slide*, *Cine*—, **ISO** in the app's three bands —*≤ 100*,
+  *200–400*, *≥ 800*, cut at 100 and 400— and **Group** —*Films*, *A film’s colour*,
+  *Grain*, *Diffusion*, *Lens*—; the app's row of brands is not
+  there: they are manufacturers' names). A filter chooses one value (or *All*); the
+  filters combine (all at once) and a recipe that says nothing about one (a
+  grain has no ISO) is only in its *All*. Below, the count: *23 of 127
+  recipes* (*None of the 127 recipes matches these filters*). The chosen
+  recipe stays chosen even if the filters leave it out: its card goes
+  **first**, dimmed, with *Not in the filters* in place of its category;
+  *No recipe* is always there. Each filter is a store action, undoable, and
+  is saved with the plugin's settings (`filters`); changing it does not redo the
+  preview. **Below the carousel, a thin slider** of the same width
+  to move through the recipes, tied to the scrolling in both directions:
+  dragging it scrolls the carousel card by card (on release it snaps to
+  the card) and scrolling the carousel moves it; a mark on its track says
+  where the chosen card is; it takes focus with the keyboard and ← → move one
+  card (*Move through the recipes*); with nothing to scroll, it is not shown. Below,
+  the chosen one with its category (*CN-01 · Films · colour negative*). On the
+  left, **the manifest's controls** by groups, each group with
+  its title: slider with its numeric field (and its unit; a slider with a
+  `minLabel` says *Recipe* at its left stop: there the plugin keeps the
+  recipe's value), list or switch, each with its sentence when it
+  has one. **Restore defaults** at the end. Each change is a store
+  action (`RenderSettings.plugins`), undoable; dragging is **one**
+  step; it is saved with the project.
+- **Preview**, on the right (below in a narrow window): **the current
+  result** —the one open in the results viewer, otherwise the last; for a
+  result made by a plugin, its origin— at **480 px** wide through the
+  plugin in its worker, with the *Render · the plugin* divider of U5. It is redone
+  **300 ms** after the last change (on release, for a slider) and the one
+  in progress is cancelled by the next. Below: the size, what the plugin
+  received (*linear light of the EXR* or *8-bit picture*) and from which result;
+  **the plugin's line**: what the plugin itself says about that preview
+  (for the film one: *Negative per pixel 75 µm · Grain Gaussian · Stages 5 ·
+  Engine wasm 0.1.0*), nothing the interface computes or invents; and *The plugin
+  took 1.1 s*, measured around its render. With no results, **the plugin's base
+  image** through it (*Test scene · the plugin*; *the plugin’s test scene*)
+  with the line *No result yet: the preview shows the plugin’s test scene;
+  Apply needs a finished render*; a plugin with no base image says *Render an
+  image first: a plugin works on a finished result*.
+- **Apply**: the result at its size through the plugin (*Applying at 1920 ×
+  1080…*, with **Cancel**, which stops the worker) and **a new result** in the
+  history next to its origin, like the AI image: PNG (JPEG for a
+  JPEG result) with the origin's DPI, saved where the origin was saved,
+  named *<origin>_<plugin>.png* with its provenance (`provenance: { plugin,
+  version, recipe, controls }`). It opens in the viewer compared with its origin,
+  which says *Made with aintfilm · film simulation 0.1.0, recipe CN-01, from
+  Bottle_Camera 1_0001.png*; a plugin with a seed also saves
   `seed: { control, seed0, frame, rule: 'seed0+frame' }`.
-- **Aplicar a los trabajos de render** (interruptor, decisión 9), debajo de
-  *Aplicar*: con él, **cada imagen que renderiza la cola** pasa también por el
-  plugin, con la receta y los mandos de ese trabajo, y se guarda junto a la del
-  motor (*<nombre>_<plugin>.png*); en una animación, **cada fotograma con su
-  semilla**, `semilla + fotograma` (el índice del fotograma en la animación, 0
-  para el primero: un tramo renderizado aparte lleva el mismo grano), para que
-  el grano sea el de una película fotograma a fotograma y no una capa fija; una
-  imagen fija usa la semilla tal cual. La primera imagen del trabajo se guarda
-  también en el historial con su procedencia. Si el plugin no está instalado o
-  falla, se dice una vez (*aintfilm · simulación de película no se aplicó a
-  …: …. Se guardó la imagen del motor.*) y el render queda como estaba.
-  Deshacible y guardado con el proyecto como el resto. Captura:
-  `docs/ui/render-plugins-film.png` (el paquete de película construido desde el
-  *checkout* de aintfilm, con el logo del dueño).
+- **Apply to render jobs** (switch, decision 9), below
+  *Apply*: with it, **every image the queue renders** also goes through the
+  plugin, with the recipe and controls of that job, and is saved next to the engine's
+  (*<name>_<plugin>.png*); in an animation, **each frame with its own
+  seed**, `seed + frame` (the index of the frame in the animation, 0
+  for the first: a stretch rendered separately carries the same grain), so that
+  the grain is that of a film frame by frame and not a fixed layer; a still
+  image uses the seed as it is. The first image of the job is also saved
+  in the history with its provenance. If the plugin is not installed or
+  fails, it says so once (*aintfilm · film simulation was not applied to
+  …: …. The engine’s image was saved.*) and the render stays as it was.
+  Undoable and saved with the project like the rest. Capture:
+  `docs/ui/render-plugins-film.png` (the film package built from the
+  aintfilm checkout, with its owner's logo).
 
-**Pie de la ventana**: a la izquierda, el resumen en una línea
-(*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
-apagada*); a la derecha **+ Añadir a la cola** (secundario) y
-**Render** (primario). *Render* mete el trabajo en la cola **en primera
-posición y lo arranca ya**, cierra la ventana y deja ver el progreso en
-el botón *Cola*; es "renderizar solo esta". *+ Añadir a la cola* lo pone
-al final sin arrancar, deja la ventana abierta para añadir más (aviso
-*Añadido a la cola · 3 trabajos*) y es la forma de preparar lotes. En la
-ventana, `⏎` es *Render* y `⇧ ⏎` es *+ Añadir a la cola*.
+**Window footer**: on the left, the summary on one line
+(*1920 × 1080 · 300 DPI · 256 samples · PNG → Downloads · AI
+off*); on the right **+ Add to queue** (secondary) and
+**Render** (primary). *Render* puts the job in the queue **in first
+position and starts it now**, closes the window and lets the progress be seen on
+the *Queue* button; it is "render only this one". *+ Add to queue* puts it
+last without starting, leaves the window open to add more (notice
+*Added to queue · 3 jobs*) and is the way to prepare batches. In the
+window, `⏎` is *Render* and `⇧ ⏎` is *+ Add to queue*.
 
-### 2.8 · Visor de resultados
+### 2.8 · Results viewer
 
-Al terminar un trabajo, su imagen se abre en una capa sobre el visor
-(no en otra ventana) con: la imagen a su tamaño o ajustada, zoom y
-desplazamiento, el nombre y los datos (tamaño, muestras, tiempo,
-cámara), y los botones *Guardar de nuevo*, *Abrir carpeta* (donde
-exista) y *Cerrar*. Si el trabajo llevaba post-procesado IA, se
-conservan **las dos imágenes** (la del motor y la de la IA) y el visor
-muestra un **divisor deslizable** vertical: a la izquierda el render del
-motor, a la derecha el de la IA, con una asa que se arrastra (y las
-teclas ← →), etiquetas *Render* · *IA* en las esquinas y los botones
-*Solo render*, *Solo IA*, *Dividir*; se pueden guardar las dos. Los
-resultados quedan en el historial del proyecto (cajón *Cola*,
-terminados) y en el almacenamiento del navegador hasta que se borran.
+When a job finishes, its image opens in a layer over the viewport
+(not in another window) with: the image at its size or fitted, zoom and
+pan, the name and the data (size, samples, time,
+camera), and the buttons *Save again*, *Open folder* (where it
+exists) and *Close*. If the job carried AI post-processing, **both
+images** are kept (the engine's and the AI's) and the viewer
+shows a vertical **sliding divider**: on the left the engine's
+render, on the right the AI's, with a handle that is dragged (and the
+← → keys), labels *Render* · *AI* in the corners and the buttons
+*Render only*, *AI only*, *Split*; both can be saved. The
+results stay in the project's history (*Queue* drawer,
+finished) and in the browser's storage until they are deleted.
 
-**Con IA (X4).** Un trabajo de imagen con el post-procesado encendido guarda
-primero la imagen del motor (siempre) y después la de la IA al lado
-(`…_AI.png`, en el formato del trabajo); el resultado conserva las dos y el
-**informe de la guarda**. El visor abre *Render* contra *IA* con el divisor
-(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y una
-línea propia bajo el título y la barra de botones, a todo lo ancho de la
-cabecera: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) · resolución ✓ ·
-enfoque ✓* (la geometría reúne bordes, píxeles fuera de las regiones
-permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de un
-material) y, en la misma línea, *La IA se limitó al 23 % para respetar las
-protecciones* si la guarda tuvo que bajar la intervención. Es siempre una sola
-línea: si no cabe acaba en puntos suspensivos y el aviso al pasar el ratón la
-tiene entera, con lo que se ejecutó. La barra de botones comparte línea con el
-título mientras caben los dos; si no, pasa debajo (y sus botones saltan de
-línea), sin estrechar nunca el título; *Cerrar* se queda en la esquina (X3c;
-`tools/ai-post-check.mjs` lo mide a 1600, 1280 y 960 px en los dos idiomas). Si la guarda la **rechaza**, el
-resultado queda con la imagen del motor sin cambios, el informe dice qué
-protección se rompió y no hay segunda imagen. Se guardan las dos por separado
-(*Guardar el render de nuevo*, *Guardar la imagen IA*); *Comparar con…* pone
-otro resultado en lugar de la IA. La cola y el historial muestran las **dos
-miniaturas**. El historial guarda la imagen de la IA como segundo fichero del
-resultado: IndexedDB en la web y `<datos>/results/<id>.ai.<ext>` en el
-escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
-`docs/ui/ai-results-viewer.png`, `docs/ui/ai-results-light.png` y
+**With AI (X4).** An image job with post-processing on saves
+first the engine's image (always) and then the AI's beside it
+(`…_AI.png`, in the job's format); the result keeps both and the
+**guard's report**. The viewer opens *Render* against *AI* with the divider
+(labels *Render · AI*, buttons *Render only · AI only · Split*) and a
+line of its own under the title and the button bar, across the full width of the
+header: *Checked: geometry ✓ · materials ✓ (ΔE max 1.8) · resolution ✓ ·
+focus ✓* (geometry gathers edges, pixels outside the allowed
+regions and high-band detail; ΔE max is the largest mean ΔE₀₀ of a
+material) and, on the same line, *The AI was limited to 23 % to respect the
+protections* if the guard had to lower the intervention. It is always a single
+line: if it does not fit it ends in an ellipsis and the hover notice
+holds it whole, with what was run. The button bar shares a line with the
+title while both fit; if not, it goes below (and its buttons wrap), without ever
+narrowing the title; *Close* stays in the corner (X3c;
+`tools/ai-post-check.mjs` measures it at 1600, 1280 and 960 px in both languages). If the guard **rejects** it, the
+result keeps the engine's image unchanged, the report says which
+protection was broken and there is no second image. The two are saved separately
+(*Save render again*, *Save AI image*); *Compare with…* puts
+another result in place of the AI. The queue and the history show the **two
+thumbnails**. The history keeps the AI image as the result's second file:
+IndexedDB on the web and `<data>/results/<id>.ai.<ext>` on the
+desktop (`PUT/GET /api/store/results/<id>/ai` of the launcher). Captures:
+`docs/ui/ai-results-viewer.png`, `docs/ui/ai-results-light.png` and
 `docs/ui/ai-queue.png`.
 
-**En el escritorio (X3c).** El render final con IA deja su imagen lineal y sus
-pases en el lanzador, que hace la IA sin que los píxeles vayan y vuelvan; la
-imagen de la IA llega como luz lineal y se escribe **con la exposición y la curva
-del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
-así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
-trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
-mosaico 2 de 4 · intento 1 de 4*, *IA · comprobando · intento 1 de 4*— y la barra
-mide la tubería, no ya el render (B1: la guarda repite como mucho `MAX_ATTEMPTS`
-= 4 veces, y cada intento tiene su cuarto de la barra, así que la barra no se
-acerca al final a cada reintento; tras un reintento, una segunda línea
-en la fila, *El intento 1 no pasó: <motivo de la guarda>*; el estado y el motivo
-enteros, en el texto emergente de la fila). *Detener* o *Pausar* en ese momento paran la
-IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
-IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
-trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
-muestran EXR, TIFF ni DNG: la miniatura de la IA de un trabajo en uno de ellos
-sale de una copia de 8 bits, pero el visor solo compara *Render | IA* cuando la
-IA es PNG o JPEG (el historial guarda el archivo tal cual; una copia para la vista
-de la imagen de la IA queda pendiente).
+**On the desktop (X3c).** The final render with AI leaves its linear image and its
+passes in the launcher, which does the AI without the pixels going back and forth; the
+AI image arrives as linear light and is written **with the exposure and the curve
+of the render itself**, in the job's format (8 or 16-bit PNG, JPEG, EXR, TIFF or DNG),
+so with Intervention 0 it is the same file byte for byte. While the AI
+works, the queue row says where it is —*AI · loading the model*, *AI ·
+tile 2 of 4 · attempt 1 of 4*, *AI · checking · attempt 1 of 4*— and the bar
+measures the pipeline, no longer the render (B1: the guard repeats at most `MAX_ATTEMPTS`
+= 4 times, and each attempt has its quarter of the bar, so the bar does not
+approach the end at each retry; after a retry, a second line
+in the row, *Attempt 1 did not pass: <guard's reason>*; the whole state and reason
+in the row's tooltip). *Stop* or *Pause* at that moment stop the
+AI at once and **the engine's image stays in the history** (notice *AI
+post-processing stopped: the engine’s image is kept in the history*); with *Pause*, the
+job goes back to waiting and *Resume* does it whole. Browsers do not
+show EXR, TIFF or DNG: the AI thumbnail of a job in one of them
+comes from an 8-bit copy, but the viewer only compares *Render | AI* when the
+AI is PNG or JPEG (the history keeps the file as it is; a copy for viewing
+the AI image is pending).
 
-**Variantes (X4b).** Un trabajo con varias variantes hace un solo render y una
-pasada de la IA por variante, con la semilla siguiente cada vez; se guardan como
-`…_AI.png`, `…_AI_2.png`, `…_AI_3.png`…, cada una con su informe. Mientras tanto
-la fila de la cola dice *IA · variante 2 de 4 · mosaico 3 de 4* y la barra mide las
-variantes juntas; *Detener* a mitad conserva el render y las variantes terminadas
-(*… el render y las 2 imágenes de IA terminadas se conservan en el historial*). Una
-variante que la guarda rechaza queda con su informe y sin imagen (aviso propio), y
-si una falla se conservan las anteriores. En el visor, **una tira de miniaturas**
-—una línea propia entre la cabecera y la imagen, *Variantes* y una miniatura por
-variante con su número, la elegida marcada, la rechazada sin imagen y deshabilitada—
-elige la que el divisor compara con el render (etiquetas *Render · IA 3*), sin
-perder el zum ni el divisor, y la línea del informe pasa a ser la suya (*Variante 3 ·
-Comprobado: …*). Botones *Guardar el render de nuevo*, *Guardar esta variante* y
-*Guardar todas* (cada una con su nombre). La cola y el historial ponen **×4** sobre
-las miniaturas y la columna IA de la cola dice *IA × 4*. En el historial, en la web
-van en el mismo registro de IndexedDB; en escritorio, `<datos>/results/<id>.ai.<n>.<ext>`
-(`PUT/GET /api/store/results/<id>/ai/<n>`; el `<id>.ai.<ext>` de un resultado de
-antes se lee como la variante 1). `tools/ai-post-check.mjs` (j) mide también la tira:
-una línea propia, sin solapes, a 1600, 1280 y 960 px. Captura:
+**Variants (X4b).** A job with several variants makes a single render and one
+AI pass per variant, with the next seed each time; they are saved as
+`…_AI.png`, `…_AI_2.png`, `…_AI_3.png`…, each with its report. Meanwhile
+the queue row says *AI · variant 2 of 4 · tile 3 of 4* and the bar measures the
+variants together; *Stop* halfway keeps the render and the finished variants
+(*… the render and the 2 finished AI images are kept in the history*). A
+variant the guard rejects stays with its report and no image (its own notice), and
+if one fails the earlier ones are kept. In the viewer, **a strip of thumbnails**
+—a line of its own between the header and the image, *Variants* and one thumbnail per
+variant with its number, the chosen one marked, the rejected one without an image and disabled—
+chooses the one the divider compares with the render (labels *Render · AI 3*), without
+losing the zoom or the divider, and the report line becomes its own (*Variant 3 ·
+Checked: …*). Buttons *Save render again*, *Save this variant* and
+*Save all* (each with its own name). The queue and the history put **×4** over
+the thumbnails and the queue's AI column says *AI × 4*. In the history, on the web
+they go in the same IndexedDB record; on the desktop, `<data>/results/<id>.ai.<n>.<ext>`
+(`PUT/GET /api/store/results/<id>/ai/<n>`; the `<id>.ai.<ext>` of an earlier
+result is read as variant 1). `tools/ai-post-check.mjs` (j) also measures the strip:
+a line of its own, no overlaps, at 1600, 1280 and 960 px. Capture:
 `docs/ui/ai-results-variants.png`.
 
-**En curso (U14).** El mismo sitio enseña un trabajo de la cola **mientras se
-renderiza** (§2.5, *Vista en vivo*): la cabecera con la ficha **En vivo**, el
-nombre del archivo que saldrá, una línea de datos con lo que dice el motor
-(*1280 × 720 · 15 de 96 muestras · 0:14 · Cámara 1*; con *Terminar por
-tiempo*, *15 muestras · 0:14 de 1:00*; con *Terminar por ruido* (E10),
-*adaptativo · 16–212 muestras · ruido 2,4 % de 1 % · 0:14 · quedan ≈ 40 s*,
-los números del motor; antes de la primera imagen, solo el
-tamaño y la cámara), a la derecha el estado de la fila con su progreso
-(*Renderizando · 19 %*, *Fotograma 3 de 48*, *IA · mosaico 2 de 4 · intento 1
-de 4*) y su barra, una nota (*Su imagen a medida que el motor suma muestras; el
-resultado se abre aquí al terminar*) y *Cerrar* (`Esc`). Debajo, la imagen a la
-proporción del render, todo lo grande que quepa, sobre el damero neutro donde
-el render es transparente. La imagen es la del motor reducida por un factor
-entero a lo que cabe (como mucho 960 × 600 píxeles de pantalla; en cajas de más de 2 × 2 píxeles, la media de cuatro de ellos) y se amplía
-suavemente: es para ver cómo llega, no para juzgar sus píxeles (eso, el visor de
-resultados al terminar, con zoom). En la web, la acumulación del *pool* tal
-como va, cada baldosa con sus muestras (en la primera pasada aparecen baldosa a
-baldosa; los números son las muestras que ya tienen todos los píxeles); en el
-escritorio, la pasada que el lanzador acaba de publicar, reducida en el
-lanzador (`fit=`). Sin zoom ni comparación: llegan con el resultado.
+**In progress (U14).** The same place shows a queue job **while it
+renders** (§2.5, *Live view*): the header with the **Live** chip, the
+name of the file that will come out, a data line with what the engine says
+(*1280 × 720 · 15 of 96 samples · 0:14 · Camera 1*; with *Finish by
+time*, *15 samples · 0:14 of 1:00*; with *Finish by noise* (E10),
+*adaptive · 16–212 samples · noise 2.4 % of 1 % · 0:14 · ≈ 40 s left*,
+the engine's numbers; before the first image, only the
+size and the camera), on the right the row's state with its progress
+(*Rendering · 19 %*, *Frame 3 of 48*, *AI · tile 2 of 4 · attempt 1
+of 4*) and its bar, a note (*Its picture as the engine adds samples; the
+result opens here when the job ends*) and *Close* (`Esc`). Below, the image at the
+render's aspect ratio, as large as fits, over the neutral checkerboard where
+the render is transparent. The image is the engine's reduced by an integer
+factor to what fits (at most 960 × 600 screen pixels; in boxes of more than 2 × 2 pixels, the mean of four of them) and is enlarged
+smoothly: it is for seeing how it arrives, not for judging its pixels (that is for the results
+viewer when done, with zoom). On the web, the pool's accumulation as
+it stands, each tile with its samples (on the first pass they appear tile by
+tile; the numbers are the samples all the pixels already have); on the
+desktop, the pass the launcher has just published, reduced in the
+launcher (`fit=`). No zoom or comparison: they arrive with the result.
 
-### 2.9 · Ventana de Ajustes
+### 2.9 · Settings window
 
-Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es una de
-las tres ventanas de la aplicación (§4.3): flotante, unos
-**960 × 680 px** centrada, el resto atenuado un 40 %, se mueve por su
-barra de título y se cierra con `Esc` o la ×. Acromática como todo el
-cromo. Se recuerda la última sección abierta.
+It opens with **Settings…** in the application menu or `Ctrl/⌘ ,`. It is one of
+the three windows of the application (§4.3): floating, about
+**960 × 680 px** centred, the rest dimmed 40 %, moved by its
+title bar and closed with `Esc` or the ×. Achromatic like all the
+chrome. The last section opened is remembered.
 
-**Los cambios se aplican al momento.** No hay *Aceptar* ni *Cancelar*:
-el pie dice *Los cambios se guardan al momento*. Los ajustes son de la
-aplicación en este equipo (no del proyecto) y no entran en deshacer; los
-valores por defecto de proyecto que se fijan aquí (render, importación)
-se aplican a los proyectos **nuevos**, nunca cambian el abierto.
+**Changes apply instantly.** There is no *OK* or *Cancel*:
+the footer says *Changes are saved instantly*. The settings belong to the
+application on this machine (not to the project) and do not enter undo; the
+project defaults set here (render, import)
+apply to **new** projects, and never change the open one.
 
-**Columna izquierda** (232 px): arriba un campo **Buscar ajustes**
-(`Ctrl/⌘ F` dentro de la ventana) que filtra por nombre y palabras clave
-en los dos idiomas y muestra los resultados con su ruta
-(*Motor de renderizado ▸ Hilos*); debajo las secciones agrupadas, con el
-título del grupo en versalitas auxiliares:
+**Left column** (232 px): at the top a **Search settings** field
+(`Ctrl/⌘ F` inside the window) that filters by name and keywords
+in both languages and shows the results with their path
+(*Render engine ▸ Threads*); below the sections grouped, with the
+group title in auxiliary small caps:
 
-| Grupo | Sección | Qué hay |
+| Group | Section | What is there |
 | --- | --- | --- |
-| **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
-| | **Preferencias** | *Visor y navegación* (el visor arranca siempre en *Rápido*): esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Luces* (L7): *Un montaje sobre focos* (*Preguntar* · *Sustituir* · *Ocultar* · *Añadir*), lo que hace un set o un montaje con los focos que hay; *Recordar mi elección* de la pregunta lo escribe aquí. *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
-| | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
-| | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
-| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
-| **Sistema** | **Plugins** | Los plugins del registro (`src/data/plugins.json`) y los instalados desde un archivo, cada uno con su logo, nombre, editor, versión, tamaño, resumen, la ficha **Licencia cerrada** y **Página del proyecto**; *Instalar*, *Actualizar a X*, *Quitar*; la clave de activación pedida en su fila; **Instalar desde archivo…** (detalle abajo) |
-| | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
-| | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
-| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
-| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (la literatura pública que sigue el motor) |
+| **Application** | **General** | Language; theme (Dark · Light · System); on start (*Standard mode with the example* · *Empty project* · *Last project*); interface units (mm, cm, m, inches); automatic recovery (a copy every N minutes in storage, *coming soon* until U2); confirm before closing with unsaved changes |
+| | **Preferences** | *Viewport and navigation* (the viewport always starts in *Fast*): mouse scheme (*Left button orbits* · *Alt + left button orbits* · *Middle button orbits*; the auxiliary line also says how the selection box is drawn in each), invert zoom, orbit and zoom speed, resolution during gestures in Full (Automatic · ½ · ¼), floor grid, gizmo size. *Selection*: default level, outline on hover. *Import defaults*: units if the file does not say, up axis, CAD tessellation quality, open the import sheet (*Always* · *Only when unsure*). *Lights* (L7): *A setup over lights* (*Ask* · *Replace* · *Hide* · *Add*), what a set or a setup does with the lights there are; the question's *Remember my choice* writes it here. *Render defaults for new projects*: name template, folder, format, DPI, *Finish by* |
+| | **Accessibility** | Interface size (90–150 %), text size, **high contrast** (stronger borders and auxiliary text, still achromatic), **reduce motion** (System · On · Off), focus always visible, tooltip delay, announce render progress to screen readers, underline access letters in menus |
+| | **Keyboard shortcuts** | The full list of §3, grouped and searchable; changing a shortcut: *coming soon* |
+| **Render** | **Render engine** | Engine (*Native, all threads* on desktop · *Browser, WebAssembly*); threads (*Automatic* or a number; in the browser, workers); SIMD (Automatic · Off); Full mode viewport limit (stop at N samples or after N seconds, to save battery); **while a render runs** (*Keep the viewport live (shared)*, the default: the render uses three quarters of the engine and the viewport continues with the rest · *Pause the viewport (fastest render)*); **particles per effect** (S4a: the cap of each *Ambient* effect; *Automatic* = 100 000 in the browser, 1 000 000 native); **Edge smoothing** (E11, below); **Measure performance** (renders the example scene for 10 s and shows the samples per second measured, with threads and SIMD; never an invented number); engine information (version, build, CPU, SIMD extensions, threads) |
+| | **AI post-processing** | Three parts, in this order: **Active model**, **Models** and **Hardware** (detail below); on desktop, four: **Inference runtime** between *Models* and *Hardware*. Where the pipeline does not exist (the web, until X3d; the service says so, `NOT_BUILT`), a line at the top in auxiliary text: *Post-processing arrives in a coming version; you can already download, import and prepare models* |
+| **System** | **Plugins** | The plugins of the registry (`src/data/plugins.json`) and those installed from a file, each with its logo, name, publisher, version, size, summary, the **Closed licence** chip and **Project page**; *Install*, *Update to X*, *Remove*; the activation key asked for in its row; **Install from file…** (detail below) |
+| | **Storage** | Space used by category (models, results history, library, cache) with a bar and *Free up* per row; history limit (number and size); ask the browser for persistent storage; on desktop, the data folder with *Open folder* |
+| | **Desktop** | Only in the desktop application: portable mode (yes or no and where the data is), browser that draws the window, logs folder |
+| | **Updates** | Above *About*, on web and desktop: installed version; **Check for updates** with the result in its row (*You have the latest version* · *Repackshot X is available* with the main button and **Release notes** · *Couldn’t check* with the real reason); **Check at startup** (on by default): at startup it checks once in the background and, if there is a new version, says so in a line of the status bar with the same main button, *Release notes* and *Later*, never in a window; *Last checked*. The source is GitHub's releases (`src/data/update-feed.ts`). **The main button** is **Install and restart** on desktop (P5): it asks about unsaved changes (§4.3), the launcher downloads this copy's package and its `SHA256SUMS.txt`, checks the sum, installs it and the application restarts itself with the new version (detail in `ARCHITECTURE.md` §5.5). On the web it is still **Download** (opens the release page) and the row says so: *Download opens the release page. To update from inside the application, use the desktop version.* It is also *Download* where the launcher does not know how to update itself (an earlier one) or the release carries no package or sums. **While installing**, the row (and the status bar line, with *Settings* closed) says where it is: *Downloading… 45 % · 3.2 of 7.1 MB* with a thin bar (grey, no colour), *Verifying…*, *Installing… the application will restart*, with **Cancel the update** until it starts changing files; closing *Settings* does not stop it (the state belongs to the launcher and is followed on page reload). **Failures** appear in the row with their reason and **Try again**: the download, a sum that does not match (*it was not installed*), no space on the disk, the package that could not be unpacked or put in place (*nothing was changed*) and *this copy is neither installed nor portable* (then the button is *Download*). On starting again, a notice says *Repackshot was updated to version X* |
+| | **About** | Version, licence (PolyForm Noncommercial 1.0.0, summary and full text), **third-party licences** with their text (three.js, rhino3dm, occt-import-js with the link to its source code, stable-diffusion.cpp and ggml —MIT, the desktop AI inference runtime, X3c—, and the downloaded AI models with theirs), credits (the public literature the engine follows) |
 
-**Columna derecha**: título de la sección, una frase de qué se ajusta
-ahí y las filas en bloques con un subtítulo y una línea fina entre
-bloques. Cada fila: nombre, una línea auxiliar si hace falta, y el
-control a la derecha (segmento, interruptor, campo numérico de §4.4 o,
-para los porcentajes con rango natural, deslizador con su campo,
-desplegable). Una fila con un valor distinto del de fábrica lleva un
-punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
-*Restablecer esta sección*. Lo que no existe todavía se ve,
-deshabilitado, con *próximamente*.
+**Right column**: section title, a sentence on what is adjusted
+there and the rows in blocks with a subtitle and a thin line between
+blocks. Each row: name, an auxiliary line if needed, and the
+control on the right (segment, switch, numeric field of §4.4 or,
+for percentages with a natural range, slider with its field,
+dropdown). A row with a value different from the factory one carries a
+dot and, on hover, an inline *Reset*; at the foot of each section,
+*Reset this section*. What does not exist yet is shown,
+disabled, with *coming soon*.
 
-**Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
-cada una ordenada de menos a más coste, sin cifras de coste (el orden y
-una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
-proyecto: no se deshacen ni viajan en el `.repack`; en escritorio
-se guardan con los demás en `settings.json` del lanzador.
+**Render engine ▸ Edge smoothing** (phase E11). Two lists,
+each ordered from least to most cost, with no cost figures (the order and
+a help sentence; rule 10). They are application settings, not
+project settings: they are not undone and do not travel in the `.repack`; on desktop
+they are saved with the others in the launcher's `settings.json`.
 
-- **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
-  defecto 4×. La línea auxiliar dice lo que da el dispositivo: *Este
-  dispositivo llega a N×; dibuja ahora: M×* (o que no tiene
-  multimuestreo); una opción por encima de su máximo dibuja con el máximo
-  (lo dice su *tooltip*). Cambia al momento, sin volver a empezar nada.
-- **Completo y render**: una lista vertical numerada, una opción por
-  fila con su nombre y su frase: **1 Ninguno** (todas las muestras por el
-  centro del píxel: bordes dentados, el más barato), **2 Estándar** (una
-  caja de un píxel: lo que renderiza un RSB que no dice filtro), **3 Suave**
-  (tienda de dos píxeles), **4 Fino** (Blackman–Harris de tres píxeles,
-  el habitual de producción; **por defecto**: cuesta los mismos rayos que
-  *Estándar*), **5 Fino + bordes ×2** (el doble de muestras donde cambian
-  la pieza, el material o la profundidad), **6 Fino + bordes ×4**. Vale
-  para el visor *Completo* y para todos los renders desde ese momento;
-  cambiarla vuelve a empezar la imagen del visor. Los fotogramas de gesto
-  (resolución reducida) usan el filtro pero no las muestras extra de
-  borde. Las flechas recorren la lista.
+- **Fast mode**: segment *None · MSAA 2× · MSAA 4× · MSAA 8×*, default
+  4×. The auxiliary line says what the device gives: *This device draws
+  up to N×; drawing now: M×* (or that it has no
+  multisampling); an option above its maximum draws with the maximum
+  (its tooltip says so). It changes instantly, without restarting anything.
+- **Full mode and render**: a numbered vertical list, one option per
+  row with its name and its sentence: **1 None** (every sample through the
+  centre of the pixel: jagged edges, the cheapest), **2 Standard** (a
+  box of one pixel: what an RSB that names no filter renders), **3 Soft**
+  (a tent of two pixels), **4 Fine** (Blackman–Harris of three pixels,
+  the usual production one; **default**: it costs the same rays as
+  *Standard*), **5 Fine + edges ×2** (twice the samples where the part,
+  the material or the depth change), **6 Fine + edges ×4**. It holds
+  for the *Full* viewport and for all renders from that moment;
+  changing it restarts the viewport's image. Gesture frames
+  (reduced resolution) use the filter but not the extra edge
+  samples. The arrows move through the list.
 
-En *Completo*, la línea del medidor que dice lo que el motor hace de la
-imagen añade **Filtro · Estándar** (o el que sea) cuando no es el de
-fábrica, *Fino*; en *Rápido*, **MSAA 2×** o **Sin multimuestreo** cuando
-no dibuja con 4×.
+In *Full*, the meter line that says what the engine does to the
+image adds **Filter · Standard** (or whichever) when it is not the
+factory one, *Fine*; in *Fast*, **MSAA 2×** or **No multisampling** when
+it does not draw with 4×.
 
-**Ratón y caja de selección.** La fila *Ratón* (Preferencias ▸ Visor y
-navegación) dice en su línea auxiliar qué botón orbita (el derecho
-desplaza y la rueda hace zoom) y cómo se dibuja la caja de selección
-(§2.3): *con la herramienta Seleccionar, `Ctrl/⌘` + arrastrar dibuja una
-caja de selección en cualquier caso (añade `Shift` para añadir, `Alt` para
-quitar); donde el botón izquierdo está libre, un arrastre sin más
-también*. La frase ocupa tres o cuatro líneas auxiliares según el
-idioma, sin desbordar la fila, y el tooltip de *Seleccionar* cabe en sus
+**Mouse and selection box.** The *Mouse* row (Preferences ▸ Viewport and
+navigation) says in its auxiliary line which button orbits (the right one
+pans and the wheel zooms) and how the selection box is drawn
+(§2.3): *with the Select tool, `Ctrl/⌘` + drag draws a
+selection box in every case (add `Shift` to add, `Alt` to
+remove); where the left button is free, a plain drag
+too*. The sentence takes three or four auxiliary lines depending on the
+language, without overflowing the row, and the tooltip of *Select* fits in its
 280 px.
 
-**Post-procesado IA ▸ Modelo activo**: el modelo en uso (nombre,
-cuantización, licencia, tamaño) y su configuración: dispositivo
-(*GPU* · *CPU*, y en escritorio qué GPU), precisión cuando haya varias,
-resolución de trabajo (lado largo 1024, 1536 o 2048, en mosaicos por
-encima), pasos, **intervención por defecto** (0–100, la de la ventana de
-render), semilla (*fija* o *nueva cada vez*), descargar el codificador de
-texto a RAM, y en *Avanzado* las tolerancias de la guarda
-(`AI-POST.md` §3.2; las de fábrica las fija X1), que la guarda usa en cada
-petición (C1). Un aviso en línea si el
-modelo no cabe en la memoria detectada.
+**AI post-processing ▸ Active model**: the model in use (name,
+quantisation, licence, size) and its configuration: device
+(*GPU* · *CPU*, and on desktop which GPU), precision when there are several,
+working resolution (long side 1024, 1536 or 2048, in tiles
+above that), steps, **default intervention** (0–100, that of the render
+window), seed (*fixed* or *new each time*), offload the text encoder to RAM, and in *Advanced* the guard's tolerances
+(`AI-POST.md` §3.2; the factory ones are set by X1), which the guard uses on each
+request (C1). An inline notice if the
+model does not fit in the detected memory.
 
-**Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para
-todas las imágenes (es un ajuste de la aplicación, no del proyecto: no se deshace
-ni va en el `.repack`), en un campo de varias líneas con el predeterminado del
-líder (*Photorealistic product photograph. Keep the image exactly as rendered…*, en
-inglés: los codificadores de texto de los modelos rinden mejor en él), contador
-*n / 2000*, **Restablecer el predeterminado** (deshabilitado mientras lo es) y la
-línea auxiliar *Palabras generales para todas las imágenes; van antes de la
-descripción de la escena y del prompt propio de cada trabajo. Las protecciones de la
-guarda no dependen de ellas.* Se guarda al dejar de escribir o al salir del campo;
-puede quedarse vacío (ninguno). Con un modelo activo que lee pocos *tokens*, una
-línea dice qué recibe: *SD 1.5 ligero lee como mucho 77 tokens: recibe la versión
-corta de este prompt* (mientras el texto sea el predeterminado; *La versión corta*
-se despliega debajo), *≈ 40 de los 77 tokens que lee …* o *Demasiado largo para …:
-el final de este prompt se queda fuera, después de la descripción de la escena y del
-prompt del trabajo*. En escritorio va en `settings.json` de la carpeta de datos, como
-todos los ajustes (P3e). Captura: `docs/ui/settings-ai-prompt.png`.
+**AI post-processing ▸ System prompt** (X4b): general words for
+all images (it is an application setting, not a project setting: it is not undone
+and does not go in the `.repack`), in a multi-line field with the lead's
+default (*Photorealistic product photograph. Keep the image exactly as rendered…*, in
+English: the models' text encoders perform better in it), counter
+*n / 2000*, **Restore default** (disabled while it is the default) and the
+auxiliary line *General words for every image, sent before the scene’s
+description and each job’s own prompt. The guard’s protections do not depend on them.* It is saved when typing stops or on leaving the field;
+it may be left empty (none). With an active model that reads few tokens, a
+line says what it receives: *Light SD 1.5 reads at most 77 tokens: it gets the short
+form of this prompt* (while the text is the default; *The short form*
+unfolds below), *≈ 40 of the 77 tokens … reads* or *Too long for …:
+the end of this prompt is left out, after the scene’s description and the
+job’s prompt*. On desktop it goes in the data folder's `settings.json`, like
+all the settings (P3e). Capture: `docs/ui/settings-ai-prompt.png`.
 
-**Post-procesado IA ▸ Modelos**: la lista de `src/data/ai-models.json`
-(los mismos modelos que ofrece el instalador) y los importados. Por fila:
-nombre, arquitectura, cuantización, licencia (con *no apto para uso
-comercial* si lo es), tamaño, *Recomendado para tu equipo* cuando toca,
-estado (*No descargado* · *Descargando 42 % · 1,2 GB de 6,4 GB · 3 min*
-· *En pausa* · *Comprobando* · *Listo* · *En uso* · *Dañado*) y acciones
-*Descargar*, *Pausar* / *Reanudar*, *Cancelar*, *Usar*, *Eliminar*.
-La licencia del modelo se muestra y se acepta **antes** de la primera
-descarga. Las descargas se reanudan donde se quedaron (también tras
-cerrar la aplicación) y cada fichero se comprueba con su `sha256` antes
-de marcarse *Listo*. **Importar modelo…** como describe `AI-POST.md` §5.
-Si el instalador dejó modelos elegidos para descargar, aparecen aquí
-descargándose desde el primer arranque. **Primer arranque de un portable**
-(fase U10): el selector (*Elige los modelos de IA que descargar*) ofrece
-también **el motor de ejecución** que elige la regla para este equipo
-(*Descargar también el motor de ejecución (Vulkan · 29 MB): es lo que
-ejecuta los modelos*), marcado y desmarcable; con la casilla marcada baja
-con el primer modelo cuyo botón *Descargar* se pulsa, como en el
-instalador.
+**AI post-processing ▸ Models**: the list of `src/data/ai-models.json`
+(the same models the installer offers) and the imported ones. Per row:
+name, architecture, quantisation, licence (with *Not for commercial
+use* if so), size, *Recommended for your computer* when it applies,
+state (*Not downloaded* · *Downloading 42 % · 1.2 GB of 6.4 GB · 3 min*
+· *Paused* · *Verifying* · *Ready* · *In use* · *Damaged*) and actions
+*Download*, *Pause* / *Resume*, *Cancel*, *Use*, *Delete*.
+The model's licence is shown and accepted **before** the first
+download. Downloads resume where they stopped (also after
+closing the application) and each file is checked against its `sha256` before
+being marked *Ready*. **Import model…** as `AI-POST.md` §5 describes.
+If the installer left models chosen to download, they appear here
+downloading from the first startup. **First start of a portable**
+(phase U10): the chooser (*Choose the AI models to download*) also offers
+**the inference runtime** that the rule chooses for this computer
+(*Also download the inference runtime (Vulkan · 29 MB): it is what
+runs the models*), ticked and untickable; with the box ticked it downloads
+with the first model whose *Download* button is pressed, as in the
+installer.
 
-**Post-procesado IA ▸ aviso** (fase U10): arriba de la sección, el mismo
-recuadro del motor de ejecución que la ventana de render (sin el botón
-*Ajustes…*), antes del modelo activo.
+**AI post-processing ▸ notice** (phase U10): at the top of the section, the same
+runtime box as in the render window (without the *Settings…* button),
+before the active model.
 
-**Post-procesado IA ▸ Motor de ejecución** (solo escritorio, X3b): la compilación de
-stable-diffusion.cpp que toca (`src/data/ai-runtimes.json`) con su nombre y la marca *Aún sin
-probar en un equipo real* mientras `verified` esté vacío; por qué es esa (*Vulkan, porque se ha
-encontrado una tarjeta gráfica que usar* · *CPU, porque no…* · *como dice Ejecutar con*) y en qué
-dispositivo se ejecuta, tal como lo dijo el propio motor (`--list-devices`); su estado (*No
-descargado · 26 MB* · *Descargando 42 % · 11 MB de 26 MB* con barra · *En pausa* · *Comprobando el
-sha256* · *Descomprimiendo* · *Instalado · stable-diffusion.cpp version unknown, commit d637cfb*,
-y *cargado: <motor>/<modelo>* mientras el modelo está en memoria); licencia y versión de la
-*release* y lo que necesita el equipo (en Windows, el entorno de Visual C++; en Linux, glibc 2.38);
-acciones *Descargar*, *Pausar*, *Reanudar*, *Eliminar* (con confirmación) e *Instalar desde un
-archivo…* (un zip descargado con el navegador, que solo se instala si su `sha256` es el fijado);
-avisos en línea si el último intento falló, si no arranca en este equipo (con el motivo, p. ej. la
-DLL que falta) o si no hay `curl` para descargar. Si una compilación de Windows no arranca porque
-falta el entorno de **Microsoft Visual C++ 2015–2022** (X3c: lo comprueba el lanzador, sus DLL ni en
-la carpeta del motor ni en `System32`), el aviso lo dice y salen **Instalar el entorno de Microsoft
-Visual C++…**, que abre la página oficial de Microsoft en el navegador del sistema (no
-redistribuimos sus DLL), y **Comprobar de nuevo**. Debajo, **Ejecutar con**: *Automático* (Vulkan
-con tarjeta gráfica, la CPU sin ella) · *Vulkan (tarjeta gráfica)* · *CPU*. Nada de esta fila se
-estima: todo lo dice el lanzador.
+**AI post-processing ▸ Inference runtime** (desktop only, X3b): the build of
+stable-diffusion.cpp that applies (`src/data/ai-runtimes.json`) with its name and the mark *Not tested on a real computer
+yet* while `verified` is empty; why it is that one (*Vulkan, because a
+graphics card to use was found* · *CPU, because no…* · *as Run on says*) and on which
+device it runs, as the engine itself said (`--list-devices`); its state (*Not
+downloaded · 26 MB* · *Downloading 42 % · 11 MB of 26 MB* with a bar · *Paused* · *Checking the
+sha256* · *Unpacking* · *Installed · stable-diffusion.cpp version unknown, commit d637cfb*,
+and *loaded: <engine>/<model>* while the model is in memory); licence and
+release version and what the computer needs (on Windows, the Visual C++ environment; on Linux, glibc 2.38);
+actions *Download*, *Pause*, *Resume*, *Delete* (with confirmation) and *Install from a
+file…* (a zip downloaded with the browser, which installs only if its `sha256` is the pinned one);
+inline notices if the last attempt failed, if it does not start on this computer (with the reason, e.g. the
+missing DLL) or if there is no `curl` to download with. If a Windows build does not start because
+the **Microsoft Visual C++ 2015–2022** environment is missing (X3c: the launcher checks it, its DLLs neither in
+the engine folder nor in `System32`), the notice says so and **Install Microsoft
+Visual C++ runtime…** appears, which opens Microsoft's official page in the system browser (we do not
+redistribute its DLLs), and **Check again**. Below, **Run on**: *Automatic* (Vulkan
+with a graphics card, the CPU without one) · *Vulkan (graphics card)* · *CPU*. Nothing in this row is
+estimated: the launcher says everything.
 
-**Post-procesado IA ▸ Equipo**: lo detectado (GPU y su VRAM dedicada,
-RAM, núcleos, WebGPU sí o no y el tamaño máximo de búfer) y la
-recomendación que sale de la regla de `AI-POST.md` §2.4, con la fila de
-la tabla que la decide. Si la detección falla, se dice y no se
-recomienda nada. En escritorio, sin tarjetas en la lista, *Tarjeta
-gráfica* y la fila *GPU* distinguen *No se ha encontrado ninguna tarjeta
-gráfica* (el lanzador preguntó y no hay) de *No se han podido leer las
-tarjetas gráficas: mira los registros* (ninguna fuente contestó,
-`gpuDetection: failed`).
+**AI post-processing ▸ Hardware**: what was detected (GPU and its dedicated VRAM,
+RAM, cores, WebGPU yes or no and the maximum buffer size) and the
+recommendation that comes from the rule of `AI-POST.md` §2.4, with the row of
+the table that decides it. If detection fails, it says so and nothing is
+recommended. On desktop, with no cards in the list, *Graphics card*
+and the *GPU* row distinguish *No graphics card found*
+(the launcher asked and there is none) from *The graphics cards could not be read: see the logs*
+(no source answered, `gpuDetection: failed`).
 
-**Plugins** (P6, `ui/panels/settings-plugins.ts`): arriba, dónde se guardan
-(*Los plugins instalados se guardan en este equipo, sus paquetes cifrados y sus
-claves aparte*, o que solo duran esta sesión donde no hay almacenamiento
-duradero). Después, **Plugins disponibles**: una fila por plugin del registro
-(y por cada uno instalado desde un archivo, con la ficha *Desde un archivo*):
-el logo (el de su paquete, en cuanto está instalado: antes, un icono neutro),
-el nombre con la ficha **Licencia cerrada**, *Editor · versión 0.1.0 · 1,8 MB*
-(el tamaño que fija el registro), el resumen, **Página del proyecto ↗**, el
-estado (*No instalado* · *Descargando 42 % · 0,7 MB de 1,8 MB* · *Comprobando
-el paquete…* · *Esperando la clave de activación* · *Instalado: versión
-0.1.0, 1,8 MB en este equipo* · *No instalado: la descarga no es el paquete que
-fija el registro (su SHA-256 no coincide)*…) y la frase, en todos: *El código de
-este plugin es cerrado; la licencia de Repackshot no lo cubre*. Instalado,
-debajo, **su licencia completa** y **los avisos de terceros** de lo que lleva,
-en desplegables que se leen del paquete (descifrado en memoria) al abrirlos. A
-la derecha **Instalar**, **Actualizar a X** (cuando el registro trae otra
-versión) y **Quitar** (pregunta: *Su paquete y su clave de activación se borran
-de este equipo; los proyectos conservan sus ajustes*). Instalar descarga,
-comprueba el tamaño y el `sha256` del registro y la cabecera del paquete, y
-pide la clave: de `keyUrl` si el registro la trae; si no (o si falla), un
-recuadro en la fila con *Este plugin se activa con una clave de su
-desarrollador. Escríbela o pégala para terminar la instalación*, el campo
-(*Pega la clave de activación*), **Activar** y *Cancelar*; una clave que no
-abre el paquete y algo que no es una clave se dicen distinto. Una
-actualización prueba primero la clave que ya tiene.
+**Plugins** (P6, `ui/panels/settings-plugins.ts`): at the top, where they are kept
+(*Installed plugins are kept on this computer, their packages encrypted and their
+keys apart*, or that they only last this session where there is no lasting
+storage). Then, **Available plugins**: one row per plugin of the registry
+(and for each one installed from a file, with the chip *From a file*):
+the logo (that of its package, once installed: before, a neutral icon),
+the name with the **Closed licence** chip, *Publisher · version 0.1.0 · 1.8 MB*
+(the size the registry pins), the summary, **Project page ↗**, the
+state (*Not installed* · *Downloading 42 % · 0.7 MB of 1.8 MB* · *Checking
+the package…* · *Waiting for the activation key* · *Installed: version
+0.1.0, 1.8 MB on this computer* · *Not installed: the download is not the package the
+registry pins (its SHA-256 differs)*…) and the sentence, on all: *This plugin’s code
+is closed; Repackshot’s licence does not cover it*. When installed,
+below, **its full licence** and **the third-party notices** of what it carries,
+in dropdowns that are read from the package (decrypted in memory) when opened. On
+the right **Install**, **Update to X** (when the registry carries another
+version) and **Remove** (it asks: *Its package and its activation key are deleted
+from this computer; projects keep its settings*). Install downloads,
+checks the registry's size and `sha256` and the package header, and
+asks for the key: from `keyUrl` if the registry carries it; if not (or if it fails), a
+box in the row with *This plugin is activated with a key from its
+developer. Type or paste it to finish the install*, the field
+(*Paste the activation key*), **Activate** and *Cancel*; a key that does not
+open the package and something that is not a key are told apart. An
+update tries the key it already has first.
 
-**Plugins ▸ Instalar desde un archivo**: **Elegir un archivo .rpk…** (el nombre
-y el tamaño del elegido al lado), el campo de la clave e **Instalar**; debajo,
-el resultado (*Instalado: Invertir (plugin de prueba) 1.0.0* o el motivo). La
-herramienta queda a la vista para los plugins que vengan. Captura:
+**Plugins ▸ Install from a file**: **Choose a .rpk file…** (the name
+and size of the chosen one beside it), the key field and **Install**; below,
+the result (*Installed: Invert (test plugin) 1.0.0* or the reason). The
+tool stays in view for the plugins to come. Capture:
 `docs/ui/settings-plugins.png`.
 
-**Último proyecto** (*General ▸ Al arrancar*): el encabezado pregunta
-*¿Abrir el último proyecto, «X»?* con *Abrir* y *Ahora no*; si el archivo
-se movió o falta el permiso, un aviso lo dice. En *Equipo* hay también el
-procesador y *Detectar de nuevo*. En escritorio, *Hilos* y *SIMD* dicen
-que el motor nativo usa los hilos con que arrancó el lanzador. En los
-portables, el selector de modelos aparece arriba de *Modelos* la primera
-vez (captura `docs/ui/settings-desktop.png`).
+**Last project** (*General ▸ On start*): the header asks
+*Open the last project, “X”?* with *Open* and *Not now*; if the file
+was moved or permission is missing, a notice says so. In *Hardware* there is also the
+processor and *Detect again*. On desktop, *Threads* and *SIMD* say
+that the native engine uses the threads the launcher started with. In
+portables, the model chooser appears above *Models* the first
+time (capture `docs/ui/settings-desktop.png`).
 
-**Enlaces directos**: cualquier parte de la interfaz puede abrir los
-Ajustes en una sección (*Gestionar modelos…* en la ventana de render,
-el medidor del visor cuando el motor no está), y `?settings=<sección>`
-en la URL lo hace para las capturas.
+**Direct links**: any part of the interface can open
+Settings at a section (*Manage models…* in the render window,
+the viewport meter when the engine is missing), and `?settings=<section>`
+in the URL does it for captures.
 
-### 2.10 · Editor de material (fase M3a)
+### 2.10 · Material editor (phase M3a)
 
-Se abre con **Nodos…** del inspector del material, con *Material ▸ Editar
-con nodos…* del menú contextual de una pieza o con la paleta, sobre el
-material de la selección (si la selección no tiene un solo material lo
-dice un aviso). Un material en modo *Simple* pasa antes a *Nodos* (su
-grafo mínimo: la salida sola, una entrada de deshacer; una madera o una
-tela, M3c, su nodo *Madera* o *Tela* conectado a la salida). Es una ventana
-flotante como la de render, de unos **1040 × 660 px** y centrada la
-primera vez, pero **sin atenuar** lo de detrás: el visor sigue pintando lo
-que hace el grafo. Se mueve por su barra de título, se agranda por su
-esquina inferior derecha (mínimo 560 × 360) y recuerda dónde estaba y su
-tamaño entre sesiones; un doble clic en la barra la vuelve a centrar.
-`Esc` (sin nada seleccionado) o la × la cierran. Acromática como todo el
-cromo: el color solo está en las esferas de los nodos, la del material,
-los colores de los valores y la barra de las rampas, que son contenido.
-![editor de material](material-nodes.png)
+It opens with **Nodes…** in the material inspector, with *Material ▸ Edit
+with nodes…* in a part's context menu or with the palette, on the
+selection's material (if the selection does not have a single material a
+notice says so). A material in *Simple* mode first becomes *Nodes* (its
+minimal graph: the output alone, one undo entry; a wood or a
+fabric, M3c, its *Wood* or *Fabric* node connected to the output). It is a floating
+window like the render one, about **1040 × 660 px** and centred the
+first time, but **without dimming** what is behind: the viewport keeps painting what
+the graph does. It is moved by its title bar, resized by its bottom right
+corner (minimum 560 × 360) and remembers where it was and its
+size between sessions; a double click on the bar centres it again.
+`Esc` (with nothing selected) or the × close it. Achromatic like all the
+chrome: colour is only in the node spheres, the material's,
+the colours of values and the ramps' bar, which are content.
+![material editor](material-nodes.png)
 
-**Barra de título**: *Editor de material*, el nombre del material,
-**Simple · Nodos** (como en el inspector, con la misma pregunta al volver
-a Simple), **Ejemplos ▾** (los diez grafos de ejemplo, con su descripción
-en el *tooltip*; uno sustituye el grafo, una entrada de deshacer),
-**+ Añadir nodo** (`⇧ A`), **Encuadrar** (`F`) y la ×.
+**Title bar**: *Material editor*, the name of the material,
+**Simple · Nodes** (as in the inspector, with the same question on returning
+to Simple), **Examples ▾** (the ten example graphs, with their description
+in the tooltip; one replaces the graph, one undo entry),
+**+ Add node** (`⇧ A`), **Frame** (`F`) and the ×.
 
-**Lienzo** (izquierda): un plano de puntos que se acerca con la rueda
-(alrededor del cursor, 25 %–200 %, el porcentaje abajo a la derecha) y se
-desplaza con el botón central, o con `Espacio` o `Alt` y el izquierdo. La
-primera vez se encuadra el grafo. Cada **nodo** es una tarjeta: su nombre
-arriba (la *Salida de material* en negativo; *Matemática* y *Mezcla* con
-la operación: *Matemática · Seno*), su **esfera** de 64 × 64 (lo que da su
-primera salida sobre una esfera de 100 mm vista de frente: un número en
-gris, un color en sRGB, un vector por la parte fraccionaria de cada
-coordenada, una normal como ½ + n/2; la de la salida, el material
-sombreado), y una fila por toma: primero las salidas, a la derecha, y
-luego las entradas que sus parámetros muestran, a la izquierda, con su
-valor si no están conectadas (un número o una muestra del color). Las
-**tomas** tienen una forma por tipo: **círculo** número, **rombo** color,
-**cuadrado** vector, **triángulo** normal; huecas sin conexión, llenas
-con ella. Las esferas las calcula un *worker* con el mismo intérprete que
-la vista previa *Rápido*; mientras llegan, el hueco queda gris.
-- *Clic* en una tarjeta la selecciona (`⇧` o `Ctrl/⌘` suman o quitan);
-  arrastrarla la mueve con el resto de la selección (una entrada de
-  deshacer por arrastre). Arrastrar en el vacío selecciona lo que toca el
-  recuadro.
-- **Conectar**: arrastrar de una salida a una entrada, o de una entrada
-  libre a una salida. Mientras se arrastra, la toma bajo el cursor se
-  marca si la acepta y se apaga si no; soltar en una que no la acepta no
-  conecta y un aviso dice por qué (*Un color no puede entrar en una
-  entrada de normal*, *Esa conexión cerraría un bucle*). Una entrada
-  conectada se coge con el ratón y su conexión se suelta en otra entrada
-  (se mueve, una entrada de deshacer) o en el vacío (se desconecta). Una
-  conexión nueva a una entrada ya conectada sustituye la anterior.
-- *Doble clic* o *clic derecho* en el vacío abre **Añadir nodo** en ese
-  punto: un campo de búsqueda (por nombre, descripción y palabras clave,
-  en los dos idiomas: *perlin*, *ruido*, *altura*) sobre los nodos por
-  categoría (*Entrada, Textura, Color, Vector, Matemática, Superficie*);
-  flechas y `⏎` eligen. *Clic derecho* en una tarjeta: *Duplicar*,
-  *Desconectar las entradas*, *Eliminar* (la salida no se duplica ni se
-  elimina).
-- **Madera** y **Tela** (M3c, categoría *Textura*; *roble*, *veta*,
-  *vaquero*, *punto* también los encuentran): los dibujos de las familias
-  *Madera* y *Tela* con sus parámetros, sus claves y sus unidades (anillos
-  por 100 mm, poros y nudos en mm, hilos por cm). Entradas: *Punto* (sin
-  conexión, el punto de la pieza en mm), *Normal* y *Rugosidad*. Salidas:
-  *Color*, *Rugosidad*, *Anisotropía*, *Normal* (doblada por el relieve de
-  poros, nudos o tejido) y *Altura (mm)*; la *Tela*, además, *Pelusa*. Su
-  esfera es la de la familia en una bola de 100 mm (la médula a lo largo
-  de su eje x); los nudos solo se ven con la figura *Anillos*.
+**Canvas** (left): a plane of dots that zooms with the wheel
+(around the cursor, 25 %–200 %, the percentage at the bottom right) and pans
+with the middle button, or with `Space` or `Alt` and the left one. The
+first time the graph is framed. Each **node** is a card: its name
+at the top (the *Material output* in negative; *Maths* and *Mix* with
+the operation: *Maths · Sine*), its **sphere** of 64 × 64 (what its
+first output gives on a 100 mm sphere seen from the front: a number in
+grey, a colour in sRGB, a vector by the fractional part of each
+coordinate, a normal as ½ + n/2; that of the output, the shaded
+material), and one row per socket: first the outputs, on the right, and
+then the inputs that its parameters show, on the left, with their
+value if they are not connected (a number or a colour swatch). The
+**sockets** have one shape per type: **circle** number, **diamond** colour,
+**square** vector, **triangle** normal; hollow without a connection, filled
+with one. The spheres are computed by a worker with the same interpreter as
+the *Fast* preview; while they arrive, the slot stays grey.
+- *Click* on a card selects it (`⇧` or `Ctrl/⌘` add or remove);
+  dragging it moves it with the rest of the selection (one undo entry
+  per drag). Dragging on empty space selects what the
+  box touches.
+- **Connecting**: drag from an output to an input, or from a free
+  input to an output. While dragging, the socket under the cursor is
+  marked if it accepts it and dimmed if not; dropping on one that does not accept it does not
+  connect and a notice says why (*A colour cannot go into a normal
+  input*, *That link would close a loop*). A connected input is grabbed with the mouse
+  and its connection is dropped on another input (it moves, one undo entry)
+  or on empty space (it disconnects). A new connection to an input already
+  connected replaces the previous one.
+- *Double click* or *right click* on empty space opens **Add node** at that
+  point: a search field (by name, description and keywords,
+  in both languages: *perlin*, *noise*, *height*) over the nodes by
+  category (*Input, Texture, Colour, Vector, Maths, Surface*);
+  arrows and `⏎` choose. *Right click* on a card: *Duplicate*,
+  *Disconnect the inputs*, *Delete* (the output cannot be duplicated or
+  deleted).
+- **Wood** and **Fabric** (M3c, *Texture* category; *oak*, *grain*,
+  *denim*, *knit* also find them): the patterns of the *Wood* and *Fabric*
+  families with their parameters, their keys and their units (rings
+  per 100 mm, pores and knots in mm, threads per cm). Inputs: *Point* (unconnected,
+  the point of the part in mm), *Normal* and *Roughness*. Outputs:
+  *Colour*, *Roughness*, *Anisotropy*, *Normal* (bent by the relief of
+  pores, knots or weave) and *Height (mm)*; the *Fabric*, in addition, *Sheen*. Its
+  sphere is that of the family on a 100 mm ball (the pith along
+  its x axis); the knots only show with the *Rings* figure.
 
-**Panel** (derecha, 280 px): el material en una esfera de 128 px; **En
-Rápido**, las líneas que dicen cómo lo dibuja la vista previa (*Dibujado
-con mapas de 512 × 512 hechos en las UV de la malla* / *por su proyección
-cilíndrica: lo que da el grafo* / *Lee coordenadas 3D: …un corte por el
-frente de la pieza…*) y qué aproxima (*Rápido funde las caras de la
-proyección de caja; el motor toma la cara a la que más mira la normal*;
-*Fresnel y de cara se toman a 60° de la normal*; *La curvatura se omite
-(0): la mide el motor*; *Sin mapa para barniz: su valor medio*), y la de
-*Completo* y *Render* (*el motor ejecuta el grafo en cada punto (sus
-imágenes filtradas, Fresnel y de cara con la vista real, la curvatura en las
-aristas vivas de la pieza); la dispersión interna no se lee. Un motor
-anterior renderiza el valor medio de cada salida*, M3b). Debajo, el **nodo seleccionado**: su nombre y su
-descripción, sus **parámetros** (desplegables, deslizadores y campos
-numéricos con su unidad, interruptores, color; la imagen de una *Textura
-de imagen* con *Cargar…* y *Quitar*, por el mismo camino y límites que las
-ranuras de M2a; las paradas de una *Rampa de color* con su posición, su
-color y su ×, *Añadir una parada* en el hueco mayor, y una barra que la
-muestra) y sus **entradas**: las libres con su valor editable, las
-conectadas con *Desde Nodo · toma* y una × que desconecta, las que leen
-una fuente del punto con cuál (*La normal de la superficie*, *Las UV de la
-malla*, *Las coordenadas de la pieza (por 100 mm)*, *El punto de la pieza
-(mm)*); *Duplicar* y
-*Eliminar*. Con varios nodos, *N nodos seleccionados* y los dos botones;
-con ninguno, una nota de cómo se usa.
-![el frasco con el mármol en Rápido](material-nodes-preview.png)
-![el editor con el nodo Madera del ejemplo de roble](material-nodes-wood.png)
+**Panel** (right, 280 px): the material on a 128 px sphere; **In
+Fast**, the lines that say how the preview draws it (*Drawn
+from 512 × 512 maps made in the mesh’s UVs* / *through its
+cylindrical projection: what the graph gives* / *Reads 3D coordinates: …a slice through the
+front of the part…*) and what it approximates (*Fast blends the faces of the
+box projection; the engine takes the face the normal is closest to*;
+*Fresnel and facing are taken at 60° from the normal*; *Curvature is left out
+(0): the engine measures it*; *No map for clear coat: its mean value*), and that of
+*Full* and *Render* (*the engine runs the graph at every point (its
+images filtered, Fresnel and facing from the real view, the curvature at the
+part’s sharp edges); subsurface is not read. An older engine renders the mean value of each output*, M3b). Below, the **selected node**: its name and its
+description, its **parameters** (dropdowns, sliders and numeric
+fields with their unit, switches, colour; the image of an *Image
+texture* with *Load…* and *Remove*, by the same path and limits as the
+slots of M2a; the stops of a *Colour ramp* with their position, their
+colour and their ×, *Add a stop* in the largest gap, and a bar showing
+it) and its **inputs**: the free ones with their editable value, the
+connected ones with *From Node · socket* and a × that disconnects, those that read
+a source from the point with which (*The surface’s normal*, *The mesh’s UVs*, *The part’s
+coordinates (per 100 mm)*, *The point on the part (mm)*); *Duplicate* and
+*Delete*. With several nodes, *N nodes selected* and the two buttons;
+with none, a note on how to use it.
+![the bottle with the marble in Fast](material-nodes-preview.png)
+![the editor with the Wood node from the oak example](material-nodes-wood.png)
 
-**Pie**: *N nodos · M conexiones · programa de K instrucciones, F + V
-registros* (lo que dice el compilador), o por qué no compila (*El grafo
-es demasiado grande: su programa pasa de 2048 instrucciones*); a la
-derecha, los atajos.
+**Footer**: *N nodes · M links · program of K instructions, F + V
+registers* (what the compiler says), or why it does not compile (*The graph
+is too large: its program passes 2048 instructions*); on the
+right, the shortcuts.
 
-**Teclado**, con el foco en el editor: `Supr`/`Retroceso` elimina la
-selección, `Ctrl/⌘ D` la duplica, `Ctrl/⌘ A` lo selecciona todo, `⇧ A`
-abre *Añadir nodo*, `F` o `Inicio` encuadran, `Esc` deselecciona y, sin
-selección, cierra; `Ctrl/⌘ Z` y `Ctrl/⌘ ⇧ Z` son el deshacer y rehacer de
-la aplicación. Las demás teclas sueltas no llegan a las herramientas del
-visor mientras el foco está en el editor. Con el foco fuera, la aplicación
-tiene las suyas: el editor no es modal. El recorrido guiado tiene un paso
-para *Nodos…*.
+**Keyboard**, with the focus in the editor: `Del`/`Backspace` deletes the
+selection, `Ctrl/⌘ D` duplicates it, `Ctrl/⌘ A` selects all, `⇧ A`
+opens *Add node*, `F` or `Home` frame, `Esc` deselects and, with no
+selection, closes; `Ctrl/⌘ Z` and `Ctrl/⌘ ⇧ Z` are the application's undo and redo. The other loose keys do not reach the viewport's
+tools while the focus is in the editor. With the focus outside, the application
+has its own: the editor is not modal. The guided tour has a step
+for *Nodes…*.
 
-### 2.11 · Editor de lente (fase O2c)
+### 2.11 · Lens editor (phase O2c)
 
-Lo pidió el usuario (`TODO.md` §1.5): «un editor de lentes donde, aparte de
-las opciones actuales, se pueda editar los elementos, cambiar tamaño o
-distancias entre cada elemento, añadir uno nuevo, rotarlo 180º». Se abre
-con **Editar elementos…** de *Cámara ▸ Lente ▸ Lente trazada*, sobre la
-lente de esa cámara. Es una ventana flotante como el editor de material
-(§2.10), de unos **1060 × 680 px** (menos en una pantalla pequeña),
-centrada y **sin atenuar** lo de detrás; se mueve por su barra de título y
-`Esc` o la × la cierran. Acromática: el corte es tinta sobre el fondo, el
-vidrio en gris y el elemento elegido más oscuro.
+Requested (`TODO.md` §1.5): “a lens editor where, besides the current
+options, the elements can be edited, the size or the distances between each
+element changed, a new one added, one turned 180º”. It opens
+with **Edit elements…** in *Camera ▸ Lens ▸ Traced lens*, on the
+lens of that camera. It is a floating window like the material editor
+(§2.10), about **1060 × 680 px** (less on a small screen),
+centred and **without dimming** what is behind it; it is moved by its title bar and
+`Esc` or the × close it. Achromatic: the section is ink on the background, the
+glass in grey and the chosen element darker.
 
-![editor de lente](ui/o2c-lens-editor.png)
+![lens editor](ui/o2c-lens-editor.png)
 
-- **La copia.** La lente del catálogo no se edita nunca: la primera
-  edición hace una **copia** con el nombre de la lente y *(editada)*, que
-  es de la cámara hasta que se aplica (se guarda con el proyecto). Cada
-  edición es **una entrada de deshacer** (*Editor de lente: girar un
-  elemento 180°*…); arrastrar un campo es un gesto, una entrada. Deshacer
-  la primera deja la ventana sobre la lente de la cámara, sin copia.
-- **Barra de título.** *Editor de lente*, el **nombre** de la lente (un
-  campo: renombrarla es una edición), **Descartar cambios** (vuelve a la
-  lente de la cámara, una entrada), **Guardar en la biblioteca…** (la
-  guarda en *Míos* con el diafragma y los mandos de la cámara, pidiendo
-  un nombre) y **Aplicar a la cámara** (la pone en la cámara como lente
-  propia, una entrada). Guardar y aplicar solo están encendidos cuando el
-  motor ha comprobado **esa** lente y no tiene nada mal.
-- **El corte**, arriba: el del motor (como en *Cámara ▸ Lente*: escalado a
-  la focal de la cámara y enfocado), con el número de cada elemento encima
-  y el elegido más oscuro; un clic en un elemento lo elige. Cuando la
-  lente tiene algo mal y el motor no se pregunta, el corte que queda es el
-  de la última lente buena, atenuado.
-- **Las herramientas del elemento elegido** (*Elemento 3*):
-  **Añadir delante** y **Añadir detrás** (un singlete biconvexo débil de
-  un vidrio crown común, radios ±4 veces la focal del diseño, 4 % de ella
-  de grosor y tan ancho como el más estrecho de sus vecinos; en medio del
-  aire si cabe, con aire a los dos lados también en los bordes, o
-  separando la lente; nunca dentro de un grupo cementado), **Girar 180°**
-  (sus radios se intercambian y cambian de signo, en su sitio; un grupo
-  cementado gira entero), **Borrar** (los de detrás se quedan donde
-  estaban; la lente conserva al menos un elemento), **Más pequeño** y **Más
-  grande** (su apertura un 10 %) y **Apertura automática** (el motor la
-  vuelve a ajustar al haz).
-- **La lista**: una fila por elemento (su número; los cementados lo dicen
-  en *Aire detrás*) y una por el diafragma, con *Radio delantero*, *Radio
-  trasero* (en mm; positivo abomba hacia el sujeto; `0` o `∞` es plano),
-  *Grosor*, *Vidrio* (la lista de los vidrios de las lentes del catálogo:
-  índice y número de Abbe en la línea d, crown o flint), *Diámetro* (la
-  apertura libre; *auto* cuando la ajusta el motor, con su valor) y *Aire
-  detrás* (la distancia al siguiente; el último no tiene: el tiraje es del
-  motor). Los campos son los de siempre (§4.4: arrastrar, flechas, doble
-  clic para escribir).
-- **A la derecha**, si se puede aplicar: *Comprobada por el motor: lista
-  para aplicar*, *Preguntando al motor…*, *Esta es la lente de la cámara*
-  (antes de editar) o **por qué no** (*Esta lente no se puede aplicar: se
-  puede seguir editando* y la lista: un hueco de aire negativo tras un
-  elemento, un elemento sin grosor, dos superficies que se cruzan dentro de
-  su apertura o dos elementos que chocan, una apertura más ancha que su
-  esfera, la imagen dentro de la lente, y lo que dice el motor: sin imagen
-  real, sin luz por el eje). Sin motor (la web sin `rt.wasm`): la lente se
-  edita, y se aplica cuando el motor la haya comprobado. Debajo, **lo que
-  calcula el motor**, al día tras cada edición: *Focal del diseño* (la de
-  la lente como está escrita, la que cambia al editarla, y la de la cámara,
-  a la que el motor la escala), *Tiraje*, *Diafragma* (f/ y T-stop),
-  *Elementos · grupos*, *Longitud*, *Círculo de imagen* (si cubre el
-  encuadre) y las curvas de *Distorsión* y *Luz hacia la esquina*.
-  Una lente que enfocaba moviendo unos huecos y ha perdido uno lo dice:
-  ahora enfoca moviéndose entera.
-- **Pie**: las medidas son milímetros a la escala del diseño (la cámara
-  escala la lente entera a su focal); `Ctrl/⌘ Z` deshace cada edición.
-  Con el foco en el editor, las teclas sueltas son suyas (`Supr` en un campo
-  no borra una pieza); las que llevan `Ctrl/⌘` siguen siendo de la
-  aplicación.
+- **The copy.** The catalogue lens is never edited: the first
+  edit makes a **copy** with the name of the lens and *(edited)*, which
+  belongs to the camera until it is applied (it is saved with the project). Each
+  edit is **one undo entry** (*Lens editor: turn an
+  element 180°*…); dragging a field is one gesture, one entry. Undoing
+  the first leaves the window on the camera's lens, with no copy.
+- **Title bar.** *Lens editor*, the **name** of the lens (a
+  field: renaming it is an edit), **Discard changes** (back to the
+  camera's lens, one entry), **Save to library…** (saves it
+  in *Mine* with the iris and the controls of the camera, asking for
+  a name) and **Apply to the camera** (puts it on the camera as an own
+  lens, one entry). Save and apply are only enabled when the
+  engine has checked **that** lens and nothing is wrong with it.
+- **The section**, at the top: the engine's (as in *Camera ▸ Lens*: scaled to
+  the camera's focal length and focused), with the number of each element on top
+  and the chosen one darker; a click on an element chooses it. When the
+  lens has something wrong and the engine is not asked, the section that remains is
+  that of the last good lens, dimmed.
+- **The tools of the chosen element** (*Element 3*):
+  **Add before** and **Add after** (a weak biconvex singlet of a
+  common crown glass, radii ±4 times the design's focal length, 4 % of it
+  thick and as wide as the narrowest of its neighbours; in the middle of
+  the air if it fits, with air on both sides also at the edges, or
+  separating the lens; never inside a cemented group), **Turn 180°**
+  (its radii swap and change sign, in place; a cemented
+  group turns whole), **Delete** (those behind stay where they
+  were; the lens keeps at least one element), **Smaller** and **Larger**
+  (its aperture by 10 %) and **Automatic aperture** (the engine
+  sizes it to the beam again).
+- **The list**: one row per element (its number; cemented ones say so
+  in *Air after, mm*) and one for the iris, with *Front radius, mm*, *Back radius, mm*
+  (positive bulges towards the subject; `0` or `∞` is flat),
+  *Thickness, mm*, *Glass* (the list of the glasses of the catalogue's lenses:
+  index and Abbe number at the d line, crown or flint), *Diameter, mm* (the
+  clear aperture; *auto* when the engine sets it, with its value) and *Air
+  after, mm* (the distance to the next; the last has none: the back focus belongs to the
+  engine). The fields are the usual ones (§4.4: drag, arrows, double
+  click to type).
+- **On the right**, whether it can be applied: *Checked by the engine: ready
+  to apply*, *Asking the engine…*, *This is the lens on the camera*
+  (before editing) or **why not** (*This lens cannot be applied: it can still be
+  edited* and the list: a negative air gap after an
+  element, an element with no thickness, two surfaces that cross inside
+  their aperture or two elements that collide, an aperture wider than
+  its sphere, the image inside the lens, and what the engine says: no real
+  image, no light along the axis). With no engine (the web without `rt.wasm`): the lens is
+  edited, and applied once the engine has checked it. Below, **what the engine
+  computes**, up to date after every edit: *Focal length of the design* (that of
+  the lens as written, the one that changes when editing it, and the camera's,
+  to which the engine scales it), *Back focus*, *Aperture* (f/ and T-stop),
+  *Elements · groups*, *Length*, *Image circle* (whether it covers the
+  frame) and the *Distortion* and *Light towards the corner* curves.
+  A lens that focused by moving some gaps and has lost one says so:
+  it now focuses by moving as a whole.
+- **Footer**: measures are millimetres at the design's scale (the camera
+  scales the whole lens to its focal length); `Ctrl/⌘ Z` undoes each edit.
+  With the focus in the editor, loose keys are its own (`Del` in a field
+  does not delete a part); those with `Ctrl/⌘` still belong to the
+  application.
 
-![lente modificada](ui/o2c-lens-modified.png)
+![modified lens](ui/o2c-lens-modified.png)
 
-## 3 · Paleta de comandos y teclado
+## 3 · Command palette and keyboard
 
-`Ctrl/⌘ K` abre la **paleta**: un campo centrado con lista debajo.
-Busca a la vez acciones ("Crear estudio", "Apoyar en el suelo"),
-materiales ("oro", "roble"), montajes de luz ("rembrandt"), cámaras y
-estudios guardados, y tipos de producto. Cada resultado dice su categoría
-en auxiliar y, si tiene atajo, lo muestra a la derecha. Enter ejecuta;
-flechas navegan; `Esc` cierra. Es la forma más rápida de hacer cualquier
-cosa y la red de seguridad cuando no se encuentra un control.
+`Ctrl/⌘ K` opens the **palette**: a centred field with a list below.
+It searches at once for actions ("Create studio", "Rest on the floor"),
+materials ("gold", "oak"), light setups ("rembrandt"), saved cameras and
+studios, and product types. Each result says its category
+in auxiliary text and, if it has a shortcut, shows it on the right. Enter runs;
+arrows navigate; `Esc` closes. It is the fastest way to do anything
+and the safety net when a control cannot be found.
 
-El enfoque (F1) tiene cuatro acciones en la paleta, para la cámara que se
-ve: *Enfocar en un punto (haz clic en él)* y *Enfocar en un objeto (haz
-clic en él)* empiezan el pico, *Mantener enfocada la selección* pasa a
-*Objeto* con lo seleccionado y *Enfocar por distancia* vuelve a
-*Distancia* con la distancia a la que estaba.
+Focus (F1) has four actions in the palette, for the camera in
+view: *Focus on a point (click on it)* and *Focus on an object (click
+on it)* start the pick, *Keep the selection in focus* switches to
+*Object* with the selection and *Focus by distance* returns to
+*Distance* with the distance it was at.
 
-El interruptor de la focal (C2) tiene la suya: *Focal: mantener el tamaño
-de lo enfocado (activar o desactivar)*, para la cámara que se ve, en una
-entrada de deshacer, con un aviso que dice cómo queda (*Cámara 1: al
-cambiar la focal se mantiene el tamaño de lo enfocado*).
+The focal length switch (C2) has its own: *Focal length: keep the size
+of what is in focus (on or off)*, for the camera in view, in one
+undo entry, with a notice saying how it ends up (*Camera 1: changing the
+focal length keeps the size of what is in focus*).
 
-Atajos iniciales (todos visibles en el tooltip del control y en *Atajos
-de teclado* del menú):
+Initial shortcuts (all visible in the control's tooltip and in *Keyboard
+shortcuts* in the menu):
 
-| Tecla | Acción |
+| Key | Action |
 | --- | --- |
-| `Ctrl/⌘ K` | Paleta de comandos |
-| `Ctrl/⌘ Z` / `Ctrl/⌘ ⇧ Z` | Deshacer / Rehacer |
-| `Ctrl/⌘ I` | Importar modelo |
-| `Ctrl/⌘ O` | Abrir proyecto |
-| `Ctrl/⌘ S` | Guardar proyecto (en el mismo archivo) |
-| `Ctrl/⌘ ⇧ S` | Guardar proyecto como… |
-| `Ctrl/⌘ ⇧ R` | Visor: *Rápido* o *Completo* |
-| `D` | *Reducir ruido* del visor *Completo*, en directo (fase U11) |
-| `Ctrl/⌘ ⏎` | Ventana de render |
-| `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
-| `F` | Encuadrar selección (o todo) |
-| `V` `O` `P` `Z` | Herramientas de vista |
-| `M` | Herramienta de mover |
-| `S` | Herramienta de escalar (fase U9) |
-| `L` / `G` | Ejes locales / globales de mover y escalar |
-| `Ctrl/⌘ ⇧ L` | Mirar a través de la luz o la cámara seleccionada (fase L4); otra vez o `Esc`, volver |
-| `H` / `⇧ H` / `Alt H` | Ocultar selección / Aislar / Mostrar todo |
-| `1` `2` `3` `4` | Nivel de selección: Modelo · Grupo · Pieza · Caras |
-| `Tab` | Plegar y desplegar los paneles laterales |
-| `Esc` | Volver de *Mirar a través*; salir de *Mover* o *Escalar*; deseleccionar; cerrar paleta o menú |
-| `Supr` | Eliminar la selección |
+| `Ctrl/⌘ K` | Command palette |
+| `Ctrl/⌘ Z` / `Ctrl/⌘ ⇧ Z` | Undo / Redo |
+| `Ctrl/⌘ I` | Import model |
+| `Ctrl/⌘ O` | Open project |
+| `Ctrl/⌘ S` | Save project (to the same file) |
+| `Ctrl/⌘ ⇧ S` | Save project as… |
+| `Ctrl/⌘ ⇧ R` | Viewport: *Fast* or *Full* |
+| `D` | *Denoise* the *Full* viewport, live (phase U11) |
+| `Ctrl/⌘ ⏎` | Render window |
+| `Ctrl/⌘ ⇧ ⏎` | Render with the last settings, without opening the window |
+| `F` | Frame selection (or all) |
+| `V` `O` `P` `Z` | View tools |
+| `M` | Move tool |
+| `S` | Scale tool (phase U9) |
+| `L` / `G` | Local / global axes of move and scale |
+| `Ctrl/⌘ ⇧ L` | Look through the selected light or camera (phase L4); again or `Esc`, go back |
+| `H` / `⇧ H` / `Alt H` | Hide selection / Isolate / Show all |
+| `1` `2` `3` `4` | Selection level: Model · Group · Part · Faces |
+| `Tab` | Fold and unfold the side panels |
+| `Esc` | Return from *Look through*; leave *Move* or *Scale*; deselect; close palette or menu |
+| `Del` | Delete the selection |
 
 ---
 
-## 4 · Comportamientos que hacen la diferencia
+## 4 · Behaviours that make the difference
 
-### 4.1 · Selección por niveles
+### 4.1 · Selection by levels
 
-Es la pieza central de la asignación de materiales. Cuatro niveles,
-**excluyentes**: **Modelo** (todo lo importado como una unidad), **Grupo**
-(un ensamblaje: nodo con hijos), **Pieza** (una malla) y **Caras** (una
-selección de caras dentro de una pieza). El selector aparece en la cabecera del inspector y encima del
-árbol, como un segmento de cuatro posiciones con atajos `1`–`4`.
+It is the central piece of material assignment. Four levels,
+**mutually exclusive**: **Model** (everything imported as a unit), **Group**
+(an assembly: a node with children), **Part** (a mesh) and **Faces** (a
+selection of faces within a part). The selector appears in the inspector header and above the
+tree, as a four-position segment with shortcuts `1`–`4`.
 
-- Al hacer clic en el visor, el nivel decide qué se selecciona: con
-  *Grupo*, clic en una tuerca selecciona el ensamblaje entero.
-- Al asignar un material, se aplica a todo lo que abarca el nivel.
-- Si el objetivo ya contiene materiales **distintos** entre sí, antes de
-  sobrescribir se pregunta en línea, con inventario: "Cuerpo contiene 3
-  materiales (Oro, Vidrio, Goma). · Sustituir todos · Mantener los
-  existentes y aplicar solo donde no hay · Cancelar".
-- En *Caras* un clic coge **la cara entera** bajo el cursor: la cara CAD
-  si la pieza viene de STEP o IGES y, si no, la superficie que continúa
-  (crece desde el triángulo picado por continuidad, `SPEC.md` §3.2). Clic
-  sin más sustituye la selección de caras; `Ctrl/⌘` clic mete o saca la
-  cara entera; `Alt` clic la quita; `Shift` vuelve **suelto** el
-  triángulo picado: `Shift` clic lo añade, `Ctrl/⌘ ⇧` clic lo mete o saca
-  y `Alt ⇧` clic lo quita. El tooltip del nivel lo dice. *Separar por caras CAD* (menú de pieza) parte
-  la pieza en una nueva por cara CAD.
-- Con *Seleccionar* (o *Mover* o *Escalar*), un clic en el visor, a cualquier nivel:
-  sin tecla sustituye la selección, `Shift` añade, `Ctrl/⌘` mete o saca,
-  `Alt` quita; un clic en vacío la limpia.
-- **Caja** (§2.3): `Ctrl/⌘` + arrastrar (con `Shift` añade, con `Alt`
-  quita), de izquierda a derecha una ventana y de derecha a izquierda un
-  cruce, al nivel vigente: modelos, grupos o piezas por su geometría
-  proyectada; caras enteras de una pieza, las que se ven (o todas con
-  *Rayos X*).
-- Soltar un material sobre algo (§2.2, §2.3) alcanza lo mismo que
-  alcanzaría un clic al nivel vigente, y la regla de los materiales
-  distintos de arriba vale igual: se pregunta en línea antes de
-  sobrescribir.
+- On clicking in the viewport, the level decides what is selected: with
+  *Group*, a click on a nut selects the whole assembly.
+- On assigning a material, it applies to everything the level covers.
+- If the target already contains **different** materials, before
+  overwriting an inline question is asked, with an inventory: "Body contains 3
+  materials (Gold, Glass, Rubber). · Replace all · Keep existing and
+  apply only where there is none · Cancel".
+- In *Faces* a click takes **the whole face** under the cursor: the CAD face
+  if the part comes from STEP or IGES and, if not, the surface that continues
+  (it grows from the picked triangle by continuity, `SPEC.md` §3.2). A plain click
+  replaces the face selection; `Ctrl/⌘` click toggles the
+  whole face; `Alt` click removes it; `Shift` makes the picked
+  triangle **loose**: `Shift` click adds it, `Ctrl/⌘ ⇧` click toggles it
+  and `Alt ⇧` click removes it. The level's tooltip says so. *Separate by CAD faces* (part menu) splits
+  the part into a new one per CAD face.
+- With *Select* (or *Move* or *Scale*), a click in the viewport, at any level:
+  with no key it replaces the selection, `Shift` adds, `Ctrl/⌘` toggles,
+  `Alt` removes; a click on empty space clears it.
+- **Box** (§2.3): `Ctrl/⌘` + drag (with `Shift` it adds, with `Alt`
+  it removes), left to right a window and right to left a
+  crossing, at the current level: models, groups or parts by their
+  projected geometry; whole faces of one part, those that can be seen (or all with
+  *X-ray*).
+- Dropping a material on something (§2.2, §2.3) reaches the same as
+  a click at the current level would, and the rule above about different
+  materials holds the same: an inline question is asked before
+  overwriting.
 
-### 4.2 · Lenguaje de fotógrafo
+### 4.2 · Photographer's language
 
-Los controles hablan de **focal, diafragma, softbox, tira, temperatura de
-color, exposición**; nunca de nodos, muestras por píxel o rebotes salvo
-en *A medida* de la barra de render. Cada catálogo muestra una frase de
-**intención** ("Una sola fuente grande: una sombra, un brillo"), no una
-lista de parámetros.
+The controls speak of **focal length, aperture, softbox, strip, colour
+temperature, exposure**; never of nodes, samples per pixel or bounces except
+in *Custom* of the render bar. Each catalogue shows an **intent**
+sentence ("One large source: one shadow, one highlight"), not a
+list of parameters.
 
-### 4.3 · Casi nada modal
+### 4.3 · Almost nothing modal
 
-Toda confirmación es **en línea**, en el sitio donde se pulsó, con dos o
-tres botones y `Esc` para cancelar. Los elementos flotantes son los
-menús, la paleta, el popover del Doctor y **tres ventanas**, abiertas solo
-a petición: la **ventana de render** (§2.7), porque un render es una
-decisión con muchos parámetros que se toma de una vez, como en KeyShot,
-la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
-la izquierda, cambios al momento) y el **editor de material** (§2.10,
-fase M3a: un grafo necesita un lienzo, y el visor sigue vivo detrás).
-Ninguna otra ventana; nada se abre solo.
+Every confirmation is **inline**, in the place where it was pressed, with two
+or three buttons and `Esc` to cancel. The floating elements are
+menus, the palette, the Doctor popover and **three windows**, opened only
+on request: the **render window** (§2.7), because a render is a
+decision with many parameters made all at once, as in KeyShot,
+the **Settings** window (§2.9: sections grouped in a column on
+the left, changes instantly) and the **material editor** (§2.10,
+phase M3a: a graph needs a canvas, and the viewport stays live behind).
+No other window; nothing opens by itself.
 
-**La pregunta por los cambios sin guardar** (solo si el proyecto los
-tiene) es la misma para todo lo que los descartaría —cerrar la ventana,
-*Nuevo*, *Abrir* y *Instalar y reiniciar*— y tiene tres botones más
-*Cancelar*: **Guardar** (donde está el proyecto, sin diálogo), **Guardar
-como…** (con el diálogo) y **No guardar** (en la actualización, **Salir sin
-guardar**). *Guardar* y *Guardar como…* siguen solo si el proyecto se
-escribió de verdad: un diálogo cancelado o un archivo que no se puede
-escribir se quedan donde estaban. `Esc` y *Cancelar* no hacen nada. Sale bajo el
-nombre del proyecto (cerrar, nuevo, abrir), en la fila de *Ajustes ▸
-Actualizaciones* o encima del botón de la barra de estado (actualizar), que
-es donde se pulsó; en *Ajustes* `Esc` cancela la pregunta, no la ventana.
-Si durante la descarga el proyecto cambió, al cerrar la ventana para
-reiniciar se pregunta otra vez (bajo el nombre del proyecto, con la
-misma pregunta); si no ha cambiado desde que se contestó, no.
+**The question about unsaved changes** (only if the project has them)
+is the same for everything that would discard them —closing the window,
+*New*, *Open* and *Install and restart*— and has three buttons plus
+*Cancel*: **Save** (where the project is, without a dialog), **Save
+as…** (with the dialog) and **Don’t save** (in the update, **Quit without
+saving**). *Save* and *Save as…* go on only if the project was
+really written: a cancelled dialog or a file that cannot be
+written stay where they were. `Esc` and *Cancel* do nothing. It appears under the
+project name (close, new, open), in the row of *Settings ▸
+Updates* or above the status bar button (update), which
+is where it was pressed; in *Settings* `Esc` cancels the question, not the window.
+If during the download the project changed, on closing the window to
+restart it asks again (under the project name, with the
+same question); if it has not changed since it was answered, it does not.
 
-### 4.4 · Campos numéricos
+### 4.4 · Numeric fields
 
-Un único componente `NumberField`: valor con unidad (mm, °, K, f/, EV, s),
-**arrastrable** en horizontal para cambiarlo (con `Shift` fino, `Ctrl`
-grueso), flechas ↑↓ ±1 paso, doble clic para escribir, Enter confirma,
-`Esc` restaura. Deslizadores siempre acompañados del campo. Ningún valor
-se aplica a medias: un arrastre genera una sola entrada de deshacer.
+A single `NumberField` component: value with unit (mm, °, K, f/, EV, s),
+**draggable** horizontally to change it (with `Shift` fine, `Ctrl`
+coarse), ↑↓ arrows ±1 step, double click to type, Enter confirms,
+`Esc` restores. Sliders always accompanied by the field. No value
+is applied halfway: a drag generates a single undo entry.
 
-**Flechas de paso** (fase U15). Todo campo numérico lleva en su extremo
-derecho, dentro del marco, dos botones apilados **▲ ▼** (los *chevron* de
-1,5 px del juego de iconos, en `ink-2`; en `ink-0` con un fondo `soft` al
-pasar el ratón). Un clic sube o baja un paso; con `Shift`, una décima de
-paso, y con `Ctrl`/`⌘`, diez pasos, igual que el arrastre y las flechas del
-teclado. **Mantenido**, repite: el primer paso al pulsar, el segundo a los
-400 ms y luego uno cada 50 ms (`STEP_REPEAT_DELAY_MS`, `STEP_REPEAT_MS`);
-`Shift` o `Ctrl` pulsados durante la repetición cambian el paso de los
-siguientes. **Una pulsación, por larga que sea, es un solo gesto y una sola
-entrada de deshacer**, como un arrastre, y avisa a `onHold`/`onRelease` al
-empezar y al soltar (lo costoso, la vista previa de la IA, espera a que se
-suelte). El valor se queda en su mínimo y su máximo, y la flecha que ya no
-puede moverlo se apaga; al llegar ahí la repetición para, y la pulsación
-sigue acabando donde se suelte el botón, dentro o fuera de él. Un campo
-deshabilitado apaga las dos (también el que una fila deshabilita:
-*próximamente* en Ajustes, los términos de la proporción; `setDisabled`). Las flechas **no son
-paradas de tabulación** ni toman el foco: lo tiene el *spinbutton*, que
-sigue con el teclado; se llaman *Aumentar* y *Disminuir* (`strings.ts`)
-para las ayudas técnicas, y un clic sin puntero (el de un lector de
-pantalla) es un paso. No arrastran el campo ni abren la edición con doble
-clic; si se estaba escribiendo un valor, una pulsación lo toma primero y
-sube o baja desde él. Ocupan la altura del campo (26 px, una línea) sin
-hacer crecer la fila; nada se anima con *Reducir movimiento*.
+**Step arrows** (phase U15). Every numeric field carries at its right
+end, inside the frame, two stacked buttons **▲ ▼** (the 1.5 px *chevron*s of
+the icon set, in `ink-2`; in `ink-0` with a `soft` background on
+hover). A click raises or lowers one step; with `Shift`, a tenth of a
+step, and with `Ctrl`/`⌘`, ten steps, just like dragging and the keyboard
+arrows. **Held**, it repeats: the first step on press, the second at
+400 ms and then one every 50 ms (`STEP_REPEAT_DELAY_MS`, `STEP_REPEAT_MS`);
+`Shift` or `Ctrl` pressed during the repeat change the step of the
+following ones. **One press, however long, is a single gesture and a single
+undo entry**, like a drag, and notifies `onHold`/`onRelease` at the
+start and on release (the costly part, the AI preview, waits until it is
+released). The value stays at its minimum and maximum, and the arrow that can no longer
+move it turns off; on reaching there the repeat stops, and the press
+goes on ending wherever the button is released, inside or outside it. A disabled
+field turns off both (also one that a row disables:
+*coming soon* in Settings, the aspect ratio terms; `setDisabled`). The arrows **are not
+tab stops** and do not take the focus: the *spinbutton* has it, which
+continues with the keyboard; they are called *Increase* and *Decrease* (`strings.ts`)
+for assistive technology, and a click without a pointer (that of a screen
+reader) is one step. They do not drag the field or open editing with a double
+click; if a value was being typed, a press takes it first and
+raises or lowers from it. They take the height of the field (26 px, one line) without
+making the row grow; nothing animates with *Reduce motion*.
 
-**Variante compacta** ◆ Fable. Un campo con etiqueta en línea (la X, Y, Z
-de un triplete, U y V, H y V) y el campo de un deslizador llevan un par
-más fino (10 px en lugar de 14) y un margen más justo, para que el valor
-conserve el sitio que tenía antes de las flechas (en un triplete de
-102 px, 47 px de valor). Es la propuesta por defecto; la alternativa,
-flechas que solo salen al pasar el ratón o con el foco, mueve el valor o
-tapa la unidad, y queda para Fable.
+**Compact variant** ◆. A field with an inline label (the X, Y, Z
+of a triplet, U and V, H and V) and a slider's field carry a thinner
+pair (10 px instead of 14) and a tighter margin, so that the value
+keeps the room it had before the arrows (in a 102 px triplet,
+47 px of value). It is the default proposal; the alternative,
+arrows that only appear on hover or with focus, moves the value or
+covers the unit, and is left to the lead.
 
-**Deslizador o campo: la regla** (U15). Un valor con un **rango natural
-acotado** —un factor de 0 a 1, un porcentaje, un ángulo en un rango fijo,
-una opacidad— es un **deslizador con su campo y sus flechas al lado**
-(`slider()`). Una **magnitud física o sin tope** —una distancia en mm, un
-tamaño, una potencia, una temperatura de color, una cuenta, un tiempo, una
-semilla— se queda en **campo con flechas**. No se convierte lo que dejaría
-la fila apretada o rota: los campos de dos en dos o de tres en tres con
-etiqueta en línea (el acimut y la elevación de las luces del estudio, las
-asas de la curva) y lo que reescala la ventana bajo el pulgar (*Tamaño de
-la interfaz* y *Tamaño del texto*) siguen siendo campos. Lo que se
-convirtió en U15 (◆ Fable confirma la lista): en el inspector, *Rozamiento*
-y *Rebote* (físicas), *Giro* del bokeh, *Inclinación* y *Eje de la
-inclinación* (óptica avanzada), el *Ángulo* de un filtro, el *Ángulo de
-suavizado* de la pieza, el *Ángulo* de un patrón circular, el *Giro* de una
-textura y de una etiqueta, y en un foco propio *Acimut*, *Elevación*,
-*Giro*, *Dispersión*, *Ángulo de cono*, *Transición* y *Disco del sol*; en
-la ventana de render, la *Calidad* del JPEG, el *Ruido* de *Terminar por
-ruido* y la *Intensidad* de la reducción de ruido; en Ajustes, *Velocidad
-de órbita*, *Velocidad de zoom*, *Tamaño del gizmo* e *Intervención por
-defecto*. La línea de tiempo no tenía ninguno que convertir (tiempos,
-cuentas y las asas). La *Distancia de enfoque* de la cámara no se toca aquí
-(la reconstruye la fase F1). El **campo de tiempo** de la ventana de render
-(`hh:mm:ss`) es ya un `NumberField` de segundos, con sus flechas (un
-minuto por paso; `Shift`, 6 s; `Ctrl`, 10 min) y que se escribe como hora,
-`mm:ss` o segundos.
+**Slider or field: the rule** (U15). A value with a **bounded natural
+range** —a factor from 0 to 1, a percentage, an angle in a fixed range,
+an opacity— is a **slider with its field and its arrows beside it**
+(`slider()`). A **physical or unbounded magnitude** —a distance in mm, a
+size, a power, a colour temperature, a count, a time, a
+seed— stays a **field with arrows**. What would leave the row
+cramped or broken is not converted: fields in pairs or triples with an
+inline label (the azimuth and elevation of the studio lights, the
+curve handles) and what rescales the window under the thumb (*Interface
+size* and *Text size*) remain fields. What was
+converted in U15 (◆ the lead confirms the list): in the inspector, *Friction*
+and *Bounciness* (physics), the bokeh *Rotation*, *Tilt* and *Tilt axis* (advanced
+optics), the *Angle* of a filter, the part's *Smoothing angle*, the
+*Angle* of a circular pattern, the *Rotation* of a texture and of a label, and on an own light *Azimuth*, *Elevation*,
+*Roll*, *Spread*, *Cone angle*, *Soft edge* and *Sun disc*; in
+the render window, the JPEG *Quality*, the *Noise* of *Finish by
+noise* and the *Strength* of the denoise; in Settings, *Orbit speed*,
+*Zoom speed*, *Gizmo size* and *Default intervention*. The timeline had none to
+convert (times, counts and the handles). The camera's *Focus distance* is not touched here
+(phase F1 rebuilds it). The render window's **time field**
+(`hh:mm:ss`) is now a `NumberField` of seconds, with its arrows (one
+minute per step; `Shift`, 6 s; `Ctrl`, 10 min) and is typed as a time,
+`mm:ss` or seconds.
 
-### 4.5 · Deshacer todo
+### 4.5 · Undo everything
 
-Cada cambio de estado pasa por el *store* y es deshacible, incluidos los
-cambios de cámara hechos orbitando (agrupados por gesto). El tooltip de
-Deshacer dice qué deshace.
+Every state change goes through the store and is undoable, including
+camera changes made by orbiting (grouped by gesture). The Undo tooltip
+says what it undoes.
 
-### 4.6 · Guía que no tapa
+### 4.6 · A guide that does not cover
 
-La *Guía* (menú o icono de cabecera) añade una tira de 3 líneas encima
-del inspector con el paso actual y botones *Siguiente / Cerrar*, y dibuja
-una **flecha** apuntando al control del que habla, sin ocultar ni mover
-nada. Seis pasos: importar o cargar el ejemplo → elegir tipo de producto y
-crear estudio → asignar un material → elegir un montaje de luz → encuadrar
-y enfocar → render.
+The *Guide* (menu or header icon) adds a 3-line strip above
+the inspector with the current step and *Next / Close* buttons, and draws
+an **arrow** pointing to the control it speaks of, without hiding or moving
+anything. Six steps: import or load the example → choose product type and
+create studio → assign a material → choose a light setup → frame
+and focus → render.
 
-### 4.7 · Recorrido guiado
+### 4.7 · Guided tour
 
-Una capa propia —nunca ventanas del navegador— que recorre la pantalla
-zona por zona (fase U10, `ui/tour.ts` y `ui/panels/tour.ts`). Sale **sola
-en el primer arranque** y desde *Ayuda ▸ Recorrido guiado* (o la paleta:
-*Recorrido guiado*), y **se puede saltar siempre**. Oscurece todo menos la
-zona del paso, la rodea con un anillo (blanco por dentro, negro por fuera,
-visible sobre cualquier contenido) y pone al lado una tarjeta con el
-número del paso, un título, un texto corto, **puntos de progreso** (uno
-por paso), **Saltar recorrido · Atrás · Siguiente** (*Hecho* en el último)
-y la pista de teclas. Es modal: la capa se queda con el puntero y con todas
-las teclas, de modo que nada de debajo cambia (ni `Supr` borra, ni `F`
-encuadra): `→` y `Av Pág` avanzan, `←` y `Re Pág` retroceden, `Esc` salta,
-`Intro` y `Espacio` pulsan el botón con el foco y `Tab` solo da vueltas por
-los botones de la tarjeta. Acromática en los dos temas; `es` y `en`.
+A layer of its own —never browser windows— that walks the screen
+zone by zone (phase U10, `ui/tour.ts` and `ui/panels/tour.ts`). It appears **by itself
+on first startup** and from *Help ▸ Guided tour* (or the palette:
+*Guided tour*), and **can always be skipped**. It dims everything but the
+zone of the step, surrounds it with a ring (white inside, black outside,
+visible over any content) and puts beside it a card with the step
+number, a title, a short text, **progress dots** (one
+per step), **Skip tour · Back · Next** (*Done* on the last)
+and the key hint. It is modal: the layer keeps the pointer and all
+the keys, so that nothing underneath changes (`Del` does not delete, `F`
+does not frame): `→` and `Page Down` advance, `←` and `Page Up` go back, `Esc` skips,
+`Enter` and `Space` press the button with the focus and `Tab` only cycles through
+the card's buttons. Achromatic in both themes; `es` and `en`.
 
-Los pasos, en este orden: **bienvenida**; **menú de la aplicación**;
-**piezas** (el árbol) y **niveles de selección**; **herramientas de vista**
-(Seleccionar con la caja de `Ctrl`, Mover, Escalar, Orbitar, Desplazar,
-Zoom; en un proyecto vacío la barra se muestra igualmente mientras dura el
-recorrido) y **Rápido y Completo**; el inspector: **producto y estudio**,
-**luz y montajes**, **entorno y cielo**, **cámara y enfoque con clic**,
-**materiales** (con el catálogo abierto y la primera pieza seleccionada; sin
-pieza, el propio inspector); las pestañas **Luces**, **Cámaras** y
-**Estudios**; **Añadir ▸ Primitiva**; **Render…**, la **ventana de render**,
-la **cola** y el **post-procesado IA**; los **resultados** (el historial del
-cajón *Cola*, donde se abre el visor) y **Ajustes** una sección por paso
-(con el nombre y la descripción de la propia sección; *Escritorio* solo en
-la aplicación de escritorio); y el cierre. 30 pasos en la web, 31 en el
-escritorio. Las zonas se localizan por los `data-guide` del código (los de
-la guía y los nuevos: `app-menu`, `parts-tab`, `levels`, `tools`,
-`add-primitive`, `scene-panel`, `inspector`, `section-<id>` en cada sección
-del inspector y de la ventana de render, `render-window`, `rw-actions`,
+The steps, in this order: **welcome**; **application menu**;
+**parts** (the tree) and **selection levels**; **view tools**
+(Select with the `Ctrl` box, Move, Scale, Orbit, Pan,
+Zoom; in an empty project the bar is shown anyway for the duration of the
+tour) and **Fast and Full**; the inspector: **product and studio**,
+**light and setups**, **environment and sky**, **camera and focus with a click**,
+**materials** (with the catalogue open and the first part selected; with no
+part, the inspector itself); the **Lights**, **Cameras** and
+**Studios** tabs; **Add ▸ Primitive**; **Render…**, the **render window**,
+the **queue** and **AI post-processing**; the **results** (the history of the
+*Queue* drawer, where the viewer opens) and **Settings** one section per step
+(with the name and description of the section itself; *Desktop* only in
+the desktop application); and the close. 30 steps on the web, 31 on
+desktop. The zones are located by the `data-guide` attributes in the code (those of
+the guide and the new ones: `app-menu`, `parts-tab`, `levels`, `tools`,
+`add-primitive`, `scene-panel`, `inspector`, `section-<id>` in each section
+of the inspector and of the render window, `render-window`, `rw-actions`,
 `history`, `settings-content`).
 
-Un paso cuya zona no está a la vista **la pone**: abre la pestaña, el panel
-lateral (en una ventana estrecha, solo el que hace falta), la ventana de
-render o la de Ajustes en su sección, el cajón *Cola*, el catálogo de
-materiales, y selecciona lo que el paso necesita (la selección no se
-deshace ni toca el proyecto); y **al terminar lo deja todo como estaba**
-(pestaña, paneles, cajón, ventanas, sección recordada de Ajustes,
-catálogo y selección). Un paso cuya zona no aparece en 0,7 s se salta en la
-dirección en que se iba (nunca se queda colgado). La tarjeta va **al lado
-de la zona** sin taparla (a la derecha de lo que está en la mitad
-izquierda, a la izquierda de lo que está en la derecha, debajo o encima de
-una barra), **fuera de la ventana** de render o de Ajustes cuando hay sitio
-y, si la zona es toda la ventana, **dentro de ella, donde no tape ningún
-control** (botón, campo o interruptor), lo más cerca posible de su
-esquina inferior derecha; si toda la sección es controles, en esa esquina.
+A step whose zone is not in view **puts it there**: it opens the tab, the side
+panel (in a narrow window, only the one needed), the render window or
+Settings at its section, the *Queue* drawer, the material
+catalogue, and selects what the step needs (the selection is not
+undoable and does not touch the project); and **on finishing it leaves everything as it was**
+(tab, panels, drawer, windows, remembered Settings section,
+catalogue and selection). A step whose zone does not appear within 0.7 s is skipped in
+the direction it was going (it never hangs). The card goes **beside the
+zone** without covering it (to the right of what is in the left
+half, to the left of what is in the right half, below or above
+a bar), **outside the window** of render or Settings when there is room
+and, if the zone is the whole window, **inside it, where it covers no
+control** (button, field or switch), as close as possible to its
+bottom right corner; if the whole section is controls, in that corner.
 
-Qué se recuerda: *Saltar*, *Hecho* y `Esc` cuentan como visto, y entonces
-ya no sale solo (sí desde *Ayuda*). Se guarda en el documento de ajustes
-(`layout.tourSeen`: la carpeta de datos en escritorio, nunca el
-almacenamiento del navegador allí; el de la web en `localStorage` como lo
-demás). No sale solo bajo automatización (`navigator.webdriver`: las
-comprobaciones y capturas del navegador): `?tour=0` no lo lanza nunca,
-`?tour=1` lo lanza ahora y `?tour=auto` hace lo del primer arranque aunque
-haya automatización. En el primer arranque de un portable espera a que se
-cierre el selector de modelos.
-
----
-
-## 5 · Qué construye la fase U1, exactamente
-
-**Entrega**: la interfaz completa descrita arriba, funcional sobre un
-**modelo de datos en memoria** (`src/core/store.ts`, ver
-`ARCHITECTURE.md` §4) y un **visor de vista previa** con three.js
-(`src/render/preview.ts`). Sin trazador de caminos, sin importadores
-reales (el ejemplo procedural basta), sin guardar a disco más allá de
-descargar el `.repack.json` y la captura PNG del visor.
-
-Lo que **sí** debe funcionar de verdad en U1:
-
-- Árbol de piezas con la pieza de ejemplo (varias piezas: cuerpo, tapón,
-  base, etiqueta… generadas por procedimiento, agrupadas en un ensamblaje
-  para que *Grupo* tenga sentido), selección sincronizada entre árbol,
-  visor e inspector, niveles de selección, ocultar / aislar / encuadrar.
-- Tipo de producto + *Crear estudio*: aplica focal, diafragma, exposición,
-  fondo, suelo y sombra del preset, y monta el rig con `studioRig()`.
-- Catálogo de montajes de luz con sus 72 miniaturas, filtro por estilo,
-  intención, anterior / siguiente; al elegir uno, el rig del visor cambia
-  (`setupRig()`): se tienen que ver moverse las luces y cambiar su color.
-- Catálogo de materiales con sus 86 presets y sus esferas (ver §6),
-  asignación por nivel con inventario de confirmación, parámetros por
-  familia que se reflejan en el visor (color, metal, rugosidad, barniz,
-  transmisión, emisión; madera y tela como aproximación de color plano
-  en U1), desgaste como estado (los deslizadores existen y se guardan;
-  el visor aún no lo pinta y el panel lo dice en una línea auxiliar).
-- Cámara: óptica, focal, diafragma, perspectiva / ortográfica, vistas,
-  encuadrar, cámaras guardadas.
-- Entorno: cúpula procedural (gradiente suelo → horizonte → cenit con los
-  valores de `src/data/environment.ts`), color plano, transparente;
-  intensidad y rotación. *Cielo* y *Archivo HDRI* pueden quedar como
-  opciones presentes pero marcadas *próximamente* en auxiliar (U1; desde
-  E5 funcionan, con la imagen de fondo).
-- Imagen: exposición y transformada de vista aplicadas al visor; el resto
-  guardado en el estado.
-- Animación: en U1, planos, movimientos con frase, presets, asistente y
-  línea de tiempo de bloques; reproducir mueve la cámara y las piezas en
-  el visor con `ease()`; *Construir vídeo* deshabilitado con tooltip
-  "próximamente". N1 la sustituye por la línea de tiempo de pistas al
-  estilo KeyShot descrita en §2.5.
-- Barra de render: todo el estado; **Render** produce de verdad una
-  captura del visor a la resolución elegida (render a un canvas fuera de
-  pantalla) y la descarga como PNG o JPEG; la cola acumula trabajos y los
-  ejecuta en serie con ese mismo mecanismo.
-- Doctor: los chequeos de escena implementados sobre el modelo (escala
-  plausible según el tipo de producto, origen y apoyo en el suelo,
-  suavizado, bisel, clipping de cámara, luces visibles, proporción de la
-  animación); los de motor (D1) leen lo que el motor dice y salen como
-  *no disponibles* con su motivo mientras no lo saben.
-- Paleta de comandos, atajos, deshacer / rehacer, temas, idioma (todas
-  las cadenas en `src/ui/strings.ts` en `es` y `en`, inglés por defecto),
-  plegado de paneles, estado vacío con arrastre de archivo (el arrastre
-  puede, en U1, cargar solo GLB/glTF con `GLTFLoader` de three; OBJ y STL
-  se listan y avisan *próximamente*).
-- Guía de seis pasos con flechas.
-
-**Visor de vista previa** (`src/render/preview.ts`): three.js con
-`WebGLRenderer` (antialias, `outputColorSpace` sRGB, tone mapping ACES
-con exposición ligada al estado), `MeshPhysicalMaterial` para los
-materiales, `RectAreaLight` (con `RectAreaLightUniformsLib`) para los
-focos de área colocados con `polar(toWorldAzimuth(az), el, dist ·
-tamaño)` y apuntados al origen, color de `specColor`, intensidad
-proporcional a la energía resuelta dividida por el área; un
-`DirectionalLight` para los de tipo sol; entorno y fondo desde una textura
-equirrectangular generada en un canvas con el gradiente de la cúpula
-(`PMREMGenerator` para el entorno); suelo con `ShadowMaterial` o material
-del color de fondo; sombras suaves; `OrbitControls` con el objetivo en el
-centro de la pieza. Expone la interfaz `RenderEngine` de
-`ARCHITECTURE.md` §5 y reporta su estado real al medidor del visor. El
-rendimiento importa: 60 fps con la pieza de ejemplo en un portátil.
+What is remembered: *Skip*, *Done* and `Esc` count as seen, and then
+it no longer appears by itself (it does from *Help*). It is saved in the settings document
+(`layout.tourSeen`: the data folder on desktop, never the
+browser's storage there; the web's in `localStorage` like
+the rest). It does not appear by itself under automation (`navigator.webdriver`: browser
+checks and captures): `?tour=0` never launches it,
+`?tour=1` launches it now and `?tour=auto` does what the first startup does even if
+there is automation. On the first startup of a portable it waits for the model
+chooser to close.
 
 ---
 
-## 6 · Miniaturas
+## 5 · What phase U1 builds, exactly
 
-- **Montajes de luz** (L6): las 88 `thumb_<clave>.png` (256 × 256) y
-  `setup_<clave>.png` (64 × 64, su promedio) de `public/thumbs/setups/`
-  las renderiza nuestro motor (`node tools/setup-thumbs.mjs`): cada set
-  sobre su héroe (`BOTTLE` el frasco de ejemplo de vidrio con líquido,
-  `BOX` una caja con una banda de aluminio, `RING` un toro de oro,
-  `CHROME` un toro cromado, `SHOE` una cápsula de cuero, `SPHERES` tres
-  esferas mate, brillante y metal) y cada montaje anterior sobre el héroe
-  de su estilo, con el tipo *Estándar*, la cámara de referencia (o la del
-  set), 96 muestras, *denoise* y semilla fija. `manifest.json` guarda el
-  *hash* de cada escena y de cada PNG; la suite comprueba que el código sigue construyendo esas escenas.
-- **Materiales**: en U1 se generan **en el navegador** con el propio
-  visor: una esfera con el material sobre el fondo del tema, renderizada a
-  96 × 96 en un canvas al abrir cada categoría y cacheada en memoria (y en
-  `localStorage` como data URL, envuelto en `try/catch`).
-- **Tipo de producto**: sin miniatura; etiqueta e intención bastan.
+**Deliverable**: the complete interface described above, functional over an
+**in-memory data model** (`src/core/store.ts`, see
+`ARCHITECTURE.md` §4) and a **preview viewport** with three.js
+(`src/render/preview.ts`). No path tracer, no real importers
+(the procedural example is enough), no saving to disk beyond
+downloading the `.repack.json` and the PNG capture of the viewport.
+
+What **must** really work in U1:
+
+- Part tree with the example part (several parts: body, cap,
+  base, label… generated procedurally, grouped into an assembly
+  so that *Group* makes sense), selection synchronised between tree,
+  viewport and inspector, selection levels, hide / isolate / frame.
+- Product type + *Create studio*: applies focal length, aperture, exposure,
+  background, floor and shadow of the preset, and builds the rig with `studioRig()`.
+- Catalogue of light setups with its 72 thumbnails, filter by style,
+  intent, previous / next; on choosing one, the viewport rig changes
+  (`setupRig()`): the lights must be seen to move and change their colour.
+- Catalogue of materials with its 86 presets and their spheres (see §6),
+  assignment by level with confirmation inventory, parameters per
+  family that are reflected in the viewport (colour, metal, roughness, clear coat,
+  transmission, emission; wood and fabric as a flat-colour approximation
+  in U1), wear as state (the sliders exist and are saved;
+  the viewport does not paint it yet and the panel says so in an auxiliary line).
+- Camera: optics, focal length, aperture, perspective / orthographic, views,
+  frame, saved cameras.
+- Environment: procedural dome (floor → horizon → zenith gradient with the
+  values of `src/data/environment.ts`), flat colour, transparent;
+  intensity and rotation. *Sky* and *HDRI file* may remain
+  present as options but marked *coming soon* in auxiliary text (U1; since
+  E5 they work, with the background image).
+- Image: exposure and view transform applied to the viewport; the rest
+  saved in the state.
+- Animation: in U1, shots, moves with a sentence, presets, wizard and
+  block timeline; playing moves the camera and the parts in
+  the viewport with `ease()`; *Build video* disabled with the tooltip
+  "coming soon". N1 replaces it with the KeyShot-style track
+  timeline described in §2.5.
+- Render bar: all the state; **Render** really produces a
+  capture of the viewport at the chosen resolution (render to an off-screen
+  canvas) and downloads it as PNG or JPEG; the queue accumulates jobs and
+  runs them in series with that same mechanism.
+- Doctor: the scene checks implemented over the model (plausible
+  scale according to the product type, origin and rest on the floor,
+  smoothing, bevel, camera clipping, visible lights, animation
+  aspect ratio); the engine ones (D1) read what the engine says and appear as
+  *unavailable* with their reason while they do not know it.
+- Command palette, shortcuts, undo / redo, themes, language (all
+  the strings in `src/ui/strings.ts` in `es` and `en`, English by default),
+  panel folding, empty state with file drag (dragging
+  may, in U1, load only GLB/glTF with three's `GLTFLoader`; OBJ and STL
+  are listed and warn *coming soon*).
+- Six-step guide with arrows.
+
+**Preview viewport** (`src/render/preview.ts`): three.js with
+`WebGLRenderer` (antialias, sRGB `outputColorSpace`, ACES tone mapping
+with exposure tied to the state), `MeshPhysicalMaterial` for the
+materials, `RectAreaLight` (with `RectAreaLightUniformsLib`) for the
+area lights placed with `polar(toWorldAzimuth(az), el, dist ·
+size)` and aimed at the origin, colour from `specColor`, intensity
+proportional to the resolved energy divided by the area; a
+`DirectionalLight` for the sun type; environment and background from an
+equirectangular texture generated in a canvas with the dome gradient
+(`PMREMGenerator` for the environment); floor with `ShadowMaterial` or a material
+of the background colour; soft shadows; `OrbitControls` with the target at the
+centre of the part. It exposes the `RenderEngine` interface of
+`ARCHITECTURE.md` §5 and reports its real state to the viewport meter. Performance
+matters: 60 fps with the example part on a laptop.
 
 ---
 
-## 7 · Criterios de aceptación de U1
+## 6 · Thumbnails
 
-Lo que revisa quien reciba el PR, en este orden:
-
-1. `npm run qa` en verde (tipos, tests, build) y `npm run screenshot` deja
-   una captura del estado con la pieza de ejemplo y el estudio creado.
-2. **Ningún color en el cromo**: el test `tests/ui-achromatic.test.ts`
-   recorre `src/ui/**/*.css` y falla si algún color (`#rgb`, `#rrggbb`,
-   `rgb()`, `hsl()`) tiene saturación distinta de cero. Las miniaturas y
-   el visor quedan fuera porque son contenido.
-3. Las 72 miniaturas de montaje y las 86 esferas de material se ven y se
-   eligen; cambiar montaje mueve las luces del visor; cambiar material
-   cambia la pieza.
-4. Flujo completo sin ratón salvo en el visor: `Ctrl K` → "ejemplo" →
-   `Ctrl K` → "joyería" → `Ctrl K` → "crear estudio" → `Ctrl K` → "oro" →
-   `Ctrl ⏎`. Descarga un PNG.
-5. El inventario de confirmación aparece al asignar un material a un
-   grupo con materiales distintos, y no aparece cuando son iguales.
-6. Deshacer revierte, en orden, todo lo anterior; Rehacer lo repite.
-7. Los dos temas y los dos idiomas se cambian en caliente sin recargar y
-   sin que ninguna cadena quede en un solo idioma (test
-   `tests/strings.test.ts`: mismas claves en `es` y `en`).
-8. Con los paneles plegados (`Tab`) el visor ocupa todo el ancho y los
-   carriles permiten volver.
-9. Sin modelo, el estado vacío acepta un `.glb` arrastrado.
-10. Ningún nombre de archivo contiene "keyshot" en ninguna combinación de
-    mayúsculas (el `.gitignore` lo ignoraría en silencio).
+- **Light setups** (L6): the 88 `thumb_<key>.png` (256 × 256) and
+  `setup_<key>.png` (64 × 64, their average) of `public/thumbs/setups/`
+  are rendered by our engine (`node tools/setup-thumbs.mjs`): each set
+  on its hero (`BOTTLE` the example glass bottle with liquid,
+  `BOX` a box with an aluminium band, `RING` a gold torus,
+  `CHROME` a chrome torus, `SHOE` a leather capsule, `SPHERES` three
+  spheres, matte, glossy and metal) and each earlier setup on the hero
+  of its style, with the *Standard* type, the reference camera (or the set's),
+  96 samples, denoise and a fixed seed. `manifest.json` keeps the
+  hash of each scene and of each PNG; the suite checks that the code still builds those scenes.
+- **Materials**: in U1 they are generated **in the browser** with the
+  viewport itself: a sphere with the material on the theme background, rendered at
+  96 × 96 on a canvas when each category is opened and cached in memory (and in
+  `localStorage` as a data URL, wrapped in `try/catch`).
+- **Product type**: no thumbnail; label and intent are enough.
 
 ---
 
-## 8 · Lo que no es de U1
+## 7 · Acceptance criteria for U1
 
-Trazador de caminos, importadores más allá de glTF (OBJ, STL, FBX, 3DM,
-STEP, IGES, 3MF, PLY, DAE, USD y la hoja de importación), *gizmo* de
-mover y el menú contextual completo de piezas (U3), focos propios y
-guardar montajes (L4), biblioteca *Míos* (U4), cara CAD entera, pelusa,
-desgaste visible, campo claro por entorno, cielo procedural, HDRI de
-archivo, colocación por reflejo exacta, vídeo, pases de render, etiquetas
-y texturas de imagen (fase M2a en la interfaz y la vista previa, M2b en el
-motor; hechas las dos), vista en sección. Todo está en `ROADMAP.md` con su
-fase y su responsable. En la interfaz, cada uno de esos huecos se marca
-con la palabra *próximamente* en texto auxiliar, nunca con un control que
-parezca funcionar y no haga nada.
+What whoever receives the PR reviews, in this order:
+
+1. `npm run qa` green (types, tests, build) and `npm run screenshot` leaves
+   a capture of the state with the example part and the studio created.
+2. **No colour in the chrome**: the test `tests/ui-achromatic.test.ts`
+   walks `src/ui/**/*.css` and fails if any colour (`#rgb`, `#rrggbb`,
+   `rgb()`, `hsl()`) has non-zero saturation. Thumbnails and
+   the viewport are outside because they are content.
+3. The 72 setup thumbnails and the 86 material spheres are seen and
+   chosen; changing setup moves the viewport lights; changing material
+   changes the part.
+4. A complete flow without the mouse except in the viewport: `Ctrl K` → "example" →
+   `Ctrl K` → "jewellery" → `Ctrl K` → "create studio" → `Ctrl K` → "gold" →
+   `Ctrl ⏎`. It downloads a PNG.
+5. The confirmation inventory appears on assigning a material to a
+   group with different materials, and does not appear when they are the same.
+6. Undo reverts, in order, everything above; Redo repeats it.
+7. The two themes and the two languages are switched live without reloading and
+   without any string being left in a single language (test
+   `tests/strings.test.ts`: same keys in `es` and `en`).
+8. With the panels collapsed (`Tab`) the viewport takes the whole width and the
+   rails allow returning.
+9. With no model, the empty state accepts a dragged `.glb`.
+10. No file name contains "keyshot" in any combination of
+    capitals (the `.gitignore` would ignore it silently).
+
+---
+
+## 8 · What is not part of U1
+
+Path tracer, importers beyond glTF (OBJ, STL, FBX, 3DM,
+STEP, IGES, 3MF, PLY, DAE, USD and the import sheet), move *gizmo*
+and the complete part context menu (U3), own lights and
+saving setups (L4), the *Mine* library (U4), whole CAD face, fuzz,
+visible wear, dark field by environment, procedural sky, file
+HDRI, exact placement by reflection, video, render passes, labels
+and image textures (phase M2a in the interface and the preview, M2b in the
+engine; both done), section view. All of it is in `ROADMAP.md` with its
+phase and its executor. In the interface, each of those gaps is marked
+with the word *coming soon* in auxiliary text, never with a control that
+looks like it works and does nothing.
