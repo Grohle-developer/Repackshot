@@ -8,10 +8,20 @@
 // gives and the final poses are one undo step (one gesture); Reset takes the clips away and puts the movers back, as
 // a step of its own. Anything else that takes the run's clips or movers away (an undo, a deletion) ends it without
 // committing anything.
+//
+// S3b: Start also runs the front glass of the active camera when it is fed by the scene (Camera ▸ Front glass ▸ From
+// the scene) and some effect rains or dusts on it (core/wet.ts): its pane steps with the bodies in the same worker, or
+// alone, each frame's record grows a PHYSICS clip of the camera (the glass track, the cache), and a run with a glass
+// stops only by Stop or its time (it keeps raining). Drop runs the bodies alone. Reset takes the glass clip away too.
 
+import { activeCamera, isPanoramic, type CameraId } from '../core/camera';
 import { nextIds } from '../core/ids';
+import { glassFromScene } from '../core/optics';
+import { capAngleDeg, GlassTrackWriter, wetBytes, wetKey, wetSpec, type GlassTrack, type WetPaneSpec } from '../core/wet';
+import { MAX_GLASS_SECONDS } from '../data/front-glass';
 import {
   anchorOf,
+  glassClip,
   moverSample,
   moverTransforms,
   NO_BODY,
@@ -67,6 +77,17 @@ interface Session {
   begun: boolean;
   over: boolean;
   unsubscribe: () => void;
+  /** S3b: the front glass that runs with it, its track and its clip ('' until it begins). */
+  glass: GlassRun | null;
+}
+
+/** S3b: the front glass of a run. */
+interface GlassRun {
+  camera: CameraId;
+  spec: WetPaneSpec;
+  key: string;
+  writer: GlassTrackWriter | null;
+  clip: string;
 }
 
 interface LastRun {
@@ -110,20 +131,30 @@ function forget(session: Session): void {
   if (sessions.get(session.ctx.store) === session) sessions.delete(session.ctx.store);
 }
 
-function grow(session: Session, frames: readonly Float32Array[]): void {
+/** The run's clips: the bodies', and its glass's. */
+function runClips(session: Session): string[] {
+  return [...session.clips.filter(Boolean), ...(session.glass?.clip ? [session.glass.clip] : [])];
+}
+
+function grow(session: Session, frames: readonly Float32Array[], glass?: readonly Uint8Array[]): void {
   if (!session.ids || !session.initial || frames.length === 0) return;
   const { spec, ids, initial } = session;
-  for (const frame of frames) {
+  frames.forEach((frame, k) => {
     session.writers.forEach((w, i) => w?.push(moverSample(spec, i, initial, frame, ids[i])));
+    const record = glass?.[k];
+    if (record) session.glass?.writer?.push(record);
     session.frames++;
     session.last = frame;
-  }
+  });
   const tracks: Record<string, PhysicsTrack> = {};
   session.writers.forEach((w, i) => {
     if (w && session.clips[i]) tracks[session.clips[i]] = w.track();
   });
+  const g = session.glass;
+  const glassTracks: Record<string, GlassTrack> | undefined = g?.writer && g.clip ? { [g.clip]: g.writer.track() } : undefined;
+  if (g?.writer) setUi(session.ctx, { glass: { drops: g.writer.lastDrops, motes: g.writer.motesAlive } });
   const { store } = session.ctx;
-  store.dispatch({ type: 'physics/grow', tracks, gesture: session.gesture, label: session.label });
+  store.dispatch({ type: 'physics/grow', tracks, ...(glassTracks ? { glass: glassTracks } : {}), gesture: session.gesture, label: session.label });
   store.dispatch({ type: 'anim/playhead', t: session.start + (session.frames - 1) / session.fps });
 }
 
@@ -149,6 +180,14 @@ function begin(session: Session, started: PhysicsStarted): void {
   const clips = spec.bodies
     .map((b, i) => (session.writers[i] ? physicsClip(session.clips[i], b.mover, session.start, session.writers[i]!.track(), anchorOf(session.pre[b.mover] ?? state.scene.nodes[b.mover].transform)) : null))
     .filter((c) => c !== null);
+  // S3b: the glass's clip, its first frame the dry pane of step 0.
+  const g = session.glass;
+  if (g && started.glass) {
+    g.writer = new GlassTrackWriter(g.camera, session.fps, g.key, capAngleDeg(g.spec));
+    g.writer.push(started.glass);
+    g.clip = nextIds('c', [...state.animation.clips.map((c) => c.id), ...session.clips.filter(Boolean)], 1)[0];
+    clips.push(glassClip(g.clip, session.start, g.writer.track()));
+  }
   ctx.store.dispatch({ type: 'anim/play', playing: false });
   ctx.store.dispatch({ type: 'physics/begin', clips, roles: session.roles, gesture: session.gesture, label: session.label });
   ctx.store.dispatch({ type: 'anim/playhead', t: session.start });
@@ -156,13 +195,13 @@ function begin(session: Session, started: PhysicsStarted): void {
   // From now on, anything that takes the run's clips or movers away ends it.
   session.unsubscribe = ctx.store.subscribe((s) => {
     if (session.over) return;
-    const alive = session.clips.every((id) => !id || s.animation.clips.some((c) => c.id === id)) && spec.bodies.every((b) => s.scene.nodes[b.mover]);
+    const alive = runClips(session).every((id) => s.animation.clips.some((c) => c.id === id)) && spec.bodies.every((b) => s.scene.nodes[b.mover]);
     if (!alive) {
       abandon(session);
       setUi(ctx, { state: 'STOPPED', ended: 'STOPPED', canReset: lastRunAlive(ctx) !== null });
     }
   });
-  setUi(ctx, { state: ctx.ui.get().physics.state === 'PAUSED' ? 'PAUSED' : 'RUNNING', time: 0, bodies: started.bodies, awake: started.bodies, ended: null, canReset: true });
+  setUi(ctx, { state: ctx.ui.get().physics.state === 'PAUSED' ? 'PAUSED' : 'RUNNING', time: 0, bodies: started.bodies, awake: started.bodies, ended: null, canReset: true, glass: g?.writer ? { drops: 0, motes: 0 } : null });
 }
 
 function update(session: Session, u: PhysicsUpdate): void {
@@ -171,7 +210,7 @@ function update(session: Session, u: PhysicsUpdate): void {
     session.held.push(u);
     return;
   }
-  grow(session, u.frames);
+  grow(session, u.frames, u.glass);
   session.shown = { steps: u.steps, awake: u.awake, bodies: u.bodies };
   setUi(session.ctx, { time: u.steps / STEPS_PER_SECOND, awake: u.awake, bodies: u.bodies });
 }
@@ -186,18 +225,35 @@ function finish(session: Session, r: PhysicsResult): void {
   const { ctx, spec } = session;
   // Stopped by the person: the pose shown, not what the simulator did after it.
   const cut = session.stopped;
-  if (!cut) grow(session, r.frames);
+  if (!cut) grow(session, r.frames, r.glass);
   session.over = true;
   session.unsubscribe();
   forget(session);
   if (session.ids && session.initial && session.last) {
     const transforms = poseTransforms(ctx.store.get(), spec, session.ids, session.initial, session.last);
     ctx.store.dispatch({ type: 'physics/commit', transforms, clips: session.clips.filter(Boolean), gesture: session.gesture, label: session.label });
-    lastRuns.set(ctx.store, { pre: session.pre, clips: session.clips.filter(Boolean), start: session.start });
+    lastRuns.set(ctx.store, { pre: session.pre, clips: runClips(session), start: session.start });
   }
   const said = cut ? session.shown : { steps: r.steps, awake: r.awake, bodies: r.bodies };
   // A run that replaced this one owns the bar now.
   if (!simulating(ctx)) setUi(ctx, { state: 'STOPPED', ended: cut ? 'STOPPED' : r.reason, time: said.steps / STEPS_PER_SECOND, awake: said.awake, bodies: said.bodies, canReset: true });
+}
+
+/**
+ * S3b: the front glass a Start runs: the active camera's, when it is fed by the scene and some effect rains or dusts on
+ * it, with the spec of its simulation (its square and axes from the engine, data/wettability.ts, its seed); NO_ENGINE
+ * without the engine's pane, null when there is nothing to run.
+ */
+function glassRun(ctx: Ctx): GlassRun | 'NO_ENGINE' | null {
+  const state = ctx.store.get();
+  const cam = activeCamera(state);
+  const g = cam.optics?.frontGlass;
+  if (!g?.on || !glassFromScene(g) || isPanoramic(cam.projection)) return null;
+  const engine = ctx.services.glass?.pane(state, cam.id) ?? null;
+  if (!engine) return 'NO_ENGINE';
+  const spec = wetSpec(state, engine.axes, engine.pane.halfExtentMm, g.seed);
+  if (!spec) return null;
+  return { camera: cam.id, spec, key: wetKey(wetBytes(spec)), writer: null, clip: '' };
 }
 
 function fail(session: Session, err: unknown): void {
@@ -227,7 +283,14 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
   }
   if (current) abandon(current);
   const state = ctx.store.get();
-  const spec = physicsSpec(state, drop ?? undefined);
+  // S3b: Start runs the front glass fed by the scene too (Drop runs the bodies it drops).
+  const glass = drop ? null : glassRun(ctx);
+  if (glass === 'NO_ENGINE') {
+    setUi(ctx, { ended: 'NO_ENGINE' });
+    ctx.ui.toast(t('phys.noEngine'));
+    return;
+  }
+  const spec = physicsSpec(state, drop ?? undefined) ?? (glass ? { bodies: [], statics: [], floor: { z: 0, friction: 0, bounciness: 0 } } : null);
   if (!spec) {
     setUi(ctx, { ended: 'NOTHING' });
     ctx.ui.toast(t(drop ? 'phys.nothingToDrop' : 'phys.nothingDynamic'));
@@ -261,10 +324,13 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
     begun: false,
     over: false,
     unsubscribe: () => undefined,
+    glass,
   };
-  session.run = port.run(spec, { fps, maxSeconds: MAX_SIMULATED_SECONDS }, (u) => update(session, u));
+  // A run with a glass goes on as long as it rains: only Stop or its time stops it.
+  const maxSeconds = glass ? MAX_GLASS_SECONDS : MAX_SIMULATED_SECONDS;
+  session.run = port.run(spec, { fps, maxSeconds }, (u) => update(session, u), glass?.spec ?? null);
   sessions.set(ctx.store, session);
-  setUi(ctx, { state: 'STARTING', time: 0, awake: 0, bodies: spec.bodies.length, ended: null });
+  setUi(ctx, { state: 'STARTING', time: 0, awake: 0, bodies: spec.bodies.length, ended: null, glass: null });
   ctx.ui.set({ drawer: 'physics' });
   session.run.started.then(
     (st) => begin(session, st),
@@ -338,7 +404,7 @@ export function reset(ctx: Ctx): void {
   let target: LastRun | null = null;
   if (session) {
     abandon(session);
-    if (session.begun) target = { pre: session.pre, clips: session.clips.filter(Boolean), start: session.start };
+    if (session.begun) target = { pre: session.pre, clips: runClips(session), start: session.start };
   } else target = lastRunAlive(ctx);
   lastRuns.delete(ctx.store);
   if (target) {
@@ -347,7 +413,7 @@ export function reset(ctx: Ctx): void {
     ctx.store.dispatch({ type: 'physics/reset', transforms, clips: target.clips, label: L('undo.physicsReset') });
     ctx.store.dispatch({ type: 'anim/playhead', t: target.start });
   }
-  setUi(ctx, { state: 'STOPPED', time: 0, awake: 0, ended: null, canReset: false });
+  setUi(ctx, { state: 'STOPPED', time: 0, awake: 0, ended: null, canReset: false, glass: null });
 }
 
 /** Keeps the bar's Reset honest: it has something to do only while the last run's clips are in the project. */

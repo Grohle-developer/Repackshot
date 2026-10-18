@@ -6,9 +6,15 @@
 //
 // S3: below the stack, the front glass (UI.md §2.4 Camera ▸ Lens ▸ Filters ▸ Front glass): a pane in front of the lens
 // with drops and dust on it, its knobs (drops, their size, dust, the seed, the distance) through the same `camera/set`.
+// S3b: where its drops and dust come from: by hand, or from the scene (the physics bar simulates the rain and the dust of
+// the ambient effects on it; the panel says which effects feed it, what the recording holds at the playhead, and when
+// the scene has changed since it was recorded).
 
 import { isPanoramic, type CameraId, type CameraState } from '../../core/camera';
-import { filtersOf, newFrontGlass, newLensFilter, OPTICS_NEUTRAL, opticsOf, type CameraOptics, type FrontGlass, type LensFilter } from '../../core/optics';
+import { playheadPose } from '../../core/animation';
+import { filtersOf, glassFromScene, newFrontGlass, newLensFilter, OPTICS_NEUTRAL, opticsOf, type CameraOptics, type FrontGlass, type GlassSource, type LensFilter } from '../../core/optics';
+import { feedingEffects, glassFrame, wetBytes, wetKey, wetSpec } from '../../core/wet';
+import { effectName } from './insp-ambient';
 import { FRONT_GLASS_LIMITS } from '../../data/front-glass';
 import { GRADE_LABELS, LENS_FILTER_GRADES, LENS_FILTERS, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../../data/lens-filters';
 import * as cmd from '../commands';
@@ -212,15 +218,34 @@ function frontGlassFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLEl
   const knobs = h(
     'div',
     { class: 'stack', 'data-glass': 'knobs' },
-    row('camera.glassDrops', 'camera.glassDropsTip', drops.el),
-    row('camera.glassDropSize', null, size.el),
-    row('camera.glassDust', 'camera.glassDustTip', dust.el),
     row('camera.glassSeed', null, seed.el, shuffle),
     row('camera.glassDistance', 'camera.glassDistanceTip', distance.el),
   );
   const panoramic = h('div', { class: 'note', 'data-glass': 'panoramic' }, t('camera.glassPanoramic'));
+  // S3b: by hand (the knobs, a still picture) or from the scene (the physics bar simulates the effects' rain and dust).
+  const source = segmented<GlassSource>(
+    (['MANUAL', 'SCENE'] as const).map((v) => ({ value: v, label: t(`camera.glassSource.${v}`) })),
+    glass().source ?? 'MANUAL',
+    (v) => set({ source: v }, 'camera.glassSource'),
+    { full: true, ariaLabel: t('camera.glassSource') },
+  );
+  const sourceRow = row('camera.glassSource', 'camera.glassSourceTip', source.el);
+  sourceRow.setAttribute('data-glass', 'source');
+  const manual = h(
+    'div',
+    { class: 'stack', 'data-glass': 'manual' },
+    row('camera.glassDrops', 'camera.glassDropsTip', drops.el),
+    row('camera.glassDropSize', null, size.el),
+    row('camera.glassDust', 'camera.glassDustTip', dust.el),
+  );
+  knobs.prepend(sourceRow, manual);
+  const fed = h('div', { class: 'aux', 'data-glass': 'fed' });
+  const recorded = h('div', { class: 'aux tabular', 'data-glass': 'recorded' });
+  const stale = h('div', { class: 'note', 'data-glass': 'stale' }, t('camera.glassStale'));
+  const scene = h('div', { class: 'stack', 'data-glass': 'scene' }, h('div', { class: 'note' }, t('camera.glassSceneNote')), fed, recorded, stale);
+  knobs.append(scene);
   scope.watch(
-    (s) => [s.camera.cameras[camId()]?.optics?.frontGlass, s.camera.cameras[camId()]?.projection] as const,
+    (s) => [s.camera.cameras[camId()]?.optics?.frontGlass, s.camera.cameras[camId()]?.projection, s.effects, s.animation.clips, s.animation.playhead, s.camera.cameras[camId()]] as const,
     () => {
       const g = glass();
       on.set(g.on);
@@ -229,9 +254,31 @@ function frontGlassFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLEl
       dust.set(g.dust);
       seed.set(g.seed);
       distance.set(g.distanceMm);
+      source.set(g.source ?? 'MANUAL');
       knobs.style.display = g.on ? '' : 'none';
+      const fromScene = glassFromScene(g);
+      manual.style.display = fromScene ? 'none' : '';
+      scene.style.display = fromScene ? '' : 'none';
       const c = cam();
       panoramic.style.display = g.on && c && isPanoramic(c.projection) ? '' : 'none';
+      if (!fromScene || !g.on) return;
+      const st = store.get();
+      const feeding = feedingEffects(st);
+      fed.textContent = feeding.length > 0 ? t('camera.glassSceneEffects', { names: feeding.map((e) => effectName(e)).join(', ') }) : t('camera.glassSceneNone');
+      // What the recording holds at the playhead (the engine's frame), and whether the scene has changed since.
+      const clip = [...st.animation.clips].reverse().find((k) => k.move === 'PHYSICS' && k.glass?.camera === camId());
+      const gp = playheadPose(st)?.glass?.[camId()];
+      const frame = clip?.glass && gp?.clip === clip.id ? glassFrame(clip.glass, gp.frame) : null;
+      recorded.textContent = clip?.glass && frame
+        ? t('camera.glassRecorded', { frames: formatNumber(clip.glass.frames, getLang(), 0), drops: formatNumber(frame.drops.length / 3, getLang(), 0), motes: formatNumber(frame.motes.length / 3, getLang(), 0) })
+        : t('camera.glassNotRecorded');
+      let isStale = false;
+      if (clip?.glass) {
+        const engine = ctx.services.glass?.pane(st, camId()) ?? null;
+        const spec = engine ? wetSpec(st, engine.axes, engine.pane.halfExtentMm, g.seed) : null;
+        isStale = engine !== null && (!spec || wetKey(wetBytes(spec)) !== clip.glass.key);
+      }
+      stale.style.display = isStale ? '' : 'none';
     },
   );
   return h(

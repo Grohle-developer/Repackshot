@@ -37,7 +37,8 @@ import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_P
 import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
-import { filtersOf, frontGlassOf, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
+import { filtersOf, frontGlassOf, glassFromScene, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
+import { paneAxes, recordedGlass, type GlassFrame, type PaneAxes } from '../core/wet';
 import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
@@ -200,6 +201,20 @@ export interface RsbGlass {
   dustSizeMm: number;
   dustSizeVar: number;
   dustOpacity: number;
+  /**
+   * S3b: the drops (x, y, a) and the motes (x, y, r) one by one, mm in the pane's axes (a pane fed by the scene: the
+   * frame of its recorded simulation), appended to the 48 bytes; the coverage fields are then 0. Only for an engine
+   * with bit 7 (render/engine.ts `readsGlassLayout`, `SceneView.glassLayout`).
+   */
+  layout?: { drops: Float32Array; motes: Float32Array };
+}
+
+/** S3b: word 48 of a GLAS payload that lists its drops and motes (rt-core `GLAS_LAYOUT_VERSION`). */
+export const GLAS_LAYOUT_VERSION = 1;
+
+/** Bytes of a GLAS payload: its 48, and its layout when it has one. */
+export function glasBytes(g: RsbGlass): number {
+  return GLAS_BYTES + (g.layout ? 4 * (3 + g.layout.drops.length + g.layout.motes.length) : 0);
 }
 
 /** Tag and size of the front glass section (S3). */
@@ -910,7 +925,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
   const glass = scene.camera.glass ?? null;
-  if (glass) size += 8 + GLAS_BYTES;
+  if (glass) size += 8 + glasBytes(glass);
   size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + renderBytes(scene.render);
   if (withMeshes) for (const m of scene.meshes) size += 8 + meshBytes(m, tex);
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
@@ -973,11 +988,20 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   }
   // S3: the front glass, right after the camera's optics, only when there is one.
   if (glass) {
-    w.section(TAG_GLAS, GLAS_BYTES, () => {
+    w.section(TAG_GLAS, glasBytes(glass), () => {
       w.u32(glass.flags);
       w.f32(glass.distanceMm);
       w.u32(glass.seed);
       for (const v of [glass.dropCoverage, glass.dropSizeMm, glass.dropSizeVar, glass.contactAngleDeg, glass.ior, glass.dustCoverage, glass.dustSizeMm, glass.dustSizeVar, glass.dustOpacity]) w.f32(v);
+      // S3b: the drops and motes one by one.
+      const l = glass.layout;
+      if (l) {
+        w.u32(GLAS_LAYOUT_VERSION);
+        w.u32(l.drops.length / 3);
+        w.u32(l.motes.length / 3);
+        for (const v of l.drops) w.f32(v);
+        for (const v of l.motes) w.f32(v);
+      }
     });
   }
   for (const m of scene.materials) {
@@ -1241,6 +1265,12 @@ export interface SceneView {
    * default: an effect of drops is written as spheres, a mix as its heaviest shape, and no front glass.
    */
   drops?: boolean;
+  /**
+   * S3b: write a front glass fed by the scene, drop by drop (the frame of its recorded simulation at the pose's instant:
+   * the tail of GLAS), for an engine with bit 7 (render/engine.ts `readsGlassLayout`). Off by default: an engine of S3
+   * would draw the coverage fields, which such a pane has at 0, so the page writes no such pane for it.
+   */
+  glassLayout?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -1586,9 +1616,29 @@ export function cameraToRsb(cam0: CameraState, outW: number, outH: number, width
   };
 }
 
-/** S3: the GLAS fields of a front glass: its knobs, the rest the pane's fixed values (data/front-glass.ts). */
-export function glassToRsb(g: FrontGlass): RsbGlass {
+/**
+ * S3: the GLAS fields of a front glass: its knobs, the rest the pane's fixed values (data/front-glass.ts). S3b: with
+ * the frame of a recorded simulation, its drops and motes one by one (no coverage, the cap angle it was recorded with).
+ */
+export function glassToRsb(g: FrontGlass, frame?: GlassFrame & { capAngleDeg: number }): RsbGlass {
   const F = FRONT_GLASS_FIXED;
+  if (frame) {
+    return {
+      flags: 0,
+      distanceMm: Math.max(0, g.distanceMm),
+      seed: Math.max(0, Math.round(g.seed)) >>> 0,
+      dropCoverage: 0,
+      dropSizeMm: 0,
+      dropSizeVar: F.dropSizeVar,
+      contactAngleDeg: Math.min(175, Math.max(5, frame.capAngleDeg)),
+      ior: F.ior,
+      dustCoverage: 0,
+      dustSizeMm: F.dustSizeMm,
+      dustSizeVar: F.dustSizeVar,
+      dustOpacity: F.dustOpacity,
+      layout: { drops: frame.drops, motes: frame.motes },
+    };
+  }
   return {
     flags: 0,
     distanceMm: Math.max(0, g.distanceMm),
@@ -1920,6 +1970,49 @@ export function focusPickRsb(state: ProjectState, view: Pick<SceneView, 'width' 
   });
 }
 
+/**
+ * S3b: the scene the engine reads to lay out a view's front glass (`rt_scene_glass`): the camera of `view` as
+ * `projectScene` writes it, with its front glass even when nothing is on it by hand (a pane fed by the scene, or one
+ * without drops: the engine still says where the pane is and how much of it the rays cross), and nothing else. Null when
+ * the camera has no front glass switched on, or is panoramic.
+ */
+export function glassPaneRsb(state: ProjectState, view: Pick<SceneView, 'width' | 'height' | 'camera' | 'cameraPatch' | 'viewport' | 'pose'>): Uint8Array | null {
+  const pose = view.pose === undefined ? currentPose(state) : view.pose;
+  const width = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.width)));
+  const height = Math.max(1, Math.min(MAX_DIMENSION, Math.round(view.height)));
+  const { cam, frame } = viewCamera(state, view, pose);
+  const g = cam.optics?.frontGlass;
+  if (!g?.on || isPanoramic(cam.projection)) return null;
+  const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
+  camera.glass = glassFromScene(g) ? { ...glassToRsb(g), dropCoverage: 0, dustCoverage: 0 } : glassToRsb(g);
+  return writeRsb({
+    camera,
+    materials: [],
+    meshes: [],
+    instances: null,
+    lights: [],
+    environment: defaultEnvironment(),
+    floor: defaultFloor(),
+    render: { ...defaultRender(), width, height },
+    bitmaps: [],
+  });
+}
+
+/**
+ * S3b: the scene the engine lays out camera `cameraId`'s front glass for the render's frame (its aspect, as the render
+ * sees it: the square of the pane the simulation of the scene's rain wets), and the axes of that pane as the engine
+ * makes them from the camera it writes (right, up, forward). Null without a front glass switched on.
+ */
+export function glassFrameRsb(state: ProjectState, cameraId: string): { rsb: Uint8Array; axes: PaneAxes } | null {
+  const cam = state.camera.cameras[cameraId];
+  if (!cam) return null;
+  const rsb = glassPaneRsb(state, { width: cam.aspect.w, height: cam.aspect.h, camera: cameraId, pose: null });
+  if (!rsb) return null;
+  const { cam: seen, frame } = viewCamera(state, { camera: cameraId }, null);
+  const c = cameraToRsb(seen, frame.w, frame.h, cam.aspect.w, cam.aspect.h);
+  return { rsb, axes: paneAxes(c.position, c.target, c.up) };
+}
+
 /** The engine's scene for a project state and a view. */
 export function projectScene(state: ProjectState, view: SceneView): ProjectScene {
   const pose = view.pose === undefined ? currentPose(state) : view.pose;
@@ -1929,8 +2022,14 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const { cam, frame } = viewCamera(state, view, pose);
   const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
   // S3: the front glass, for an engine that draws it (not through a panoramic camera, which has no front element).
+  // S3b: one fed by the scene goes drop by drop (the frame of its recording the pose shows), for an engine that reads
+  // that; without a recording it is a dry pane, which changes nothing and is left out.
   const glass = view.drops && !isPanoramic(cam.projection) ? frontGlassOf(cam.optics) : null;
-  if (glass) camera.glass = glassToRsb(glass);
+  if (glass && !glassFromScene(glass)) camera.glass = glassToRsb(glass);
+  else if (glass && view.glassLayout) {
+    const frame = recordedGlass(state, pose, cam.id);
+    if (frame) camera.glass = glassToRsb(glass, frame);
+  }
   // K3: the exterior factor of the camera ray, and the panorama, only for an engine that reads them.
   const exterior = exteriorOf(state.environment.exterior);
   if (view.cameras && exterior !== 1) camera.exterior = exterior;

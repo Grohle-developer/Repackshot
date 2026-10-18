@@ -49,6 +49,8 @@ export interface PhysicsUi {
   ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | null;
   /** Reset has something to undo: a run in progress, or the last one's clips and poses. */
   canReset: boolean;
+  /** S3b: the front glass of the run in progress or the last one, as its last frame left it (absent: none). */
+  glass?: { drops: number; motes: number } | null;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of

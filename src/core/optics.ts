@@ -27,11 +27,19 @@ export interface LensFilter {
 }
 
 /**
+ * S3b: where the drops and the dust of a front glass come from: the knobs (a still picture, S3), or the scene's rain
+ * and dust as the physics bar simulates them (the recorded PHYSICS clip of the camera, core/wet.ts).
+ */
+export type GlassSource = 'MANUAL' | 'SCENE';
+
+/**
  * S3: the front glass, a pane in front of the lens with drops and dust on it (data/front-glass.ts; the RSB `GLAS`
  * section). Off, or with no drops and no dust, it changes nothing.
  */
 export interface FrontGlass {
   on: boolean;
+  /** S3b: by hand (absent, as before S3b) or from the scene. From the scene the knobs of drops and dust do nothing. */
+  source?: GlassSource;
   /** Share of the pane under drops (before they merge), 0..0.9. */
   drops: number;
   /** Mean diameter of a drop's footprint, mm. */
@@ -56,6 +64,7 @@ export function normalizeFrontGlass(g: unknown): FrontGlass | undefined {
   const S = FRONT_GLASS_START;
   return {
     on: r.on === true,
+    ...(r.source === 'SCENE' ? { source: 'SCENE' as const } : {}),
     drops: clamp(r.drops, L.drops.min, L.drops.max, S.drops),
     dropSizeMm: clamp(r.dropSizeMm, L.dropSizeMm.min, L.dropSizeMm.max, S.dropSizeMm),
     dust: clamp(r.dust, L.dust.min, L.dust.max, S.dust),
@@ -64,10 +73,15 @@ export function normalizeFrontGlass(g: unknown): FrontGlass | undefined {
   };
 }
 
-/** The front glass of optics that draws something (on, with drops or dust), or null. */
+/** The front glass of optics that draws something (on, with drops or dust by hand, or fed by the scene), or null. */
 export function frontGlassOf(o: CameraOptics | undefined): FrontGlass | null {
   const g = o?.frontGlass;
-  return g && g.on && (g.drops > 0 || g.dust > 0) ? g : null;
+  return g && g.on && (glassFromScene(g) || g.drops > 0 || g.dust > 0) ? g : null;
+}
+
+/** S3b: the pane's drops and dust come from the scene's effects (the simulation), not from its knobs. */
+export function glassFromScene(g: FrontGlass | undefined | null): boolean {
+  return g?.source === 'SCENE';
 }
 
 /** The optics of a camera (CameraState.optics; absent on cameras made before O1, which are the neutral optics). */

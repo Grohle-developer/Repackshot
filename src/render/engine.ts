@@ -87,6 +87,18 @@ export function readsDrops(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_DROPS) !== 0;
 }
 
+/**
+ * S3b: bit 7 of the engine's features (rt_core::FEATURE_GLASS_LAYOUT): it reads a front glass laid out drop by drop
+ * (the tail of GLAS: a pane fed by the scene, the frame of its recorded simulation), so the page writes one; an engine
+ * without the bit would draw such a pane clean, and the page writes none for it (io/rsb.ts `SceneView.glassLayout`).
+ */
+export const ENGINE_FEATURE_GLASS_LAYOUT = 128;
+
+/** True when an engine of `features` reads a front glass laid out drop by drop (S3b). */
+export function readsGlassLayout(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_GLASS_LAYOUT) !== 0;
+}
+
 /** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
 export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
   if (!readsPrograms(features)) return {};
@@ -161,6 +173,11 @@ export interface EngineStatus {
    * the noise target from the last pass (-1: unknown). The engine's numbers, as the meter prints them.
    */
   adaptive?: { min: number; max: number; noise: number; eta: number };
+  /**
+   * Preview (S3b): its approximation of the camera's front glass, the drops and motes the engine laid out (or the frame
+   * of a recorded simulation) it draws; `noEngine` when it cannot, without rt.wasm; absent without a front glass.
+   */
+  glass?: { drops: number; motes: number; noEngine?: boolean };
   /**
    * Path tracer (D1): what the Doctor reads of the view's accumulation, once every pixel has a few samples: the
    * fireflies and the frame's brightness by the stop (core/doctor-engine.ts `FrameScan`, made by render/frame-scan.ts).

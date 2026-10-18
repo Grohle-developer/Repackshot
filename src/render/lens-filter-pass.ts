@@ -4,6 +4,7 @@
 // colour, and taps along the lines of a star, a streak or a net), and the result goes to the screen through the
 // renderer's tone curve and output colour space. An approximation of what the engine traces (the meter says so).
 // O2: a traced lens's distortion and falloff (the engine's tables, `LensProfile`) are drawn in that last step.
+// S3b: the front glass (render/glass-overlay.ts) is drawn after the filters, before that step.
 
 import * as THREE from 'three';
 import type { FilterKernel } from './lens-filter-image';
@@ -92,6 +93,45 @@ void main() {
   gl_FragColor = vec4((1.0 - s) * i.rgb + s * k, i.a);
 }`;
 
+/**
+ * S3b: the front glass (render/glass-overlay.ts): where the pixel's chief ray crosses the pane, the share of its
+ * footprint under the drops' middles takes the image blurred (dimmed by the drops' two faces), the share under their
+ * rims (total internal reflection) is dark, and the dust's share dims it.
+ */
+const GLASS = /* glsl */ `
+uniform sampler2D image;
+uniform sampler2D blurred;
+uniform sampler2D pane;
+uniform vec2 scale;
+uniform vec2 offset;
+uniform vec4 rect;
+uniform float dropT;
+varying vec2 vUv;
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0 - offset) * scale;
+  vec2 uv = (p - rect.xy) / rect.zw;
+  vec3 m = (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) ? texture2D(pane, uv).rgb : vec3(0.0);
+  vec4 i = texture2D(image, vUv);
+  vec3 b = texture2D(blurred, vUv).rgb * dropT;
+  float keep = (1.0 - clamp(m.g, 0.0, 1.0)) * (1.0 - clamp(m.b, 0.0, 1.0));
+  gl_FragColor = vec4(mix(i.rgb, b, clamp(m.r - m.b, 0.0, 1.0)) * keep, i.a);
+}`;
+
+/** S3b: the front glass the Fast viewport draws over the picture (render/glass-overlay.ts makes its maps). */
+export interface GlassDraw {
+  /** The maps over the pane: R the drops' share of the footprint, G the dust's dimming, B the drops' rims' share. */
+  texture: THREE.Texture;
+  /** Pane mm of a pixel's chief ray: (ndc − offset) × scale. */
+  scale: [number, number];
+  offset: [number, number];
+  /** The maps' rectangle: lower left corner, width and height, mm. */
+  rect: [number, number, number, number];
+  /** How much the scene blurs inside a drop, full-size pixels. */
+  sigmaPx: number;
+  /** The drops' transmittance at normal incidence. */
+  dropT: number;
+}
+
 /** To the screen, through the renderer's tone curve and output colour space (O2: and a traced lens's profile). */
 const PRESENT = /* glsl */ `
 uniform sampler2D src;
@@ -151,6 +191,15 @@ export class LensFilterPass {
     true,
   );
   private readonly combine = material(COMBINE, { image: { value: null }, scattered: { value: null }, s: { value: 0 } });
+  private readonly glassMat = material(GLASS, {
+    image: { value: null },
+    blurred: { value: null },
+    pane: { value: null },
+    scale: { value: new THREE.Vector2(1, 1) },
+    offset: { value: new THREE.Vector2(0, 0) },
+    rect: { value: new THREE.Vector4(0, 0, 1, 1) },
+    dropT: { value: 1 },
+  });
   /** O2: the map of a traced lens's profile (render/lens-profile.ts), the one the hit tests invert. */
   private readonly profileSet = new ProfileUniformSet();
   private readonly present = material(PRESENT, { src: { value: null }, ...this.profileSet.uniforms }, false, true);
@@ -234,9 +283,10 @@ export class LensFilterPass {
 
   /**
    * Draws `scene` from `camera` through the filter `kernels` to the screen (the renderer's current size), and with a
-   * traced lens's `profile` (O2). The kernels' pixels are full-size pixels of the drawing buffer.
+   * traced lens's `profile` (O2). The kernels' pixels are full-size pixels of the drawing buffer. S3b: then the front
+   * `glass` over it, in front of the filters as the pane is in front of them.
    */
-  render(r: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, kernels: readonly FilterKernel[], profile: LensProfile | null = null): void {
+  render(r: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, kernels: readonly FilterKernel[], profile: LensProfile | null = null, glass: GlassDraw | null = null): void {
     const size = r.getDrawingBufferSize(new THREE.Vector2());
     this.ensure(size.x, size.y);
     const autoClear = r.autoClear;
@@ -286,6 +336,23 @@ export class LensFilterPass {
       c.s.value = k.s;
       const into = this.result(size);
       this.draw(r, this.combine, into);
+      cur = into;
+    }
+    if (glass) {
+      r.setRenderTarget(this.accum);
+      r.setClearColor(0x000000, 0);
+      r.clear(true, false, false);
+      this.gaussian(r, cur, Math.max(0.5, glass.sigmaPx), 1, [1, 1, 1]);
+      const g = this.glassMat.uniforms;
+      g.image.value = cur.texture;
+      g.blurred.value = this.accum!.texture;
+      g.pane.value = glass.texture;
+      (g.scale.value as THREE.Vector2).set(glass.scale[0], glass.scale[1]);
+      (g.offset.value as THREE.Vector2).set(glass.offset[0], glass.offset[1]);
+      (g.rect.value as THREE.Vector4).set(...glass.rect);
+      g.dropT.value = glass.dropT;
+      const into = this.result(size);
+      this.draw(r, this.glassMat, into);
       cur = into;
     }
     const u = this.present.uniforms;

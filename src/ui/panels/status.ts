@@ -338,7 +338,10 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       const lensApprox = port.kind !== 'pathtracer' && !!opticsOf(cam).traced && cam.projection !== 'ORTHOGRAPHIC' ? ` · ${t('status.lensApprox')}` : '';
       // K3: and so is its panorama (six cube faces).
       const panoApprox = port.kind !== 'pathtracer' && isPanoramic(cam.projection) ? ` · ${t('status.panorama')}` : '';
-      const approx = filtersApprox + lensApprox + panoApprox;
+      // S3b: and so is its front glass, drawn from the engine's drops and motes (the numbers are the engine's).
+      const g = port.kind !== 'pathtracer' ? st.glass : undefined;
+      const glassApprox = !g ? '' : ` · ${g.noEngine ? t('status.glassNoEngine') : t('status.glassApprox', { drops: formatNumber(g.drops, getLang(), 0), motes: formatNumber(g.motes, getLang(), 0) })}`;
+      const approx = filtersApprox + lensApprox + panoApprox + glassApprox;
       engine.textContent =
         port.kind !== 'pathtracer'
           ? t('status.engineFast', { device: st.device }) + approx

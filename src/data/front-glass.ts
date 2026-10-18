@@ -3,8 +3,12 @@
 // rt-core `optics::glass`, the RSB `GLAS` section). The interface has the photographer's knobs (drops, their size,
 // dust, the seed, the distance); the rest of the pane is these values.
 //
+// S3b adds `GLASS_FEED` (what each ambient effect leaves on a pane fed by the scene) and the longest such simulation.
+//
 // Every value here is this phase's proposal for the lead's verdict (rule 11, ◆ in the ROADMAP's S3): the contact angle
 // of water on the glass, the spread of the drops' sizes, the motes' size and opacity, the knobs' ranges and defaults.
+
+import type { EffectKind } from './effects';
 
 /** The pane's values the interface does not show (rt-core `GlassParams`). */
 export const FRONT_GLASS_FIXED = {
@@ -41,3 +45,27 @@ export const FRONT_GLASS_START = {
   seed: 1,
   distanceMm: 0,
 } as const;
+
+/**
+ * S3b: what each ambient effect leaves on a pane fed by the scene (Front glass ▸ From the scene): its particles land
+ * as drops of water, as motes of dust, or not at all. Snow (it would melt into drops or pile up: S3c), rising bubbles
+ * (they never fall on the glass) and confetti (it does not stick) leave nothing; the S5 volumes have no particles.
+ * A proposal for the lead's verdict (rule 11, ◆ in the ROADMAP's S3b).
+ */
+export const GLASS_FEED: Readonly<Record<EffectKind, 'DROPS' | 'DUST' | null>> = {
+  DUST_MOTES: 'DUST',
+  POLLEN: 'DUST',
+  RAIN: 'DROPS',
+  SNOW: null,
+  DUST_CLOUD: 'DUST',
+  ASH: 'DUST',
+  BUBBLES: null,
+  CONFETTI: null,
+  HAZE: null,
+  LIGHT_SHAFTS: null,
+  GROUND_FOG: null,
+  WATER_DROPS: 'DROPS',
+};
+
+/** S3b: the longest a simulation that wets the front glass runs before it stops by itself, simulated seconds (◆). */
+export const MAX_GLASS_SECONDS = 120;
