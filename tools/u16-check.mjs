@@ -183,7 +183,10 @@ async function main() {
     await page.keyboard.press('Control+z');
     await settle(page);
 
-    // The capture: the Material card with its pointer, then Physics (Textures, Wear and Part folded).
+    // The capture: the Material card with its pointer, then Physics (Textures, Wear and Part folded), in a window tall
+    // enough for both.
+    await page.setViewportSize({ width: 1600, height: 1600 });
+    await settle(page, 300);
     await fold(page, 'material', false);
     for (const id of ['textures', 'wear', 'part']) await fold(page, id, true);
     await fold(page, 'physics', false);
@@ -198,6 +201,9 @@ async function main() {
       const y = Math.max(col.y, top.y - 4);
       await page.screenshot({ path: join(SHOTS, 'physics-inspector.png'), clip: { x: col.x, y, width: col.width, height: Math.min(col.y + col.height, bottom.y + bottom.height + 6) - y } });
     }
+
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await settle(page, 300);
 
     // effect: the note's button.
     await page.click('[data-action="phys.toEffect"]');
