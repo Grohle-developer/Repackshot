@@ -1537,6 +1537,77 @@ mod grid_tests {
             .collect()
     }
 
+    /// The nearest hit of `ray` among every particle of `set`, without its BVH: `(t, centre)`.
+    fn nearest(set: &ParticleSet, ray: &Ray) -> Option<(f32, Vec3)> {
+        let mut best: Option<(f32, Vec3)> = None;
+        for slot in 0..set.len() {
+            if let Some(t) = set.hit(slot, ray, ray.t_min, ray.t_max, false) {
+                if best.is_none_or(|(b, _)| t < b) {
+                    best = Some((t, set.centres[slot]));
+                }
+            }
+        }
+        best
+    }
+
+    #[test]
+    fn a_mix_hits_each_particle_as_its_own_shape() {
+        // S3: the particles of a mix as one set, and the same particles as four sets of one shape
+        // each: every ray meets the same particle at the same distance.
+        let width = crate::geometry::BvhWidth::native();
+        let mix: Vec<Particle> = (0..400u32)
+            .map(|id| {
+                let shape = MIX_SHAPES_FOR_TESTS[(id % 4) as usize];
+                Particle {
+                    id,
+                    ..particles(shape, 400, 60 + u64::from(id % 4))[id as usize]
+                }
+            })
+            .collect();
+        let params = |shape: Shape, n: usize| AmbientParams {
+            shape,
+            count: n as u32,
+            drop_tip: 0.2,
+            ..AmbientParams::default()
+        };
+        let mixed = ParticleSet::new(
+            &params(Shape::Sphere, mix.len()),
+            &mix,
+            PixelFootprint::NONE,
+            width,
+        );
+        let singles: Vec<ParticleSet> = MIX_SHAPES_FOR_TESTS
+            .iter()
+            .map(|&shape| {
+                let own: Vec<Particle> = mix
+                    .iter()
+                    .filter(|p| p.shape == shape)
+                    .enumerate()
+                    .map(|(i, p)| Particle { id: i as u32, ..*p })
+                    .collect();
+                ParticleSet::new(&params(shape, own.len()), &own, PixelFootprint::NONE, width)
+            })
+            .collect();
+        let mut rng = Pcg32::seeded(23, 4);
+        let mut f = |lo: f32, hi: f32| lo + (hi - lo) * rng.next_f32();
+        let mut hits = 0;
+        for _ in 0..4000 {
+            let o = Vec3::new(f(-600.0, 600.0), -1500.0, f(-300.0, 500.0));
+            let target = Vec3::new(f(-500.0, 500.0), f(-700.0, 400.0), f(-250.0, 450.0));
+            let ray = Ray::new(o, (target - o).normalize());
+            let want = singles.iter().filter_map(|s| nearest(s, &ray)).fold(
+                None,
+                |b: Option<(f32, Vec3)>, h| match b {
+                    Some(x) if x.0 <= h.0 => Some(x),
+                    _ => Some(h),
+                },
+            );
+            assert_eq!(nearest(&mixed, &ray), want);
+            hits += want.is_some() as u32;
+        }
+        assert!(hits > 200, "{hits}");
+    }
+
     #[test]
     fn camera_rays_find_through_the_screen_grid_what_brute_force_finds() {
         let width = crate::geometry::BvhWidth::native();
