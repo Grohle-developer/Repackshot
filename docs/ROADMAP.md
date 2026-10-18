@@ -11674,6 +11674,13 @@ cloth over Box*, one clip that *drapes as simulated*, the section's fields): `do
 bottle with a sheet of each of the 11 presets dropped over it by *Drape over the part*, at the last
 frame of its simulation (at most 6 s), rendered by the native `rt`, with what was measured.
 
+**Gates.** `npm run engine:build`; `npm run qa` green (3,375 tests: 3,344 pass and 31 are
+skipped; `section-rsb`'s real-`rt.wasm` test timed out once under the shared machine's load and
+passes on its own with `--maxWorkers=2`); from `engine/`, `cargo fmt --all -- --check`, `cargo
+clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release` (1,292 pass,
+5 ignored) and `cargo build -p rt-wasm --target wasm32-unknown-unknown --release`; the cloth
+tests on `wasm32-wasip1` scalar and `+simd128` (10 each; the two fixture tests are native only).
+
 **What did not fit the plan** (rule 12):
 - **One iteration per substep diverged.** "Small Steps" has many substeps of one iteration;
   a 64 × 64 sheet hanging from a row blew up with one, whatever the number of substeps, in a
