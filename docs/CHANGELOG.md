@@ -5,9 +5,11 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+## v0.1.20 — 2026-10-18
+
 ### Materiales
 
-- **La madera de la familia *Madera* enseña sus anillos, poros y nudos en *Rápido***, como la misma madera con el nodo *Madera*: la vista previa la hornea por el grafo que da *Simple → Nodos*, el mismo camino, y salen los mismos píxeles. Antes, en *Rápido*, solo tenía su color medio y sus nudos; en *Completo* y en los renders no cambia nada. La tela sigue con el color medio de su tejido en *Rápido* (M3d).
+- **La madera de la familia *Madera* enseña sus anillos, poros y nudos en *Rápido***, como la misma madera con el nodo *Madera*: la vista previa la hornea por el grafo que da *Simple → Nodos*, el mismo camino, y salen los mismos píxeles. Antes, en *Rápido*, solo tenía su color medio y sus nudos; en *Completo* y en los renders no cambia nada. (M3d).
 - **Los nudos de una madera en *Rápido* caen donde los pone *Completo***: la madera horneada (la de la familia y la del nodo *Madera*) ya no lleva los nudos en su horneado, colocados en la caja de las piezas, sino encima, en cada pieza y con la prueba de su malla, como el motor. En la bola de pino nudoso, los tres nudos visibles caen a menos de una décima de píxel de los de *Completo*; la familia y el nodo siguen dando los mismos píxeles (M3e).
 - **La tela de la familia *Tela* se teje en *Rápido* cuando sus hilos se ven**: si un hilo ocupa al menos 2,5 téxeles del horneado en sus piezas (en una pieza de 120 mm, la lona, la malla, el carbono y el punto), la vista previa la hornea por el nodo *Tela* y le pone encima su pelusa; una tela más fina sigue con su color medio, sin muaré, como antes (M3e).
 - **Un fundido de material sobre una madera con nudos se ve en *Rápido***: la copia de cada pieza con sus nudos no se volvía transparente con el fundido (M3e).

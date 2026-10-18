@@ -22,16 +22,20 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas; las capturas se reparten en 56 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 21 versiones, 18 con capturas nuevas; las capturas se reparten en 56 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
+
+Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.20).
+
+### v0.1.20 · 2026-10-18
 
 La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M3d), con sus nudos donde los pone *Completo*, y la tela de la familia tejida en *Rápido* cuando sus hilos se leen (M3e); la forma de gota y la mezcla de formas de *Ambiente*, y el cristal frontal de la cámara (S3).
 
 #### M3d · La madera de la familia en *Rápido* por el camino del nodo *Madera*
 
 <a id="c-m3d-wood-fast"></a><img src="ui/m3d-wood-fast.png" width="480" alt="Seis bolas de madera en dos filas, el roble arriba y el pino nudoso abajo: a la izquierda la vista Rápida antes de M3d, de un color liso con los nudos del pino; en medio la vista Rápida ahora, con los anillos horneados como el nodo Madera y los nudos del pino arriba a la izquierda, abajo a la derecha y abajo; a la derecha el modo Completo, con los anillos y los nudos del motor."><br>
-`m3d-wood-fast.png` · `305db3e` · La madera de la familia en una bola de 100 mm, el roble (arriba) y el pino nudoso (abajo): a la izquierda, *Rápido* antes de M3d (su color medio y los nudos de la capa de E6); en medio, *Rápido* ahora, horneada por el grafo de *Simple → Nodos* como el nodo *Madera* (los mismos píxeles que la madera pasada a nodos), con sus anillos; a la derecha, *Completo* (el `rt.wasm`). El fondo de las tres columnas es el mismo gris. `tests/wood-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`. *(regrabada en Sin publicar: M3e, los nudos del pino de *Rápido*, ahora encima del horneado, caen donde los pone *Completo*; en M3d eran los del horneado, en otro sitio)*
+`m3d-wood-fast.png` · `305db3e` · La madera de la familia en una bola de 100 mm, el roble (arriba) y el pino nudoso (abajo): a la izquierda, *Rápido* antes de M3d (su color medio y los nudos de la capa de E6); en medio, *Rápido* ahora, horneada por el grafo de *Simple → Nodos* como el nodo *Madera* (los mismos píxeles que la madera pasada a nodos), con sus anillos; a la derecha, *Completo* (el `rt.wasm`). El fondo de las tres columnas es el mismo gris. `tests/wood-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`. *(regrabada en v0.1.20: M3e, los nudos del pino de *Rápido*, ahora encima del horneado, caen donde los pone *Completo*; en M3d eran los del horneado, en otro sitio)*
 
 #### M3e · Los nudos de *Rápido* donde los pone *Completo* y la tela horneada cuando sus hilos se leen
 
@@ -725,8 +729,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`label-placed.png`](#c-label-placed) · v0.1.6 · M2a
 - [`material-nodes.png`](#c-material-nodes) · v0.1.6 · M3a **← propuesta**
 - [`material-nodes-preview.png`](#c-material-nodes-preview) · v0.1.6 · M3a
-- [`m3e-fabric-fast.png`](#c-m3e-fabric-fast) · Sin publicar · M3e
-- [`m3d-wood-fast.png`](#c-m3d-wood-fast) · Sin publicar · M3d
+- [`m3e-fabric-fast.png`](#c-m3e-fabric-fast) · v0.1.20 · M3e
+- [`m3d-wood-fast.png`](#c-m3d-wood-fast) · v0.1.20 · M3d
 - [`material-nodes-wood.png`](#c-material-nodes-wood) · v0.1.19 · M3c
 - [`material-drag.png`](#c-material-drag) · v0.1.2 · U7
 - [`material-drag-tree.png`](#c-material-drag-tree) · v0.1.2 · U7
@@ -758,7 +762,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
-- [`lens-glass.png`](#c-lens-glass) · Sin publicar · S3
+- [`lens-glass.png`](#c-lens-glass) · v0.1.20 · S3
 - [`o2c-lens-editor.png`](#c-o2c-lens-editor) · v0.1.19 · O2c
 - [`o2c-lens-modified.png`](#c-o2c-lens-modified) · v0.1.19 · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
@@ -844,8 +848,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`physics-bar.png`](#c-physics-bar) · v0.1.6 · S2
 - [`physics-drop.png`](#c-physics-drop) · v0.1.6 · S2 **← propuesta**
 - [`physics-drop-strip.png`](#c-physics-drop-strip) · v0.1.6 · S2
-- [`ambient-drops.png`](#c-ambient-drops) · Sin publicar · S3
-- [`ambient-mix.png`](#c-ambient-mix) · Sin publicar · S3
+- [`ambient-drops.png`](#c-ambient-drops) · v0.1.20 · S3
+- [`ambient-mix.png`](#c-ambient-mix) · v0.1.20 · S3
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 
