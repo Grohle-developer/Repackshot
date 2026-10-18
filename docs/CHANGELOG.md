@@ -7,6 +7,7 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ### Camera and lens
 
+- **Focus with a click takes what the image shows**: the point is the engine's own first hit in the whole scene along the clicked pixel's ray, the face the camera sees there, not the viewport's geometry along that ray; the engine's pick also steps over parts hidden to the camera, as the camera does (F1).
 - Fixed: *Focus ▸ Object* focused on the centre of the object's box, which lies inside a solid product: wide open (f/1) the face the camera sees was out of focus. It now focuses on the surface the camera sees at the centre of the object's outline (F1).
 
 ## v0.1.22 — 2026-10-18

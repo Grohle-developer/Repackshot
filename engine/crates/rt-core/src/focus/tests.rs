@@ -600,3 +600,24 @@ fn a_tilted_traced_lens_renders_sharpest_where_the_pick_focuses() {
         "at the pick's {focus} mm the render's contrast is {picked}, the most through focus {best}"
     );
 }
+
+#[test]
+fn the_pick_does_not_meet_a_part_hidden_to_the_camera() {
+    // K3's plan view looks down at the room through its ceiling, which is hidden to the camera: a
+    // click focuses on what the image shows there, the floor and the furniture, never the ceiling
+    // in front of them (the owner's report, 2026-10-18: focus on the visible face).
+    let scene = example::k3_plan_scene();
+    let mut met = 0;
+    for (x, y) in grid(&scene) {
+        let (u, v) = centre(&scene, x, y);
+        if let Some(hit) = pick(&scene, u, v).hit {
+            assert_ne!(
+                hit.instance as usize,
+                example::K3_CEILING,
+                "({x}, {y}) met the ceiling"
+            );
+            met += 1;
+        }
+    }
+    assert!(met > 10, "the grid met {met} parts");
+}
