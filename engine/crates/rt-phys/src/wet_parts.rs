@@ -3847,6 +3847,16 @@ impl WetParts {
         self.refined
     }
 
+    /// S3e: where part `part` stands now, object to world (its spec's transform; for a part that
+    /// moves, carried where its body took it).
+    pub fn placement(&self, part: usize) -> Transform {
+        let t = self.spec.parts[part].transform;
+        match self.parts[part].mover {
+            Some(mi) => compose(&self.movers[mi as usize].now, &t),
+            None => t,
+        }
+    }
+
     /// S3e: the effective gravity the drops of part `part` feel, over `g`.
     pub fn part_gravity(&self, part: usize) -> Vec3 {
         self.parts[part].gravity

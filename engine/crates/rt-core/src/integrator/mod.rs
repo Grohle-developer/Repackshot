@@ -1270,6 +1270,19 @@ pub fn radiance_weighted<T: Tracer>(
                         caustics.map(|(map, _)| map),
                         rays,
                     );
+                    // S3e: where its film wets it, the catcher darkens what is behind it as a wet
+                    // porous floor darkens (crate::weather::catcher_wet).
+                    let (c, a) = match layers {
+                        Some((l, porosity)) if l.wet > 0.0 => {
+                            let k = crate::weather::catcher_wet(l, porosity);
+                            if prepared.background == Background::Transparent {
+                                (c, 1.0 - (1.0 - a) * k)
+                            } else {
+                                (c * k, a)
+                            }
+                        }
+                        _ => (c, a),
+                    };
                     return (sum + throughput * c, a * alpha_weight);
                 }
             } else if let Some((l, porosity)) = layers {

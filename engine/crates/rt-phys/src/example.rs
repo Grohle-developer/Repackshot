@@ -699,3 +699,485 @@ pub fn s3f_organic_scene_at(steps: u32) -> rt_core::scene::Scene {
 pub fn s3f_organic_scene() -> rt_core::scene::Scene {
     s3f_organic_scene_at(ORGANIC_STEPS)
 }
+
+/// S3e: steps of the S3e parity scene (five seconds).
+pub const S3E_STEPS: u32 = 1200;
+/// S3e: the wind of the S3e parity scene, mm/s.
+pub const S3E_WIND: Vec3 = Vec3::new(1500.0, 400.0, 0.0);
+
+/// S3e: the S3e parity scene's parts: a glass bottle standing on the studio floor, a glass ledge
+/// facing down over the floor (a drop hangs under it and pinches off: its drips fall onto the floor
+/// and the wind carries them), a plastic plate tilted on two axes (its drops reach its side edges
+/// and run down them to its lowest corner) and a paper card of the set as a film beside the bottle
+/// (its triangles that the bottle's shadow crosses take fine samples), under the page's *Rain*
+/// with a side wind and a *Dust cloud*'s dust, over a studio floor of 2 mm cells.
+pub fn s3e_spec() -> crate::wet_parts::PartsSpec {
+    use crate::wet_parts::{
+        FloorSpec, PartsExtras, PartsSource, PartsSourceKind, PartsSpec, WetPartSpec, NO_BODY,
+        PART_FILM,
+    };
+    let part = |mesh: u32, transform: Transform, adv: f32, rec: f32, flags: u32| WetPartSpec {
+        mesh,
+        transform,
+        advancing_deg: adv,
+        receding_deg: rec,
+        soak_mm_s: 0.0,
+        flags,
+        body: NO_BODY,
+    };
+    let mut ledge = plate_mesh(60.0, 60.0, 3, 3);
+    ledge.indices.chunks_exact_mut(3).for_each(|t| t.swap(1, 2));
+    let rolled = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 12.0 * fmath::DEG_TO_RAD)
+        * Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), 55.0 * fmath::DEG_TO_RAD);
+    PartsSpec {
+        seed: 11,
+        cell_mm: 1.5,
+        max_samples: 60_000,
+        repose_deg: DUST_REPOSE_DEG,
+        snow_repose_deg: SNOW_REPOSE_DEG,
+        meshes: vec![
+            parts_mesh(cylinder_mesh(35.0, 160.0, 32)),
+            ledge,
+            plate_mesh(60.0, 120.0, 3, 6),
+            plate_mesh(300.0, 300.0, 1, 1),
+        ],
+        parts: vec![
+            part(
+                0,
+                Transform::translation(Vec3::new(0.0, 0.0, 80.0)),
+                GLASS_ADVANCING_DEG,
+                GLASS_RECEDING_DEG,
+                0,
+            ),
+            part(
+                1,
+                Transform::translation(Vec3::new(120.0, 40.0, 140.0)),
+                GLASS_ADVANCING_DEG,
+                GLASS_RECEDING_DEG,
+                0,
+            ),
+            part(
+                2,
+                Transform::from_pose(Vec3::new(-120.0, 60.0, 70.0), rolled),
+                PLASTIC_ADVANCING_DEG,
+                PLASTIC_RECEDING_DEG,
+                0,
+            ),
+            part(
+                3,
+                Transform::translation(Vec3::new(160.0, -160.0, 0.5)),
+                PAPER_ADVANCING_DEG,
+                PAPER_RECEDING_DEG,
+                PART_FILM,
+            ),
+        ],
+        sources: vec![
+            PartsSource {
+                kind: PartsSourceKind::Drops,
+                density: 2.0e-5,
+                velocity: Vec3::new(S3E_WIND.x, S3E_WIND.y, -6500.0),
+                size_mm: 1.2,
+                size_var: 0.4,
+            },
+            PartsSource {
+                kind: PartsSourceKind::Dust,
+                density: 3.0e-3,
+                velocity: Vec3::new(400.0, -300.0, -300.0),
+                size_mm: 0.3,
+                size_var: 0.6,
+            },
+        ],
+        extras: PartsExtras {
+            wind: S3E_WIND,
+            floor: Some(FloorSpec {
+                z: 0.0,
+                min: [-300.0, -320.0],
+                max: [340.0, 260.0],
+                cell_mm: 2.0,
+                max_cells: 120_000,
+            }),
+            edge_cell_mm: 2.0,
+            edge_budget: 60_000,
+        },
+    }
+}
+
+/// S3e: the parts of [`s3e_spec`] with three drops under the ledge's upwind side past what their
+/// contact lines hold (each pinches off twice within the first second; the drips fall onto the
+/// floor in the dry patch the ledge keeps from the rain), after `steps`.
+pub fn s3e_parts_at(steps: u32) -> crate::wet_parts::WetParts {
+    let mut parts = crate::wet_parts::WetParts::new(s3e_spec());
+    let k = {
+        let t = 0.5 * (GLASS_ADVANCING_DEG + GLASS_RECEDING_DEG) * fmath::DEG_TO_RAD;
+        let (s, c) = fmath::sin_cos(t);
+        fmath::PI * (2.0 - 3.0 * c + c * c * c) / (3.0 * s * s * s)
+    };
+    let hang = (2.0
+        * fmath::PI
+        * crate::wet::SURFACE_TENSION
+        * fmath::sin(0.5 * (GLASS_ADVANCING_DEG + GLASS_RECEDING_DEG) * fmath::DEG_TO_RAD)
+        / (crate::wet::WATER_WEIGHT * k))
+        .sqrt()
+        * 1.6;
+    for (tri, u, v) in [(6, 0.2, 0.2), (6, 0.6, 0.2), (0, 0.4, 0.3)] {
+        parts.add_drop(1, tri, u, v, k * hang * hang * hang);
+    }
+    parts.step(steps);
+    parts
+}
+
+/// S3e: the parts of [`s3e_spec`] after [`S3E_STEPS`].
+pub fn s3e_parts() -> crate::wet_parts::WetParts {
+    s3e_parts_at(S3E_STEPS)
+}
+
+/// The instances of `spec`'s parts where `parts` has them now, one per part (instance `k`
+/// material `k`).
+fn instances_of(
+    spec: &crate::wet_parts::PartsSpec,
+    parts: &crate::wet_parts::WetParts,
+) -> rt_core::geometry::Geometry {
+    use rt_core::scene::{Instance, Mesh, Transform as RtTransform};
+    let meshes: Vec<Mesh> = spec
+        .meshes
+        .iter()
+        .map(|m| Mesh::new(&m.positions, &[], &m.indices, 0).expect("a valid mesh"))
+        .collect();
+    let instances: Vec<Instance> = spec
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            Instance::new(
+                p.mesh,
+                RtTransform {
+                    rows: parts.placement(k).rows,
+                },
+                k as u32,
+            )
+        })
+        .collect();
+    rt_core::geometry::Geometry::new(meshes, instances).expect("a valid geometry")
+}
+
+/// The weather of `parts` on instances `0..` (instance `k` is part `k`) with the shapes of the
+/// drops, the dust's motes of `motes` and `porosity` per part, the drops in the air, and the
+/// studio floor's (of `floor_porosity`), into `scene`.
+fn weather_into(
+    scene: &mut rt_core::scene::Scene,
+    parts: &crate::wet_parts::WetParts,
+    porosity: &[f32],
+    motes: Option<rt_core::weather::MoteSpec>,
+    floor_porosity: f32,
+) {
+    let weather = parts
+        .weather()
+        .iter()
+        .enumerate()
+        .map(|(k, w)| {
+            let p = w
+                .part_weather_shaped(k as u32, porosity.get(k).copied().unwrap_or(0.0))
+                .expect("valid weather");
+            match motes {
+                Some(m) if w.dust.iter().any(|&d| d > 0.0) => p.with_motes(m).expect("motes"),
+                _ => p,
+            }
+        })
+        .collect();
+    scene.set_wet_parts(weather).expect("weather that fits");
+    let falling = parts
+        .falling()
+        .iter()
+        .map(|&(part, position, radius)| rt_core::weather::FallingDrop {
+            instance: part,
+            position,
+            radius,
+        })
+        .collect();
+    scene.set_wet_falling(falling).expect("drops that fit");
+    scene
+        .set_wet_floor(parts.floor_weather(floor_porosity))
+        .expect("a floor that fits");
+}
+
+/// S3e: the porosity of the studio floor in the example scenes (◆ the page's, `src/data/wet-parts.ts`).
+pub const FLOOR_POROSITY: f32 = 0.5;
+
+/// S3e: the S3e parity scene at `steps` of [`s3e_parts_at`]: the bottle in clear glass, the ledge in
+/// glass, the plate in a red plastic and the card in paper, over the studio floor as the page writes
+/// it (a shadow catcher on a light grey background), seen by a 40 mm lens at f/8 from the front and
+/// above; their weather with the shapes and the motes (`WETP`, `WTP2` for the card), the drops in the
+/// air (`WETF`) and the floor's (`WETG`).
+pub fn s3e_scene_at(steps: u32) -> rt_core::scene::Scene {
+    use rt_core::color::Rgb;
+    use rt_core::scene::{FloorMode, Material, BACKGROUND_COLOR, MATERIAL_GLASS};
+    let spec = s3e_spec();
+    let parts = s3e_parts_at(steps);
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let target = Vec3::new(20.0, -20.0, 40.0);
+    scene.camera.position = Vec3::new(40.0, -560.0, 330.0);
+    scene.camera.target = target;
+    scene.camera.focal_mm = 40.0;
+    scene.camera.fstop = 8.0;
+    scene.camera.focus_dist = (target - scene.camera.position).length();
+    scene.floor.mode = FloorMode::ShadowCatcher;
+    scene.floor.z = 0.0;
+    scene.environment.background_mode = BACKGROUND_COLOR;
+    scene.environment.background_color = Rgb::splat(0.72);
+    let glass = Material {
+        kind: MATERIAL_GLASS,
+        base_color: Rgb::new(0.85, 0.95, 0.9),
+        roughness: 0.0,
+        transmission: 1.0,
+        ..Material::default()
+    };
+    scene.materials = vec![
+        glass.clone(),
+        glass,
+        Material {
+            base_color: Rgb::new(0.7, 0.12, 0.08),
+            roughness: 0.35,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.75, 0.74, 0.7),
+            roughness: 0.7,
+            ..Material::default()
+        },
+    ];
+    scene.geometry = instances_of(&spec, &parts);
+    scene.apply_section();
+    weather_into(
+        &mut scene,
+        &parts,
+        &[0.0, 0.0, 0.0, PAPER_POROSITY],
+        Some(rt_core::weather::MoteSpec {
+            size_mm: 0.3,
+            size_var: 0.6,
+            seed: spec.seed,
+        }),
+        FLOOR_POROSITY,
+    );
+    scene
+}
+
+/// S3e: the S3e parity scene after [`S3E_STEPS`] (`tests/wet_parts_s3e.rs` pins its image; `rt
+/// --write-s3e-example` writes it).
+pub fn s3e_scene() -> rt_core::scene::Scene {
+    s3e_scene_at(S3E_STEPS)
+}
+
+/// S3e: steps of the moving parity parts (two seconds).
+pub const MOVING_STEPS: u32 = 480;
+/// S3e: the steps of the frames of the strip of the moving part (`docs/ui/rain-moving.png`).
+pub const MOVING_STRIP_STEPS: [u32; 6] = [0, 36, 60, 84, 120, 480];
+
+/// S3e: the moving parity parts: the parity drop scene's tilted box (its dynamic body 0) and its
+/// static block, both glass, under heavy rain: the box gets wet as it falls and lands on the floor.
+pub fn moving_spec() -> crate::wet_parts::PartsSpec {
+    use crate::wet_parts::{
+        PartsExtras, PartsSource, PartsSourceKind, PartsSpec, WetPartSpec, NO_BODY,
+    };
+    let scene = drop_scene();
+    let part = |mesh: u32, transform: Transform, body: u32| WetPartSpec {
+        mesh,
+        transform,
+        advancing_deg: PLASTIC_ADVANCING_DEG,
+        receding_deg: PLASTIC_RECEDING_DEG,
+        soak_mm_s: 0.0,
+        flags: 0,
+        body,
+    };
+    PartsSpec {
+        seed: 13,
+        cell_mm: 1.0,
+        max_samples: 60_000,
+        repose_deg: DUST_REPOSE_DEG,
+        snow_repose_deg: SNOW_REPOSE_DEG,
+        meshes: vec![
+            parts_mesh(box_mesh(Vec3::new(30.0, 20.0, 15.0))),
+            parts_mesh(box_mesh(Vec3::new(40.0, 40.0, 20.0))),
+        ],
+        parts: vec![
+            part(0, scene.bodies[0].pieces[0].transform, 0),
+            part(1, scene.bodies[3].pieces[0].transform, NO_BODY),
+        ],
+        sources: vec![PartsSource {
+            kind: PartsSourceKind::Drops,
+            density: 1.0e-4,
+            velocity: Vec3::new(600.0, 0.0, -6500.0),
+            size_mm: 1.4,
+            size_var: 0.4,
+        }],
+        extras: PartsExtras {
+            wind: Vec3::new(600.0, 0.0, 0.0),
+            ..PartsExtras::default()
+        },
+    }
+}
+
+/// S3e: the moving parts of [`moving_spec`] stepped `steps` with the bodies of [`drop_scene`].
+pub fn moving_parts_at(steps: u32) -> (crate::wet_parts::WetParts, crate::World) {
+    let (mut world, ids) = drop_scene().build();
+    let mut parts = crate::wet_parts::WetParts::new(moving_spec());
+    parts.step_with(&mut world, &ids, steps);
+    (parts, world)
+}
+
+/// S3e: the moving parity scene at `steps`: the box (a red plastic) where its body is then and the
+/// block (a grey one), seen by a 60 mm lens at f/8, their weather and the drops in the air.
+pub fn moving_scene_at(steps: u32) -> rt_core::scene::Scene {
+    use rt_core::color::Rgb;
+    use rt_core::scene::{FloorMode, Material};
+    let spec = moving_spec();
+    let (parts, _) = moving_parts_at(steps);
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let target = Vec3::new(-50.0, 0.0, 40.0);
+    scene.camera.position = Vec3::new(-140.0, -420.0, 200.0);
+    scene.camera.target = target;
+    scene.camera.focal_mm = 60.0;
+    scene.camera.fstop = 8.0;
+    scene.camera.focus_dist = (target - scene.camera.position).length();
+    scene.floor.mode = FloorMode::Visible;
+    scene.floor.color = Rgb::splat(0.45);
+    scene.materials = vec![
+        Material {
+            base_color: Rgb::new(0.65, 0.1, 0.07),
+            roughness: 0.3,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.55, 0.55, 0.57),
+            roughness: 0.5,
+            ..Material::default()
+        },
+    ];
+    scene.geometry = instances_of(&spec, &parts);
+    scene.apply_section();
+    weather_into(&mut scene, &parts, &[0.0, 0.0], None, FLOOR_POROSITY);
+    scene
+}
+
+/// S3e: the dust sheet's parts: the bottle on a paper card of the set (a film, 700 mm square: two
+/// triangles a metre long, which the budget of a third of the samples for the films leaves at a
+/// cell of about 7 mm), under a *Dust cloud*'s dust, with the card's fine samples (`fine`: the two
+/// triangles the bottle's shadow crosses at 2 mm, within [`DUST_EDGE_BUDGET`]) or without.
+pub fn dust_spec(fine: bool) -> crate::wet_parts::PartsSpec {
+    let mut spec = s3e_spec();
+    spec.meshes.push(plate_mesh(700.0, 700.0, 1, 1));
+    spec.extras.edge_budget = DUST_EDGE_BUDGET;
+    spec.parts.truncate(1);
+    spec.parts.push(crate::wet_parts::WetPartSpec {
+        mesh: 4,
+        transform: Transform::translation(Vec3::new(0.0, 0.0, 0.5)),
+        advancing_deg: PAPER_ADVANCING_DEG,
+        receding_deg: PAPER_RECEDING_DEG,
+        soak_mm_s: 0.0,
+        flags: crate::wet_parts::PART_FILM,
+        body: crate::wet_parts::NO_BODY,
+    });
+    spec.sources
+        .retain(|s| s.kind == crate::wet_parts::PartsSourceKind::Dust);
+    spec.sources[0].velocity = Vec3::new(250.0, 150.0, -300.0);
+    spec.extras.floor = None;
+    if !fine {
+        spec.extras.edge_cell_mm = 0.0;
+        spec.extras.edge_budget = 0;
+    }
+    spec
+}
+
+/// S3e: the samples the fine cells of the dust sheet's card may take (the page's
+/// `PARTS_EDGE_BUDGET`, ◆).
+pub const DUST_EDGE_BUDGET: u32 = 300_000;
+
+/// S3e: the dust sheet's scene at `seconds`: the bottle on the card, close, from above, its dust and
+/// its motes; with the card's fine samples or without.
+pub fn dust_scene_at(seconds: u32, fine: bool) -> rt_core::scene::Scene {
+    use rt_core::color::Rgb;
+    use rt_core::scene::{FloorMode, Material, MATERIAL_GLASS};
+    let spec = dust_spec(fine);
+    let mut parts = crate::wet_parts::WetParts::new(spec.clone());
+    parts.step(seconds * crate::world::STEPS_PER_SECOND);
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let target = Vec3::new(-28.0, -40.0, 20.0);
+    scene.camera.position = Vec3::new(-60.0, -260.0, 230.0);
+    scene.camera.target = target;
+    scene.camera.focal_mm = 90.0;
+    scene.camera.fstop = 11.0;
+    scene.camera.focus_dist = (target - scene.camera.position).length();
+    scene.floor.mode = FloorMode::None;
+    scene.materials = vec![
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.85, 0.95, 0.9),
+            roughness: 0.0,
+            transmission: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.1, 0.1, 0.11),
+            roughness: 0.6,
+            ..Material::default()
+        },
+    ];
+    scene.geometry = instances_of(&spec, &parts);
+    scene.apply_section();
+    weather_into(
+        &mut scene,
+        &parts,
+        &[0.0, PAPER_POROSITY],
+        Some(rt_core::weather::MoteSpec {
+            size_mm: spec.sources[0].size_mm,
+            size_var: spec.sources[0].size_var,
+            seed: spec.seed,
+        }),
+        FLOOR_POROSITY,
+    );
+    scene
+}
+
+/// S3e: the frames of the S3e captures (`tools/s3e-strip.mjs`), by name: the moving box at the
+/// steps of [`MOVING_STRIP_STEPS`] (`moving-<step>`), the S3e scene at 1, 3 and 5 s (`floor-<s>`),
+/// the dust on the set card at 30 and 120 s (`dust-<s>`) and its shadow's edge at 120 s without and
+/// with the fine samples (`edge-coarse`, `edge-fine`, a closer camera).
+pub fn s3e_strip() -> Vec<(String, rt_core::scene::Scene)> {
+    let mut out = Vec::new();
+    for steps in MOVING_STRIP_STEPS {
+        out.push((format!("moving-{steps}"), moving_scene_at(steps)));
+    }
+    for s in [1u32, 3, 5] {
+        out.push((
+            format!("floor-{s}"),
+            s3e_scene_at(s * crate::world::STEPS_PER_SECOND),
+        ));
+    }
+    // Close, on the patch the ledge keeps dry and the drips that fell on it.
+    let mut close = s3e_scene();
+    let target = Vec3::new(95.0, 30.0, 0.0);
+    close.camera.position = target + Vec3::new(-40.0, -260.0, 230.0);
+    close.camera.target = target;
+    close.camera.focal_mm = 70.0;
+    close.camera.focus_dist = (target - close.camera.position).length();
+    out.push(("floor-close".to_string(), close));
+    for s in [30u32, 120] {
+        out.push((format!("dust-{s}"), dust_scene_at(s, true)));
+    }
+    for (name, fine) in [("edge-coarse", false), ("edge-fine", true)] {
+        let mut scene = dust_scene_at(120, fine);
+        // On the side edge of the bottle's dust shadow on the card.
+        let target = Vec3::new(51.0, 71.0, 0.5);
+        scene.camera.position = target + Vec3::new(-10.0, -110.0, 140.0);
+        scene.camera.target = target;
+        scene.camera.focal_mm = 100.0;
+        scene.camera.focus_dist = (target - scene.camera.position).length();
+        out.push((name.to_string(), scene));
+    }
+    out
+}

@@ -83,7 +83,7 @@ import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
 import { wetBytes } from './core/wet';
 import { engineGlassPane, hasGlassExports } from './render/glass-pane';
-import { readsGlassLayout, readsWetFlight, readsWetParts, readsWetShapes } from './render/engine';
+import { readsGlassLayout, readsWetFlight, readsWetFloor, readsWetMotes, readsWetParts, readsWetShapes } from './render/engine';
 import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16 as exactWords16Of, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba as straightLinearRgbaOf, straightWords16 } from './render/tiles';
@@ -492,6 +492,8 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
       wetParts: readsWetParts(i.features),
       wetFlight: readsWetFlight(i.features),
       wetShapes: readsWetShapes(i.features),
+      wetFloor: readsWetFloor(i.features),
+      wetMotes: readsWetMotes(i.features),
       native: { threads: i.threads, isa: i.isa, simd: i.simd, os: i.os, arch: i.arch, engineVersion: i.engineVersion },
     });
     return;
@@ -513,7 +515,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
     }
     const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
     poolCfg = { backend: 'wasm', threads: cfg.threads, simd: cfg.simd };
-    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features), wetParts: readsWetParts(t.features), wetFlight: readsWetFlight(t.features), wetShapes: readsWetShapes(t.features) });
+    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features), wetParts: readsWetParts(t.features), wetFlight: readsWetFlight(t.features), wetShapes: readsWetShapes(t.features), wetFloor: readsWetFloor(t.features), wetMotes: readsWetMotes(t.features) });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`path tracer: ${reason}`);

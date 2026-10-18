@@ -1584,6 +1584,21 @@ pub fn catcher_shares(l: Layers, cos: f32) -> (f32, f32) {
     (cover, film)
 }
 
+/// S3e: the grey a shadow-catcher floor stands for when its film darkens it (◆): what is behind
+/// it is darkened as a porous floor of this albedo darkens wet, `CATCHER_GREY^(wet × porosity)`.
+pub const CATCHER_GREY: f32 = 0.5;
+
+/// S3e: how much a shadow-catcher floor's water film darkens what is behind it: as the porous
+/// darkening of [`weathered`] darkens a floor of [`CATCHER_GREY`] (◆), 1 where it is dry.
+pub fn catcher_wet(l: Layers, porosity: f32) -> f32 {
+    let w = l.wet.clamp(0.0, 1.0) * porosity.clamp(0.0, 1.0) * WET_DARKEN;
+    if w > 0.0 {
+        fmath::powf(CATCHER_GREY, w)
+    } else {
+        1.0
+    }
+}
+
 /// S3e: the visible layer of a shadow-catcher floor where dust and snow cover it: the dust (wet, as
 /// the film makes it) with the snow over it by its share of the cover.
 pub fn catcher_cover(l: Layers, porosity: f32) -> Material {
@@ -2210,3 +2225,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "weather_s3e_tests.rs"]
+mod s3e_tests;

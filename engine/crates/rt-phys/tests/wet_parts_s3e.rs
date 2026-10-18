@@ -866,3 +866,118 @@ fn a_spec_of_version_two_round_trips_and_bad_ones_are_refused() {
     bad[4] = 3;
     assert!(PartsSpec::parse(&bad).is_err());
 }
+
+// --- The S3e parity scenes ----------------------------------------------------------------------
+
+/// Pinned hash of the S3e parity parts after [`S3E_STEPS`] ([`WetParts::hash`]); the page's test
+/// with the real `rt.wasm` checks the module against it.
+const PINNED_S3E_PARTS: u32 = 0x8cbf_1fd2;
+/// Pinned hash of the moving parity parts after [`MOVING_STEPS`] with the drop scene's bodies.
+const PINNED_S3E_MOVING: u32 = 0x5a95_d355;
+/// Pinned hash of the S3e parity scene ([`s3e_scene`]) at 4 samples per pixel; `tools/wasm-parity.mjs`
+/// checks the module against it (`rt --write-s3e-example`).
+const PINNED_S3E_FLOOR_4SPP: u32 = 0xa531_1343;
+/// Pinned hash of the moving parity scene at 4 samples per pixel (`rt --write-s3e-moving-example`).
+const PINNED_S3E_MOVING_4SPP: u32 = 0xe7e9_64e9;
+/// Pinned hash of the dust parity scene (the bottle on the set's card at 120 s, its fine samples and
+/// its motes) at 4 samples per pixel (`rt --write-s3e-dust-example`).
+const PINNED_S3E_DUST_4SPP: u32 = 0xb19b_c6f0;
+
+/// FNV-1a over the little-endian bytes of the resolved film.
+fn film_hash(values: &[f32]) -> u32 {
+    values
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .fold(0x811c_9dc5u32, |h, b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        })
+}
+
+/// The film of `scene` at 4 samples per pixel on `isa`.
+fn render(scene: &rt_core::scene::Scene, isa: rt_core::simd::Isa) -> Vec<f32> {
+    use rt_core::render::{render_tile_prepared, tile_grid};
+    let (w, h) = (scene.render.width, scene.render.height);
+    let prepared = rt_core::integrator::Prepared::new(scene);
+    let mut film = rt_core::image::Film::new(w, h);
+    for tile in tile_grid(w, h, 32) {
+        for sample in 0..4 {
+            render_tile_prepared(scene, &prepared, tile, sample, &mut film, isa);
+        }
+    }
+    film.resolve()
+}
+
+#[test]
+fn the_s3e_parts_have_a_pinned_hash() {
+    use rt_phys::example::{s3e_parts, S3E_STEPS};
+    let parts = s3e_parts();
+    let (landed, splashes, drips) = parts.counts();
+    let (water, on_floor) = parts.floor_water();
+    let (nx, ny, cell) = parts.floor_cells().unwrap();
+    let wet = (0..(nx * ny) as usize)
+        .filter(|&c| parts.floor_wet_step(c) != NEVER)
+        .count();
+    let edge = parts.drop_states().iter().filter(|d| d.edge).count();
+    eprintln!(
+        "S3e parts after {S3E_STEPS} steps: {:#010x}, {} samples ({} refined triangles), {} drops ({edge} at an edge), {} in the air, {landed} landed, {splashes} splashes, {drips} drips, floor {nx}×{ny} of {cell} mm: {wet} wet, {on_floor} drops ({water:.1} mm³) on it",
+        parts.hash(),
+        parts.sample_count(),
+        parts.refined_triangles(),
+        parts.drops().len(),
+        parts.falling().len(),
+    );
+    assert!(drips >= 3, "the ledge drips");
+    assert!(on_floor >= 3, "and its drips land on the floor");
+    assert!(parts.refined_triangles() > 0);
+    assert!(wet > 1000);
+    assert_eq!(parts.hash(), PINNED_S3E_PARTS);
+}
+
+#[test]
+fn the_moving_parts_have_a_pinned_hash() {
+    use rt_phys::example::{moving_parts_at, MOVING_STEPS};
+    let (parts, world) = moving_parts_at(MOVING_STEPS);
+    eprintln!(
+        "S3e moving parts after {MOVING_STEPS} steps: {:#010x} (world {:#010x}), {} drops, {} in the air, {:?}",
+        parts.hash(),
+        world.hash(),
+        parts.drops().len(),
+        parts.falling().len(),
+        parts.counts(),
+    );
+    assert!(parts.drops().iter().filter(|d| d.0 == 0).count() > 20);
+    assert_eq!(parts.hash(), PINNED_S3E_MOVING);
+}
+
+#[test]
+fn the_s3e_scenes_have_pinned_hashes_on_every_simd_path() {
+    use rt_phys::example::{dust_scene_at, moving_scene_at, s3e_scene, MOVING_STEPS};
+    let floor = s3e_scene();
+    assert!(floor.wet_floor.is_some());
+    assert!(!floor.wet_falling.is_empty());
+    let moving = moving_scene_at(MOVING_STEPS);
+    let dust = dust_scene_at(120, true);
+    assert!(dust.motes().is_some(), "the dust's motes");
+    assert!(
+        dust.wet_parts.iter().any(|w| w.wide()),
+        "the card's fine samples"
+    );
+    for (name, scene, pinned) in [
+        ("floor", floor, PINNED_S3E_FLOOR_4SPP),
+        ("moving", moving, PINNED_S3E_MOVING_4SPP),
+        ("dust", dust, PINNED_S3E_DUST_4SPP),
+    ] {
+        // Through an RSB round trip: WETG, WTP2 and the motes tail travel.
+        let read = rt_core::scene::Scene::from_rsb(&scene.to_rsb()).expect("read");
+        assert_eq!(read, scene, "{name}");
+        let mut found = Vec::new();
+        for isa in rt_core::simd::Isa::available() {
+            let hash = film_hash(&render(&read, isa));
+            eprintln!("S3e {name} at 4 spp on {}: {hash:#010x}", isa.name());
+            found.push((isa.name(), hash));
+        }
+        for (isa, hash) in found {
+            assert_eq!(hash, pinned, "{name} {isa}");
+        }
+    }
+}

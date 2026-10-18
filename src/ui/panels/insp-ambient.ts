@@ -6,7 +6,7 @@
 import { DEFAULT_MIX, EFFECT_PRESETS, EFFECT_SHAPES, effectPreset, type EffectKind, type EffectShape } from '../../data/effects';
 import { MATERIAL_PRESETS } from '../../data/materials';
 import { PARTS_FEED } from '../../data/wet-parts';
-import { partsRenderDry, partsRenderNoFlight, partsRenderRound } from '../../core/wet-parts';
+import { partsRenderDry, partsRenderNoFlight, partsRenderNoFloor, partsRenderNoMotes, partsRenderRound } from '../../core/wet-parts';
 import { effectCap, effectHasShape, engineParticleCap, MAX_PALETTE, mixWeights, requestedParticles, windPolar, windVector, type AmbientEffect, type EffectPatch } from '../../core/effects';
 import type { Vec3 } from '../../core/math';
 import type { ProjectState } from '../../core/store';
@@ -293,6 +293,30 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
       },
     );
   }
+  // S3e: it draws them, but not the studio floor's weather (bit 11): the floor would show dry.
+  const partsNoFloor = feeds ? h('div', { class: 'note', 'data-ambient': 'wet-floor-old-engine' }, t('ambient.wetFloorOldEngine')) : null;
+  if (partsNoFloor) {
+    scope.watch(
+      (s, u) => [s.effects, s.studio.floor, u.engineInfo?.wetParts, u.engineInfo?.wetFloor] as const,
+      () => {
+        const e = get();
+        const info = ctx.ui.get().engineInfo;
+        partsNoFloor.style.display = e?.wetParts === true && partsRenderNoFloor(store.get(), info?.wetParts, info?.wetFloor) ? '' : 'none';
+      },
+    );
+  }
+  // S3e: it draws the dust's layer, but not its motes (bit 13).
+  const partsNoMotes = feeds === 'DUST' ? h('div', { class: 'note', 'data-ambient': 'wet-motes-old-engine' }, t('ambient.wetMotesOldEngine')) : null;
+  if (partsNoMotes) {
+    scope.watch(
+      (s, u) => [s.effects, u.engineInfo?.wetParts, u.engineInfo?.wetMotes] as const,
+      () => {
+        const e = get();
+        const info = ctx.ui.get().engineInfo;
+        partsNoMotes.style.display = e?.wetParts === true && partsRenderNoMotes(store.get(), info?.wetParts, info?.wetMotes) ? '' : 'none';
+      },
+    );
+  }
   if (partsRow) {
     partsRow.setAttribute('data-knob', 'ambient.wetParts');
     partsRow.setAttribute('data-tip', t(feeds === 'DROPS' ? 'ambient.wetPartsTip.DROPS' : feeds === 'DUST' ? 'ambient.wetPartsTip.DUST' : 'ambient.wetPartsTip.SNOW'));
@@ -468,7 +492,7 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     field(t('ambient.name'), nameField.el),
     line,
     // S3b (decision S3 ◆5): the Shape is one of the visible knobs, after the size, with the weights of a mix under it.
-    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow, partsRow, partsDry, partsNoFlight, partsRound),
+    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow, partsRow, partsDry, partsNoFlight, partsRound, partsNoFloor, partsNoMotes),
     section(ctx, 'ambient-advanced', t('ambient.advanced'), advanced, null, true),
     h('div', { class: 'note' }, t('ambient.previewNote')),
   );

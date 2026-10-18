@@ -12,7 +12,8 @@
 //
 // S3c: and the parts under the scene's rain, dust and snow (a WPT1 spec): they step with the bodies too, the run starts
 // with the engine's layout of their samples and their record at step 0, each frame comes with their record, and a run
-// that wets them does not stop when its bodies sleep either.
+// that wets them does not stop when its bodies sleep either. S3e: when some of them move with a body, the engine steps
+// the parts and the bodies together, a step at a time (`wpt_step_with`), so they get wet where the bodies take them.
 
 import { frameStep, STEPS_PER_SECOND, type PhysicsResult, type PhysicsRunOptions } from '../core/physics';
 import { hasPartsExports, hasPhysExports, hasWetExports, PartsSim, PhysWorld, WetSim, type PartsExports, type PhysExports, type WetExports } from './phys-wasm';
@@ -91,9 +92,13 @@ function settled(r: Run): boolean {
 
 function stepBoth(r: Run, n: number): void {
   if (n <= 0) return;
-  r.world?.step(n);
+  // S3e: parts that move step with the bodies, one step after the other (the engine does both).
+  if (r.world && r.parts && r.parts.moving > 0) r.parts.stepWith(r.world, n);
+  else {
+    r.world?.step(n);
+    r.parts?.step(n);
+  }
   r.pane?.step(n);
-  r.parts?.step(n);
   r.steps += n;
 }
 
