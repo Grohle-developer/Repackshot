@@ -1,13 +1,14 @@
 // The page of the M3b region comparison (tests/programs-full-browser.test.ts): the Fast preview draws the scenes of
 // programs-scene.ts, its graphs baked by the graph workers as in the app (render/graph-worker.ts), and gives back
 // its colour pixels and its part ids. Each scene gets a preview and workers of its own. M3d: a key
-// `WOOD_SPHERE:<kind>[:<preset>[:FADED]]` draws the wood sphere of `woodSphereScene` instead, and `workers` false draws without
+// `WOOD_SPHERE:<kind>[:<preset>[:FADED|:KNOTLESS|:NOFUZZ]]` (M3e: the last two, and a fabric's preset) draws the
+// sphere of `woodSphereScene` instead, and `workers` false draws without
 // graph workers (what a family's wood looked like in Fast before M3d: tests/wood-fast-browser.test.ts).
 
 import { projectScene } from '../../src/io/rsb';
 import { GraphWorkers } from '../../src/render/graph-client';
 import { PreviewEngine } from '../../src/render/preview';
-import { graphScene, woodSphereScene } from './programs-scene';
+import { graphScene, woodSphereScene, type SphereFlag } from './programs-scene';
 
 declare global {
   interface Window {
@@ -27,7 +28,7 @@ window.runGraph = async (key, width, height, withWorkers = true) => {
   engine.mount(canvas);
   try {
     const [, sphere, preset, tint] = key.startsWith('WOOD_SPHERE:') ? key.split(':') : [];
-    const state = sphere ? woodSphereScene(sphere as Parameters<typeof woodSphereScene>[0], width, height, preset, tint === 'FADED') : graphScene(key, width, height);
+    const state = sphere ? woodSphereScene(sphere as Parameters<typeof woodSphereScene>[0], width, height, preset, (tint ?? '') as SphereFlag | '') : graphScene(key, width, height);
     engine.sync(state, null);
     engine.resize(width, height, 1);
     const ids = projectScene(state, { width, height, maxSamples: 1, maxSeconds: 0 }).ids;

@@ -4,11 +4,12 @@
 // those names with the plan's mapping; every other output (clear coat, transmission, IOR…) is its mean. A bake comes
 // in two passes, 128² at once and then 512²; until the first arrives the material shows the means of its outputs.
 // The material's own image maps (M2a slots) win over the graph's map of the same slot (that output is then its
-// mean under the image), and its labels lie over everything, as in Simple mode.
+// mean under the image), and its labels lie over everything, as in Simple mode. M3e: a wood's knots are not in the
+// maps; the preview draws them on top, part by part (render/knots.ts).
 
 import type * as THREE from 'three';
 import type { MaterialInstance } from '../core/materials';
-import { flattenGraph, materialBounds, planBake, BAKE_SIZE, type BakePlan, type BakeResult, type OutputValues } from '../core/material-preview';
+import { flattenGraph, materialBounds, planBake, programKnots, BAKE_SIZE, type BakePlan, type BakeResult, type OutputValues } from '../core/material-preview';
 import { compileGraph, type Program } from '../core/material-program';
 import type { MaterialGraph } from '../core/material-graph';
 import type { ProjectState } from '../core/store';
@@ -28,8 +29,8 @@ interface Entry {
   result: BakeResult | null;
   /** Bumped with each result: the baked maps' ids change with it (the texture cache is by id). */
   version: number;
-  /** The preview material and the instance it was last applied with (a result re-applies them). */
-  target: { m: THREE.MeshPhysicalMaterial; inst: MaterialInstance; partSizeMm: number } | null;
+  /** The preview material and the instance it was last applied with (a result re-applies them), and what goes on top. */
+  target: { m: THREE.MeshPhysicalMaterial; inst: MaterialInstance; partSizeMm: number; finish?: (m: THREE.MeshPhysicalMaterial) => void } | null;
 }
 
 const programs = new WeakMap<MaterialGraph, Program | null>();
@@ -114,18 +115,23 @@ export class GraphBakes {
   /**
    * Gives a preview material its graph: the maps it has (or its means while they come) and its own textures. M3d: a
    * wood of the family comes here too, with the graph Simple → Nodes makes of it as its `graph` (core/material-graph.ts
-   * `familyBakeGraph`), and is baked as the Wood node is.
+   * `familyBakeGraph`), and is baked as the Wood node is. M3e: the knots of the wood whose colour asks for them are
+   * left out of the maps (`BakePlan.knotless`): the preview draws them on top, part by part, where the engine puts
+   * them (render/knots.ts). `finish` runs after every drawing of the material (M3e: a baked fabric's fuzz).
    */
-  apply(m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, state: ProjectState): void {
+  apply(m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, state: ProjectState, finish?: (m: THREE.MeshPhysicalMaterial) => void): void {
     const g = inst.graph!;
     const program = programOf(g);
     if (!program) {
       // A graph that does not compile draws as the means of its outputs (the default grey).
       applyMaterial(m, { ...inst, ...flattenGraph(g) }, state.scene.partSizeMm);
       this.textures().apply(m, inst);
+      finish?.(m);
       return;
     }
-    const plan = planBake(program, materialBounds(state, inst.id), state.scene.partSizeMm);
+    const plan: BakePlan = planBake(program, materialBounds(state, inst.id), state.scene.partSizeMm);
+    const knots = programKnots(program);
+    if (knots) plan.knotless = knots.k;
     const key = bakeKey(program, plan);
     let e = this.entries.get(inst.id);
     if (!e || e.key !== key) {
@@ -133,7 +139,7 @@ export class GraphBakes {
       this.entries.set(inst.id, e);
       this.request(inst.id, e);
     }
-    e.target = { m, inst, partSizeMm: state.scene.partSizeMm };
+    e.target = { m, inst, partSizeMm: state.scene.partSizeMm, finish };
     this.draw(e);
   }
 
@@ -170,12 +176,13 @@ export class GraphBakes {
   private draw(e: Entry): void {
     const t = e.target;
     if (!t) return;
-    const { m, inst, partSizeMm } = t;
+    const { m, inst, partSizeMm, finish } = t;
     const r = e.result;
     const tp = this.textures();
     if (!r) {
       applyMaterial(m, { ...inst, ...flattenGraph(inst.graph!) }, partSizeMm);
       tp.apply(m, inst);
+      finish?.(m);
       return;
     }
     const own = inst.textures;
@@ -204,5 +211,6 @@ export class GraphBakes {
       m.emissiveIntensity = strength;
     }
     tp.apply(m, { ...inst, family: flat.family, textures });
+    finish?.(m);
   }
 }

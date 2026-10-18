@@ -173,15 +173,23 @@ export function sphere(r = 50): MeshData {
   return { positions: Float32Array.from(p), normals: Float32Array.from(n), indices: Uint32Array.from(idx), uvs: Float32Array.from(uv) };
 }
 
+/** M3e: what else `woodSphereScene` may change (see there). */
+export type SphereFlag = 'FADED' | 'KNOTLESS' | 'NOFUZZ';
+
 /**
  * M3c: a 100 mm sphere seen from the front in the flat white world, in the Wood family's oak (`FAMILY`), in the oak
  * converted to nodes by Simple → Nodes (`CONVERTED`), in the wood example of the graphs (`EXAMPLE`), or in the example
  * turned a quarter of a turn about its vertical axis (`TURNED`, the control: the same surface, the wood moved). M3d:
  * `preset` another wood of the catalogue (the knotty pine) for the family and its conversion; `faded`, a fade of the
- * material on the timeline (N1, to 60 % opacity over 4 s) with the playhead halfway through it.
+ * material on the timeline (N1, to 60 % opacity over 4 s) with the playhead halfway through it. M3e: `flag` may also be
+ * `KNOTLESS` (the wood without knots: the reference the knots are measured against) or `NOFUZZ` (a fabric without its
+ * fuzz), and `preset` a fabric of the catalogue.
  */
-export function woodSphereScene(kind: 'FAMILY' | 'CONVERTED' | 'EXAMPLE' | 'TURNED', width: number, height: number, preset = 'OAK', faded = false): ProjectState {
+export function woodSphereScene(kind: 'FAMILY' | 'CONVERTED' | 'EXAMPLE' | 'TURNED', width: number, height: number, preset = 'OAK', flag: boolean | SphereFlag | '' = false): ProjectState {
+  const faded = flag === true || flag === 'FADED';
   const mat = instanceFromPreset('mPart', preset, 120)!;
+  if (flag === 'KNOTLESS') mat.params = { ...mat.params, knotCount: 0 };
+  if (flag === 'NOFUZZ') mat.params = { ...mat.params, fuzz: 0 };
   const nodes: Record<NodeId, SceneNode> = {
     model: node('model', null, ['part'], [0, 0, 0]),
     part: node('part', 'model', [], [0, 0, 0], { mesh: registerMesh('m3c:sphere', sphere()), material: 'mPart', smooth: true }),
