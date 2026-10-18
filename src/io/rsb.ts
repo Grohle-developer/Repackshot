@@ -39,7 +39,7 @@ import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type Tex
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
 import { filtersOf, frontGlassOf, glassFromScene, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
 import { paneAxes, recordedGlass, type GlassFrame, type PaneAxes } from '../core/wet';
-import { partWeather, recordedParts } from '../core/wet-parts';
+import { partWeather, recordedParts, ROUND_SHAPE } from '../core/wet-parts';
 import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
@@ -636,7 +636,15 @@ export interface RsbWetPart {
   porosity: number;
   /** Its drops: their triangle in the mesh, their point in the instance's object space, their contact radius. */
   drops: { triangle: number; position: readonly [number, number, number]; radius: number }[];
+  /**
+   * S3f: the shape of each drop (core/wet-parts.ts `DropShape`, axes in the instance's object space), written as the
+   * shape tail of the section; absent: round caps, no tail.
+   */
+  shapes?: readonly (readonly number[])[];
 }
+
+/** S3f: the tag of the shape tail of a WETP section (rt-core `weather::SHAPE_TAG`). */
+export const WETP_SHAPE_TAG = 'SHP1';
 
 /** S3c: the header of a WETP payload, bytes (rt-core `weather::WETP_HEADER`). */
 export const WETP_HEADER = 24;
@@ -644,7 +652,8 @@ export const TAG_WETP = 'WETP';
 
 /** The bytes of a WETP payload. */
 export function wetpBytes(p: RsbWetPart): number {
-  return WETP_HEADER + Math.ceil(p.resolution.length / 4) * 4 + Math.ceil(p.values.length / 4) * 4 + 20 * p.drops.length;
+  const tail = p.shapes && p.shapes.length > 0 ? 8 + 4 * 15 * p.shapes.length : 0;
+  return WETP_HEADER + Math.ceil(p.resolution.length / 4) * 4 + Math.ceil(p.values.length / 4) * 4 + 20 * p.drops.length + tail;
 }
 
 /** Q1: the section view's plane, as `SECT` holds it (core/section.ts `resolveSection`). */
@@ -1131,6 +1140,12 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
         w.vec(d.position);
         w.f32(d.radius);
       }
+      // S3f: the shape tail.
+      if (p.shapes && p.shapes.length > 0) {
+        w.raw(new TextEncoder().encode(WETP_SHAPE_TAG));
+        w.u32(p.shapes.length);
+        for (const s of p.shapes) for (const v of s) w.f32(v);
+      }
     });
   }
   // S3d: the drops in the air, after them.
@@ -1359,6 +1374,11 @@ export interface SceneView {
    * (render/engine.ts `readsWetFlight`); with `wetParts` only. Off by default: an engine of before skips it.
    */
   wetFlight?: boolean;
+  /**
+   * S3f: and the shapes of the drops on the parts (the shape tail of WETP), for an engine with bit 10 (render/engine.ts
+   * `readsWetShapes`); with `wetParts` only. Off by default: an engine of before would ignore it and draw round caps.
+   */
+  wetShapes?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -2406,7 +2426,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       const w = partWeather(recorded.track, recorded.frame, k, ip.tris);
       if (!w) return;
       if (w.drops.length === 0 && w.values.every((v) => v === 0)) return;
-      wetParts.push({ instance: i, resolution: w.resolution, values: w.values, capAngleDeg: tp.capAngleDeg, porosity: tp.porosity, drops: w.drops });
+      // S3f: with the shapes of its drops (round for a drop of a track of before), for an engine with bit 10.
+      const shapes = view.wetShapes && w.drops.some((d) => d.shape) ? w.drops.map((d) => d.shape ?? ROUND_SHAPE) : undefined;
+      wetParts.push({ instance: i, resolution: w.resolution, values: w.values, capAngleDeg: tp.capAngleDeg, porosity: tp.porosity, drops: w.drops.map(({ triangle, position, radius }) => ({ triangle, position, radius })), ...(shapes ? { shapes } : {}) });
     });
   }
   // S3d: the drops in the air at that frame, each from the first instance of the part it left, for an engine that draws

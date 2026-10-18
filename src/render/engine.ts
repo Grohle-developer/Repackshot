@@ -124,6 +124,18 @@ export function readsWetFlight(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_WET_FLIGHT) !== 0;
 }
 
+/**
+ * S3f: bit 10 of the engine's features (rt_core::FEATURE_WET_SHAPES): it draws the drops on the parts with their shapes
+ * (the shape tail of WETP: elongated as they slide, bulging downhill, merging with a neck, hanging). The page writes the
+ * tail only for it (io/rsb.ts `SceneView.wetShapes`); an engine without it (S3c, S3d) draws round caps.
+ */
+export const ENGINE_FEATURE_WET_SHAPES = 1024;
+
+/** True when an engine of `features` draws the shapes of the drops (S3f). */
+export function readsWetShapes(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_WET_SHAPES) !== 0;
+}
+
 /** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
 export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
   if (!readsPrograms(features)) return {};

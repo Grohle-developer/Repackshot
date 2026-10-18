@@ -216,6 +216,13 @@ jobs:
           test -n "$expected" && test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3d-flight.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3d-flight.rsb" --expect "$expected" --expect-passes "$passes"
+          # S3f: the organic drops with their shapes (the shape tail of WETP, bit 10: deformed caps), alone and with
+          # the passes interleaved.
+          cargo run --release -p rt-cli -- --write-s3f-organic-example "$RUNNER_TEMP/s3f-organic.rsb"
+          expected=$(sed -n 's/.*PINNED_S3F_ORGANIC_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-phys/tests/wet_parts.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3f-organic.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3f-organic.rsb" --expect "$expected" --passes
           # E11: the example with the fine filter and twice the samples on its edges (the module finds
           # each tile's edges from its centre rays).
           cargo run --release -p rt-cli -- --write-e11-example "$RUNNER_TEMP/e11.rsb"
@@ -355,7 +362,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
@@ -368,7 +375,8 @@ jobs:
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet
           # S3c: the rain, dust and snow on the parts, and the image of the parts they leave, too. S3d: and the drops in
-          # the air, their image and the passes that name them by their part.
+          # the air, their image and the passes that name them by their part. S3f: and the organic drops, their pins and the
+          # image of their shapes.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts
 

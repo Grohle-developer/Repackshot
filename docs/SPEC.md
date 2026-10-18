@@ -319,7 +319,26 @@ to triangle (along a crease, down it), with their trail, which wets
 the samples it passes over, carries off their dust and takes water from them; a drop that
 **hangs** from a face looking downwards **drips** when its weight overcomes
 its contact line (`ρ g V (ĝ·n) > 2π a γ sin θ̄`), and one that leaves through
-an open edge drips there. **S3d: through the air.** A drip (from rest,
+an open edge drips there (S3f: it stops at the edge and hangs, below). **S3f:
+organic drops.** A drop that keeps receiving rain grows by merging with what
+lands on it and with the drops it touches, and stays pinned until it passes the
+critical size of its tilt and of its part's wettability; a sliding drop
+**gathers the drops on the path** it swept in each step (and none beside it),
+grows and runs faster; a merge **keeps the volume** and the survivor's centre
+relaxes to the centre of volume of the two over a few capillary times
+(`√(ρ a³ / γ)`), without a jump. Fast enough for its rear contact angle (Cox
+and Voinov's dynamic angles) to fall below 0.8 of the receding one, a drop
+becomes a **continuous run** and leaves the beads of a rivulet behind it,
+elongated along its path, which relax into small pinned drops. Each drop has a
+**shape** from its physics (a `DropShape`): stretched along its motion with a
+rounder head and a thinner tail as it slides, bulging downhill when it is pinned
+on a slope (its front angle towards the advancing one, its rear towards the
+receding one, by its load), spanning the two drops with a neck after a merge,
+stretched along gravity as it hangs; every deformation keeps its volume. A drop
+**held at an open edge** or under a face looking down hangs until its weight
+passes what its contact line holds, then necks and lets go of 0.6 of its water
+as one drop in the air (Harkins and Brown), the rest staying to grow again.
+**S3d: through the air.** A drip (from rest,
 or at the speed it was sliding along the edge) and the drops of a
 splash (lifted 30° off the surface, at the speed that on a horizontal
 face carries them to their reach) are spheres of their volume that fall with
@@ -340,7 +359,9 @@ engine without it is not sent it, and the inspector warns that the render will s
 the parts dry. S3d: the drops in the air go in a `WETF` section of the
 scene (bit 9), each with the instance of the part it came from; with
 bit 8 and without bit 9 the inspector warns that drips and splashes will only
-show once they land. In the part and material passes, a drop (on a part or
+show once they land. S3f: the shapes go in a tail of each `WETP` section (bit
+10); with bit 8 and without bit 10 the inspector warns that the render will show
+the drops round. In the part and material passes, a drop (on a part or
 in the air) is its part. **How it looks**: the film's water as an almost smooth
 transparent layer over the material (roughness 0.03) and porous material
 darker; dust, a matte brownish grey on top (darker when wet); snow, a
@@ -1673,8 +1694,9 @@ its drops and its porosity, the layout of the samples that the engine gave, each
 drop with the frames in which it was as it was, the frame in which each
 sample got wet and those in which the rain cleaned it, the drops and drips of each
 frame and, since S3d, the drops in the air of each frame —the part each one
-came from, its centre and its radius—, in base64; version 2 of the format,
-and an S3c track, without them, is still read): the cache. A part whose mesh is no longer the recorded one
+came from, its centre and its radius—, and, since S3f, the shape of each version
+of each drop, in base64; version 3 of the format, and a track of before, without
+them, is still read, its drops round): the cache. A part whose mesh is no longer the recorded one
 stays dry. A track that cannot be read is removed on opening.
 
 **An animation** (`MotionClip`): name, target (part, group, model,

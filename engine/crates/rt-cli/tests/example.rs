@@ -170,13 +170,14 @@ fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
     // them (the glass is laid out once per scene; the particles are evaluated in any order).
     // S3b: and the pane the simulation of the rain left, laid out drop by drop. S3c: and the
     // parts the rain, dust and snow left their weather on, with their drops' caps. S3d: and the
-    // drops in the air.
+    // drops in the air. S3f: and the drops with their shapes (deformed caps).
     for which in [
         S3Example::Drops,
         S3Example::Glass,
         S3Example::WetGlass,
         S3Example::WetParts,
         S3Example::Flight,
+        S3Example::Organic,
     ] {
         let scene = which.scene();
         let one = rt_cli::render(&scene, 2, 1);
@@ -210,6 +211,11 @@ fn write_s3_examples_produce_readable_rsb_files() {
             "--write-s3d-flight-example",
             "s3d-flight.rsb",
         ),
+        (
+            S3Example::Organic,
+            "--write-s3f-organic-example",
+            "s3f-organic.rsb",
+        ),
     ] {
         let path = scratch(name);
         let args = [flag.to_string(), path.to_str().unwrap().to_string()];
@@ -232,6 +238,32 @@ fn write_s3_examples_produce_readable_rsb_files() {
         ];
         assert!(parse_args(&extra).is_err());
     }
+}
+
+#[test]
+fn write_s3f_strip_writes_a_scene_per_frame() {
+    let dir = scratch("s3f-strip");
+    let args = [
+        "--write-s3f-strip".to_string(),
+        dir.to_str().unwrap().to_string(),
+    ];
+    let command = parse_args(&args).expect("valid arguments");
+    assert_eq!(command, Command::WriteS3fStrip { dir: dir.clone() });
+    run(command).expect("write succeeds");
+    for steps in rt_phys::example::ORGANIC_STRIP_STEPS {
+        let bytes = std::fs::read(dir.join(format!("s3f-strip-{steps}.rsb"))).expect("written");
+        assert_eq!(
+            Scene::from_rsb(&bytes),
+            Ok(rt_phys::example::s3f_organic_scene_at(steps))
+        );
+    }
+    assert!(parse_args(&[
+        "--write-s3f-strip".into(),
+        "x".into(),
+        "--samples".into(),
+        "2".into()
+    ])
+    .is_err());
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 167 files: 165 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 168 files: 166 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,11 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 60 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 61 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI section's stored example and the preview of the job's own scene with the Full engine (X6), which re-records, without changing place, `ai-section-dark.png`, `ai-section-light.png` and `ai-section-prompt.png` (X4, X4b).
+Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI section's stored example and the preview of the job's own scene with the Full engine (X6), which re-records, without changing place, `ai-section-dark.png`, `ai-section-light.png` and `ai-section-prompt.png` (X4, X4b); organic drops (S3f).
 
 #### S3d · What remains of drops and dust on the parts (simulation)
 
@@ -46,6 +46,11 @@ Drips and splashes that fall through the air, and the meter that says what is on
 
 <a id="c-ai-x6-example-es"></a><img src="ui/ai-x6-example-es.png" width="480" alt="The AI section in Spanish: Ejemplo: escena de referencia, motor Completo, modelo de prueba; tu render será distinto, Hecho con Intervención 50…, and Vista previa de mi escena (motor Completo)."><br>
 `ai-x6-example-es.png` · `0f52127` · The same section in Spanish (*Ejemplo: escena de referencia, motor Completo, modelo de prueba; tu render será distinto*). `tools/ai-x6-check.mjs`.
+
+#### S3f · Organic drops
+
+<a id="c-rain-organic"></a><img src="ui/rain-organic.png" width="480" alt="Six frames of a dark pane with water drops, at 0, 0.25, 0.5, 0.75, 1 and 1.25 s: a drop near the top slides down through smaller pinned drops, the path above it left clean, growing and getting longer with a rounder head as it speeds up; in the last frame a line of small beads runs down the pane where it passed."><br>
+`rain-organic.png` · `540471b` · The S3f parity scene (`rt_phys::example::s3f_organic_scene_at`) rendered by the native engine at 0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the pane: a drop past its critical size slides down a vertical pane through smaller pinned drops, gathers those on its path (the path above it is clean), grows and runs faster, stretched along its motion with a rounder head (S3f ◆1), and once fast enough leaves the beads of a rivulet (◆5), which the last frame shows above it. `tools/s3f-strip.mjs`.
 
 ### v0.1.21 · 2026-10-18
 
@@ -894,6 +899,7 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · Unreleased · S3d
+- [`rain-organic.png`](#c-rain-organic) · Unreleased · S3f
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 
