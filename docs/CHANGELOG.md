@@ -588,7 +588,7 @@ stays the same.
 - **The recipes, a carousel** (P6): one card per recipe with its image —the plugin's test scene (for the film one, a perfume bottle next to a lit lamp in a dark room) through that recipe—, its name and its category; it scrolls sideways with the wheel and is chosen with the arrows. The images are made once on each machine. Before the first render, the preview shows that test scene (P6).
 - **Filters and slider in the recipe carousel** (P6b), as in the film search of the aintfilm app: chips of **Type** (colour, B&W, slide, cinema), **ISO** (≤ 100 · 200–400 · ≥ 800) and **Group** (films, a film's colour, grain, diffusion, lens), which combine, with the count (*23 of 127 recipes*); the chosen recipe stays in view, first and marked, even if the filters leave it out, and the filters are saved with the project. Below the carousel, a slider to go through the recipes, tied to its scrolling, with the chosen one marked (P6b).
 - **Apply to render jobs** (P6): a plugin can also pass every image the queue renders; in an animation, each frame with its seed (*seed + frame*), so the film's grain changes from frame to frame as in a real film (P6).
-- The film plugin's logo is the owner's: the 35 mm cartridge in dots, with the tongue in three greys (P6).
+- The film plugin's logo is the plugin owner's: the 35 mm cartridge in dots, with the tongue in three greys (P6).
 
 ### Animation
 

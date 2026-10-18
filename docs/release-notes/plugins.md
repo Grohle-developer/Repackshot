@@ -23,7 +23,7 @@ node tools/plugins/build-film.mjs --aintfilm ../aintfilm --logo ~/plugins/aintfi
 
 The *logo:* line says where the logo came from: *15×15 dots from …* (121 dots,
 the inks `#808080`, `#BFBFBF`, `#E0E0E0` and `#FFFFFF`) with `--logo`; without
-it, the checkout’s `LOGO` grid, which is not the owner’s logo (another shape and
+it, the checkout’s `LOGO` grid, which is not the plugin owner’s logo (another shape and
 a single grey): it is not published like that.
 
 The base image of the recipe cards, `tools/plugins/film/thumb-base.png`, is in
