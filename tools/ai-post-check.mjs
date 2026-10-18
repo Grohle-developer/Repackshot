@@ -11,10 +11,11 @@
 //   (b) with the synthetic service: the section is folded and off, the switch turns it on, the model line, the six
 //       controls with their sentence, the style list, the six locked protection chips without a switch, Another
 //       variation, the preview with its divider, the report line, the measured time and the note about Fast mode;
-//   (c) the preview is not recomputed while a slider is dragged: no "Updating" appears until the release, then once;
-//   (d) a drag is one undo step, the preview follows the undo, and the same settings give the same picture;
-//   (e) Another variation changes the picture and its undo brings the first one back;
-//   (f) the option "Use the full engine for the preview" draws the path tracer's picture;
+//   (c) X6: a dragged slider changes the stored example at once and never runs the pipeline ("Updating" never shows);
+//   (d) a drag is one undo step, the example follows the undo, and the same settings give the same picture;
+//   (e) Another variation changes the example and its undo brings the first one back;
+//   (f) X6: Preview my scene runs the pipeline on the job's scene drawn by the Full engine (it replaced the option
+//       "Use the full engine for the preview");
 //   (g) a job with AI saves the engine's PNG and the AI's, the results viewer opens Render against AI under the divider
 //       with the report line, and the queue and the history show both thumbnails;
 //   (h) the whole section and the viewer are achromatic in both themes (every computed colour has r = g = b, but the
@@ -150,8 +151,10 @@ const stateLog = (page) => page.evaluate(() => window.__stateLog);
 const afterPicture = (page) => page.evaluate(() => document.querySelector('.rw-ai-frame .split-b')?.toDataURL() ?? null);
 const beforePicture = (page) => page.evaluate(() => document.querySelector('.rw-ai-frame .split-a')?.toDataURL() ?? null);
 
+/** X6: the stored example is drawn (it follows the controls without a pipeline call). */
 async function waitReady(page, ms = 60000) {
-  await page.waitForFunction(() => /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state')?.textContent ?? ''), null, { timeout: ms });
+  await page.waitForFunction(() => (document.querySelector('.rw-ai-frame')?.dataset.example ?? '') !== '' && document.querySelector('.rw-ai-frame .split canvas'), null, { timeout: ms });
+  await page.waitForTimeout(300);
 }
 
 /** Colours of every element under a selector that are not grey: [selector, property, value]. */
@@ -318,7 +321,7 @@ try {
     const gridHiddenOff = !(await page.locator(`${section} .rw-ai-grid`).isVisible());
     await sw.click();
     await page.waitForSelector(`${section} .rw-ai-frame .split canvas`, { timeout: 60000 });
-    await waitReady(page);
+    await page.waitForTimeout(400);
     const aux = (await page.locator(`${section} .rw-ai-line`).textContent())?.trim().toLowerCase();
     check('b_section_default', foldedAtStart && offAtStart && gridHiddenOff && (await sw.getAttribute('aria-checked')) === 'true' && aux === 'synthetic test service · no model', { foldedAtStart, offAtStart, gridHiddenOff, aux });
 
@@ -335,19 +338,16 @@ try {
     const locks = await page.locator(`${section} .rw-ai-prot [data-protection] svg`).count();
     check('b_protections_locked', chips.map((c) => c.trim()).join('|') === 'Geometry|Materials|Resolution|Depth of field|Framing|Text and logos' && pressables === 0 && locks === 6, { chips, pressables, locks });
     const variation = await page.locator(`${section} button`, { hasText: 'Another variation' }).count();
-    const report = (await page.locator(`${section} .rw-ai-report`).textContent())?.trim();
+    const source = (await page.locator(`${section} .rw-ai-source`).textContent())?.trim();
+    const guard = await page.locator(`${section} .rw-ai-guard li`).allTextContents();
     const time = (await page.locator(`${section} .rw-ai-time`).textContent())?.trim();
-    const note = (await page.locator(`${section} .rw-ai-preview .note`, { hasText: 'starts from Fast mode' }).textContent())?.trim();
-    const fullOpt = await page.locator(`${section} .rw-ai-full`).textContent();
+    const run = (await page.locator(`${section} [data-ai-run]`).textContent())?.trim();
     const labels = await page.locator(`${section} .split-label`).allTextContents();
     check(
       'b_preview',
-      variation === 1 && /^Checked: geometry ✓ · materials ✓ \(ΔE max \d+\.\d\) · resolution ✓ · focus ✓$/.test(report ?? '') && /^≈ \d+(\.\d)? s per change on this computer$/.test(time ?? '') && /Fast mode/.test(note ?? '') && /full engine for the preview/.test(fullOpt ?? '') && labels.join('|') === 'Before|After',
-      { variation, report, time, note, fullOpt, labels },
+      variation === 1 && /^Example: reference scene, Full engine, test model/.test(source ?? '') && guard.length > 0 && /measured with the first preview/.test(time ?? '') && run === 'Preview my scene (Full engine)' && labels.join('|') === 'Before|After',
+      { variation, source, guard, time, run, labels },
     );
-    // The size of the preview is the job's shape at 512 px.
-    const sizeLine = (await page.locator(`${section} .rw-ai-state`).textContent())?.trim();
-    check('b_preview_size', sizeLine === '512 × 288 px', { sizeLine });
     // Screenshot (dark): the section as it opens, with the defaults.
     await shootSection(page, join(SHOTS, 'ai-section-dark.png'));
 
@@ -366,11 +366,12 @@ try {
     await page.waitForTimeout(700);
     const during = await stateLog(page);
     const valueWhileDragging = await range.inputValue();
+    const exampleWhileDragging = await page.evaluate(() => document.querySelector('.rw-ai-frame').dataset.example);
     await page.mouse.up();
-    await page.waitForFunction(() => window.__stateLog.some((t) => /Updating/.test(t)) && /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 60000 });
+    await page.waitForTimeout(700);
     const after = await stateLog(page);
     const updates = after.filter((t) => /Updating the preview/.test(t)).length;
-    check('c_not_during_drag', during.length === 0 && Number(valueWhileDragging) > 50 && updates === 1, { duringDrag: during, valueWhileDragging, updatesAfterRelease: updates });
+    check('c_not_during_drag', during.length === 0 && Number(valueWhileDragging) > 50 && /-l(75|100)-/.test(exampleWhileDragging ?? '') && updates === 0, { duringDrag: during, valueWhileDragging, exampleWhileDragging, updatesAfterRelease: updates });
 
     // (d) The drag is one undo step; the preview follows the undo; the same settings give the same picture.
     const draggedValue = await range.inputValue();
@@ -381,11 +382,10 @@ try {
     await watchState(page);
     await page.keyboard.press('Control+z');
     const valueAfterUndo = await range.inputValue();
-    await page.waitForFunction(() => window.__stateLog.some((t) => /Updating/.test(t)) && /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 60000 });
+    await page.waitForTimeout(600);
     const pictureUndone = await afterPicture(page);
     await page.keyboard.press('Control+Shift+z');
     await page.waitForFunction((v) => document.querySelector('[data-ai="light"] input[type=range]').value === v, draggedValue);
-    await page.waitForFunction(() => /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent));
     await page.waitForTimeout(600);
     const pictureRedone = await afterPicture(page);
     check('d_one_undo_step', Number(draggedValue) > 50 && valueAfterUndo === '50' && /AI post-processing: Light/.test(tipDragged ?? '') && pictureUndone !== pictureDragged && pictureRedone === pictureDragged, { draggedValue, valueAfterUndo, tipDragged, undoneDiffers: pictureUndone !== pictureDragged, redoneSame: pictureRedone === pictureDragged });
@@ -393,50 +393,50 @@ try {
     // (e) Another variation changes the picture, and its undo brings the first one back.
     const first = await afterPicture(page);
     await watchState(page);
+    // (The example has the other seeds at the stored defaults: Light back at 50 first.)
+    await page.locator(`${section} [data-ai="light"] .num`).dblclick();
+    await page.locator(`${section} [data-ai="light"] .num input`).fill('50');
+    await page.locator(`${section} [data-ai="light"] .num input`).press('Enter');
+    await page.waitForTimeout(600);
+    const first0 = await afterPicture(page);
     await page.locator(`${section} button`, { hasText: 'Another variation' }).click();
-    await page.waitForFunction(() => window.__stateLog.some((t) => /Updating/.test(t)) && /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 60000 });
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(600);
     const varied = await afterPicture(page);
     const variedTip = await undoTip();
     await watchState(page);
     await page.keyboard.press('Control+z');
-    await page.waitForFunction(() => window.__stateLog.some((t) => /Updating/.test(t)) && /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 60000 });
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(600);
     const back = await afterPicture(page);
-    check('e_another_variation', varied !== first && back === first && /Another variation/.test(variedTip ?? ''), { changed: varied !== first, undoBringsItBack: back === first, variedTip });
+    check('e_another_variation', first !== null && varied !== first0 && back === first0 && /Another variation/.test(variedTip ?? ''), { changed: varied !== first0, undoBringsItBack: back === first0, variedTip });
 
     // The style list and Style strength change the picture too (and a style at 0 strength does not).
     const baseline = await afterPicture(page);
     await page.locator(`${section} [data-ai="style"] select`).selectOption('WARM');
-    await page.waitForTimeout(1200);
-    await waitReady(page);
+    await page.waitForTimeout(800);
     const warm = await afterPicture(page);
     check('e_style_changes_picture', warm !== baseline, { changed: warm !== baseline });
     await page.locator(`${section} [data-ai="style"] select`).selectOption('NATURAL');
-    await page.waitForTimeout(1200);
-    await waitReady(page);
+    await page.waitForTimeout(800);
 
     const darkColours = await chromatic(page, '.rw');
     check('h_achromatic_dark', darkColours.length === 0, { found: darkColours.slice(0, 6) });
 
-    // (f) The full engine for the preview: the path tracer's picture, at the job's budget (a few samples here).
-    await page.locator(`${section} [data-ai="light"] input[type=range]`).focus();
+    // (f) X6: Preview my scene, drawn by the Full engine at the job's budget (a few samples here).
     await page.locator('.rw .num[aria-label="Samples"]').scrollIntoViewIfNeeded();
     await page.locator('.rw .num[aria-label="Samples"]').dblclick();
     await page.locator('.rw .num[aria-label="Samples"] input').fill('4');
     await page.locator('.rw .num[aria-label="Samples"] input').press('Enter');
     await scrollToAi(page);
-    const fastBefore = await beforePicture(page);
+    const exampleBefore = await beforePicture(page);
     await watchState(page);
-    await page.locator(`${section} .rw-ai-full .toggle`).click();
-    await page.waitForFunction(() => window.__stateLog.some((t) => /Updating|Drawing/.test(t)), null, { timeout: 60000 });
+    await page.locator(`${section} [data-ai-run]`).click();
+    await page.waitForFunction(() => window.__stateLog.some((t) => /Updating|Rendering your scene/.test(t)), null, { timeout: 60000 });
     await page.waitForFunction(() => /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 180000 });
     await page.waitForTimeout(500);
     const fullBefore = await beforePicture(page);
-    const noteHidden = !(await page.locator(`${section} .rw-ai-preview .note`, { hasText: 'starts from Fast mode' }).isVisible());
-    check('f_full_engine_preview', fullBefore !== null && fullBefore !== fastBefore && noteHidden, { differsFromFast: fullBefore !== fastBefore, noteHidden });
-    await page.locator(`${section} .rw-ai-full .toggle`).click();
-    await page.waitForFunction(() => /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 60000 });
+    const mineSource = (await page.locator(`${section} .rw-ai-source`).textContent())?.trim();
+    const sizeLine = (await page.locator(`${section} .rw-ai-state`).textContent())?.trim();
+    check('f_full_engine_preview', fullBefore !== null && fullBefore !== exampleBefore && /^Your scene · Full engine/.test(mineSource ?? '') && sizeLine === '512 × 288 px', { differsFromExample: fullBefore !== exampleBefore, mineSource, sizeLine });
 
     // (g) A job with AI: two files, the viewer with the divider and the report, both thumbnails in the queue.
     // A look that shows: warm, with more light and a stronger hand.
@@ -632,8 +632,15 @@ try {
       await page.locator(`${section} [data-ai="${key}"] .num input`).press('Enter');
     }
     await page.locator(`${section} [data-ai="style"] select`).selectOption('CINEMATIC');
-    await page.waitForTimeout(1500);
-    await waitReady(page);
+    await page.waitForTimeout(600);
+    // X6: the report comes with the preview of the person's own scene, drawn by the Full engine at the job's samples.
+    await page.locator('.rw .num[aria-label="Samples"]').scrollIntoViewIfNeeded();
+    await page.locator('.rw .num[aria-label="Samples"]').dblclick();
+    await page.locator('.rw .num[aria-label="Samples"] input').fill('8');
+    await page.locator('.rw .num[aria-label="Samples"] input').press('Enter');
+    await page.locator(`${section} [data-ai-run]`).scrollIntoViewIfNeeded();
+    await page.locator(`${section} [data-ai-run]`).click();
+    await page.waitForFunction(() => /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state')?.textContent ?? ''), null, { timeout: 180000 });
     const reportPreview = (await page.locator(`${section} .rw-ai-report`).textContent())?.trim();
     const notePreview = (await page.locator(`${section} .rw-ai-report-note`).textContent())?.trim();
     check('i_strong_settings_report', /^Checked: /.test(reportPreview ?? ''), { reportPreview, notePreview });
@@ -662,9 +669,9 @@ try {
     await page.waitForSelector(`${section} .rw-ai-frame .split canvas`, { timeout: 60000 });
     await waitReady(page);
     const text = (await page.locator(section).innerText()).replace(/\s+/g, ' ');
-    const spanish = ['Intervención', 'Luz', 'Rebotes', 'Desgaste y microdetalle', 'Estilo', 'Fuerza del estilo', 'Protegido', 'Geometría', 'Texto y logotipos', 'Otra variación', 'Vista previa', 'Comprobado: geometría ✓', 'Usar el motor completo para la vista previa'];
+    const spanish = ['Intervención', 'Luz', 'Rebotes', 'Desgaste y microdetalle', 'Estilo', 'Fuerza del estilo', 'Protegido', 'Geometría', 'Texto y logotipos', 'Otra variación', 'Vista previa', 'Ejemplo: escena de referencia', 'Vista previa de mi escena (motor Completo)'];
     const missing = spanish.filter((w) => !text.includes(w));
-    const english = ['Intervention', 'Another variation', 'Protected', 'Checked:', 'Preview', 'per change'].filter((w) => text.includes(w));
+    const english = ['Intervention', 'Another variation', 'Protected', 'Example:', 'Preview my', 'per change'].filter((w) => text.includes(w));
     check('h_spanish', missing.length === 0 && english.length === 0, { missing, english });
     // A job with AI in Spanish, for the viewer's header (its words are longer), with three variants (X4b: the strip).
     await page.locator(`${section} [data-ai="variants"] .num`).scrollIntoViewIfNeeded();

@@ -60,6 +60,10 @@ pub(crate) fn log_ratio(a: f32, b: f32) -> f32 {
 /// the style) and up to `lum_allow` of scene log luminance (light and wear), both through the
 /// render's own tone curve. What remains is a change of the material's colour itself; a pure
 /// change of light, which the tone curve may desaturate in its shoulder, leaves nothing.
+///
+/// `known` is the scene log gain of the style's own grade at that pixel (X6, [`crate::style`]): a
+/// change the controls ask for and the guard makes itself, so it is part of the reference too.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn colour_delta(
     display: &Display,
     orig: [f32; 3],
@@ -68,22 +72,33 @@ pub(crate) fn colour_delta(
     out_disp: [f32; 3],
     grade: [f32; 3],
     lum_allow: f32,
+    known: [f32; 3],
 ) -> f32 {
     if orig == out {
         return 0.0;
     }
     let mut r = [0.0f32; 3];
     for c in 0..3 {
-        r[c] = log_ratio(orig[c], out[c]) - grade[c];
+        r[c] = log_ratio(orig[c], out[c]) - grade[c] - known[c];
     }
     let y = (LUMA[0] * r[0] + LUMA[1] * r[1] + LUMA[2] * r[2]).clamp(-lum_allow, lum_allow);
-    let reference = if grade == [0.0; 3] && y == 0.0 {
+    let reference = if grade == [0.0; 3] && y == 0.0 && known == [0.0; 3] {
         orig_disp
     } else {
-        let g = [0, 1, 2].map(|c| fmath::exp(grade[c] + y));
+        let g = [0, 1, 2].map(|c| fmath::exp(known[c] + grade[c] + y));
         display.apply(orig[0] * g[0], orig[1] * g[1], orig[2] * g[2])
     };
     delta_e_2000(lab(reference), lab(out_disp))
+}
+
+/// The style's own grade at pixel `p` of a plane of 3 floats a pixel (empty: none).
+#[inline]
+pub(crate) fn known_at(known: &[f32], p: usize) -> [f32; 3] {
+    if known.is_empty() {
+        [0.0; 3]
+    } else {
+        [known[p * 3], known[p * 3 + 1], known[p * 3 + 2]]
+    }
 }
 
 /// What the checks measured on one result.
@@ -102,12 +117,14 @@ pub(crate) struct Measures {
 }
 
 /// The change common to the open part of the image, per channel: the median of the scene log
-/// ratio over the pixels `take` selects, within what the style may change.
+/// ratio over the pixels `take` selects, within what the style may change. The style's own grade
+/// (`known`, X6) is taken out first: it is measured as what it is, pixel by pixel.
 pub(crate) fn grade_of(
     prep: &Prepared,
     take: &dyn Fn(usize) -> bool,
     out: &dyn Fn(usize) -> [f32; 3],
     caps: &Caps,
+    known: &[f32],
 ) -> [f32; 3] {
     let mut grade = [0.0f32; 3];
     if caps.style <= 0.0 {
@@ -116,8 +133,9 @@ pub(crate) fn grade_of(
     let mut hists = [0, 1, 2].map(|_| Histogram::new(-4.0, 4.0, 8192));
     for p in (0..prep.w * prep.h).filter(|&p| take(p)) {
         let o = out(p);
+        let k = known_at(known, p);
         for c in 0..3 {
-            hists[c].add(log_ratio(prep.orig[p * 4 + c], o[c]));
+            hists[c].add(log_ratio(prep.orig[p * 4 + c], o[c]) - k[c]);
         }
     }
     for c in 0..3 {
@@ -141,6 +159,7 @@ pub(crate) fn region_deltas(
     out: &dyn Fn(usize) -> ([f32; 3], [f32; 3]),
     take: &dyn Fn(usize) -> bool,
     allow: &[RegionAllowance],
+    known: &[f32],
 ) -> Vec<(f32, f32)> {
     let mut sums = vec![Sum::default(); allow.len()];
     let mut hists: Vec<Option<Histogram>> = allow
@@ -162,7 +181,16 @@ pub(crate) fn region_deltas(
         let (scene, shown) = out(p);
         let orig = [prep.orig[p * 4], prep.orig[p * 4 + 1], prep.orig[p * 4 + 2]];
         let orig_disp = [prep.disp[p * 3], prep.disp[p * 3 + 1], prep.disp[p * 3 + 2]];
-        let d = colour_delta(&prep.display, orig, orig_disp, scene, shown, a.grade, a.lum);
+        let d = colour_delta(
+            &prep.display,
+            orig,
+            orig_disp,
+            scene,
+            shown,
+            a.grade,
+            a.lum,
+            known_at(known, p),
+        );
         sums[r as usize].add(d);
         hist.add(d);
     }
@@ -388,8 +416,15 @@ pub(crate) fn wear_open(prep: &Prepared, caps: &Caps) -> Vec<bool> {
         .collect()
 }
 
-/// Every check on a result (`out` RGBA scene-linear, `out_disp` its display image) of one attempt.
-pub(crate) fn measure(prep: &Prepared, out: &[f32], out_disp: &[f32], caps: &Caps) -> Measures {
+/// Every check on a result (`out` RGBA scene-linear, `out_disp` its display image) of one attempt;
+/// `known` is the style's own grade the guard applied (X6; 3 floats a pixel, or empty).
+pub(crate) fn measure(
+    prep: &Prepared,
+    out: &[f32],
+    out_disp: &[f32],
+    caps: &Caps,
+    known: &[f32],
+) -> Measures {
     let n = prep.w * prep.h;
     let open = prep.open_mask();
     let mut outside = 0u32;
@@ -411,9 +446,21 @@ pub(crate) fn measure(prep: &Prepared, out: &[f32], out_disp: &[f32], caps: &Cap
         .map(|(&e, w)| e || w)
         .collect();
     let detail = detail_ssim(prep, &ho, &hc, &skip);
-    let focus = focus_deviation(prep, &ho, &hc, &near);
+    // X6: the pixels where Wear may add detail (in focus enough to take some) are not the focus
+    // check's either: a block whose mean is out of focus may hold some of them, and the detail
+    // Wear rightly added there read as "sharpened what is out of focus" (the block straddles the
+    // depth of field). Out-of-focus pixels take no wear, so they still say whether it sharpened.
+    let wear = wear_open(prep, caps);
+    let t = &prep.job.tolerances;
+    let focus_skip: Vec<bool> = near
+        .iter()
+        .zip(&wear)
+        .enumerate()
+        .map(|(p, (&e, &w))| e || (w && prep.coc(p) < t.out_of_focus_coc))
+        .collect();
+    let focus = focus_deviation(prep, &ho, &hc, &focus_skip);
     let pixel = |p: usize| [out[p * 4], out[p * 4 + 1], out[p * 4 + 2]];
-    let grade = grade_of(prep, &|p| open[p], &pixel, caps);
+    let grade = grade_of(prep, &|p| open[p], &pixel, caps, known);
     let cand = |p: usize| {
         (
             pixel(p),
@@ -431,7 +478,7 @@ pub(crate) fn measure(prep: &Prepared, out: &[f32], out_disp: &[f32], caps: &Cap
             active: true,
         })
         .collect();
-    let colour = region_deltas(prep, &cand, &|_| true, &allow);
+    let colour = region_deltas(prep, &cand, &|_| true, &allow, known);
     Measures {
         outside,
         edges,
@@ -452,7 +499,16 @@ mod tests {
         let show = |c: [f32; 3]| display.apply(c[0], c[1], c[2]);
         let orig = [0.9f32, 0.45, 0.2];
         let d = |out: [f32; 3], grade: [f32; 3], allow: f32| {
-            colour_delta(&display, orig, show(orig), out, show(out), grade, allow)
+            colour_delta(
+                &display,
+                orig,
+                show(orig),
+                out,
+                show(out),
+                grade,
+                allow,
+                [0.0; 3],
+            )
         };
         assert_eq!(d(orig, [0.0; 3], 0.0), 0.0);
         // A pure change of light of 30 %, desaturated by the curve's shoulder: nothing left within
@@ -468,6 +524,21 @@ mod tests {
         assert!(d(warm, [0.0; 3], 0.2) > 1.0);
         // A hue change stays whatever the allowances.
         assert!(d([0.2, 0.45, 0.9], [0.0; 3], 1.0) > 10.0);
+        // X6: the style's own grade, known pixel by pixel, is part of the reference.
+        let known = [0.1f32, 0.02, -0.12];
+        let styled = [0, 1, 2].map(|c| orig[c] * fmath::exp(known[c]));
+        let with = colour_delta(
+            &display,
+            orig,
+            show(orig),
+            styled,
+            show(styled),
+            [0.0; 3],
+            0.0,
+            known,
+        );
+        assert!(with < 0.05, "{with}");
+        assert!(d(styled, [0.0; 3], 0.0) > 1.0);
         assert_eq!(log_ratio(0.0, 0.0), 0.0);
         assert!((log_ratio(0.5, 1.0) - fmath::LN_2).abs() < 1e-6);
     }

@@ -7,6 +7,11 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ### AI post-processing
 
+- **Every control does what its sentence says, step by step**: Light, Bounces, Wear and micro-detail and Style strength are now a gain on what the model did in their band (none at 0, as the model made it at 50, twice at 100), where before they could only let through half of it at their defaults; the default Intervention asks the model for an img2img strength of 0.3 (0.2 before; 0.6 at 100) (X6).
+- **The style is a real colour grade**: each of the six styles, *Natural* included, is a grade the guard applies itself, the same with any model; before, a style was only words for the model and the six gave the same pixels (X6).
+- **The preview is a stored example**: the reference scene rendered by the Full engine and passed through the guard with the test model at every step of every control, which changes as a slider moves without calling any model, says what it is and at which values it was made; *Preview my scene (Full engine)* runs the AI on the job's own scene, always drawn by the Full engine (X6).
+- **What the guard did, in plain words**: where its caps held Light, Bounces, Wear or the style's overall change back, how much of a material's colour change it kept, and which checks made it lower the strength; and under each control, what it acts on (X6).
+- Fixed: an AI model that changed nothing brightened the image by a hair (the guard's median of the overall change was half a histogram bin off); the focus check rejected the Wear a material in focus rightly took next to an out-of-focus floor (X6).
 - **The model through an API**, if you choose it: *Settings ▸ AI post-processing ▸ Model by API ▸ Run the model ▸ Through an API*, per installation. The render window's AI line says which is active (*Through an API · … · host*) (X7).
 - **A generic HTTP image-to-image endpoint**: URL, method, the key's header, more headers, a JSON or multipart template with placeholders for the image, the prompt, the negative prompt, the strength and the seed, and where the image is in the answer; the problems are listed until it can be used (X7).
 - **Two presets** written from the services' public API documentation and not yet tried against the live services: Stability AI Stable Diffusion 3.5 image-to-image and OpenAI image edits (X7).
@@ -18,7 +23,13 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ### Engine and launcher
 
+- **`rt-post`**: the band gains (`BAND_GAIN_AT_100`), the styles' grades (`style.rs`), `MAX_STRENGTH` 0.6, the job's style (`RPJ2`; `RPJ1` still reads, as *Natural*), the report's `capped` and each material's `kept`, and a deterministic **test model** (`test_model.rs`) that `post.wasm` exports (`post_test_model`) and `rt-fake-sd` serves as its `model` image. `tests/fixtures/ai-guard.json` moves on purpose with the guard's new law (X6).
+- **`rt --ai-inputs <prefix>`** writes the linear image (`RPL1`) and the passes (`RPP1`) of a render, what the AI post-processing starts from (X6).
 - **`ModelBackend`** in `rt-app`: the desktop pipeline's model call goes through one interface, the local runtime as before and a remote API through the system's `curl` (key through standard input, no redirects); `/api/ai/apikeys` and `aiRemote: 1` in `/api/info` (X7).
+
+### Tools
+
+- `tools/ai-preview-sheet.mjs` makes the stored example (`public/ai-preview/`, 161 WebP images, 0.74 MB) and a contact sheet; `tools/ai-x6-check.mjs` checks the section in the browser and makes its captures; `tools/ai-post-check.mjs` follows the new preview (X6).
 
 ### Scene and ambient
 

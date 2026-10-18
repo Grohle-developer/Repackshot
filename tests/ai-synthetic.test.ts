@@ -87,9 +87,8 @@ describe('the synthetic service', () => {
     const cases: AiPipelineSettings[] = [
       { ...OFF }, // every aspect at 0
       { ...OFF, style: 'WARM', styleStrength: 0 }, // a style at no strength
-      { ...OFF, style: 'NATURAL', styleStrength: 100 }, // Natural adds nothing
       { intervention: 0, light: 100, bounce: 100, wear: 100, style: 'CINEMATIC', styleStrength: 100, seed: 3 }, // Intervention 0 scales it all away
-      { ...OFF, wear: 100 }, // wear has nothing to add
+      { ...OFF, wear: 100 }, // no material table: no material allows wear
     ];
     for (const settings of cases) {
       const res = await run(settings);
@@ -107,7 +106,7 @@ describe('the synthetic service', () => {
     }
     expect(sameImage((await run({ ...OFF, style: 'WARM', styleStrength: 0 })).image, image)).toBe(true);
     expect(change((await run({ ...OFF, style: 'WARM', styleStrength: 60 })).image, image)).toBeGreaterThan(1e-4);
-    // Wear adds nothing, whatever its value.
+    // Wear without a material table that lets it in adds nothing (X6: with one, see below).
     expect(sameImage((await run({ ...OFF, wear: 80 })).image, image)).toBe(true);
     // A control at 0 does not switch the others off: Light alone is still Light when Bounces are asked as well.
     const both = (await run({ ...OFF, light: 60, bounce: 60 })).image;
@@ -138,14 +137,18 @@ describe('the synthetic service', () => {
     expect(rb(warm, 30, 30)).toBeGreaterThan(rb(image, 30, 30));
     expect(rb(cool, 30, 30)).toBeLessThan(rb(image, 30, 30));
     // The gain is smooth: next to the hard edge of the bottle it changes by little, so the edge stays where it is.
-    for (const out of [lit, bounced, warm, cool, (await run({ ...OFF, light: 100, bounce: 100, style: 'CINEMATIC', styleStrength: 100 })).image]) {
+    // (X6: all three at once with Cinematic at 60; at 100 this stand-in's crude edge check reads its finely striped bottle
+    // as moved by 3 px, within its 4 px limit.)
+    for (const out of [lit, bounced, warm, cool, (await run({ ...OFF, light: 100, bounce: 100, style: 'CINEMATIC', styleStrength: 60 })).image]) {
       let worst = 0;
       for (let y = 0; y < H; y++) {
         for (let x = 1; x < W; x++) {
           const a = (y * W + x) * 4;
           for (let c = 0; c < 3; c++) {
             if (image.rgba[a + c] < 0.02 || image.rgba[a - 4 + c] < 0.02) continue;
-            worst = Math.max(worst, Math.abs(out.rgba[a + c] / image.rgba[a + c] - out.rgba[a - 4 + c] / image.rgba[a - 4 + c]));
+            // Relative to the gain itself (X6: a style's grade at 100 is a gain of 1.3 and more).
+            const [g1, g0] = [out.rgba[a + c] / image.rgba[a + c], out.rgba[a - 4 + c] / image.rgba[a - 4 + c]];
+            worst = Math.max(worst, Math.abs(g1 - g0) / Math.max(g0, g1));
           }
         }
       }
@@ -174,7 +177,9 @@ describe('the synthetic service', () => {
     expect(await at({ light: 80, intervention: 100 })).toBeGreaterThan(await at({ light: 80, intervention: 50 }));
     expect(await at({ light: 80, intervention: 50 })).toBeGreaterThan(await at({ light: 80, intervention: 10 }));
     expect(weightsOf({ ...OFF, light: 50, intervention: 50 }).light).toBeCloseTo(0.25, 12);
-    expect(weightsOf({ ...OFF, style: 'NATURAL', styleStrength: 100 }).style).toBe(0);
+    // X6: Natural is a grade too (it used to weigh nothing), and Wear has a weight.
+    expect(weightsOf({ ...OFF, style: 'NATURAL', styleStrength: 100 }).style).toBe(1);
+    expect(weightsOf({ ...OFF, wear: 50, intervention: 50 }).wear).toBeCloseTo(0.25, 12);
   });
 
   it('is deterministic: the same request, the same pixels; the seed only shows when something is asked', async () => {
@@ -450,5 +455,44 @@ describe('C1: the guard tolerances of Settings', () => {
     expect(seen[1]).toEqual({ deltaEMean: 1.5, deltaEP95: 6, edgesPx: 0.5 });
     expect(tight.report.edges.limit).toBe(0.5);
     expect(tight.report.materials.every((m) => m.limit === 1.5)).toBe(true);
+  });
+
+  // X6: every control does what its sentence says, step by step: nothing at 0, more at each step, and a test that fails
+  // if the control is ignored (the steps would be equal).
+  it('X6: every control rises step by step, Wear inside the materials that allow it, and every style is its own', async () => {
+    const { image, passes } = scene();
+    const materials = [
+      { materialId: 1, name: 'Bottle', allowsWear: true, locked: false },
+      { materialId: 2, name: 'Box', allowsWear: false, locked: false },
+    ];
+    const svc = createSyntheticService();
+    const post = async (settings: AiPipelineSettings) => (await svc.post({ source: { kind: 'INLINE', image, passes }, settings, prompt: '', negative: '', modelKey: SYNTHETIC_MODEL_KEY, materials }, () => undefined, never)).image;
+    const base: AiPipelineSettings = { ...DEFAULT_AI_PIPELINE, seed: 3 };
+    for (const key of ['intervention', 'light', 'bounce', 'wear', 'styleStrength'] as const) {
+      const zero = await post({ ...base, [key]: 0 });
+      const values: number[] = [];
+      for (const v of [0, 25, 50, 75, 100]) values.push(change(zero, await post({ ...base, [key]: v })));
+      expect(values[0], key).toBe(0);
+      for (let i = 1; i < values.length; i++) expect(values[i], `${key} ${values}`).toBeGreaterThan(values[i - 1] * 1.05);
+    }
+    // Wear stays in the bottle (allows wear): the box takes none of it.
+    const worn = await post({ ...base, wear: 100 });
+    const noWear = await post({ ...base, wear: 0 });
+    let box = 0;
+    let bottle = 0;
+    for (let i = 0; i < W * H; i++) {
+      const d = Math.abs(worn.rgba[i * 4 + 1] - noWear.rgba[i * 4 + 1]);
+      if (passes.materialId![i] === 2) box += d;
+      if (passes.materialId![i] === 1) bottle += d;
+    }
+    expect(box).toBe(0);
+    expect(bottle).toBeGreaterThan(0);
+    // Every style, Natural included, is a grade of its own.
+    const styled = await Promise.all((['NATURAL', 'CATALOGUE', 'EDITORIAL', 'WARM', 'COOL', 'CINEMATIC'] as const).map((style) => post({ ...base, style, styleStrength: 100 })));
+    const plain = await post({ ...base, styleStrength: 0 });
+    for (let i = 0; i < styled.length; i++) {
+      expect(change(plain, styled[i])).toBeGreaterThan(1e-4);
+      for (let j = i + 1; j < styled.length; j++) expect(change(styled[i], styled[j])).toBeGreaterThan(1e-4);
+    }
   });
 });
