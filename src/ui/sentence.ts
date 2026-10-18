@@ -6,6 +6,7 @@ import type { Lang } from '../data/types';
 import { amountUnit, clipEnd, clipRepeat, type ClipTarget, type MotionClip } from '../core/animation';
 import { resolveExplode } from '../core/explode';
 import type { ProjectState } from '../core/store';
+import type { PartsShown } from '../core/wet-parts';
 import { materialName } from './names';
 import { STRINGS, formatNumber, tIn, type StringKey } from './strings';
 
@@ -223,4 +224,29 @@ export function clipAmountText(clip: MotionClip, lang: Lang): string {
 export function clipHeader(state: ProjectState, clip: MotionClip, lang: Lang): string {
   const range = `${formatNumber(clip.start, lang)}–${formatNumber(clipEnd(clip), lang)} s`;
   return [clipTargetName(state, clip.target, lang), clipKindName(clip, lang), clipAmountText(clip, lang), range].filter((x) => x !== '').join(' · ');
+}
+
+/** S3d: the key of what a frame holds on the parts, by what it is (R rain, D dust, S snow). */
+const PARTS_ON: Readonly<Record<string, StringKey>> = {
+  R: 'status.partsOn.R',
+  D: 'status.partsOn.D',
+  S: 'status.partsOn.S',
+  RD: 'status.partsOn.RD',
+  RS: 'status.partsOn.RS',
+  DS: 'status.partsOn.DS',
+  RDS: 'status.partsOn.RDS',
+};
+
+/**
+ * S3d: the meter's words for the recorded rain, dust and snow on the parts at the frame shown: what is there and on how
+ * many parts ("Rain and dust on 4 parts"), and with rain the drops on them and in the air ("1,443 drops, 12 in the air");
+ * before anything lands, that nothing is there yet.
+ */
+export function partsMeterText(shown: PartsShown, lang: Lang): string {
+  const code = `${shown.rain ? 'R' : ''}${shown.dust ? 'D' : ''}${shown.snow ? 'S' : ''}`;
+  const what = PARTS_ON[code];
+  if (!what) return tIn(lang, 'status.partsOn.none');
+  const on = tIn(lang, what, { parts: formatNumber(shown.parts, lang, 0) });
+  if (!shown.rain) return on;
+  return `${on}: ${tIn(lang, 'status.partsDrops', { drops: formatNumber(shown.drops, lang, 0), falling: formatNumber(shown.falling, lang, 0) })}`;
 }

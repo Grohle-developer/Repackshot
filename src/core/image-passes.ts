@@ -4,7 +4,7 @@
 // them (render/tonemap.ts) as they show or save an image.
 //
 //   exposure  manual: `exposureEv` stops. Automatic (K3, INTERIORS.md §3.4): metered from the image itself, plus
-//             `exposureEv` as the compensation (one dial, *Brillo (EV)*). The meter reads the linear sums of the
+//             `exposureEv` as the compensation (one dial, *Brightness (EV)*). The meter reads the linear sums of the
 //             accumulation, so the same image gives the same exposure on every machine: the luminance of each pixel,
 //             its log2 by the engine's own f32 function (core/f32math.ts), sorted, the darkest and brightest shares
 //             left out (black corners, the windows and the lamps), the mean of the rest put at middle grey, clamped

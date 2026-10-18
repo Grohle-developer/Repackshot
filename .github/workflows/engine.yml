@@ -10,7 +10,7 @@
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E5b-1
 # caustics, the O1 lens, the S4a ambient particles (and S3's drops, mixes of shapes and front glass, S3b's pane wet
-# by the simulated rain, and S3c's parts under it, their wet film, dust, snow and drops), the E11 edges, the O3a lens filters, the E9
+# by the simulated rain, and S3c's parts under it, their wet film, dust, snow and drops, and S3d's drops in the air), the E11 edges, the O3a lens filters, the E9
 # scattering media and dispersion, the E6 bevel, the E6 wood and cloth patterns (and M3c's nodes of them), the M2b image
 # textures and labels, the M3b material programs, the E10 adaptive sampling, the Q1 section view (the
 # E5 scene cut in two, its cap and the plane's clipped rays) and the L5 IES lights; with every
@@ -206,6 +206,16 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3c-wet.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3c-wet.rsb" --expect "$expected" --passes
+          # S3d: the same with the drops in the air (WETF, bit 9), alone and with the six passes against their pins (a
+          # drop on a part and a drop in the air name their part in the part and material passes).
+          cargo run --release -p rt-cli -- --write-s3d-flight-example "$RUNNER_TEMP/s3d-flight.rsb"
+          expected=$(sed -n 's/.*PINNED_S3D_FLIGHT_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-phys/tests/wet_parts.rs | tr -d _)
+          passes=$(for k in ALBEDO NORMAL DEPTH PART_ID MATERIAL_ID COC; do
+            sed -n "s/.*PINNED_S3D_PASS_${k}: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-phys/tests/wet_parts.rs | tr -d _
+          done | paste -sd,)
+          test -n "$expected" && test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3d-flight.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3d-flight.rsb" --expect "$expected" --expect-passes "$passes"
           # E11: the example with the fine filter and twice the samples on its edges (the module finds
           # each tile's edges from its centre rays).
           cargo run --release -p rt-cli -- --write-e11-example "$RUNNER_TEMP/e11.rsb"
@@ -345,7 +355,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
@@ -357,7 +367,8 @@ jobs:
           # native pins in WebAssembly too.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet
-          # S3c: the rain, dust and snow on the parts, and the image of the parts they leave, too.
+          # S3c: the rain, dust and snow on the parts, and the image of the parts they leave, too. S3d: and the drops in
+          # the air, their image and the passes that name them by their part.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts
 

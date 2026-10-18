@@ -52,7 +52,7 @@ export interface PhysicsUi {
   /** S3b: the front glass of the run in progress or the last one, as its last frame left it (absent: none). */
   glass?: { drops: number; motes: number } | null;
   /** S3c: the parts of the run in progress or the last one: the drops on them at the last frame, the drips so far. */
-  parts?: { drops: number; drips: number } | null;
+  parts?: { drops: number; drips: number; falling?: number } | null;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
@@ -246,6 +246,11 @@ export interface EngineInfo {
    * render draws them dry, and the ambient section says so. Absent: not known.
    */
   wetParts?: boolean;
+  /**
+   * S3d: the engine draws the drops in the air (bit 9, render/engine.ts `readsWetFlight`): without it the render draws
+   * the drips and splashes only once they land, and the ambient section says so. Absent: not known.
+   */
+  wetFlight?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

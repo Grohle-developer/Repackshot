@@ -1,4 +1,4 @@
-// Rain, dust and snow on the parts (phase S3c, SPEC §3.1 "Físicas", UI.md §2.5): what each ambient effect leaves on
+// Rain, dust and snow on the parts (phase S3c, SPEC §3.1 "Physics", UI.md §2.5): what each ambient effect leaves on
 // the parts when it falls on them (its `wetParts` switch, Scene ▸ Ambient), and the knobs of the simulation the page
 // does not show (engine/crates/rt-phys `wet_parts`: the samples of the surfaces, how long a run goes on). Every value
 // is this phase's proposal for the lead's verdict (rule 11, ◆ in the ROADMAP's S3c).

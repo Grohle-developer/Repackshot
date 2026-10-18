@@ -22,7 +22,7 @@
 //! with a dot, without `..`, and never a Windows device name (`con`, `nul`, `com1`...). Every path
 //! is the data folder joined with fixed folder names and one such name, and every folder on the
 //! way is checked to be a real folder, not a link, so nothing planted inside leads out
-//! (**confinement**). The API contract is in this crate's `README.md` (§ *Estado de la página*).
+//! (**confinement**). The API contract is in this crate's `README.md` (§ *Page state*).
 
 use crate::http::{Request, Response};
 use crate::json::{self, Value};

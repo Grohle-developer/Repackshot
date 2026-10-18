@@ -62,7 +62,7 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       time.textContent = reported ? t('phys.time', { t: formatNumber(p.time, getLang(), 2) }) : '';
       awake.textContent = reported && p.bodies > 0 ? t('phys.awake', { n: p.awake, total: p.bodies }) : '';
       glass.textContent = reported && p.glass ? t('phys.glass', { drops: formatNumber(p.glass.drops, getLang(), 0), motes: formatNumber(p.glass.motes, getLang(), 0) }) : '';
-      parts.textContent = reported && p.parts ? t('phys.parts', { drops: formatNumber(p.parts.drops, getLang(), 0), drips: formatNumber(p.parts.drips, getLang(), 0) }) : '';
+      parts.textContent = reported && p.parts ? t('phys.parts', { drops: formatNumber(p.parts.drops, getLang(), 0), drips: formatNumber(p.parts.drips, getLang(), 0), falling: formatNumber(p.parts.falling ?? 0, getLang(), 0) }) : '';
       state.textContent = stateText(p);
       note.textContent = running ? t('phys.fastNote') : t('phys.note');
     },

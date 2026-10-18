@@ -82,7 +82,7 @@ function paneSvg(file) {
 
 const caption = (s) =>
   s.parts
-    ? `${esc(s.label)} · ${s.parts.drops.toLocaleString('en-US')} drops on the parts · ${s.parts.drips.toLocaleString('en-US')} drips so far · samples wet ${pct(s.parts.wet)}, dusty ${pct(s.parts.dust)}, under snow ${pct(s.parts.snow)} · ${s.renderSeconds} s`
+    ? `${esc(s.label)} · ${s.parts.drops.toLocaleString('en-US')} drops on the parts · ${(s.parts.falling ?? 0).toLocaleString('en-US')} in the air · ${s.parts.drips.toLocaleString('en-US')} drips so far · samples wet ${pct(s.parts.wet)}, dusty ${pct(s.parts.dust)}, under snow ${pct(s.parts.snow)} · ${s.renderSeconds} s`
     : `${esc(s.label)} · ${s.drops.toLocaleString('en-US')} drops covering ${pct(s.dropCover)} · ${s.motes.toLocaleString('en-US')} motes covering ${pct(s.dustCover)} · ${s.renderSeconds} s`;
 const cell = (s) =>
   `<figure><div class="pair"><img src="${rel(s.png)}" alt="${esc(s.label)}" width="${W}" height="${H}">${s.row === 'clean' || s.parts ? '' : paneSvg(s.file)}</div><figcaption>${caption(s)}</figcaption></figure>`;
@@ -107,8 +107,8 @@ ${row('rain', 'Lluvia empujada hacia la lente por un viento de 6 m/s (la cámara
 ${row('dust', 'Motas de polvo, la lente mirando 60° hacia arriba (el cristal, 30° sobre la horizontal): 0, 30 y 120 s')}
 ${row('cloud', 'La densidad de una polvareda sin viento (el suyo sopla lejos de esta lente), la misma lente: 0, 30 y 120 s')}
 ${row('clean', 'Las mismas fotos sin cristal')}
-<h2>Sobre las piezas (S3c)</h2>
-<p>La botella de ejemplo sobre el set del tipo <em>Perfume</em>, encuadrada como la fila de la lluvia (28 mm, f/8), con el efecto <em>Sobre las piezas</em> y sus partículas ocultas a la cámara (para que se lean las piezas): cada foto es el render de <code>rt</code> de la escena en ese instante con las secciones <code>WETP</code> del fotograma grabado (la película de agua, el polvo, la nieve y las gotas como casquetes). Las piezas del set se mojan como película. Valores ◆ por decidir: ROADMAP, S3c.</p>
+<h2>Sobre las piezas (S3c; S3d: las gotas en el aire)</h2>
+<p>La botella de ejemplo sobre el set del tipo <em>Perfume</em>, encuadrada como la fila de la lluvia (28 mm, f/8), con el efecto <em>Sobre las piezas</em> y sus partículas ocultas a la cámara (para que se lean las piezas): cada foto es el render de <code>rt</code> de la escena en ese instante con las secciones <code>WETP</code> del fotograma grabado (la película de agua, el polvo, la nieve y las gotas como casquetes) y, desde S3d, su <code>WETF</code> (las gotas en el aire: goteos y salpicaduras que caen, como esferas de agua). Las piezas del set se mojan como película. Valores ◆ por decidir: ROADMAP, S3c.</p>
 ${row('bottle', 'La botella bajo la lluvia sin viento: 0, 2, 5 y 15 s (gotas, rastros, goteo)')}
 ${row('set', 'Polvo sobre la botella y el set (la densidad de una polvareda sin viento): 0, 30 y 120 s')}
 ${row('snow', 'Nieve sobre la botella y el set: 0, 10 y 30 s')}

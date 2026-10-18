@@ -76,7 +76,7 @@ import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
 import { wetBytes } from './core/wet';
 import { engineGlassPane, hasGlassExports } from './render/glass-pane';
-import { readsGlassLayout, readsWetParts } from './render/engine';
+import { readsGlassLayout, readsWetFlight, readsWetParts } from './render/engine';
 import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16 as exactWords16Of, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba as straightLinearRgbaOf, straightWords16 } from './render/tiles';
@@ -483,6 +483,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
       denoise: true,
       glassLayout: readsGlassLayout(i.features),
       wetParts: readsWetParts(i.features),
+      wetFlight: readsWetFlight(i.features),
       native: { threads: i.threads, isa: i.isa, simd: i.simd, os: i.os, arch: i.arch, engineVersion: i.engineVersion },
     });
     return;
@@ -504,7 +505,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
     }
     const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
     poolCfg = { backend: 'wasm', threads: cfg.threads, simd: cfg.simd };
-    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features), wetParts: readsWetParts(t.features) });
+    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features), wetParts: readsWetParts(t.features), wetFlight: readsWetFlight(t.features) });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`path tracer: ${reason}`);
@@ -1046,7 +1047,7 @@ const services: AppServices = {
   captureViewport: () => (full && tracer ? tracer.capture() : preview ? preview.capture() : Promise.resolve(null)),
   exportScene(state) {
     // M2b: with the textures `rt` reads (the images decoded since the materials took them); M3b: and the programs; L5: and the IES lights.
-    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true, programs: true, ies: true, drops: true, glassLayout: true, wetParts: true });
+    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true, programs: true, ies: true, drops: true, glassLayout: true, wetParts: true, wetFlight: true });
     return new Blob([writeRsb(scene) as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
   },
   async importFile(file, options) {

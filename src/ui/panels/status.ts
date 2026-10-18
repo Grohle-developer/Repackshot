@@ -20,6 +20,7 @@ import { cameraName, dyn } from '../names';
 import { Scope, shallowEq, type Ctx } from '../reactive';
 import { formatClock, formatNumber, getLang, isaLabel, lbl, t, type StringKey } from '../strings';
 import { formatDuration } from './render-window';
+import { partsMeterText } from '../sentence';
 import { dismissRuntimeNote, fixRuntime } from '../ai-runtime-state';
 import { installActive } from '../../core/updates';
 import { cancelInstall, dismissUpdateNotice, downloadUpdate, installFaultText, installRequestFor, installText, installUpdate, openReleaseNotes, restartNow, retryInstall } from '../updates';
@@ -341,9 +342,9 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       // S3b: and so is its front glass, drawn from the engine's drops and motes (the numbers are the engine's).
       const g = port.kind !== 'pathtracer' ? st.glass : undefined;
       const glassApprox = !g ? '' : ` · ${g.noEngine ? t('status.glassNoEngine') : t('status.glassApprox', { drops: formatNumber(g.drops, getLang(), 0), motes: formatNumber(g.motes, getLang(), 0) })}`;
-      // S3c: and the recorded rain, dust and snow on the parts (the simulation's numbers).
+      // S3c: and the recorded rain, dust and snow on the parts (the simulation's numbers). S3d: what is there of it.
       const wp = port.kind !== 'pathtracer' ? st.parts : undefined;
-      const partsApprox = wp ? ` · ${t('status.partsWeather', { drops: formatNumber(wp.drops, getLang(), 0), parts: formatNumber(wp.parts, getLang(), 0) })}` : '';
+      const partsApprox = wp ? ` · ${partsMeterText(wp, getLang())}` : '';
       const approx = filtersApprox + lensApprox + panoApprox + glassApprox + partsApprox;
       engine.textContent =
         port.kind !== 'pathtracer'

@@ -44,9 +44,19 @@
 //! [`crate::wet`], leaving a wet trail that takes its water and wipes the dust it crosses. On a face
 //! that looks down a drop **hangs** until its weight pulls harder than its contact line can hold,
 //! `ρ g V (ĝ·n) > 2π a γ sin θ̄` ([`PENDANT_HOLD`]), and drips; one that slides off an open edge of
-//! the mesh drips there. A drip falls straight down to the first part under it and lands there as
-//! a drop (it may splash again), or is gone. A porous material soaks its drops in at
+//! the mesh drips there, at the speed it slid. A porous material soaks its drops in at
 //! `soak × π a²` mm³ per second.
+//!
+//! **Drops in the air** (S3d). A drip and the drops a splash throws are spheres of their volume that
+//! fly: each step gravity and the drag of the air (held over the step; quadratic, so that a drop falls at most at its
+//! terminal speed: [`terminal_speed`], Atlas, Srivastava and Sekhon, "Doppler radar characteristics
+//! of precipitation at vertical incidence", Rev. Geophys. 11 (1973), above 0.6 mm, linear in the
+//! diameter below it) change their velocity, and the segment they cross is cast against the
+//! triangles: the first face they meet from its front takes them as a drop (an impact at the speed
+//! along its normal: it may splash again). A splash throws its drops off the surface at
+//! [`SPLASH_ELEVATION_DEG`], at the speed that would carry them up to [`SPLASH_REACH`] diameters on
+//! a level face. A drop that falls below the lowest of the parts and the studio floor (`z = 0`) is
+//! gone. None lands in the step it left: they are in the frames while they fly.
 //!
 //! **Parts as a film.** A part flagged [`PART_FILM`] (a set's backdrop, floor and cards: too large for
 //! drops one by one) takes no drops: each of its samples is wet at the first landing near it, a
@@ -105,6 +115,13 @@ pub const PENDANT_HOLD: f32 = 1.0;
 /// The share of a snow layer that is flakes (◆): a flake adds its own volume over this to the
 /// depth.
 pub const SNOW_PACKING: f32 = 0.5;
+/// S3d: how far off the surface a splash throws its drops, degrees (◆).
+pub const SPLASH_ELEVATION_DEG: f32 = 30.0;
+/// S3d: most drops in the air at once (◆: each is a sphere the renderer meshes); past it a drip or
+/// a splash's drop is lost.
+pub const MAX_FALLING_DROPS: usize = 1024;
+/// S3d: the longest a drop flies, steps (10 s): past it, it is gone.
+pub const MAX_FLIGHT_STEPS: u32 = 2400;
 /// Gravity, mm/s².
 const GRAVITY_MM: f32 = 9810.0;
 /// Density and viscosity of water in SI units for the splashing numbers (kg/m³, Pa·s), and its
@@ -124,6 +141,7 @@ const SALT_COUNT: u64 = 0x53c0_0000_0000_0002;
 const SALT_PLACE: u64 = 0x53c0_0000_0000_0003;
 const SALT_SPLASH: u64 = 0x53c0_0000_0000_0004;
 const SALT_FILM: u64 = 0x53c0_0000_0000_0005;
+const SALT_FLIGHT: u64 = 0x53d0_0000_0000_0001;
 
 /// What a source leaves on the parts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -588,6 +606,39 @@ impl Drop {
     }
 }
 
+/// S3d: a drop in the air (a drip, a splash's drop), world space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Falling {
+    /// Its number (the drops' numbering: it came after the drops before it).
+    id: u32,
+    /// The part it left.
+    part: u32,
+    p: Vec3,
+    /// Velocity, mm/s.
+    v: Vec3,
+    volume: f32,
+    /// Steps in the air.
+    steps: u32,
+}
+
+/// The diameter of a sphere of `volume` mm³, mm.
+fn diameter_of(volume: f32) -> f32 {
+    cbrt(6.0 * volume / fmath::PI)
+}
+
+/// S3d: the terminal speed of a drop of water of diameter `d` mm in still air, mm/s: Atlas,
+/// Srivastava and Sekhon (1973), `9.65 − 10.3 e^(−0.6 D)` m/s, above 0.6 mm; below it, linear in
+/// the diameter down to 0 (the measurements of small drops are close to a line there).
+pub fn terminal_speed(d: f32) -> f32 {
+    const D0: f32 = 0.6;
+    let atlas = |d: f32| (9.65 - 10.3 * fmath::exp(-0.6 * d)) * 1000.0;
+    if d >= D0 {
+        atlas(d)
+    } else {
+        atlas(D0) * d.max(0.0) / D0
+    }
+}
+
 /// A binary tree of boxes over the triangles for rays (median split of the longest axis of the
 /// centroids, ties by index: the same everywhere).
 #[derive(Clone, Debug, Default)]
@@ -901,6 +952,11 @@ pub struct WetParts {
     /// The number of the next drop, and the drops gone since the last frame.
     next_id: u32,
     gone_ids: Vec<u32>,
+    /// S3d: the drops in the air, by number; below `floor_z` they are gone.
+    falling: Vec<Falling>,
+    floor_z: f32,
+    /// Drops that landed from the air so far.
+    flown: u32,
 }
 
 impl WetParts {
@@ -1007,6 +1063,11 @@ impl WetParts {
             p.samples = end - p.first_sample;
         }
         let n = pos.len();
+        let floor_z = tris
+            .iter()
+            .flat_map(|t| t.v)
+            .fold(0.0f32, |m, v| m.min(v.z))
+            - 1.0;
         let tree = RayTree::build(&tris);
         let grid = SampleGrid::new(&pos, (2.0 * cell).max(4.0));
         let mut this = WetParts {
@@ -1042,6 +1103,9 @@ impl WetParts {
             dirty: false,
             next_id: 0,
             gone_ids: Vec::new(),
+            falling: Vec::new(),
+            floor_z,
+            flown: 0,
             spec,
         };
         this.prepare_sources();
@@ -1234,6 +1298,36 @@ impl WetParts {
         self.drops.iter().map(|d| d.volume).sum()
     }
 
+    /// S3d: the drops in the air, by number: the part each left, its centre (world) and the radius
+    /// of its sphere.
+    pub fn falling(&self) -> Vec<(u32, Vec3, f32)> {
+        self.falling
+            .iter()
+            .map(|f| (f.part, f.p, 0.5 * diameter_of(f.volume)))
+            .collect()
+    }
+
+    /// S3d: the velocities of the drops in the air, mm/s, in the order of [`WetParts::falling`].
+    pub fn falling_velocities(&self) -> Vec<Vec3> {
+        self.falling.iter().map(|f| f.v).collect()
+    }
+
+    /// S3d: the water in the air, mm³.
+    pub fn water_in_air(&self) -> f32 {
+        self.falling.iter().map(|f| f.volume).sum()
+    }
+
+    /// S3d: the drops that landed from the air so far (drips and splashes' drops).
+    pub fn landed_from_air(&self) -> u32 {
+        self.flown
+    }
+
+    /// S3d: puts a drop of `volume` mm³ in the air at `p` (world) with velocity `v` mm/s, as if it
+    /// left part `part` (tests and still pictures).
+    pub fn add_falling(&mut self, part: usize, p: Vec3, v: Vec3, volume: f32) {
+        self.launch(part as u32, p, v, volume);
+    }
+
     /// Water left in trails so far, mm³.
     pub fn water_shed(&self) -> f32 {
         self.shed
@@ -1281,6 +1375,8 @@ impl WetParts {
         let step = self.steps;
         self.steps += 1;
         let mut changed = std::mem::take(&mut self.dirty);
+        // S3d: the drops in the air first: those that left in the steps before this one.
+        changed |= self.fly();
         for si in 0..self.sources.len() {
             if self.spec.sources[si].kind == PartsSourceKind::Drops {
                 changed |= self.land(step, si);
@@ -1387,23 +1483,22 @@ impl WetParts {
             self.splashes += 1;
             let each = thrown / SPLASH_DROPS as f32;
             let (u_axis, v_axis) = tangent_basis(t.n);
+            let (se, ce) = fmath::sin_cos(SPLASH_ELEVATION_DEG * fmath::DEG_TO_RAD);
             for n in 0..SPLASH_DROPS {
                 let h = mix64(seed ^ SALT_SPLASH ^ u64::from(n));
                 let angle = unit(h) * 2.0 * fmath::PI;
                 let reach = d * (1.0 + (SPLASH_REACH - 1.0) * unit(mix64(h)));
                 let (sa, ca) = fmath::sin_cos(angle);
                 let dir = u_axis * ca + v_axis * sa;
-                let end = self.walk(ti, p, Course::Straight(dir), reach, &mut Vec::new());
-                if end.off || self.drops.len() >= MAX_PART_DROPS {
-                    self.lost_water += each;
-                    continue;
-                }
-                let id = self.take_id();
-                let drop = Drop::new(id, t.part, end.tri, end.p, each, self.parts[part_index].k);
-                let n_end = self.tris[end.tri as usize].n;
-                self.wet_disc(t.part, end.p, n_end, drop.a, false);
-                self.drops.push(drop);
-                added = true;
+                // S3d: into the air, at the speed that reaches `reach` on a level face
+                // (`v² sin 2θ / g`).
+                let speed = (reach * GRAVITY_MM / (2.0 * se * ce)).sqrt();
+                self.launch(
+                    t.part,
+                    p + t.n * RAY_OFFSET,
+                    (dir * ce + t.n * se) * speed,
+                    each,
+                );
             }
         }
         if self.drops.len() < MAX_PART_DROPS {
@@ -1415,6 +1510,87 @@ impl WetParts {
             self.lost_water += volume;
         }
         added
+    }
+
+    /// S3d: a drop of `volume` leaves part `part` at `p` with velocity `v`: it is in the air from
+    /// the next step (or lost, past [`MAX_FALLING_DROPS`]).
+    fn launch(&mut self, part: u32, p: Vec3, v: Vec3, volume: f32) {
+        if self.falling.len() >= MAX_FALLING_DROPS || volume.is_nan() || volume < MIN_VOLUME {
+            self.lost_water += volume.max(0.0);
+            return;
+        }
+        let id = self.take_id();
+        self.falling.push(Falling {
+            id,
+            part,
+            p,
+            v,
+            volume,
+            steps: 0,
+        });
+    }
+
+    /// S3d: one step of the drops in the air: gravity and the drag of the air, then the first face
+    /// the step crosses from its front takes the drop (an impact); below the floor, or too long in
+    /// the air, it is gone. The drops a landing throws fly from the next step. True when a drop
+    /// landed on a part that takes drops.
+    fn fly(&mut self) -> bool {
+        if self.falling.is_empty() {
+            return false;
+        }
+        let flying = std::mem::take(&mut self.falling);
+        let mut kept = Vec::with_capacity(flying.len());
+        let mut came = false;
+        for f in flying {
+            let d = diameter_of(f.volume);
+            let vt = terminal_speed(d);
+            let speed = f.v.length();
+            let drag = if above(vt, 0.0) {
+                GRAVITY_MM * speed / (vt * vt)
+            } else {
+                0.0
+            };
+            // The acceleration held over the step (exact for gravity alone).
+            let accel = Vec3::new(0.0, 0.0, -GRAVITY_MM) - f.v * drag;
+            let v = f.v + accel * STEP;
+            let mv = f.v * STEP + accel * (0.5 * STEP * STEP);
+            let len = mv.length();
+            if above(len, 0.0) {
+                let dir = mv / len;
+                let tris = &self.tris;
+                let hit = self.tree.cast(tris, f.p, dir, len, false, |i| {
+                    tris[i as usize].n.dot(dir) < 0.0
+                });
+                if let Some((ti, t)) = hit {
+                    let at = f.p + dir * t;
+                    let n = self.tris[ti as usize].n;
+                    let seed = mix64(
+                        (u64::from(self.spec.seed) << 32)
+                            ^ SALT_FLIGHT
+                            ^ (u64::from(f.id) << 8)
+                            ^ u64::from(self.steps).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                    );
+                    self.flown += 1;
+                    came |= self.impact(ti, at, d, (-v.dot(n)).max(0.0), seed);
+                    continue;
+                }
+            }
+            let p = f.p + mv;
+            if p.z < self.floor_z || f.steps + 1 > MAX_FLIGHT_STEPS {
+                self.lost_water += f.volume;
+                continue;
+            }
+            kept.push(Falling {
+                p,
+                v,
+                steps: f.steps + 1,
+                ..f
+            });
+        }
+        // The survivors, then what the landings threw (all numbered after them).
+        kept.append(&mut self.falling);
+        self.falling = kept;
+        came
     }
 
     /// The number of a new drop.
@@ -1471,7 +1647,7 @@ impl WetParts {
         let gravity = Vec3::new(0.0, 0.0, -1.0);
         let mut moved = false;
         let mut keep = vec![true; self.drops.len()];
-        let mut drips: Vec<(Vec3, f32)> = Vec::new();
+        let mut drips: Vec<(u32, Vec3, Vec3, f32)> = Vec::new();
         let mut path = Vec::new();
         for (i, kept) in keep.iter_mut().enumerate() {
             let d = self.drops[i];
@@ -1485,7 +1661,7 @@ impl WetParts {
                 let hold = PENDANT_HOLD * 2.0 * fmath::PI * a * SURFACE_TENSION * part.sin_cap;
                 if pull > hold {
                     *kept = false;
-                    drips.push((d.p + t.n * a, d.volume));
+                    drips.push((d.part, d.p + t.n * a, Vec3::ZERO, d.volume));
                     moved = true;
                     continue;
                 }
@@ -1515,8 +1691,16 @@ impl WetParts {
                 self.wipe(d.part, w[0], w[1], a, t.n);
             }
             if end.off {
+                // Off the edge at the speed it slid, along its last stretch.
                 *kept = false;
-                drips.push((end.p, left));
+                let last = end.p - path[path.len().saturating_sub(2)];
+                let len = last.length();
+                let v = if above(len, 0.0) {
+                    last * (speed / len)
+                } else {
+                    Vec3::ZERO
+                };
+                drips.push((d.part, end.p, v, left));
                 continue;
             }
             if left < MIN_VOLUME {
@@ -1536,34 +1720,18 @@ impl WetParts {
         if keep.iter().any(|k| !k) {
             self.keep_drops(&keep);
         }
-        for (p, volume) in drips {
-            self.drip(p, volume);
+        for (part, p, v, volume) in drips {
+            self.drip(part, p, v, volume);
         }
         moved
     }
 
-    /// A drop of `volume` leaves the surface at `p` and falls: it lands on the first part below
-    /// facing up, or is gone.
-    fn drip(&mut self, p: Vec3, volume: f32) {
+    /// A drop of `volume` leaves part `part` at `p` with velocity `v` and falls (S3d: through the
+    /// air, from the next step).
+    fn drip(&mut self, part: u32, p: Vec3, v: Vec3, volume: f32) {
         self.drips += 1;
         self.drips_since += 1;
-        let down = Vec3::new(0.0, 0.0, -1.0);
-        let tris = &self.tris;
-        let hit = self.tree.cast(tris, p, down, f32::INFINITY, false, |i| {
-            tris[i as usize].n.z > 0.0
-        });
-        let Some((ti, fall)) = hit else {
-            self.lost_water += volume;
-            return;
-        };
-        let speed = (2.0 * GRAVITY_MM * fall).sqrt();
-        let d = cbrt(6.0 * volume / fmath::PI);
-        let at = p + down * fall;
-        let seed = mix64(
-            u64::from(self.spec.seed) ^ u64::from(self.steps) << 24 ^ u64::from(self.drips) << 48,
-        );
-        let t = self.tris[ti as usize];
-        self.impact(ti, at, d, speed * t.n.z.max(0.0), seed);
+        self.launch(part, p, v, volume);
     }
 
     /// Walks a point of triangle `ti` along the surface by `dist`, from triangle to triangle,
@@ -1885,10 +2053,14 @@ impl WetParts {
     /// u32 wiped;   u32 samples[wiped]   (wiped since the last frame, ascending)
     /// u32 drips                         (since the last frame)
     /// u32 drops                         (on the parts now)
+    /// u32 falling; per drop in the air now, by number:
+    ///              u32 id part (the part it left); f32 x y z (world) r (the radius of its sphere)
     /// ```
     ///
     /// A drop's number is the order it came in; one that came and went between two frames is in
-    /// `gone` only. The drops of a frame, by number, are what [`WetParts::weather`] gives.
+    /// `gone` only. The drops of a frame, by number, are what [`WetParts::weather`] gives. The drops
+    /// in the air (S3d) are listed whole in every frame (they all move), with numbers of their own
+    /// that no drop on a part has; they are what [`WetParts::falling`] gives.
     pub fn frame(&mut self) -> Vec<u8> {
         let mut changed: Vec<usize> = (0..self.drops.len())
             .filter(|&i| self.drops[i].touched)
@@ -1924,6 +2096,18 @@ impl WetParts {
         }
         words.push(self.drips_since);
         words.push(self.drops.len() as u32);
+        words.push(self.falling.len() as u32);
+        for f in &self.falling {
+            let r = 0.5 * diameter_of(f.volume);
+            words.extend_from_slice(&[
+                f.id,
+                f.part,
+                f.p.x.to_bits(),
+                f.p.y.to_bits(),
+                f.p.z.to_bits(),
+                r.to_bits(),
+            ]);
+        }
         self.gone_ids.clear();
         self.new_wet.clear();
         self.new_wiped.clear();
@@ -1968,8 +2152,9 @@ impl WetParts {
             .collect()
     }
 
-    /// FNV-1a (32 bits) of the steps, the drops in order and every sample's wet and wiped steps:
-    /// what the native and WebAssembly builds are compared by.
+    /// FNV-1a (32 bits) of the steps, the drops in order, every sample's wet and wiped steps and
+    /// rates, and the drops in the air (S3d): what the native and WebAssembly builds are compared
+    /// by.
     pub fn hash(&self) -> u32 {
         let mut h: u32 = 0x811c_9dc5;
         let mut eat = |w: u32| {
@@ -1995,6 +2180,15 @@ impl WetParts {
         for (&d, &s) in self.dust_rate.iter().zip(&self.snow_rate) {
             eat(d.to_bits());
             eat(s.to_bits());
+        }
+        // S3d: the drops in the air.
+        eat(self.falling.len() as u32);
+        for f in &self.falling {
+            eat(f.id);
+            eat(f.part);
+            for v in [f.p.x, f.p.y, f.p.z, f.v.x, f.v.y, f.v.z, f.volume] {
+                eat(v.to_bits());
+            }
         }
         h
     }

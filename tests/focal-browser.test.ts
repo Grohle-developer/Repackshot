@@ -1,5 +1,5 @@
-// The focal length's switch in a real browser (phase C2, the user's report 1.7: "o la cámara se acerca o el objeto /
-// punto enfocado"). The page of tests/browser/focal-page.ts draws two glowing cards with the preview engine (headless
+// The focal length's switch in a real browser (phase C2, the owner's report 1.7: "either the camera gets closer or the
+// focused object / point"). The page of tests/browser/focal-page.ts draws two glowing cards with the preview engine (headless
 // Chromium, SwiftShader), changes the focal length through the store the way the inspector's field does (a drag is one
 // gesture, a press of the arrows one more) and reads the canvas back before and after. With *Keep the size of what is
 // in focus* on, the card on the plane in focus keeps its size in pixels within 1 % (and its place), with the focus at

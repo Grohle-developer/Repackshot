@@ -22,7 +22,7 @@ use rt_phys::Transform;
 
 /// Pinned hash of the parity parts after [`PARTS_STEPS`] ([`WetParts::hash`]); the page's test with
 /// the real `rt.wasm` (`tests/s3c-parts.test.ts`) checks the module against it.
-const PINNED_WET_PARTS: u32 = 0x6245_0071;
+const PINNED_WET_PARTS: u32 = 0xe181_1f7e;
 
 /// A plate tilted `deg` about X (its slope runs down −Y for a positive angle) at `at`.
 fn tilted(deg: f32, at: Vec3) -> Transform {
@@ -493,19 +493,45 @@ fn a_hanging_drop_drips_once_it_is_heavy_enough_onto_what_is_below() {
         (2.0 * std::f64::consts::PI * gamma * 60f64.to_radians().sin() / (rho_g * k)).sqrt();
     for (factor, drips) in [(0.95, false), (1.05, true)] {
         let mut parts = WetParts::new(scene.clone());
-        parts.add_drop(0, 0, 0.3, 0.3, glass_volume(a_crit * factor));
-        parts.step(24);
+        let total = glass_volume(a_crit * factor);
+        parts.add_drop(0, 0, 0.3, 0.3, total);
+        parts.step(2);
         assert_eq!(parts.counts().2 == 1, drips, "{factor}");
-        let on_floor = parts.drops().iter().filter(|d| d.0 == 1).count();
-        assert_eq!(on_floor > 0, drips, "{factor}: {:?}", parts.drops());
-        if drips {
-            // The water is on the floor, but for what the splash threw off the plate.
-            let total = glass_volume(a_crit * factor);
-            assert!(parts.water() + parts.water_lost() > 0.999 * total);
-            assert!(parts.drops().iter().all(|d| d.2.z.abs() < 1e-3));
-            // A drop of 8 mm falling 44 mm meets the floor at √(2 g h) ≈ 0.93 m/s: K ≈ 93, it splashes.
-            assert_eq!(parts.counts().1, 1);
+        if !drips {
+            parts.step(46);
+            assert_eq!(parts.counts().2, 0);
+            assert!(parts.falling().is_empty());
+            assert_eq!(parts.drops().len(), 1);
+            continue;
         }
+        // S3d: the drip is in the air, not yet on the floor: it falls the 44 mm in about 0.095 s
+        // (√(2 h / g)), some 23 steps.
+        assert_eq!(parts.falling().len(), 1, "{factor}");
+        assert!(parts.drops().is_empty(), "{:?}", parts.drops());
+        let mut fell = 0;
+        let mut last_z = f32::INFINITY;
+        while parts.drops().iter().all(|d| d.0 != 1) && fell < 60 {
+            let (part, p, r) = parts.falling()[0];
+            assert_eq!(part, 0, "it left the ceiling");
+            assert!(p.z < last_z, "it falls: {p:?}");
+            assert!((r - 0.5 * (6.0 * total / std::f32::consts::PI).cbrt()).abs() < 1e-3);
+            last_z = p.z;
+            parts.step(1);
+            fell += 1;
+        }
+        assert!((20..=26).contains(&fell), "{fell} steps in the air");
+        assert_eq!(parts.landed_from_air(), 1);
+        // The water is on the floor or in the air, but for what the splash threw off the plate.
+        assert!(parts.water() + parts.water_in_air() + parts.water_lost() > 0.999 * total);
+        assert!(parts.drops().iter().all(|d| d.2.z.abs() < 1e-3));
+        // A drop of 8 mm falling 44 mm meets the floor at √(2 g h) ≈ 0.93 m/s: K ≈ 93, it splashes.
+        assert_eq!(parts.counts().1, 1);
+        // Its two drops fly from the next step, and land on the floor too.
+        assert_eq!(parts.falling().len(), 2);
+        parts.step(48);
+        assert!(parts.falling().is_empty());
+        assert_eq!(parts.landed_from_air(), 3);
+        assert!(parts.water() + parts.water_lost() > 0.999 * total);
     }
     // From 5 mm it lands at 0.3 m/s (K ≈ 24) and stays whole.
     let mut low = scene.clone();
@@ -516,6 +542,99 @@ fn a_hanging_drop_drips_once_it_is_heavy_enough_onto_what_is_below() {
     assert_eq!(parts.counts(), (0, 0, 1));
     assert_eq!(parts.drops().len(), 1);
     assert!((parts.water() / glass_volume(a_crit * 1.05) - 1.0).abs() < 1e-4);
+}
+
+#[test]
+fn a_drop_in_the_air_falls_at_most_at_its_terminal_speed_and_is_gone_below_the_floor() {
+    use rt_phys::wet_parts::terminal_speed;
+    // Atlas, Srivastava and Sekhon (1973) at 2 mm: 9.65 − 10.3 e^−1.2 = 6.55 m/s.
+    assert!(
+        (terminal_speed(2.0) - 6547.8).abs() < 1.0,
+        "{}",
+        terminal_speed(2.0)
+    );
+    // Below 0.6 mm, a line through 0: a drop of 0.3 mm at half of 0.6 mm's.
+    assert!((terminal_speed(0.3) - 0.5 * terminal_speed(0.6)).abs() < 1e-3);
+    // A drop of 2 mm let go 20 m above a plate: it speeds up to its terminal speed, never past it.
+    let mut parts = WetParts::new(spec(
+        vec![plate_mesh(100.0, 100.0, 1, 1)],
+        vec![glass_part(0, Transform::IDENTITY)],
+        vec![],
+    ));
+    let volume = std::f32::consts::PI / 6.0 * 8.0;
+    parts.add_falling(0, Vec3::new(0.0, 0.0, 20_000.0), Vec3::ZERO, volume);
+    let mut top = 0.0f32;
+    for _ in 0..240 * 3 {
+        parts.step(1);
+        let Some(&v) = parts.falling_velocities().first() else {
+            break;
+        };
+        top = top.max(v.length());
+    }
+    assert!(top <= terminal_speed(2.0) * 1.0001, "{top}");
+    assert!(top > terminal_speed(2.0) * 0.99, "{top}");
+    // One that misses every part is gone below the floor (z = 0, the lowest of the parts and it).
+    parts.add_falling(0, Vec3::new(500.0, 0.0, 100.0), Vec3::ZERO, volume);
+    let lost = parts.water_lost();
+    parts.step(240);
+    assert!(parts.falling().is_empty());
+    assert!((parts.water_lost() - lost - volume).abs() < 1e-4);
+}
+
+#[test]
+fn a_splash_throws_its_drops_through_the_air_to_land_within_its_reach() {
+    // One drop of 2.5 mm at 9 m/s onto a level plate: K about 650, it splashes. It lands on a
+    // pad of 2 mm (part 0) a hair above a large plate (part 1), so that the drops it throws land on
+    // another part than its own and none merges with it.
+    let mut parts = WetParts::new(spec(
+        vec![plate_mesh(2.0, 2.0, 1, 1), plate_mesh(300.0, 300.0, 6, 6)],
+        vec![
+            glass_part(0, Transform::translation(Vec3::new(10.0, -20.0, 0.0))),
+            glass_part(1, Transform::translation(Vec3::new(0.0, 0.0, -0.01))),
+        ],
+        vec![],
+    ));
+    let volume = std::f32::consts::PI / 6.0 * 2.5f32.powi(3);
+    parts.add_falling(
+        0,
+        Vec3::new(10.0, -20.0, 20.0),
+        Vec3::new(0.0, 0.0, -9000.0),
+        volume,
+    );
+    // The step it lands in.
+    while parts.landed_from_air() == 0 {
+        parts.step(1);
+    }
+    assert_eq!(parts.counts(), (0, 1, 0));
+    let landing = parts.drops()[0].2;
+    assert!((landing - Vec3::new(10.0, -20.0, 0.0)).length() < 1e-3);
+    // Its two drops are in the air, above the plate, and none landed in the step it splashed.
+    let thrown = parts.falling();
+    assert_eq!(thrown.len(), 2);
+    assert_eq!(parts.drops().len(), 1);
+    assert_eq!(parts.landed_from_air(), 1);
+    let mut highest = 0.0f32;
+    let mut steps = 0;
+    while !parts.falling().is_empty() && steps < 240 {
+        for f in parts.falling() {
+            assert!(f.1.z >= 0.0, "{f:?}");
+            highest = highest.max(f.1.z);
+        }
+        parts.step(1);
+        steps += 1;
+    }
+    assert!(highest > 0.1, "they fly: {highest}");
+    assert!(steps >= 2, "they land later: {steps}");
+    assert_eq!(parts.landed_from_air(), 3);
+    assert!((parts.water() / volume - 1.0).abs() < 1e-4, "no water lost");
+    // They land between one diameter and the reach of the splash (◆: up to 4 diameters), each a
+    // drop of its own on the plate.
+    let others: Vec<_> = parts.drops().iter().filter(|d| d.0 == 1).copied().collect();
+    assert_eq!(others.len(), 2, "{:?}", parts.drops());
+    for d in others {
+        let r = (d.2 - landing).length();
+        assert!((0.8 * 2.5..=4.0 * 2.5).contains(&r), "{r} mm");
+    }
 }
 
 #[test]
@@ -530,10 +649,16 @@ fn a_fast_drop_splashes_and_no_water_is_lost_on_the_way() {
     let (landed, splashes, _) = parts.counts();
     assert!(landed > 5, "{landed}");
     assert_eq!(splashes, landed);
-    // Every drop that landed is on the plate, merged, or was thrown off its edge.
+    // Every drop that landed is on the plate, merged, in the air, or was thrown off its edge.
     let each = std::f32::consts::PI / 6.0 * 2.5f32.powi(3);
     let total = each * landed as f32;
-    let seen = parts.water() + parts.water_lost() + parts.water_shed();
+    let seen = parts.water() + parts.water_in_air() + parts.water_lost() + parts.water_shed();
+    assert!((seen / total - 1.0).abs() < 1e-3, "{seen} vs {total}");
+    // S3d: let the last thrown drops land.
+    parts.step(48);
+    let (landed, _, _) = parts.counts();
+    let total = each * landed as f32;
+    let seen = parts.water() + parts.water_in_air() + parts.water_lost() + parts.water_shed();
     assert!((seen / total - 1.0).abs() < 1e-3, "{seen} vs {total}");
     // Each landing left a drop of 70 % of its volume and threw two of 15 % each.
     let volumes: Vec<f32> = parts
@@ -541,17 +666,23 @@ fn a_fast_drop_splashes_and_no_water_is_lost_on_the_way() {
         .iter()
         .map(|d| glass_volume(f64::from(d.3)))
         .collect();
-    let big = volumes
+    let big: Vec<f32> = volumes
         .iter()
-        .filter(|&&v| (v / (0.7 * each) - 1.0).abs() < 0.01)
-        .count();
+        .copied()
+        .filter(|&v| v > 0.69 * each)
+        .collect();
     let small = volumes
         .iter()
         .filter(|&&v| (v / (0.15 * each) - 1.0).abs() < 0.01)
         .count();
-    // (A thrown drop may land on another drop and merge with it.)
-    assert!(big + 2 >= landed as usize, "{volumes:?}");
-    assert!(small >= landed as usize, "{volumes:?}");
+    // (A thrown drop may land on another drop and merge with it: a big one with thrown ones on it
+    // is 70 % and some 15 %s.)
+    let merged: usize = big
+        .iter()
+        .map(|&v| ((v - 0.7 * each) / (0.15 * each)).round() as usize)
+        .sum();
+    assert!(big.len() + 2 >= landed as usize, "{volumes:?}");
+    assert!(small + merged >= landed as usize, "{volumes:?}");
 }
 
 #[test]
@@ -613,6 +744,7 @@ fn the_same_parts_by_steps_and_through_the_frames() {
     assert_eq!(u32::from_le_bytes(layout[0..4].try_into().unwrap()), 4);
     let mut wet = vec![false; framed.sample_count()];
     let mut drops: std::collections::BTreeMap<u32, (u32, u32, [u32; 4])> = Default::default();
+    let mut flown = 0;
     for _ in 0..10 {
         framed.step(24);
         let rec = framed.frame();
@@ -645,8 +777,25 @@ fn the_same_parts_by_steps_and_through_the_frames() {
         let nx = w(at) as usize;
         at += 1 + nx;
         assert_eq!(w(at + 1) as usize, drops.len(), "the count of drops");
-        assert_eq!(4 * (at + 2), rec.len());
+        // S3d: the drops in the air, whole, by number: what the parts give.
+        at += 2;
+        let nf = w(at) as usize;
+        let falling = framed.falling();
+        assert_eq!(nf, falling.len());
+        for (k, (part, p, r)) in falling.iter().enumerate() {
+            let f = at + 1 + 6 * k;
+            assert!(!drops.contains_key(&w(f)), "a number of its own");
+            assert!(k == 0 || w(f) > w(f - 6), "by number");
+            assert_eq!(w(f + 1), *part);
+            assert_eq!(
+                [w(f + 2), w(f + 3), w(f + 4), w(f + 5)],
+                [p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), r.to_bits()]
+            );
+        }
+        flown += nf;
+        assert_eq!(4 * (at + 1 + 6 * nf), rec.len());
     }
+    assert!(flown > 0, "drops were in the air in some frame");
     for (s, &w) in wet.iter().enumerate() {
         assert_eq!(w, framed.wet_step(s) != NEVER, "{s}");
     }
@@ -674,23 +823,28 @@ fn the_parity_parts_have_a_pinned_hash() {
         .filter(|&s| parts.wet_step(s) != NEVER)
         .count();
     eprintln!(
-        "S3c wet parts after {PARTS_STEPS} steps: {:#010x}, {} samples (cell {:.2} mm), {} drops, {landed} landed, {splashes} splashes, {drips} drips, {wet} wet samples, {:.1} mm³ on, {:.1} mm³ shed, {:.1} mm³ lost",
+        "S3c wet parts after {PARTS_STEPS} steps: {:#010x}, {} samples (cell {:.2} mm), {} drops, {} in the air, {landed} landed, {splashes} splashes, {drips} drips, {} from the air, {wet} wet samples, {:.1} mm³ on, {:.1} mm³ in the air, {:.1} mm³ shed, {:.1} mm³ lost",
         parts.hash(),
         parts.sample_count(),
         parts.cell_mm(),
         parts.drops().len(),
+        parts.falling().len(),
+        parts.landed_from_air(),
         parts.water(),
+        parts.water_in_air(),
         parts.water_shed(),
         parts.water_lost(),
     );
     assert!(parts.drops().len() > 50);
     assert!(drips > 0 && splashes > 0);
+    // S3d: some of what the splashes threw is in the air.
+    assert!(!parts.falling().is_empty());
     assert_eq!(parts.hash(), PINNED_WET_PARTS);
 }
 
 /// Pinned hash of the S3c parity scene ([`s3c_wet_scene`]) at 4 samples per pixel;
 /// `tools/wasm-parity.mjs` checks the module against it (`rt --write-s3c-wet-example`).
-const PINNED_S3C_WET_4SPP: u32 = 0x66fa_33ab;
+const PINNED_S3C_WET_4SPP: u32 = 0x827a_c33c;
 
 /// FNV-1a over the little-endian bytes of the resolved film (the hash of the render tests and of
 /// `tools/wasm-parity.mjs`).
@@ -737,6 +891,123 @@ fn the_s3c_scene_has_a_pinned_hash_on_every_simd_path() {
     }
     for (isa, hash) in found {
         assert_eq!(hash, PINNED_S3C_WET_4SPP, "{isa}");
+    }
+}
+
+/// Pinned hash of the S3d parity scene ([`s3d_flight_scene`]: the S3c scene with the drops in the
+/// air in its `WETF`) at 4 samples per pixel; `tools/wasm-parity.mjs` checks the module against it
+/// (`rt --write-s3d-flight-example`).
+const PINNED_S3D_FLIGHT_4SPP: u32 = 0xf7b7_8a45;
+
+/// Pinned hashes of the six exact passes of the S3d scene (4 albedo samples), in the order of
+/// `PASS_KEYS` (`PINNED_S3D_PASS_<KEY>` for CI): a drop on a part and a drop in the air name their
+/// part in the part and material passes.
+const PINNED_S3D_PASS_ALBEDO: u32 = 0x3868_1bb3;
+const PINNED_S3D_PASS_NORMAL: u32 = 0x45b8_b9a8;
+const PINNED_S3D_PASS_DEPTH: u32 = 0x2a0c_1589;
+const PINNED_S3D_PASS_PART_ID: u32 = 0xde26_88e3;
+const PINNED_S3D_PASS_MATERIAL_ID: u32 = 0xde26_88e3;
+const PINNED_S3D_PASS_COC: u32 = 0x14b5_c1e9;
+
+/// The six exact passes of `scene` (4 albedo samples) on `isa`, as the hosts render them.
+fn passes(scene: &rt_core::scene::Scene, isa: rt_core::simd::Isa) -> rt_core::passes::Passes {
+    use rt_core::passes::{PassFilm, Passes, PASS_X2};
+    use rt_core::render::{render_tile_albedo, render_tile_exact, tile_grid};
+    let (w, h) = (scene.render.width, scene.render.height);
+    let prepared = rt_core::integrator::Prepared::new(scene);
+    let mut whole = Passes::new(w, h, PASS_X2);
+    for tile in tile_grid(w, h, 32) {
+        let mut film = PassFilm::region(tile.x, tile.y, tile.w, tile.h, PASS_X2);
+        render_tile_exact(scene, &prepared, tile, &mut film, isa);
+        for s in 0..4 {
+            render_tile_albedo(scene, &prepared, tile, s, &mut film, isa);
+        }
+        whole.copy_region(tile.x, tile.y, &film.resolve());
+    }
+    whole
+}
+
+#[test]
+fn the_s3d_scene_draws_the_drops_in_the_air_with_a_pinned_hash_on_every_simd_path() {
+    use rt_phys::example::{s3c_wet_scene, s3d_flight_scene};
+    let scene = s3d_flight_scene();
+    let falling = wet_parts().falling();
+    assert!(!falling.is_empty());
+    assert_eq!(scene.wet_falling.len(), falling.len());
+    let caps = scene.caps().expect("drops");
+    let on_parts: usize = scene.wet_parts.iter().map(|w| w.drops.len()).sum();
+    assert_eq!(caps.caps as usize, on_parts);
+    // Through an RSB round trip: the drops in the air travel in WETF and are meshed again.
+    let bytes = scene.to_rsb();
+    let read = rt_core::scene::Scene::from_rsb(&bytes).expect("read");
+    assert_eq!(read, scene);
+    // Without them it is the S3c scene; with them, the image changes.
+    let plain = s3c_wet_scene();
+    assert_eq!(plain.wet_falling.len(), 0);
+    let isa = rt_core::simd::Isa::detect();
+    assert_ne!(
+        film_hash(&render(&read, isa)),
+        film_hash(&render(&plain, isa))
+    );
+    let mut found = Vec::new();
+    for isa in rt_core::simd::Isa::available() {
+        let hash = film_hash(&render(&read, isa));
+        eprintln!(
+            "S3d drops in the air at 4 spp on {}: {hash:#010x}",
+            isa.name()
+        );
+        found.push((isa.name(), hash));
+    }
+    for (isa, hash) in found {
+        assert_eq!(hash, PINNED_S3D_FLIGHT_4SPP, "{isa}");
+    }
+}
+
+#[test]
+fn the_passes_name_a_drop_by_its_part_with_pinned_hashes_on_every_simd_path() {
+    use rt_phys::example::s3d_flight_scene;
+    let scene = s3d_flight_scene();
+    let caps = scene.caps().expect("drops");
+    let p = passes(&scene, rt_core::simd::Isa::detect());
+    // No pixel names the drops' own instance: a cap or a drop in the air is its part.
+    assert!(p.part_id.iter().all(|&id| id != caps.instance + 1));
+    assert!(p.material_id.iter().all(|&id| id != caps.material + 1));
+    // And some pixels see drops: their part id is a part's (1..=4), their depth is the drop's.
+    let w = scene.render.width;
+    let mut on_drops = 0;
+    for (k, &id) in p.part_id.iter().enumerate() {
+        let (x, y) = (k as u32 % w, k as u32 / w);
+        let ray = rt_core::render::centre_ray(&scene, x, y);
+        if let Some(hit) = scene.pick(&ray) {
+            if hit.instance == caps.instance {
+                on_drops += 1;
+                assert!((1..=4).contains(&id), "{id}");
+                let material = scene.geometry.material_of(id - 1).unwrap();
+                assert_eq!(p.material_id[k], material + 1);
+            }
+        }
+    }
+    assert!(on_drops > 0, "the camera sees drops");
+    let pinned = [
+        PINNED_S3D_PASS_ALBEDO,
+        PINNED_S3D_PASS_NORMAL,
+        PINNED_S3D_PASS_DEPTH,
+        PINNED_S3D_PASS_PART_ID,
+        PINNED_S3D_PASS_MATERIAL_ID,
+        PINNED_S3D_PASS_COC,
+    ];
+    let mut found = Vec::new();
+    for isa in rt_core::simd::Isa::available() {
+        let hashes: Vec<u32> = passes(&scene, isa)
+            .planes()
+            .iter()
+            .map(|plane| plane.fnv1a())
+            .collect();
+        eprintln!("S3d passes on {}: {:#010x?}", isa.name(), hashes);
+        found.push((isa.name(), hashes));
+    }
+    for (isa, hashes) in found {
+        assert_eq!(hashes, pinned, "{isa}");
     }
 }
 

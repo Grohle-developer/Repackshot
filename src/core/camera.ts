@@ -217,7 +217,7 @@ export function clipPlanesFor(distance: number, radius: number): { clipStart: nu
 }
 
 /**
- * Frames a box without changing the orientation (SPEC §3.5 "Encuadrar"): the
+ * Frames a box without changing the orientation (SPEC §3.5 "Frame"): the
  * target goes to the centre of the box and the distance (or the orthographic
  * width) is the smallest that keeps the eight corners inside the frame. The clip planes follow the
  * framed distance (`clipPlanesFor`), so the camera sees the model whatever its scale.

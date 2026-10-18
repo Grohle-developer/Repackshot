@@ -1,4 +1,4 @@
-// Rain and dust on the front glass (phase S3b, SPEC §3.1 "Físicas", UI.md §2.4 and §2.5): what the scene's ambient
+// Rain and dust on the front glass (phase S3b, SPEC §3.1 "Physics", UI.md §2.4 and §2.5): what the scene's ambient
 // effects leave on the pane in front of a camera whose front glass is fed by the scene. The engine simulates it
 // (engine/crates/rt-phys `wet`, through rt.wasm's `wet_*` in the physics worker, next to the rigid bodies of S2) from a
 // WET1 spec (`wetBytes` writes it from `wetSpec`): the pane's square, gravity in the pane's axes, the contact angles of

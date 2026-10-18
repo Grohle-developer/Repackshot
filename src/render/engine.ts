@@ -12,6 +12,7 @@ import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
+import type { PartsShown } from '../core/wet-parts';
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
 
@@ -111,6 +112,18 @@ export function readsWetParts(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_WET_PARTS) !== 0;
 }
 
+/**
+ * S3d: bit 9 of the engine's features (rt_core::FEATURE_WET_FLIGHT): it draws the drops in the air (the WETF section:
+ * drips and splashes falling, as spheres of water) and names a drop as its part in the part and material passes, so the
+ * page writes them; an engine without the bit (one of S3c) does not draw them (io/rsb.ts `SceneView.wetFlight`).
+ */
+export const ENGINE_FEATURE_WET_FLIGHT = 512;
+
+/** True when an engine of `features` draws the drops in the air (S3d). */
+export function readsWetFlight(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_WET_FLIGHT) !== 0;
+}
+
 /** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
 export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
   if (!readsPrograms(features)) return {};
@@ -190,8 +203,8 @@ export interface EngineStatus {
    * of a recorded simulation) it draws; `noEngine` when it cannot, without rt.wasm; absent without a front glass.
    */
   glass?: { drops: number; motes: number; noEngine?: boolean };
-  /** Preview (S3c): the recorded rain, dust and snow on the parts it draws: the parts that carry it and their drops. */
-  parts?: { parts: number; drops: number };
+  /** Preview (S3c): the recorded rain, dust and snow on the parts it draws (S3d: what of it is there, on how many parts, the drops on them and in the air). */
+  parts?: PartsShown;
   /**
    * Path tracer (D1): what the Doctor reads of the view's accumulation, once every pixel has a few samples: the
    * fireflies and the frame's brightness by the stop (core/doctor-engine.ts `FrameScan`, made by render/frame-scan.ts).

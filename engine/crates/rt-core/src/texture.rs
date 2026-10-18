@@ -2,7 +2,7 @@
 //! their mipmaps ([`image`]), the projections that place them on a part ([`mapping`]) and what a
 //! material's six slots and its labels make of a surface point ([`shade`]).
 //!
-//! The contract is the one the page writes (`src/io/rsb.ts`, ARCHITECTURE §5.2 *Texturas en el
+//! The contract is the one the page writes (`src/io/rsb.ts`, ARCHITECTURE §5.2 *Textures in the
 //! RSB*) and the Fast preview draws (`src/core/textures.ts`, whose functions are the reference the
 //! tests pin, and `src/render/texture-shader.ts`), so that a texture lands where Fast draws it:
 //!

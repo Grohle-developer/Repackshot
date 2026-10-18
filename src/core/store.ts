@@ -84,7 +84,7 @@ export interface EnvironmentState {
 export interface ImageState {
   /**
    * The exposure in stops; K3, with `exposureMode` AUTO, the compensation over the metered exposure (core/image-passes.ts):
-   * one dial, *Brillo (EV)*, in both modes.
+   * one dial, *Brightness (EV)*, in both modes.
    */
   exposureEv: number;
   /** K3: the exposure set by hand (MANUAL, also when absent: every project of before K3) or metered from the image (AUTO). */

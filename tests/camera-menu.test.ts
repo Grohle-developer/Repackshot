@@ -1,4 +1,4 @@
-// The viewport's camera list and the scene's camera section (user report: the list had no way to edit a camera, and
+// The viewport's camera list and the scene's camera section (owner's report: the list had no way to edit a camera, and
 // the section did not say it was editing "Camera 1"): every row carries its lens and a pencil that opens that
 // camera's own inspector, and the section is titled with the active camera's name.
 

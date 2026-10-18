@@ -120,6 +120,12 @@ pub const FEATURE_GLASS_LAYOUT: u32 = 128;
 /// dust and the snow over its material and its drops as caps of water). An engine without it skips
 /// the section and draws the parts dry and clean, so the page writes none for it.
 pub const FEATURE_WET_PARTS: u32 = 256;
+/// Bit 9 of [`FEATURES`] (S3d): the engine draws the drops in the air (`WETF`,
+/// [`weather::FallingDrop`]: the drips and the drops splashes throw, as the simulation of the
+/// scene's rain has them in the frame), and names a drop on a part or in the air as its part in
+/// the part and material passes. An engine without it skips the section (the drops in the air are
+/// not drawn), so the page writes none for it.
+pub const FEATURE_WET_FLIGHT: u32 = 512;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
@@ -132,7 +138,8 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_PATTERN_NODES
     | FEATURE_DROPS
     | FEATURE_GLASS_LAYOUT
-    | FEATURE_WET_PARTS;
+    | FEATURE_WET_PARTS
+    | FEATURE_WET_FLIGHT;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

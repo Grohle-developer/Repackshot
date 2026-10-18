@@ -1,6 +1,6 @@
 // H1, contrast of the text tokens (UI.md §1, theme.css). Every text token is measured against every surface the
 // chrome paints text on, in both themes and in their high-contrast variants, with the WCAG 2.x ratio computed from the
-// token values. Two tiers, decided in docs/ROADMAP.md (Decisiones de criterio, H1; applied in C1): the primary text
+// token values. Two tiers, decided in docs/ROADMAP.md (Judgement calls, H1; applied in C1): the primary text
 // (`ink-0`, `ink-1` and the inverted pair) reaches 7:1 (WCAG AAA) on every surface, and the secondary text (`ink-2`, the
 // auxiliary grey) 4.5:1 (WCAG AA). The hierarchy of the greys is not flattened: on every surface each ink stands out
 // less than the one above it.
