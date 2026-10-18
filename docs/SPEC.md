@@ -1254,9 +1254,12 @@ that way), `POINT` (a point picked with a click, `focusPoint: { node, point }`,
 stored **in the coordinates of the part it touched**, so that it follows
 its transforms and its animation) or `OBJECT` (a part, a group or the
 model, `focusObject`, at the selection level it was chosen with; the point
-that is followed is the **centre of its box** (decided; the other two
-candidates, the vertex nearest along the axis and the surface seen at
-the centre of its silhouette, are written in `objectFocusPoint` and unused). In
+that is followed is the **surface the camera sees at the centre of its
+outline** on the image (decided after the owner's report of 2026-10-18: the
+centre of its box, the first rule, lies inside a solid product, and wide
+open the face the camera sees was out of focus; the other two candidates,
+the centre of the box and the vertex nearest along the axis, are written in
+`objectFocusPoint` and unused). In
 `POINT` and `OBJECT` the focus distance **is computed** from the camera as
 it is at each moment and the point where it is at that moment: when navigating,
 when looking through, at each frame of an animation, in the render

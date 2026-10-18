@@ -5,6 +5,10 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Camera and lens
+
+- Fixed: *Focus ▸ Object* focused on the centre of the object's box, which lies inside a solid product: wide open (f/1) the face the camera sees was out of focus. It now focuses on the surface the camera sees at the centre of the object's outline (F1).
+
 ### Physics
 
 - **Cloth**: a new role in *Physics*, *Cloth*: a part (its face picked at the *Faces* level, or the whole part; a closed solid keeps its volume with *Pressure*) folds and drapes over what is under it when the physics bar's *Start* runs, colliding with itself, the other parts, the falling bodies and the floor, and blown by the wind of the *Ambient* effects (S9).
