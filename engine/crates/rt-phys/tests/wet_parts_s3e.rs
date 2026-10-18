@@ -871,14 +871,14 @@ fn a_spec_of_version_two_round_trips_and_bad_ones_are_refused() {
 
 /// Pinned hash of the S3e parity parts after [`S3E_STEPS`] ([`WetParts::hash`]); the page's test
 /// with the real `rt.wasm` checks the module against it.
-const PINNED_S3E_PARTS: u32 = 0x8cbf_1fd2;
+const PINNED_S3E_PARTS: u32 = 0xf45d_1240;
 /// Pinned hash of the moving parity parts after [`MOVING_STEPS`] with the drop scene's bodies.
 const PINNED_S3E_MOVING: u32 = 0x5a95_d355;
 /// Pinned hash of the S3e parity scene ([`s3e_scene`]) at 4 samples per pixel; `tools/wasm-parity.mjs`
 /// checks the module against it (`rt --write-s3e-example`).
-const PINNED_S3E_FLOOR_4SPP: u32 = 0xa531_1343;
+const PINNED_S3E_FLOOR_4SPP: u32 = 0x0cee_573e;
 /// Pinned hash of the moving parity scene at 4 samples per pixel (`rt --write-s3e-moving-example`).
-const PINNED_S3E_MOVING_4SPP: u32 = 0xe7e9_64e9;
+const PINNED_S3E_MOVING_4SPP: u32 = 0x2608_cbab;
 /// Pinned hash of the dust parity scene (the bottle on the set's card at 120 s, its fine samples and
 /// its motes) at 4 samples per pixel (`rt --write-s3e-dust-example`).
 const PINNED_S3E_DUST_4SPP: u32 = 0xb19b_c6f0;

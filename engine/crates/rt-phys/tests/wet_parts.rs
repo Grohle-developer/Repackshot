@@ -22,7 +22,7 @@ use rt_phys::Transform;
 
 /// Pinned hash of the parity parts after [`PARTS_STEPS`] ([`WetParts::hash`]); the page's test with
 /// the real `rt.wasm` (`tests/s3c-parts.test.ts`) checks the module against it.
-const PINNED_WET_PARTS: u32 = 0xdc58_fa46;
+const PINNED_WET_PARTS: u32 = 0xb671_a2b3;
 
 /// A plate tilted `deg` about X (its slope runs down −Y for a positive angle) at `at`.
 fn tilted(deg: f32, at: Vec3) -> Transform {
@@ -301,7 +301,7 @@ fn a_sliding_drop_follows_the_surface_from_face_to_face() {
     assert!(crossed, "the drop never reached the steep face: {last:?}");
     // S3f: it reached the open lower edge of the steep face and hangs there (S3c and S3d ran it off
     // the edge as a drip): far too light for its contact line to let go. Running fast down the
-    // steep face it left the beads of a rivulet behind it, on its path, smaller.
+    // steep face it left its wet trail behind it (S3g: no beads; S3f left those of a rivulet).
     assert_eq!(parts.counts().2, 0);
     let held = parts.drop_states();
     let edge: Vec<_> = held.iter().filter(|d| d.edge).collect();
@@ -916,7 +916,7 @@ fn the_parity_parts_have_a_pinned_hash() {
 
 /// Pinned hash of the S3c parity scene ([`s3c_wet_scene`]) at 4 samples per pixel;
 /// `tools/wasm-parity.mjs` checks the module against it (`rt --write-s3c-wet-example`).
-const PINNED_S3C_WET_4SPP: u32 = 0xfc96_fb05;
+const PINNED_S3C_WET_4SPP: u32 = 0xaf75_aead;
 
 /// FNV-1a over the little-endian bytes of the resolved film (the hash of the render tests and of
 /// `tools/wasm-parity.mjs`).
@@ -969,17 +969,17 @@ fn the_s3c_scene_has_a_pinned_hash_on_every_simd_path() {
 /// Pinned hash of the S3d parity scene ([`s3d_flight_scene`]: the S3c scene with the drops in the
 /// air in its `WETF`) at 4 samples per pixel; `tools/wasm-parity.mjs` checks the module against it
 /// (`rt --write-s3d-flight-example`).
-const PINNED_S3D_FLIGHT_4SPP: u32 = 0x3ba0_0640;
+const PINNED_S3D_FLIGHT_4SPP: u32 = 0x77d7_f09c;
 
 /// Pinned hashes of the six exact passes of the S3d scene (4 albedo samples), in the order of
 /// `PASS_KEYS` (`PINNED_S3D_PASS_<KEY>` for CI): a drop on a part and a drop in the air name their
 /// part in the part and material passes.
-const PINNED_S3D_PASS_ALBEDO: u32 = 0x95e5_9402;
-const PINNED_S3D_PASS_NORMAL: u32 = 0x6373_4817;
-const PINNED_S3D_PASS_DEPTH: u32 = 0x04de_e46d;
-const PINNED_S3D_PASS_PART_ID: u32 = 0x787b_3f07;
-const PINNED_S3D_PASS_MATERIAL_ID: u32 = 0x787b_3f07;
-const PINNED_S3D_PASS_COC: u32 = 0x7918_3f06;
+const PINNED_S3D_PASS_ALBEDO: u32 = 0x0384_f4a7;
+const PINNED_S3D_PASS_NORMAL: u32 = 0x6cbc_a8cd;
+const PINNED_S3D_PASS_DEPTH: u32 = 0xd048_5554;
+const PINNED_S3D_PASS_PART_ID: u32 = 0x2dd8_69f3;
+const PINNED_S3D_PASS_MATERIAL_ID: u32 = 0x2dd8_69f3;
+const PINNED_S3D_PASS_COC: u32 = 0x709d_4ae9;
 
 /// The six exact passes of `scene` (4 albedo samples) on `isa`, as the hosts render them.
 fn passes(scene: &rt_core::scene::Scene, isa: rt_core::simd::Isa) -> rt_core::passes::Passes {
@@ -1188,12 +1188,12 @@ fn without_meshes(bytes: &[u8]) -> Vec<u8> {
 /// Pinned hash of the organic parts ([`rt_phys::example::organic_parts`]) after
 /// [`rt_phys::example::ORGANIC_STEPS`]; the page's test with the real `rt.wasm`
 /// (`tests/s3f-organic.test.ts`) checks the module against it.
-const PINNED_S3F_PARTS: u32 = 0x1c5a_82bb;
+const PINNED_S3F_PARTS: u32 = 0xec4c_7e6b;
 
 /// Pinned hash of the S3f parity scene ([`rt_phys::example::s3f_organic_scene`]: the drops with
 /// their shapes in `WETP`) at 4 samples per pixel; `tools/wasm-parity.mjs` checks the module against
 /// it (`rt --write-s3f-organic-example`).
-const PINNED_S3F_ORGANIC_4SPP: u32 = 0xbfb0_b45a;
+const PINNED_S3F_ORGANIC_4SPP: u32 = 0x1008_858c;
 
 fn part_of(adv: f32, rec: f32, transform: Transform) -> WetPartSpec {
     WetPartSpec {
@@ -1492,15 +1492,18 @@ fn a_merge_moves_the_centre_continuously_to_the_centre_of_volume() {
     assert_eq!(merged[0].id, first[0].id);
     let total = 2.0 * k * a * a * a;
     assert!((merged[0].volume / total - 1.0).abs() < 1e-6);
-    // At first its outline spans the two, with a neck between them, centred between them.
+    // At first its outline lies along the line of the two (as long over as wide as their span over
+    // one of them), with a neck between them, centred between them; S3g: and of the merged drop's
+    // contact area (S3f's spanned both, a quarter more).
     let s = parts.shapes()[0];
     let a2 = merged[0].a;
     assert!(s.neck > 0.4, "{s:?}");
     assert!(
-        ((s.merge_along * a2) / (0.5 * (1.8 * a + 2.0 * a)) - 1.0).abs() < 1e-3,
+        (s.merge_along / s.merge_across / (0.5 * (1.8 * a + 2.0 * a) / a) - 1.0).abs() < 1e-3,
         "{s:?}"
     );
     assert!((s.shift * a2 - 0.9 * a).abs() < 1e-3, "{s:?}");
+    assert!((parts.outline_ratios(720)[0] - 1.0).abs() < 0.02);
     // Its centre moves on to the centre of volume, never by more than a few hundredths of the two
     // radii in a step (a merge does not teleport), and the neck fills.
     let bound = 0.12 * 2.0 * a;
@@ -1576,7 +1579,7 @@ fn a_drop_that_reaches_an_open_edge_hangs_there_until_it_pinches_off() {
 }
 
 #[test]
-fn a_fast_drop_on_a_steep_face_leaves_a_continuous_run_and_a_slow_one_does_not() {
+fn a_fast_drop_on_a_steep_face_leaves_a_continuous_trail_and_no_beads_and_a_slow_one_neither() {
     let k = k_of(GLASS_ADVANCING_DEG, GLASS_RECEDING_DEG);
     let crit = rt_phys::wet::critical_radius(GLASS_ADVANCING_DEG, GLASS_RECEDING_DEG, 1.0);
     let a = 2.0 * crit;
@@ -1591,42 +1594,17 @@ fn a_fast_drop_on_a_steep_face_leaves_a_continuous_run_and_a_slow_one_does_not()
         parts.step(60);
         parts
     };
-    // Vertical: it runs at its fastest, its rear angle falls below RUN_REAR_SHARE of the receding
-    // one, and it leaves the beads of a rivulet on its path, above it, elongated along it.
+    // Vertical: it runs at its fastest. S3g: its rear angle stays far above the pearling one, so it
+    // leaves its wet trail and nothing else (S3f left the beads of a rivulet, a dotted line).
     let mut steep = run(90.0);
-    let states = steep.drop_states();
-    let shapes = steep.shapes();
-    let head = states
-        .iter()
-        .max_by(|x, y| x.volume.total_cmp(&y.volume))
-        .unwrap();
-    let beads: Vec<usize> = (0..states.len()).filter(|&i| states[i].bead).collect();
-    assert!(beads.len() >= 5, "{} beads", beads.len());
-    for &i in &beads {
-        let b = states[i];
-        assert!(b.p.z > head.p.z && (b.p.x - head.p.x).abs() < 0.5, "{b:?}");
-        assert!(
-            shapes[i].aspect > 1.0 && shapes[i].axis.z.abs() > 0.99,
-            "{:?}",
-            shapes[i]
-        );
-        assert!(b.a < 0.5 * head.a);
-    }
-    // The newest, just behind it, still as long as RUN_BEAD times their width.
-    let longest = beads.iter().fold(0.0f32, |m, &i| m.max(shapes[i].aspect));
-    assert!(longest > 2.5, "{longest}");
-    // They relax into small round drops that stay where they are.
-    let left: Vec<_> = beads.iter().map(|&i| (states[i].id, states[i].p)).collect();
+    assert_eq!(steep.drop_states().len(), 1, "{:?}", steep.drop_states());
+    assert_eq!(steep.pearls(), 0);
     steep.step(480);
-    let later = steep.drop_states();
-    for (id, p) in left {
-        let b = later.iter().find(|d| d.id == id).expect("still there");
-        assert!(!b.bead && b.p == p, "{b:?}");
-    }
-    // At 25° the same drop runs slower and leaves none.
+    assert_eq!(steep.pearls(), 0);
+    // At 25° the same drop runs slower and leaves none either.
     let gentle = run(25.0);
-    assert!(gentle.drop_states().iter().all(|d| !d.bead));
     assert_eq!(gentle.drop_states().len(), 1);
+    assert_eq!(gentle.pearls(), 0);
 }
 
 #[test]
@@ -1648,12 +1626,12 @@ fn the_organic_parts_are_the_same_however_the_steps_are_split_with_a_pinned_hash
     let shapes = once.shapes();
     let (landed, splashes, drips) = once.counts();
     eprintln!(
-        "S3f organic parts after {ORGANIC_STEPS} steps: {:#010x}, {} drops ({} sliding, {} relaxing a merge, {} beads, {} at an edge), {} in the air, {landed} landed, {splashes} splashes, {drips} drips, {:.1} mm³ on",
+        "S3f organic parts after {ORGANIC_STEPS} steps: {:#010x}, {} drops ({} sliding, {} relaxing a merge, {} pearls so far, {} at an edge), {} in the air, {landed} landed, {splashes} splashes, {drips} drips, {:.1} mm³ on",
         once.hash(),
         states.len(),
         states.iter().filter(|d| d.velocity.length() > 0.0).count(),
         states.iter().filter(|d| d.merging > 0.0).count(),
-        states.iter().filter(|d| d.bead).count(),
+        once.pearls(),
         states.iter().filter(|d| d.edge).count(),
         once.falling().len(),
         once.water(),
@@ -1661,7 +1639,8 @@ fn the_organic_parts_are_the_same_however_the_steps_are_split_with_a_pinned_hash
     // Something of every kind is there.
     assert!(states.iter().any(|d| d.velocity.length() > 0.0));
     assert!(states.iter().any(|d| d.merging > 0.0));
-    assert!(states.iter().any(|d| d.bead));
+    // S3g: the runner on the glass pane leaves no pearls (S3f: the beads of a rivulet).
+    assert_eq!(once.pearls(), 0);
     assert!(shapes.iter().any(|s| s.neck > 0.0));
     assert!(shapes.iter().any(|s| s.sag > 0.0));
     assert!(drips >= 1);

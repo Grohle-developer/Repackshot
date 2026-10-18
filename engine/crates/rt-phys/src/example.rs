@@ -1181,3 +1181,181 @@ pub fn s3e_strip() -> Vec<(String, rt_core::scene::Scene)> {
     }
     out
 }
+
+/// S3g: the rain of the water table (the page's default *Rain*): its number density (drops per
+/// mm³), its speed (mm/s), and its drops' diameter (mm) and variation (± share).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterRain {
+    /// Drops per mm³.
+    pub density: f32,
+    /// mm/s.
+    pub speed: f32,
+    /// mm.
+    pub size_mm: f32,
+    /// ± share of the size.
+    pub size_var: f32,
+}
+
+/// S3g: a wettability family of the water table: its name and its advancing and receding contact
+/// angles of water, degrees.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WaterFamily {
+    /// Its key (`src/data/wettability.ts`).
+    pub name: String,
+    /// Degrees.
+    pub advancing_deg: f32,
+    /// Degrees.
+    pub receding_deg: f32,
+}
+
+/// S3g: the tilts of the water table's plates, degrees from the horizontal.
+pub const WATER_TILTS_DEG: [f32; 5] = [90.0, 60.0, 45.0, 30.0, 15.0];
+
+/// S3g: the median, the 90th percentile, the least and the most of a sample, and its size.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Quantiles {
+    /// Values in the sample.
+    pub count: u32,
+    /// Its median.
+    pub median: f32,
+    /// Its 90th percentile.
+    pub p90: f32,
+    /// Its least value.
+    pub min: f32,
+    /// Its largest value.
+    pub max: f32,
+}
+
+impl Quantiles {
+    /// The quantiles of `v` (sorted in place; nearest rank); all zero for an empty one.
+    pub fn of(v: &mut [f32]) -> Quantiles {
+        if v.is_empty() {
+            return Quantiles::default();
+        }
+        v.sort_by(f32::total_cmp);
+        let at = |q: f32| v[((q * v.len() as f32).ceil() as usize).clamp(1, v.len()) - 1];
+        Quantiles {
+            count: v.len() as u32,
+            median: at(0.5),
+            p90: at(0.9),
+            min: v[0],
+            max: v[v.len() - 1],
+        }
+    }
+}
+
+/// S3g: the states of a drop the water table measures its outline in.
+pub const OUTLINE_STATES: [&str; 5] = ["round", "pinned", "sliding", "merging", "hanging"];
+
+/// S3g: what the drops did on one plate of the water table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WaterRow {
+    /// The family.
+    pub family: WaterFamily,
+    /// The plate's tilt, degrees from the horizontal.
+    pub tilt_deg: f32,
+    /// The model's critical contact radius at that tilt (Furmidge), mm.
+    pub critical_radius_mm: f32,
+    /// The contact diameter of the drops when they started to slide from rest, mm.
+    pub depin_contact_mm: Quantiles,
+    /// Their equivalent sphere's diameter `∛(6V/π)`, mm.
+    pub depin_sphere_mm: Quantiles,
+    /// The contact diameter of the sliding drops (whatever else they do), every frame (24 a
+    /// second), mm.
+    pub runner_contact_mm: Quantiles,
+    /// The area-equivalent diameter of the outline the renderer draws over the physical contact
+    /// diameter (`√(outline area / π a²)`), every frame, by [`OUTLINE_STATES`].
+    pub outline: [Quantiles; 5],
+    /// Drops the runners left behind them.
+    pub pearls: u32,
+    /// Drops that landed.
+    pub landed: u32,
+}
+
+/// S3g: one plate of the water table: 100 mm square of `family`, tilted `tilt_deg` from the
+/// horizontal about X (its downhill along −Y), its centre 300 mm up, under `rain` falling onto it
+/// square-on (so every tilt takes the same water and only gravity's share along the face differs).
+pub fn water_plate_spec(
+    family: &WaterFamily,
+    tilt_deg: f32,
+    rain: WaterRain,
+) -> crate::wet_parts::PartsSpec {
+    use crate::wet_parts::{PartsSource, PartsSourceKind, PartsSpec, WetPartSpec};
+    let rot = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), tilt_deg * fmath::DEG_TO_RAD);
+    let transform = Transform::from_pose(Vec3::new(0.0, 0.0, 300.0), rot);
+    let n = rot.rotate(Vec3::new(0.0, 0.0, 1.0));
+    PartsSpec {
+        seed: 11,
+        cell_mm: 1.0,
+        max_samples: 60_000,
+        repose_deg: DUST_REPOSE_DEG,
+        snow_repose_deg: SNOW_REPOSE_DEG,
+        meshes: vec![plate_mesh(100.0, 100.0, 5, 5)],
+        parts: vec![WetPartSpec {
+            mesh: 0,
+            transform,
+            advancing_deg: family.advancing_deg,
+            receding_deg: family.receding_deg,
+            soak_mm_s: 0.0,
+            flags: 0,
+            body: crate::wet_parts::NO_BODY,
+        }],
+        sources: vec![PartsSource {
+            kind: PartsSourceKind::Drops,
+            density: rain.density,
+            velocity: n * (-rain.speed),
+            size_mm: rain.size_mm,
+            size_var: rain.size_var,
+        }],
+        extras: crate::wet_parts::PartsExtras::default(),
+    }
+}
+
+/// S3g: runs one plate of the water table for `seconds` and measures its drops.
+pub fn water_row(family: &WaterFamily, tilt_deg: f32, rain: WaterRain, seconds: f32) -> WaterRow {
+    let mut parts = crate::wet_parts::WetParts::new(water_plate_spec(family, tilt_deg, rain));
+    let sin = fmath::sin(tilt_deg * fmath::DEG_TO_RAD);
+    let critical = parts.critical_radius(0, sin);
+    let frames = (seconds * 24.0).round().max(1.0) as u32;
+    let mut runners = Vec::new();
+    let mut outline: [Vec<f32>; 5] = Default::default();
+    for _ in 0..frames {
+        parts.step(crate::world::STEPS_PER_SECOND / 24);
+        let ratios = parts.outline_ratios(96);
+        for (d, r) in parts.drop_states().iter().zip(ratios) {
+            let sliding = d.velocity.length() > 0.0;
+            if sliding {
+                runners.push(2.0 * d.a);
+            }
+            let state = if d.hang > 0.0 || d.pinch > 0.0 {
+                4
+            } else if d.merging > 0.0 {
+                3
+            } else if sliding {
+                2
+            } else if sin > 1.0e-3 && !d.edge {
+                1
+            } else {
+                0
+            };
+            outline[state].push(r.max(0.0).sqrt());
+        }
+    }
+    let mut contact: Vec<f32> = parts.depins().iter().map(|d| 2.0 * d.a).collect();
+    let mut sphere: Vec<f32> = parts
+        .depins()
+        .iter()
+        .map(|d| crate::wet::cbrt(6.0 * d.volume / fmath::PI))
+        .collect();
+    WaterRow {
+        family: family.clone(),
+        tilt_deg,
+        critical_radius_mm: critical,
+        depin_contact_mm: Quantiles::of(&mut contact),
+        depin_sphere_mm: Quantiles::of(&mut sphere),
+        runner_contact_mm: Quantiles::of(&mut runners),
+        outline: outline.map(|mut v| Quantiles::of(&mut v)),
+        pearls: parts.pearls(),
+        landed: parts.counts().0,
+    }
+}

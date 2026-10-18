@@ -65,6 +65,7 @@ USAGE:
     rt --write-s3e-moving-example <scene.rsb>
     rt --write-s3e-dust-example <scene.rsb>
     rt --write-s3e-strip <dir>
+    rt --water-table <in.txt> -o <table.json>
     rt --write-s3c-parts-spec <parts.wpt1>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
@@ -251,6 +252,12 @@ OPTIONS:
                             write the frames of the S3e captures of docs/ui (the falling box,
                             the floor, the dust and its motes, the set's edge coarse and fine;
                             one RSB file each, s3e-<name>.rsb)
+        --water-table <f>   S3g: run the water table (plates of each wettability family at
+                            90, 60, 45, 30 and 15 degrees under a rain falling onto them
+                            square-on) and write what their drops did as JSON to -o; <f> holds
+                            the lines `seconds S`, `rain DENSITY SPEED SIZE VAR` (drops per mm3,
+                            mm/s, mm, share) and one `family NAME ADVANCING RECEDING` (degrees)
+                            per family
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -642,6 +649,14 @@ pub enum Command {
         /// The directory.
         dir: PathBuf,
     },
+    /// S3g: run the water table (`rt_phys::example::water_row`) of the families and rain of
+    /// `input` and write it as JSON.
+    WaterTable {
+        /// The text file of the table's rain and families.
+        input: PathBuf,
+        /// The JSON file to write.
+        output: PathBuf,
+    },
     /// S3b: write the spec of the parity pane (`rt_phys::example::wet_spec`) as a `WET1` file.
     WriteWetSpec {
         /// WET1 file to write.
@@ -773,6 +788,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_s3 = None;
     let mut write_strip = None;
     let mut write_s3e_strip = None;
+    let mut water_table = None;
     let mut write_wet = None;
     let mut write_parts = None;
     let mut write_e10 = None;
@@ -950,6 +966,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 write_s3 = Some((S3Example::Dust, PathBuf::from(value(&mut it, arg)?)))
             }
             "--write-s3e-strip" => write_s3e_strip = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--water-table" => water_table = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-s3c-parts-spec" => write_parts = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -1146,6 +1163,15 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-s3f-strip takes no other option".into());
         }
         return Ok(Command::WriteS3fStrip { dir });
+    }
+    if let Some(input) = water_table {
+        let Some(output) = output else {
+            return Err("--water-table needs -o <table.json>".into());
+        };
+        if args.len() != 4 {
+            return Err("--water-table takes no other option than -o".into());
+        }
+        return Ok(Command::WaterTable { input, output });
     }
     if let Some(dir) = write_s3e_strip {
         if args.len() != 2 {
@@ -1450,6 +1476,30 @@ pub fn run(command: Command) -> Result<(), String> {
                 std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
                 println!("wrote {} ({} bytes)", path.display(), bytes.len());
             }
+            Ok(())
+        }
+        Command::WaterTable { input, output } => {
+            let text =
+                std::fs::read_to_string(&input).map_err(|e| format!("{}: {e}", input.display()))?;
+            let (seconds, rain, families) = water_input(&text)?;
+            let mut rows = Vec::new();
+            for family in &families {
+                for &tilt in &rt_phys::example::WATER_TILTS_DEG {
+                    let row = rt_phys::example::water_row(family, tilt, rain, seconds);
+                    println!(
+                        "{} at {tilt}°: critical {:.2} mm, {} depinned (contact {:.2} mm median), {} pearls",
+                        family.name,
+                        2.0 * row.critical_radius_mm,
+                        row.depin_contact_mm.count,
+                        row.depin_contact_mm.median,
+                        row.pearls
+                    );
+                    rows.push(row);
+                }
+            }
+            let json = water_json(seconds, rain, &rows);
+            std::fs::write(&output, json).map_err(|e| format!("{}: {e}", output.display()))?;
+            println!("wrote {} ({} rows)", output.display(), rows.len());
             Ok(())
         }
         Command::WriteS3eStrip { dir } => {
@@ -1807,6 +1857,101 @@ pub fn run(command: Command) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// S3g: the seconds, the rain and the families of a water table's input (see `--water-table`).
+pub fn water_input(
+    text: &str,
+) -> Result<
+    (
+        f32,
+        rt_phys::example::WaterRain,
+        Vec<rt_phys::example::WaterFamily>,
+    ),
+    String,
+> {
+    let mut seconds = 10.0;
+    let mut rain = None;
+    let mut families = Vec::new();
+    let num = |w: Option<&str>, what: &str| -> Result<f32, String> {
+        w.and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| format!("water table: a bad {what}"))
+    };
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let mut w = line.split_whitespace();
+        match w.next() {
+            Some("seconds") => seconds = num(w.next(), "seconds")?.clamp(0.1, 600.0),
+            Some("rain") => {
+                rain = Some(rt_phys::example::WaterRain {
+                    density: num(w.next(), "density")?.max(0.0),
+                    speed: num(w.next(), "speed")?.max(0.0),
+                    size_mm: num(w.next(), "size")?.max(0.0),
+                    size_var: num(w.next(), "variation")?.clamp(0.0, 1.0),
+                })
+            }
+            Some("family") => {
+                let name = w.next().ok_or("water table: a family without a name")?;
+                families.push(rt_phys::example::WaterFamily {
+                    name: name.to_string(),
+                    advancing_deg: num(w.next(), "advancing angle")?,
+                    receding_deg: num(w.next(), "receding angle")?,
+                });
+            }
+            Some(other) => return Err(format!("water table: unknown line `{other}`")),
+            None => {}
+        }
+    }
+    let rain = rain.ok_or("water table: no rain line")?;
+    if families.is_empty() {
+        return Err("water table: no family".into());
+    }
+    Ok((seconds, rain, families))
+}
+
+/// S3g: a water table as JSON.
+pub fn water_json(
+    seconds: f32,
+    rain: rt_phys::example::WaterRain,
+    rows: &[rt_phys::example::WaterRow],
+) -> String {
+    use rt_phys::example::{Quantiles, OUTLINE_STATES};
+    let q = |q: &Quantiles| {
+        format!(
+            "{{\"count\":{},\"median\":{},\"p90\":{},\"min\":{},\"max\":{}}}",
+            q.count, q.median, q.p90, q.min, q.max
+        )
+    };
+    let mut out = format!(
+        "{{\"seconds\":{seconds},\"rain\":{{\"density\":{},\"speed\":{},\"sizeMm\":{},\"sizeVar\":{}}},\"rows\":[",
+        rain.density, rain.speed, rain.size_mm, rain.size_var
+    );
+    for (k, r) in rows.iter().enumerate() {
+        if k > 0 {
+            out.push(',');
+        }
+        let outline: Vec<String> = OUTLINE_STATES
+            .iter()
+            .zip(&r.outline)
+            .map(|(name, o)| format!("\"{name}\":{}", q(o)))
+            .collect();
+        out.push_str(&format!(
+            "{{\"family\":\"{}\",\"advancingDeg\":{},\"recedingDeg\":{},\"tiltDeg\":{},\"criticalRadiusMm\":{},\"depinContactMm\":{},\"depinSphereMm\":{},\"runnerContactMm\":{},\"outline\":{{{}}},\"pearls\":{},\"landed\":{}}}",
+            r.family.name,
+            r.family.advancing_deg,
+            r.family.receding_deg,
+            r.tilt_deg,
+            r.critical_radius_mm,
+            q(&r.depin_contact_mm),
+            q(&r.depin_sphere_mm),
+            q(&r.runner_contact_mm),
+            outline.join(","),
+            r.pearls,
+            r.landed
+        ));
+    }
+    out.push_str("]}\n");
+    out
 }
 
 #[cfg(test)]

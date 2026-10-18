@@ -162,7 +162,8 @@ pub struct DropShape {
     pub neck: f32,
     /// How far its outline is off its centre along `merge_axis`, in contact radii, −16..16.
     pub shift: f32,
-    /// How much it stretches along gravity (hanging), 0..8: by `1 + sag`, thinner across.
+    /// How much it stretches along gravity (hanging), 0..8: thinner across by up to `√(1 + sag)`
+    /// at its top, longer along gravity by what keeps its volume (S3g: its contact line stays).
     pub sag: f32,
     /// The neck of a hanging drop under its contact line, 0..0.95.
     pub pinch: f32,
@@ -301,9 +302,10 @@ impl ShapeFrame {
 /// at the top, none at the contact line), the taper of its width along the axis, the stretch along
 /// the axis by `√aspect` and across by its inverse; the merge's stretch, its neck
 /// (`1 − neck (1 − u²)²` of the width at `u` along the merge's axis) and shift, its height scaled
-/// to keep the volume; the stretch along gravity by `1 + sag` with the plane across it thinner by
-/// `√(1 + sag)` and pinched by `pinch · 4t(1 − t)` at height share `t`, the stretch compensated for
-/// the pinch. Every step keeps the volume of a paraboloid cap.
+/// to keep the volume; S3g: the stretch along gravity of a hanging drop, the plane across it thinner
+/// from none at its contact line (which stays where it is) to `√(1 + sag)` at its top, linearly in
+/// the height share `t`, and pinched by `pinch · 4t(1 − t)`, the stretch along gravity what keeps the
+/// volume ([`hang_stretch`]). Every step keeps the volume of a paraboloid cap.
 pub fn shape_point(q: Vec3, f: &ShapeFrame, s: &DropShape) -> Vec3 {
     let a = f.a.max(1.0e-6);
     let z0 = q.dot(f.n);
@@ -333,15 +335,70 @@ pub fn shape_point(q: Vec3, f: &ShapeFrame, s: &DropShape) -> Vec3 {
         q = (e * (xm * s.merge_along + s.shift) + w * (ym * s.merge_across * pinch)) * a + f.n * z;
     }
     if s.sag > 0.0 || s.pinch > 0.0 {
-        let k = 1.0 + s.sag.max(0.0);
-        let c = s.pinch.clamp(0.0, 0.95);
-        let kt = k / (1.0 - 4.0 * c / 3.0 + 8.0 * c * c / 15.0);
+        let (b, c, kt) = hang_stretch(s);
         let par = q.dot(f.g);
         let perp = q - f.g * par;
-        let across = (1.0 - c * 4.0 * t * (1.0 - t)) / k.sqrt();
+        let across = (1.0 - c * 4.0 * t * (1.0 - t)) * (1.0 + b * t);
         q = f.g * (par * kt) + perp * across;
     }
     q
+}
+
+/// S3g: the hanging step of [`shape_point`] for `shape`: `b = 1/√(1 + sag) − 1` (the thinning across
+/// gravity at the top of the cap: `1 + b t` at height share `t`), the pinch `c` and the stretch
+/// along gravity that keeps the volume of a paraboloid cap, `1 / ∫₀¹ 2(1 − t) w(t)² dt` with
+/// `w = (1 − 4c t(1 − t))(1 + b t)`:
+/// `(1 − 4c/3 + 8c²/15) + b(2/3 − 16c/15 + 16c²/35) + b²(1/6 − 4c/15 + 4c²/35)` under the line.
+pub fn hang_stretch(shape: &DropShape) -> (f32, f32, f32) {
+    let k = 1.0 + shape.sag.max(0.0);
+    let c = shape.pinch.clamp(0.0, 0.95);
+    let b = 1.0 / k.sqrt() - 1.0;
+    let i = (1.0 - 4.0 * c / 3.0 + 8.0 * c * c / 15.0)
+        + b * (2.0 / 3.0 - 16.0 * c / 15.0 + 16.0 * c * c / 35.0)
+        + b * b * (1.0 / 6.0 - 4.0 * c / 15.0 + 4.0 * c * c / 35.0);
+    (b, c, if i > 0.0 { 1.0 / i } else { 1.0 })
+}
+
+/// S3g: the area of the outline of a cap in frame `f` deformed by `shape` (where its contact line
+/// meets the surface), mm²: the polygon of `points` points of its round contact circle moved by
+/// [`shape_point`] and projected onto the tangent plane, over the polygon of the round circle's own
+/// points, times `π a²` (so a deformation that keeps areas gives `π a²` whatever the points).
+pub fn outline_area(f: &ShapeFrame, shape: &DropShape, points: u32) -> f32 {
+    let a = f.a.max(0.0);
+    let n = points.max(3);
+    // A tangent basis: the world axis least along the normal, crossed with it.
+    let pick = if f.n.x.abs() <= f.n.y.abs() && f.n.x.abs() <= f.n.z.abs() {
+        Vec3::new(1.0, 0.0, 0.0)
+    } else if f.n.y.abs() <= f.n.z.abs() {
+        Vec3::new(0.0, 1.0, 0.0)
+    } else {
+        Vec3::new(0.0, 0.0, 1.0)
+    };
+    let e1 = f.n.cross(pick).normalize();
+    let e2 = f.n.cross(e1);
+    let mut area = 0.0f32;
+    let mut prev: Option<(f32, f32)> = None;
+    let mut first = (0.0, 0.0);
+    for k in 0..n {
+        let phi = 2.0 * fmath::PI * k as f32 / n as f32;
+        let (s, c) = fmath::sin_cos(phi);
+        let p = shape_point((e1 * c + e2 * s) * a, f, shape);
+        let here = (p.dot(e1), p.dot(e2));
+        match prev {
+            Some((x, y)) => area += x * here.1 - here.0 * y,
+            None => first = here,
+        }
+        prev = Some(here);
+    }
+    if let Some((x, y)) = prev {
+        area += x * first.1 - first.0 * y;
+    }
+    let round = 0.5 * n as f32 * fmath::sin(2.0 * fmath::PI / n as f32);
+    if round > 0.0 {
+        0.5 * area.abs() / round * fmath::PI
+    } else {
+        0.0
+    }
 }
 
 /// The index of sample `(i, j)` of a triangle of resolution `r` among its samples (the order of
@@ -2155,7 +2212,8 @@ mod tests {
             width(false)
         );
         // Hanging from a ceiling (its normal down, gravity along it): longer along gravity than a
-        // round cap is tall, thinner across.
+        // round cap is tall; S3g: its contact line where the round cap's is, thinner across above
+        // it.
         let hanging = |shape| Cap {
             normal: Vec3::new(0.0, 0.0, -1.0),
             ..cap(shape)
@@ -2164,7 +2222,31 @@ mod tests {
         let h = points(&cap_mesh(&[hanging(Some(all[2]))]).unwrap());
         let z = Vec3::new(0.0, 0.0, 1.0);
         assert!(extent(&h, z) > 1.6 * extent(&r, z));
-        assert!(extent(&h, x) < extent(&r, x));
+        let ring = |p: &[Vec3]| {
+            p.iter()
+                .filter(|q| q.z.abs() < 1e-4)
+                .map(|q| q.x.abs())
+                .fold(0.0f32, f32::max)
+        };
+        assert!(
+            (ring(&h) - ring(&r)).abs() < 1e-4,
+            "{} vs {}",
+            ring(&h),
+            ring(&r)
+        );
+        let below = |p: &[Vec3], depth: f32| {
+            p.iter()
+                .filter(|q| q.z < -depth)
+                .map(|q| q.x.abs())
+                .fold(0.0f32, f32::max)
+        };
+        let half = 0.5 * extent(&r, z);
+        assert!(
+            below(&h, half) < below(&r, half),
+            "{} vs {}",
+            below(&h, half),
+            below(&r, half)
+        );
         // And a round shape is the round cap.
         assert!(DropShape::ROUND.is_round() && !all.iter().any(DropShape::is_round));
     }
@@ -2229,3 +2311,7 @@ mod tests {
 #[cfg(test)]
 #[path = "weather_s3e_tests.rs"]
 mod s3e_tests;
+
+#[cfg(test)]
+#[path = "weather_s3g_tests.rs"]
+mod s3g_tests;
