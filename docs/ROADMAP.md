@@ -4364,7 +4364,7 @@ nodo *Madera*) y en *Completo*. Ninguna captura anterior enseña una madera
 de la familia en *Rápido* (las de madera son de *Completo* o del editor de
 nodos), así que ninguna se regraba.
 
-No encajó con el plan:
+No encajó con el plan (lo marcado ◆ está decidido en *Decisiones de criterio*: los dos van a **M3e**):
 
 1. ◆ **Los nudos en *Rápido* cambian de sitio.** Antes los ponía la capa de
    E6 por pieza, en 3D y con la prueba de la malla, donde los pone
@@ -12585,6 +12585,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **C2** · Interruptor de la focal (1.7). **Hecha**: ver C2, abajo.
 - **M3c** · Nodos *Madera* y *Tela* (1.6). **Hecha**: ver M3c, tras M3b.
 - **M3d** · La madera de la familia en *Rápido* por el camino del nodo *Madera* (M3c ◆3). **Hecha**: ver M3d, tras M3c.
+- **M3e** · Los nudos de *Rápido* donde los pone *Completo* y la tela horneada cuando sus hilos se leen (M3d ◆1 y ◆2).
 - **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
 - El 1.2 entra en **S3**.
@@ -12678,6 +12679,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **C2** (interruptor de la focal). Se aceptan las seis tal como están: el interruptor va en cada cámara (viaja con ella al proyecto y a los estudios); una cámara bloqueada cambia la focal sin moverse; el objetivo de la órbita avanza por el eje cuando la cámara quedaría a menos de 0,1 × distancia × f′/f; las ópticas de interior pasan por el interruptor, los presets de lente siguen encuadrando el producto y los clips *ZOOM* no se mueven; la fila va debajo de *Focal*; con ortográfica o panorámica el interruptor sigue usable, no hace nada y lo dice. **Hecho en C2.**
 - **O2c** (editor de elementos de la lente). Se acepta tal como está: el elemento nuevo por defecto (radios ±4 f, 4 % de f de grosor, el vidrio de la lente simple del catálogo, tan ancho como el vecino más estrecho, centrado en el hueco), los márgenes (1 % de f de aire, 5 % delante y detrás, 1e-3 mm en los bordes), el paso del 10 % de *Más pequeño · Más grande* y el umbral del círculo de imagen (luz relativa 0,001). Un círculo que no cubre el encuadre **no impide aplicar** (el viñeteo fuerte es un aspecto que se puede querer, y el render lo enseña). La lente editada **conserva el recorrido del diafragma** de la del catálogo. **Hecho en O2c.**
 - **M3c** (nodos *Madera* y *Tela*). ◆1, la pelusa: se queda como está, una salida numérica de la *Tela* que se puede usar en el grafo; la entrada de pelusa de la salida de material (la 16 del programa) llega con **M5**, cuando el motor pinte la pelusa, no antes. ◆2, la tela bajo un bisel: se acepta como está (fuera del radio de bisel, los mismos bits que la familia; su propio fijado). ◆3, la madera de la familia en *Rápido*: **sí**, que se hornee por el mismo camino que el nodo, para que la madera en escena se vea como en las esferas también en *Rápido*: **M3d**. Lo demás (vista desde dentro, el bit de la normal, los nudos contra la caja en *Rápido*, el color medio, la semilla copiada al convertir), como está. **Hecho en M3c**, salvo M3d y lo que va a M5.
+- **M3d** (la madera de la familia en *Rápido*). Se acepta como está: la familia se hornea por el camino del nodo y da sus mismos píxeles. ◆1, los nudos: **(b)**, la capa de nudos de E6 (la de cada pieza, la que coincide con *Completo*) encima de un horneado sin nudos, para la familia y para el nodo; que los nudos de *Rápido* caigan donde los pone el render pesa más que el horneado los traiga. ◆2, la tela: **(b)**, se hornea solo cuando un hilo ocupa al menos 2,5 texels, con la pelusa (*sheen*) encima; por debajo se queda como hoy, sin moiré. Los dos, en **M3e**. **Hecho en M3d**, salvo M3e.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
