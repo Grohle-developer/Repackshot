@@ -11974,7 +11974,7 @@ probaba tras *Parar*):
    render, ◆7 de S3).
 8. ◆ `MAX_GLASS_SECONDS = 120`.
 
-### S3c · Gotas y polvo sobre las piezas (simulación) — **Opus** (tras S3b) — propuesta
+### S3c · Gotas y polvo sobre las piezas (simulación) — **Opus** (tras S3b) — hecha en parte (el aviso del bit 7; la lluvia, el polvo y la nieve sobre las piezas, en el motor y en *Rápido*); el resto, S3d
 
 Lo que queda de S3 tras S3b, sobre el modelo de `rt_phys::wet` (que ya hace el
 cristal):
@@ -12001,6 +12001,271 @@ cristal):
 5. **Criterios** que quedan de S3: la hoja con la botella bajo la lluvia a 0, 2,
    5 y 15 s (gotas, rastros, goteo) y el polvo sobre el set a 0, 30 y 120 s;
    `docs/ui/physics-rain-set.png`.
+
+**Hecho (S3c: el aviso y lo de las piezas; lo que queda, S3d, abajo).** Entra
+todo lo que pasa **sobre las piezas** que están quietas: las gotas una a una
+sobre las mallas, el rastro como máscara del material, el polvo y la nieve por
+muestra, la caché y el clip, en el motor (*Completo* y el render) y en
+*Rápido*, y la hoja y la captura. Lo que no entra (las gotas que caen por el
+aire al gotear y al salpicar, las motas del polvo, las piezas que se mueven, el
+suelo del estudio) es la propuesta **S3d**.
+
+**0. El aviso (primero, con su test).** `core/wet.ts` `glassRendersClean`: con
+el cristal frontal encendido, en *De la escena*, algún efecto que lo alimenta,
+una cámara que no es panorámica y un motor que dice que no tiene el bit 7
+(`EngineInfo.glassLayout`, que `main.ts` saca de las capacidades del motor del
+render: el nativo o el *pool*), *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal*
+dice *el render enseñará este cristal limpio* (`camera.glassOldEngine`, es y
+en). Un motor aún desconocido o uno con el bit, nada; *A mano*, nada (ese lo
+dibuja un motor de S3). Lo mismo para lo nuevo de esta fase con el bit 8
+(`core/wet-parts.ts` `partsRenderDry`, la nota bajo *Sobre las piezas*:
+*el render las enseñará secas y limpias*). `tools/s3c-check.mjs --only
+warning,parts` lo comprueba en la aplicación compilada con un `rt.wasm` cuyas
+capacidades se parchean sin el bit (`tools/wasm-features.mjs`, la constante de
+`rt_features` en su sitio), en inglés y en español.
+
+**1. La simulación (`rt_phys::wet_parts`, §5.2 vicies de ARCHITECTURE).**
+- **Las piezas** son las mallas de las piezas visibles que no mueve la
+  simulación, en mm del mundo donde están al empezar, cada una con la
+  mojabilidad de la familia de su material (◆1) y las del set como
+  **película** (sin gotas una a una: cada muestra se moja en el instante
+  sorteado de la exponencial de su flujo; ◆6). Cada triángulo lleva una
+  **rejilla de muestras** baricéntrica (celda de 1 mm como poco, que crece
+  hasta caber en 150 000 muestras, ◆7; las películas en un tercio como mucho;
+  una astilla, por su área; `R` ≤ 255).
+- **Llegadas.** El flujo de cada efecto (`densidad × |v| × máx(0, −v̂·n)`) a
+  través de cada triángulo, **si nada está en medio** aguas arriba (un rayo
+  contra `v̂` por una BVH de los triángulos del mundo): las gotas, por Poisson
+  sobre todo el flujo y el triángulo por su parte; el polvo y la nieve, como
+  campos por muestra. Qué deja cada efecto: `src/data/wet-parts.ts`
+  `PARTS_FEED` (◆2).
+- **Gotas.** El casquete de S3b en el plano tangente; **salpican** por encima
+  de `K = We^½ Re^¼ = 57,7` (Mundo, Sommerfeld y Tropea 1995) tirando hasta un
+  30 % de su agua como 2 gotas por la superficie (◆3); **se juntan** (por
+  volumen, incremental: solo las nuevas o movidas, 30 veces más rápido que
+  todas con todas); **ancladas** por Furmidge con la gravedad tangente y si no
+  **resbalan** de triángulo en triángulo por las aristas compartidas (las
+  posiciones soldadas; por un pliegue, a lo largo de él), con el rastro de S3b
+  que moja las muestras, se lleva su polvo y les quita agua; **cuelgan** de una
+  cara que mira hacia abajo hasta `ρ g V (ĝ·n) > 2π a γ sin θ̄` y **gotean**
+  (también por una arista abierta): el goteo cae recto hasta la primera pieza de
+  debajo y se posa ahí (a `√(2 g h)`, y puede salpicar) o se va (◆4); lo poroso
+  se las **bebe**.
+- **Polvo** `1 − e^(−k t)` desde la última limpieza y **nieve** como una capa
+  que crece por su flujo (◆5), donde la cara está por debajo del ángulo de
+  reposo (polvo 35°, nieve 50°, ±5°) y a cielo abierto.
+- **WPT1** (`core/wet-parts.ts` `wptBytes`) y, por fotograma, el registro
+  (`WetParts::frame`: las gotas nuevas o cambiadas **por número**, las que se
+  fueron, las muestras mojadas y limpiadas, los goteos). La página lo junta en
+  la **pista de las piezas** de un clip `PHYSICS` de la **escena** (la caché,
+  con la clave `wetPartsKey`), que `partsFrame` rehace en cualquier fotograma.
+  `rt.wasm` exporta `wpt_*`. En el *worker* corre con los cuerpos y el cristal
+  (los mismos pasos) o sola, y no se para sola (*Parar* o 120 s,
+  `MAX_PARTS_SECONDS`).
+
+**2. En el motor (`WETP`, bit 8).** `rt_core::weather`: una sección `WETP` por
+instancia mojada con los tres bytes de cada muestra (mojado, polvo, nieve) y
+sus gotas (§5.2 vicies). Un impacto los lee lineales sobre su triangulito de la
+rejilla; encima del material (con patrones, programa y texturas) van el
+**polvo** (un gris pardo mate, más oscuro mojado), la **película de agua** (una
+capa transparente de rugosidad 0,03 sobre todo y lo poroso más oscuro: el
+albedo a la potencia `1 + mojado × porosidad`, Lekner y Dorf 1988) y la
+**nieve** (blanca y mate, `1 − e^(−h / 0,5 mm)`) (◆8); las **gotas** son
+casquetes de agua (índice 1,333; 16 × 4) en una malla, instancia y material
+más, tras los del archivo, que las sombras cruzan como una pared fina de agua
+(una gota no echa un disco negro). Donde no hay nada, el material no se toca:
+la imagen no cambia un bit (test). Bit 8, `FEATURE_WET_PARTS` (256;
+`/api/info` dice 511); la página manda `WETP` solo a un motor con él
+(`SceneView.wetParts`), del fotograma del *pose* (`Pose.parts`).
+
+**3. En *Rápido*** (`render/weather-preview.ts`). Las piezas mojadas se
+dibujan con una copia de su geometría sin índices y de sus materiales con un
+parche que lee las muestras del fotograma (dos texturas de datos,
+`texelFetch`) como el motor y pone las mismas capas con los mismos números; las
+gotas, un casquete instanciado por gota. El medidor: *Lluvia en las piezas:
+1.443 gotas en 7 piezas*.
+
+**4. La interfaz.** *Ambiente*: el interruptor **Sobre las piezas** (una
+entrada de deshacer, guardado con el efecto, `AmbientEffect.wetParts`) en los
+efectos que dejan algo, con su ayuda por clase; la barra de físicas: *Piezas:
+N gotas · M goteos*; el clip de la escena en la línea de tiempo (*Las piezas
+reciben la lluvia, el polvo y la nieve de los efectos de la escena, según la
+simulación*), que *Reiniciar* quita. Cadenas en es y en.
+
+**5. Fijados** (§5.2 vicies). Nuevos: `PINNED_WET_PARTS = 0x62450071` (las
+piezas de paridad de `rt_phys::example::parts_spec` tras 5 s: una botella de
+vidrio, una placa de plástico a 45°, un estante de metal a 20° y una tarjeta de
+papel como película, bajo lluvia con viento, polvo y nieve) y
+`PINNED_S3C_WET_4SPP = 0x66fa33ab` (`s3c_wet_scene`, con su `WETP`): los mismos
+en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, en `wasm32-wasip1` escalar y
+simd128 (`cargo test -p rt-phys --test wet_parts`, nuevo en CI) y en el
+`rt.wasm` real (`tools/wasm-parity.mjs`, también con los pases;
+`tests/s3c-parts.test.ts` en el paso de CI del `rt.wasm` real). `rt
+--write-s3c-wet-example` y `--write-s3c-parts-spec`
+(`tests/fixtures/s3c-wet.rsb`, `s3c-parts.wpt1`). **Ningún fijado anterior se
+mueve.** `rt-app`: `/api/info` dice 511.
+
+**Tests** (cada uno comprobado con su mutación: la cambia, el test falla, y
+pasa sin ella; las que sobrevivieron a la primera pasada se cerraron con un
+test más estricto):
+- `rt-phys/tests/wet_parts.rs` (17): el WPT1 va y vuelve y uno roto se rechaza;
+  las muestras cubren cada triángulo, caben en el presupuesto, una astilla
+  gasta por su área y una película cabe en su tercio; el vidrio a 30° se queda
+  hasta el radio crítico de Furmidge (± 0,5 % del cálculo en `f64`) y resbala
+  por encima perdiendo en el rastro la película de 2 µm que dice; una gota
+  cruza de cara en cara y gotea por una arista abierta; juntar suma el volumen
+  (± 1 %); el rastro limpia el polvo y la lluvia deja menos; el polvo a 60° <
+  10 % del horizontal, a 30° el coseno, mirando abajo nada, bajo un tejado
+  nada; la lluvia llega a su flujo (± 4σ), nunca a una cara que mira al otro
+  lado ni bajo un tejado; una gota que cuelga gotea al pesar lo que dice y cae
+  sobre lo de debajo (salpica desde 44 mm, no desde 12 mm); una gota rápida
+  salpica sin perder agua; una película se moja a su ritmo; la nieve se apila
+  donde reposa; las mismas piezas por pasos y rehechas de sus fotogramas por
+  número; los dos fijados; un `WETP` sin nada no cambia un píxel, solo los
+  valores o solo las gotas cambian la imagen, y una actualización sin `MESH`
+  tres veces seguidas deja 5 mallas. Mutaciones: media histéresis; sin juntar;
+  el rastro que no limpia; sin ángulo de reposo; sin mirar lo que está en
+  medio; colgar con el doble de agarre; el goteo que no se posa; el agua
+  perdida sin contar; el área de la película sin π; la nieve sin su ángulo; no
+  cruzar aristas; el diario de mojadas sin vaciar; sin gotear por la arista; el
+  rastro sin película (sobrevivió: se añadió la película perdida); el goteo a
+  velocidad 0 o 10 veces (sobrevivieron: se añadió el caso de 12 mm sin
+  salpicar); las ids de las gotas idas sin anotar; sin límite por área; la
+  película con todo el presupuesto. El flujo con `|cos|` en vez de la cara
+  solo lo mata el fijado: casi equivalente, porque la cara de atrás está tapada
+  por la propia pieza.
+- `rt-core` (`weather::tests`, 5): el `WETP` va y vuelve y uno roto se
+  rechaza; un impacto mezcla las muestras de su triangulito; nada encima no
+  toca el material y cada capa lo cambia; un casquete es la parte de su esfera
+  por encima de la superficie; una gota se malla sobre su pieza y deja pasar la
+  luz. Mutaciones: el
+  escritor sin `WETP`; las capas ignoradas; los casquetes que no dejan pasar
+  la sombra; la actualización que no quita los casquetes viejos (sobrevivió:
+  se añadió la actualización sin `MESH`); el triangulito de arriba sin usar.
+  `rt-wasm`: el registro de piezas es el nativo. `rt-cli`: la escena con 1, 4
+  y 16 hilos, los dos `--write-*` y la comparación con los *fixtures*.
+- `tests/s3c-warning.test.ts` (4): el bit 7 (cuándo avisa y cuándo no: polvo
+  sí, nieve no, apagado, *A mano*, el efecto apagado, panorámica, cámara
+  desconocida) y el bit 8; las cadenas, el inspector y `main.ts`. Mutaciones
+  (8): del bit 7, un motor desconocido avisado; sin mirar los efectos que lo
+  alimentan; sin mirar *De la escena*; sin mirar la panorámica; `main.ts` sin
+  el bit; el inspector que no lo mira al cambiar el motor; del bit 8, un motor
+  desconocido avisado; sin mirar los efectos.
+- `tests/s3c-parts.test.ts` (17): la tabla (madera y tela añadidas; plástico,
+  metal, papel y nieve, los del motor); la familia de un material por su
+  categoría o su receta; qué deja cada efecto; solo un efecto con el
+  interruptor cae, y se guarda; las piezas visibles quietas, donde están, con
+  su familia, y las fuentes; el set, película; el WPT1 byte a byte con el del
+  motor; la pista rehace cada fotograma (las gotas por número, mojado, el polvo
+  desde la última limpieza); un grupo de caras toma sus muestras en su orden;
+  el *pose* dice el fotograma también en 0 y el clip no mueve nada; `WETP` por
+  instancia solo para el bit 8; guardado y abierto, una pista rota se quita;
+  la barra corre las piezas solas (una entrada; *Reiniciar*, otra,
+  deshacible), *Dejar caer* y el efecto sin el interruptor no; una pieza
+  *Dinámica* no se moja donde estaba; con el `rt.wasm` real, el fijado de las
+  piezas, dos ejecuciones con la misma pista, su último fotograma es el tiempo
+  del motor nativo (± 1 del byte del polvo) y la imagen fijada. Mutaciones (8):
+  las limpiezas ignoradas; el fotograma mojado corrido en uno; `WETP` sin el
+  bit 8; un `WETP` vacío escrito; las piezas que se mueven mojadas
+  (sobrevivió: se añadió el test de la *Dinámica*); la receta metálica como
+  pintura; una pista rota guardada; el *pose* sin piezas.
+- `tools/s3c-check.mjs` (Chromium y SwiftShader): los dos avisos (arriba); la
+  lluvia del ejemplo con viento de 3 m/s y *Sobre las piezas* (una entrada de
+  deshacer): *Iniciar*, en pausa a los 3 s con *Piezas: 1.443 gotas · 0
+  goteos*, el medidor de *Rápido* con las gotas, 334 891 píxeles cambian,
+  *Parar* (una entrada), *Reiniciar* la quita y *Deshacer* la devuelve; el
+  cromo acromático (también el interruptor) en los dos temas. Captura
+  `docs/ui/physics-rain-set.png`.
+- La hoja `out/rain-dust-sheet.html` (`tools/rain-dust-sheet.mjs`, con
+  `tests/rain-dust-dump.test.ts`) añade tres filas: la botella de ejemplo sobre
+  el set del tipo *Perfume*, a 28 mm f/8, con las partículas ocultas a la
+  cámara, bajo *Lluvia* sin viento a 0, 2, 5 y 15 s (691, 618 y 690 gotas; 9
+  goteos a los 15 s; mojado el 18, el 28 y el 52 % de las muestras), bajo la
+  densidad de una *Polvareda* sin viento a 0, 30 y 120 s, y bajo *Nieve* a 0,
+  10 y 30 s, cada foto el render de `rt` de la escena con los `WETP` del
+  fotograma grabado.
+
+**No encajó con el plan.**
+- **La fase partida otra vez.** Las gotas que gotean y salpican no vuelven a
+  ser partículas de `rt-sim` que caen por el aire: el goteo cae recto y se posa
+  en el mismo paso, y la salpicadura tira sus gotas por la superficie. Las motas
+  del polvo donde la cobertura es alta no están (solo la capa). S3d.
+- **Las piezas que se mueven no se mojan**: una *Dinámica* se mojaría donde
+  estaba al empezar, así que se queda fuera. S3d.
+- **El suelo del estudio** (el plano `z = 0`, que no es una malla) no se moja;
+  el suelo del set, sí (es una pieza). S3d.
+- **Muestras por triángulo, no téxeles ni vértices**: una rejilla baricéntrica
+  por triángulo, independiente de las UV (muchas piezas no tienen) y de lo fino
+  de la malla. Un triángulo grande de un set (2 triángulos de 700 mm en una
+  tarjeta) se queda en una celda de unos 10 mm con el presupuesto de la página,
+  y el borde de una sombra de nieve o de polvo en el set se ve en escalones en
+  la hoja; la botella, a 1 mm. Una rejilla que siga a la sombra, o partir los
+  triángulos grandes, en S3d (◆7).
+- **Los aterrizajes son el flujo, no cada partícula del efecto**, como en el
+  cristal (S3b): la región del efecto no limita dónde llueve (◆, como S3b ◆5).
+  Las partículas de *Ambiente* siguen atravesando las piezas en la imagen.
+- **El clip es de la escena** (`target` *Escena*), uno por simulación, no uno
+  por pieza; no mueve nada.
+- **Las gotas son una instancia aparte** en los pases de pieza y de material
+  (la de después de las del archivo), no la de su pieza.
+- **La nieve no alimenta el cristal** (S3b ◆4, decidido: no deja nada); en las
+  piezas, sí, como capa.
+- **El medidor dice *Lluvia en las piezas*** también cuando solo hay polvo o
+  nieve (con 0 gotas).
+- `rt-app/tests/server.rs` comprobaba `features == 255`; ahora 511.
+
+**Para el veredicto** (regla 11, ◆; decidido en *Decisiones de criterio*):
+1. ◆ La familia de cada material (`wettabilityFamilyOf`): las categorías
+   *Metal*, *Plástico*, *Vidrio* (y un emisor, como vidrio), *Madera* y *Tela*
+   la suya; las demás por su receta (metálica ≥ 0,5 como metal, el resto como
+   pintura). Las familias nuevas: madera 85°/40°, bebe 0,01 mm/s, porosidad
+   0,6; tela 110°/40°, 0,5 mm/s, 1; el papel bebe 0,05 mm/s con porosidad 1;
+   los demás no beben ni oscurecen.
+2. ◆ Qué deja cada efecto en las piezas (`PARTS_FEED`): la lluvia y las gotas
+   de agua, gotas; motas, polen, polvareda y ceniza, polvo; la nieve, nieve;
+   burbujas y confeti, nada.
+3. ◆ La salpicadura: hasta un 30 % del agua (de nada en el umbral a todo eso
+   al doble), 2 gotas, tiradas hasta 4 diámetros; el impacto moja 2 diámetros.
+4. ◆ El goteo: el agarre de una gota que cuelga (`PENDANT_HOLD = 1`), y que el
+   goteo caiga recto y se pose en el acto.
+5. ◆ La nieve: su ángulo de reposo (50°), el empaquetado (la mitad de la capa
+   son copos) y su aspecto (albedo 0,9, rugosidad 0,85, cubre el 63 % a 0,5 mm;
+   el byte llega a 5,1 mm).
+6. ◆ Las piezas del set como película (`SET_PIECES_AS_FILM`).
+7. ◆ El presupuesto: la celda de 1 mm, 150 000 muestras (las películas un
+   tercio), `MAX_PARTS_SECONDS = 120` y 4 096 gotas como mucho.
+8. ◆ Lo oscuro y lo brillante de lo mojado: la película con rugosidad 0,03, el
+   exponente del albedo poroso `1 + mojado × porosidad`; el polvo (albedo 0,42,
+   0,39, 0,35; rugosidad 0,9) y su oscurecerse mojado.
+9. ◆ Que lo que está a cubierto (bajo un tejado, detrás de la botella respecto
+   al viento) quede seco del todo: es la física, sin salpicaduras del suelo ni
+   rebotes.
+
+### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación) — **Opus** (tras S3c) — propuesta
+
+Lo que queda de S3c, sobre `rt_phys::wet_parts`:
+
+1. **Gotas por el aire**: un goteo y las gotas de una salpicadura vuelven a ser
+   partículas que caen (con `rt-sim` de S4a, o un recorrido propio de forma
+   cerrada), se dibujan en *Completo*, en el render y en *Rápido* mientras
+   caen, y se posan donde llegan (o se van); el goteo deja de posarse en el
+   mismo paso.
+2. **Las motas del polvo** donde la cobertura es alta (granos sobre la capa,
+   en el motor y en *Rápido*).
+3. **Piezas que se mueven**: las *Dinámicas* se mojan donde están en cada
+   fotograma (las muestras en el espacio de la pieza, su pose del paso) y sus
+   gotas se mueven con ellas.
+4. **El suelo del estudio**: el plano `z = 0` se moja y empolva (charcos,
+   un rastro de goteo), como pieza o como sección propia.
+5. **Muestras finas donde hace falta**: partir los triángulos grandes del set
+   o una rejilla que se adapte a los bordes de sombra, para que el borde de la
+   nieve y del polvo en un set no se vea en escalones (◆7 de S3c).
+6. **Los pases**: las gotas con el id de su pieza en los pases de pieza y de
+   material.
+7. **El medidor**: lo que hay de verdad (gotas, polvo o nieve) en vez de
+   *Lluvia en las piezas* siempre.
+8. **Criterios**: la hoja con el goteo en el aire y el polvo con sus motas;
+   una captura de una pieza *Dinámica* que se moja al caer.
 
 ## M5 · Tejido hilo a hilo y pelusa real — **Opus**, veredicto **Fable** (tras E6 y E9; la pelusa tras S8)
 
@@ -13296,7 +13561,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
 - El 1.2 entra en **S3**. (hecho en S3)
 - **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9). **Hecha en parte**: la *Forma*, el cristal en *Rápido* y todo lo que pasa en el cristal frontal; lo de las piezas, **S3c** (ver S3b y S3c, tras S3). **Hecha en parte**: ver S3b (el cristal frontal); el resto, S3c.
-- **S3c** · Gotas y polvo sobre las piezas: la lluvia que se posa, resbala y gotea por las mallas, la nieve, la marca mojada en el material y el polvo por pieza (S3b, «S3c»); y un aviso cuando el motor no tiene el bit 7 y el cristal de la escena saldría limpio.
+- **S3c** · Gotas y polvo sobre las piezas: la lluvia que se posa, resbala y gotea por las mallas, la nieve, la marca mojada en el material y el polvo por pieza (S3b, «S3c»); y un aviso cuando el motor no tiene el bit 7 y el cristal de la escena saldría limpio. **Hecha en parte**: el aviso (y el del bit 8) y todo lo que pasa sobre las piezas quietas, en el motor y en *Rápido*; las gotas por el aire, las motas del polvo, las piezas que se mueven y el suelo del estudio, **S3d** (ver S3c y S3d, tras S3b). **Hecha en parte**: ver S3c; el resto, S3d.
+- **S3d** · Lo que queda de las gotas y el polvo sobre las piezas: goteo y salpicaduras que caen por el aire, motas de polvo, piezas dinámicas mojándose, el suelo del estudio, muestras más finas en el set, el id de pieza de las gotas y el texto del medidor (S3c, «S3d»).
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
   - qué lentes dan ojo de gato, burbuja, cremoso y remolino;
@@ -13391,6 +13657,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **M3e** (los nudos y la tela en *Rápido*). Se acepta como está. ◆1, el umbral: **se queda en 2,5 texels por hilo**; a 2 se roza el límite donde sale el moiré, y el lino y el fieltro sin hornear se leen bien en *Rápido*. ◆2, el nudo encima: **se queda el disco oscurecido**; *Rápido* es una vista previa, y la testa, la grieta y la veta alrededor salen en *Completo*. **Hecho en M3e.**
 - **S3** (la gota, la mezcla de formas y el cristal frontal; primera parte). Se aceptan ◆1–4, 6 y 8 tal como están: la gota de 1,6 radios con punta de 0,15; la punta detrás de la velocidad (la lágrima que pidió el usuario, aunque una gota real caiga casi redonda); la mezcla 1 : 1 : 1 : 2; el preset *Gotas de agua*; las cifras y los rangos del cristal; las motas que solo absorben. ◆5: **sí, la *Forma* sale de *Avanzado*** a los mandos visibles, porque el usuario la pidió y escondida no se encuentra; va en **S3b**. ◆7: **se queda la física**, sin un mando no físico que afile las gotas: con la lente y el diafragma que lo piden (angulares, diafragma cerrado, cristal lejos) se leen; se revisa con un render real del usuario. ◆9: *Rápido* no dibuja el cristal en esta parte; una aproximación (las gotas como discos) va en **S3b**. **Hecha la primera parte en S3**; el resto, S3b.
 - **S3b** (el cristal frontal alimentado por la escena; la *Forma* visible; el cristal en *Rápido*). Se acepta tal como está: ◆1, las mojabilidades por familia (vidrio 70/50, plástico 90/65, metal 80/50, papel 100/20, pintura 85/60); ◆2, el deslizamiento (C = 300, tope de 250 mm/s, película de 2 µm); ◆3, el ángulo de reposo del polvo de 35° ± 5°, y un cristal vertical sin polvo; ◆4, la nieve, las burbujas y el confeti no dejan nada en el cristal (la nieve, con su capa, en S3c); ◆5, la región del efecto no limita el cristal, y una lente que mira hacia abajo se queda seca sin viento, como dice la física; ◆6, **no hay un mando de intensidad no físico** (como S3 ◆7): con las densidades de los presets el polvo apenas se ve a los 120 s, y quien lo quiera sube la densidad; ◆7, la aproximación de *Rápido* tal como sale de la óptica; ◆8, `MAX_GLASS_SECONDS` = 120. El aviso de un motor sin el bit 7 va en **S3c**. **Hecho en parte en S3b**; el resto, S3c.
+- **S3c** (la lluvia, el polvo y la nieve sobre las piezas; el aviso del bit 7). Se acepta todo tal como está: ◆1, la familia de mojabilidad de cada categoría (`wettabilityFamilyOf`) y los valores de madera (85/40, absorbe 0,01, porosidad 0,6), tela (110/40, 0,5, 1) y papel (absorbe 0,05); ◆2, lo que deja cada efecto (`PARTS_FEED`); ◆3, la salpicadura (hasta el 30 % del agua, 2 gotas, a 4 diámetros; un impacto moja 2); ◆4, el colgado = 1 y el goteo que cae en el mismo paso (la caída por el aire, en S3d); ◆5, la nieve (reposo 50°, empaquetado 0,5, albedo 0,9, rugosidad 0,85, cubre a 0,5 mm); ◆6, el set se moja como película; ◆7, los presupuestos (celda de 1 mm, 150 000 muestras con un tercio para películas, 120 s, 4096 gotas); ◆8, lo oscuro y brillante que se pone lo mojado (película a rugosidad 0,03, exponente del albedo 1 + mojado × porosidad) y el color y la rugosidad del polvo; ◆9, lo resguardado se queda seco del todo. **Hecho en parte en S3c**; el resto, S3d.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de

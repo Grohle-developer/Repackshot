@@ -133,7 +133,8 @@ src/
     doctor-interior.ts      el Doctor de interiores (K1): siete chequeos de `INTERIORS.md` §3.6 que no piden motor, solo con el tipo de escena *Interior*, cada uno con su arreglo (escala y unidades, abertura para el sol y el cielo, vidrio de ventana, óptica, altura de ojo, recorte cercano, normales); `runDoctor` y `fixDoctor` los llaman
     scene-type.ts           el tipo de escena (K1): `scene.type`, la acción `scene/setType`, y la memoria `scene.typeBase` de lo que cada tipo reemplazó para que volver deje el proyecto como estaba salvo lo tocado; los valores son `data/scene-types.ts`
     physics.ts              físicas (S2): la sección Físicas de un nodo, qué se simula (`physicsSpec`), las poses del simulador de vuelta a los nodos, la pista del clip PHYSICS y su ancla, las acciones `physics/*` (§5.6)
-    wet.ts                  S3b: el cristal frontal alimentado por la escena: qué se simula (`wetSpec`, `wetBytes`, la clave `wetKey`), la pista del cristal del clip PHYSICS de la cámara (`GlassTrackWriter`, `glassFrame`, `recordedGlass`) y el cristal que dice el motor (`parseEnginePane`) (§5.2 novendecies)
+    wet.ts                  S3b: el cristal frontal alimentado por la escena: qué se simula (`wetSpec`, `wetBytes`, la clave `wetKey`), la pista del cristal del clip PHYSICS de la cámara (`GlassTrackWriter`, `glassFrame`, `recordedGlass`) y el cristal que dice el motor (`parseEnginePane`) (§5.2 novendecies); S3c: `glassRendersClean`, el aviso de un motor sin el bit 7
+    wet-parts.ts            S3c: la lluvia, el polvo y la nieve sobre las piezas: qué se simula (`wetPartsSpec`, `wptBytes`, la clave `wetPartsKey`), la pista de las piezas del clip PHYSICS de la escena (`PartsTrackWriter`, `partsFrame`, `recordedParts`, `partWeather`) y el aviso de un motor sin el bit 8 (`partsRenderDry`) (§5.2 vicies)
     effects.ts              los efectos de Ambiente (S4a): el efecto como dato, sus acciones `effect/*`, la región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos de un archivo; S3: la gota, la mezcla de formas (`mixWeights`, `heaviestShape`) y la variación de forma, los campos de S3 solo cuando hay alguno (`hasS3Fields`) y solo para un motor que los dibuja
     section.ts              la vista en sección (Q1): el plano como dato (`state.section`), sus acciones `section/*`, desde un clic y un eje o desde dos puntos, resuelto en un instante de la animación para los motores, qué piezas corta, cuáles tapa y cuáles son estudio (`partIsExempt`)
     solid.ts                qué mallas son sólidos cerrados (Q1): la misma regla que `geometry/solid.rs` del motor, para que Rápido tape las mismas piezas; y hacia qué lado mira una superficie cerrada (`solidOrientation`, K1)
@@ -161,7 +162,7 @@ src/
     sets.ts                 los sets (L6): aplicar, sustituir y quitar su decoración (tarjetas, barrido, suelo, charco), su aspecto, Usar la cámara del set
     wear.ts                 valores por defecto del desgaste
     version.ts
-  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2); effects.ts: los presets de Ambiente (S4a; S3 añade la gota, la mezcla y *Gotas de agua*); front-glass.ts: los valores del cristal frontal que la interfaz no enseña, los rangos y el arranque de sus mandos (S3), y qué deja cada efecto en el cristal alimentado por la escena (`GLASS_FEED`, S3b); wettability.ts: los ángulos de avance y de retroceso del agua por familia de material y el ángulo de reposo del polvo (S3b)
+  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2); effects.ts: los presets de Ambiente (S4a; S3 añade la gota, la mezcla y *Gotas de agua*); front-glass.ts: los valores del cristal frontal que la interfaz no enseña, los rangos y el arranque de sus mandos (S3), y qué deja cada efecto en el cristal alimentado por la escena (`GLASS_FEED`, S3b); wettability.ts: los ángulos de avance y de retroceso del agua por familia de material y el ángulo de reposo del polvo (S3b), y desde S3c madera y tela, lo que bebe y lo que oscurece mojarse cada familia, el ángulo de reposo de la nieve y la familia del material de una pieza (`wettabilityFamilyOf`); wet-parts.ts: qué deja cada efecto en las piezas (`PARTS_FEED`), la celda y el presupuesto de muestras y el tope de una simulación (S3c)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
@@ -185,8 +186,9 @@ src/
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
     pass-planes.ts          los pases exactos del motor en la página (X2): junta los de rt.wasm por baldosa y lee el RPP1 del lanzador
     physics-worker.ts       el worker del simulador (S2): su rt.wasm, una simulación a la vez, al ritmo del reloj y con acuse de recibo (§5.6)
-    physics.ts  phys-wasm.ts  el cliente de ese worker (`PhysicsClient`) y la envoltura tipada de las exportaciones `phys_*` (`PhysWorld`) y, S3b, `wet_*` (`WetSim`)
+    physics.ts  phys-wasm.ts  el cliente de ese worker (`PhysicsClient`) y la envoltura tipada de las exportaciones `phys_*` (`PhysWorld`) y, S3b, `wet_*` (`WetSim`); S3c, `wpt_*` (`PartsSim`)
     glass-overlay.ts  glass-pane.ts  S3b: la aproximación del cristal frontal en Rápido (los mapas sobre el cristal, borrosos por la huella de un píxel) y el cristal tal como lo coloca el motor (`rt_scene_glass`) (§5.2 novendecies)
+    weather-preview.ts      S3c: la lluvia, el polvo y la nieve de las piezas en Rápido: las muestras del fotograma grabado en texturas de datos que lee un parche de los materiales, y las gotas como casquetes instanciados (§5.2 vicies)
   ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core (y data), nunca al revés; la guarda NO es TypeScript: es rt-post
     post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
     prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
@@ -244,7 +246,7 @@ src/
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
       animation.ts          el cajón de animación (N6): transporte y las tres zonas; anim-tree.ts (qué se anima), anim-timeline.ts (regla, barras, imán, pista de cámara con sus fundidos), anim-props.ts (propiedades, el asistente en tres pasos, las de un plano, presets); components/curve-editor.ts, la curva de dos asas (N1)
     texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
-    physics.ts              la simulación en marcha (S2): Dejar caer, Iniciar, Pausar, Parar, Reiniciar, los clips que crecen; S3b: y el cristal frontal de la cámara alimentado por la escena
+    physics.ts              la simulación en marcha (S2): Dejar caer, Iniciar, Pausar, Parar, Reiniciar, los clips que crecen; S3b: y el cristal frontal de la cámara alimentado por la escena; S3c: y las piezas (`partsRun`, sin las que mueve la simulación)
     panels/physics.ts  panels/insp-physics.ts  la barra de físicas (cajón de la barra inferior) y la sección Físicas del inspector (S2)
     anim-commands.ts        lo que hace la línea de tiempo (N6): selección de animaciones en paso con la escena y el visor, Animar…, duplicar, borrar, invertir, partir, fijar en el despiece, transporte y teclas
     graph-commands.ts       lo que hacen el editor de material y el inspector con un grafo: abrir, Simple ↔ Nodos, ejemplos, ediciones (M3a)
@@ -277,7 +279,8 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
                             texturas de imagen y etiquetas del sombreado (texture/: imagen y mipmaps, proyecciones,
                             ranuras y etiquetas en el punto, M2b);
                             los programas de los materiales de nodos (program.rs y program/: lectura y comprobación,
-                            intérprete, ruido de M3a, el punto y el material del impacto, M3b)
+                            intérprete, ruido de M3a, el punto y el material del impacto, M3b);
+                            la lluvia, el polvo y la nieve de las piezas: la sección `WETP`, sus capas y los casquetes de las gotas (weather.rs, S3c, §5.2 vicies)
   crates/rt-sim/            el simulador de partículas sin estado (S4a): `FXAM` ⇄ `AmbientParams`, `evaluate`
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG, TIFF o DNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
@@ -285,7 +288,7 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
   crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
   crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
-  crates/rt-phys/           el simulador de cuerpos rígidos (S2): XPBD, envolventes convexas, contactos, dormir; PHY1 (§5.6); S3b: `wet`, la lluvia y el polvo en el cristal frontal, WET1 (§5.2 novendecies)
+  crates/rt-phys/           el simulador de cuerpos rígidos (S2): XPBD, envolventes convexas, contactos, dormir; PHY1 (§5.6); S3b: `wet`, la lluvia y el polvo en el cristal frontal, WET1 (§5.2 novendecies); S3c: `wet_parts`, la lluvia, el polvo y la nieve sobre las piezas, WPT1 (§5.2 vicies)
   crates/rt-sky/            herramienta fuera de línea `rt-sky` (E5c): simulador espectral de la atmósfera, ajuste
                             Levenberg–Marquardt del cielo físico y su tabla; escribe rt-core/src/sky_table.rs,
                             src/core/sky-table.ts y tests/fixtures/sky-physical.json
@@ -546,11 +549,11 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), programas de material (M3b, `program`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_particles_shapes` (S3: la forma de cada una, un `u32`, para la mezcla de formas en Rápido), `rt_scene_pick` y `rt_scene_focus_at` (F1: el rayo principal de un punto de la imagen, lo que toca y la distancia que lo enfoca; la página las detecta por su nombre, sin bit de `rt_features`), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5; bit 4, las cámaras de interiores, K3; bit 5, los nodos de dibujo, M3c; bit 6, las gotas y el cristal frontal, S3; bit 7, el cristal gota a gota, S3b)…), `rt_scene_glass_len` y `rt_scene_glass_copy` (S3b: el cristal frontal de una escena tal como el motor lo coloca) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2; `wet_new`, `wet_step`, `wet_frame`, `wet_frame_copy`, `wet_hash`…, S3b). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_particles_shapes` (S3: la forma de cada una, un `u32`, para la mezcla de formas en Rápido), `rt_scene_pick` y `rt_scene_focus_at` (F1: el rayo principal de un punto de la imagen, lo que toca y la distancia que lo enfoca; la página las detecta por su nombre, sin bit de `rt_features`), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5; bit 4, las cámaras de interiores, K3; bit 5, los nodos de dibujo, M3c; bit 6, las gotas y el cristal frontal, S3; bit 7, el cristal gota a gota, S3b; bit 8, la lluvia, el polvo y la nieve de las piezas, S3c)…), `rt_scene_glass_len` y `rt_scene_glass_copy` (S3b: el cristal frontal de una escena tal como el motor lo coloca) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2; `wet_new`, `wet_step`, `wet_frame`, `wet_frame_copy`, `wet_hash`…, S3b; `wpt_new`, `wpt_step`, `wpt_layout`, `wpt_frame`, `wpt_copy`, `wpt_hash`…, S3c). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
-| `rt-phys` | **El simulador de cuerpos rígidos** (S2, §5.6): dinámica por posiciones extendida (XPBD), envolventes convexas propias, contactos por ejes separadores, rozamiento de Coulomb, restitución, dormir; el formato PHY1. S3b: `wet`, la lluvia y el polvo en el cristal frontal (gotas ancladas por Furmidge que resbalan y limpian, polvo con ángulo de reposo) y el formato WET1 | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` y `rt_core::fmath`, determinista con cualquier número de hilos (`std::thread::scope` solo en nativo; en wasm, uno). Depende de `rt-core`; `rt-core` no la conoce |
+| `rt-phys` | **El simulador de cuerpos rígidos** (S2, §5.6): dinámica por posiciones extendida (XPBD), envolventes convexas propias, contactos por ejes separadores, rozamiento de Coulomb, restitución, dormir; el formato PHY1. S3b: `wet`, la lluvia y el polvo en el cristal frontal (gotas ancladas por Furmidge que resbalan y limpian, polvo con ángulo de reposo) y el formato WET1. S3c: `wet_parts`, la lluvia, el polvo y la nieve sobre las mallas de las piezas (llegadas por el flujo con lo que está en medio, salpicar, resbalar de triángulo en triángulo, colgar y gotear, piezas como película, polvo y nieve por muestra) y el formato WPT1 | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` y `rt_core::fmath`, determinista con cualquier número de hilos (`std::thread::scope` solo en nativo; en wasm, uno). Depende de `rt-core`; `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
@@ -3087,6 +3090,109 @@ caché) y mandada al motor gota a gota.
   `tests/s3b-wet.test.ts` con `tests/fixtures/s3b-wet.wet1` y `s3b-wet.rsb`).
   Ningún fijado anterior se movió.
 
+### 5.2 vicies · La lluvia, el polvo y la nieve sobre las piezas (S3c, `rt_phys::wet_parts`, `WETP`)
+
+El modelo del cristal frontal (§5.2 novendecies) llevado a las mallas de las
+piezas: una simulación a paso fijo en `rt-phys`, en el *worker* de físicas con
+los cuerpos y el cristal (o sola), grabada en un clip `PHYSICS` de la escena (la
+caché) y mandada al motor, instancia a instancia, en la sección `WETP`.
+
+- **WPT1** (`rt_phys::wet_parts::PartsSpec`; lo escribe `src/core/wet-parts.ts`
+  `wptBytes`): `"WPT1"`, versión 1, semilla, la celda de las muestras (mm, la
+  menor), el presupuesto de muestras, los ángulos de reposo del polvo y de la
+  nieve; las mallas (posiciones y triángulos); las piezas (su malla, su matriz
+  de objeto a mundo 3 × 4 por filas, los ángulos de avance y de retroceso, lo
+  que bebe por segundo y la marca de película, `PART_FILM`); las fuentes (gotas,
+  polvo o nieve, densidad por mm³, velocidad media en el mundo en mm/s, tamaño y
+  su variación). La página da las piezas visibles que no mueve la simulación,
+  donde están al empezar (`wetPartsSpec`; las del set, película), y cada efecto
+  con `wetParts` según `PARTS_FEED`.
+- **Las muestras.** Cada triángulo lleva una rejilla de `R` pasos por lado (las
+  muestras `(i, j)`, `i + j ≤ R`, en los pesos baricéntricos
+  `(1 − (i + j)/R, i/R, j/R)`, fila tras fila: `sample_index`), `R` la arista
+  más larga entre la celda, pero no más que el doble del lado del cuadrado de su
+  área (`resolution_of`: una astilla gasta por su área), entre 1 y 255. La celda
+  crece (× 1,25) hasta caber en el presupuesto; las películas, en un tercio como
+  mucho cuando hay piezas con gotas, y las demás en el resto.
+- **El modelo** (`WetParts`, ver la documentación del módulo). Una BVH de
+  rayos sobre los triángulos del mundo para lo que está en medio (un rayo
+  aguas arriba de la velocidad de cada fuente). Gotas: por paso de 1/240 s,
+  Poisson de la media de todo el flujo `densidad × |v| × máx(0, −v̂·n) × área`
+  de las piezas con gotas; el triángulo por su parte del flujo (una CDF), un
+  punto uniforme en él, y la llegada si está a cielo abierto. Salpica por
+  encima de `K = We^½ Re^¼ = 57,7` (Mundo, Sommerfeld y Tropea 1995):
+  hasta `SPLASH_SHARE` de su agua (nada en el umbral, todo eso desde `2K`)
+  como `SPLASH_DROPS` gotas lanzadas hasta
+  `SPLASH_REACH` diámetros por la superficie, y moja un círculo de
+  `LANDING_SPREAD` diámetros. Furmidge, como en el cristal, con la gravedad
+  tangente; resbala a la velocidad de `wet`, de triángulo en triángulo por la
+  adyacencia de sus aristas (las posiciones soldadas), por un pliegue a lo
+  largo de él; el rastro moja, limpia el polvo de las muestras a menos de `a`
+  (una rejilla de muestras de `2 × celda`) y quita su película de agua; juntar,
+  incremental (solo las gotas nuevas o movidas). Cuelga mientras
+  `ρ g V (ĝ·n) ≤ PENDANT_HOLD · 2π a γ sin θ̄` y si no gotea; por una arista
+  abierta, gotea ahí. Un goteo cae recto (la BVH) hasta la primera pieza: se
+  posa con la velocidad `√(2 g h)`, o se va. Lo poroso bebe `soak × π a²`
+  mm³/s. Película: cada muestra se moja en un instante sorteado una vez de la
+  exponencial de su flujo. Polvo y nieve: por muestra, una tasa (`k` del polvo,
+  `1 − e^(−k t)` desde la última limpieza; mm/s de la nieve, por
+  `SNOW_PACKING`) del flujo, el ángulo de reposo con su rampa y el cielo
+  abierto, calculada una vez. Como mucho 4 096 gotas. Todo `f32`, `+ − × ÷
+  sqrt` y `fmath`, en orden fijo.
+- **Lo que da.** `layout` una vez (las resoluciones de cada triángulo y las
+  tasas de polvo y nieve de cada muestra), `frame` por fotograma (las gotas
+  nuevas o cambiadas por número, con su pieza, su triángulo, su punto en el
+  objeto y su radio; las que se fueron; las muestras mojadas y limpiadas desde
+  el anterior; los goteos y las gotas), `weather` el estado del último paso como
+  lo toma el motor, y `hash`. La página (`PartsTrackWriter`) lo junta en la
+  **pista de las piezas** (`MotionClip.parts`, en base64, con la clave
+  `wetPartsKey`: FNV-1a de los bytes WPT1 y la versión) y `partsFrame` rehace
+  cualquier fotograma (los bytes de cada muestra y sus gotas), en caché.
+  `rt.wasm` exporta `wpt_new`, `wpt_free`, `wpt_step`, `wpt_steps`, `wpt_hash`,
+  `wpt_layout`, `wpt_frame` y `wpt_copy` sobre un registro por *handle*
+  (`rt-wasm/src/parts.rs`).
+- **`WETP`** (`rt_core::weather`, bit 8 de `FEATURES`, `FEATURE_WET_PARTS`,
+  `/api/info` dice 511): una sección por instancia mojada, tras `INST`:
+  `u32 instance triangles samples drops; f32 cap_angle_deg porosity` (24 B),
+  `u8 resolution[triangles]`, `u8 (wet dust snow)[samples]` (cada una
+  rellenada a 4) y `(u32 triangle; f32 x y z r)[drops]` en el espacio del
+  objeto. Un impacto lee sus tres bytes lineales sobre el triangulito de la
+  rejilla en que cae (`PartWeather::at`) y `weathered` pone encima del material
+  (ya con patrones, programa y texturas) el polvo, la película (capa
+  transparente de rugosidad 0,03; lo poroso, el albedo a la potencia
+  `1 + mojado × porosidad`, Lekner y Dorf 1988) y la nieve
+  (`1 − e^(−h / 0,5 mm)`); donde todo es 0, el material no se toca (bit a bit).
+  Las gotas, casquetes de agua (`cap_mesh`: 16 segmentos por 4 anillos) en una
+  malla, una instancia y un material más (agua, 1,333) tras los del archivo
+  (`Scene::caps`; el id de instancia de las gotas en los pases es el número de
+  instancias del archivo); los rayos de sombra las cruzan como una pared fina
+  de agua. Un archivo de actualización sin `MESH` quita la malla de los
+  casquetes antes de volver a hacerla (no se acumulan). La página la escribe
+  solo para un motor con el bit 8 (`SceneView.wetParts`, `readsWetParts`), del
+  fotograma que el *pose* dice (`Pose.parts`), y para una pieza cuya malla es
+  la grabada; una instancia sin nada no lleva sección.
+- **En el *worker*** (`render/physics-worker.ts`): `run` lleva también el WPT1
+  (o nada); los tres avanzan los mismos pasos, cada fotograma manda su registro
+  de las piezas, y una simulación con piezas no se da por asentada (solo
+  *Parar* o sus `MAX_PARTS_SECONDS`).
+- **En *Rápido*** (`render/weather-preview.ts`): cada pieza mojada se dibuja con
+  una copia de su geometría sin índices (cada triángulo con su número y los
+  pesos de sus esquinas) y de sus materiales con un parche
+  (`onBeforeCompile`) que lee las muestras de dos texturas de datos
+  (`texelFetch`: el primer índice y la resolución de cada triángulo, y los tres
+  bytes de cada muestra) como el motor y pone las mismas capas con los mismos
+  números (`WEATHER_LOOK`); las gotas, un casquete instanciado por gota.
+- **Fijados.** `PINNED_WET_PARTS = 0x62450071` (las piezas de
+  `rt_phys::example::parts_spec` tras 5 s: una botella, una placa de plástico a
+  45°, un estante de metal a 20° y una tarjeta de papel como película, bajo
+  lluvia con viento, polvo y nieve; `tests/wet_parts.rs`) y
+  `PINNED_S3C_WET_4SPP = 0x66fa33ab` (`example::s3c_wet_scene`: esas piezas con
+  su `WETP`): los mismos en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, en
+  `wasm32-wasip1` (escalar y simd128) y en el `rt.wasm` real
+  (`tools/wasm-parity.mjs` con `rt --write-s3c-wet-example`, también con los
+  pases; `tests/s3c-parts.test.ts` con `tests/fixtures/s3c-parts.wpt1` y
+  `s3c-wet.rsb`). Ningún fijado anterior se movió.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -3702,7 +3808,9 @@ el ancla de los clips), todas con el mismo gesto: una entrada de deshacer.
 único que la interfaz sabe del simulador. S3b: `physics/begin` lleva también
 el clip del cristal de la cámara, y `physics/grow` su pista (`glass`);
 `AppServices.glass` (`GlassPort`) da el cristal tal como lo coloca el motor
-(§5.2 novendecies).
+(§5.2 novendecies). S3c: `physics/begin` lleva también el clip de las piezas
+(de la escena), y `physics/grow` su pista (`parts`); `PhysicsPort.run` recibe
+los bytes WPT1 (§5.2 vicies).
 
 ## 6 · Interfaz (`src/ui/`)
 
@@ -3825,6 +3933,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Lluvia y polvo en el cristal (S3b) | `cargo test -p rt-phys --test wet` (también en `wasm32-wasip1`); `rt-core` `optics::glass::tests` y `render::s3_tests`; `tests/s3b-wet.test.ts`; `tools/s3b-check.mjs`; la hoja `tools/rain-dust-sheet.mjs` | Una gota en vidrio a 30° se queda hasta el radio crítico de Furmidge (± 0,5 % del cálculo en `f64`) y resbala por encima; dos que se tocan suman su volumen (± 1 %); el rastro limpia el polvo; el polvo en una cara a 60° es < 10 % del de una horizontal; la lluvia llega a su flujo y nunca a una cara que mira al otro lado; el mismo cristal por pasos sueltos o juntos y reconstruido de sus fotogramas; los dos fijados en todo camino SIMD y en wasm; el `WET1` y el `GLAS` gota a gota byte a byte; la pista (la caché) igual en dos ejecuciones; el clip de la cámara, guardado y abierto; la barra lo corre solo, una entrada de deshacer, *Reiniciar* lo quita; la aproximación de *Rápido* |
+| Lluvia, polvo y nieve sobre las piezas (S3c) | `cargo test -p rt-phys --test wet_parts` (también en `wasm32-wasip1`); `rt-core` `weather::tests`; `rt-wasm` `parts`; `rt-cli/tests/example.rs`; `tests/s3c-parts.test.ts` y `tests/s3c-warning.test.ts`; `tools/s3c-check.mjs`; la hoja `tools/rain-dust-sheet.mjs` | El vidrio a 30° hasta el radio crítico y la película del rastro; de cara en cara y el goteo por una arista abierta; juntar ± 1 %; el rastro limpia el polvo; el polvo a 60° < 10 %; la lluvia a su flujo, nunca a una cara de espaldas ni bajo un tejado; colgar y gotear sobre lo de debajo, salpicar sin perder agua; la película a su ritmo; la nieve donde reposa; por pasos y por fotogramas; los dos fijados en todo camino SIMD, con 1, 4 y 16 hilos y en wasm; un `WETP` sin nada no cambia un píxel; el WPT1 byte a byte; la pista igual en dos ejecuciones; el clip de la escena, guardado y abierto; la barra lo corre solo; los avisos de los bits 7 y 8 |
 | Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |
 | Doctor de motor (D1) | `tests/doctor-engine.test.ts` (un motor falso que simula cada estado y el `installDoctorFacts` de verdad), `tests/frame-scan.test.ts` (la lectura de la acumulación y el `status().scan` del pool con *workers* falsos), `tests/store.test.ts` (las acciones de un oyente durante un deshacer); `tools/doctor-engine-check.mjs` | Cada chequeo se dispara y su arreglo lo limpia (proyecto por el *store*, una entrada de deshacer; lo que no es del proyecto, solo la explicación y, si una fila de Ajustes lo limita, el botón que la abre); *Arreglar todo* en un clic; sin hechos del motor, todo *no disponible* como antes; los umbrales en sus fronteras; `sameImage` coincide con `touchesImage` de los dos motores; las frases en los dos idiomas; en el navegador, el Doctor con dos avisos de motor (`docs/ui/doctor-engine.png`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |

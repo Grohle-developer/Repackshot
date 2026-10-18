@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Contact sheet of the rain and dust on the front glass (phase S3b; not part of `npm run qa`), for the eye that decides
+// Contact sheet of the rain and dust on the front glass (phase S3b) and on the parts (S3c; not part of `npm run qa`), for the eye that decides
 // the values marked ◆ in the ROADMAP's S3b (the wettability of glass, the sliding, the dust's angle of repose, how strong
 // the effect reads): the example through a lens whose glass the scene's rain wets (0, 2, 5 and 15 s), and a lens looking
 // up that the dust settles on (dust motes and a dust cloud's density, 0, 30 and 120 s), each photo beside a drawing of
-// the pane as the simulation left it, and the photos without the glass.
+// the pane as the simulation left it, and the photos without the glass. S3c: the example bottle and its set under rain on
+// the parts (0, 2, 5 and 15 s: drops, trails, drips), dust on them (0, 30 and 120 s) and snow (0, 10 and 30 s).
 //
 //   npm run engine:build && node tools/rain-dust-sheet.mjs [--out out/rain-dust-sheet] [--size 512x288] [--samples 64]
 //        [--threads 2]
@@ -55,7 +56,7 @@ for (const shot of manifest.shots) {
   const said = run(RT, [join(OUT, `${shot.file}.rsb`), '-o', png, '--samples', String(shot.samples), '--threads', THREADS]);
   const rendered = /rendered (\d+) spp, (\d+) rays in ([\d.]+) s/.exec(said);
   shots.push({ ...shot, png: `${shot.file}.png`, renderSeconds: rendered ? Number(rendered[3]) : null });
-  console.log(`${shot.file}: ${shot.drops} drops, ${shot.motes} motes, render ${rendered?.[3] ?? '?'} s`);
+  console.log(`${shot.file}: ${shot.parts ? `${shot.parts.drops} drops on the parts` : `${shot.drops} drops`}, ${shot.motes} motes, render ${rendered?.[3] ?? '?'} s`);
 }
 writeFileSync(join(OUT, 'sheet.json'), JSON.stringify({ size: SIZE, samples: Number(SAMPLES), threads: Number(THREADS), shots }, null, 2));
 
@@ -79,8 +80,12 @@ function paneSvg(file) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="the pane"><rect width="${size}" height="${size}" fill="#f2f2f2" stroke="#999"/>${circles.join('')}<text x="6" y="${size - 6}" font-size="11" fill="#555">${(2 * h).toFixed(1)} mm · ${p.distanceMm} mm in front of the lens · up ↑</text></svg>`;
 }
 
+const caption = (s) =>
+  s.parts
+    ? `${esc(s.label)} · ${s.parts.drops.toLocaleString('en-US')} drops on the parts · ${s.parts.drips.toLocaleString('en-US')} drips so far · samples wet ${pct(s.parts.wet)}, dusty ${pct(s.parts.dust)}, under snow ${pct(s.parts.snow)} · ${s.renderSeconds} s`
+    : `${esc(s.label)} · ${s.drops.toLocaleString('en-US')} drops covering ${pct(s.dropCover)} · ${s.motes.toLocaleString('en-US')} motes covering ${pct(s.dustCover)} · ${s.renderSeconds} s`;
 const cell = (s) =>
-  `<figure><div class="pair"><img src="${rel(s.png)}" alt="${esc(s.label)}" width="${W}" height="${H}">${s.row === 'clean' ? '' : paneSvg(s.file)}</div><figcaption>${esc(s.label)} · ${s.drops.toLocaleString('en-US')} drops covering ${pct(s.dropCover)} · ${s.motes.toLocaleString('en-US')} motes covering ${pct(s.dustCover)} · ${s.renderSeconds} s</figcaption></figure>`;
+  `<figure><div class="pair"><img src="${rel(s.png)}" alt="${esc(s.label)}" width="${W}" height="${H}">${s.row === 'clean' || s.parts ? '' : paneSvg(s.file)}</div><figcaption>${caption(s)}</figcaption></figure>`;
 const row = (key, title) => `<h2>${esc(title)}</h2><div class="row">${shots.filter((s) => s.row === key).map(cell).join('')}</div>`;
 
 const html = `<!doctype html>
@@ -96,12 +101,17 @@ figure { margin: 0; } figcaption { color: var(--muted); max-width: ${W + H + 8}p
 img { max-width: 100%; height: auto; }
 p { max-width: 900px; }
 </style></head><body>
-<h1>Lluvia y polvo sobre el cristal frontal (S3b)</h1>
+<h1>Lluvia y polvo sobre el cristal frontal (S3b) y sobre las piezas (S3c)</h1>
 <p>Cada foto es el render de <code>rt</code> (${esc(SIZE)}, ${esc(SAMPLES)} muestras) de la escena en ese instante con el fotograma grabado del cristal; a su lado, el cristal tal como lo dejó la simulación (el cuadrado que cruzan los rayos del render; gotas en gris azulado, motas en negro; arriba es el arriba de la cámara). La simulación corre en el <code>rt.wasm</code> real a través del código de la página, como en el <em>worker</em> de físicas. Valores ◆ por decidir: ROADMAP, S3b.</p>
 ${row('rain', 'Lluvia empujada hacia la lente por un viento de 6 m/s (la cámara mira un poco hacia abajo): 0, 2, 5 y 15 s')}
 ${row('dust', 'Motas de polvo, la lente mirando 60° hacia arriba (el cristal, 30° sobre la horizontal): 0, 30 y 120 s')}
 ${row('cloud', 'La densidad de una polvareda sin viento (el suyo sopla lejos de esta lente), la misma lente: 0, 30 y 120 s')}
 ${row('clean', 'Las mismas fotos sin cristal')}
+<h2>Sobre las piezas (S3c)</h2>
+<p>La botella de ejemplo sobre el set del tipo <em>Perfume</em>, encuadrada como la fila de la lluvia (28 mm, f/8), con el efecto <em>Sobre las piezas</em> y sus partículas ocultas a la cámara (para que se lean las piezas): cada foto es el render de <code>rt</code> de la escena en ese instante con las secciones <code>WETP</code> del fotograma grabado (la película de agua, el polvo, la nieve y las gotas como casquetes). Las piezas del set se mojan como película. Valores ◆ por decidir: ROADMAP, S3c.</p>
+${row('bottle', 'La botella bajo la lluvia sin viento: 0, 2, 5 y 15 s (gotas, rastros, goteo)')}
+${row('set', 'Polvo sobre la botella y el set (la densidad de una polvareda sin viento): 0, 30 y 120 s')}
+${row('snow', 'Nieve sobre la botella y el set: 0, 10 y 30 s')}
 </body></html>
 `;
 writeFileSync(HTML, html);

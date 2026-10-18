@@ -41,6 +41,8 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
   const awake = h('span', { class: 'aux tabular', 'data-field': 'phys.awake', 'data-tip': t('phys.awakeTip') });
   // S3b: the front glass fed by the scene, as the engine's last frame left it.
   const glass = h('span', { class: 'aux tabular', 'data-field': 'phys.glass', 'data-tip': t('phys.glassTip') });
+  // S3c: the parts under the scene's rain, dust and snow, as the engine's last frame left them.
+  const parts = h('span', { class: 'aux tabular', 'data-field': 'phys.parts', 'data-tip': t('phys.partsTip') });
   const state = h('span', { class: 'phys-state', 'data-field': 'phys.state', role: 'status' });
   const note = h('p', { class: 'note', style: 'margin:0' });
   scope.watch(
@@ -56,10 +58,11 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       pause.setAttribute('data-tip', t(paused ? 'phys.resumeTip' : 'phys.pauseTip'));
       pause.setAttribute('aria-pressed', String(paused));
       // Only what the simulator said: nothing before it has said it.
-      const reported = p.state === 'RUNNING' || p.state === 'PAUSED' || (p.state === 'STOPPED' && p.ended !== null && (p.bodies > 0 || !!p.glass) && p.ended !== 'NOTHING' && p.ended !== 'NO_ENGINE' && p.ended !== 'FAILED');
+      const reported = p.state === 'RUNNING' || p.state === 'PAUSED' || (p.state === 'STOPPED' && p.ended !== null && (p.bodies > 0 || !!p.glass || !!p.parts) && p.ended !== 'NOTHING' && p.ended !== 'NO_ENGINE' && p.ended !== 'FAILED');
       time.textContent = reported ? t('phys.time', { t: formatNumber(p.time, getLang(), 2) }) : '';
       awake.textContent = reported && p.bodies > 0 ? t('phys.awake', { n: p.awake, total: p.bodies }) : '';
       glass.textContent = reported && p.glass ? t('phys.glass', { drops: formatNumber(p.glass.drops, getLang(), 0), motes: formatNumber(p.glass.motes, getLang(), 0) }) : '';
+      parts.textContent = reported && p.parts ? t('phys.parts', { drops: formatNumber(p.parts.drops, getLang(), 0), drips: formatNumber(p.parts.drips, getLang(), 0) }) : '';
       state.textContent = stateText(p);
       note.textContent = running ? t('phys.fastNote') : t('phys.note');
     },
@@ -78,6 +81,7 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       time,
       awake,
       glass,
+      parts,
       state,
       h('span', { style: 'flex:1' }),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('render.drawerClose'), 'data-tip': t('render.drawerClose'), onclick: () => ui.set({ drawer: null }) }, icon('close')),

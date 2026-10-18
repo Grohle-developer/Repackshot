@@ -341,7 +341,10 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       // S3b: and so is its front glass, drawn from the engine's drops and motes (the numbers are the engine's).
       const g = port.kind !== 'pathtracer' ? st.glass : undefined;
       const glassApprox = !g ? '' : ` · ${g.noEngine ? t('status.glassNoEngine') : t('status.glassApprox', { drops: formatNumber(g.drops, getLang(), 0), motes: formatNumber(g.motes, getLang(), 0) })}`;
-      const approx = filtersApprox + lensApprox + panoApprox + glassApprox;
+      // S3c: and the recorded rain, dust and snow on the parts (the simulation's numbers).
+      const wp = port.kind !== 'pathtracer' ? st.parts : undefined;
+      const partsApprox = wp ? ` · ${t('status.partsWeather', { drops: formatNumber(wp.drops, getLang(), 0), parts: formatNumber(wp.parts, getLang(), 0) })}` : '';
+      const approx = filtersApprox + lensApprox + panoApprox + glassApprox + partsApprox;
       engine.textContent =
         port.kind !== 'pathtracer'
           ? t('status.engineFast', { device: st.device }) + approx

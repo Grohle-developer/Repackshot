@@ -99,6 +99,18 @@ export function readsGlassLayout(features: number | undefined): boolean {
   return ((features ?? 0) & ENGINE_FEATURE_GLASS_LAYOUT) !== 0;
 }
 
+/**
+ * S3c: bit 8 of the engine's features (rt_core::FEATURE_WET_PARTS): it draws the rain, dust and snow on the parts (the
+ * WETP sections: the wet film, the dust and the snow over each instance's material, its drops as caps of water), so the
+ * page writes them; an engine without the bit draws the parts dry and clean (io/rsb.ts `SceneView.wetParts`).
+ */
+export const ENGINE_FEATURE_WET_PARTS = 256;
+
+/** True when an engine of `features` draws the rain, dust and snow on the parts (S3c). */
+export function readsWetParts(features: number | undefined): boolean {
+  return ((features ?? 0) & ENGINE_FEATURE_WET_PARTS) !== 0;
+}
+
 /** The scene view's program switches for an engine of `features` (M3b programs, M3c their pattern nodes). */
 export function programsView(features: number | undefined): { programs?: true; patternNodes?: false } {
   if (!readsPrograms(features)) return {};
@@ -178,6 +190,8 @@ export interface EngineStatus {
    * of a recorded simulation) it draws; `noEngine` when it cannot, without rt.wasm; absent without a front glass.
    */
   glass?: { drops: number; motes: number; noEngine?: boolean };
+  /** Preview (S3c): the recorded rain, dust and snow on the parts it draws: the parts that carry it and their drops. */
+  parts?: { parts: number; drops: number };
   /**
    * Path tracer (D1): what the Doctor reads of the view's accumulation, once every pixel has a few samples: the
    * fireflies and the frame's brightness by the stop (core/doctor-engine.ts `FrameScan`, made by render/frame-scan.ts).

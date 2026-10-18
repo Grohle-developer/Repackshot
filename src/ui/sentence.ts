@@ -46,6 +46,8 @@ function subject(state: ProjectState, clip: MotionClip, lang: Lang): string {
       return tIn(lang, 'say.light', { name: lightName(state, clip.target.id, lang).toLowerCase() });
     case 'SCENE':
       // Q1: the section plane is what moves, not the environment; N1: the sun goes along its arc.
+      // S3c: the parts get the weather of the scene's effects.
+      if (clip.move === 'PHYSICS' && clip.parts) return tIn(lang, 'say.parts');
       return tIn(lang, clip.move === 'SECTION' ? 'say.section' : clip.move === 'SUN_ARC' ? 'say.sun' : 'say.scene');
     case 'MATERIAL':
       // N1: a material and every part that wears it.
@@ -85,6 +87,8 @@ function verb(clip: MotionClip, lang: Lang): string {
   if (clip.move === 'EXPLODE' && clip.explode) return explodeVerb(clip, lang);
   // S3b: the recorded front glass of the camera.
   if (clip.move === 'PHYSICS' && clip.glass) return tIn(lang, 'say.PHYSICS_GLASS');
+  // S3c: the recorded rain, dust and snow on the parts.
+  if (clip.move === 'PHYSICS' && clip.parts) return tIn(lang, 'say.PHYSICS_PARTS');
   switch (clip.move) {
     case 'RISE':
       return tIn(lang, clip.amount < 0 ? 'say.RISE.neg' : 'say.RISE', { amount: amount(clip.amount) });

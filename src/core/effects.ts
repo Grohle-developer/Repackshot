@@ -116,6 +116,11 @@ export interface AmbientEffect {
   /** The most particles of this effect (0: the engine's cap, Settings ▸ Render engine). */
   cap: number;
   seed: number;
+  /**
+   * S3c: its particles fall on the parts when the physics bar runs (rain wets them, dust and snow pile on them;
+   * core/wet-parts.ts). Absent: no (an effect of before S3c, and a new one until it is switched on).
+   */
+  wetParts?: boolean;
 }
 
 /** What `effect/set` may change: anything but the id. */
@@ -561,6 +566,7 @@ function cleanPatch(patch: EffectPatch): EffectPatch {
   if (out.seed !== undefined) out.seed = Math.max(0, Math.min(0xffffffff, Math.round(finite(out.seed, 0))));
   if (out.palette !== undefined) out.palette = out.palette.slice(0, MAX_PALETTE);
   if (out.preset !== undefined && !isEffectKind(out.preset)) delete out.preset;
+  if (out.wetParts !== undefined) out.wetParts = out.wetParts === true;
   return out;
 }
 
@@ -636,7 +642,11 @@ export function normalizeEffects(raw: unknown, state: ProjectState): AmbientEffe
     merged.palette = Array.isArray(merged.palette) ? merged.palette.filter((c) => Array.isArray(c) && c.length === 3 && c.every((x) => typeof x === 'number' && Number.isFinite(x))).slice(0, MAX_PALETTE) : [];
     const own = merged.ownMaterial as Partial<EffectMaterial>;
     merged.ownMaterial = { ...base.ownMaterial, ...own, baseColor: vec(own.baseColor, base.ownMaterial.baseColor as Vec3) };
-    out.push({ ...merged, ...cleanPatch(merged), id: o.id, preset });
+    const next: AmbientEffect = { ...merged, ...cleanPatch(merged), id: o.id, preset };
+    // S3c: falls on the parts (absent unless a file says so).
+    if (o.wetParts === true) next.wetParts = true;
+    else delete next.wetParts;
+    out.push(next);
   }
   return out;
 }

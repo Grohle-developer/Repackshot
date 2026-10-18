@@ -13,7 +13,7 @@
 import { isPanoramic, type CameraId, type CameraState } from '../../core/camera';
 import { playheadPose } from '../../core/animation';
 import { filtersOf, glassFromScene, newFrontGlass, newLensFilter, OPTICS_NEUTRAL, opticsOf, type CameraOptics, type FrontGlass, type GlassSource, type LensFilter } from '../../core/optics';
-import { feedingEffects, glassFrame, wetBytes, wetKey, wetSpec } from '../../core/wet';
+import { feedingEffects, glassFrame, glassRendersClean, wetBytes, wetKey, wetSpec } from '../../core/wet';
 import { effectName } from './insp-ambient';
 import { FRONT_GLASS_LIMITS } from '../../data/front-glass';
 import { GRADE_LABELS, LENS_FILTER_GRADES, LENS_FILTERS, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../../data/lens-filters';
@@ -242,10 +242,12 @@ function frontGlassFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLEl
   const fed = h('div', { class: 'aux', 'data-glass': 'fed' });
   const recorded = h('div', { class: 'aux tabular', 'data-glass': 'recorded' });
   const stale = h('div', { class: 'note', 'data-glass': 'stale' }, t('camera.glassStale'));
-  const scene = h('div', { class: 'stack', 'data-glass': 'scene' }, h('div', { class: 'note' }, t('camera.glassSceneNote')), fed, recorded, stale);
+  // S3c: the engine of the render does not read a pane laid out drop by drop (bit 7): it would draw this glass clean.
+  const oldEngine = h('div', { class: 'note', 'data-glass': 'old-engine' }, t('camera.glassOldEngine'));
+  const scene = h('div', { class: 'stack', 'data-glass': 'scene' }, h('div', { class: 'note' }, t('camera.glassSceneNote')), fed, recorded, stale, oldEngine);
   knobs.append(scene);
   scope.watch(
-    (s) => [s.camera.cameras[camId()]?.optics?.frontGlass, s.camera.cameras[camId()]?.projection, s.effects, s.animation.clips, s.animation.playhead, s.camera.cameras[camId()]] as const,
+    (s, u) => [s.camera.cameras[camId()]?.optics?.frontGlass, s.camera.cameras[camId()]?.projection, s.effects, s.animation.clips, s.animation.playhead, s.camera.cameras[camId()], u.engineInfo?.glassLayout] as const,
     () => {
       const g = glass();
       on.set(g.on);
@@ -261,8 +263,9 @@ function frontGlassFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLEl
       scene.style.display = fromScene ? '' : 'none';
       const c = cam();
       panoramic.style.display = g.on && c && isPanoramic(c.projection) ? '' : 'none';
-      if (!fromScene || !g.on) return;
       const st = store.get();
+      oldEngine.style.display = glassRendersClean(st, camId(), ctx.ui.get().engineInfo?.glassLayout) ? '' : 'none';
+      if (!fromScene || !g.on) return;
       const feeding = feedingEffects(st);
       fed.textContent = feeding.length > 0 ? t('camera.glassSceneEffects', { names: feeding.map((e) => effectName(e)).join(', ') }) : t('camera.glassSceneNone');
       // What the recording holds at the playhead (the engine's frame), and whether the scene has changed since.

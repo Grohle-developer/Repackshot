@@ -977,6 +977,25 @@ pub struct Scene {
     /// block (M2b). The writer gives every mesh its UV sets when this is set or when the scene has
     /// images or texture blocks, as the page's writer does when the scene carries textures.
     pub textured: bool,
+    /// S3c: the rain, dust and snow on the instances (`WETP`, [`crate::weather`]), at most one per
+    /// instance. Set them with [`Scene::set_wet_parts`] (the RSB reader does), which meshes their
+    /// drops.
+    pub wet_parts: Vec<crate::weather::PartWeather>,
+    /// S3c: where the mesh of the drops' caps, its instance and its material (water) are, after the
+    /// file's own: none without drops.
+    pub caps: Option<Caps>,
+}
+
+/// S3c: the mesh of the drops' caps, its instance and its material, each the last of its list
+/// (after the file's own, [`Scene::wet_parts`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Caps {
+    /// Index of the mesh among the geometry's meshes.
+    pub mesh: u32,
+    /// Index of the instance.
+    pub instance: u32,
+    /// Index of the material (water).
+    pub material: u32,
 }
 
 impl Scene {
@@ -1048,14 +1067,19 @@ impl Scene {
     /// The materials say which instances are not capped (a thin wall has no inside). Call it
     /// after anything that rebuilds the geometry or changes the instances or the materials.
     pub fn apply_section(&mut self) {
+        // S3c: the drops' caps are open shells: cut, never capped.
+        let caps = self.caps.map(|c| c.instance as usize);
         let capped: Vec<bool> = self
             .geometry
             .instances()
             .iter()
-            .map(|i| {
-                self.materials
-                    .get(i.material_id as usize)
-                    .is_none_or(|m| m.flags & MATERIAL_FLAG_THIN == 0)
+            .enumerate()
+            .map(|(k, i)| {
+                Some(k) != caps
+                    && self
+                        .materials
+                        .get(i.material_id as usize)
+                        .is_none_or(|m| m.flags & MATERIAL_FLAG_THIN == 0)
             })
             .collect();
         self.geometry.set_section(self.section, &capped);
@@ -1068,6 +1092,101 @@ impl Scene {
         if !kept.is_empty() || !self.effects.is_empty() {
             self.build_particles(kept);
         }
+    }
+
+    /// S3c: the mesh, instance and material of the drops' caps, after the file's own; `None`
+    /// without drops.
+    pub fn caps(&self) -> Option<Caps> {
+        self.caps
+    }
+
+    /// S3c: the instances of the file (all of them but the caps').
+    pub fn file_instances(&self) -> &[Instance] {
+        let all = self.geometry.instances();
+        &all[..self.caps.map_or(all.len(), |c| c.instance as usize)]
+    }
+
+    /// S3c: the meshes of the file (all of them but the caps').
+    pub fn file_meshes(&self) -> &[Mesh] {
+        let all = self.geometry.meshes();
+        &all[..self.caps.map_or(all.len(), |c| c.mesh as usize)]
+    }
+
+    /// S3c: the materials of the file (all of them but the caps' water).
+    pub fn file_materials(&self) -> &[Material] {
+        &self.materials[..self
+            .caps
+            .map_or(self.materials.len(), |c| c.material as usize)]
+    }
+
+    /// S3c: sets the rain, dust and snow on the instances ([`crate::weather`]) and meshes their
+    /// drops: the caps' mesh, instance and material come after the file's own. Fails, leaving the
+    /// scene as it was, when a part names an instance that is not there or twice, its triangles are
+    /// not its mesh's, or the drops are too many.
+    pub fn set_wet_parts(
+        &mut self,
+        parts: Vec<crate::weather::PartWeather>,
+    ) -> Result<(), &'static str> {
+        crate::weather::check_parts(&parts, self.file_instances(), self.file_meshes())?;
+        if self.file_instances().len() + self.geometry.particle_sets().len() + 1
+            > crate::geometry::MAX_INSTANCES
+            && parts.iter().any(|p| !p.drops.is_empty())
+        {
+            return Err("too many instances for the drops");
+        }
+        self.detach_caps();
+        self.wet_parts = parts;
+        self.attach_caps();
+        Ok(())
+    }
+
+    /// Takes the caps' mesh, instance and material out.
+    fn detach_caps(&mut self) {
+        let Some(c) = self.caps.take() else { return };
+        let width = crate::geometry::BvhWidth::native();
+        let sets = self.geometry.take_particles();
+        let mut instances = self.geometry.instances().to_vec();
+        instances.truncate(c.instance as usize);
+        let mut meshes = std::mem::take(&mut self.geometry).into_meshes();
+        meshes.truncate(c.mesh as usize);
+        self.materials.truncate(c.material as usize);
+        self.geometry =
+            Geometry::with_particles(meshes, instances, sets, width).unwrap_or_default();
+        self.apply_section();
+    }
+
+    /// Meshes the drops of [`Scene::wet_parts`] after the file's own (validated) instances.
+    fn attach_caps(&mut self) {
+        let caps = crate::weather::caps_of(
+            &self.wet_parts,
+            self.geometry.instances(),
+            self.geometry.meshes(),
+        );
+        let Some(mesh) = crate::weather::cap_mesh(&caps) else {
+            return;
+        };
+        let width = crate::geometry::BvhWidth::native();
+        let sets = self.geometry.take_particles();
+        let mut instances = self.geometry.instances().to_vec();
+        let mut meshes = std::mem::take(&mut self.geometry).into_meshes();
+        let at = Caps {
+            mesh: meshes.len() as u32,
+            instance: instances.len() as u32,
+            material: self.materials.len() as u32,
+        };
+        meshes.push(mesh);
+        instances.push(Instance::new(at.mesh, Transform::IDENTITY, at.material));
+        self.materials.push(crate::weather::water());
+        match Geometry::with_particles(meshes, instances, sets, width) {
+            Ok(g) => {
+                self.geometry = g;
+                self.caps = Some(at);
+            }
+            Err(_) => {
+                self.materials.pop();
+            }
+        }
+        self.apply_section();
     }
 
     /// Number of distinct triangles (each mesh counted once, however many instances use it).

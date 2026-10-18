@@ -59,7 +59,7 @@ import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
-import { programsView, readsCameras, readsDrops, readsGlassLayout, readsIes, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
+import { programsView, readsCameras, readsDrops, readsGlassLayout, readsIes, readsWetParts, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
 import { adaptiveKey, QUIET_MS, viewAdaptive, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
@@ -643,6 +643,7 @@ export class NativeEngine {
         ...(readsCameras(this.info.features) ? { cameras: true } : {}),
         ...(readsDrops(this.info.features) ? { drops: true } : {}),
         ...(readsGlassLayout(this.info.features) ? { glassLayout: true } : {}),
+        ...(readsWetParts(this.info.features) ? { wetParts: true } : {}),
       },
     };
   }
@@ -1078,6 +1079,7 @@ export class NativeEngine {
         ...(readsCameras(this.info.features) ? { cameras: true } : {}),
         ...(readsDrops(this.info.features) ? { drops: true } : {}),
         ...(readsGlassLayout(this.info.features) ? { glassLayout: true } : {}),
+        ...(readsWetParts(this.info.features) ? { wetParts: true } : {}),
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.

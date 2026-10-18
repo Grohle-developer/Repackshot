@@ -272,7 +272,8 @@ recibido, así que en una máquina cargada va más despacio en vez de acabar
 sin que se vea; un cuerpo quieto durante
 0,5 s **duerme** y, con todos dormidos, la simulación se para sola; si no,
 a los 30 s simulados (S3b: con el cristal frontal alimentado por la escena,
-que sigue lloviendo, no se para sola; a los 120 s). La misma escena da las mismas poses en cualquier
+que sigue lloviendo, no se para sola; a los 120 s; S3c: igual con algún efecto
+sobre las piezas). La misma escena da las mismas poses en cualquier
 máquina (*hash* de las poses fijado en los tests, igual en nativo y en
 wasm y con cualquier número de hilos).
 
@@ -288,6 +289,53 @@ que da *Dejar caer* y las poses finales son **una** entrada de deshacer;
 *Reiniciar* quita los clips de la última simulación y devuelve los nodos a
 donde estaban antes, como otra entrada; deshacer mientras corre la
 abandona sin confirmar nada.
+
+**Lluvia, polvo y nieve sobre las piezas (S3c).** Un efecto de *Ambiente* con
+`wetParts` cae sobre las piezas cuando corre *Iniciar* (no *Dejar caer*): lo
+que deja cada uno lo dice `src/data/wet-parts.ts` `PARTS_FEED` (*Lluvia* y
+*Gotas de agua*, gotas; *Motas de polvo*, *Polen*, *Polvareda* y *Ceniza*,
+polvo; *Nieve*, nieve; las burbujas y el confeti, nada). Se mojan las piezas
+visibles que la simulación no mueve (una *Dinámica* se mojaría donde estaba),
+donde están al empezar, en mm del mundo, como mallas de triángulos
+(`engine/crates/rt-phys` `wet_parts`, en el *worker* de S2, con su formato
+`WPT1`); cada una con la **mojabilidad** de la familia de su material
+(`src/data/wettability.ts` `wettabilityFamilyOf`: la categoría *Metal*,
+*Plástico*, *Vidrio* —y un emisor, como vidrio—, *Madera* y *Tela* la suya; las
+demás, por su receta: metálica como metal, el resto como pintura; S3c añade
+madera, 85°/40°, y tela, 110°/40°, y lo que tarda un material poroso en beberse
+una gota y cuánto lo oscurece mojarse: papel 0,05 mm/s y 1, madera 0,01 y 0,6,
+tela 0,5 y 1). Las piezas de un **set** (fondo, suelo, tarjetas) no llevan gotas
+una a una: se mojan como **película**. Cada triángulo lleva una rejilla de
+muestras de 1 mm de lado como poco (que crece hasta caber en 150 000 muestras
+en total, de las que el set toma un tercio como mucho; una astilla, por su
+área). Por cada efecto, su densidad y su velocidad media (viento y caída, en
+los ejes del mundo): por una cara de normal `n` pasan `densidad × |v| ×
+máx(0, −v̂·n)` por mm² y s si nada de la escena está en medio aguas arriba.
+**Las gotas** se posan por Poisson en el plano tangente de su punto (el
+casquete de S3b con la normal de la malla) y, si llegan deprisa, **salpican**
+(Mundo, Sommerfeld y Tropea: `K = We^½ Re^¼ > 57,7`; hasta un 30 % de su agua como dos
+gotas más pequeñas lanzadas por la superficie); se **juntan**, se quedan
+**ancladas** por Furmidge y **resbalan** con la gravedad tangente de triángulo
+en triángulo (por un pliegue, a lo largo de él), con su rastro, que moja las
+muestras por donde pasa, se lleva su polvo y les quita agua; una gota que
+**cuelga** de una cara que mira hacia abajo **gotea** cuando su peso puede más
+que su línea de contacto (`ρ g V (ĝ·n) > 2π a γ sin θ̄`), y una que sale por
+una arista abierta gotea ahí: cae recta hasta la primera pieza de debajo y se
+posa (puede salpicar otra vez), o se va. Lo poroso se las bebe. **El polvo** se
+posa como un campo (`1 − e^(−k t)` desde la última vez que la lluvia lo limpió)
+y **la nieve** como una capa que crece y no resbala, los dos solo donde la cara
+es lo bastante plana (polvo, 35°; nieve, 50°; una rampa de ±5°) y a cielo
+abierto. Cada fotograma se graba en un clip `PHYSICS` de la **escena** (§3.7,
+`parts`: la caché), y el render y el modo Rápido leen el fotograma del cabezal:
+el motor recibe, por instancia de una pieza mojada, la sección `WETP` (lo mojado,
+el polvo y la nieve de cada muestra y las gotas), bit 8 de sus capacidades; a
+un motor sin él no se le manda, y el inspector avisa de que el render enseñará
+las piezas secas. **Cómo se ve**: el agua de la película como una capa
+transparente casi lisa sobre el material (rugosidad 0,03) y lo poroso más
+oscuro; el polvo, un gris pardo mate encima (más oscuro mojado); la nieve, un
+blanco mate que cubre según su espesor (`1 − e^(−h / 0,5 mm)`); las gotas,
+casquetes de agua (índice 1,333) encima de la pieza. Sin grabación, las piezas
+están secas.
 
 **Ambiente** (fase S4a, `src/core/effects.ts`, catálogo
 `src/data/effects.ts`). Partículas del aire **sin estado**: polvo en
@@ -332,7 +380,8 @@ función pura de (semilla, id, instante). Ni caché ni horneado.
   efecto guardado antes de S4b toma el de su preset), `tintVar`
   y `palette` (hasta 4 tintes), `time` (*Congelar en*, s), `camera`,
   `reflections` y `shadows` (como en las luces), `cap` (tope propio; 0: el
-  del motor) y `seed`. Un efecto guardado antes de S3 abre con la gota y la
+  del motor), `seed` y, desde S3c, `wetParts` (cae sobre las piezas cuando
+  corre la barra de físicas; solo se guarda encendido). Un efecto guardado antes de S3 abre con la gota y la
   variación de su preset y la mezcla apagada. Un motor sin el bit 6 de sus
   capacidades (S3) recibe una gota como esfera y una mezcla como la forma de
   más peso.
@@ -1608,6 +1657,17 @@ se fue, `f32` y `u32` *little endian* en base64): es la caché que se guarda con
 el proyecto. Una simulación con la misma clave da los mismos fotogramas, bit a
 bit; el inspector avisa cuando la escena ya no da la clave grabada. Una pista
 que no se lee se quita al abrir, como la de un nodo.
+**Las piezas (S3c).** Una simulación con algún efecto sobre las piezas da un
+clip `PHYSICS` a la **escena** (`target` *Escena*), en la misma entrada de
+deshacer: no mueve nada, dice qué fotograma enseñan las piezas (el más cercano),
+también en 0 sin reproducir. Lleva la **pista de las piezas** (`parts`: los fps
+y los fotogramas, la **clave** —el FNV-1a de sus bytes `WPT1` y la versión del
+formato—, cada pieza con su malla, sus triángulos, sus muestras, el ángulo de
+sus gotas y su porosidad, la disposición de las muestras que dio el motor, cada
+gota con los fotogramas en que fue como era, el fotograma en que se mojó cada
+muestra y en los que la lluvia la limpió, y las gotas y goteos de cada
+fotograma, en base64): la caché. Una pieza cuya malla ya no es la grabada se
+queda seca. Una pista que no se lee se quita al abrir.
 
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,

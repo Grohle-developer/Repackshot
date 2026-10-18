@@ -736,7 +736,19 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    *Mezcla* por primera vez; sin ningún peso, *Da peso a alguna forma*);
    *Energía* (m/s), *Caos* (%), *Viento* (m/s) y
    *Dirección del viento* (°), *Gravedad* (× g), *Variación* (%) y
-   *Semilla* con *Barajar*. **Avanzado**, plegado: región (*Alrededor de
+   *Semilla* con *Barajar*. Con un efecto que deja algo en las piezas (S3c:
+   *Lluvia* y *Gotas de agua*, gotas; *Motas de polvo*, *Polen*, *Polvareda* y
+   *Ceniza*, polvo; *Nieve*, nieve; las burbujas y el confeti, nada), detrás de
+   la semilla el interruptor **Sobre las piezas**, una entrada de deshacer
+   (*Deshacer: Lluvia: Sobre las piezas*, con el nombre del efecto), apagado por defecto y guardado con el
+   proyecto; su ayuda dice qué hace *Iniciar* en la barra de físicas con ese
+   efecto (la lluvia: las gotas se posan y salpican, se juntan, resbalan y
+   gotean por las aristas, y dejan las superficies mojadas; el polvo se posa
+   donde la pieza es lo bastante plana y la lluvia que resbala se lo lleva; la
+   nieve se acumula donde la sostiene) y que la grabación es un clip de
+   *Físicas* de la escena. Encendido, si el motor del render no dibuja el
+   tiempo de las piezas (le falta el bit 8: un motor anterior), una nota debajo
+   lo dice: *el render las enseñará secas y limpias*. **Avanzado**, plegado: región (*Alrededor de
    la escena* con margen en mm, o *Caja propia* con centro y tamaño),
    banda de alturas, *Cantidad por* (*Densidad · Cuenta*) y, según la
    forma: con gotas, *Largo de la gota* (×, del centro
@@ -1103,6 +1115,12 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      simulación*), y, si la escena ha cambiado desde que se grabó (otra clave
      de simulación: la cámara, los efectos, la semilla), *inicia otra vez
      para poner el cristal al día*.
+     Si el motor del render no lee el cristal gota a gota (le falta el bit 7,
+     S3c: un motor anterior, como un lanzador de escritorio de antes) y la
+     escena alimenta el cristal (encendido, *De la escena*, con algún efecto
+     que lo alimenta y una cámara que no es panorámica), una nota lo dice:
+     *el render enseñará este cristal limpio*; *A mano*, no (ese lo dibuja
+     cualquier motor).
      ![el cristal frontal mojado en Completo](lens-glass.png)
      ![la aproximación del cristal en Rápido](lens-glass-fast.png)
 7. **Imagen** — Exposición (EV), transformada de vista (Estándar /
@@ -1524,6 +1542,21 @@ nota: cómo empezar, y mientras corre, que el visor la enseña en *Rápido*
   lluvia y el polvo de la escena, según la simulación · 4 s*), en la misma
   entrada de deshacer; *Reiniciar* lo quita también.
   ![la lluvia en el cristal, en pausa](physics-rain.png)
+- **Las piezas** (S3c). Con algún efecto *Sobre las piezas*, *Iniciar* moja,
+  empolva y nieva las piezas visibles que la simulación no mueve (las
+  *Dinámicas* no: se mojarían donde estaban), con los cuerpos o solo;
+  *Dejar caer* no. La barra añade lo que dice el motor (*Piezas: 1.443 gotas
+  · 0 goteos*: las gotas sobre las piezas en el último fotograma y las que
+  han goteado hasta ahora); como con el cristal, no se para sola al dormirse
+  los cuerpos: la para *Parar* o sus 120 s simulados. Su grabación es un clip
+  **Simulación** de la *Escena* (*Las piezas reciben la lluvia, el polvo y la
+  nieve de los efectos de la escena, según la simulación*), que no mueve
+  nada: dice qué fotograma enseñan las piezas, y *Reiniciar* lo quita. El
+  modo *Rápido* dibuja el fotograma del cabezal (las gotas como casquetes de
+  agua, la película mojada más brillante y lo poroso más oscuro, el polvo y la
+  nieve encima) y el medidor añade *Lluvia en las piezas: 1.443 gotas en 7
+  piezas*; *Completo* y el render, con un motor que tiene el bit 8.
+  ![la lluvia sobre las piezas, en pausa](physics-rain-set.png)
 
 Capturas (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (la barra
 en pausa, en mitad de una caída), `docs/ui/physics-drop.png` (tres

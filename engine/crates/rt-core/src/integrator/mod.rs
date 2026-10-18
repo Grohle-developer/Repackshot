@@ -269,6 +269,8 @@ pub struct Prepared {
     pub(crate) textures: TextureSetup,
     /// The material programs of every instance ([`crate::program`], M3b).
     pub(crate) programs: ProgramSetup,
+    /// The rain, dust and snow on the instances ([`crate::weather`], S3c).
+    pub(crate) weather: crate::weather::WeatherSetup,
 }
 
 /// True when a shadow ray from a medium's exit vertex may cross a solid of `m` (E9b): smooth,
@@ -343,6 +345,8 @@ impl Prepared {
         // M2b: an alpha image makes the opacity vary over the surface; M3b: so does a program.
         let textures = TextureSetup::new(scene);
         let programs = ProgramSetup::new(scene);
+        // S3c: the drops' caps are crossed straight by shadow rays, as small clear particles are.
+        let weather = crate::weather::WeatherSetup::new(scene);
         // Small clear particles that cast shadows are crossed straight by shadow rays (S4b).
         let clear = |i: usize| {
             scene
@@ -354,14 +358,16 @@ impl Prepared {
             .map(|i| {
                 material(i).is_some_and(|m| {
                     let thin = m.flags & MATERIAL_FLAG_THIN != 0 || disc(i);
-                    !m.is_emissive()
-                        && (m.opacity < 1.0
-                            || textures.has_alpha(i as u32)
-                            || programs.see_through(i as u32)
-                            || clear(i)
-                            || (thin
-                                && m.transmission > 0.0
-                                && (m.metallic < 1.0 || m.kind == crate::scene::MATERIAL_GLASS)))
+                    weather.is_caps(i as u32)
+                        || !m.is_emissive()
+                            && (m.opacity < 1.0
+                                || textures.has_alpha(i as u32)
+                                || programs.see_through(i as u32)
+                                || clear(i)
+                                || (thin
+                                    && m.transmission > 0.0
+                                    && (m.metallic < 1.0
+                                        || m.kind == crate::scene::MATERIAL_GLASS)))
                 })
             })
             .collect();
@@ -411,6 +417,7 @@ impl Prepared {
             patterns: PatternSetup::new(scene),
             textures,
             programs,
+            weather,
         }
     }
 
@@ -528,8 +535,20 @@ impl Prepared {
         // M2b: the opacity, tint and transmission its textures give it there.
         let textured = self.textures.at_shadow(scene, details, m);
         let m = textured.as_ref().unwrap_or(m);
+        // S3c: and the rain, dust and snow on it.
+        let weathered = self.weather.at(scene, details, m);
+        let m = weathered.as_ref().unwrap_or(m);
         let cos = details.geometric_normal.dot(r.dir);
         let opacity = m.opacity.clamp(0.0, 1.0);
+        // S3c: a drop's cap is crossed straight, as a thin wall of water.
+        if self.weather.is_caps(hit.instance) {
+            let mut wall = m.clone();
+            wall.flags |= MATERIAL_FLAG_THIN;
+            return (
+                Bsdf::principled(&wall).straight_transmittance(cos),
+                offset_origin(details.point, -details.geometric_normal),
+            );
+        }
         let drop = scene
             .geometry
             .particle_set(hit.instance)
@@ -667,6 +686,9 @@ impl Prepared {
             // M2b: the opacity, tint and transmission its textures give it there.
             let textured = self.textures.at_shadow(scene, &details, m);
             let m = textured.as_ref().unwrap_or(m);
+            // S3c: and the rain, dust and snow on it.
+            let weathered = self.weather.at(scene, &details, m);
+            let m = weathered.as_ref().unwrap_or(m);
             let n = details.geometric_normal;
             let next_origin = if self
                 .passable
@@ -875,11 +897,21 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
                 };
                 prepared.textures.albedo(scene, ray, &details, &m)
             });
+            let albedo = textured.flatten().unwrap_or(base);
+            // S3c: the rain, dust and snow on it.
+            let weathered = prepared.weather.at(
+                scene,
+                &details,
+                &Material {
+                    base_color: albedo,
+                    ..material.clone()
+                },
+            );
             FirstHit::Surface {
                 instance: details.instance,
                 t: details.t,
                 normal: prepared.bevel.pass_normal(scene, ray, &details),
-                albedo: textured.flatten().unwrap_or(base),
+                albedo: weathered.map_or(albedo, |m| m.base_color),
             }
         }
         None => FirstHit::Background,
@@ -949,6 +981,8 @@ struct Surface {
     textured: Option<Textured>,
     /// What the material's program makes of it here, if it has one (M3b).
     programmed: Option<Resolved>,
+    /// The rain, dust and snow here and its instance's porosity, if any lies here (S3c).
+    weather: Option<(crate::weather::Layers, f32)>,
 }
 
 /// Radiance and coverage arriving at the camera along `camera_ray`, for one sample of one
@@ -1232,6 +1266,7 @@ pub fn radiance_weighted<T: Tracer>(
                 tint: None,
                 textured: None,
                 programmed: None,
+                weather: None,
             }
         } else {
             // S4b: a path that scattered off a rough lobe crosses a small clear particle (a drop)
@@ -1353,6 +1388,7 @@ pub fn radiance_weighted<T: Tracer>(
                 tint,
                 textured: textured.flatten(),
                 programmed,
+                weather: prepared.weather.layers(scene, &details),
             }
         };
 
@@ -1376,6 +1412,12 @@ pub fn radiance_weighted<T: Tracer>(
             .or(material);
         // The textures' material (M2b), made over the patterned one (or the program's).
         let material = surface.textured.as_ref().map(|t| &t.material).or(material);
+        // S3c: the rain, dust and snow over all of it.
+        let weathered = surface
+            .weather
+            .zip(material)
+            .and_then(|((l, porosity), m)| crate::weather::weathered(m, l, porosity));
+        let material = weathered.as_ref().or(material);
 
         // Emitters reflect nothing: add their light and stop.
         if let (Some((instance, front)), Some(m)) = (surface.instance, material) {

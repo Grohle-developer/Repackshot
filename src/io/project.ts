@@ -119,6 +119,7 @@ import { withNormalFocus } from '../core/focus';
 import { migrateRender, syncOutputSize } from '../core/render';
 import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { isGlassTrack } from '../core/wet';
+import { isPartsTrack } from '../core/wet-parts';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -435,7 +436,11 @@ function checkState(raw: RawState): ProjectState {
   if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
   // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project. S3b: a PHYSICS
   // clip of the camera records its front glass instead (a glass track, core/wet.ts), checked the same way.
-  const recorded = (c: Record<string, unknown>) => (c.target as { kind?: unknown } | undefined)?.kind === 'CAMERA' ? isGlassTrack(c.glass) : isTrack(c.track);
+  // S3c: a PHYSICS clip of the scene records the rain, dust and snow on the parts (a parts track, core/wet-parts.ts).
+  const recorded = (c: Record<string, unknown>) => {
+    const kind = (c.target as { kind?: unknown } | undefined)?.kind;
+    return kind === 'CAMERA' ? isGlassTrack(c.glass) : kind === 'SCENE' ? isPartsTrack(c.parts) : isTrack(c.track);
+  };
   if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !recorded(c))) {
     s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !recorded(c))) };
   }

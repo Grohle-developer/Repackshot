@@ -55,6 +55,7 @@ import { filterKernel, type FilterKernel } from './lens-filter-image';
 import { LensFilterPass, type GlassDraw } from './lens-filter-pass';
 import { dropTransmittance, footprintRadiusMm, paneGrid, paneMapping, seenRect, type PaneGrid, type PaneLayout } from './glass-overlay';
 import { frontGlassOf, glassFromScene } from '../core/optics';
+import { WeatherPreview } from './weather-preview';
 import { recordedGlass, type EnginePane } from '../core/wet';
 import { lensProfileTable, PROFILE_GLSL, ProfileUniformSet, shownOfSource, sourceOfShown, type LensProfile, type ProfileView } from './lens-profile';
 import type { EngineLensInfo } from '../core/traced-lens';
@@ -326,6 +327,8 @@ export class PreviewEngine implements RenderEngine {
   private pmrem!: THREE.PMREMGenerator;
   private state: ProjectState | null = null;
   private readonly objects = new Map<NodeId, THREE.Object3D>();
+  /** S3c: the recorded rain, dust and snow on the parts at the playhead's frame. */
+  private readonly weather = new WeatherPreview(this.modelRoot);
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
   private readonly materials = new Map<string, THREE.MeshPhysicalMaterial>();
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
@@ -788,6 +791,14 @@ export class PreviewEngine implements RenderEngine {
     const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
     if (pose || this.nodesPosed) this.applyNodePose(state, pose);
     this.nodesPosed = pose !== null;
+    // S3c: the weather of the frame the playhead shows: the parts that carry it draw a copy of their geometry and their
+    // materials that reads it.
+    const weatherChanged = this.weather.update(state, pose, this.objects, (id) => {
+      const n = state.scene.nodes[id];
+      return n ? this.geometryFor(n) : null;
+    });
+    if (weatherChanged || nodesChanged) this.applyWeatherGeometry(state);
+    if (weatherChanged) this.assignMaterials(state);
     this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
     this.poseActive = posed;
     // Q1: the section plane where the playhead has put it, and the caps of what it cuts (made again when the parts or
@@ -1000,14 +1011,26 @@ export class PreviewEngine implements RenderEngine {
       const parent = node.parent ? this.objects.get(node.parent) : this.modelRoot;
       if (parent && obj.parent !== parent) parent.add(obj);
     }
-    // Drop geometries no node uses.
-    const used = new Set<THREE.BufferGeometry>();
+    // Drop geometries no node uses (S3c: a part that draws the weather uses its base geometry through its copy).
+    const used = new Set<THREE.BufferGeometry>(this.weather.bases());
     for (const obj of this.objects.values()) if (obj instanceof THREE.Mesh) used.add(obj.geometry);
     for (const [k, g] of this.geometries) {
       if (!used.has(g)) {
         g.dispose();
         this.geometries.delete(k);
       }
+    }
+  }
+
+  /** S3c: each part draws its weathered copy of its geometry while it carries the weather, its own otherwise. */
+  private applyWeatherGeometry(state: ProjectState): void {
+    for (const [id, obj] of this.objects) {
+      if (!(obj instanceof THREE.Mesh)) continue;
+      const node = state.scene.nodes[id];
+      const base = node ? this.geometryFor(node) : null;
+      if (!base) continue;
+      const g = this.weather.geometryOf(id, base);
+      if (obj.geometry !== g) obj.geometry = g;
     }
   }
 
@@ -1031,7 +1054,9 @@ export class PreviewEngine implements RenderEngine {
         const base = m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial;
         // M3e: E6's knots on top, the bake's left out of its maps, so that they fall where Full puts them.
         const knots = m ? this.partKnotsOf(state, id, m) : null;
-        const own = knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
+        const knotted = knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
+        // S3c: the rain, dust and snow of the frame over it.
+        const own = this.weather.materialOf(id, knotted);
         // Q1: while a section cuts, the studio draws with a material that carries no clipping plane.
         const cut = free ? this.section.unclipped(`${id}|${m ?? ''}`, own, studio) : own;
         // N1: a part that fades draws with a see-through copy.
@@ -1043,6 +1068,7 @@ export class PreviewEngine implements RenderEngine {
     }
     this.section.pruneStudio(studio);
     this.fades.prune(faded);
+    this.weather.prune();
     for (const [key, m] of this.knotMaterials) {
       if (used.has(key)) continue;
       m.dispose();
@@ -2234,7 +2260,7 @@ export class PreviewEngine implements RenderEngine {
     const msaa = this.msaa();
     // K3: an automatic exposure draws with the path tracer's last reading of its image.
     const metered = this.state && autoExposure(this.state.image) ? { meteredEv: this.exposureMeter() } : {};
-    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...metered, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}), ...(this.glassStats ? { glass: { ...this.glassStats } } : {}) };
+    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...metered, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}), ...(this.glassStats ? { glass: { ...this.glassStats } } : {}), ...(this.weather.shown ? { parts: { ...this.weather.shown } } : {}) };
   }
 
   // ------------------------------------------------------------------ ambient effects (S4a)

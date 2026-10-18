@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 160 archivos: 158 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 161 archivos: 159 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,11 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 21 versiones, 18 con capturas nuevas; las capturas se reparten en 57 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 21 versiones, 18 con capturas nuevas; las capturas se reparten en 58 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápido* y la lluvia que la escena deja en el cristal (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3).
+La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápido* y la lluvia que la escena deja en el cristal (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3); la lluvia sobre las piezas (S3c).
 
 #### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación)
 
@@ -38,6 +38,11 @@ La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápi
 
 <a id="c-physics-rain"></a><img src="ui/physics-rain.png" width="480" alt="El frasco bajo la lluvia, a 35 mm f/11, con la barra de físicas en pausa a los 4 s: Cristal 148 gotas; en el inspector, el cristal frontal De la escena, alimentado por la lluvia, y lo grabado en el cabezal."><br>
 `physics-rain.png` · `fe3f101` · La lluvia empujada hacia la cámara por un viento de 6 m/s, a 35 mm f/11, con el cristal frontal en *Gotas y polvo ▸ De la escena*: la barra de físicas en pausa a los 4 s simulados (*Glass: 148 drops · 0 motes*), el inspector dice que lo alimenta la lluvia y lo que hay grabado en el cabezal, y *Rápido* dibuja las gotas del cristal, que han resbalado hacia abajo. `tools/s3b-check.mjs --only rain`.
+
+#### S3c · Gotas y polvo sobre las piezas (simulación)
+
+<a id="c-physics-rain-set"></a><img src="ui/physics-rain-set.png" width="480" alt="El frasco de ejemplo en Rápido bajo la lluvia con viento de 3 m/s y el interruptor Sobre las piezas encendido: el cuerpo, el tapón y el set salpicados de gotas pequeñas; la barra de físicas en pausa a los 3 s con Piezas: 1.443 gotas y 0 goteos; la barra de estado dice Lluvia sobre las piezas: 1.443 gotas en 7 piezas."><br>
+`physics-rain-set.png` · `324bb1e` · La lluvia del ejemplo con un viento de 3 m/s y *Sobre las piezas* encendido en sus mandos: la barra de físicas en pausa a los 3 s simulados (*Parts: 1,443 drops · 0 drips*), y *Rápido* dibuja el fotograma grabado: las gotas del motor como casquetes sobre el cuerpo, el cuello, el tapón y el set, y la película de agua donde ha llovido; la barra de estado: *Rain on the parts: 1,443 drops on 7 parts*. `tools/s3c-check.mjs --only rain`.
 
 ### v0.1.20 · 2026-10-18
 
@@ -864,6 +869,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`ambient-mix.png`](#c-ambient-mix) · v0.1.20 · S3
 - [`physics-rain.png`](#c-physics-rain) · Sin publicar · S3b
 - [`ambient-shape.png`](#c-ambient-shape) · Sin publicar · S3b
+- [`physics-rain-set.png`](#c-physics-rain-set) · Sin publicar · S3c
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

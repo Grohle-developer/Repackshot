@@ -51,6 +51,8 @@ export interface PhysicsUi {
   canReset: boolean;
   /** S3b: the front glass of the run in progress or the last one, as its last frame left it (absent: none). */
   glass?: { drops: number; motes: number } | null;
+  /** S3c: the parts of the run in progress or the last one: the drops on them at the last frame, the drips so far. */
+  parts?: { drops: number; drips: number } | null;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
@@ -233,6 +235,17 @@ export interface EngineInfo {
   cores: number | null;
   /** D1: the engine can denoise (rt.wasm exports the denoiser; the native engine always can). Absent: not known. */
   denoise?: boolean;
+  /**
+   * S3c: the engine reads a front glass laid out drop by drop (bit 7 of its features, render/engine.ts
+   * `readsGlassLayout`): without it the render draws a glass fed by the scene clean, and the inspector says so. Absent:
+   * not known.
+   */
+  glassLayout?: boolean;
+  /**
+   * S3c: the engine draws the rain, dust and snow on the parts (bit 8, render/engine.ts `readsWetParts`): without it the
+   * render draws them dry, and the ambient section says so. Absent: not known.
+   */
+  wetParts?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

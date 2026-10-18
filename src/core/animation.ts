@@ -15,6 +15,7 @@ import { allParts, boundsOf, partsUnder, worldMatrix, worldToLocalDelta, type No
 import { decomposeMatrix } from './transform';
 import { trackPose, type PhysicsTrack } from './physics';
 import { glassFrameIndex, type GlassTrack } from './wet';
+import { partsFrameIndex, type PartsTrack } from './wet-parts';
 
 /**
  * How the camera track changes into a shot (N1, SPEC §3.7 "Fundidos"): a cut, or a fade to a colour (black or white)
@@ -112,6 +113,11 @@ export interface MotionClip {
    * drops and motes per frame. The clip moves nothing; it says which frame of the glass the camera shows.
    */
   glass?: GlassTrack;
+  /**
+   * PHYSICS of the scene (S3c): the recorded rain, dust and snow on the parts of a run (core/wet-parts.ts): the drops
+   * and the samples of every frame. The clip moves nothing; it says which frame the parts show.
+   */
+  parts?: PartsTrack;
 }
 
 /** A node's position (mm) and rotation (degrees, XYZ) without its scale. */
@@ -344,6 +350,8 @@ export interface Pose {
    * the clip and the frame), absent without one. The last clip of a camera wins.
    */
   glass?: Record<CameraId, GlassPose>;
+  /** S3c: the frame of the recorded rain, dust and snow on the parts at this instant (the last such clip wins). */
+  parts?: GlassPose;
 }
 
 /** S3b: which frame of which recorded glass a camera shows. */
@@ -367,12 +375,15 @@ export function playheadPose(state: ProjectState): Pose | null {
   if (anim.clips.length === 0) return null;
   if (poseActive(state)) return evaluate(state, anim.playhead);
   const held = new Set(anim.clips.filter((c) => c.move === 'PHYSICS' && c.target.kind === 'NODE').map((c) => (c.target.kind === 'NODE' ? c.target.id : '')));
-  // S3b: a recorded front glass shows its frame at 0 too, like the nodes a recorded simulation holds.
+  // S3b: a recorded front glass shows its frame at 0 too, like the nodes a recorded simulation holds. S3c: and the
+  // recorded rain, dust and snow on the parts.
   const glass = anim.clips.some((c) => c.move === 'PHYSICS' && c.glass);
-  if (held.size === 0 && !glass) return null;
+  const parts = anim.clips.some((c) => c.move === 'PHYSICS' && c.parts);
+  if (held.size === 0 && !glass && !parts) return null;
   const pose = evaluate(state, anim.playhead);
   const out: Pose = { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, materials: {}, fade: null, skySun: null, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
   if (!glass) delete out.glass;
+  if (!parts) delete out.parts;
   return out;
 }
 
@@ -559,6 +570,11 @@ export function evaluate(state: ProjectState, t: number): Pose {
   for (const c of anim.clips) {
     if (c.move !== 'PHYSICS' || c.target.kind !== 'CAMERA' || !c.glass) continue;
     (pose.glass ??= {})[c.glass.camera] = { clip: c.id, frame: glassFrameIndex(c.glass, clipPhase(c, t)) };
+  }
+  // S3c: the recorded rain, dust and snow on the parts, the frame at this instant.
+  for (const c of anim.clips) {
+    if (c.move !== 'PHYSICS' || c.target.kind !== 'SCENE' || !c.parts) continue;
+    pose.parts = { clip: c.id, frame: partsFrameIndex(c.parts, clipPhase(c, t)) };
   }
 
   // Nodes: the subject (every model root) or one node.

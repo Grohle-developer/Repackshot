@@ -8,21 +8,28 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Escena y ambiente
 
 - **La *Forma* sale de *Avanzado***: es uno de los mandos siempre visibles de un efecto, justo después del *Tamaño*, con los pesos de la *Mezcla* debajo (S3b).
+- **La lluvia, el polvo y la nieve caen sobre las piezas** (*Sobre las piezas*, en los mandos de *Lluvia*, *Gotas de agua*, *Motas de polvo*, *Polen*, *Polvareda*, *Ceniza* y *Nieve*): *Iniciar* en la barra de físicas los simula sobre las piezas que no se mueven. Las gotas se posan y salpican, se juntan, se quedan ancladas hasta su tamaño crítico según el material de la pieza, resbalan por la superficie de cara en cara, cuelgan y gotean por las aristas sobre lo que hay debajo, y dejan las superficies mojadas (más brillantes, y más oscuras las porosas); el polvo se posa donde la pieza es lo bastante plana y la lluvia que resbala se lo lleva; la nieve se acumula donde la sostiene. Lo que está a cubierto se queda seco. Las piezas del set se mojan como una película. La grabación es un clip de *Físicas* de la escena que se guarda con el proyecto; *Rápido*, *Completo* y el render enseñan el fotograma del cabezal, y la barra dice cuántas gotas y goteos hay (S3c).
+- **Aviso de un motor que dibujaría las piezas secas**: con un motor de render anterior (sin el bit 8), el efecto lo dice debajo de *Sobre las piezas* (S3c).
 
 ### Cámara y lente
 
 - **El cristal frontal en *Rápido***: una aproximación hecha con las gotas y motas que coloca el motor, las gotas como discos suaves de borde oscuro y el polvo como un tinte o unas motas, tan desenfocados como los deja la apertura; el medidor dice que es una aproximación y de cuántas gotas y motas (S3b).
 - **El cristal frontal alimentado por la escena** (*Gotas y polvo ▸ De la escena*): *Iniciar* en la barra de físicas simula la lluvia y el polvo de los efectos de *Ambiente* cayendo en el cristal. Las gotas se posan donde la lluvia lo cruza (una cámara que mira hacia abajo no se moja con lluvia vertical; con viento hacia ella, sí), se juntan, se quedan ancladas hasta su tamaño crítico y resbalan según el arriba de la cámara, y su rastro se lleva el polvo; el polvo se queda donde el cristal mira hacia arriba. La simulación se graba en un clip de *Físicas* de la cámara que se guarda con el proyecto; el inspector dice qué efectos lo alimentan, qué hay en el cabezal y si la escena ha cambiado desde que se grabó (S3b).
+- **Aviso de un motor que dibujaría limpio el cristal de la escena**: con un motor de render anterior (sin el bit 7, como un lanzador de escritorio de antes), *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal* dice que el render enseñará limpio el cristal alimentado por la escena (S3c).
 
 ### Motor
 
 - **`rt_phys::wet`**, la lluvia y el polvo en el cristal frontal, a paso fijo y determinista: llegadas por el flujo de cada efecto a través de la cara del cristal, gotas que se juntan por volumen, ancladas por la histéresis de su línea de contacto (Furmidge) y que resbalan con su rastro, polvo con ángulo de reposo que el rastro limpia; el formato WET1 y `wet_*` en `rt.wasm` (S3b).
 - **El cristal gota a gota**: el final de `GLAS` lleva las gotas y motas de un cristal simulado, y el motor las toma tal cual; bit 7 de las capacidades (`FEATURE_GLASS_LAYOUT`, `/api/info` dice 255). `rt_scene_glass_len` / `_copy` dan a la página el cristal tal como lo coloca el motor (S3b).
 - Fijados nuevos: el cristal de paridad tras 5 s de lluvia (`PINNED_WET_PANE`) y el ejemplo a través de él (`PINNED_S3B_WET_4SPP`, `rt --write-s3b-wet-example`; el WET1, `--write-s3b-wet-spec`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos, en `wasm32-wasip1` y en el `rt.wasm` real. Ningún *hash* fijado antes se mueve (S3b).
+- **`rt_phys::wet_parts`**, la lluvia, el polvo y la nieve sobre las mallas de las piezas, a paso fijo y determinista: muestras por triángulo, llegadas por el flujo de cada efecto con lo que está en medio, salpicaduras (Mundo, Sommerfeld y Tropea), Furmidge con la gravedad tangente, resbalar de triángulo en triángulo con su rastro, colgar y gotear, piezas como película, polvo y nieve con su ángulo de reposo; el formato WPT1 y `wpt_*` en `rt.wasm` (S3c).
+- **La sección `WETP`**: el agua, el polvo y la nieve de cada muestra de una instancia y sus gotas; el motor pone encima del material el polvo, una película de agua (y lo poroso más oscuro) y la nieve, y dibuja las gotas como casquetes de agua. Bit 8 de las capacidades (`FEATURE_WET_PARTS`, `/api/info` dice 511) (S3c).
+- Fijados nuevos: las piezas de paridad tras 5 s de lluvia, polvo y nieve (`PINNED_WET_PARTS`) y su render (`PINNED_S3C_WET_4SPP`, `rt --write-s3c-wet-example`; el WPT1, `--write-s3c-parts-spec`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos, en `wasm32-wasip1` y en el `rt.wasm` real. Ningún *hash* fijado antes se mueve (S3c).
 
 ### Herramientas
 
 - `tools/s3b-check.mjs`: la *Forma* entre los mandos visibles, el cristal en *Rápido* y la lluvia en el cristal con la barra de físicas, con sus tres capturas; `tools/rain-dust-sheet.mjs`, la hoja `out/rain-dust-sheet.html` (la lluvia a 0, 2, 5 y 15 s y el polvo a 0, 30 y 120 s en el cristal, con el dibujo del cristal al lado) (S3b).
+- `tools/s3c-check.mjs`: los avisos de un motor sin el bit 7 o sin el bit 8 (con un `rt.wasm` de capacidades parcheadas, `tools/wasm-features.mjs`), la lluvia sobre las piezas con la barra de físicas y su captura, y el cromo acromático; la hoja `out/rain-dust-sheet.html` añade la botella sobre el set del tipo *Perfume* bajo la lluvia a 0, 2, 5 y 15 s, el polvo a 0, 30 y 120 s y la nieve a 0, 10 y 30 s (S3c).
 
 ## v0.1.20 — 2026-10-18
 

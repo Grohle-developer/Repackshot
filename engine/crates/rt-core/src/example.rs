@@ -212,6 +212,8 @@ pub fn scene() -> Scene {
         programs: Vec::new(),
         glass: None,
         textured: false,
+        wet_parts: Vec::new(),
+        caps: None,
     }
 }
 
