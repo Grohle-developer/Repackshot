@@ -1048,8 +1048,8 @@ const TABLE = {
   'material.makeOwnAux': ['Detaches it from the catalogue preset (and from other parts that share it).', 'Lo separa del preset del catálogo (y de otras piezas que lo comparten).'],
   'material.params': ['Parameters', 'Parámetros'],
   'material.flatNote': [
-    'Wood shows its mean colour and where its knots are in the Fast preview; Full mode and renders draw its rings, pores, grain and knots. Fabric shows the mean colour of its weave; Full mode and renders weave its threads, at their real size.',
-    'La madera se ve con su color medio y dónde caen sus nudos en la vista Rápida; el modo Completo y los renders pintan sus anillos, poros, fibra y nudos. La tela se ve con el color medio de su tejido; el modo Completo y los renders tejen sus hilos, a su tamaño real.',
+    'The Fast preview shows the wood’s rings, pores and knots as the Wood node bakes them: a slice through the front of the parts, projected onto every face; Full mode and renders draw the wood as it runs through the whole part. Fabric shows the mean colour of its weave; Full mode and renders weave its threads, at their real size.',
+    'La vista Rápida muestra los anillos, poros y nudos de la madera como los hornea el nodo Madera: un corte por el frente de las piezas, proyectado en cada cara; el modo Completo y los renders pintan la madera como corre por toda la pieza. La tela se ve con el color medio de su tejido; el modo Completo y los renders tejen sus hilos, a su tamaño real.',
   ],
   'material.notDrawn': ['stored, drawn by the engine (coming soon)', 'se guarda; lo pinta el motor (próximamente)'],
   'material.knotsFit': ['{asked} asked · {fit} fit', '{asked} pedidos · {fit} caben'],

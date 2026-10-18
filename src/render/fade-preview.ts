@@ -10,7 +10,6 @@ import { posedMaterial, type Pose } from '../core/animation';
 import type { MaterialInstance } from '../core/materials';
 import { allParts, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
-import { applyMaterial } from './materials';
 
 /** N1: the parts a pose fades and their opacity (their own and their ancestors' fades, multiplied); only those below 1. */
 export function partOpacities(state: ProjectState, pose: Pose | null): Map<NodeId, number> {
@@ -60,10 +59,10 @@ export class FadePreview {
 
   /**
    * The shared materials as the pose leaves them: the ones it tints or fades set from their instance as the clips
-   * leave it, the ones it touched before and no longer does set back. `reapply` is what the preview does after a
-   * material's parameters (its textures).
+   * leave it, the ones it touched before and no longer does set back. `reset` sets a material from its instance and
+   * the instance as the clips leave it (`posed`): its parameters and textures, or, M3d, a family's wood's bake.
    */
-  applyMaterials(state: ProjectState, materials: ReadonlyMap<string, THREE.MeshPhysicalMaterial>, pose: Pose | null, reapply: (m: THREE.MeshPhysicalMaterial, inst: MaterialInstance) => void): void {
+  applyMaterials(state: ProjectState, materials: ReadonlyMap<string, THREE.MeshPhysicalMaterial>, pose: Pose | null, reset: (m: THREE.MeshPhysicalMaterial, inst: MaterialInstance, posed: MaterialInstance) => void): void {
     const want = pose?.materials ?? {};
     for (const id of new Set([...this.posed, ...Object.keys(want)])) {
       const m = materials.get(id);
@@ -71,8 +70,7 @@ export class FadePreview {
       if (!m || !inst || inst.graph) continue;
       const mp = want[id];
       const was = m.transparent;
-      applyMaterial(m, mp ? posedMaterial(inst, mp) : inst, state.scene.partSizeMm);
-      reapply(m, inst);
+      reset(m, inst, mp ? posedMaterial(inst, mp) : inst);
       const o = mp?.opacity ?? 1;
       if (o < 1) {
         m.opacity *= o;

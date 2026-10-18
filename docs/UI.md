@@ -1093,12 +1093,13 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
    ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
    (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
-   anillos*, variación, ruidos, *Poros*: lo pintan el modo Completo y los
-   renders, y su punto «·» y su ayuda lo dicen; la vista Rápida muestra el
-   color medio; *Nudos*, *Tamaño de los nudos* en mm, *Variación de
-   tamaño* y *Oscuridad de los nudos*, que la vista Rápida ya enseña
-   oscureciendo donde caen; en el bambú, el MDF y el ébano están
-   desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
+   anillos*, variación, ruidos, *Poros*, *Nudos*, *Tamaño de los nudos* en
+   mm, *Variación de tamaño* y *Oscuridad de los nudos*: desde M3d la
+   vista Rápida los enseña todos, horneados como los hornea el nodo
+   *Madera* —un corte por el frente de las piezas, proyectado en cada
+   cara—, y ya no llevan el punto «·»; el modo Completo y los renders
+   pintan la madera en tres dimensiones; los nudos, en el bambú, el MDF y
+   el ébano, están desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
    tejido, *Hilos por cm* (2–200, físicos), relieve, pelusa: el tejido, su
    densidad y su relieve los pintan el modo Completo y los renders, y la
    vista Rápida muestra su color medio); emisor (tipo, temperatura,

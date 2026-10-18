@@ -176,7 +176,7 @@ src/
     lens-info.ts            lo que el motor calcula de una lente trazada (O2): `rt_scene_lens_info` de rt.wasm en el hilo de la página
     focus-pick.ts           enfocar con clic con el motor (F1): `rt_scene_pick` (el rayo principal de un píxel de la vista) y `rt_scene_focus_at` (la distancia que pone un punto en foco; la de una lente trazada, de sus rayos) de rt.wasm en el hilo de la página, con detección de las exportaciones; el solucionador de `core/focus.ts`
     lens-profile.ts         la tabla del visor Rápido de una lente trazada (O2): la escala de imagen, la distorsión y la iluminación relativa del motor; y el mapa de la pantalla a la imagen sin distorsionar, una vez en TypeScript y en GLSL con los mismos números: lo dibujan el pase de pantalla, el contorno y los superpuestos, y lo invierten el pico, el gizmo, los glifos y la selección por caja
-    graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
+    graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a); y la madera de la familia, por su grafo de Simple → Nodos (M3d)
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
@@ -2025,10 +2025,14 @@ de 20 mm o más una grieta radial desde el centro (una línea de 0,3 mm,
 −20 %). La interfaz (`src/core/knots.ts`) coloca los mismos nudos con el
 mismo *hash*, los mismos intentos y la misma prueba de incidencia (contra
 los triángulos de la pieza con ese material, en f64: los mismos sitios a
-milésimas de milímetro); la vista *Rápida* (`src/render/knots.ts`, una copia
-del material por pieza) los oscurece, con su bolsa de corteza, sobre el
-color medio; como no pinta anillos, tampoco su flujo. Con 0 nudos los bits
-son los de antes.
+milésimas de milímetro). La vista *Rápida*, desde M3d, hornea la madera de
+la familia por el grafo que da *Simple → Nodos* (`familyBakeGraph` en
+`core/material-graph.ts`, el mismo horneado que el nodo *Madera*: anillos,
+poros, flujo y nudos, estos colocados en la caja de las piezas,
+`patternPlacements`); solo sin *workers* de horneado vuelve a lo de E6
+(`src/render/knots.ts`, una copia del material por pieza que oscurece los
+nudos, con su bolsa de corteza, sobre el color medio, sin anillos ni flujo).
+Con 0 nudos los bits son los de antes.
 
 **Coste.** Una docena de evaluaciones de ruido por punto de una pieza de
 madera (dos más para el relieve de los poros); cada nudo, unos productos

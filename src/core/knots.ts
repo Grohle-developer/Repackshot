@@ -1,7 +1,7 @@
 // E6: where a wood's knots are, as rt_core places them (pattern.rs `wood_frame` and `meets_surface`,
 // pattern/knots.rs `Knots::place`, pattern/noise.rs `hash01`), in f64: the same knots in the same places (to a few
-// thousandths of a millimetre). The Fast preview darkens them (render/knots.ts) and the inspector says when fewer
-// fit than were asked.
+// thousandths of a millimetre). The inspector says when fewer fit than were asked; the Fast preview darkens them
+// (render/knots.ts) only without graph workers: with them it bakes the wood as the Wood node does (M3d).
 import { mat4Invert, type Mat4 } from './math';
 import { triangleMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { getMesh } from './meshes';
