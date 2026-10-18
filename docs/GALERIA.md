@@ -22,16 +22,31 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas; las capturas se reparten en 57 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 21 versiones, 18 con capturas nuevas; las capturas se reparten en 57 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M3d), con sus nudos donde los pone *Completo*, y la tela de la familia tejida en *Rápido* cuando sus hilos se leen (M3e); la forma de gota y la mezcla de formas de *Ambiente*, y el cristal frontal de la cámara (S3); la *Forma* entre los mandos visibles, el cristal frontal en *Rápido* y la lluvia de la escena en el cristal con la barra de físicas (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3).
+La *Forma* entre los mandos visibles de *Ambiente*, el cristal frontal en *Rápido* y la lluvia que la escena deja en el cristal (S3b), que regraban, sin cambiar de sitio, `ambient-drops.png` y `ambient-mix.png` (S3).
+
+#### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación)
+
+<a id="c-ambient-shape"></a><img src="ui/ambient-shape.png" width="480" alt="El frasco en Rápido con Gotas de agua en mezcla de formas; en el inspector, los mandos del efecto con la Forma, Mezcla, justo después del Tamaño, sus cuatro pesos y la parte que da cada uno debajo, y Avanzado plegado."><br>
+`ambient-shape.png` · `fe3f101` · El frasco en *Rápido* con *Gotas de agua* en mezcla de formas; en el inspector, los mandos del efecto con la **Forma** (*Mezcla*) justo después del *Tamaño*, sus cuatro pesos y la parte que da cada uno debajo, y *Avanzado* plegado (decisión S3 ◆5). `tools/s3b-check.mjs --only shape`.
+
+<a id="c-lens-glass-fast"></a><img src="ui/lens-glass-fast.png" width="480" alt="El frasco en Rápido a través del cristal frontal con gotas de 8 mm a 150 mm del objetivo a f/16: la imagen velada y desenfocada por discos suaves; en el inspector, el cristal con Gotas y polvo A mano y sus mandos; la barra de estado dice que el cristal es una aproximación de las 389 gotas y 28 747 motas del motor."><br>
+`lens-glass-fast.png` · `fe3f101` · El mismo cristal que `lens-glass.png` (gotas de 8 mm a 150 mm, f/16) en *Rápido*: la aproximación con las gotas y motas que coloca el motor, discos suaves de borde oscuro desenfocados por la huella de cada píxel en el cristal y el polvo como un tinte; en el inspector, *Gotas y polvo ▸ A mano* y sus mandos; la barra de estado: *Front glass: approximation of the engine’s 389 drops and 28,747 motes* (decisión S3 ◆9). `tools/s3b-check.mjs --only fast`.
+
+<a id="c-physics-rain"></a><img src="ui/physics-rain.png" width="480" alt="El frasco bajo la lluvia, a 35 mm f/11, con la barra de físicas en pausa a los 4 s: Cristal 148 gotas; en el inspector, el cristal frontal De la escena, alimentado por la lluvia, y lo grabado en el cabezal."><br>
+`physics-rain.png` · `fe3f101` · La lluvia empujada hacia la cámara por un viento de 6 m/s, a 35 mm f/11, con el cristal frontal en *Gotas y polvo ▸ De la escena*: la barra de físicas en pausa a los 4 s simulados (*Glass: 148 drops · 0 motes*), el inspector dice que lo alimenta la lluvia y lo que hay grabado en el cabezal, y *Rápido* dibuja las gotas del cristal, que han resbalado hacia abajo. `tools/s3b-check.mjs --only rain`.
+
+### v0.1.20 · 2026-10-18
+
+La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M3d), con sus nudos donde los pone *Completo*, y la tela de la familia tejida en *Rápido* cuando sus hilos se leen (M3e); la forma de gota y la mezcla de formas de *Ambiente*, y el cristal frontal de la cámara (S3).
 
 #### M3d · La madera de la familia en *Rápido* por el camino del nodo *Madera*
 
 <a id="c-m3d-wood-fast"></a><img src="ui/m3d-wood-fast.png" width="480" alt="Seis bolas de madera en dos filas, el roble arriba y el pino nudoso abajo: a la izquierda la vista Rápida antes de M3d, de un color liso con los nudos del pino; en medio la vista Rápida ahora, con los anillos horneados como el nodo Madera y los nudos del pino arriba a la izquierda, abajo a la derecha y abajo; a la derecha el modo Completo, con los anillos y los nudos del motor."><br>
-`m3d-wood-fast.png` · `305db3e` · La madera de la familia en una bola de 100 mm, el roble (arriba) y el pino nudoso (abajo): a la izquierda, *Rápido* antes de M3d (su color medio y los nudos de la capa de E6); en medio, *Rápido* ahora, horneada por el grafo de *Simple → Nodos* como el nodo *Madera* (los mismos píxeles que la madera pasada a nodos), con sus anillos; a la derecha, *Completo* (el `rt.wasm`). El fondo de las tres columnas es el mismo gris. `tests/wood-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`. *(regrabada en Sin publicar: M3e, los nudos del pino de *Rápido*, ahora encima del horneado, caen donde los pone *Completo*; en M3d eran los del horneado, en otro sitio)*
+`m3d-wood-fast.png` · `305db3e` · La madera de la familia en una bola de 100 mm, el roble (arriba) y el pino nudoso (abajo): a la izquierda, *Rápido* antes de M3d (su color medio y los nudos de la capa de E6); en medio, *Rápido* ahora, horneada por el grafo de *Simple → Nodos* como el nodo *Madera* (los mismos píxeles que la madera pasada a nodos), con sus anillos; a la derecha, *Completo* (el `rt.wasm`). El fondo de las tres columnas es el mismo gris. `tests/wood-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`. *(regrabada en v0.1.20: M3e, los nudos del pino de *Rápido*, ahora encima del horneado, caen donde los pone *Completo*; en M3d eran los del horneado, en otro sitio)*
 
 #### M3e · Los nudos de *Rápido* donde los pone *Completo* y la tela horneada cuando sus hilos se leen
 
@@ -48,17 +63,6 @@ La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M
 
 <a id="c-lens-glass"></a><img src="ui/lens-glass.png" width="480" alt="El frasco en Completo a través de un cristal mojado a 150 mm del objetivo, a f/16: discos blandos con la escena del revés dentro, cada uno una gota del cristal; en el inspector, Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal con sus gotas, su tamaño, el polvo, la semilla y la distancia."><br>
 `lens-glass.png` · `ee18304` · El frasco en *Completo* a través de un cristal mojado a 150 mm del objetivo, a f/16 y con gotas de 8 mm: discos blandos con la escena del revés dentro, cada uno una gota del cristal desenfocada; en el inspector, *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal* con *Gotas*, *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia*. `tools/s3-check.mjs --only glass`.
-
-#### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación)
-
-<a id="c-ambient-shape"></a><img src="ui/ambient-shape.png" width="480" alt="El frasco en Rápido con Gotas de agua en mezcla de formas; en el inspector, los mandos del efecto con la Forma, Mezcla, justo después del Tamaño, sus cuatro pesos y la parte que da cada uno debajo, y Avanzado plegado."><br>
-`ambient-shape.png` · `fe3f101` · El frasco en *Rápido* con *Gotas de agua* en mezcla de formas; en el inspector, los mandos del efecto con la **Forma** (*Mezcla*) justo después del *Tamaño*, sus cuatro pesos y la parte que da cada uno debajo, y *Avanzado* plegado (decisión S3 ◆5). `tools/s3b-check.mjs --only shape`.
-
-<a id="c-lens-glass-fast"></a><img src="ui/lens-glass-fast.png" width="480" alt="El frasco en Rápido a través del cristal frontal con gotas de 8 mm a 150 mm del objetivo a f/16: la imagen velada y desenfocada por discos suaves; en el inspector, el cristal con Gotas y polvo A mano y sus mandos; la barra de estado dice que el cristal es una aproximación de las 389 gotas y 28 747 motas del motor."><br>
-`lens-glass-fast.png` · `fe3f101` · El mismo cristal que `lens-glass.png` (gotas de 8 mm a 150 mm, f/16) en *Rápido*: la aproximación con las gotas y motas que coloca el motor, discos suaves de borde oscuro desenfocados por la huella de cada píxel en el cristal y el polvo como un tinte; en el inspector, *Gotas y polvo ▸ A mano* y sus mandos; la barra de estado: *Front glass: approximation of the engine’s 389 drops and 28,747 motes* (decisión S3 ◆9). `tools/s3b-check.mjs --only fast`.
-
-<a id="c-physics-rain"></a><img src="ui/physics-rain.png" width="480" alt="El frasco bajo la lluvia, a 35 mm f/11, con la barra de físicas en pausa a los 4 s: Cristal 148 gotas; en el inspector, el cristal frontal De la escena, alimentado por la lluvia, y lo grabado en el cabezal."><br>
-`physics-rain.png` · `fe3f101` · La lluvia empujada hacia la cámara por un viento de 6 m/s, a 35 mm f/11, con el cristal frontal en *Gotas y polvo ▸ De la escena*: la barra de físicas en pausa a los 4 s simulados (*Glass: 148 drops · 0 motes*), el inspector dice que lo alimenta la lluvia y lo que hay grabado en el cabezal, y *Rápido* dibuja las gotas del cristal, que han resbalado hacia abajo. `tools/s3b-check.mjs --only rain`.
 
 ### v0.1.19 · 2026-10-17
 
@@ -736,8 +740,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`label-placed.png`](#c-label-placed) · v0.1.6 · M2a
 - [`material-nodes.png`](#c-material-nodes) · v0.1.6 · M3a **← propuesta**
 - [`material-nodes-preview.png`](#c-material-nodes-preview) · v0.1.6 · M3a
-- [`m3e-fabric-fast.png`](#c-m3e-fabric-fast) · Sin publicar · M3e
-- [`m3d-wood-fast.png`](#c-m3d-wood-fast) · Sin publicar · M3d
+- [`m3e-fabric-fast.png`](#c-m3e-fabric-fast) · v0.1.20 · M3e
+- [`m3d-wood-fast.png`](#c-m3d-wood-fast) · v0.1.20 · M3d
 - [`material-nodes-wood.png`](#c-material-nodes-wood) · v0.1.19 · M3c
 - [`material-drag.png`](#c-material-drag) · v0.1.2 · U7
 - [`material-drag-tree.png`](#c-material-drag-tree) · v0.1.2 · U7
@@ -770,7 +774,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
 - [`lens-glass-fast.png`](#c-lens-glass-fast) · Sin publicar · S3b
-- [`lens-glass.png`](#c-lens-glass) · Sin publicar · S3
+- [`lens-glass.png`](#c-lens-glass) · v0.1.20 · S3
 - [`o2c-lens-editor.png`](#c-o2c-lens-editor) · v0.1.19 · O2c
 - [`o2c-lens-modified.png`](#c-o2c-lens-modified) · v0.1.19 · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
@@ -853,13 +857,13 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`physics-drop.png`](#c-physics-drop) (v0.1.6): antes y después de «Dejar caer»: tres cuerpos en el aire y en reposo sobre el suelo.
 
-- [`physics-rain.png`](#c-physics-rain) · Sin publicar · S3b
-- [`ambient-shape.png`](#c-ambient-shape) · Sin publicar · S3b
 - [`physics-bar.png`](#c-physics-bar) · v0.1.6 · S2
 - [`physics-drop.png`](#c-physics-drop) · v0.1.6 · S2 **← propuesta**
 - [`physics-drop-strip.png`](#c-physics-drop-strip) · v0.1.6 · S2
-- [`ambient-drops.png`](#c-ambient-drops) · Sin publicar · S3
-- [`ambient-mix.png`](#c-ambient-mix) · Sin publicar · S3
+- [`ambient-drops.png`](#c-ambient-drops) · v0.1.20 · S3
+- [`ambient-mix.png`](#c-ambient-mix) · v0.1.20 · S3
+- [`physics-rain.png`](#c-physics-rain) · Sin publicar · S3b
+- [`ambient-shape.png`](#c-ambient-shape) · Sin publicar · S3b
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

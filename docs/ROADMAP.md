@@ -11950,7 +11950,7 @@ probaba tras *Parar*):
   pública de `rt-core`.
 - `rt-app/tests/server.rs` comprobaba `features == 127`; ahora 255.
 
-**Para el veredicto** (regla 11, ◆):
+**Para el veredicto** (regla 11, ◆; decidido en *Decisiones de criterio*):
 1. ◆ La mojabilidad por familia (`src/data/wettability.ts`): vidrio 70°/50°
    (media 60°, la del cristal de S3), plástico 90°/65°, metal 80°/50°, papel
    100°/20°, pintura 85°/60°; con ellos el radio crítico en vidrio vertical es
@@ -11974,7 +11974,7 @@ probaba tras *Parar*):
    render, ◆7 de S3).
 8. ◆ `MAX_GLASS_SECONDS = 120`.
 
-### S3c · Gotas y polvo sobre las piezas (simulación) — tras S3b — propuesta
+### S3c · Gotas y polvo sobre las piezas (simulación) — **Opus** (tras S3b) — propuesta
 
 Lo que queda de S3 tras S3b, sobre el modelo de `rt_phys::wet` (que ya hace el
 cristal):
@@ -13295,7 +13295,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
 - El 1.2 entra en **S3**. (hecho en S3)
-- **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9). **Hecha en parte**: la *Forma*, el cristal en *Rápido* y todo lo que pasa en el cristal frontal; lo de las piezas, **S3c** (ver S3b y S3c, tras S3).
+- **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9). **Hecha en parte**: la *Forma*, el cristal en *Rápido* y todo lo que pasa en el cristal frontal; lo de las piezas, **S3c** (ver S3b y S3c, tras S3). **Hecha en parte**: ver S3b (el cristal frontal); el resto, S3c.
+- **S3c** · Gotas y polvo sobre las piezas: la lluvia que se posa, resbala y gotea por las mallas, la nieve, la marca mojada en el material y el polvo por pieza (S3b, «S3c»); y un aviso cuando el motor no tiene el bit 7 y el cristal de la escena saldría limpio.
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
   - qué lentes dan ojo de gato, burbuja, cremoso y remolino;
@@ -13389,6 +13390,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **M3d** (la madera de la familia en *Rápido*). Se acepta como está: la familia se hornea por el camino del nodo y da sus mismos píxeles. ◆1, los nudos: **(b)**, la capa de nudos de E6 (la de cada pieza, la que coincide con *Completo*) encima de un horneado sin nudos, para la familia y para el nodo; que los nudos de *Rápido* caigan donde los pone el render pesa más que el horneado los traiga. ◆2, la tela: **(b)**, se hornea solo cuando un hilo ocupa al menos 2,5 texels, con la pelusa (*sheen*) encima; por debajo se queda como hoy, sin moiré. Los dos, en **M3e**. **Hecho en M3d**, salvo M3e.
 - **M3e** (los nudos y la tela en *Rápido*). Se acepta como está. ◆1, el umbral: **se queda en 2,5 texels por hilo**; a 2 se roza el límite donde sale el moiré, y el lino y el fieltro sin hornear se leen bien en *Rápido*. ◆2, el nudo encima: **se queda el disco oscurecido**; *Rápido* es una vista previa, y la testa, la grieta y la veta alrededor salen en *Completo*. **Hecho en M3e.**
 - **S3** (la gota, la mezcla de formas y el cristal frontal; primera parte). Se aceptan ◆1–4, 6 y 8 tal como están: la gota de 1,6 radios con punta de 0,15; la punta detrás de la velocidad (la lágrima que pidió el usuario, aunque una gota real caiga casi redonda); la mezcla 1 : 1 : 1 : 2; el preset *Gotas de agua*; las cifras y los rangos del cristal; las motas que solo absorben. ◆5: **sí, la *Forma* sale de *Avanzado*** a los mandos visibles, porque el usuario la pidió y escondida no se encuentra; va en **S3b**. ◆7: **se queda la física**, sin un mando no físico que afile las gotas: con la lente y el diafragma que lo piden (angulares, diafragma cerrado, cristal lejos) se leen; se revisa con un render real del usuario. ◆9: *Rápido* no dibuja el cristal en esta parte; una aproximación (las gotas como discos) va en **S3b**. **Hecha la primera parte en S3**; el resto, S3b.
+- **S3b** (el cristal frontal alimentado por la escena; la *Forma* visible; el cristal en *Rápido*). Se acepta tal como está: ◆1, las mojabilidades por familia (vidrio 70/50, plástico 90/65, metal 80/50, papel 100/20, pintura 85/60); ◆2, el deslizamiento (C = 300, tope de 250 mm/s, película de 2 µm); ◆3, el ángulo de reposo del polvo de 35° ± 5°, y un cristal vertical sin polvo; ◆4, la nieve, las burbujas y el confeti no dejan nada en el cristal (la nieve, con su capa, en S3c); ◆5, la región del efecto no limita el cristal, y una lente que mira hacia abajo se queda seca sin viento, como dice la física; ◆6, **no hay un mando de intensidad no físico** (como S3 ◆7): con las densidades de los presets el polvo apenas se ve a los 120 s, y quien lo quiera sube la densidad; ◆7, la aproximación de *Rápido* tal como sale de la óptica; ◆8, `MAX_GLASS_SECONDS` = 120. El aviso de un motor sin el bit 7 va en **S3c**. **Hecho en parte en S3b**; el resto, S3c.
 
 **1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
 repositorio; el triaje anota que Repackshot también dibuja el carrusel de
