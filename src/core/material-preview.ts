@@ -19,9 +19,12 @@
 import type { MaterialFamily, MaterialParams } from '../data/types';
 import { getImage } from './images';
 import type { Box } from './math';
-import { compileGraph, CTX, OUTPUT_KEYS, OUTPUT_TYPES, type CoordSource, type Program, type ValueRef } from './material-program';
+import { compileGraph, CTX, OP, OUTPUT_KEYS, OUTPUT_TYPES, WORDS, type CoordSource, type Program, type ValueRef } from './material-program';
 import { ProgramRunner, type ImagePixels, type PlacementOf, type ShadingPoint } from './material-interp';
-import { meetsBox, placeKnots } from './knots';
+import { meetsBox, placeKnots, type KnotSpec } from './knots';
+import { familyBakeGraph } from './material-graph';
+import type { MaterialInstance } from './materials';
+import { fabricRecipe } from './pattern-recipe';
 import { f32Knot, IDENTITY_PLACEMENT, PATTERN_WOOD, recipeOf, woodPlacementFrame, type Placement, type V } from './patterns';
 import { EMIT_RADIANCE_PER_WATT } from './photometry';
 import type { MaterialGraph } from './material-graph';
@@ -240,6 +243,12 @@ export interface BakePlan {
   surface: BakeSurface;
   /** M3c: the parts' box (part space, mm) the patterns of Wood and Fabric nodes are placed in. */
   box: Box;
+  /**
+   * M3e: the wood recipe (the index of its constants) whose knots the maps leave out, because the Fast preview draws
+   * them on top, part by part, where the engine puts them (render/knots.ts, `programKnots`). Absent: every recipe
+   * with its knots, as `planBake` gives it.
+   */
+  knotless?: number;
 }
 
 type BakeSurface =
@@ -409,7 +418,7 @@ export const SPHERE_BOX: Box = { min: [-PREVIEW_RADIUS_MM, -PREVIEW_RADIUS_MM, -
  * below and aside), its knots placed in the box by core/knots.ts with the box's faces as the surface (the engine tests
  * the mesh's own); a cloth on the part's axes from the box's corner. Null for a program without them.
  */
-export function patternPlacements(p: Program, box: Box | null): PlacementOf | undefined {
+export function patternPlacements(p: Program, box: Box | null, knotless?: number): PlacementOf | undefined {
   if (!p.uses.patterns) return undefined;
   const b = box && Number.isFinite(box.min[0]) ? box : SPHERE_BOX;
   const fr = Math.fround;
@@ -426,7 +435,8 @@ export function patternPlacements(p: Program, box: Box | null): PlacementOf | un
       const recipe = recipeOf(kind, p.consts, k);
       let list: Placement['knots']['list'] = [];
       let darkness = 0;
-      if (recipe?.kind === 'WOOD' && recipe.knots.count > 0 && recipe.knots.diameterMm > 0) {
+      // M3e: the recipe whose knots Fast draws on top (`BakePlan.knotless`) is placed without them.
+      if (recipe?.kind === 'WOOD' && recipe.knots.count > 0 && recipe.knots.diameterMm > 0 && k !== knotless) {
         const inFrame = (v: readonly number[]): [number, number, number] => frame.axes.map((a) => v[0] * a[0] + v[1] * a[1] + v[2] * a[2]) as [number, number, number];
         const c = [min[0] + size[0] / 2 - frame.origin[0], min[1] + size[1] / 2 - frame.origin[1], min[2] + size[2] / 2 - frame.origin[2]];
         const centre = inFrame(c);
@@ -441,6 +451,81 @@ export function patternPlacements(p: Program, box: Box | null): PlacementOf | un
     cache.set(key, out);
     return out;
   };
+}
+
+// --- What the Fast preview draws on top of a bake, and which families it bakes (M3e) -----------------------------
+
+/**
+ * M3e: the wood whose knots the Fast preview draws on top of a program's bake, part by part, where the engine puts
+ * them (E6's layer, render/knots.ts, with core/knots.ts `partKnots`: the box of each part and its mesh as the
+ * surface): the first colour instruction of a Wood node (`OP.WOOD`) whose recipe asks for knots, with the index of
+ * its constants (`BakePlan.knotless`, what the maps leave out) and its knots as the engine reads them (the recipe's
+ * `f32` constants). Null when no Wood node's colour asks for knots.
+ */
+export function programKnots(p: Program): { k: number; spec: KnotSpec } | null {
+  for (let pc = 0; pc + WORDS <= p.code.length; pc += WORDS) {
+    if (p.code[pc] !== OP.WOOD) continue;
+    const k = p.code[pc + 5];
+    const r = recipeOf(PATTERN_WOOD, p.consts, k);
+    if (r?.kind === 'WOOD' && r.knots.count > 0 && r.knots.diameterMm > 0) return { k, spec: { ...r.knots } };
+  }
+  return null;
+}
+
+const graphPrograms = new WeakMap<MaterialGraph, Program | null>();
+function graphProgram(g: MaterialGraph): Program | null {
+  if (!graphPrograms.has(g)) graphPrograms.set(g, compileGraph(g).program);
+  return graphPrograms.get(g)!;
+}
+
+/** M3e: `programKnots` of a graph's program (null when it does not compile). */
+export function graphKnotSpec(g: MaterialGraph): KnotSpec | null {
+  const p = graphProgram(g);
+  return p ? (programKnots(p)?.spec ?? null) : null;
+}
+
+/** M3e: the least texels of the bake a fabric's thread spans for the Fast preview to bake it (below: moiré or noise). */
+export const FABRIC_MIN_THREAD_TEXELS = 2.5;
+
+/**
+ * Millimetres of the part a texel of a bake of `size` covers: the slice's side over `size` (the 3D patterns), the
+ * UV square's millimetres, or, for a projection, its span in millimetres of the projection's size.
+ */
+export function bakeTexelMm(plan: BakePlan, size = BAKE_SIZE): number {
+  const s = plan.surface;
+  if (s.kind === 'TRIPLANAR') return s.d / size;
+  if (s.kind === 'UV') return s.mm / size;
+  return (s.d * s.source.sizeMm) / size;
+}
+
+const threadCache = new WeakMap<MaterialInstance, { nodes: unknown; partSizeMm: number; texels: number }>();
+
+/**
+ * M3e: how many texels of the 512² bake one thread of a fabric of the family spans on the parts that carry it: the
+ * thread spacing (`10 / threadCount` mm, core/pattern-recipe.ts) over the texel of the plan the Fast preview would
+ * bake it with (the slice through the front of the parts' box). NaN for a material that is not a fabric of the family
+ * in Simple mode. Cached per instance, scene and part size.
+ */
+export function fabricThreadTexels(s: Pick<ProjectState, 'scene'>, inst: MaterialInstance): number {
+  if (inst.family !== 'FABRIC' || inst.graph) return NaN;
+  const hit = threadCache.get(inst);
+  if (hit && hit.nodes === s.scene.nodes && hit.partSizeMm === s.scene.partSizeMm) return hit.texels;
+  const g = familyBakeGraph(inst);
+  const p = g ? graphProgram(g) : null;
+  const texels = p ? fabricRecipe(inst.params, 0).scaleMm / bakeTexelMm(planBake(p, materialBounds(s, inst.id), s.scene.partSizeMm)) : NaN;
+  threadCache.set(inst, { nodes: s.scene.nodes, partSizeMm: s.scene.partSizeMm, texels });
+  return texels;
+}
+
+/**
+ * M3e: the graph the Fast preview bakes a material of the family in Simple mode through (`familyBakeGraph`), or null
+ * when it draws it from its parameters: every wood, and a fabric only when a thread spans at least
+ * `FABRIC_MIN_THREAD_TEXELS` texels of the bake on its parts (a finer weave keeps its mean colour and its fuzz).
+ */
+export function fastFamilyGraph(s: Pick<ProjectState, 'scene'>, inst: MaterialInstance): MaterialGraph | null {
+  const g = familyBakeGraph(inst);
+  if (!g || inst.family !== 'FABRIC') return g;
+  return fabricThreadTexels(s, inst) >= FABRIC_MIN_THREAD_TEXELS ? g : null;
 }
 
 /** A shading point whose arrays are filled again for each texel (no allocation per texel). */
@@ -574,7 +659,7 @@ export interface BakeBand {
 
 /** Evaluates rows `r0` to `r1` of a bake of `size` × `size` texels (a worker may take a band each). */
 export function bakeRows(p: Program, images: readonly (ImagePixels | null)[], plan: BakePlan, size: number, r0 = 0, r1 = size): BakeBand {
-  const run = new ProgramRunner(p, images, patternPlacements(p, plan.box));
+  const run = new ProgramRunner(p, images, patternPlacements(p, plan.box, plan.knotless));
   const n = (r1 - r0) * size;
   const floats = new Float32Array(n * BAKE_STRIDE);
   const frames = new Float32Array(n * 9);

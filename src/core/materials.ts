@@ -161,7 +161,8 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
   FABRIC: [
     { key: 'threadColor1', kind: 'color', fallback: [0.7, 0.7, 0.68, 1], preview: true },
     { key: 'threadColor2', kind: 'color', fallback: [0.6, 0.6, 0.58, 1], preview: true },
-    // E6: the engine weaves them (Full mode and renders); the Fast preview shows the mean colour.
+    // E6: the engine weaves them (Full mode and renders); the Fast preview shows the mean colour, or, M3e, weaves them
+    // through the Fabric node where a thread spans 2.5 texels of its bake (core/material-preview.ts fastFamilyGraph).
     { key: 'weave', kind: 'select', options: ['PLAIN', 'TWILL', 'TWILL31', 'SATIN', 'CANVAS', 'KNIT', 'FELT'], fallback: 'PLAIN', preview: false, engine: true },
     // E6: threads per cm (physical: the same on a phone case and on a sofa).
     { key: 'threadCount', kind: 'number', min: 2, max: 200, step: 1, unit: '/cm', fallback: 40, preview: false, engine: true },

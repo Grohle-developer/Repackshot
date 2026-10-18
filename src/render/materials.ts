@@ -2,7 +2,8 @@
 // viewport and the thumbnail renderer. Approximations of the preview: wood is
 // the mean colour of its pattern (the engine draws its rings, pores and grain,
 // E6: rt_core::pattern), fabric the mean colour of its weave (the engine
-// weaves it), fuzz is sheen, wear is not drawn; the engine draws glass
+// weaves it; M3d and M3e: the preview bakes a family's wood, and a fabric
+// whose threads read, through their pattern node instead), fuzz is sheen, wear is not drawn; the engine draws glass
 // (refraction, absorption, thin walls), the clear coat, opacity and anisotropy
 // (E5). E9: a scattering medium is approximated as a translucent diffuse (the
 // colour light comes back with, opaque when the medium is dense for the part's
@@ -46,6 +47,18 @@ export function diffuseOfMedium(a: number): number {
 export function clarityOfMedium(mfpMm: number, partSizeMm: number): number {
   if (!(mfpMm > 0)) return 1;
   return Math.min(1, Math.max(0, mfpMm / Math.max(1e-3, partSizeMm * 0.25)));
+}
+
+/**
+ * A fabric's fuzz as three.js's sheen: its amount, roughness and a colour a little lighter than the warp. M3e: also on
+ * top of a fabric of the family that the Fast preview bakes through the Fabric node (render/preview.ts), whose bake
+ * gives a Simple material without it.
+ */
+export function applyFuzz(m: THREE.MeshPhysicalMaterial, p: MaterialInstance['params']): void {
+  const a = rgbOf(p.threadColor1, [0.7, 0.7, 0.68]);
+  m.sheen = num(p.fuzz, 0.3);
+  m.sheenRoughness = num(p.fuzzRoughness, 0.5);
+  setLinear(m.sheenColor, [Math.min(1, a[0] * 1.4), Math.min(1, a[1] * 1.4), Math.min(1, a[2] * 1.4)]);
 }
 
 /** Writes an instance into a physical material (in place; three bumps versions when needed). */
@@ -128,12 +141,9 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
       break;
     }
     case 'FABRIC': {
-      const a = rgbOf(p.threadColor1, [0.7, 0.7, 0.68]);
       setLinear(m.color, fabricMeanColor(p));
       m.roughness = num(p.roughness, 0.75);
-      m.sheen = num(p.fuzz, 0.3);
-      m.sheenRoughness = num(p.fuzzRoughness, 0.5);
-      setLinear(m.sheenColor, [Math.min(1, a[0] * 1.4), Math.min(1, a[1] * 1.4), Math.min(1, a[2] * 1.4)]);
+      applyFuzz(m, p);
       m.clearcoat = num(p.coat, 0);
       m.clearcoatRoughness = num(p.coatRoughness, 0.05);
       break;

@@ -1,7 +1,8 @@
 // E6: where a wood's knots are, as rt_core places them (pattern.rs `wood_frame` and `meets_surface`,
 // pattern/knots.rs `Knots::place`, pattern/noise.rs `hash01`), in f64: the same knots in the same places (to a few
 // thousandths of a millimetre). The inspector says when fewer fit than were asked; the Fast preview darkens them
-// (render/knots.ts) only without graph workers: with them it bakes the wood as the Wood node does (M3d).
+// (render/knots.ts) on every wood: M3e, also on top of the bake of a family's wood or a Wood node (M3d), which leaves
+// them out of its maps, so that they fall where Full puts them.
 import { mat4Invert, type Mat4 } from './math';
 import { triangleMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { getMesh } from './meshes';
@@ -267,12 +268,11 @@ const partCache = new Map<string, PartKnots | null>();
 /**
  * The knots of `material` on part `node` (null when it has none): in the box of the part's triangles of that material
  * (the mesh the engine gets), at the part's scale, kept only where they meet its surface squarely. Cached by mesh,
- * material values and transform.
+ * material values and transform. `spec`: what is asked (by default the family's, `knotSpecOf`; M3e: a Wood node's,
+ * core/material-preview.ts `graphKnotSpec`, which the engine places the same way).
  */
-export function partKnots(state: ProjectState, node: NodeId, material: MaterialId): PartKnots | null {
+export function partKnots(state: ProjectState, node: NodeId, material: MaterialId, spec: KnotSpec | null = knotSpecOf(state.materials[material])): PartKnots | null {
   const n = state.scene.nodes[node];
-  const inst = state.materials[material];
-  const spec = knotSpecOf(inst);
   if (!n?.mesh || !spec) return null;
   const data = getMesh(n.mesh.id);
   if (!data) return null;

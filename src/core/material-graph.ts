@@ -467,16 +467,20 @@ export function minimalGraph(m: Convertible): MaterialGraph {
   return { version: GRAPH_VERSION, nodes: [patternNode(m, type, 'n2'), node], links: PATTERN_LINKS.map(([output, input]) => ({ from: 'n2', output, to: 'n1', input })) };
 }
 
-/** M3d: the families of Simple mode the Fast preview bakes through their pattern node (the fabric does not yet). */
-export const FAST_BAKED_FAMILIES: readonly MaterialFamily[] = ['WOOD'];
+/**
+ * M3d: the families of Simple mode the Fast preview bakes through their pattern node. M3e: the fabric too, but only
+ * where its threads read in the bake (core/material-preview.ts `fastFamilyGraph`: 2.5 texels a thread or more).
+ */
+export const FAST_BAKED_FAMILIES: readonly MaterialFamily[] = ['WOOD', 'FABRIC'];
 
 const familyGraphs = new WeakMap<MaterialInstance, MaterialGraph>();
 
 /**
  * M3d: the graph the Fast preview bakes a material of a pattern family in Simple mode through: the one Simple → Nodes
  * makes of it (`minimalGraph`: the Wood node with the family's parameters into the output), so that the family's wood
- * and the Wood node go through the same bake (render/graph-preview.ts) and show the same rings, pores and knots. Null
- * for a material with a graph of its own and for the other families. Cached per instance (the store replaces an
+ * and the Wood node go through the same bake (render/graph-preview.ts) and show the same rings, pores and knots. M3e:
+ * a fabric's too (the Fabric node); whether Fast bakes it depends on its parts (`fastFamilyGraph`). Null for a
+ * material with a graph of its own and for the other families. Cached per instance (the store replaces an
  * instance when it changes), so that the program and the bake are made once.
  */
 export function familyBakeGraph(m: MaterialInstance): MaterialGraph | null {

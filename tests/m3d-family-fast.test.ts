@@ -1,7 +1,8 @@
 // Phase M3d (M3c ◆3): the Fast preview bakes a wood of the family in Simple mode through the graph Simple → Nodes
 // makes of it (`familyBakeGraph`), so that it shows its rings, pores and knots as the Wood node does, by the same bake.
 // Here: the graph is the conversion's and the same program and maps as the material converted to nodes, for every
-// wood of the catalogue; it is not made for a fabric, another family or a material with a graph of its own; and
+// wood of the catalogue; it is not made for another family or a material with a graph of its own (M3e: a fabric's is
+// made, and baked only where its threads read: tests/m3e-fast-knots-fabric.test.ts); and
 // render/graph-preview.ts draws it with its baked maps (a colour map, white under it), not with its mean colour. What
 // the viewport draws of it is tests/wood-fast-browser.test.ts (the same pixels as the node, in Chromium).
 
@@ -21,7 +22,8 @@ const woods = MATERIAL_PRESETS.filter((p) => p.family === 'WOOD').map((p) => p.k
 
 describe('the family’s wood in Fast goes through the Wood node’s bake (M3d)', () => {
   it('its graph is the one Simple → Nodes makes, for every wood of the catalogue, once per instance', () => {
-    expect(FAST_BAKED_FAMILIES).toEqual(['WOOD']);
+    // M3e: the fabric too, where its threads read (tests/m3e-fast-knots-fabric.test.ts).
+    expect(FAST_BAKED_FAMILIES).toEqual(['WOOD', 'FABRIC']);
     expect(woods.length).toBeGreaterThanOrEqual(7);
     for (const key of woods) {
       const inst = instanceFromPreset('m', key, 120)!;
@@ -36,8 +38,9 @@ describe('the family’s wood in Fast goes through the Wood node’s bake (M3d)'
     }
   });
 
-  it('is not made for a fabric, another family, or a material with a graph of its own', () => {
-    for (const key of ['COTTON', 'DENIM', 'WHITE_STUDIO', 'GLASS_CLEAR']) expect(familyBakeGraph(instanceFromPreset('m', key, 120)!), key).toBeNull();
+  it('is not made for another family, or a material with a graph of its own (M3e: a fabric’s is, its Fabric node)', () => {
+    for (const key of ['WHITE_STUDIO', 'GLASS_CLEAR']) expect(familyBakeGraph(instanceFromPreset('m', key, 120)!), key).toBeNull();
+    for (const key of ['COTTON', 'DENIM']) expect(familyBakeGraph(instanceFromPreset('m', key, 120)!)!.nodes.some((n) => n.type === 'FABRIC'), key).toBe(true);
     const oak = instanceFromPreset('m', 'OAK', 120)!;
     expect(familyBakeGraph({ ...oak, graph: minimalGraph(oak) })).toBeNull();
   });

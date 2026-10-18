@@ -176,7 +176,7 @@ src/
     lens-info.ts            lo que el motor calcula de una lente trazada (O2): `rt_scene_lens_info` de rt.wasm en el hilo de la página
     focus-pick.ts           enfocar con clic con el motor (F1): `rt_scene_pick` (el rayo principal de un píxel de la vista) y `rt_scene_focus_at` (la distancia que pone un punto en foco; la de una lente trazada, de sus rayos) de rt.wasm en el hilo de la página, con detección de las exportaciones; el solucionador de `core/focus.ts`
     lens-profile.ts         la tabla del visor Rápido de una lente trazada (O2): la escala de imagen, la distorsión y la iluminación relativa del motor; y el mapa de la pantalla a la imagen sin distorsionar, una vez en TypeScript y en GLSL con los mismos números: lo dibujan el pase de pantalla, el contorno y los superpuestos, y lo invierten el pico, el gizmo, los glifos y la selección por caja
-    graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a); y la madera de la familia, por su grafo de Simple → Nodos (M3d)
+    graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a); y la madera de la familia, por su grafo de Simple → Nodos (M3d), sin los nudos que se pintan encima, y la tela de la familia cuando sus hilos se leen, con su pelusa encima (M3e)
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
@@ -2032,6 +2032,15 @@ poros, flujo y nudos, estos colocados en la caja de las piezas,
 `patternPlacements`); solo sin *workers* de horneado vuelve a lo de E6
 (`src/render/knots.ts`, una copia del material por pieza que oscurece los
 nudos, con su bolsa de corteza, sobre el color medio, sin anillos ni flujo).
+Desde M3e los nudos no van en el horneado: `programKnots`
+(`core/material-preview.ts`) busca la primera instrucción `WOOD` (el color
+de un nodo *Madera*) que pide nudos, `BakePlan.knotless` lleva el índice de
+sus constantes y `patternPlacements` coloca esa receta sin nudos; la capa
+de E6 los pinta encima, en cada pieza, con `partKnots` y los nudos de esa
+receta (`graphKnotSpec`, los `f32` del programa: los mismos para la familia
+y para el nodo), es decir donde los pone el motor. Una copia con nudos se
+vuelve a hacer cuando llega un horneado y se recompila cuando su material
+de base se recompila (`base.version`).
 Con 0 nudos los bits son los de antes.
 
 **Coste.** Una docena de evaluaciones de ruido por punto de una pieza de
@@ -2074,6 +2083,15 @@ vista *Rápida* y el que ven los fotones de las cáusticas. Hilos más finos
 que un píxel (el algodón a 0,25 mm en un plano general) se promedian con
 las muestras del píxel, sin filtro propio: el color converge a la media y
 el relieve se vuelve rugosidad. La pelusa (`fuzz`, *sheen*) no se dibuja.
+La vista *Rápida* (M3e) hornea la tela de la familia por el nodo *Tela*
+(`fastFamilyGraph` en `core/material-preview.ts`, el grafo de *Simple →
+Nodos* como la madera de M3d) solo cuando un hilo ocupa al menos
+`FABRIC_MIN_THREAD_TEXELS` = 2,5 téxeles del horneado de 512²
+(`fabricThreadTexels`: `10 / threadCount` mm sobre el téxel del plan, el
+lado del corte por el frente de la caja de las piezas entre 512); por
+debajo, el color medio de siempre, sin muaré. Al horneado (un material
+*Simple*) le pone encima la pelusa de la familia (`applyFuzz` de
+`render/materials.ts`, por el `finish` de `GraphBakes.apply`).
 
 ### 5.2 nonies · La lente trazada (O2, `rt_core::optics::traced`)
 
