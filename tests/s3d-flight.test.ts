@@ -162,7 +162,8 @@ describe('S3d: the meter says what is on the parts', () => {
 describe('S3d: the drops in the air in the render', () => {
   function recorded(): { state: ProjectState; parts: string[] } {
     const s = exampleState();
-    const parts = allParts(s).filter((id) => s.scene.nodes[id].mesh).slice(0, 2);
+    // The track's parts in the other order than the file's instances: a drop's part index is not its instance.
+    const parts = allParts(s).filter((id) => s.scene.nodes[id].mesh).slice(0, 2).reverse();
     const m = parts.map((id) => {
       const mesh = s.scene.nodes[id].mesh!;
       return { node: id, mesh: mesh.id, triangles: mesh.triangles, samples: 3 * mesh.triangles, capAngleDeg: 75, porosity: 0 };

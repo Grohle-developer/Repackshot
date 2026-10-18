@@ -355,6 +355,9 @@ async function partsCheck(browser) {
   console.log(`parts: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
 }
 
+/** S3d: any words of the meter for the recorded parts (at the playhead's frame 0, nothing is on them yet). */
+const PARTS_METER = / on [\d,]+ parts|Nothing on the parts yet/;
+
 /** What the physics bar says. */
 const bar = (page) =>
   page.evaluate(() => {
@@ -418,11 +421,11 @@ async function rainCheck(browser) {
   await page.click('[data-action="phys.reset"]');
   await settle(page, 600);
   log.meterAfterReset = await engineMeter(page);
-  ok(!/Rain on [1-9]/.test(log.meterAfterReset ?? ''), `Reset did not take the recording away: ${log.meterAfterReset}`, f);
+  ok(!PARTS_METER.test(log.meterAfterReset ?? ''), `Reset did not take the recording away: ${log.meterAfterReset}`, f);
   await page.locator('canvas[aria-label="viewport"]').focus();
   await page.keyboard.press('Control+z');
-  log.meterAfterUndo = await meterSays(page, /Rain on [1-9]/);
-  ok(/Rain on [1-9]/.test(log.meterAfterUndo ?? ''), `Undo did not bring the recording back: ${log.meterAfterUndo}`, f);
+  log.meterAfterUndo = await meterSays(page, PARTS_METER);
+  ok(PARTS_METER.test(log.meterAfterUndo ?? ''), `Undo did not bring the recording back: ${log.meterAfterUndo}`, f);
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
   await context.close();
   results.rain = { ok: f.length === 0, failures: f, ...log };
