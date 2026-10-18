@@ -1,33 +1,33 @@
-# Publicar un plugin: el `.rpk` como *asset* y su clave
+# Publishing a plugin: the `.rpk` as an asset and its key
 
-Cómo sale un plugin de Repackshot (P6, `ARCHITECTURE.md` §9) con una release: el
-paquete cifrado se sube como *asset* de la release, el registro
-(`src/data/plugins.json`) lo fija por su tamaño y su `sha256`, y la clave de
-activación **nunca** entra en el repositorio. El primero es el de película de
-aintfilm, en la **v0.1.6**.
+How a Repackshot plugin (P6, `ARCHITECTURE.md` §9) ships with a release: the
+encrypted package is uploaded as a release *asset*, the registry
+(`src/data/plugins.json`) pins it by its size and its `sha256`, and the
+activation key **never** goes into the repository. The first one is aintfilm’s
+film plugin, in **v0.1.6**.
 
-## 1 · Construir el paquete
+## 1 · Build the package
 
-Desde la raíz del repositorio, con un *checkout* de aintfilm al lado (solo se
-lee) y la imagen del logo del dueño (puntos blancos sobre negro, el cartucho con
-los tres grises de la lengüeta; la guarda el desarrollador, como la clave, y no
-entra en el repositorio):
+From the repository root, with an aintfilm checkout alongside (it is only read)
+and the plugin owner’s logo image (white dots on black, the cartridge with the
+three greys of the tongue; the developer keeps it, like the key, and it does not
+go into the repository):
 
 ```bash
-# Un plugin nuevo: una clave nueva, escrita solo en --key-out (fuera del repositorio).
+# A new plugin: a new key, written only to --key-out (outside the repository).
 node tools/plugins/build-film.mjs --aintfilm ../aintfilm --logo ~/plugins/aintfilm-logo.png --rpk ~/plugins/film-0.1.0.rpk --key-out ~/plugins/film-activation-key.txt
 
-# Una versión nueva del mismo plugin: la misma clave, para que quien lo tiene lo actualice sin teclear otra.
+# A new version of the same plugin: the same key, so whoever has it can update without typing another.
 node tools/plugins/build-film.mjs --aintfilm ../aintfilm --logo ~/plugins/aintfilm-logo.png --rpk ~/plugins/film-0.1.1.rpk --key-file ~/plugins/film-activation-key.txt --version 0.1.1
 ```
 
-La línea *logo:* dice de dónde salió el logo: *15×15 dots from …* (121 puntos,
-las tintas `#808080`, `#BFBFBF`, `#E0E0E0` y `#FFFFFF`) con `--logo`; sin él, la
-rejilla `LOGO` del *checkout*, que no es el logo del dueño (otra forma y un solo
-gris): no se publica así.
+The *logo:* line says where the logo came from: *15×15 dots from …* (121 dots,
+the inks `#808080`, `#BFBFBF`, `#E0E0E0` and `#FFFFFF`) with `--logo`; without
+it, the checkout’s `LOGO` grid, which is not the owner’s logo (another shape and
+a single grey): it is not published like that.
 
-La imagen base de las tarjetas de recetas, `tools/plugins/film/thumb-base.png`,
-está en el repositorio (es nuestra); si cambia la escena, se rehace con:
+The base image of the recipe cards, `tools/plugins/film/thumb-base.png`, is in
+the repository (it is ours); if the scene changes, it is redone with:
 
 ```bash
 cd engine
@@ -35,110 +35,98 @@ cargo run --release -p rt-cli -- --write-film-thumb film-thumb.rsb
 cargo run --release -p rt-cli -- film-thumb.rsb -o ../tools/plugins/film/thumb-base.png --samples 512 --denoise
 ```
 
-Una versión nueva del plugin rehace las imágenes de las tarjetas en cada equipo
-(se guardan por versión): con la misma versión y otro paquete, se quedarían las
-de antes.
+A new version of the plugin redoes the card images on each machine (they are
+stored per version): with the same version and another package, the earlier ones
+would stay.
 
-La salida tiene que decir *no listed mark, product name or retired id in the
+The output has to say *no listed mark, product name or retired id in the
 manifest, the recipes, the glue, the logo, the licence or Repackshot's strings*:
-si la comprobación de marcas (D112 de aintfilm) encuentra algo en lo que ve el
-público, el *build* falla. Las líneas *the checkout's own tags* son las
-etiquetas internas del motor (en el módulo y en los ajustes de los *presets*),
-que aintfilm renombra en sus M38-07 y M38-08; se cuentan, no paran el *build*.
-Al final imprime la versión, los **bytes** y el **sha256** del paquete.
+if the trademark check (D112 of aintfilm) finds something in what the public
+sees, the build fails. The *the checkout's own tags* lines are the engine’s
+internal labels (in the module and in the presets’ settings), which aintfilm
+renames in its M38-07 and M38-08; they are counted, they do not stop the build.
+At the end it prints the version, the **bytes** and the **sha256** of the
+package.
 
-Cada empaquetado usa un *nonce* nuevo: el mismo contenido da otro `sha256`. El
-registro tiene que fijar el archivo que se sube, no otro construido después.
+Each packaging uses a fresh *nonce*: the same content gives another `sha256`.
+The registry has to pin the file that is uploaded, not another one built later.
 
-## 2 · Fijarlo en el registro
+## 2 · Pin it in the registry
 
-En `src/data/plugins.json`, la entrada del plugin (su `id` no cambia nunca):
+In `src/data/plugins.json`, the plugin’s entry (its `id` never changes):
 
-- `version`: la del paquete;
-- `url`: `https://github.com/Grohle-developer/Repackshot/releases/download/v<release>/film-<versión>.rpk`
-  (el nombre del *asset* tiene que ser exactamente ese);
-- `sha256` y `bytes`: los que imprimió el *build*;
-- `keyUrl`: vacío mientras el desarrollador no aloje la clave (entonces se pide
-  al instalar; ver §4).
+- `version`: the package’s;
+- `url`: `https://github.com/Grohle-developer/Repackshot/releases/download/v<release>/film-<version>.rpk`
+  (the asset’s name has to be exactly that);
+- `sha256` and `bytes`: the ones the build printed;
+- `keyUrl`: empty while the developer does not host the key (then it is asked
+  for at install time; see §4).
 
-`npm run qa` comprueba la forma de la entrada y que la `url` sea la de la
-release. Después, la comprobación de navegador con el paquete de verdad:
+`npm run qa` checks the shape of the entry and that the `url` is the release’s.
+Then, the browser check with the real package:
 
 ```bash
 npm run engine:build && npm run build
 node tools/plugins-check.mjs --film ~/plugins/film-0.1.0.rpk --film-key ~/plugins/film-activation-key.txt
 ```
 
-Su punto `d_registry_pins_this_package` falla si el archivo no es el que fija el
-registro. Deja `docs/ui/settings-plugins.png` y `docs/ui/render-plugins-film.png`.
+Its `d_registry_pins_this_package` point fails if the file is not the one the
+registry pins. It leaves `docs/ui/settings-plugins.png` and
+`docs/ui/render-plugins-film.png`.
 
-## 3 · Subirlo con la release
+## 3 · Upload it with the release
 
-Con la release ya creada (`packaging/release.mjs`), el paquete como un *asset*
-más:
+With the release already created (`packaging/release.mjs`), the package as one
+more asset:
 
 ```bash
 gh release upload v0.1.6 ~/plugins/film-0.1.0.rpk
 ```
 
-Antes de anunciarla, descárgalo desde la página de la release y comprueba que
-es el mismo: `sha256sum film-0.1.0.rpk` tiene que dar el `sha256` del registro.
-Y ábrelo con la clave, sin escribir nada en claro más que en una carpeta
-temporal: `node tools/plugin-unpack.mjs film-0.1.0.rpk --header` (la cabecera,
-comprobada) y `node tools/plugin-unpack.mjs film-0.1.0.rpk /tmp/film --key-file
+Before announcing it, download it from the release page and check that it is
+the same: `sha256sum film-0.1.0.rpk` has to give the registry’s `sha256`. And
+open it with the key, writing nothing in the clear except in a temporary folder:
+`node tools/plugin-unpack.mjs film-0.1.0.rpk --header` (the header, checked) and
+`node tools/plugin-unpack.mjs film-0.1.0.rpk /tmp/film --key-file
 ~/plugins/film-activation-key.txt`.
 
-## 4 · La clave
+## 4 · The key
 
-- **No va en el repositorio**, ni en un *commit*, ni en el registro, ni en las
-  notas de la release, ni en un *issue*: el anfitrión es de código disponible y
-  no puede guardar secretos. La guarda el desarrollador.
-- Mientras `keyUrl` esté vacío, *Ajustes ▸ Plugins ▸ Instalar* la pide: el
-  desarrollador la da a quien vaya a instalar el plugin (un mensaje, la página
-  del proyecto).
-- Para no pedirla: alojarla en una dirección https del desarrollador cuya
-  respuesta sea el texto de la clave (con CORS para el origen de la web, y sin
-  caché), y poner esa dirección en `keyUrl` en la siguiente versión. El
-  desarrollador puede rotarla o condicionarla más adelante: una clave nueva va
-  con un paquete nuevo (otra versión, otra entrada del registro); quien tiene el
-  anterior lo conserva.
-- Lo que protege el cifrado y lo que no: `ARCHITECTURE.md` §9.1.
+- **It does not go in the repository**, nor in a commit, nor in the registry, nor
+  in the release notes, nor in an issue: the host is source-available and cannot
+  keep secrets. The developer keeps it.
+- While `keyUrl` is empty, *Settings ▸ Plugins ▸ Install* asks for it: the
+  developer gives it to whoever is going to install the plugin (a message, the
+  project page).
+- To avoid asking for it: host it at an https address of the developer whose
+  response is the key’s text (with CORS for the web origin, and no cache), and
+  put that address in `keyUrl` in the next version. The developer can rotate it
+  or make it conditional later: a new key goes with a new package (another
+  version, another registry entry); whoever has the previous one keeps it.
+- What the encryption protects and what it does not: `ARCHITECTURE.md` §9.1.
 
-## 5 · Para las notas de la v0.1.6
+## 5 · Text for the v0.1.6 notes
 
-Un párrafo para *Qué hay de nuevo*:
+A paragraph for *What's new*:
 
-> **Plugins, y el primero: aintfilm · simulación de película.** *Ajustes ▸
-> Plugins* instala herramientas de otros programas, cada una con su licencia. La
-> primera es el motor de película de **aintfilm**, la app de edición de fotos y
-> simulación de película del mismo desarrollador, en desarrollo (un adelanto):
-> en la ventana de render, la sección *Plugins* tiene sus recetas (51 películas,
-> su color solo, granos, filtros de difusión y objetivos), los mandos de su
-> editor (formato del negativo, exposición y forzado, color, grano, halación,
-> difusión, copia o escaneo, semilla), una vista previa del último resultado y
-> *Aplicar*, que deja un resultado nuevo en el visor. **Su licencia es cerrada**:
-> la de Repackshot no lo cubre. Se activa con una clave que da su desarrollador.
+> **Plugins, and the first one: aintfilm · film simulation.** *Settings ▸
+> Plugins* installs tools from other programs, each with its own licence. The
+> first is the film engine of **aintfilm**, the photo-editing and film
+> simulation app from the same developer, in development (a preview): in the
+> render window, the *Plugins* section has its recipes (51 films, their colour
+> alone, grains, diffusion filters and lenses), the controls of its editor
+> (negative format, exposure and push, colour, grain, halation, diffusion, print
+> or scan, seed), a preview of the last result and *Apply*, which leaves a new
+> result in the viewer. **Its licence is closed**: Repackshot’s does not cover
+> it. It is activated with a key that its developer provides.
 
-Y una fila para *Descargas*:
+And a row for *Downloads*:
 
-> **film-0.1.0.rpk**: el plugin de película (1,9 MB). No se abre a mano: se
-> instala desde *Ajustes ▸ Plugins ▸ Instalar*, que lo descarga de aquí y
-> comprueba su `sha256`, o con *Instalar desde archivo…*; pide la clave de
-> activación.
+> **film-0.1.0.rpk**: the film plugin (1.9 MB). It is not opened by hand: it is
+> installed from *Settings ▸ Plugins ▸ Install*, which downloads it from here and
+> checks its `sha256`, or with *Install from a file…*; it asks for the
+> activation key.
 
-Y para la lista de comprobación en Windows (WebView2):
-
-1. [ ] *Ajustes ▸ Plugins ▸ aintfilm · simulación de película ▸ Instalar*: baja,
-   pide la clave, una clave mal escrita se dice, la buena lo instala; sale su
-   logo y se abren su licencia y sus avisos.
-2. [ ] Cierra y abre la aplicación: sigue instalado.
-3. [ ] Antes de renderizar, la ventana de render ▸ *Plugins*: la vista previa
-   es la escena de prueba del plugin; el carrusel de recetas se llena de
-   imágenes (una vez: al volver a abrir están todas); la rueda lo desplaza de
-   lado y las flechas eligen.
-4. [ ] Un render, y en la ventana de render la sección *Plugins*: la vista
-   previa con una receta (*CN-01*), la línea del plugin y el tiempo; *Aplicar*
-   deja un resultado nuevo con su procedencia y su archivo `_aintfilm-film.png`.
-5. [ ] *Aplicar a los trabajos de render* y una animación corta: cada fotograma
-   tiene su `_aintfilm-film.png` y su grano cambia de uno a otro.
-6. [ ] *Quitar*: se borra, y el proyecto conserva sus ajustes.
+For testers, the manual Windows test plan for plugins (WebView2) is in the
+*Plugin installation* section of
+[docs/testing/windows-checklist.md](https://github.com/Grohle-developer/Repackshot/blob/main/docs/testing/windows-checklist.md).
