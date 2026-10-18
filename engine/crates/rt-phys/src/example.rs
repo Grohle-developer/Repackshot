@@ -695,3 +695,179 @@ pub fn s3f_organic_scene_at(steps: u32) -> rt_core::scene::Scene {
 pub fn s3f_organic_scene() -> rt_core::scene::Scene {
     s3f_organic_scene_at(ORGANIC_STEPS)
 }
+
+// --- S9: cloth -----------------------------------------------------------------------------------
+
+/// S9: silk, 60 g/m² (`SILK` of `src/data/fabrics.ts`; the tests and the fixture
+/// `tests/fixtures/cloth-fabrics.json` check that the two agree).
+pub const SILK: crate::cloth::ClothParams = crate::cloth::ClothParams {
+    mass_per_area: 0.06,
+    stretch: 2000.0,
+    bend: 3.0e-7,
+    damping: 0.6,
+    thickness: 1.0,
+    friction: 0.3,
+    area: 0.0,
+    pressure: 0.0,
+    flags: crate::cloth::FLAG_SELF_COLLISION,
+};
+
+/// S9: thick leather, 1,200 g/m² (`LEATHER_THICK` of `src/data/fabrics.ts`).
+pub const LEATHER_THICK: crate::cloth::ClothParams = crate::cloth::ClothParams {
+    mass_per_area: 1.2,
+    stretch: 20000.0,
+    bend: 2.0e-3,
+    damping: 2.0,
+    thickness: 3.0,
+    friction: 0.6,
+    area: 0.0,
+    pressure: 0.0,
+    flags: crate::cloth::FLAG_SELF_COLLISION,
+};
+
+/// S9: a flat sheet of `size_x × size_y` mm centred on `center`, facing up, `nx × ny` squares each
+/// split along alternating diagonals (so the sheet has no preferred direction to fold in).
+pub fn cloth_sheet(
+    size_x: f32,
+    size_y: f32,
+    nx: u32,
+    ny: u32,
+    center: Vec3,
+) -> (Vec<Vec3>, Vec<u32>) {
+    let mut positions = Vec::new();
+    for j in 0..=ny {
+        for i in 0..=nx {
+            positions.push(Vec3::new(
+                center.x + size_x * (i as f32 / nx as f32 - 0.5),
+                center.y + size_y * (j as f32 / ny as f32 - 0.5),
+                center.z,
+            ));
+        }
+    }
+    let at = |i: u32, j: u32| j * (nx + 1) + i;
+    let mut indices = Vec::new();
+    for j in 0..ny {
+        for i in 0..nx {
+            let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+            if (i + j) % 2 == 0 {
+                indices.extend_from_slice(&[a, b, c, a, c, d]);
+            } else {
+                indices.extend_from_slice(&[a, b, d, b, c, d]);
+            }
+        }
+    }
+    (positions, indices)
+}
+
+/// S9: the sphere the drape tests lay a cloth over: radius 150 mm, centre 400 mm above the floor.
+pub const DRAPE_SPHERE: (Vec3, f32) = (Vec3::new(0.0, 0.0, 400.0), 150.0);
+
+/// S9: a 600 mm square of `params` (64 × 64 squares) 20 mm above the top of [`DRAPE_SPHERE`],
+/// a static UV sphere of 48 × 96, and the floor.
+pub fn drape_spec(params: crate::cloth::ClothParams) -> crate::cloth::ClothSpec {
+    let (c, r) = DRAPE_SPHERE;
+    let (positions, indices) = cloth_sheet(600.0, 600.0, 64, 64, c + Vec3::new(0.0, 0.0, r + 20.0));
+    let n = positions.len();
+    let ball = sphere_mesh(r, 48, 96);
+    crate::cloth::ClothSpec {
+        pieces: vec![crate::cloth::ClothPiece {
+            positions,
+            indices,
+            pinned: vec![false; n],
+            params,
+        }],
+        statics: vec![crate::cloth::ClothStatic {
+            positions: ball.positions.iter().map(|p| *p + c).collect(),
+            indices: ball.indices,
+        }],
+        floor: Some((0.0, 0.6)),
+        wind: crate::cloth::ClothWind::default(),
+    }
+}
+
+/// S9: steps the cloth parity scene is simulated for (two seconds).
+pub const CLOTH_STEPS: u32 = 480;
+
+/// S9: the cloth parity scene: a box dropped onto the floor ([`cloth_world`]) and, above it, a
+/// 300 mm sheet of fine cotton (24 × 24 squares, self-collision on) that falls on it in a gusty
+/// 1 m/s breeze, beside a static block.
+pub fn cloth_parity_spec() -> crate::cloth::ClothSpec {
+    let (positions, indices) = cloth_sheet(300.0, 300.0, 24, 24, Vec3::new(20.0, 0.0, 220.0));
+    let n = positions.len();
+    let pinned = vec![false; n];
+    let block = box_mesh(Vec3::new(40.0, 40.0, 30.0));
+    crate::cloth::ClothSpec {
+        pieces: vec![crate::cloth::ClothPiece {
+            positions,
+            indices,
+            pinned,
+            params: crate::cloth::ClothParams {
+                mass_per_area: 0.12,
+                stretch: 3000.0,
+                bend: 5.0e-6,
+                damping: 0.8,
+                thickness: 1.5,
+                friction: 0.4,
+                area: 0.0,
+                pressure: 0.0,
+                flags: crate::cloth::FLAG_SELF_COLLISION,
+            },
+        }],
+        statics: vec![crate::cloth::ClothStatic {
+            positions: block
+                .positions
+                .iter()
+                .map(|p| *p + Vec3::new(-120.0, 0.0, 30.0))
+                .collect(),
+            indices: block.indices,
+        }],
+        floor: Some((0.0, 0.6)),
+        wind: crate::cloth::ClothWind {
+            velocity: Vec3::new(1000.0, 300.0, 0.0),
+            gust: 0.4,
+            scale: 150.0,
+            speed: 800.0,
+            seed: 11,
+        },
+    }
+}
+
+/// S9: the rigid side of the cloth parity scene (`PHY1`): a box falling from 120 mm onto the floor,
+/// tilted, and the static block of [`cloth_parity_spec`].
+pub fn cloth_world() -> Scene {
+    let params = BodyParams {
+        density: 700.0,
+        friction: 0.6,
+        restitution: 0.1,
+    };
+    let tilt = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 1.0), 0.4);
+    Scene {
+        meshes: vec![
+            box_mesh(Vec3::new(50.0, 35.0, 25.0)),
+            box_mesh(Vec3::new(40.0, 40.0, 30.0)),
+        ],
+        bodies: vec![
+            SceneBody {
+                dynamic: true,
+                params,
+                pieces: vec![Piece {
+                    mesh: 0,
+                    transform: Transform::from_pose(Vec3::new(30.0, 0.0, 120.0), tilt),
+                }],
+            },
+            SceneBody {
+                dynamic: false,
+                params,
+                pieces: vec![Piece {
+                    mesh: 1,
+                    transform: Transform::translation(Vec3::new(-120.0, 0.0, 30.0)),
+                }],
+            },
+        ],
+        floor: Some(Floor {
+            z: 0.0,
+            friction: 0.6,
+            restitution: 0.1,
+        }),
+    }
+}

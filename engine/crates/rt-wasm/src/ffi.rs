@@ -972,3 +972,94 @@ pub unsafe extern "C" fn wpt_copy(handle: u32, out: *mut u8) -> u32 {
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
     STATUS_OK
 }
+
+// --- Cloth (S9) ------------------------------------------------------------------------------
+
+/// S9: builds a cloth from `CLT1` bytes (`rt_phys::cloth`). Returns its handle, or 0 after
+/// recording the error (`rt_scene_error_len`, `rt_scene_error_copy`).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn cloth_new(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("cloth_new: null pointer");
+        return 0;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::cloth::new(bytes)
+}
+
+/// Forgets a cloth. Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn cloth_free(handle: u32) -> u32 {
+    if crate::cloth::free(handle) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Simulates `n` fixed steps of 1/240 s (at most a minute per call); with `world`, a `phys_new`
+/// handle (0 for none), the rigid bodies step with it and push it. Returns 0, or 1 for a bad
+/// handle (the cloth's or the world's).
+#[no_mangle]
+pub extern "C" fn cloth_step(handle: u32, world: u32, n: u32) -> u32 {
+    if crate::cloth::step(handle, world, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Vertices of all the cloth's pieces (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn cloth_vertices(handle: u32) -> u32 {
+    crate::cloth::vertices(handle).unwrap_or(0)
+}
+
+/// Writes every vertex of every piece (world mm, three little-endian `f32` each) to `out`.
+/// Returns 0, 1 for a bad handle, 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to `cloth_vertices(handle) * 12` writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn cloth_positions(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(p) = crate::cloth::positions(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    let bytes: Vec<u8> = p.iter().flat_map(|v| v.to_le_bytes()).collect();
+    // SAFETY: the caller promises 12 writable bytes per vertex, which is `bytes.len()`; `bytes` is
+    // a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
+
+/// 1 when the cloth has settled, 0 when not, 2 for a bad handle.
+#[no_mangle]
+pub extern "C" fn cloth_settled(handle: u32) -> u32 {
+    match crate::cloth::settled(handle) {
+        Some(true) => 1,
+        Some(false) => 0,
+        None => 2,
+    }
+}
+
+/// Steps simulated (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn cloth_steps(handle: u32) -> u32 {
+    crate::cloth::steps(handle).unwrap_or(0)
+}
+
+/// The cloth's FNV-1a hash (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn cloth_hash(handle: u32) -> u32 {
+    crate::cloth::hash(handle).unwrap_or(0)
+}

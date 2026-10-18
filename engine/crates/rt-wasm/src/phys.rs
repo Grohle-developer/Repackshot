@@ -62,6 +62,12 @@ fn with<R>(handle: u32, f: impl FnOnce(&mut Loaded) -> R) -> Option<R> {
         .map(f)
 }
 
+/// S9: runs `f` on the rigid world of `handle` (the cloth steps it with itself), or `None` for a
+/// bad handle.
+pub(crate) fn with_world<R>(handle: u32, f: impl FnOnce(&mut World) -> R) -> Option<R> {
+    with(handle, |l| f(&mut l.world))
+}
+
 /// Forgets a world. True when there was one.
 pub fn free(handle: u32) -> bool {
     let mut reg = worlds();

@@ -1,0 +1,4 @@
+{
+  "SILK": { "weightGsm": 60, "stretch": 2000, "bend": 3e-7, "damping": 0.6, "thicknessMm": 1, "friction": 0.3 },
+  "LEATHER_THICK": { "weightGsm": 1200, "stretch": 20000, "bend": 2e-3, "damping": 2, "thicknessMm": 3, "friction": 0.6 }
+}
