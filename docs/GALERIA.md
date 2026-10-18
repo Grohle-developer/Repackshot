@@ -22,9 +22,13 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 62 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 62 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
+
+Nothing yet: every screenshot in `docs/ui/` is already in a published version (the latest is v0.1.22).
+
+### v0.1.22 · 2026-10-18
 
 Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI section's stored example and the preview of the job's own scene with the Full engine (X6), which re-records, without changing place, `ai-section-dark.png`, `ai-section-light.png` and `ai-section-prompt.png` (X4, X4b); organic drops (S3f); the AI model through an API (X7).
 
@@ -478,7 +482,7 @@ Caustics and own denoise, own lights and lights and cameras in the viewport, the
 #### X4b · Own prompt and variants
 
 <a id="c-ai-section-prompt"></a><img src="ui/ai-section-prompt.png" width="480" alt="The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %."><br>
-`ai-section-prompt.png` · `a40a6b4` · The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %. *(re-recorded in Unreleased: X6, the stored example)*
+`ai-section-prompt.png` · `a40a6b4` · The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %. *(re-recorded in v0.1.22: X6, the stored example)*
 
 <a id="c-ai-results-variants"></a><img src="ui/ai-results-variants.png" width="480" alt="The results viewer with the strip of four AI variants under the header; the third one, compared with the render using the divider."><br>
 `ai-results-variants.png` · `a40a6b4` · The results viewer with the strip of four AI variants under the header; the third one, compared with the render using the divider.
@@ -616,7 +620,7 @@ Desktop fixes (own window, data that survives a restart), dragging a material an
 #### X4 · Post-processing interface
 
 <a id="c-ai-section-dark"></a><img src="ui/ai-section-dark.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme."> <a id="c-ai-section-light"></a><img src="ui/ai-section-light.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme."><br>
-`ai-section-dark.png` and `ai-section-light.png` · `693762d` · The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-section-light.png` re-recorded in v0.1.18: C1, the factory intervention at 50 and the light theme's secondary text at 4.5:1)* *(both re-recorded in Unreleased: X6, the stored example and the line on what each control acts on)*
+`ai-section-dark.png` and `ai-section-light.png` · `693762d` · The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-section-light.png` re-recorded in v0.1.18: C1, the factory intervention at 50 and the light theme's secondary text at 4.5:1)* *(both re-recorded in v0.1.22: X6, the stored example and the line on what each control acts on)*
 
 <a id="c-ai-results-viewer"></a><img src="ui/ai-results-viewer.png" width="440" alt="The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme."> <a id="c-ai-results-light"></a><img src="ui/ai-results-light.png" width="440" alt="The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme."><br>
 `ai-results-viewer.png` and `ai-results-light.png` · `693762d` · The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-results-light.png` re-recorded in v0.1.18: C1, the light theme's secondary text at 4.5:1)*
@@ -912,8 +916,8 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`physics-rain.png`](#c-physics-rain) · v0.1.21 · S3b
 - [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
-- [`physics-rain-air.png`](#c-physics-rain-air) · Unreleased · S3d
-- [`rain-organic.png`](#c-rain-organic) · Unreleased · S3f
+- [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
+- [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 
@@ -931,15 +935,15 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 
 **Proposal for the README:** [`ai-results-viewer.png`](#c-ai-results-viewer) (v0.1.2): the AI result compared with the render using the divider and the guard's report.
 
-- [`ai-x6-example-dark.png`](#c-ai-x6-example-dark) · Unreleased · X6
-- [`ai-x6-example-light.png`](#c-ai-x6-example-light) · Unreleased · X6
-- [`ai-x6-style.png`](#c-ai-x6-style) · Unreleased · X6
-- [`ai-x6-mine.png`](#c-ai-x6-mine) · Unreleased · X6
-- [`ai-x6-example-es.png`](#c-ai-x6-example-es) · Unreleased · X6
-- [`settings-ai-api.png`](#c-settings-ai-api) · Unreleased · X7
-- [`settings-ai-api-preset.png`](#c-settings-ai-api-preset) · Unreleased · X7
-- [`ai-api-consent.png`](#c-ai-api-consent) · Unreleased · X7
-- [`ai-api-section.png`](#c-ai-api-section) · Unreleased · X7
+- [`ai-x6-example-dark.png`](#c-ai-x6-example-dark) · v0.1.22 · X6
+- [`ai-x6-example-light.png`](#c-ai-x6-example-light) · v0.1.22 · X6
+- [`ai-x6-style.png`](#c-ai-x6-style) · v0.1.22 · X6
+- [`ai-x6-mine.png`](#c-ai-x6-mine) · v0.1.22 · X6
+- [`ai-x6-example-es.png`](#c-ai-x6-example-es) · v0.1.22 · X6
+- [`settings-ai-api.png`](#c-settings-ai-api) · v0.1.22 · X7
+- [`settings-ai-api-preset.png`](#c-settings-ai-api-preset) · v0.1.22 · X7
+- [`ai-api-consent.png`](#c-ai-api-consent) · v0.1.22 · X7
+- [`ai-api-section.png`](#c-ai-api-section) · v0.1.22 · X7
 - [`ai-section-prompt.png`](#c-ai-section-prompt) · v0.1.5 · X4b
 - [`ai-results-variants.png`](#c-ai-results-variants) · v0.1.5 · X4b
 - [`settings-ai-prompt.png`](#c-settings-ai-prompt) · v0.1.5 · X4b
