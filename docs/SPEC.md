@@ -299,12 +299,21 @@ función pura de (semilla, id, instante). Ni caché ni horneado.
 
 - **Campos**: `id` (`fx1`, `fx2`…), `preset` (clave estable del catálogo:
   `DUST_MOTES`, `POLLEN`, `RAIN`, `SNOW`, `DUST_CLOUD`, `ASH`, `BUBBLES`,
-  `CONFETTI`; `HAZE`, `LIGHT_SHAFTS` y `GROUND_FOG` están en el catálogo
+  `CONFETTI`, y desde S3 `WATER_DROPS`, *Gotas de agua*; `HAZE`,
+  `LIGHT_SHAFTS` y `GROUND_FOG` están en el catálogo
   como *próximamente*, son volúmenes de S5), `name` (vacío: el del
   preset), `enabled`; la cantidad (`amountMode` `DENSITY` con `density`
   en partículas/m³ del volumen, o `COUNT` con `count`), `sizeMm` ±
   `sizeVar`, `shape` (`SPHERE` punto/esfera, `DISC` copo, `CAPSULE`
-  estela), `energy` (m/s de nacimiento en dirección al azar, que se relaja
+  estela y, desde S3, `DROP` gota: un cuerpo redondo y una punta que lo
+  sigue, contra la velocidad), desde S3 `shapeMix` (`on` y un peso por forma,
+  `SPHERE`, `DISC`, `CAPSULE`, `DROP`: encendida, cada partícula elige una en
+  proporción a los pesos y conserva la suya siempre; apagada, o sin ningún
+  peso, todas son `shape`), `dropTail` (largo de la gota, del centro del
+  cuerpo al de la punta, en radios del cuerpo, 0..16; 1,6) y `dropTip`
+  (radio de la punta entre el del cuerpo, 0..1; 0,15) y `shapeVar` (cuánto
+  más larga o más corta es cada gota y cada estela que las demás, 0..1; 0),
+  `energy` (m/s de nacimiento en dirección al azar, que se relaja
   hacia la caída), `chaos` (fuerza de la turbulencia como fracción de su
   escala), `turbulenceScaleMm`, `turbulenceSpeed` (m/s), `wind` (vector
   en m/s, Z arriba), `fallSpeed` (velocidad terminal a 1 g, m/s) ±
@@ -322,7 +331,10 @@ función pura de (semilla, id, instante). Ni caché ni horneado.
   efecto guardado antes de S4b toma el de su preset), `tintVar`
   y `palette` (hasta 4 tintes), `time` (*Congelar en*, s), `camera`,
   `reflections` y `shadows` (como en las luces), `cap` (tope propio; 0: el
-  del motor) y `seed`.
+  del motor) y `seed`. Un efecto guardado antes de S3 abre con la gota y la
+  variación de su preset y la mezcla apagada. Un motor sin el bit 6 de sus
+  capacidades (S3) recibe una gota como esfera y una mezcla como la forma de
+  más peso.
 - **Acciones del *store***, todas deshacibles: `effect/add` (un preset
   disponible; nace con los valores del preset, la región alrededor de la
   escena con un margen de 0,75 tamaños de pieza y la semilla de su
@@ -1275,6 +1287,29 @@ destellos finos alrededor de cada luz. Un filtro de grado 0 no hace nada. Elegir
 bokeh o *Disco sencillo* no quita los filtros. Una cámara ortográfica no
 tiene filtros (como no tiene lente). El modo Rápido dibuja una
 aproximación en imagen con los mismos núcleos y el medidor lo dice.
+
+**Cristal frontal (S3).** `CameraOptics.frontGlass` (opcional; sin él, o
+apagado, o sin gotas ni polvo, ninguno, y los proyectos anteriores no cambian
+ni un byte): una lámina delante del objetivo con gotas de agua y polvo encima,
+como una lente bajo la lluvia. Guarda `on`, `drops` (la parte del cristal que
+cubren las gotas antes de juntarse, 0..0,9), `dropSizeMm` (el diámetro medio
+de la huella de una gota, 0,2..10 mm), `dust` (la parte que cubren las motas,
+0..0,5), `seed` y `distanceMm` (desde el centro del objetivo; 0, automática:
+donde está el elemento frontal; hasta 200 mm, un cristal o una ventana delante
+de la cámara). Lo demás de la lámina (el ángulo de contacto del agua, la
+dispersión de los tamaños, el tamaño y la opacidad de las motas) son los
+valores fijos de `src/data/front-glass.ts`. El motor traza el cristal como
+geometría real delante de la lente (`rt_core::optics::glass`): cada gota
+refracta como la lente que es (a través de un objetivo enfocado lejos, un
+disco blando con la escena del revés dentro y el borde oscuro), las que se
+tocan se juntan en una con su volumen sumado y el polvo son motas oscuras y
+suaves; sin nada encima, la imagen es la de sin cristal, bit a bit. Las gotas
+están en el cristal, no en el encuadre: cambiar la focal o el tamaño de la
+imagen no las mueve. Solo los modos Completo y Render lo trazan, y solo un
+motor con el bit 6 de sus capacidades; una cámara panorámica no tiene
+elemento frontal y no lo usa. Se guarda con cada cámara, en el proyecto y en
+los estudios. Las gotas que caen de la lluvia de la escena y resbalan por el
+cristal son de S3b.
 
 **Lente trazada (O2).** `CameraOptics.traced` (opcional; sin él o `null`,
 la lente simple, y los proyectos anteriores no cambian ni un byte): una

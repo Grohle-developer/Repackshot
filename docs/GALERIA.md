@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 152 archivos: 150 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 155 archivos: 153 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,22 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas; las capturas se reparten en 53 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas, y lo que está sin publicar; las capturas se reparten en 54 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-Nada todavía: todas las capturas de `docs/ui/` están ya en una versión publicada (la última es v0.1.19).
+La forma de gota y la mezcla de formas de *Ambiente*, y el cristal frontal de la cámara (S3).
+
+#### S3 · Lluvia y polvo sobre el set y sobre la lente
+
+<a id="c-ambient-drops"></a><img src="ui/ambient-drops.png" width="480" alt="El frasco de ejemplo en Rápido con el efecto Gotas de agua: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, Ambiente ▸ Avanzado con la forma Gota elegida, su largo, su punta y la variación de forma."><br>
+`ambient-drops.png` · S3 · El frasco de ejemplo en *Rápido* con el efecto *Gotas de agua*: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, *Ambiente ▸ Avanzado* con la forma *Gota* elegida, su *Largo de la gota*, su *Punta* y la *Variación de forma*. `tools/s3-check.mjs --only drops`.
+
+<a id="c-ambient-mix"></a><img src="ui/ambient-mix.png" width="480" alt="El mismo efecto con la forma Mezcla: puntos, copos, estelas y gotas mezclados en el visor; en el inspector, un peso por forma y la línea con la parte que da cada uno."><br>
+`ambient-mix.png` · S3 · El mismo efecto con la forma *Mezcla*: puntos, copos, estelas y gotas en el visor, cada partícula con la forma que le da el motor; en el inspector, un peso por forma (*Puntos*, *Copos*, *Estelas*, *Gotas*) y la línea con la parte que da cada uno. `tools/s3-check.mjs --only mix`.
+
+<a id="c-lens-glass"></a><img src="ui/lens-glass.png" width="480" alt="El frasco en Completo a través de un cristal mojado a 150 mm del objetivo, a f/16: discos blandos con la escena del revés dentro, cada uno una gota del cristal; en el inspector, Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal con sus gotas, su tamaño, el polvo, la semilla y la distancia."><br>
+`lens-glass.png` · S3 · El frasco en *Completo* a través de un cristal mojado a 150 mm del objetivo, a f/16 y con gotas de 8 mm: discos blandos con la escena del revés dentro, cada uno una gota del cristal desenfocada; en el inspector, *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal* con *Gotas*, *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia*. `tools/s3-check.mjs --only glass`.
 
 ### v0.1.19 · 2026-10-17
 
@@ -735,6 +746,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`lens-glass.png`](#c-lens-glass) · sin publicar · S3
 - [`o2c-lens-editor.png`](#c-o2c-lens-editor) · v0.1.19 · O2c
 - [`o2c-lens-modified.png`](#c-o2c-lens-modified) · v0.1.19 · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
@@ -820,6 +832,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`physics-bar.png`](#c-physics-bar) · v0.1.6 · S2
 - [`physics-drop.png`](#c-physics-drop) · v0.1.6 · S2 **← propuesta**
 - [`physics-drop-strip.png`](#c-physics-drop-strip) · v0.1.6 · S2
+- [`ambient-drops.png`](#c-ambient-drops) · sin publicar · S3
+- [`ambient-mix.png`](#c-ambient-mix) · sin publicar · S3
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

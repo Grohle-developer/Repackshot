@@ -250,7 +250,12 @@ Sobre la animación de N1 y el paseo de N3:
 > colisión con las piezas y las horneadas siguen pendientes. Los valores
 > de partida de los presets de S4a se aceptaron con la hoja
 > `out/ambient-sheet.html`; el lóbulo hacia delante, la lluvia sin
-> cáusticas y el coste a las densidades de los presets son S4b.
+> cáusticas y el coste a las densidades de los presets son S4b. **S3**
+> (primera parte) añade la forma de gota, la mezcla de formas por
+> partícula y la variación de forma, y el cristal frontal de la cámara con
+> gotas y polvo como foto fija (`GLAS`, `ARCHITECTURE.md` §5.2
+> octodecies); las gotas que caen y resbalan sobre las piezas y sobre el
+> cristal, el polvo que se asienta y su simulación con caché son **S3b**.
 
 Un nodo de escena **Efecto** con emisor (punto, superficie de una pieza,
 volumen, curva o estallido en un fotograma), cantidad, vida, velocidad y

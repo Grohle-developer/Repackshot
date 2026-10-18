@@ -113,7 +113,7 @@ src/
     interior-camera.ts      la cámara de interiores (K3): verticales rectas (`verticalsOf`, `renderedCamera`: la cámara nivelada con el *shift* que conserva el encuadre), altura de ojo y ópticas de interior (`camera/eyeHeight`, `camera/interiorLens`), el multiplicador de exterior (`exteriorOf`)
     panorama.ts             el mapa de las panorámicas (K3): equirectangular y ojo de pez equidistante, dirección ↔ punto de la imagen en TS y en GLSL (`PANORAMA_GLSL`), los campos del marco de salida (`panoramaFov`); el mismo mapa que `Camera::panorama_dir` del motor
     image-passes.ts         los pases del estado `image` (K3): su orden, cuáles se aplican (exposición y curva), la exposición automática determinista (`meterExposure`, `ExposureMeter`), la compensación y los presets de brillo
-    optics.ts               la óptica de una cámara más allá de la lente simple (O1; se llamaba lente fina hasta O4): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2); los dos modelos de lente (`lensModelOf`, `opticsWithLensModel`: cambiar no borra nada), el bokeh solo de la lente simple (`bokehApplies`) y la inclinación de cada modelo (`tiltOf`, `withTilt`, O4)
+    optics.ts               la óptica de una cámara más allá de la lente simple (O1; se llamaba lente fina hasta O4): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2); los dos modelos de lente (`lensModelOf`, `opticsWithLensModel`: cambiar no borra nada), el bokeh solo de la lente simple (`bokehApplies`) y la inclinación de cada modelo (`tiltOf`, `withTilt`, O4); el cristal frontal (S3, `frontGlass`: `normalizeFrontGlass`, `frontGlassOf`)
     focus-plane.ts          el plano de enfoque de una lente inclinada (O4): la regla de la bisagra del motor, la inclinación que lo pone por dos o tres puntos (`solveTilt`), su lectura como cantidad y dirección hacia la que se aleja (`recedeOf`), y lo que dibuja el visor (`focusPlaneHint`)
     traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
     lens-edit.ts            los elementos editados de una lente trazada (O2c): la lista (elementos y diafragma), las operaciones sobre la prescripción (radios, grosor, vidrio, apertura, tamaño, aire, añadir, borrar, girar 180°), el enfoque seguido a través de ellas, la lista de vidrios del catálogo y lo que está mal antes y después de preguntar al motor
@@ -133,7 +133,7 @@ src/
     doctor-interior.ts      el Doctor de interiores (K1): siete chequeos de `INTERIORS.md` §3.6 que no piden motor, solo con el tipo de escena *Interior*, cada uno con su arreglo (escala y unidades, abertura para el sol y el cielo, vidrio de ventana, óptica, altura de ojo, recorte cercano, normales); `runDoctor` y `fixDoctor` los llaman
     scene-type.ts           el tipo de escena (K1): `scene.type`, la acción `scene/setType`, y la memoria `scene.typeBase` de lo que cada tipo reemplazó para que volver deje el proyecto como estaba salvo lo tocado; los valores son `data/scene-types.ts`
     physics.ts              físicas (S2): la sección Físicas de un nodo, qué se simula (`physicsSpec`), las poses del simulador de vuelta a los nodos, la pista del clip PHYSICS y su ancla, las acciones `physics/*` (§5.6)
-    effects.ts              los efectos de Ambiente (S4a): el efecto como dato, sus acciones `effect/*`, la región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos de un archivo
+    effects.ts              los efectos de Ambiente (S4a): el efecto como dato, sus acciones `effect/*`, la región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos de un archivo; S3: la gota, la mezcla de formas (`mixWeights`, `heaviestShape`) y la variación de forma, los campos de S3 solo cuando hay alguno (`hasS3Fields`) y solo para un motor que los dibuja
     section.ts              la vista en sección (Q1): el plano como dato (`state.section`), sus acciones `section/*`, desde un clic y un eje o desde dos puntos, resuelto en un instante de la animación para los motores, qué piezas corta, cuáles tapa y cuáles son estudio (`partIsExempt`)
     solid.ts                qué mallas son sólidos cerrados (Q1): la misma regla que `geometry/solid.rs` del motor, para que Rápido tape las mismas piezas; y hacia qué lado mira una superficie cerrada (`solidOrientation`, K1)
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
@@ -160,11 +160,11 @@ src/
     sets.ts                 los sets (L6): aplicar, sustituir y quitar su decoración (tarjetas, barrido, suelo, charco), su aspecto, Usar la cámara del set
     wear.ts                 valores por defecto del desgaste
     version.ts
-  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2); effects.ts: los presets de Ambiente (S4a)
+  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2); effects.ts: los presets de Ambiente (S4a; S3 añade la gota, la mezcla y *Gotas de agua*); front-glass.ts: los valores del cristal frontal que la interfaz no enseña, los rangos y el arranque de sus mandos (S3)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
-    particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
+    particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte; S3: la forma de cada una (`rt_particles_shapes`) y el contorno de la gota (`dropOutline`)
     camera-projection.ts    la proyección de la cámara de Rápido como función pura (K3): el *shift* en NDC y la matriz con las verticales rectas (`perspectiveProjection`)
     panorama-pass.ts        las panorámicas de Rápido (K3): la escena en las seis caras de un cubo (medio flotante, lineal) y el lienzo dibujado desde él con `PANORAMA_GLSL`
     section-preview.ts      la vista en sección en Rápido (Q1): el plano compartido por los materiales del modelo, las tapas, el estudio sin plano, la selección y el cardán sin lo quitado
@@ -544,7 +544,7 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), programas de material (M3b, `program`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_scene_pick` y `rt_scene_focus_at` (F1: el rayo principal de un punto de la imagen, lo que toca y la distancia que lo enfoca; la página las detecta por su nombre, sin bit de `rt_features`), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_particles_shapes` (S3: la forma de cada una, un `u32`, para la mezcla de formas en Rápido), `rt_scene_pick` y `rt_scene_focus_at` (F1: el rayo principal de un punto de la imagen, lo que toca y la distancia que lo enfoca; la página las detecta por su nombre, sin bit de `rt_features`), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b; bit 2, la vista en sección, Q1; bit 3, las luces IES, L5; bit 4, las cámaras de interiores, K3; bit 5, los nodos de dibujo, M3c; bit 6, las gotas y el cristal frontal, S3)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -605,6 +605,21 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
+- **`GLAS`** (S3, a lo sumo una, 48 B; un motor anterior la salta y la cámara
+  es la de siempre): el cristal frontal, justo detrás de `LENS` (o de `CAMR`
+  sin ella). `u32 flags` (0; los bits desconocidos se guardan y se
+  ignoran), `f32 distance_mm` (desde la posición de la cámara a lo largo de
+  su eje; 0, automática: 25 mm con la lente simple, 5 mm delante del vértice
+  frontal con la trazada, que es también lo mínimo), `u32 seed`, `f32
+  drop_coverage` (0..0,9), `drop_size_mm` (0..50, el diámetro del círculo de
+  contacto), `drop_size_var` (0..1), `contact_angle_deg` (5..175), `ior`
+  (1..3), `dust_coverage` (0..0,5), `dust_size_mm` (0..10), `dust_size_var`
+  (0..1) y `dust_opacity` (0..1); un valor fuera de rango o no finito es
+  archivo inválido, una carga más corta es error y una más larga se lee
+  hasta donde se conoce. Sin gotas ni polvo, ningún píxel cambia; sin `GLAS`
+  los bytes y los *hashes* son los de antes de S3. `rt_features` y
+  `/api/info` suben el bit 6 (valor 64, `FEATURE_DROPS`). Reglas en §5.2
+  octodecies.
 - **`SECT`** (Q1, a lo sumo una, 20 B; un motor anterior la salta y muestra
   la pieza entera): el plano de la vista en sección, `u32 flags` (bit 0:
   tapar el corte; los demás se ignoran), `f32 normal[3]` (hacia el lado que
@@ -780,9 +795,12 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   (`tests/fixtures/lens-catalogue.json`, `rt --write-lens-catalogue`).
 - **`FXAM`** (S4a, repetible: una por efecto de *Ambiente*; un motor
   anterior la salta como sección desconocida). Los **parámetros** del
-  efecto, no sus partículas: 200 B (192 en S4a; los primeros 128 son obligatorios; una
-  carga más corta es error, una más larga se lee hasta donde se conoce y
-  lo que sobra se ignora; presupuesto, 256 B). El motor evalúa las
+  efecto, no sus partículas: 200 B (192 en S4a; 228 con los campos de S3,
+  que el escritor añade solo cuando alguno no es el de por defecto, así que
+  un efecto sin gotas, mezcla ni variación de forma conserva los 200 B de
+  S4b; los primeros 128 son obligatorios; una carga más corta es error, una
+  más larga se lee hasta donde se conoce y lo que sobra se ignora;
+  presupuesto, 256 B). El motor evalúa las
   partículas al cargar la escena con `rt-sim` y construye su BVH; la
   fuente de verdad es `rt_sim::params`.
 
@@ -797,7 +815,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   | 40 | `f32[2]` | `band` | alturas que se conservan, mm (`min ≥ max`: sin banda; el escritor TypeScript ya la aplica a la caja y escribe 0, 0) |
   | 48 | `f32` | `size_mm` | diámetro medio, mm |
   | 52 | `f32` | `size_var` | variación relativa, 0..1 |
-  | 56 | `u32` | `shape` | 0 esfera, 1 disco (copo), 2 cápsula (estela) |
+  | 56 | `u32` | `shape` | 0 esfera, 1 disco (copo), 2 cápsula (estela), 3 gota (S3; un motor anterior la lee como esfera); con una mezcla, la forma de más peso (lo que dibuja un motor sin mezclas) |
   | 60 | `f32` | `fall_speed` | velocidad terminal a 1 g, mm/s |
   | 64 | `f32` | `fall_var` | variación relativa, 0..1 |
   | 68 | `f32[3]` | `wind` | mm/s |
@@ -816,6 +834,10 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   | 144 | `f32[4][3]` | `palette` | RGB lineal, multiplica el color base del material |
   | 192 | `f32` | `forward` | S4b: parte de lo que dispersa la partícula que va al lóbulo hacia delante, 0..1 (0: ninguno; una carga de 192 B no lo tiene) |
   | 196 | `f32` | `forward_g` | su asimetría de Henyey–Greenstein, −1 < g < 1 |
+  | 200 | `f32[4]` | `mix` | S3: pesos de una mezcla de formas (esfera, disco, cápsula, gota; ≥ 0; todos 0: todas son `shape`) |
+  | 216 | `f32` | `drop_tail` | S3: largo de la gota, del centro de su cuerpo al de su punta, en radios del cuerpo, 0..16 (1,6) |
+  | 220 | `f32` | `drop_tip` | S3: radio de la punta entre el del cuerpo, 0..1 (0,15) |
+  | 224 | `f32` | `shape_var` | S3: variación del largo de cada gota y de cada estela, 0..1 (0) |
 
   **En el motor** (`rt-core::geometry::particles`): un conjunto por efecto
   con su BVH plana sobre los tamaños reales (hojas de una partícula; el id
@@ -864,6 +886,17 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   (Henyey y Greenstein, ApJ 1941), muestreado con probabilidad `forward` y
   con la densidad de la mezcla en el MIS de E12; sus rayos que atraviesan
   la partícula (y sus rayos de sombra) salen de su cara del fondo.
+
+  **S3.** Una gota es la envolvente convexa de su cuerpo redondo y de una
+  punta más pequeña que lo sigue (contra su velocidad: la que cae apunta
+  hacia arriba; quieta, a lo largo de la normal de su vida); con una
+  mezcla, cada partícula sortea su forma una vez con su propio *hash*
+  (`mix`), y `shape_var` alarga o acorta la gota o la estela de cada una con
+  otro; las sales son nuevas, así que un efecto sin ellas da los mismos
+  bits. El conjunto guarda una forma por partícula solo si se mezclan, y
+  todas las pruebas (impacto, salida, normal, cobertura, cajas de la rejilla)
+  despachan por ella; un disco de una mezcla es pared fina, su gota un
+  sólido. Detalle en §5.2 octodecies.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -2864,6 +2897,90 @@ TypeScript:
   resuelto), `PINNED_FOCUS_PICK_O1` y `PINNED_FOCUS_PICK_O2`, los mismos bits
   en nativo y en el `rt.wasm` real (`tools/wasm-parity.mjs --pick`, en CI).
 
+### 5.2 octodecies · Gotas y el cristal frontal (S3, `rt_core::geometry::particles`, `rt_core::optics::glass`)
+
+Petición del usuario (1.2 de `TODO.md`, decidida en *Decisiones de criterio*):
+en *Ambiente*, una forma de gota y que las partículas no tengan todas la misma
+geometría. Y la parte de S3 que es una foto fija sin simular: el cristal de
+delante de la lente con gotas y polvo.
+
+- **La gota** (`Shape::Drop`, código 3 en `FXAM.shape`). Un cuerpo de radio
+  `r` (el de la partícula) en el centro `c` y una punta de radio
+  `drop_tip · r` en `c + a`, con `|a| = drop_tail · r` (al menos
+  `1 − drop_tip + 0,05` radios: una punta dentro del cuerpo sería una esfera):
+  las dos esferas y el cono tangente a ambas (semiángulo `β`,
+  `sin β = (r − r_p) / |a|`). En el plano por su eje, el cono es
+  `ρ cos β + s sin β = r`, una cuadrática en el `t` del rayo que se resuelve
+  desde el punto del rayo más cercano a `c` (una gota diminuta y lejana
+  conserva sus cifras, como la esfera de Haines et al.); el cuerpo cuenta
+  donde `s < r sin β`, el cono entre eso y `|a| + r_p sin β`, la punta más
+  allá. Toda raíz que se queda está en el borde de la gota convexa, así que la
+  más cercana en el intervalo es la entrada o, desde dentro, la salida, como
+  en la cápsula. La normal, la de la parte en que cae el punto; un test
+  la compara con el gradiente de la distancia exacta (`drop_distance`) y los
+  impactos con una marcha de esa distancia. **Tamaño mínimo**: para los rayos
+  de cámara una gota fina se escala entera alrededor de su cuerpo (el radio
+  ensanchado entre el real), así su cobertura es el cuadrado de la escala,
+  como la de una esfera, y las cajas de la cámara crecen con el largo de la
+  gota más larga (`drop_reach`).
+- **La mezcla** (`mix`). `rt-sim` sortea la forma de cada partícula una vez
+  con `mix64(base ^ SALT_SHAPE)` y la reparte por los pesos; el eje de cada
+  forma es el suyo (cero, la normal del disco que gira, la mitad de la estela,
+  la gota). `ParticleSet` guarda la forma de cada hueco solo cuando se
+  mezclan; el integrador pregunta por partícula si es un disco (pared fina) y
+  por conjunto si todos lo son (sin medio dentro). `rt_particles_shapes`
+  da a *Rápido* la forma de cada una (`shapes_hash`, fijado con
+  `PINNED_S3_DROPS_SHAPES`); `positions_hash` no las incluye y sigue siendo el
+  de S4a.
+- **El cristal frontal** (`GLAS`, `optics::glass::FrontGlass`). Una lámina
+  ideal perpendicular al eje, a `distance` de la cámara: no tuerce ni oscurece
+  ningún rayo (un cristal tratado), así que sin nada encima la imagen es la de
+  sin cristal, bit a bit (test, con los pases). Lo que hay encima es geometría
+  real que los rayos de cámara cruzan antes de llegar a la escena: **gotas**,
+  casquetes esféricos de agua en su cara de fuera (la bola de radio
+  `a / sin θ` cuyo centro queda `R cos θ` detrás de la lámina, cortada por
+  ella) en las que el rayo entra por la base (refractado del aire al agua: el
+  vidrio fino entre medias no cambia la dirección) o por la cúpula, y sale por
+  la cúpula (Snell; el peso, la transmitancia de Fresnel exacta) o, por
+  reflexión total, rebota dentro primero; uno que vuelve a salir por la base
+  va hacia la cámara y no trae nada, como uno que rebota más de 8 veces. La
+  luz que una gota refleja no se sigue (iría casi toda de vuelta a la lente).
+  Una gota a unos centímetros del sensor es una lente fuerte: a través de un
+  objetivo enfocado lejos es un disco blando con la escena del revés dentro y
+  un borde oscuro. **Polvo**: discos en la lámina que dejan pasar
+  `1 − opacity`. **Dónde**: la lámina se parte en celdas de cuatro diámetros
+  medios en sus propias coordenadas (mm a la derecha y arriba de la cámara) y
+  cada celda saca sus gotas de *hashes* de (semilla, celda, índice): cuántas,
+  de la cobertura pedida (la fracción por un sorteo de Bernoulli), dónde,
+  uniformes en la celda, y de qué tamaño, `± size_var`. Solo las celdas que
+  los rayos pueden cruzar (el semicampo del lado largo, al menos 45°, por la
+  distancia, más el radio de la apertura y el descentramiento): cambiar la
+  focal o el tamaño de la imagen no mueve ninguna gota, y la imagen de un
+  visor más ancha que el marco tiene las mismas. Las gotas que se tocan **se
+  juntan** en una de su volumen sumado (el de un casquete a ángulo fijo es
+  `a³` por una constante: `∛(a₁³ + a₂³)`) en su centro de masas, por pasadas
+  en orden fijo hasta que ninguna toca a otra. Todo con `+ − × ÷ sqrt` y
+  `fmath`.
+- **Qué lo ve.** Los rayos de cámara de la imagen (en `render_tile_traced`,
+  después de la lente y sus filtros), el albedo y el alfa de sus muestras
+  (uno bloqueado es oscuro y opaco), y la posición en la pantalla de un rayo
+  que una gota dobló se recalcula por su dirección para la imagen de fondo.
+  Una conexión de los filtros de O3a con una luz que el cristal cambiaría se
+  deja fuera. No lo ven los pases exactos (sus rayos van por el centro de cada
+  píxel y de la lente a la escena), ni los picos del enfoque, ni una cámara
+  panorámica, que no tiene elemento frontal.
+- **Interruptor.** `rt_features` bit 6 (valor 64, `FEATURE_DROPS`; en la página
+  `render/engine.ts` `readsDrops` y `SceneView.drops`): sin él el escritor
+  manda una gota como esfera, una mezcla como su forma de más peso, ningún
+  campo de S3 y ningún `GLAS`.
+- **Fijados.** `PINNED_S3_DROPS_4SPP` (la escena de gotas y mezcla,
+  `example::s3_drops_scene`), `PINNED_S3_DROPS_PARTICLES` y
+  `PINNED_S3_DROPS_SHAPES`, y `PINNED_S3_GLASS_4SPP` (el ejemplo a 28 mm f/8 a
+  través de un cristal mojado y con polvo, `example::s3_glass_scene`); los
+  mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos y en el `rt.wasm` real
+  (`tools/wasm-parity.mjs --expect-shapes`, en CI). Ningún fijado anterior se
+  movió.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -3592,6 +3709,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente simple no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente simple y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
 | Lentes simple y trazada, inclinación (O4) | `optics::traced_tests` (los de la inclinación y el desplazamiento), `render` (`PINNED_O4_TRACED_TILT_4SPP`) y `tilt_sheet` de rt-cli, `rt-cli/tests/example.rs`, `rt-app/tests/parity.rs`, `tests/lens-o4.test.ts`, `tests/lens-modes-browser.test.ts`, `tools/o4-check.mjs`, `tools/lens-check.mjs` | Con la lente trazada inclinada, el centro nítido a la distancia de enfoque (1,5 %), la pendiente del plano a 4 mm del centro igual a la de la lente simple más la curvatura de campo de la lente derecha a esas alturas (3,5 % en la doble Gauss y la macro, 20 % en el tele y el triplete), los nueve puntos de la macro sobre el plano (2,5 %); el encuadre sobre el punto de enfoque; el desplazamiento mueve el eje sus milímetros, derecha o inclinada; inclinación 0 bit a bit la lente derecha, con cualquier eje, y sin `tiltDeg` en el JSON; lotes con los bits de las muestras solas y la luz del centro (6 %); una lente con cilindros la rechaza; *hash* de O4 en SIMD, wasm (por la página y en CI) y 1/4/16 hilos; en la página: *Lente simple* en los dos idiomas y ninguna cadena dice *lente fina*, los valores guardados sin cambiar y un proyecto anterior de ida y vuelta, ninguna inclinación de lente simple aplicada a una trazada, ningún tipo de bokeh aplicado a una cámara trazada por ningún camino (falla con el arreglo quitado), volver a la lente simple con su bokeh y su óptica avanzada, el plano por dos y tres puntos exacto, la lectura en dirección, el dibujo sobre el plano, el plano por dos puntos como una entrada de deshacer en los dos modelos; en Chromium, las secciones de cada modelo, el dial como una entrada por arrastre y nada recortado en inglés y en español |
 | Ventana de la lente (O2b) | `tests/lens-peek.test.ts` (con el `rt.wasm` real), `tests/lens-peek-browser.test.ts`, `tools/lens-hover-check.mjs` | A qué cámara se pregunta y que la lente puesta es la cámara tal cual; la caché (una pregunta por lente, compartida la que está en vuelo, otra al cambiar focal, foco, f/, encuadre o ajustes, la negativa se guarda y «sin motor» y el fallo no, acotada); el reposo de 300 ms (cruzar la lista no abre nada), cerrar al salir, con Esc y al elegir, y no reabrir hasta que vuelve el puntero; las tarjetas con solo los números del motor (cargando, sin motor y negada, sin números ni dibujo; es y en); la colocación dentro de la ventana; los números de lentes que no están en la cámara contra los del motor real. En Chromium, sobre la sección de verdad: abre junto a la lista y junto al chip con el nombre, la fuente, el dibujo y los números de esa lente, no toma foco ni puntero, el teclado la abre y la mueve de lente en lente, y elegir pone la lente. Con la aplicación y el motor reales: los números de la ventana son los de la sección al poner la lente, y volver a pasar no vuelve a preguntar al módulo |
+| Gotas y cristal frontal (S3) | `rt-sim` (`params`, `eval::tests`), `geometry::particles` (`tests`, `grid_tests`), `geometry::tests`, `integrator::particle_tests`, `optics::glass::tests` y `render::s3_tests` de rt-core, `rt-cli/tests/example.rs` (1, 4 y 16 hilos), `rt-wasm`; `tests/s3-drops.test.ts` (con `tests/fixtures/s3-drops.rsb` y `s3-glass.rsb`, que escribe `rt`, y el `rt.wasm` real); `tools/s3-check.mjs` | La carga de 228 B y la de 200 B sin campos de S3; la gota sigue a su velocidad con su largo (y el mínimo de la punta), quieta según su normal; la forma no cambia ninguna posición, la mezcla da sus partes (± 1,5 % sobre 40 000), cada partícula conserva su forma; la variación estira gotas y estelas por el mismo factor; los impactos de la gota contra una marcha de su distancia exacta y su normal contra el gradiente, una gota diminuta a 2 m, la gota ensanchada como copia escalada con su cobertura y su caja dentro del margen; la rejilla y la BVH contra la fuerza bruta con gotas y con una mezcla, y la mezcla contra cuatro conjuntos de una forma; los discos de una mezcla, paredes finas, y su gota, sólida; el cristal: la carga, dos gotas que se tocan suman su volumen (± 1e-5), ninguna gota toca a otra, las mismas gotas con otra focal y en la imagen de un visor, el rayo por el centro de una gota con su Fresnel, una gota que lleva los rayos paralelos a su foco `R / (n − 1)` (± 8 %), el borde de una gota de 90° que no trae nada, el polvo opaco y a medias; un cristal sin nada que no cambia un bit de la imagen ni de los pases, y una gota que pone la escena del revés; la página: los bytes de `FXAM` y `GLAS` frente a los de `rt`, lo que va a un motor sin el bit, el *store*, los archivos y los fijados con el `rt.wasm` real; Chromium: la galería, la gota y la mezcla en *Rápido*, el cristal en *Completo*, cromo acromático. Catorce mutaciones del motor, todas detectadas |
 | Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
 | Texturas en el motor (M2b) | `texture::tests` de rt-core (con `tests/fixtures/texture-mapping.json`, que `tests/texture-mapping.test.ts` fija contra `core/textures.ts`), `render::tests` y `passes_tests` (fijados M2B), `rt-cli/tests/example.rs` y `rt-app` (hilos); `tests/textures-engine.test.ts` (con el `rt.wasm` real), `tests/textures-full-browser.test.ts` | Las cinco proyecciones y las etiquetas en 858 puntos del fixture (±2·10⁻⁵ relativo), gradientes contra diferencias finitas, *mipmaps* en lineal, nivel de detalle y huella de la cámara, marco del mapa de normales, recorte y cobertura también en las sombras, etiquetas en orden con su borde; ida y vuelta RSB, ficheros viejos y `m2b.rsb` byte a byte con el escritor de la página; el mismo fijado con 1, 4 y 16 hilos y en cada ruta SIMD; comparación por regiones con *Rápido* en Chromium (≥ 97 % de los píxeles asentados, control movido una casilla < 15 %; etiqueta con intersección sobre unión > 0,9) |
 | Programas de material en el motor (M3b) | `program::tests` y `program::scene_tests` de rt-core (con `tests/fixtures/material-programs.json`, que `tests/material-program-cross.test.ts` fija contra `core/material-interp.ts`), `integrator::tests`, `render::tests` y `passes_tests` (fijados M3B), `rt-cli/tests/example.rs` y `rt-app` (hilos, `features`); `tests/programs-engine.test.ts` (con el `rt.wasm` real), `tests/programs-full-browser.test.ts` | 172 casos de la prueba cruzada bit a bit (los diez ejemplos en 1000 puntos, cada instrucción, los casos especiales); los valores punto a punto en el espacio de la pieza, la normal, el recorte también en las sombras, la emisión y el emisor que deja de ser luz, el peso del bisel, la curvatura, el nivel de detalle, los rangos; `PROG` de ida y vuelta, ficheros viejos, versión nueva, inválidos y `m3b.rsb` byte a byte con el escritor de la página; el interruptor del *pool* y del lanzador; el mismo fijado con 1, 4 y 16 hilos y en cada ruta SIMD; comparación por regiones con *Rápido* en Chromium (siete grafos al 100 % de los píxeles asentados con correlación ≥ 0,99, control hundido; tono a menos de 40) |

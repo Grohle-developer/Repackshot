@@ -11089,7 +11089,7 @@ vidrio; material vidrio con absorción. Barra, *Grabar* y caché de S2.
 ± 3 %; la miel tarda ≥ 5× más que el agua en nivelarse (test); nada
 atraviesa el vaso; determinismo; hoja `out/liquid-sheet.html`.
 
-### S3 · Lluvia y polvo sobre el set y sobre la lente — **Opus** (tras S4a y S2)
+### S3 · Lluvia y polvo sobre el set y sobre la lente — **Opus** (tras S4a y S2) — hecha la primera parte (la gota, la mezcla de formas y el cristal frontal); el resto, S3b
 
 Petición del usuario (14-10): la lluvia de S4a cayendo sobre el set y la
 pieza y **resbalando** de forma realista; el polvo **asentándose**; y que
@@ -11153,6 +11153,302 @@ la botella bajo lluvia a 0, 2, 5 y 15 s (gotas, rastros, goteo), polvo a
 polvo; a ojo (veredicto **Fable**). Capturas `docs/ui/physics-rain.png`,
 `docs/ui/lens-glass.png`. `SPEC.md`, `UI.md`, `ARCHITECTURE.md`,
 CHANGELOG.
+
+**Hecho (primera parte; el resto, S3b, abajo).** La fase es grande y no
+cabía entera en un PR sin bajar la calidad: entra la decisión **1.2**
+(la forma de gota y la mezcla de geometrías en *Ambiente*, pedida por el
+usuario) y el punto 3 como foto fija sin simular (el cristal frontal con
+sus mandos manuales: cantidad de gotas, tamaño, polvo, semilla). Las gotas
+que caen y resbalan sobre las piezas, el polvo que se asienta, el cristal
+alimentado por los efectos de la escena y la simulación con caché y clip
+son la propuesta **S3b**.
+
+**1. La gota y la mezcla de formas (1.2).**
+- **`rt-sim`.** `Shape::Drop` (código 3 de `FXAM.shape`; un motor anterior la
+  lee como esfera): el cuerpo redondo de la partícula y una punta de
+  `drop_tip` veces su radio cuyo centro queda `drop_tail` radios detrás,
+  **contra la velocidad** (la gota que cae apunta hacia arriba, la burbuja que
+  sube hacia abajo; quieta, a lo largo de la normal de su vida), con al menos
+  0,05 radios de punta fuera del cuerpo. La **mezcla** (`mix`, un peso por
+  forma: esfera, disco, cápsula, gota) sortea la forma de cada partícula una
+  vez con su propio *hash*, de modo que cada una la conserva en cualquier
+  instante; `shape_var` alarga o acorta la gota o la estela de cada una
+  (`± shape_var`) con otro. Las sales son nuevas: la forma no cambia ninguna
+  posición, tamaño ni tinte, y un efecto sin campos de S3 da sus bits de
+  siempre. `Particle` gana su `shape`; `positions_hash` no la incluye (es el
+  de S4a) y `shapes_hash` la fija aparte. `FXAM` crece a **228 B** solo cuando
+  hay campos de S3 (`has_s3_fields`): un efecto sin gotas, mezcla ni variación
+  conserva los 200 B de S4b (y `tests/fixtures/ambient.rsb` no cambia).
+- **`rt-core`.** La gota es la envolvente convexa de dos esferas: el cono
+  tangente `ρ cos β + s sin β = r` resuelto como cuadrática desde el punto del
+  rayo más cercano al cuerpo (sin cancelación para una gota diminuta lejana),
+  el cuerpo donde `s < r sin β`, la punta más allá del círculo de contacto;
+  toda raíz que se queda está en el borde convexo, así que vale la más cercana
+  en el intervalo, como en la cápsula. Normal por partes; `drop_distance`
+  (la distancia exacta) para los tests. Ensanchada para la cámara, la gota se
+  escala entera alrededor de su cuerpo (cobertura = cuadrado de la escala) y
+  el margen de las cajas crece con su largo (`drop_reach`). Un conjunto que
+  mezcla guarda la forma de cada hueco y todas las pruebas despachan por ella
+  (impacto, salida, normal, cobertura, cajas de la rejilla de pantalla); el
+  integrador pregunta por partícula si es un disco (pared fina) y por
+  conjunto si todos lo son (sin medio dentro). `rt_particles_shapes` (wasm)
+  da a *Rápido* la forma de cada partícula.
+- **La página.** `EffectShape` gana `DROP`; `AmbientEffect` gana `shapeMix`
+  (`on` y los cuatro pesos), `dropTail`, `dropTip` y `shapeVar`
+  (`core/effects.ts`: `mixWeights`, `effectHasShape`, `heaviestShape`,
+  `hasS3Fields`); el preset nuevo **`WATER_DROPS`** *Gotas de agua* (código
+  12). En *Ambiente ▸ Avanzado* la **Forma** pasa a ser una lista (*Punto ·
+  Copo · Estela · Gota · Mezcla*), con los pesos de la mezcla y la parte de
+  cada uno, el largo y la punta de la gota y la variación de forma, cada uno
+  una entrada de deshacer; el giro y el largo de estela salen también cuando
+  la mezcla tiene copos o estelas. *Rápido* dibuja las gotas con el contorno
+  del motor (`dropOutline`, en un `LatheGeometry` por instancias, estirado al
+  largo de cada una) y cada partícula de una mezcla con su forma. Un motor sin
+  el bit 6 recibe una gota como esfera y una mezcla como su forma de más
+  peso, sin campos de S3.
+
+**2. El cristal frontal (punto 3, foto fija).** `CameraOptics.frontGlass`
+(`on`, `drops`, `dropSizeMm`, `dust`, `seed`, `distanceMm`) en *Cámara ▸
+Lente ▸ Filtros ▸ Cristal frontal*, y en el motor la sección nueva **`GLAS`**
+(48 B, justo detrás de `LENS`) y `rt_core::optics::glass`. Una lámina ideal
+(no tuerce ni oscurece nada: sin gotas ni polvo la imagen es la de sin
+cristal, **bit a bit**, test con los pases) a `distance` de la cámara (0,
+automática: 25 mm con la lente simple, 5 mm delante del vértice frontal de
+una trazada); encima, **gotas** como casquetes esféricos de agua (ángulo de
+contacto e índice en `src/data/front-glass.ts`) por las que los rayos de
+cámara entran por la base o la cúpula y salen por la cúpula con Snell y la
+transmitancia de Fresnel exacta, o rebotan por reflexión total (hasta 8
+veces; los que vuelven a salir por la base van hacia la cámara y no traen
+nada), y **polvo**, discos que dejan pasar `1 − opacidad`. Las gotas salen de
+celdas del propio cristal (cuatro diámetros medios) con *hashes* de (semilla,
+celda, índice): la cobertura pedida, la posición, el tamaño; solo las celdas
+que los rayos pueden cruzar (al menos 45° de semicampo, para que la imagen de
+un visor, más ancha, tenga las del marco). Las que se tocan **se juntan** en
+una de su volumen sumado en su centro de masas (`∛(a₁³ + a₂³)` a ángulo
+fijo), por pasadas en orden fijo. Lo ven los rayos de cámara de la imagen
+(después de la lente y sus filtros), el albedo y el alfa de sus muestras;
+la posición en la pantalla de un rayo que una gota dobló se recalcula para la
+imagen de fondo. No lo ven los pases exactos, el enfoque con clic ni una
+cámara panorámica. En la interfaz: el interruptor y sus cinco mandos, cada
+uno una entrada de deshacer, una nota de que solo lo trazan *Completo* y el
+render, y otra si la cámara es panorámica; se guarda con la cámara (proyecto
+y estudios) y se escribe solo para un motor con el bit 6.
+
+**3. Motor, capacidades y fijados.** Bit 6 de `FEATURES`, `FEATURE_DROPS`
+(64): la gota, la mezcla y la variación de `FXAM` y el `GLAS`; la página
+(`render/engine.ts` `readsDrops`, `SceneView.drops`) los escribe solo para un
+motor que lo dice, y *Exportar escena* para `rt` siempre. Dos escenas de
+paridad: `example::s3_drops_scene` (2 500 gotas de agua, claras y lisas, y
+3 000 partículas opacas en una mezcla 1 : 1 : 1 : 2 con paleta, sombra y
+variación) y `example::s3_glass_scene` (el ejemplo a 28 mm f/8 a través de un
+cristal con un 35 % de gotas de 2 mm y un 3 % de polvo), con `rt
+--write-s3-drops-example` y `--write-s3-glass-example`. **Fijados nuevos**:
+`PINNED_S3_DROPS_4SPP = 0x73ebde26`, `PINNED_S3_DROPS_PARTICLES =
+0x401e61d5`, `PINNED_S3_DROPS_SHAPES = 0xec380974`, `PINNED_S3_GLASS_4SPP =
+0xf410d5f0`: los mismos en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, a través
+de un RSB, y en el `rt.wasm` real (`tools/wasm-parity.mjs`, que gana
+`--expect-shapes`; la escena del cristal también con los pases intercalados);
+`.github/workflows/engine.yml` los lee del fuente y pasa
+`tests/s3-drops.test.ts` con el `rt.wasm` real. **Ningún fijado anterior se
+mueve.**
+
+**Coste** (instrucciones por muestra con *valgrind*, deterministas: 3 spp
+menos 1 spp a 160 × 120, un hilo). La escena de gotas con sus dos efectos como
+esferas, 337,5 M; como estelas de 10 ms, 407,9 M; como gotas, 398,5 M (una
+gota cuesta como una estela corta: su cono es otra cuadrática); la escena
+fijada (gotas, mezcla y variación), 385,4 M. El ejemplo, 199,4 M; con un
+cristal sin nada, 200,0 M (+0,3 %: la comprobación de cada rayo de cámara); con
+el cristal mojado de 35 % y polvo, 219,7 M (+10 %). Frente al motor de antes de S3 (el de `ec6deee`), con los mismos archivos: el
+ejemplo, 198,9 M → 199,4 M (+0,24 %), y la escena de *Ambiente* de S4a, 539,9 M →
+548,3 M (+1,6 %: la forma de cada hueco que se mira en cada prueba de impacto;
+los mismos píxeles).
+
+**Tests** (cada uno comprobado con su mutación: las 21, 14 del motor y 7 de la
+página, lo hacen fallar, y pasan sin ella; tres del motor sobrevivieron a la
+primera pasada y se cerraron: la mezcla dibujada con la forma del conjunto
+engañaba a la comparación con la fuerza bruta, que usa la misma prueba, y hubo
+que añadir la de abajo contra los conjuntos de una forma; las otras dos eran
+mutaciones mal elegidas para el test que se corrió y las detectan los de al
+lado):
+- `rt-sim::params`: la carga de 228 B y sus desplazamientos, la de 200 B sin
+  campos de S3 (y la de S4b, más corta, con los de por defecto), los rangos;
+  `shape_for` y `can_be`. Mutaciones: los campos de S3 nunca escritos; la
+  mezcla sin sus pesos.
+- `rt-sim::eval::tests`: la gota sigue a su velocidad con su largo, la
+  punta mínima y la quieta según su normal; la forma no cambia posiciones,
+  tamaños ni tintes; la mezcla 1 : 2 : 0 : 5 da sus partes (± 1,5 % sobre 40
+  000) y cada partícula conserva su forma; la variación estira gotas y estelas
+  por el mismo factor. Mutaciones: la gota que apunta hacia delante; sin
+  variación.
+- `geometry::particles::tests`: 400 gotas de formas variadas contra una
+  marcha de su distancia exacta (impacto, salida y normal contra el
+  gradiente); una gota de 0,02 mm a 2 m, y ensanchada como copia escalada con
+  su cobertura, su caja y el margen de la cámara. Mutaciones: sin el cono; la
+  gota ensanchada sin escalar; el margen sin el largo de la gota.
+- `geometry::particles::grid_tests` y `geometry::tests`: la rejilla de pantalla
+  y la BVH contra la fuerza bruta con gotas y con una mezcla de las cuatro
+  formas (también los rayos de toda clase), y `a_mix_hits_each_particle_as_its_own_shape`:
+  cada rayo toca en la mezcla la misma partícula, a la misma distancia, que en
+  cuatro conjuntos de una forma cada uno. Mutación: la mezcla dibujada con la
+  forma del conjunto.
+- `integrator::particle_tests`: los copos de una mezcla son pared fina y sus
+  gotas sólidos. Mutación: el disco del conjunto, no el de la partícula.
+- `optics::glass::tests`: la carga y sus rangos; dos gotas que se tocan suman
+  su volumen (± 1e-5), una cadena se junta entera y una separada no; ninguna
+  gota del cristal toca a otra, la cobertura tras juntarse, las mismas gotas
+  con otra focal y en la imagen de un visor; el rayo por el centro de una gota
+  sigue recto con su Fresnel y sale por lo alto del casquete; una gota lleva
+  los rayos paralelos a su foco `R / (n − 1)` (± 8 %); el borde de una gota de
+  90° no trae nada (15 de 20 rayos del último quinto) y el centro sí; el polvo
+  opaco para y el de media opacidad deja la mitad. Mutaciones: la salida sin
+  Fresnel; la reflexión total tomada como salida; las gotas que suman radios;
+  sin juntarlas.
+- `render::s3_tests`: los cuatro fijados; las partículas renderizadas son las
+  evaluadas; gotas y mezcla igual que la fuerza bruta; **un cristal sin nada
+  no cambia un bit** de la imagen del ejemplo ni de sus pases, también a
+  través de un RSB, y uno mojado sí; una gota de 6 mm en un estenopeico pone
+  la escena del revés (la mitad izquierda de la gota ve la derecha de la
+  pared), y fuera de ella nada cambia. Mutación: la lámina que mueve el rayo.
+- `rt-cli/tests/example.rs`: las dos escenas, los mismos píxeles con 1, 4 y 16
+  hilos y tras un RSB; los dos `--write-s3-*-example`. `rt-wasm`: las formas
+  por la API C son las del simulador, y el bit 6. `rt-app`: `/api/info`
+  dice 127.
+- `tests/s3-drops.test.ts`: los `FXAM` y el `GLAS` byte a byte frente a los de
+  `rt` (`tests/fixtures/s3-drops.rsb`, `s3-glass.rsb`); el efecto nuevo con su
+  gota por defecto y sus 200 B; *Gotas de agua*; la mezcla, su forma de más
+  peso y su estela, y lo que va a un motor sin el bit; los rangos por el
+  *store* y el deshacer; un archivo anterior y uno con mezcla; el contorno de
+  la gota; el cristal apagado, sin nada, en los límites de un archivo, escrito
+  tras la cámara con sus valores fijos, no para un motor sin el bit ni con una
+  cámara panorámica, guardado y abierto; con el `rt.wasm` real, las formas de
+  la mezcla y las partículas fijadas, las dos imágenes fijadas y un proyecto
+  con cristal y gotas. Mutaciones (siete): el bit ignorado, los campos de S3
+  siempre, el `GLAS` sin el bit y a través de una panorámica, el cristal sin
+  recortar, los pesos sin recortar, la mezcla sin su estela.
+- `tools/s3-check.mjs` (Chromium y SwiftShader): la galería con *Gotas de
+  agua*, la gota y sus filas, las gotas en *Rápido* (el medidor y los
+  píxeles), la mezcla con sus partes y sus pesos (una entrada cada cambio) y
+  el deshacer; el cristal en *Completo* (apagado sin mandos; encendido, una
+  entrada; gotas de 8 mm a 150 mm a f/16, y la imagen cambia; deshacer); el
+  cromo acromático en los dos temas. Capturas `docs/ui/ambient-drops.png`,
+  `docs/ui/ambient-mix.png` y `docs/ui/lens-glass.png`.
+
+**No encajó con el plan.**
+- **La fase partida.** Esta parte es 1.2 y el cristal frontal como foto fija;
+  todo lo que es simulación (gotas sobre las piezas, resbalar, gotear, polvo
+  asentado, el cristal alimentado por la lluvia de la escena, la barra de
+  físicas, la caché y el clip) es S3b. Por eso no están la hoja
+  `out/rain-dust-sheet.html` ni `docs/ui/physics-rain.png`, ni los criterios
+  del vidrio a 30°, del polvo a 60° y del rastro que limpia.
+- **El cristal no va en `LENS`.** Va en su sección (`GLAS`): vale también con
+  una cámara ortográfica, no toca los bytes de `LENS` de O1–O4, y un motor
+  anterior la salta. Un solo bit de capacidades (6) para la gota, la mezcla y
+  el cristal.
+- **La lámina es ideal** (sin Fresnel propio), para que sin nada encima la
+  imagen sea la misma bit a bit (el criterio); el vidrio de debajo de una gota
+  tampoco cuenta (un 0,4 % entre vidrio y agua). La luz que refleja una gota
+  no se sigue: se pierde un poco en las caras (unos pocos por ciento), que es
+  lo que se iría hacia la lente.
+- **La visibilidad es la física.** Una gota en el cristal es una lente fuerte
+  muy desenfocada: con un objetivo largo y abierto (el 85 mm f/5,6 de todo
+  proyecto nuevo cruza 15 mm de cristal por píxel) las gotas de 2 mm solo
+  velan la imagen; se ven como discos cuando son más anchas que esa huella
+  (un angular cerrado, como la escena de paridad a 28 mm f/8, o el cristal
+  lejos, una ventana). La captura usa gotas de 8 mm a 150 mm y f/16. Para el
+  veredicto (◆ 7).
+- **La distancia** se mide desde la posición de la cámara (el centro de la
+  lente simple, la pupila de entrada de la trazada); la automática es una
+  propuesta (◆ 6). El cristal ocupa al menos 45° de semicampo para que el
+  visor y el render vean las mismas gotas.
+- **Qué lo ve**: ni los pases exactos (sus rayos van por el centro del píxel y
+  de la lente a la escena, y la guarda de la IA los compara con la imagen), ni
+  el enfoque con clic, ni las conexiones de los filtros de O3a con las luces
+  que el cristal cambiaría (se dejan fuera).
+- **La forma pasa a una lista**: cinco botones no cabían en el ancho del
+  inspector (la primera captura salía cortada). Sigue en *Avanzado* (◆ 5).
+- **`FXAM` de 228 B solo con campos de S3**, como los campos «solo si se
+  ponen» de `CAMR` y `RNDR`: la carga de S4b no cambia de tamaño y
+  `tests/fixtures/ambient.rsb` es el mismo.
+- **`positions_hash` no ve las formas**: es el de S4a, y meterlas movía
+  `PINNED_AMBIENT_PARTICLES`; `shapes_hash` (y `--expect-shapes`) las fija
+  aparte.
+- **El ángulo de contacto del cristal** es un valor fijo de
+  `src/data/front-glass.ts` (60°), no de la tabla de mojabilidad por familia,
+  que es de S3b.
+- **Rápido no dibuja el cristal** (el plan pedía las gotas como esferas y la
+  cobertura como tinte para la simulación, que es S3b); la sección lo dice.
+- `rt-app/tests/server.rs` comprobaba `features == 63`; ahora 127.
+- `tools/ambient-check.mjs` esperaba ocho tarjetas disponibles; ahora nueve.
+  `docs/ui/ambient-gallery.png` no se ha regrabado (sigue con las once de S4a).
+
+**Para el veredicto** (regla 11, ◆):
+1. ◆ La gota por defecto: largo 1,6 radios del cuerpo y punta de 0,15
+   (`rt_sim::DROP_TAIL`, `DROP_TIP`), y la punta mínima de 0,05 radios fuera
+   del cuerpo.
+2. ◆ La orientación: la punta **detrás**, contra la velocidad (la lágrima que
+   cae con la punta arriba). Una gota de lluvia real cae casi esférica o
+   achatada; la lágrima es la forma que se pidió.
+3. ◆ La mezcla con que arranca *Mezcla*: 1 : 1 : 1 : 2 (puntos, copos,
+   estelas, gotas).
+4. ◆ El preset *Gotas de agua*: 8 000 /m³, 3 mm ± 50 %, caída 2,5 m/s ± 30 %,
+   variación de forma 30 %, viento 0,3 m/s, caos 5 %, agua ior 1,33, sin
+   sombra.
+5. ◆ Si la *Forma* sale de *Avanzado* a los mandos visibles (el usuario pidió
+   la gota y la mezcla expresamente).
+6. ◆ El cristal: ángulo de contacto 60°, dispersión de tamaños ± 60 %, motas
+   de 0,3 mm ± 60 % que paran el 90 %; al encenderlo, 30 % de gotas de 2 mm y
+   2 % de polvo; los rangos (gotas hasta 90 %, 0,2 a 10 mm, polvo hasta 50 %,
+   distancia hasta 200 mm); la distancia automática, 25 mm con la lente simple
+   y 5 mm delante del vértice frontal de la trazada.
+7. ◆ Lo fuerte que se ve el efecto: con la física de ahora, unas gotas del
+   tamaño de la apertura velan la imagen y no se leen como gotas (arriba).
+   Aceptarlo, o gotas por defecto más grandes, o un mando no físico que las
+   enfoque más (marcado como tal, como los de O2).
+8. ◆ El polvo como motas que absorben: una mota a contraluz no brilla (en una
+   lente real, el polvo del elemento frontal a contraluz sí se enciende un
+   poco).
+9. ◆ El cristal en *Rápido*: nada ahora; con S3b, una aproximación (manchas
+   blandas) o seguir sin dibujarlo.
+
+### S3b · Lluvia y polvo que se posan, resbalan y caen sobre la lente (simulación) — **Opus** (tras S3) — propuesta
+
+Lo que queda de S3, tal como lo pide su apartado de arriba y sobre lo que deja
+hecho la primera parte:
+
+1. **Gotas sobre las superficies** (punto 1 de S3): los aterrizajes de la
+   lluvia de un efecto (su recorrido es de forma cerrada en `rt-sim`: el
+   instante en que cruza una pieza se busca sobre él) en un `rt-phys::wet`
+   de paso fijo; la tabla de **mojabilidad** por familia de material
+   (`src/data/wettability.ts`: ángulos de avance y de retroceso de vidrio,
+   plástico, metal, papel y pintura) y la condición de Furmidge para anclar o
+   resbalar (`m g sin α = γ w (cos θ_R − cos θ_A)`; el test del vidrio a 30°
+   con el radio crítico de la tabla); juntarse por volumen (la regla de
+   `optics::glass::merge_drops`); el **rastro mojado** como máscara de
+   humedad del material (menos rugosidad, más oscuro lo poroso: una sección
+   nueva o un canal del programa de M3b); gotear en las aristas (vuelven a
+   ser partículas que caen) y salpicar; la nieve como capa que no resbala.
+   Las gotas, como casquetes de esfera sobre la pieza (la intersección del
+   cristal frontal, en el plano tangente).
+2. **Polvo asentado** (punto 2): la cobertura por pieza (téxeles o
+   vértices) que acumula lo que deposita un efecto de polvo, con el ángulo de
+   reposo (el test de la cara a 60° frente a la horizontal) y la lluvia que la
+   limpia por donde pasa el rastro; la capa en el sombreado y las motas donde
+   la cobertura es alta.
+3. **El cristal alimentado por la escena** (punto 3, lo que falta): la lluvia
+   y el polvo de los efectos caen sobre el cristal frontal de esta parte con
+   los mismos modelos, las gotas resbalan según el *arriba* de la cámara; los
+   mandos manuales de S3 siguen para la foto fija.
+4. **Simulación** (punto 4): en el *worker* de físicas de S2 con *Pausar /
+   Reanudar*, la caché junto al proyecto (clave = *hash* de parámetros +
+   geometría + semilla + versión) y el clip `PHYSICS` automático; *Rápido*
+   enseña las gotas como esferas y la cobertura como tinte (y el cristal, si
+   el veredicto ◆ 9 lo pide).
+5. **Criterios** de S3 que quedan: el vidrio a 30°, la cobertura a 60° < 10 %
+   de la horizontal, el rastro que limpia el polvo, determinismo y caché
+   reproducible, el clip que nace y se va con *Reiniciar*; la hoja
+   `out/rain-dust-sheet.html` (la botella bajo lluvia a 0, 2, 5 y 15 s, polvo
+   a 0, 30 y 120 s, y la foto con el cristal mojado y con polvo) y
+   `docs/ui/physics-rain.png`.
 
 ## M5 · Tejido hilo a hilo y pelusa real — **Opus**, veredicto **Fable** (tras E6 y E9; la pelusa tras S8)
 
@@ -12445,7 +12741,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **M3d** · La madera de la familia en *Rápido* por el camino del nodo *Madera* (M3c ◆3).
 - **N2b** · El estudio viaja con el proyecto. **Hecha**: ver N2b, tras N2.
 - **O2c** · Editor de elementos de la lente (1.5). **Hecha**: ver O2c, tras O2b.
-- El 1.2 entra en **S3**.
+- El 1.2 entra en **S3**. (hecho en S3)
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
   - qué lentes dan ojo de gato, burbuja, cremoso y remolino;
@@ -12469,7 +12765,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **5.1** (el tamaño de texturas y procedurales). **En milímetros**, absoluto, como ya hace E6. *Ajustar a la pieza* queda como opción. El tamaño manual escribe esos milímetros. SPEC l. 456 se corrige para decir lo mismo que l. 101 y E6. **C1**: comprobar que el código ya lo hace así y corregir la SPEC. (hecho en C1)
 - **E13** (MNEE). **No se fusiona.** Cuesta 1,8–2× con vidrio curvo y no mejora lo que se ve. Las cáusticas siguen en el mapa de fotones. La rama `wip/ccr-8df3f848/e13` se queda como referencia.
 - **E10** (el muestreo adaptativo). **Se acepta**, con 0,83× a igual tiempo: está solo detrás de *Terminar por ruido* y no empeora nada. La regla de reparto se revisa si un render real lo pide.
-- **1.2** (la gota y la mezcla de geometrías en *Ambiente*). **Sí.** Entra en **S3**, la fase de lluvia y polvo, que es la que ya toca esas geometrías.
+- **1.2** (la gota y la mezcla de geometrías en *Ambiente*). **Sí.** Entra en **S3**, la fase de lluvia y polvo, que es la que ya toca esas geometrías. (hecho en S3)
 - **S4b** (las partículas de ambiente). Se acepta todo lo propuesto:
   - el lóbulo hacia delante, a 0,5;
   - el coste de la lluvia (1,63×), que solo se paga con lluvia;

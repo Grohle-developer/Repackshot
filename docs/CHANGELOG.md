@@ -5,6 +5,29 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Escena y ambiente
+
+- **Forma de gota** en *Ambiente ▸ Avanzado ▸ Forma*: un cuerpo redondo y una punta que lo sigue, contra la velocidad (la gota que cae apunta hacia arriba), con su *Largo de la gota* y su *Punta*. En *Completo* y en los renders el agua de una gota refracta como la de la lluvia, sin cáusticas (S3).
+- **Mezcla de formas**: *Forma ▸ Mezcla* reparte las partículas de un efecto entre puntos, copos, estelas y gotas según un peso por forma, y dice la parte que da cada uno; cada partícula conserva su forma siempre. Y *Variación de forma*: unas gotas y estelas más largas o más cortas que otras (S3).
+- Preset nuevo, **Gotas de agua**: gotas transparentes que caen con su forma de gota y largos distintos (S3).
+- La forma ya es una lista (*Punto · Copo · Estela · Gota · Mezcla*): los cinco botones no cabían en el inspector (S3).
+- *Rápido* dibuja las gotas como gotas y cada partícula de una mezcla con su forma, la que da el motor (S3).
+
+### Cámara y lente
+
+- **Cristal frontal** en *Cámara ▸ Lente ▸ Filtros*: una lámina delante del objetivo con gotas de agua y polvo encima, como una lente bajo la lluvia o una ventana mojada. Mandos: *Gotas* (la parte del cristal que cubren), *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia* (automática, donde está el elemento frontal, o hasta 200 mm). El motor lo traza como geometría real: cada gota refracta como la lente que es (un disco blando con la escena del revés dentro y el borde oscuro), las que se tocan se juntan en una con su volumen, y el polvo son motas oscuras y suaves. Sin gotas ni polvo, la imagen no cambia un bit. Se ve en *Completo* y en los renders; *Rápido* no lo dibuja y lo dice (S3).
+
+### Motor
+
+- La **gota** como primitiva de partícula (la envolvente convexa de dos esferas, con su cono resuelto desde el punto del rayo más cercano) y la **mezcla de formas** por partícula, con los campos nuevos de `FXAM` (228 B, escritos solo cuando hay alguno: los efectos de antes conservan sus 200 B). `rt_particles_shapes` da a *Rápido* la forma de cada partícula (S3).
+- El **cristal frontal** (`GLAS`, `rt_core::optics::glass`): gotas como casquetes esféricos que se juntan por volumen y refractan los rayos de cámara con su Fresnel y su reflexión total, y motas de polvo; las gotas están en el cristal, no en el encuadre (S3).
+- Bit 6 de las capacidades del motor (`FEATURE_DROPS`): un motor sin él recibe una gota como esfera, una mezcla como su forma de más peso y ningún cristal frontal (S3).
+- Dos escenas de paridad nuevas con sus *hashes* (`rt --write-s3-drops-example` y `--write-s3-glass-example`), los mismos en escalar, SSE2, AVX2, con 1, 4 y 16 hilos y en el `rt.wasm` real. Ningún *hash* fijado antes se mueve (S3).
+
+### Herramientas
+
+- `tools/s3-check.mjs`: la gota y la mezcla en *Rápido* y el cristal frontal en *Completo* en Chromium, con sus tres capturas; `tools/wasm-parity.mjs --expect-shapes` (S3).
+
 ## v0.1.19 — 2026-10-17
 
 ### Cola y proyecto
