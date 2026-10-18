@@ -168,8 +168,14 @@ fn the_k3_views_render_the_same_pixels_on_one_four_and_sixteen_threads() {
 fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
     // S3: the drops, the mixes of shapes and the front glass are the same arithmetic whoever runs
     // them (the glass is laid out once per scene; the particles are evaluated in any order).
-    // S3b: and the pane the simulation of the rain left, laid out drop by drop.
-    for which in [S3Example::Drops, S3Example::Glass, S3Example::WetGlass] {
+    // S3b: and the pane the simulation of the rain left, laid out drop by drop. S3c: and the
+    // parts the rain, dust and snow left their weather on, with their drops' caps.
+    for which in [
+        S3Example::Drops,
+        S3Example::Glass,
+        S3Example::WetGlass,
+        S3Example::WetParts,
+    ] {
         let scene = which.scene();
         let one = rt_cli::render(&scene, 2, 1);
         for threads in [4, 16] {
@@ -191,6 +197,11 @@ fn write_s3_examples_produce_readable_rsb_files() {
             S3Example::WetGlass,
             "--write-s3b-wet-example",
             "s3b-wet.rsb",
+        ),
+        (
+            S3Example::WetParts,
+            "--write-s3c-wet-example",
+            "s3c-wet.rsb",
         ),
     ] {
         let path = scratch(name);
@@ -768,4 +779,35 @@ fn the_cli_writes_the_denoised_image_and_the_noisy_one_beside_it() {
         "-3".into()
     ])
     .is_err());
+}
+
+#[test]
+fn write_s3c_parts_spec_writes_the_parity_parts_spec() {
+    let path = scratch("s3c-parts.wpt1");
+    let args = [
+        "--write-s3c-parts-spec".to_string(),
+        path.to_str().unwrap().to_string(),
+    ];
+    let command = parse_args(&args).expect("valid arguments");
+    assert_eq!(command, Command::WritePartsSpec { path: path.clone() });
+    run(command).expect("write succeeds");
+    let bytes = std::fs::read(&path).expect("written");
+    assert_eq!(
+        rt_phys::wet_parts::PartsSpec::parse(&bytes),
+        Ok(rt_phys::example::parts_spec())
+    );
+    // The page's fixture is this file.
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/fixtures/s3c-parts.wpt1");
+    assert_eq!(
+        std::fs::read(fixture).expect("tests/fixtures/s3c-parts.wpt1"),
+        bytes
+    );
+    let extra = [
+        "--write-s3c-parts-spec".to_string(),
+        "x.wpt1".to_string(),
+        "--samples".into(),
+        "2".into(),
+    ];
+    assert!(parse_args(&extra).is_err());
 }

@@ -94,11 +94,15 @@
 //!             contact_angle_deg ior dust_coverage dust_size_mm dust_size_var dust_opacity
 //!             | u32 layout (1); u32 drop_count mote_count; f32 (x y a)[drop_count]
 //!             (x y r)[mote_count]     (S3b: the drops and motes one by one; only when there are)
+//! WETP  24 B  the rain, dust and snow on an instance (S3c, new, at most one per instance, written
+//!             after the INST sections): u32 instance triangles samples drops; f32 cap_angle_deg
+//!             porosity; u8 resolution[triangles], zero padding to 4; u8 (wet dust snow)[samples],
+//!             zero padding to 4; (u32 triangle; f32 x y z radius)[drops]
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT` and `GLAS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
-//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP` and `PROG` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP`, `PROG` and `WETP` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -159,6 +163,18 @@
 //! scene's rain and dust wet), which the reader takes as they are; the page writes them only for an
 //! engine with [`crate::FEATURE_GLASS_LAYOUT`], and with the coverage fields at 0, so an engine of S3
 //! draws a clean pane.
+//!
+//! **Wet parts** (S3c). A `WETP` section is what the simulation of the scene's rain, dust and snow
+//! left on instance `instance` ([`crate::weather`]): a grid of samples on each triangle of its mesh
+//! (`triangles` must be the mesh's, each `resolution` 1 to 64, `samples` their sum of
+//! `(R + 1)(R + 2)/2`), each wet, dusty and snowy (bytes: 0..1 and 0.02 mm steps), shaded over the
+//! instance's material, and its drops, which the reader meshes as caps of water at `cap_angle_deg`
+//! in one more mesh, instance and material after the file's own ([`crate::scene::Caps`]; a drop
+//! counts in the part and material passes as that instance). An instance named twice or that is not
+//! there, other triangles than its mesh's or more than [`crate::weather::MAX_WET_DROPS`] drops make
+//! the file invalid. A file without `WETP` is the scene as before S3c; an engine of before skips the
+//! section (the page writes it only for an engine with [`crate::FEATURE_WET_PARTS`]). An update
+//! without `MESH` sections keeps the file's meshes and meshes the caps again.
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
@@ -404,6 +420,8 @@ pub const TAG_PROG: [u8; 4] = *b"PROG";
 pub const TAG_SECT: [u8; 4] = *b"SECT";
 /// Tag of the front glass section (S3, at most one).
 pub const TAG_GLAS: [u8; 4] = *b"GLAS";
+/// S3c: the rain, dust and snow on an instance ([`crate::weather`]).
+pub const TAG_WETP: [u8; 4] = *b"WETP";
 
 /// Widest field of view of a panoramic camera, degrees (`CAMR.fov_x_deg`, `fov_y_deg`; K3).
 pub const MAX_FOV_DEG: f32 = 3600.0;
@@ -1108,6 +1126,8 @@ struct Kept<'a> {
     images: &'a mut Vec<Arc<TextureImage>>,
     /// The loaded camera's lens: its traced preparation is reused when it still applies (O2).
     lens: Option<&'a Lens>,
+    /// S3c: the kept geometry's caps of drops (its last mesh), which are not the file's.
+    caps: Option<crate::scene::Caps>,
 }
 
 /// Parses an RSB file. With `kept`, a file without `MESH` sections uses the meshes of `kept`
@@ -1139,6 +1159,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut programs: Vec<(u32, crate::program::Program)> = Vec::new();
     let mut section = None;
     let mut glass = None;
+    let mut wet: Vec<crate::weather::PartWeather> = Vec::new();
     let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
     // The profile each IES light names, by the light's position in `scene.lights`.
     let mut light_profiles: Vec<(usize, u32)> = Vec::new();
@@ -1219,6 +1240,15 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                     .map_err(|reason| RsbError::Invalid { tag, reason })?;
                 set_once(&mut glass, tag, (params, layout))?;
             }
+            TAG_WETP => {
+                if payload.len() < crate::weather::WETP_HEADER {
+                    return Err(RsbError::SectionTooShort { tag });
+                }
+                wet.push(
+                    crate::weather::PartWeather::decode(payload)
+                        .map_err(|reason| RsbError::Invalid { tag, reason })?,
+                );
+            }
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
@@ -1235,10 +1265,18 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     }
     // The meshes the instances refer to: the file's own, or the kept ones when it has none; the
     // same for the bitmaps.
-    let (kept_geometry, kept_bitmaps, kept_lens, kept_images) = match kept {
-        Some(k) => (Some(k.geometry), Some(k.bitmaps), k.lens, Some(k.images)),
-        None => (None, None, None, None),
+    let (kept_geometry, kept_bitmaps, kept_lens, kept_images, kept_caps) = match kept {
+        Some(k) => (
+            Some(k.geometry),
+            Some(k.bitmaps),
+            k.lens,
+            Some(k.images),
+            k.caps,
+        ),
+        None => (None, None, None, None, None),
     };
+    // S3c: the kept meshes the file may refer to (not the caps of drops).
+    let file_meshes = |g: &Geometry| kept_caps.map_or(g.meshes().len(), |c| c.mesh as usize);
     let reuse_meshes = meshes.is_empty() && kept_geometry.is_some();
     // M2b: the images travel with the meshes: a file without either keeps the loaded ones.
     let reuse_images = if images.is_none() && reuse_meshes {
@@ -1314,7 +1352,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         }
     }
     let available: &[Mesh] = match &kept_geometry {
-        Some(geometry) if reuse_meshes => geometry.meshes(),
+        Some(geometry) if reuse_meshes => &geometry.meshes()[..file_meshes(geometry)],
         _ => &meshes,
     };
     let materials = scene.materials.len();
@@ -1370,6 +1408,21 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             reason: "too many instances and effects",
         });
     }
+    // S3c: the weather of the instances, and room for the instance of the drops' caps.
+    crate::weather::check_parts(&wet, &instances, available).map_err(|reason| {
+        RsbError::Invalid {
+            tag: TAG_WETP,
+            reason,
+        }
+    })?;
+    if wet.iter().any(|w| !w.drops.is_empty())
+        && instances.len() + effects.len() + 1 > crate::geometry::MAX_INSTANCES
+    {
+        return Err(RsbError::Invalid {
+            tag: TAG_WETP,
+            reason: "too many instances for the drops",
+        });
+    }
     let mut camera = camera.unwrap_or_default();
     camera.lens = lens;
     // O2: the traced lens is prepared for this camera, or keeps the preparation of the loaded
@@ -1388,7 +1441,9 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     if let Some(geometry) = kept_geometry {
         kept_sets = geometry.take_particles();
         if reuse_meshes {
+            let keep = file_meshes(geometry);
             meshes = std::mem::take(geometry).into_meshes();
+            meshes.truncate(keep);
         }
     }
     if let Some(kept) = reuse_bitmaps {
@@ -1435,6 +1490,9 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     scene.render = render;
     scene.effects = effects;
     scene.section = section;
+    // S3c: the weather of the instances, and the caps of their drops.
+    scene.wet_parts = wet;
+    scene.attach_caps();
     scene.apply_section();
     Ok(scene)
 }
@@ -1459,6 +1517,7 @@ impl Scene {
             bitmaps: &mut self.bitmaps,
             images: &mut self.images,
             lens: self.camera.lens.as_ref(),
+            caps: self.caps,
         };
         let scene = read_scene(bytes, Some(kept))?;
         *self = scene;
@@ -1556,7 +1615,7 @@ impl Scene {
         if let Some(glass) = &self.glass {
             w.section(TAG_GLAS, |w| w.buf.extend_from_slice(&glass.encode()));
         }
-        for (index, m) in self.materials.iter().enumerate() {
+        for (index, m) in self.file_materials().iter().enumerate() {
             w.section(TAG_MATL, |w| {
                 w.u32(m.kind);
                 w.rgb(m.base_color);
@@ -1600,7 +1659,7 @@ impl Scene {
                 w.u32(p.seed);
             });
         }
-        for mesh in self.geometry.meshes() {
+        for mesh in self.file_meshes() {
             w.section(TAG_MESH, |w| {
                 let n = mesh.vertex_count();
                 w.u32(n as u32);
@@ -1628,7 +1687,7 @@ impl Scene {
             });
         }
         if !self.geometry.has_implicit_instances() {
-            for instance in self.geometry.instances() {
+            for instance in self.file_instances() {
                 w.section(TAG_INST, |w| {
                     w.u32(instance.mesh);
                     for v in instance.transform.rows.iter().flatten() {
@@ -1638,6 +1697,10 @@ impl Scene {
                     w.u32(instance.flags);
                 });
             }
+        }
+        // S3c: the weather of the instances, after them.
+        for part in &self.wet_parts {
+            w.section(TAG_WETP, |w| w.buf.extend_from_slice(&part.encode()));
         }
         // L5: the profiles the IES lights use, once each, in the order of first use. An IES light
         // without one is ignored by the engine and so is not written.

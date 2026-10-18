@@ -22,7 +22,7 @@ use rt_phys::Transform;
 
 /// Pinned hash of the parity parts after [`PARTS_STEPS`] ([`WetParts::hash`]); the page's test with
 /// the real `rt.wasm` (`tests/s3c-parts.test.ts`) checks the module against it.
-const PINNED_WET_PARTS: u32 = 0x719d_5f41;
+const PINNED_WET_PARTS: u32 = 0x9fb6_9a83;
 
 /// A plate tilted `deg` about X (its slope runs down −Y for a positive angle) at `at`.
 fn tilted(deg: f32, at: Vec3) -> Transform {
@@ -613,4 +613,154 @@ fn the_parity_parts_have_a_pinned_hash() {
     assert!(parts.drops().len() > 50);
     assert!(drips > 0 && splashes > 0);
     assert_eq!(parts.hash(), PINNED_WET_PARTS);
+}
+
+/// Pinned hash of the S3c parity scene ([`s3c_wet_scene`]) at 4 samples per pixel;
+/// `tools/wasm-parity.mjs` checks the module against it (`rt --write-s3c-wet-example`).
+const PINNED_S3C_WET_4SPP: u32 = 0x7bad_d7de;
+
+/// FNV-1a over the little-endian bytes of the resolved film (the hash of the render tests and of
+/// `tools/wasm-parity.mjs`).
+fn film_hash(values: &[f32]) -> u32 {
+    values
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .fold(0x811c_9dc5u32, |h, b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        })
+}
+
+/// The film of `scene` at 4 samples per pixel on `isa`.
+fn render(scene: &rt_core::scene::Scene, isa: rt_core::simd::Isa) -> Vec<f32> {
+    use rt_core::render::{render_tile_prepared, tile_grid};
+    let (w, h) = (scene.render.width, scene.render.height);
+    let prepared = rt_core::integrator::Prepared::new(scene);
+    let mut film = rt_core::image::Film::new(w, h);
+    for tile in tile_grid(w, h, 32) {
+        for sample in 0..4 {
+            render_tile_prepared(scene, &prepared, tile, sample, &mut film, isa);
+        }
+    }
+    film.resolve()
+}
+
+#[test]
+fn the_s3c_scene_has_a_pinned_hash_on_every_simd_path() {
+    use rt_phys::example::s3c_wet_scene;
+    let scene = s3c_wet_scene();
+    assert_eq!(scene.wet_parts.len(), 4);
+    let caps = scene.caps().expect("drops");
+    assert_eq!(caps.instance, 4);
+    let drops: usize = scene.wet_parts.iter().map(|w| w.drops.len()).sum();
+    assert_eq!(drops, wet_parts().drops().len());
+    // Through an RSB round trip: the weather travels instance by instance, the caps are meshed again.
+    let read = rt_core::scene::Scene::from_rsb(&scene.to_rsb()).expect("read");
+    assert_eq!(read, scene);
+    let mut found = Vec::new();
+    for isa in rt_core::simd::Isa::available() {
+        let hash = film_hash(&render(&read, isa));
+        eprintln!("S3c wet parts at 4 spp on {}: {hash:#010x}", isa.name());
+        found.push((isa.name(), hash));
+    }
+    for (isa, hash) in found {
+        assert_eq!(hash, PINNED_S3C_WET_4SPP, "{isa}");
+    }
+}
+
+#[test]
+fn weather_with_nothing_on_it_changes_no_pixel_and_the_weather_changes_the_image() {
+    use rt_core::weather::PartWeather;
+    use rt_phys::example::s3c_wet_scene;
+    let wet = s3c_wet_scene();
+    let mut dry = wet.clone();
+    dry.set_wet_parts(Vec::new()).expect("none");
+    assert!(dry.caps().is_none());
+    assert_eq!(dry.geometry.instances().len(), 4);
+    // The same parts with every sample at 0 and no drop: not a bit changes.
+    let clear: Vec<PartWeather> = wet
+        .wet_parts
+        .iter()
+        .map(|w| {
+            PartWeather::new(
+                w.instance,
+                w.resolution.clone(),
+                vec![[0; 3]; w.values.len()],
+                w.cap_angle_deg,
+                w.porosity,
+                Vec::new(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut clean = dry.clone();
+    clean.set_wet_parts(clear).expect("fits");
+    let read = rt_core::scene::Scene::from_rsb(&clean.to_rsb()).expect("read");
+    let isa = rt_core::simd::Isa::detect();
+    let base = render(&dry, isa);
+    assert_eq!(render(&read, isa), base);
+    // The weather does change it, and so do the drops alone.
+    assert_ne!(render(&wet, isa), base);
+    let mut drops_only = dry.clone();
+    let only: Vec<PartWeather> = wet
+        .wet_parts
+        .iter()
+        .map(|w| {
+            PartWeather::new(
+                w.instance,
+                w.resolution.clone(),
+                vec![[0; 3]; w.values.len()],
+                w.cap_angle_deg,
+                w.porosity,
+                w.drops.clone(),
+            )
+            .unwrap()
+        })
+        .collect();
+    drops_only.set_wet_parts(only).expect("fits");
+    assert!(drops_only.caps().is_some());
+    assert_ne!(render(&drops_only, isa), base);
+    // The weather alone (no drops) changes it too.
+    let mut values_only = dry.clone();
+    let only: Vec<PartWeather> = wet
+        .wet_parts
+        .iter()
+        .map(|w| {
+            PartWeather::new(
+                w.instance,
+                w.resolution.clone(),
+                w.values.clone(),
+                w.cap_angle_deg,
+                w.porosity,
+                Vec::new(),
+            )
+            .unwrap()
+        })
+        .collect();
+    values_only.set_wet_parts(only).expect("fits");
+    assert!(values_only.caps().is_none());
+    assert_ne!(render(&values_only, isa), base);
+    // An update without meshes keeps the file's meshes and meshes the caps again, not the old ones
+    // as well; again and again.
+    let mut updated = wet.clone();
+    let bytes = without_meshes(&wet.to_rsb());
+    for _ in 0..3 {
+        updated.update_from_rsb(&bytes).expect("update");
+        assert_eq!(updated.geometry.meshes().len(), 5);
+    }
+    assert_eq!(updated, wet);
+}
+
+/// An RSB file without its `MESH` sections (an update that keeps the loaded meshes).
+fn without_meshes(bytes: &[u8]) -> Vec<u8> {
+    let header = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut out = bytes[..8 + header].to_vec();
+    let mut at = 8 + header;
+    while at < bytes.len() {
+        let len = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        if &bytes[at..at + 4] != b"MESH" {
+            out.extend_from_slice(&bytes[at..at + 8 + len]);
+        }
+        at += 8 + len;
+    }
+    out
 }

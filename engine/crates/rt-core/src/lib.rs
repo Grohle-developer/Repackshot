@@ -59,6 +59,7 @@ pub mod sky_table;
 pub mod texture;
 pub mod tiff;
 pub mod warp;
+pub mod weather;
 
 /// Parses a decimal component of the crate version at compile time.
 const fn version_part(text: &str) -> u32 {
@@ -114,6 +115,11 @@ pub const FEATURE_DROPS: u32 = 64;
 /// draws the pane's coverage, which the page writes as 0: a clean pane, so the page writes no front
 /// glass fed by the scene for it.
 pub const FEATURE_GLASS_LAYOUT: u32 = 128;
+/// Bit 8 of [`FEATURES`] (S3c): the engine draws the rain, dust and snow on the parts (`WETP`,
+/// [`weather`]: what the simulation of the scene's effects left on each instance, the wet film, the
+/// dust and the snow over its material and its drops as caps of water). An engine without it skips
+/// the section and draws the parts dry and clean, so the page writes none for it.
+pub const FEATURE_WET_PARTS: u32 = 256;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
@@ -125,7 +131,8 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_CAMERAS
     | FEATURE_PATTERN_NODES
     | FEATURE_DROPS
-    | FEATURE_GLASS_LAYOUT;
+    | FEATURE_GLASS_LAYOUT
+    | FEATURE_WET_PARTS;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

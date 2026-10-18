@@ -1939,6 +1939,64 @@ pub struct Weather {
     pub drops: Vec<(u32, Vec3, f32)>,
 }
 
+/// The byte of a sample's wetness in a `WETP` section (`rt_core::weather`): 255 when wet.
+pub fn wet_byte(wet: bool) -> u8 {
+    if wet {
+        255
+    } else {
+        0
+    }
+}
+
+/// The byte of a share under dust, `round(255 × share)`.
+pub fn dust_byte(share: f32) -> u8 {
+    (share.clamp(0.0, 1.0) * 255.0 + 0.5).floor() as u8
+}
+
+/// The byte of a depth of snow, in steps of `rt_core::weather::SNOW_STEP_MM` (at most 255).
+pub fn snow_byte(depth_mm: f32) -> u8 {
+    (depth_mm.max(0.0) / rt_core::weather::SNOW_STEP_MM + 0.5)
+        .floor()
+        .min(255.0) as u8
+}
+
+impl Weather {
+    /// The `WETP` of this part as the renderer reads it, for instance `instance` whose material
+    /// darkens by `porosity` when wet.
+    pub fn part_weather(
+        &self,
+        instance: u32,
+        porosity: f32,
+    ) -> Result<rt_core::weather::PartWeather, &'static str> {
+        let values = (0..self.wet.len())
+            .map(|s| {
+                [
+                    wet_byte(self.wet[s]),
+                    dust_byte(self.dust[s]),
+                    snow_byte(self.snow_mm[s]),
+                ]
+            })
+            .collect();
+        let drops = self
+            .drops
+            .iter()
+            .map(|&(triangle, position, radius)| rt_core::weather::WetDrop {
+                triangle,
+                position,
+                radius,
+            })
+            .collect();
+        rt_core::weather::PartWeather::new(
+            instance,
+            self.resolution.clone(),
+            values,
+            self.cap_angle_deg,
+            porosity,
+            drops,
+        )
+    }
+}
+
 /// Two unit vectors that make an orthonormal basis of the plane normal to `n`.
 fn tangent_basis(n: Vec3) -> (Vec3, Vec3) {
     let helper = if n.z.abs() < 0.9 {

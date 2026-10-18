@@ -257,6 +257,13 @@ pub const PAINT_ADVANCING_DEG: f32 = 85.0;
 pub const PAINT_RECEDING_DEG: f32 = 60.0;
 /// See [`PLASTIC_ADVANCING_DEG`].
 pub const SNOW_REPOSE_DEG: f32 = 50.0;
+/// S3c: paper's contact angles and how much a wet film darkens it (the page's family `PAPER`:
+/// its `porosity`, ◆).
+pub const PAPER_ADVANCING_DEG: f32 = 100.0;
+/// See [`PAPER_ADVANCING_DEG`].
+pub const PAPER_RECEDING_DEG: f32 = 20.0;
+/// See [`PAPER_ADVANCING_DEG`].
+pub const PAPER_POROSITY: f32 = 1.0;
 
 /// A flat plate of `size_x` × `size_y` mm in the XY plane about the origin, facing +Z, `nx` × `ny`
 /// quads of two triangles each (counter-clockwise from above).
@@ -292,7 +299,7 @@ pub fn parts_mesh(m: SceneMesh) -> crate::wet_parts::PartsMesh {
 
 /// S3c: the parity scene's parts: a glass bottle (a closed cylinder of 35 mm by 160 mm standing on
 /// the floor), a plastic plate tilted 45° beside it, a metal shelf tilted 20° above the plate (its
-/// drops run to its low edge and hang under it), and a painted floor card as a film; under the
+/// drops run to its low edge and hang under it), and a paper floor card as a film; under the
 /// page's *Rain* driven by 1.5 m/s of wind, a *Dust cloud*'s dust and a light snow.
 pub fn parts_spec() -> crate::wet_parts::PartsSpec {
     use crate::wet_parts::{PartsSource, PartsSourceKind, PartsSpec, WetPartSpec, PART_FILM};
@@ -313,14 +320,14 @@ pub fn parts_spec() -> crate::wet_parts::PartsSpec {
     PartsSpec {
         seed: 5,
         cell_mm: 1.5,
-        max_samples: 200_000,
+        max_samples: 40_000,
         repose_deg: DUST_REPOSE_DEG,
         snow_repose_deg: SNOW_REPOSE_DEG,
         meshes: vec![
             parts_mesh(cylinder_mesh(35.0, 160.0, 32)),
             plate_mesh(120.0, 80.0, 12, 8),
             parts_mesh(box_mesh(Vec3::new(40.0, 30.0, 2.0))),
-            plate_mesh(500.0, 500.0, 10, 10),
+            plate_mesh(300.0, 300.0, 6, 6),
         ],
         parts: vec![
             part(
@@ -347,8 +354,8 @@ pub fn parts_spec() -> crate::wet_parts::PartsSpec {
             part(
                 3,
                 Transform::translation(Vec3::new(0.0, 0.0, -0.5)),
-                PAINT_ADVANCING_DEG,
-                PAINT_RECEDING_DEG,
+                PAPER_ADVANCING_DEG,
+                PAPER_RECEDING_DEG,
                 PART_FILM,
             ),
         ],
@@ -383,4 +390,85 @@ pub fn wet_parts() -> crate::wet_parts::WetParts {
     let mut parts = crate::wet_parts::WetParts::new(parts_spec());
     parts.step(PARTS_STEPS);
     parts
+}
+
+/// S3c: the parity scene of the wet parts: the parts of [`parts_spec`] as instances (a clear glass
+/// bottle, a red plastic plate, a metal shelf and a paper card under them), seen by a 50 mm lens at
+/// f/8 under the example's light, with what [`wet_parts`] left on each in its `WETP` section (the
+/// card's wet film darkens it: paper is porous). `tests/wet_parts.rs` pins its image; `rt
+/// --write-s3c-wet-example` writes it.
+pub fn s3c_wet_scene() -> rt_core::scene::Scene {
+    use rt_core::color::Rgb;
+    use rt_core::scene::{
+        FloorMode, Instance, Material, Mesh, Transform as RtTransform, MATERIAL_GLASS,
+    };
+    let spec = parts_spec();
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let target = Vec3::new(60.0, 0.0, 70.0);
+    scene.camera.position = Vec3::new(-60.0, -520.0, 300.0);
+    scene.camera.target = target;
+    scene.camera.focal_mm = 50.0;
+    scene.camera.fstop = 8.0;
+    scene.camera.focus_dist = (target - scene.camera.position).length();
+    scene.floor.mode = FloorMode::None;
+    scene.materials = vec![
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.85, 0.95, 0.88),
+            roughness: 0.0,
+            transmission: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.7, 0.12, 0.08),
+            roughness: 0.35,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.6, 0.6, 0.62),
+            metallic: 1.0,
+            roughness: 0.3,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.7, 0.7, 0.68),
+            roughness: 0.6,
+            ..Material::default()
+        },
+    ];
+    let meshes: Vec<Mesh> = spec
+        .meshes
+        .iter()
+        .map(|m| Mesh::new(&m.positions, &[], &m.indices, 0).expect("a valid mesh"))
+        .collect();
+    let instances: Vec<Instance> = spec
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            Instance::new(
+                p.mesh,
+                RtTransform {
+                    rows: p.transform.rows,
+                },
+                k as u32,
+            )
+        })
+        .collect();
+    scene.geometry = rt_core::geometry::Geometry::new(meshes, instances).expect("a valid geometry");
+    scene.apply_section();
+    let porosity = [0.0, 0.0, 0.0, PAPER_POROSITY];
+    let parts = wet_parts()
+        .weather()
+        .iter()
+        .enumerate()
+        .map(|(k, w)| {
+            w.part_weather(k as u32, porosity[k])
+                .expect("valid weather")
+        })
+        .collect();
+    scene.set_wet_parts(parts).expect("weather that fits");
+    scene
 }
