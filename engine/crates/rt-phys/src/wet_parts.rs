@@ -541,6 +541,10 @@ struct Part {
 /// A drop on a part.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Drop {
+    /// Its number, in the order drops came (a merge keeps the lower index's).
+    id: u32,
+    /// Changed since the last frame.
+    touched: bool,
     part: u32,
     tri: u32,
     p: Vec3,
@@ -552,8 +556,10 @@ struct Drop {
 }
 
 impl Drop {
-    fn new(part: u32, tri: u32, p: Vec3, volume: f32, k: f32) -> Drop {
+    fn new(id: u32, part: u32, tri: u32, p: Vec3, volume: f32, k: f32) -> Drop {
         Drop {
+            id,
+            touched: true,
             part,
             tri,
             p,
@@ -874,6 +880,9 @@ pub struct WetParts {
     scratch: Vec<u32>,
     /// Drops were put by hand since the last merge.
     dirty: bool,
+    /// The number of the next drop, and the drops gone since the last frame.
+    next_id: u32,
+    gone_ids: Vec<u32>,
 }
 
 impl WetParts {
@@ -1009,6 +1018,8 @@ impl WetParts {
             lost_water: 0.0,
             scratch: Vec::new(),
             dirty: false,
+            next_id: 0,
+            gone_ids: Vec::new(),
             spec,
         };
         this.prepare_sources();
@@ -1230,7 +1241,9 @@ impl WetParts {
         let p = t.v[0] + (t.v[1] - t.v[0]) * u + (t.v[2] - t.v[0]) * v;
         if volume > 0.0 && self.drops.len() < MAX_PART_DROPS {
             let k = self.parts[part].k;
-            self.drops.push(Drop::new(part as u32, ti, p, volume, k));
+            let id = self.take_id();
+            self.drops
+                .push(Drop::new(id, part as u32, ti, p, volume, k));
             self.dirty = true;
         }
     }
@@ -1363,7 +1376,8 @@ impl WetParts {
                     self.lost_water += each;
                     continue;
                 }
-                let drop = Drop::new(t.part, end.tri, end.p, each, self.parts[part_index].k);
+                let id = self.take_id();
+                let drop = Drop::new(id, t.part, end.tri, end.p, each, self.parts[part_index].k);
                 let n_end = self.tris[end.tri as usize].n;
                 self.wet_disc(t.part, end.p, n_end, drop.a, false);
                 self.drops.push(drop);
@@ -1372,12 +1386,31 @@ impl WetParts {
         }
         if self.drops.len() < MAX_PART_DROPS {
             let k = self.parts[part_index].k;
-            self.drops.push(Drop::new(t.part, ti, p, volume, k));
+            let id = self.take_id();
+            self.drops.push(Drop::new(id, t.part, ti, p, volume, k));
             added = true;
         } else {
             self.lost_water += volume;
         }
         added
+    }
+
+    /// The number of a new drop.
+    fn take_id(&mut self) -> u32 {
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
+        id
+    }
+
+    /// Keeps the drops whose flag is set, in order; the others are gone (the frame says so).
+    fn keep_drops(&mut self, keep: &[bool]) {
+        for (d, &k) in self.drops.iter().zip(keep) {
+            if !k {
+                self.gone_ids.push(d.id);
+            }
+        }
+        let mut it = keep.iter();
+        self.drops.retain(|_| *it.next().unwrap_or(&true));
     }
 
     /// Porous parts soak their drops in; true when one changed.
@@ -1394,6 +1427,7 @@ impl WetParts {
             let left = d.volume - lost;
             self.drops[i].volume = left;
             self.drops[i].a = cbrt(left / part.k);
+            self.drops[i].touched = true;
             self.lost_water += lost;
             let n = self.tris[d.tri as usize].n;
             self.wet_disc(d.part, d.p, n, d.a, false);
@@ -1401,7 +1435,8 @@ impl WetParts {
             gone |= left < MIN_VOLUME;
         }
         if gone {
-            self.drops.retain(|d| d.volume >= MIN_VOLUME);
+            let keep: Vec<bool> = self.drops.iter().map(|d| d.volume >= MIN_VOLUME).collect();
+            self.keep_drops(&keep);
         }
         changed
     }
@@ -1472,12 +1507,12 @@ impl WetParts {
                 volume: left,
                 a: cbrt(left / part.k),
                 fresh: true,
+                touched: true,
                 ..d
             };
         }
         if keep.iter().any(|k| !k) {
-            let mut it = keep.iter();
-            self.drops.retain(|_| *it.next().unwrap_or(&true));
+            self.keep_drops(&keep);
         }
         for (p, volume) in drips {
             self.drip(p, volume);
@@ -1759,13 +1794,12 @@ impl WetParts {
                     (big.tri, big.p)
                 };
                 let k = self.parts[p.part as usize].k;
-                self.drops[keep] = Drop::new(p.part, tri, at, volume, k);
+                self.drops[keep] = Drop::new(p.id, p.part, tri, at, volume, k);
                 alive[gone] = false;
                 merged = true;
             }
             if merged {
-                let mut it = alive.iter();
-                self.drops.retain(|_| *it.next().unwrap_or(&true));
+                self.keep_drops(&alive);
             }
         }
     }
@@ -1821,21 +1855,33 @@ impl WetParts {
     /// The record of a frame, and the start of the next one: little-endian words
     ///
     /// ```text
-    /// u32 drops; per drop: u32 part triangle (its index in the part's mesh);
-    ///            f32 x y z (the part's object space) a (contact radius, mm)
-    /// u32 wetted; u32 samples[wetted]   (first wet since the last frame, ascending)
-    /// u32 wiped;  u32 samples[wiped]    (wiped since the last frame, ascending)
+    /// u32 changed; per drop new or changed since the last frame, by number:
+    ///              u32 id part triangle (its index in the part's mesh);
+    ///              f32 x y z (the part's object space) a (contact radius, mm)
+    /// u32 gone;    u32 ids[gone]        (drops gone since the last frame, ascending)
+    /// u32 wetted;  u32 samples[wetted]  (first wet since the last frame, ascending)
+    /// u32 wiped;   u32 samples[wiped]   (wiped since the last frame, ascending)
     /// u32 drips                         (since the last frame)
+    /// u32 drops                         (on the parts now)
     /// ```
+    ///
+    /// A drop's number is the order it came in; one that came and went between two frames is in
+    /// `gone` only. The drops of a frame, by number, are what [`WetParts::weather`] gives.
     pub fn frame(&mut self) -> Vec<u8> {
+        let mut changed: Vec<usize> = (0..self.drops.len())
+            .filter(|&i| self.drops[i].touched)
+            .collect();
+        changed.sort_unstable_by_key(|&i| self.drops[i].id);
         let mut words: Vec<u32> = Vec::with_capacity(
-            4 + 6 * self.drops.len() + self.new_wet.len() + self.new_wiped.len(),
+            6 + 7 * changed.len() + self.gone_ids.len() + self.new_wet.len() + self.new_wiped.len(),
         );
-        words.push(self.drops.len() as u32);
-        for d in &self.drops {
+        words.push(changed.len() as u32);
+        for &i in &changed {
+            let d = self.drops[i];
             let part = &self.parts[d.part as usize];
             let o = part.to_object.apply(d.p);
             words.extend_from_slice(&[
+                d.id,
                 d.part,
                 d.tri - part.first_tri,
                 o.x.to_bits(),
@@ -1844,13 +1890,19 @@ impl WetParts {
                 d.a.to_bits(),
             ]);
         }
+        for d in self.drops.iter_mut() {
+            d.touched = false;
+        }
+        self.gone_ids.sort_unstable();
         self.new_wet.sort_unstable();
         self.new_wiped.sort_unstable();
-        words.push(self.new_wet.len() as u32);
-        words.extend_from_slice(&self.new_wet);
-        words.push(self.new_wiped.len() as u32);
-        words.extend_from_slice(&self.new_wiped);
+        for list in [&self.gone_ids, &self.new_wet, &self.new_wiped] {
+            words.push(list.len() as u32);
+            words.extend_from_slice(list);
+        }
         words.push(self.drips_since);
+        words.push(self.drops.len() as u32);
+        self.gone_ids.clear();
         self.new_wet.clear();
         self.new_wiped.clear();
         self.drips_since = 0;
@@ -1859,7 +1911,7 @@ impl WetParts {
     }
 
     /// The parts as the renderer takes them now ([`Weather`]): per part its samples' wetness (0 or
-    /// 1), share under dust and depth of snow, and its drops in its object space.
+    /// 1), share under dust and depth of snow, and its drops in its object space, by number.
     pub fn weather(&self) -> Vec<Weather> {
         self.parts
             .iter()
@@ -1878,12 +1930,17 @@ impl WetParts {
                     dust: (s0..s1).map(|s| self.dust_at(s)).collect(),
                     snow_mm: (s0..s1).map(|s| self.snow_at(s)).collect(),
                     cap_angle_deg: p.cap_deg,
-                    drops: self
-                        .drops
-                        .iter()
-                        .filter(|d| d.part as usize == pi)
-                        .map(|d| (d.tri - p.first_tri, p.to_object.apply(d.p), d.a))
-                        .collect(),
+                    drops: {
+                        let mut mine: Vec<&Drop> = self
+                            .drops
+                            .iter()
+                            .filter(|d| d.part as usize == pi)
+                            .collect();
+                        mine.sort_unstable_by_key(|d| d.id);
+                        mine.iter()
+                            .map(|d| (d.tri - p.first_tri, p.to_object.apply(d.p), d.a))
+                            .collect()
+                    },
                 }
             })
             .collect()

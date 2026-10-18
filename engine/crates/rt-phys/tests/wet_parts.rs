@@ -559,18 +559,35 @@ fn the_same_parts_by_steps_and_through_the_frames() {
         parts.step(24);
     }
     assert_eq!(once.hash(), parts.hash());
-    // The frames say every sample that got wet, once, and the drops of the end.
+    // The frames say every sample that got wet, once, and the drops of the end: what changed and
+    // what went, by number.
     let mut framed = WetParts::new(parts_spec());
     let layout = framed.layout();
     assert_eq!(u32::from_le_bytes(layout[0..4].try_into().unwrap()), 4);
     let mut wet = vec![false; framed.sample_count()];
-    let mut last = Vec::new();
+    let mut drops: std::collections::BTreeMap<u32, (u32, u32, [u32; 4])> = Default::default();
     for _ in 0..10 {
         framed.step(24);
         let rec = framed.frame();
         let w = |i: usize| u32::from_le_bytes(rec[4 * i..4 * i + 4].try_into().unwrap());
-        let nd = w(0) as usize;
-        let mut at = 1 + 6 * nd;
+        let nc = w(0) as usize;
+        for k in 0..nc {
+            let at = 1 + 7 * k;
+            drops.insert(
+                w(at),
+                (
+                    w(at + 1),
+                    w(at + 2),
+                    [w(at + 3), w(at + 4), w(at + 5), w(at + 6)],
+                ),
+            );
+        }
+        let mut at = 1 + 7 * nc;
+        let ng = w(at) as usize;
+        for k in 0..ng {
+            drops.remove(&w(at + 1 + k));
+        }
+        at += 1 + ng;
         let nw = w(at) as usize;
         for k in 0..nw {
             let s = w(at + 1 + k) as usize;
@@ -580,16 +597,25 @@ fn the_same_parts_by_steps_and_through_the_frames() {
         at += 1 + nw;
         let nx = w(at) as usize;
         at += 1 + nx;
-        assert_eq!(4 * (at + 1), rec.len());
-        last = rec;
+        assert_eq!(w(at + 1) as usize, drops.len(), "the count of drops");
+        assert_eq!(4 * (at + 2), rec.len());
     }
     for (s, &w) in wet.iter().enumerate() {
         assert_eq!(w, framed.wet_step(s) != NEVER, "{s}");
     }
-    assert_eq!(
-        u32::from_le_bytes(last[0..4].try_into().unwrap()) as usize,
-        framed.drops().len()
-    );
+    // The drops rebuilt from the frames are the parts' weather, part by part, by number.
+    let weather = framed.weather();
+    for (part, w) in weather.iter().enumerate() {
+        let mine: Vec<_> = drops.values().filter(|d| d.0 == part as u32).collect();
+        assert_eq!(mine.len(), w.drops.len());
+        for (d, (tri, p, a)) in mine.iter().zip(&w.drops) {
+            assert_eq!(d.1, *tri);
+            assert_eq!(
+                d.2,
+                [p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), a.to_bits()]
+            );
+        }
+    }
     assert_eq!(framed.hash(), once.hash());
 }
 
