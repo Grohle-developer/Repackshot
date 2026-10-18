@@ -5,6 +5,8 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+## v0.1.21 — 2026-10-18
+
 ### Escena y ambiente
 
 - **La *Forma* sale de *Avanzado***: es uno de los mandos siempre visibles de un efecto, justo después del *Tamaño*, con los pesos de la *Mezcla* debajo (S3b).
