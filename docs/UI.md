@@ -748,7 +748,10 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    nieve se acumula donde la sostiene) y que la grabación es un clip de
    *Físicas* de la escena. Encendido, si el motor del render no dibuja el
    tiempo de las piezas (le falta el bit 8: un motor anterior), una nota debajo
-   lo dice: *el render las enseñará secas y limpias*. **Avanzado**, plegado: región (*Alrededor de
+   lo dice: *el render las enseñará secas y limpias*; S3d: si lo dibuja pero no
+   las gotas en el aire (tiene el bit 8 y no el 9: un motor de S3c), con un
+   efecto de gotas, otra: *los goteos y las salpicaduras solo se verán cuando se
+   posen*. **Avanzado**, plegado: región (*Alrededor de
    la escena* con margen en mm, o *Caja propia* con centro y tamaño),
    banda de alturas, *Cantidad por* (*Densidad · Cuenta*) y, según la
    forma: con gotas, *Largo de la gota* (×, del centro
@@ -1546,17 +1549,24 @@ nota: cómo empezar, y mientras corre, que el visor la enseña en *Rápido*
   empolva y nieva las piezas visibles que la simulación no mueve (las
   *Dinámicas* no: se mojarían donde estaban), con los cuerpos o solo;
   *Dejar caer* no. La barra añade lo que dice el motor (*Piezas: 1.443 gotas
-  · 0 goteos*: las gotas sobre las piezas en el último fotograma y las que
-  han goteado hasta ahora); como con el cristal, no se para sola al dormirse
+  · 0 goteos · 12 en el aire*: las gotas sobre las piezas en el último
+  fotograma, las que han goteado hasta ahora y, S3d, las que están en el aire
+  en el último fotograma, goteos y salpicaduras que caen); como con el cristal, no se para sola al dormirse
   los cuerpos: la para *Parar* o sus 120 s simulados. Su grabación es un clip
   **Simulación** de la *Escena* (*Las piezas reciben la lluvia, el polvo y la
   nieve de los efectos de la escena, según la simulación*), que no mueve
   nada: dice qué fotograma enseñan las piezas, y *Reiniciar* lo quita. El
   modo *Rápido* dibuja el fotograma del cabezal (las gotas como casquetes de
   agua, la película mojada más brillante y lo poroso más oscuro, el polvo y la
-  nieve encima) y el medidor añade *Lluvia en las piezas: 1.443 gotas en 7
-  piezas*; *Completo* y el render, con un motor que tiene el bit 8.
+  nieve encima; S3d: las gotas en el aire como esferas de agua) y el medidor
+  añade lo que hay de verdad (S3d): qué (*Lluvia*, *Polvo*, *Nieve* o juntos:
+  *Lluvia y polvo*), en cuántas piezas (las que tienen algo) y, con lluvia, las
+  gotas en ellas y en el aire: *Lluvia en 7 piezas: 1.443 gotas, 12 en el
+  aire*, *Polvo en 3 piezas*, o *Aún nada en las piezas* antes de que se pose
+  nada; *Completo* y el render, con un motor que tiene el bit 8 (las gotas en el
+  aire, con el bit 9).
   ![la lluvia sobre las piezas, en pausa](physics-rain-set.png)
+  ![las gotas en el aire, en pausa](physics-rain-air.png)
 
 Capturas (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (la barra
 en pausa, en mitad de una caída), `docs/ui/physics-drop.png` (tres

@@ -12241,7 +12241,7 @@ test más estricto):
    al viento) quede seco del todo: es la física, sin salpicaduras del suelo ni
    rebotes.
 
-### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación) — **Opus** (tras S3c) — propuesta
+### S3d · Lo que queda de las gotas y el polvo sobre las piezas (simulación) — **Opus** (tras S3c) — hecha en parte (el medidor, el id de pieza de las gotas y las gotas por el aire, en el motor y en *Rápido*); el resto, S3e
 
 Lo que queda de S3c, sobre `rt_phys::wet_parts`:
 
@@ -12266,6 +12266,282 @@ Lo que queda de S3c, sobre `rt_phys::wet_parts`:
    *Lluvia en las piezas* siempre.
 8. **Criterios**: la hoja con el goteo en el aire y el polvo con sus motas;
    una captura de una pieza *Dinámica* que se moja al caer.
+
+**Hecho (S3d: el medidor, el id de pieza de las gotas y las gotas por el aire; lo
+que queda, S3e, abajo).** Entran, por este orden, los puntos 7, 6 y 1 de la
+propuesta: el texto del medidor, las gotas con el id de su pieza en los pases y
+el goteo y las salpicaduras que vuelven a ser gotas que caen por el aire, en la
+simulación, en el motor (*Completo* y el render) y en *Rápido*. Los puntos 2 a 5
+(las motas del polvo, las piezas que se mueven, el suelo del estudio y las
+muestras finas en el set) son cada uno del tamaño de una fase y no caben en
+este PR sin bajar la calidad: son la propuesta **S3e**, con lo que queda del
+punto 8.
+
+**1. El medidor (primero, con su test).** `core/wet-parts.ts` `partsShown` dice
+lo que tiene el fotograma en las piezas que dibuja el visor: si hay lluvia (una
+muestra mojada, una gota en una pieza o en el aire), polvo o nieve, en cuántas
+piezas (las que tienen algo, no las que se dibujan), las gotas en ellas y en el
+aire; `ui/sentence.ts` `partsMeterText` lo dice: *Lluvia y polvo en 4 piezas:
+1.443 gotas, 12 en el aire*, *Polvo en 3 piezas* (sin hablar de gotas), *Nieve
+en 2 piezas*, y *Aún nada en las piezas* antes de que se pose nada (claves
+`status.partsOn.*` y `status.partsDrops`, es y en; `status.partsWeather` se
+va). La barra de físicas añade las del aire: *Piezas: N gotas · M goteos · K en
+el aire* (`phys.parts`).
+
+**2. Las gotas con el id de su pieza (con su test).** `Scene::pass_instance`:
+un impacto en la instancia de los casquetes da, para los pases de pieza y de
+material, la instancia en que está la gota (`Scene::cap_owners`, uno por
+casquete en el orden de la malla, y `Caps::caps`, cuántos casquetes van
+primero), y para una gota en el aire la instancia de la que salió; `first_hit`
+la usa, así que `partId` y `materialId` de un píxel sobre una gota son los de su
+pieza y la página (`passInstances`) los lleva a su nodo. La imagen no cambia: el
+*fixture* de S3c de antes renderiza con el motor nuevo a su fijado de antes
+(`0x66fa33ab`).
+
+**3. Las gotas por el aire (`rt_phys::wet_parts`, §5.2 unvicies de
+ARCHITECTURE).**
+- **Un goteo** (la gota que cuelga y pesa más de lo que aguanta su línea de
+  contacto, o la que resbala por una arista abierta) **y las gotas de una
+  salpicadura** son esferas de su volumen **en el aire**, con su velocidad: el
+  goteo que cuelga sale del reposo; el que sale por una arista, a la velocidad a
+  que resbalaba, por su último tramo (◆4); las de una salpicadura, despegadas de
+  la superficie a `SPLASH_ELEVATION_DEG = 30°` (◆3) en la dirección que ya
+  sorteaba S3c, a la velocidad que en una cara horizontal las llevaría al
+  alcance sorteado (`v = √(R g / sin 2θ)`, `R` de 1 a `SPLASH_REACH = 4`
+  diámetros: el alcance que decidió S3c ◆3, ahora como vuelo).
+- **Cada paso** (antes de las llegadas del cielo, así que nada se posa en el paso
+  en que sale): la gravedad y el arrastre del aire, cuadrático para que una gota
+  caiga a lo sumo a su **velocidad terminal** (`terminal_speed`: Atlas,
+  Srivastava y Sekhon 1973, `9,65 − 10,3 e^(−0,6 D)` m/s por encima de 0,6 mm, y
+  una recta hasta 0 por debajo; ◆2), con la aceleración del paso sostenida en él
+  (exacto con la gravedad sola: el alcance de la salpicadura no se queda corto un
+  paso); el tramo del paso se lanza contra la BVH de las piezas y **la primera
+  cara que encuentra por delante** (`n·v < 0`) **la recibe**: un impacto con la
+  velocidad a lo largo de su normal, que moja su círculo, puede volver a
+  salpicar (y sus gotas vuelan desde el paso siguiente) y se queda como gota (o
+  moja la película de una pieza del set). Por debajo de la pieza más baja y del
+  suelo del estudio (`z = 0`), o tras `MAX_FLIGHT_STEPS = 2400` pasos (10 s),
+  se va (el agua perdida); como mucho `MAX_FALLING_DROPS = 1024` a la vez (◆6).
+- **El registro**: cada fotograma lleva al final las gotas en el aire enteras,
+  por número (`u32 falling; (u32 id part; f32 x y z r)`, el mundo y el radio de
+  su esfera; tienen números propios, de la misma cuenta que las de las piezas),
+  `WetParts::falling`, `falling_velocities`, `water_in_air`, `landed_from_air`,
+  `add_falling`; el `hash` las incluye.
+- En la escena de paridad a los 5 s: 1 951 gotas en las piezas y **70 en el
+  aire**, 8 839 llegadas del cielo, 7 079 salpicaduras, 5 goteos y 13 943 gotas
+  posadas desde el aire; 15 987 muestras mojadas; 8 516 mm³ en las piezas,
+  10,7 en el aire, 10,9 en los rastros y 62,4 perdidos (S3c: 1 834 gotas, 8
+  goteos, 16 010 muestras, 8 479, 13,3 y 68,6).
+
+**4. En el motor (`WETF`, bit 9).** `rt_core::weather`: `FallingDrop` (la
+instancia de la que salió o `NO_INSTANCE`, el centro en el mundo, el radio) y la
+sección **`WETF`**, una por escena tras las `WETP`: `u32 drops; (u32 instance;
+f32 x y z radius)[drops]` (`decode_falling`, `encode_falling`,
+`check_falling`: una instancia que no está, un radio fuera de 0..50 mm, más de
+4 096 o dos `WETF` invalidan el archivo). `Scene::set_wet_falling` las malla como
+**esferas de agua** (12 × 6, `SPHERE_SEGMENTS`, `SPHERE_RINGS`) en la misma malla,
+instancia y material que los casquetes, tras ellos (`water_mesh`), con las
+mismas sombras rectas (una gota en el aire no echa un disco negro). Bit 9,
+`FEATURE_WET_FLIGHT` (512; `/api/info` dice 1023): el motor dibuja `WETF` y da
+a una gota el id de su pieza en los pases; la página escribe `WETF` solo para un
+motor con él (`SceneView.wetFlight`, `readsWetFlight`), con cada gota de la
+primera instancia de la pieza de la que salió (las de una pieza que no se dibuja
+se quedan fuera, como su tiempo). Un motor de S3c se salta la sección: dibuja
+las piezas mojadas pero no lo que cae, y la nota *el render solo enseñará los
+goteos y las salpicaduras cuando se posen* (`ambient.wetFlightOldEngine`,
+`core/wet-parts.ts` `partsRenderNoFlight`: con el bit 8 y sin el 9, para un
+efecto de gotas) lo dice bajo *Sobre las piezas*.
+
+**5. En la página.** La pista de las piezas guarda por fotograma sus gotas en el
+aire (`PartsTrack.falling`, base64; `PartsFrame.falling`); una pista de S3c, sin
+ellas, se sigue leyendo (sin gotas en el aire), y la versión del formato pasa a
+2 (`PARTS_FORMAT_VERSION`: la clave `wpt2:`; la simulación ya no es la de S3c).
+**En *Rápido*** (`render/weather-preview.ts`) una esfera instanciada del agua de
+los casquetes por gota en el aire, donde la tiene el motor (el espacio del
+`modelRoot`), de las piezas que dibujan su tiempo.
+
+**6. Fijados** (§5.2 unvicies). **Nuevos**: `PINNED_S3D_FLIGHT_4SPP =
+0xf7b78a45` (`rt_phys::example::s3d_flight_scene`: la escena de S3c con su
+`WETF`, las 70 gotas en el aire de los 5 s) y sus seis pases
+`PINNED_S3D_PASS_ALBEDO = 0x38681bb3`, `_NORMAL = 0x45b8b9a8`, `_DEPTH =
+0x2a0c1589`, `_PART_ID = 0xde2688e3`, `_MATERIAL_ID = 0xde2688e3` (en esta
+escena la instancia `k` lleva el material `k`: los dos planos son iguales) y
+`_COC = 0x14b5c1e9`: los mismos en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos
+(`rt-cli`), en `wasm32-wasip1` escalar y simd128 (`cargo test -p rt-phys --test
+wet_parts`) y en el `rt.wasm` real (`tools/wasm-parity.mjs` con `rt
+--write-s3d-flight-example`, la imagen sola y con los seis pases;
+`tests/s3d-flight.test.ts` con `tests/fixtures/s3d-flight.rsb`, en el paso de
+CI del `rt.wasm` real). **Movidos, a propósito**: `PINNED_WET_PARTS`
+`0x62450071` → `0xe1811f7e` y `PINNED_S3C_WET_4SPP` `0x66fa33ab` →
+`0x827ac33c`. El primero es la simulación misma: los goteos ya no se posan en
+el acto y las salpicaduras vuelan en vez de resbalar sus gotas por la
+superficie, así que a los 5 s las gotas, las muestras mojadas y el agua no son
+las de S3c, y el `hash` cuenta además las gotas en el aire. El segundo es solo
+consecuencia del primero: `s3c_wet_scene` lleva los `WETP` de esa simulación;
+con el `tests/fixtures/s3c-wet.rsb` de S3c, el motor nuevo da el `0x66fa33ab`
+de antes (comprobado), así que el motor no cambia la imagen de un `WETP`.
+`tests/fixtures/s3c-wet.rsb` se rehízo con `rt --write-s3c-wet-example`; el
+WPT1 (`s3c-parts.wpt1`) no cambia. **Ningún otro fijado se mueve.** `rt-app`:
+`/api/info` dice 1023.
+
+**Tests** (cada uno comprobado con su mutación: la cambia, el test falla, y
+pasa sin ella):
+- `rt-phys/tests/wet_parts.rs` (21; 4 nuevos y 3 rehechos): una gota que
+  cuelga gotea al pesar lo que dice, **está en el aire** y no en el suelo
+  justo después, cae (cada paso más abajo, de la pieza que dejó, con el radio
+  de su volumen) unos 23 pasos (`√(2 h / g)` de 44 mm) y se posa, salpica, y sus
+  dos gotas vuelan desde el paso siguiente y se posan también, sin perder agua;
+  una gota de 2 mm soltada a 20 m llega a su velocidad terminal (± 1 %) y nunca
+  la pasa (Atlas a 2 mm: 6,55 m/s; por debajo de 0,6 mm, la recta) y una que no
+  encuentra pieza se va por debajo del suelo con su agua contada; una gota de
+  2,5 mm a 9 m/s sobre una almohadilla tira sus dos gotas al aire (ninguna se
+  posa en el paso en que salpica), vuelan y suben, y se posan cada una aparte
+  entre 1 y 4 diámetros (el alcance de S3c ◆3); bajo lluvia rápida el agua se
+  conserva contando la del aire; los fotogramas listan las gotas en el aire
+  enteras, por número, con números propios, iguales a `falling()`; las piezas
+  de paridad tienen gotas en el aire; la escena de S3d, por RSB, en escalar,
+  SSE2 y AVX2 (y distinta de la de S3c); los seis pases, con ningún píxel con
+  la instancia de los casquetes y cada píxel de una gota con el id y el
+  material de una pieza. Mutaciones: el goteo que se posa en el acto (la de
+  S3c); sin arrastre; nunca se va por debajo del suelo; el fotograma sin las
+  del aire; la salpicadura por la superficie (la de S3c); el `hash` sin las del
+  aire (solo lo mata el fijado); la cara de atrás que también recibe (solo la
+  matan los fijados: en las piezas de paridad hay placas con algo encima).
+- `rt-core` (`weather::tests`, 2 nuevos): el `WETF` va y vuelve (la cola de un
+  escritor nuevo se ignora) y uno roto o con una instancia que no está se
+  rechaza; una gota en el aire es una esfera de su radio tras los casquetes, en
+  la misma instancia, que las sombras cruzan, y `first_hit` da a la esfera la
+  pieza de la que salió, a la de ninguna la de los casquetes y al casquete la
+  de su pieza; quitarlas deja el casquete. Mutaciones: `first_hit` con la
+  instancia de los casquetes (también la mata el test de los pases de
+  `rt-phys`); sin esferas; las esferas sin dueño; la cuenta de casquetes a 0;
+  el escritor sin `WETF` (lo mata la ida y vuelta de la escena de S3d).
+  `rt-cli`: la escena de S3d con 1, 4 y 16 hilos y su `--write-*`. `rt-wasm`
+  y `rt-app`: el bit 9.
+- `tests/s3d-flight.test.ts` (9): la pista guarda las gotas en el aire de cada
+  fotograma por la pieza que dejaron, un registro sin ellas o de una pieza que
+  no está se rechaza, y una lista cortada no es pista; una pista de antes se
+  lee sin ellas y la clave es `wpt2:`; las palabras del medidor (nada aún,
+  polvo, nieve, polvo y nieve, una película es lluvia, lluvia y polvo con las
+  gotas y las del aire, las tres juntas en español, lluvia y nieve; las del
+  aire solas ya son lluvia) y que cuenta las piezas que dibuja; las cadenas en
+  es y en; `WETF` solo con el bit 9, cada gota de la primera instancia de su
+  pieza (la pista en otro orden que las instancias), byte a byte y tras las
+  `WETP`, las de una pieza oculta fuera; *Rápido* dibuja una esfera por gota en
+  el aire donde la tiene el motor y ninguna sin ellas; la nota del bit 9 (sí con
+  bit 8 sin 9 y lluvia; no con el bit, desconocido, sin el bit 8, con polvo o
+  sin el interruptor); con el `rt.wasm` real, el último fotograma de las piezas
+  de paridad tiene las gotas en el aire del `WETF` nativo y la escena de S3d da
+  sus fijados de imagen y de pases. Mutaciones (9): el escritor sin las del
+  aire; una pista sin ellas rechazada; el medidor que siempre dice lluvia; las
+  piezas contadas tengan algo o no; `WETF` sin el bit 9; la instancia de una
+  gota su índice de pieza (sobrevivió: se añadió la pista en otro orden); sin
+  esferas en *Rápido*; la nota también con polvo; la barra sin las del aire (la
+  mata `tests/s3c-parts.test.ts`).
+- `tests/s3c-parts.test.ts`: el registro de la página con su cola de gotas en
+  el aire, las cadenas nuevas, la barra con las del aire.
+- `tools/s3d-check.mjs` (Chromium y SwiftShader): la nota de un motor sin el
+  bit 9 en inglés y en español (y ninguna con el motor de esta compilación ni
+  con polvo); la lluvia del ejemplo con viento de 3 m/s, en pausa con gotas en
+  el aire (*Parts: 875 drops · 0 drips · 62 in the air*, *Rain on 7 parts: 875
+  drops, 62 in the air*), y la captura; la *Polvareda* sobre las piezas dice
+  *Dust on 6 parts* sin hablar de gotas; el cromo acromático de la nota en los
+  dos temas. `tools/s3c-check.mjs --only rain,parts` pasa con las palabras
+  nuevas (tras *Deshacer*, en el fotograma 0, *Nothing on the parts yet*).
+
+**Capturas.** `docs/ui/physics-rain-air.png` (`tools/s3d-check.mjs --only
+air`): la lluvia del ejemplo con viento de 3 m/s sobre las piezas, en pausa con
+gotas en el aire, y el medidor nuevo. La hoja `out/rain-dust-sheet.html`
+(`tools/rain-dust-sheet.mjs`, con `tests/rain-dust-dump.test.ts`) escribe
+ahora también el `WETF` de cada foto de las piezas y dice cuántas gotas hay en
+el aire: la botella bajo la lluvia sin viento tiene 34, 36 y 37 a los 2, 5 y
+15 s (656, 604 y 616 en las piezas; 5 goteos a los 15 s), casi todas
+salpicaduras que vuelan un par de milímetros.
+
+**No encajó con el plan.**
+- **La fase partida otra vez.** Las motas del polvo, las piezas que se mueven,
+  el suelo del estudio y las muestras finas en el set (puntos 2 a 5) son S3e.
+  La captura de una *Dinámica* que se moja al caer y la hoja del polvo con sus
+  motas (punto 8) van con ellos.
+- **No hacía falta `rt-sim`**: las gotas en el aire son pocas y nacen en la
+  simulación de las piezas, así que su recorrido es el propio (un paso con la
+  aceleración sostenida, contra la misma BVH), no partículas de S4a.
+- **El suelo del estudio no las recibe**: una gota que llega a `z = 0` sin
+  ninguna pieza debajo se va, como en S3c; el suelo que se moja es S3e.
+- **Una gota en el aire que da en la cara de atrás de una pieza la atraviesa**
+  (una placa fina vista desde abajo): las muestras de S3c están solo en la cara
+  de delante y una gota que cuelga solo existe en ella (◆5).
+- **El viento no empuja las gotas en el aire**: el arrastre es contra el aire
+  quieto (casi todas caen al resguardo de la pieza de la que salen; ◆2).
+- **Sin estela ni desenfoque de movimiento**: el motor no tiene obturador; una
+  gota en el aire es una esfera quieta en su sitio del fotograma (◆1).
+- **El id de pieza de las gotas es del bit 9**: un motor de S3c sigue dando a
+  las gotas la instancia de los casquetes; la nota del bit 9 no lo dice (el
+  medidor de *Completo* no enseña pases).
+- **La pista de antes no se rehace sola**: la de S3c se sigue leyendo (sin gotas
+  en el aire), pero su clave (`wpt1:`) ya no es la de la simulación de ahora.
+- `rt-app/tests/server.rs` comprobaba `features == 511`; ahora 1023.
+
+**Para el veredicto** (regla 11, ◆):
+1. ◆ Cómo se ve una gota en el aire: una esfera de agua de su volumen (12 × 6),
+   sin estela, sin achatarse y sin desenfoque de movimiento; en *Rápido*, la
+   misma esfera con el agua de los casquetes.
+2. ◆ El aire: la velocidad terminal de Atlas, Srivastava y Sekhon por encima de
+   0,6 mm y una recta por debajo, el arrastre cuadrático, y que el viento del
+   efecto no empuje las gotas en el aire.
+3. ◆ La salpicadura al aire: la elevación de 30° y la velocidad que da, en una
+   cara horizontal, el alcance que decidió S3c ◆3 (una gota de una de 2,5 mm
+   vuela de 4 a 8 pasos y sube como mucho 1,5 mm).
+4. ◆ El goteo por una arista sale a la velocidad con que resbalaba; el que
+   cuelga, del reposo.
+5. ◆ Lo que llega al suelo del estudio o a la cara de atrás de una pieza: se va,
+   o la atraviesa.
+6. ◆ Los topes: `MAX_FALLING_DROPS = 1024` y `MAX_FLIGHT_STEPS = 2400` (10 s).
+7. ◆ Las palabras del medidor: qué hay (lluvia, polvo, nieve), en cuántas piezas
+   (las que tienen algo), las gotas y las del aire; *Aún nada en las piezas*.
+8. ◆ Que en los pases una gota en el aire sea la pieza de la que salió (y no
+   ninguna).
+
+### S3e · Las motas del polvo, las piezas que se mueven, el suelo del estudio y las muestras finas del set (simulación) — **Opus** (tras S3d) — propuesta
+
+Lo que queda de S3d, sobre `rt_phys::wet_parts` y `rt_core::weather`:
+
+1. **Piezas que se mueven** (las *Dinámicas* de S2). La simulación de las
+   piezas corre en el mismo bucle que los cuerpos (`render/physics-worker.ts`):
+   el WPT1 marca cada pieza dinámica (un bit `PART_MOVING` en `flags` y el
+   índice de su cuerpo, en una versión 2 del formato) y cada paso
+   `WetParts::step` recibe las poses de los cuerpos; las muestras y las gotas
+   viven en el espacio de su pieza, el flujo, lo que está en medio (la BVH de
+   rayos por pieza, con su transformación) y la gravedad tangente se toman con
+   la pose del paso, y una gota en la pieza siente también la aceleración del
+   cuerpo (◆). El registro por fotograma no cambia (las gotas ya van en el
+   espacio del objeto); el `WETP` de la pieza sigue a su instancia, que ya
+   mueve el clip de la pieza. Criterio: una captura de una pieza *Dinámica* que
+   se moja al caer, y el test de que una pieza que no se mueve da los mismos
+   bits que en S3d.
+2. **El suelo del estudio** (`z = 0`, que no es una malla). Una pieza implícita
+   de película en la página (un cuadrado bajo el producto del tamaño de la
+   región de los efectos, ◆), con su rejilla regular en XY, que recibe la lluvia,
+   el polvo, la nieve, los goteos y las gotas en el aire que llegan a él
+   (charcos: ◆ si las gotas se juntan en el suelo); en el motor una sección
+   nueva (`WETG`: origen, paso y tamaño de la rejilla y los tres bytes por
+   celda) que el sombreado de `FLOR` lee como las capas de `weather` (también en
+   el modo de captador de sombras, ◆), con un bit nuevo (10); en *Rápido*, el
+   mismo parche en el material del suelo. Criterio: la hoja con el suelo mojado
+   bajo la botella y su rastro de goteo.
+3. **Muestras finas en el set.** O partir los triángulos grandes de las
+   películas en la simulación (sus hijos se reparten las muestras y el `WETP`
+   sigue con el triángulo de la malla: una `resolution` de dos bytes, en una
+   versión 2 de `WETP` con su bit), o un presupuesto de muestras por área a
+   cielo abierto que gaste más donde cambia la sombra; criterio: el borde de la
+   sombra de la nieve y del polvo en la tarjeta del set de la hoja a 2 mm o
+   menos, sin escalones (◆7 de S3c).
+4. **Las motas del polvo** donde la cobertura pasa de un umbral (◆): granos del
+   tamaño del efecto colocados por una semilla por muestra, en el motor (una
+   malla de motas tras los casquetes, como las gotas, o las partículas de
+   `rt_core::geometry::particles`) y en *Rápido* (instancias), con su color y su
+   tamaño (◆). Criterio: la hoja del polvo a 30 y 120 s con sus motas.
+5. **Criterios** que quedan: las tres hojas y la captura de arriba.
 
 ## M5 · Tejido hilo a hilo y pelusa real — **Opus**, veredicto **Fable** (tras E6 y E9; la pelusa tras S8)
 
@@ -13562,7 +13838,8 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - El 1.2 entra en **S3**. (hecho en S3)
 - **S3b** · El resto de S3 (la lluvia que se posa y resbala, el polvo que se asienta, el cristal alimentado por la escena, la simulación en el *worker* con caché), con la *Forma* fuera de *Avanzado* y el cristal aproximado en *Rápido* (S3 ◆5 y ◆9). **Hecha en parte**: la *Forma*, el cristal en *Rápido* y todo lo que pasa en el cristal frontal; lo de las piezas, **S3c** (ver S3b y S3c, tras S3). **Hecha en parte**: ver S3b (el cristal frontal); el resto, S3c.
 - **S3c** · Gotas y polvo sobre las piezas: la lluvia que se posa, resbala y gotea por las mallas, la nieve, la marca mojada en el material y el polvo por pieza (S3b, «S3c»); y un aviso cuando el motor no tiene el bit 7 y el cristal de la escena saldría limpio. **Hecha en parte**: el aviso (y el del bit 8) y todo lo que pasa sobre las piezas quietas, en el motor y en *Rápido*; las gotas por el aire, las motas del polvo, las piezas que se mueven y el suelo del estudio, **S3d** (ver S3c y S3d, tras S3b). **Hecha en parte**: ver S3c; el resto, S3d.
-- **S3d** · Lo que queda de las gotas y el polvo sobre las piezas: goteo y salpicaduras que caen por el aire, motas de polvo, piezas dinámicas mojándose, el suelo del estudio, muestras más finas en el set, el id de pieza de las gotas y el texto del medidor (S3c, «S3d»).
+- **S3d** · Lo que queda de las gotas y el polvo sobre las piezas: goteo y salpicaduras que caen por el aire, motas de polvo, piezas dinámicas mojándose, el suelo del estudio, muestras más finas en el set, el id de pieza de las gotas y el texto del medidor (S3c, «S3d»). **Hecha en parte**: el texto del medidor, el id de pieza de las gotas en los pases y el goteo y las salpicaduras que caen por el aire (en la simulación, el motor y *Rápido*); las motas del polvo, las piezas que se mueven, el suelo del estudio y las muestras finas del set, **S3e** (ver S3d y S3e, tras S3c).
+- **S3e** · Las motas del polvo, las piezas dinámicas que se mojan al moverse, el suelo del estudio que se moja y empolva, y las muestras finas del set (S3d, «S3e»).
 
 - **O2** (la hoja de la lente trazada). Se acepta tal como está:
   - qué lentes dan ojo de gato, burbuja, cremoso y remolino;

@@ -3191,7 +3191,66 @@ caché) y mandada al motor, instancia a instancia, en la sección `WETP`.
   `wasm32-wasip1` (escalar y simd128) y en el `rt.wasm` real
   (`tools/wasm-parity.mjs` con `rt --write-s3c-wet-example`, también con los
   pases; `tests/s3c-parts.test.ts` con `tests/fixtures/s3c-parts.wpt1` y
-  `s3c-wet.rsb`). Ningún fijado anterior se movió.
+  `s3c-wet.rsb`). Ningún fijado anterior se movió. (S3d movió los dos, a
+  propósito: §5.2 unvicies.)
+
+### 5.2 unvicies · Las gotas por el aire y el id de pieza de las gotas (S3d, `rt_phys::wet_parts`, `WETF`)
+
+Lo de §5.2 vicies con lo que cae: el goteo y las gotas de una salpicadura ya no
+se posan en el acto ni resbalan por la superficie, sino que vuelan.
+
+- **El vuelo** (`WetParts::fly`, antes de las llegadas del cielo en cada paso:
+  nada se posa en el paso en que sale). Cada gota en el aire es una esfera de su
+  volumen con su velocidad: la gravedad menos un arrastre cuadrático
+  `g |v| v / v_t²` (`terminal_speed`: Atlas, Srivastava y Sekhon 1973 por
+  encima de 0,6 mm, una recta hasta 0 por debajo), sostenida en el paso
+  (`Δp = v Δt + ½ a Δt²`); el tramo se lanza contra la BVH de rayos de las
+  piezas y lo recibe la primera cara con `n·v < 0`, como un impacto con la
+  velocidad a lo largo de su normal (`impact`: moja su círculo, puede salpicar,
+  se queda como gota o moja la película). Por debajo de `min(0, z más baja de
+  las piezas) − 1 mm` o tras `MAX_FLIGHT_STEPS` se va; como mucho
+  `MAX_FALLING_DROPS`. Salen de `launch`: el goteo que cuelga, del reposo,
+  `a` por debajo de su cara; el de una arista, a su velocidad de resbalar por
+  su último tramo; cada gota de una salpicadura a `SPLASH_ELEVATION_DEG` de la
+  superficie, a `√(R g / sin 2θ)`. Toman un número de la cuenta de las gotas.
+- **El registro**: tras `u32 drops`, `u32 falling; (u32 id part; f32 x y z r)
+  [falling]` (el mundo; el radio de la esfera), todas en cada fotograma, por
+  número; `hash` las cuenta (id, pieza, punto, velocidad, volumen). La página
+  (`PartsTrackWriter`) las guarda por fotograma en `PartsTrack.falling`
+  (`u32 n; (u32 part; f32 x y z r)[n]`, base64) y `partsFrame` las da en
+  `PartsFrame.falling`; `PARTS_FORMAT_VERSION` 2 (la clave `wpt2:`); una pista
+  sin `falling` se lee sin gotas en el aire.
+- **`WETF`** (`rt_core::weather`, bit 9, `FEATURE_WET_FLIGHT`, `/api/info` dice
+  1023): una sección por escena tras las `WETP`, `u32 drops; (u32 instance; f32
+  x y z radius)[drops]` (`FallingDrop`: la instancia de la que salió o
+  `NO_INSTANCE`, el mundo, 0..50 mm; como mucho `MAX_FALLING_DROPS` = 4 096; la
+  cola de un escritor nuevo se ignora). `Scene::set_wet_falling` (o el lector)
+  las malla como esferas (`water_mesh`: 12 × 6, tras los casquetes, en la misma
+  malla, instancia y material de agua; las sombras las cruzan igual).
+- **Los pases**: `Scene::pass_instance(instancia, triángulo)` da, en la
+  instancia de los casquetes, la de su dueño: `cap_owners` (uno por casquete
+  y luego uno por esfera; `Caps::caps` casquetes de `CAP_TRIANGLES` triángulos
+  primero, después esferas de `SPHERE_TRIANGLES`); `first_hit` lo usa, así que
+  `partId` y `materialId` de una gota son los de su pieza (y `NO_INSTANCE`, la
+  de los casquetes).
+- **La página** escribe `WETF` solo para un motor con el bit 9
+  (`SceneView.wetFlight`, `readsWetFlight`), del fotograma del *pose*, cada
+  gota de la primera instancia del nodo de la pieza que dejó (las de una pieza
+  que no se dibuja, fuera); con el bit 8 y sin el 9, la nota
+  `partsRenderNoFlight` en *Ambiente*. *Rápido* (`render/weather-preview.ts`):
+  una esfera instanciada (`drops:air`, el agua de los casquetes) por gota en el
+  aire de las piezas que dibuja, en el espacio del `modelRoot`; el medidor dice
+  `partsShown` con `ui/sentence.ts` `partsMeterText`.
+- **Fijados.** Nuevos: `PINNED_S3D_FLIGHT_4SPP = 0xf7b78a45`
+  (`rt_phys::example::s3d_flight_scene`, `rt --write-s3d-flight-example`,
+  `tests/fixtures/s3d-flight.rsb`) y sus seis pases `PINNED_S3D_PASS_*`
+  (`tests/wet_parts.rs`), en escalar, SSE2 y AVX2, con 1, 4 y 16 hilos, en
+  `wasm32-wasip1` y en el `rt.wasm` real (`tools/wasm-parity.mjs` con
+  `--expect-passes`; `tests/s3d-flight.test.ts`). Movidos, a propósito:
+  `PINNED_WET_PARTS` (0x62450071 → 0xe1811f7e: la simulación cambia) y
+  `PINNED_S3C_WET_4SPP` (0x66fa33ab → 0x827ac33c: los `WETP` de esa
+  simulación; el `s3c-wet.rsb` de S3c sigue dando 0x66fa33ab con el motor
+  nuevo).
 
 ### 5.3 · En el navegador: workers
 
