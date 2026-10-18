@@ -13,9 +13,9 @@ import { focusPlaneOf, planeDistance } from '../src/core/focus-plane';
 import { createStore, type ProjectState } from '../src/core/store';
 import { newTracedLens } from '../src/core/traced-lens';
 import { focusCameraOf, focusModeAction, focusObjectAction, focusPickAction, glyphsOf, viewProjector } from '../src/core/view-objects';
-import { cameraToRsb, focusPickRsb, lensInfoRsb, projectScene } from '../src/io/rsb';
+import { cameraToRsb, focusPickRsb, lensInfoRsb, projectScene, writeRsb } from '../src/io/rsb';
 import { loadProject, serializeProject } from '../src/io/project';
-import { engineFocusAt, enginePick, focusSolverOf, hasFocusExports, settledFocusPick } from '../src/render/focus-pick';
+import { engineFocusAt, enginePick, focusSolverOf, hasFocusExports, settledFocusPick, settledScenePick } from '../src/render/focus-pick';
 import { apply, exampleState, keyIds } from './helpers';
 import { loadRt, RT_WASM } from './wasm-engine';
 
@@ -368,6 +368,55 @@ describe('the mark in the viewport and the slider', () => {
     expect(r.hi).toBeGreaterThan(cam.focusDistance);
     expect(r.hi / r.lo).toBeGreaterThanOrEqual(10);
     expect(focusRange(s, cam, 1e5).hi).toBeGreaterThanOrEqual(1e5);
+  });
+});
+
+describe.skipIf(!RT_WASM)('a click focuses on what the image shows there (owner’s report, 2026-10-18)', () => {
+  const [w, h] = [640, 400];
+  const sceneOf = (s: ProjectState) => {
+    const { scene, ids } = projectScene(s, { width: w, height: h, maxSamples: 1, maxSeconds: 0, maxDepth: 1, cameras: true, viewport: { viewW: w, viewH: h } });
+    return { rsb: writeRsb(scene, { meshes: true }), nodeOf: (i: number) => ids.instances[i]?.node ?? null };
+  };
+  /** A pixel of the view where the engine shows the label. */
+  const labelPixel = async (s: ProjectState, label: string): Promise<[number, number]> => {
+    const rt = await loadRt();
+    for (let y = 150; y < 300; y += 4) {
+      const { rsb, nodeOf } = sceneOf(s);
+      const hit = enginePick(rt as never, rsb, 0.5, y / h)?.hit;
+      if (hit && nodeOf(Math.round(hit.instance)) === label) return [0.5, y / h];
+    }
+    throw new Error('no label pixel');
+  };
+
+  it('the point the engine meets at the pixel, the label where the label is seen', async () => {
+    const rt = await loadRt();
+    if (!hasFocusExports(rt)) throw new Error('rt.wasm has no focus pick: npm run engine:build');
+    const s = apply(exampleState(), { type: 'camera/set', id: 'cam1', patch: { fstop: 1 } });
+    const ids = keyIds(s);
+    const [u, v] = await labelPixel(s, ids.label);
+    const hit = settledScenePick(rt, s, u, v, sceneOf, (st, p) => {
+      const a = focusPickAction(st, null, p);
+      return a ? apply(st, a) : null;
+    })!;
+    expect(hit.node).toBe(ids.label);
+    const focused = apply(s, focusPickAction(s, null, hit)!);
+    // The engine's own focus for what that pixel shows is the camera's focus now: in focus to a hundredth of a mm.
+    const seen = enginePick(rt, sceneOf(focused).rsb, u, v)!.hit!;
+    expect(Math.abs(activeCamera(focused).focusDistance - seen.focusDist!)).toBeLessThan(0.01);
+  });
+
+  it('never a part the image does not show there: a part hidden to the camera is looked through', async () => {
+    const rt = await loadRt();
+    if (!hasFocusExports(rt)) throw new Error('rt.wasm has no focus pick: npm run engine:build');
+    const s0 = apply(exampleState(), { type: 'camera/set', id: 'cam1', patch: { fstop: 1 } });
+    const ids = keyIds(s0);
+    const [u, v] = await labelPixel(s0, ids.label);
+    const s = apply(s0, { type: 'scene/setCameraHidden', ids: [ids.label], hidden: true });
+    const hit = settledScenePick(rt, s, u, v, sceneOf, null)!;
+    expect(hit.node).not.toBe(ids.label);
+    const cam = activeCamera(s);
+    const labelHit = enginePick(rt, sceneOf(s0).rsb, u, v)!.hit!;
+    expect(depthOf(cam, hit.point)).toBeGreaterThan(labelHit.depth);
   });
 });
 

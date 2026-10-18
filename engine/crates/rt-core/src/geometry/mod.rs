@@ -85,6 +85,9 @@ pub enum RayClass {
     Rough,
     /// Only the parts, no particles (picking).
     Parts,
+    /// The parts as the camera sees them, no particles: what the image shows at a point (focus with
+    /// a click). Like [`RayClass::Parts`], and it does not see the instances hidden to the camera.
+    Seen,
 }
 
 impl RayClass {
@@ -97,9 +100,16 @@ impl RayClass {
             RayClass::Shadow => rt_sim::FLAG_SHADOW,
             RayClass::Rough if set.is_clear() => rt_sim::FLAG_SHADOW,
             RayClass::Rough => rt_sim::FLAG_REFLECTIONS,
-            RayClass::Parts => return false,
+            RayClass::Parts | RayClass::Seen => return false,
         };
         set.params().visible_to(flag)
+    }
+
+    /// True when a query of this class steps over the instances hidden to the camera
+    /// ([`INSTANCE_NO_CAMERA`]): the camera's rays and what the image shows.
+    #[inline(always)]
+    pub fn skips_camera_hidden(self) -> bool {
+        matches!(self, RayClass::Camera | RayClass::Seen)
     }
 }
 

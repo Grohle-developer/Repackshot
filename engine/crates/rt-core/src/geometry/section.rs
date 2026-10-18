@@ -291,7 +291,7 @@ impl Geometry {
     /// K3: true when `hit` (on a cap, or on the surface that tells one) is of an instance a query of
     /// `class` does not see: a camera query and an instance hidden to the camera.
     fn cap_hidden(&self, class: RayClass, hit: &RayHit) -> bool {
-        class == RayClass::Camera && self.camera_hidden(hit.instance)
+        class.skips_camera_hidden() && self.camera_hidden(hit.instance)
     }
 
     /// [`Geometry::occluded_class`] against the geometry with its section.
