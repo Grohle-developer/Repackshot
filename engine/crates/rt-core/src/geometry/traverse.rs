@@ -677,7 +677,7 @@ fn nearest<B: Backend>(
         ray,
         world: r,
         best: Best::new(r.t_max),
-        camera: class == RayClass::Camera,
+        camera: class.skips_camera_hidden(),
         backend: PhantomData,
     };
     let tlas = geometry.tlas();
@@ -711,7 +711,7 @@ fn nearest<B: Backend>(
         if set.is_empty() || !class.sees(set) {
             continue;
         }
-        let camera = class == RayClass::Camera;
+        let camera = class.skips_camera_hidden();
         let instance = first_set + k as u32;
         // A camera ray from the pinhole's centre tests the particles of its cell of the screen
         // grid (S4b): the same tests, so the same nearest hit.
@@ -749,7 +749,7 @@ fn any<B: Backend>(geometry: &Geometry, ray: &Ray, class: RayClass, stack: &mut 
         ray,
         world: r,
         t_max: r.t_max,
-        camera: class == RayClass::Camera,
+        camera: class.skips_camera_hidden(),
         backend: PhantomData,
     };
     let tlas = geometry.tlas();
@@ -785,13 +785,13 @@ fn any<B: Backend>(geometry: &Geometry, ray: &Ray, class: RayClass, stack: &mut 
             ray,
             t_min: r.t_min,
             t_max: r.t_max,
-            camera: class == RayClass::Camera,
+            camera: class.skips_camera_hidden(),
         };
         if walk_particles::<B, _>(
             set,
             &r,
             false,
-            class == RayClass::Camera,
+            class.skips_camera_hidden(),
             &mut leaves,
             stack,
         ) {
@@ -896,7 +896,7 @@ pub(crate) fn brute_force(
         let Some((mesh, prepared)) = geometry.instance_parts(instance) else {
             continue;
         };
-        if class == RayClass::Camera && prepared.camera_hidden {
+        if class.skips_camera_hidden() && prepared.camera_hidden {
             continue;
         }
         let local = PreparedRay::new(&prepared.local_ray(ray));
@@ -915,7 +915,7 @@ pub(crate) fn brute_force(
         if !class.sees(set) {
             continue;
         }
-        let camera = class == RayClass::Camera;
+        let camera = class.skips_camera_hidden();
         for slot in 0..set.len() {
             any |= set.hit(slot, ray, r.t_min, r.t_max, camera).is_some();
             if let Some(t) = set.hit(slot, ray, r.t_min, best.t, camera) {

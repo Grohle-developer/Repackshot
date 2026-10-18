@@ -1366,7 +1366,7 @@ impl Scene {
         self.geometry.intersect_class(
             ray,
             crate::simd::Isa::detect(),
-            crate::geometry::RayClass::Parts,
+            crate::geometry::RayClass::Seen,
         )
     }
 

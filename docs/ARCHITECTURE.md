@@ -2686,7 +2686,9 @@ tiles like any image.
 **Visible to camera** (`INSTANCE_NO_CAMERA`, `PreparedInstance::camera_hidden`).
 Only queries of class `RayClass::Camera` (primary rays and their straight
 continuations through cut-outs and thin walls, the passes and the section
-caps) skip it, in the BVH, in brute force and in the caps; shadows,
+caps) and `RayClass::Seen` (the pick of focus with a click: the parts as
+the image shows them, no particles) skip it (`RayClass::skips_camera_hidden`),
+in the BVH, in brute force and in the caps; shadows,
 bounces and reflections see it. It is the plan: the ceiling gives its light
 and its shadow and the camera looks over it.
 

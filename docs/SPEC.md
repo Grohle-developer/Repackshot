@@ -1264,10 +1264,15 @@ it is repeated with the camera already focused until the pixel shows the same
 point. **Focus with a click** picks the exact pixel in
 the exact view: the engine's principal ray for that pixel (the camera
 looked through with its own frame, the playhead's pose, the viewport image
-around the frame, the lens with its distortion and its breathing),
-cast against the viewport geometry through both faces of each triangle
-(as the engine sees them) and with the section; the camera that receives it is the one that
-is seen (the one looked through, the playhead shot's, or the active one).
+around the frame, the lens with its distortion and its breathing) and the
+first part **the engine itself** meets along it in the view's whole scene:
+the surface the image shows at that pixel, the face the camera sees (since
+the owner's report of 2026-10-18; the engine's pick also steps over the parts
+hidden to the camera, as its camera rays do). Only where the engine shows no
+part of the scene there is the ray cast against the viewport geometry
+(through both faces of each triangle, with the section). The camera that
+receives it is the one that is seen (the one looked through, the playhead
+shot's, or the active one).
 
 **Focal length and size of what is in focus** (C2, `core/focal.ts`). Each camera carries
 the switch *Keep the size of what is in focus*,

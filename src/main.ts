@@ -75,7 +75,7 @@ import { msaaSamples } from './core/antialias';
 import { PreviewEngine } from './render/preview';
 import { hasParticleExport } from './render/particles';
 import { hasLensInfoExport, readLensVerdict } from './render/lens-info';
-import { enginePick, focusSolverOf, hasFocusExports, settledFocusPick } from './render/focus-pick';
+import { enginePick, focusSolverOf, hasFocusExports, settledFocusPick, settledScenePick } from './render/focus-pick';
 import { setFocusSolver } from './core/focus';
 import { parseLensInfo, type EngineLensInfo } from './core/traced-lens';
 import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
@@ -397,6 +397,17 @@ async function focusPickAt(x: number, y: number, opts: { settle?: boolean; camer
           return a ? reduce(s, a) : null;
         }
       : null;
+    // What the image shows at the pixel, as the engine renders it: its own first hit in the view's whole scene (the
+    // parts it draws, where it draws them), not the viewport's geometry along the ray. The viewport's cast is left for
+    // a pixel the engine shows no part at (a part it adds of its own) and for the object pick's fallback.
+    const sceneOf = (s: ProjectStateOf) => {
+      const through = viewCameraFn?.(s) ?? null;
+      const cameraPatch = through ? (({ id: _id, ...rest }) => rest)(through) : undefined;
+      const { scene, ids } = projectScene(s, { width: w, height: h, maxSamples: 1, maxSeconds: 0, maxDepth: 1, cameras: true, viewport: { viewW: w, viewH: h }, ...(cameraPatch ? { cameraPatch } : {}) });
+      return { rsb: writeRsb(scene, { meshes: true }), nodeOf: (i: number) => ids.instances[i]?.node ?? null };
+    };
+    const seen = settledScenePick(exports, store.get(), x / w, y / h, sceneOf, focusedOn);
+    if (seen && store.get().scene.nodes[seen.node]) return { node: seen.node, face: 0, point: seen.point, normal: [0, 0, 1] };
     const cast = (o: [number, number, number], d: [number, number, number]) => p.pickAlong(o, d);
     const hit = settledFocusPick(exports, store.get(), x / w, y / h, rsbOf, cast, focusedOn);
     if (hit) return hit;
