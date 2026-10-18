@@ -64,6 +64,13 @@
 // file from before S2 has neither and opens as it always did; on open the section keeps only what this version
 // knows, a clip whose track does not decode is left out and so is a damaged anchor. The schema stays at 2.
 //
+// Liquids (S7): a part Convert to liquid made carries its Liquid section (`liquid`: preset, spacing, the part it came
+// from) and the physics role LIQUID, and its mesh is its own (the source's shape in world space), written like any
+// other; a PHYSICS clip of a liquid part holds its recorded run (`liquid`: the frame records as base64,
+// core/liquid.ts) in place of a track. A file from before S7 has neither and opens as it always did; on open a
+// spacing out of range is brought within it, a source that is not in the scene is none, and a clip whose liquid track
+// does not decode is left out. The schema stays at 2.
+//
 // IES lights (L5): an own light of type IES keeps its photometric profile in `studio.lights[].ies` (`{ name, text, base }`: the
 // file's text, one character per byte, and the power the light came in with), so the project opens elsewhere without the
 // file; it is plain JSON in the state, a file from before L5 has none and opens as it always did, and on open a profile
@@ -119,6 +126,8 @@ import { withNormalFocus } from '../core/focus';
 import { migrateRender, syncOutputSize } from '../core/render';
 import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { isGlassTrack } from '../core/wet';
+import { isLiquidTrack, type LiquidProps } from '../core/liquid';
+import { LIQUID_SPACING_LIMITS } from '../data/liquids';
 import { isPartsTrack } from '../core/wet-parts';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
@@ -348,12 +357,29 @@ function checkState(raw: RawState): ProjectState {
       const fixed: SceneNode = { ...(emptied[id] ?? n) };
       const props: PhysicsProps = {};
       if (ph.role === 'STATIC' || ph.role === 'DYNAMIC') props.role = ph.role;
+      // S7: LIQUID only on a part that is one (its Liquid section is read below).
+      else if (ph.role === 'LIQUID' && n.kind === 'PART' && isObject(n.liquid)) props.role = ph.role;
       if (typeof ph.density === 'number' && Number.isFinite(ph.density) && ph.density > 0) props.density = ph.density;
       if (typeof ph.friction === 'number' && Number.isFinite(ph.friction) && ph.friction >= 0) props.friction = ph.friction;
       if (typeof ph.bounciness === 'number' && Number.isFinite(ph.bounciness) && ph.bounciness >= 0 && ph.bounciness <= 1) props.bounciness = ph.bounciness;
       if (typeof ph.asParts === 'boolean') props.asParts = ph.asParts;
       if (Object.keys(props).length > 0) fixed.physics = props;
       else delete fixed.physics;
+      emptied[id] = fixed;
+    }
+    if (n.liquid !== undefined) {
+      // A liquid part (S7): its preset (an unknown one moves as the default, core/liquid.ts presetOf), its spacing
+      // within the limits, the part it came from when that part is in the scene; not a part, or not a section: no
+      // liquid.
+      const lq = n.liquid as unknown;
+      const fixed: SceneNode = { ...(emptied[id] ?? n) };
+      if (n.kind !== 'PART' || !isObject(lq) || typeof lq.preset !== 'string') delete fixed.liquid;
+      else {
+        const props: LiquidProps = { preset: lq.preset };
+        if (typeof lq.spacingMm === 'number' && Number.isFinite(lq.spacingMm) && lq.spacingMm > 0) props.spacingMm = Math.min(LIQUID_SPACING_LIMITS.max, Math.max(LIQUID_SPACING_LIMITS.min, lq.spacingMm));
+        props.source = typeof lq.source === 'string' && isObject(nodes[lq.source]) && lq.source !== id ? lq.source : null;
+        fixed.liquid = props;
+      }
       emptied[id] = fixed;
     }
     if (n.primitive !== undefined) {
@@ -437,8 +463,10 @@ function checkState(raw: RawState): ProjectState {
   // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project. S3b: a PHYSICS
   // clip of the camera records its front glass instead (a glass track, core/wet.ts), checked the same way.
   // S3c: a PHYSICS clip of the scene records the rain, dust and snow on the parts (a parts track, core/wet-parts.ts).
+  // S7: a PHYSICS clip of a liquid part records its particles (a liquid track, core/liquid.ts).
   const recorded = (c: Record<string, unknown>) => {
     const kind = (c.target as { kind?: unknown } | undefined)?.kind;
+    if (kind === 'NODE' && c.liquid !== undefined) return isLiquidTrack(c.liquid);
     return kind === 'CAMERA' ? isGlassTrack(c.glass) : kind === 'SCENE' ? isPartsTrack(c.parts) : isTrack(c.track);
   };
   if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !recorded(c))) {
