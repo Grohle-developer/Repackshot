@@ -535,6 +535,33 @@ pub unsafe extern "C" fn rt_scene_lens_info_copy(handle: u32, ptr: *mut u8) -> u
     crate::STATUS_OK
 }
 
+/// S3b: length in bytes of the front glass of scene `handle` as the engine laid it out
+/// ([`crate::scene_glass`]; 0 without one), `u32::MAX` for a bad handle.
+#[no_mangle]
+pub extern "C" fn rt_scene_glass_len(handle: u32) -> u32 {
+    crate::scene_glass(handle).map_or(u32::MAX, |b| b.len() as u32)
+}
+
+/// S3b: copies the front glass of scene `handle` ([`crate::scene_glass`]) to `ptr`. Returns 0, 1
+/// for a bad handle, 3 for a null `ptr`.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to at least [`rt_scene_glass_len`] writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rt_scene_glass_copy(handle: u32, ptr: *mut u8) -> u32 {
+    if ptr.is_null() {
+        return crate::STATUS_NULL_POINTER;
+    }
+    let Some(bytes) = crate::scene_glass(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    // SAFETY: the caller promises room for `rt_scene_glass_len(handle)` bytes, which is
+    // `bytes.len()`; `bytes` is a fresh allocation, so the regions cannot overlap.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
+    crate::STATUS_OK
+}
+
 /// F1, focus with a click: writes the [`rt_core::focus::PICK_FLOATS`] little-endian floats of the
 /// chief ray of image point `(u, v)` of scene `handle` and of the part it meets
 /// ([`crate::scene_pick`]: origin, direction, hit, `t`, point, instance, depth, focus distance) to
@@ -779,4 +806,82 @@ pub extern "C" fn phys_steps(handle: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn phys_hash(handle: u32) -> u32 {
     crate::phys::hash(handle).unwrap_or(0)
+}
+
+/// S3b: builds a pane of the front glass from `WET1` bytes (`rt_phys::wet`). Returns its handle, or
+/// 0 after recording the error (`rt_scene_error_len`, `rt_scene_error_copy`).
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn wet_new(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("wet_new: null pointer");
+        return 0;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::wet::new(bytes)
+}
+
+/// Forgets a pane. Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn wet_free(handle: u32) -> u32 {
+    if crate::wet::free(handle) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Simulates `n` fixed steps of 1/240 s (at most a minute per call). Returns 0, or 1 for a bad
+/// handle.
+#[no_mangle]
+pub extern "C" fn wet_step(handle: u32, n: u32) -> u32 {
+    if crate::wet::step(handle, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Steps simulated (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn wet_steps(handle: u32) -> u32 {
+    crate::wet::steps(handle).unwrap_or(0)
+}
+
+/// The pane's FNV-1a hash (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn wet_hash(handle: u32) -> u32 {
+    crate::wet::hash(handle).unwrap_or(0)
+}
+
+/// Takes the record of a frame (the drops, the motes added and carried away since the last one;
+/// the next frame starts now) and returns its length in bytes, `u32::MAX` for a bad handle; copy
+/// it with [`wet_frame_copy`].
+#[no_mangle]
+pub extern "C" fn wet_frame(handle: u32) -> u32 {
+    crate::wet::frame(handle).unwrap_or(u32::MAX)
+}
+
+/// Copies the record [`wet_frame`] took to `out`. Returns 0, 1 for a bad handle, 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to at least the length [`wet_frame`] returned, writable.
+#[no_mangle]
+pub unsafe extern "C" fn wet_frame_copy(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(bytes) = crate::wet::frame_bytes(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    // SAFETY: the caller promises room for the length `wet_frame` returned, which is
+    // `bytes.len()`; `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
 }

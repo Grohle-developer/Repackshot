@@ -55,6 +55,8 @@ USAGE:
     rt --write-k3-fisheye-example <scene.rsb>
     rt --write-s3-drops-example <scene.rsb>
     rt --write-s3-glass-example <scene.rsb>
+    rt --write-s3b-wet-example <scene.rsb>
+    rt --write-s3b-wet-spec <pane.wet1>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
@@ -196,9 +198,14 @@ OPTIONS:
                             inside; an equidistant fisheye) as an RSB file
         --write-s3-drops-example <f>
         --write-s3-glass-example <f>
+        --write-s3b-wet-example <f>
                             write an S3 parity scene (the example with falling drops and a mix
                             of the four shapes of particles; the example through a front glass
-                            with drops and dust on it) as an RSB file
+                            with drops and dust on it; S3b: through the pane five seconds of
+                            wind-driven rain left, simulated) as an RSB file
+        --write-s3b-wet-spec <f>
+                            write the spec of that pane's simulation (rain and pollen on the
+                            front glass, rt_phys::wet) as a WET1 file
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -358,6 +365,9 @@ pub enum S3Example {
     Drops,
     /// `rt_core::example::s3_glass_scene`: the example through a wet, dusty front glass.
     Glass,
+    /// `rt_phys::example::s3b_wet_scene` (S3b): the same lens through the pane the simulation of
+    /// wind-driven rain left, its drops one by one.
+    WetGlass,
 }
 
 impl S3Example {
@@ -366,6 +376,7 @@ impl S3Example {
         match self {
             S3Example::Drops => rt_core::example::s3_drops_scene(),
             S3Example::Glass => rt_core::example::s3_glass_scene(),
+            S3Example::WetGlass => rt_phys::example::s3b_wet_scene(),
         }
     }
 }
@@ -550,6 +561,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// S3b: write the spec of the parity pane (`rt_phys::example::wet_spec`) as a `WET1` file.
+    WriteWetSpec {
+        /// WET1 file to write.
+        path: PathBuf,
+    },
     /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
     WriteAmbientExample {
         /// RSB file to write.
@@ -669,6 +685,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_l5 = None;
     let mut write_k3 = None;
     let mut write_s3 = None;
+    let mut write_wet = None;
     let mut write_e10 = None;
     let mut adaptive_noise_dir = None;
     let mut write_ambient = None;
@@ -819,6 +836,10 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-s3-glass-example" => {
                 write_s3 = Some((S3Example::Glass, PathBuf::from(value(&mut it, arg)?)))
             }
+            "--write-s3b-wet-example" => {
+                write_s3 = Some((S3Example::WetGlass, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3b-wet-spec" => write_wet = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--rounds" => options.rounds = Some(positive(value(&mut it, arg)?, arg)?),
@@ -990,6 +1011,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-k3-*-example takes no other option".into());
         }
         return Ok(Command::WriteK3Example { view, path });
+    }
+    if let Some(path) = write_wet {
+        if args.len() != 2 {
+            return Err("--write-s3b-wet-spec takes no other option".into());
+        }
+        return Ok(Command::WriteWetSpec { path });
     }
     if let Some((which, path)) = write_s3 {
         if args.len() != 2 {
@@ -1264,6 +1291,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteK3Example { view, path } => {
             let bytes = view.scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteWetSpec { path } => {
+            let bytes = rt_phys::example::wet_spec().to_bytes();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())

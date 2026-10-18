@@ -21,6 +21,10 @@
 //! **Sleeping.** A body slower than its rest speed for half a second sleeps; when every body
 //! sleeps the simulation is [`World::settled`].
 //!
+//! **Rain and dust on the front glass** (S3b, [`wet`]): what the ambient effects of a scene leave
+//! on the pane in front of a camera, drops that land, merge, stay pinned or slide leaving their
+//! trails, and dust that settles where the pane is flat enough, at the same fixed step.
+//!
 //! **Determinism.** See [`world`]: contacts are sorted by (body, body, feature) before the solver
 //! sees them, so a narrow phase split over threads would give the same result; the pose hash
 //! ([`World::hash`]) is the check, pinned in the tests and compared with the WebAssembly build.
@@ -35,9 +39,11 @@ pub mod hull;
 pub mod math;
 pub mod scene;
 pub mod shape;
+pub mod wet;
 pub mod world;
 
 pub use math::Quat;
 pub use scene::Scene;
 pub use shape::ShapeKind;
+pub use wet::{WetPane, WetSource, WetSpec};
 pub use world::{BodyError, BodyParams, Pose, ShapeSource, Transform, World};

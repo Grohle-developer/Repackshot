@@ -148,3 +148,93 @@ pub fn drop_scene() -> Scene {
         }),
     }
 }
+
+/// S3b: steps the wet pane of the parity scene is simulated for (five seconds).
+pub const WET_STEPS: u32 = 1200;
+/// S3b: the contact angles of water on glass, advancing and receding (the page's
+/// `src/data/wettability.ts`, family `GLASS`: ◆ a proposal), and the dust's angle of repose (its
+/// `DUST_REPOSE_DEG`).
+pub const GLASS_ADVANCING_DEG: f32 = 70.0;
+/// See [`GLASS_ADVANCING_DEG`].
+pub const GLASS_RECEDING_DEG: f32 = 50.0;
+/// See [`GLASS_ADVANCING_DEG`].
+pub const DUST_REPOSE_DEG: f32 = 35.0;
+
+/// A world vector in the axes of the front glass of `camera`: to its right, up, and out of the
+/// pane's outer face (the camera's forward).
+pub fn pane_axes(camera: &rt_core::scene::Camera, v: Vec3) -> [f32; 3] {
+    let (forward, right, up) = camera.basis();
+    [v.dot(right), v.dot(up), v.dot(forward)]
+}
+
+/// The S3b parity pane: the front glass of [`rt_core::example::s3_glass_scene`]'s camera under rain
+/// that a 3 m/s wind drives at the lens (20 000 drops of 1.2 mm ± 40 % per m³ falling at 6.5 m/s,
+/// the page's *Rain*) and pollen (40 000 grains of 0.3 mm per m³), five seconds of it. The camera
+/// looks a little down, so the rain reaches the lens only because of the wind, and no pollen stays
+/// on a face that looks down.
+pub fn wet_spec() -> crate::wet::WetSpec {
+    use crate::wet::{SourceKind, WetSource, WetSpec};
+    use rt_core::optics::glass::{FrontGlass, GlassParams};
+    let scene = rt_core::example::s3_glass_scene();
+    let camera = &scene.camera;
+    let distance = FrontGlass::new(GlassParams::default(), camera).distance();
+    let half_extent = FrontGlass::half_extent_of(camera, distance);
+    let mut towards = camera.position - camera.target;
+    towards.z = 0.0;
+    let towards = towards.normalize();
+    let gravity = pane_axes(camera, Vec3::new(0.0, 0.0, -1.0));
+    let rain = towards * 3000.0 + Vec3::new(0.0, 0.0, -6500.0);
+    let pollen = towards * 50.0 + Vec3::new(0.0, 0.0, -20.0);
+    WetSpec {
+        seed: 3,
+        half_extent,
+        gravity,
+        advancing_deg: GLASS_ADVANCING_DEG,
+        receding_deg: GLASS_RECEDING_DEG,
+        repose_deg: DUST_REPOSE_DEG,
+        sources: vec![
+            WetSource {
+                kind: SourceKind::Drops,
+                density: 2.0e-5,
+                velocity: pane_axes(camera, rain),
+                size_mm: 1.2,
+                size_var: 0.4,
+            },
+            WetSource {
+                kind: SourceKind::Dust,
+                density: 4.0e-5,
+                velocity: pane_axes(camera, pollen),
+                size_mm: 0.3,
+                size_var: 0.4,
+            },
+        ],
+    }
+}
+
+/// The pane of [`wet_spec`] after [`WET_STEPS`].
+pub fn wet_pane() -> crate::wet::WetPane {
+    let mut pane = crate::wet::WetPane::new(wet_spec());
+    pane.step(WET_STEPS);
+    pane
+}
+
+/// The S3b parity scene: [`rt_core::example::s3_glass_scene`] through the pane the simulation left
+/// ([`wet_pane`]): its drops one by one in the `GLAS` section (no scatter, no dust coverage), at
+/// the cap angle of the glass's contact angles and with the drops' and motes' optics of the front
+/// glass. `tests/wet.rs` pins its image; `rt --write-s3b-wet-example` writes it.
+pub fn s3b_wet_scene() -> rt_core::scene::Scene {
+    use rt_core::optics::glass::GlassParams;
+    let mut scene = rt_core::example::s3_glass_scene();
+    let pane = wet_pane();
+    let params = GlassParams {
+        seed: 0,
+        drop_coverage: 0.0,
+        dust_coverage: 0.0,
+        contact_angle_deg: pane.spec().cap_angle_deg(),
+        ior: 1.333,
+        dust_opacity: 0.9,
+        ..GlassParams::default()
+    };
+    scene.set_glass_layout(params, pane.layout());
+    scene
+}

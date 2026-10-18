@@ -23,3 +23,5 @@ path = "src/bin/rt-bench.rs"
 rt-core = { path = "../rt-core" }
 # The denoiser (E5b-1) lives with the rest of the pixel work.
 rt-post = { path = "../rt-post" }
+# The rain and dust on the front glass (S3b): the parity scene's pane is simulated by `rt_phys::wet`.
+rt-phys = { path = "../rt-phys" }

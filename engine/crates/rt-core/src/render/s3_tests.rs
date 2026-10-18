@@ -138,6 +138,19 @@ fn a_front_glass_with_nothing_on_it_changes_no_pixel_and_no_pass() {
     let back = Scene::from_rsb(&clean.to_rsb()).expect("read");
     assert!(back.glass.is_some());
     assert_eq!(scene_4spp_hash(&back, isa), PINNED_EXAMPLE_4SPP);
+    // S3b: a pane laid out drop by drop with no drop and no mote (a simulation before anything
+    // landed), even with coverage asked for, through a file as well.
+    let mut dry = crate::example::scene();
+    dry.set_glass_layout(
+        crate::example::wet_glass(),
+        crate::optics::glass::GlassLayout::default(),
+    );
+    let back = Scene::from_rsb(&dry.to_rsb()).expect("read");
+    assert!(back
+        .glass
+        .as_ref()
+        .is_some_and(|g| g.is_clear() && g.layout().is_some()));
+    assert_eq!(scene_4spp_hash(&back, isa), PINNED_EXAMPLE_4SPP);
     // And the wet pane does change the picture.
     assert_ne!(
         scene_4spp_hash(&crate::example::s3_glass_scene(), isa),

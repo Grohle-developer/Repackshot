@@ -168,7 +168,8 @@ fn the_k3_views_render_the_same_pixels_on_one_four_and_sixteen_threads() {
 fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
     // S3: the drops, the mixes of shapes and the front glass are the same arithmetic whoever runs
     // them (the glass is laid out once per scene; the particles are evaluated in any order).
-    for which in [S3Example::Drops, S3Example::Glass] {
+    // S3b: and the pane the simulation of the rain left, laid out drop by drop.
+    for which in [S3Example::Drops, S3Example::Glass, S3Example::WetGlass] {
         let scene = which.scene();
         let one = rt_cli::render(&scene, 2, 1);
         for threads in [4, 16] {
@@ -186,6 +187,11 @@ fn write_s3_examples_produce_readable_rsb_files() {
     for (which, flag, name) in [
         (S3Example::Drops, "--write-s3-drops-example", "s3-drops.rsb"),
         (S3Example::Glass, "--write-s3-glass-example", "s3-glass.rsb"),
+        (
+            S3Example::WetGlass,
+            "--write-s3b-wet-example",
+            "s3b-wet.rsb",
+        ),
     ] {
         let path = scratch(name);
         let args = [flag.to_string(), path.to_str().unwrap().to_string()];
@@ -208,6 +214,30 @@ fn write_s3_examples_produce_readable_rsb_files() {
         ];
         assert!(parse_args(&extra).is_err());
     }
+}
+
+#[test]
+fn write_s3b_wet_spec_writes_the_parity_panes_spec() {
+    let path = scratch("s3b-wet.wet1");
+    let args = [
+        "--write-s3b-wet-spec".to_string(),
+        path.to_str().unwrap().to_string(),
+    ];
+    let command = parse_args(&args).expect("valid arguments");
+    assert_eq!(command, Command::WriteWetSpec { path: path.clone() });
+    run(command).expect("write succeeds");
+    let bytes = std::fs::read(&path).expect("written");
+    assert_eq!(
+        rt_phys::wet::WetSpec::parse(&bytes),
+        Ok(rt_phys::example::wet_spec())
+    );
+    // The page's fixture is this file.
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/fixtures/s3b-wet.wet1");
+    assert_eq!(
+        std::fs::read(fixture).expect("tests/fixtures/s3b-wet.wet1"),
+        bytes
+    );
 }
 
 #[test]

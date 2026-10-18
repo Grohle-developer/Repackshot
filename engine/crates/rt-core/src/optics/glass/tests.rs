@@ -362,3 +362,103 @@ fn a_traced_lens_keeps_the_pane_in_front_of_its_front_vertex() {
     let ortho = FrontGlass::new(rainy(), &cam);
     assert!((ortho.half_extent() - 220.0).abs() < 1.0e-3);
 }
+
+#[test]
+fn a_layout_travels_drop_by_drop_and_bad_ones_are_refused() {
+    // S3b: the tail of the payload after its 48 bytes.
+    let layout = GlassLayout {
+        drops: vec![
+            GlassDrop {
+                x: -3.0,
+                y: 2.0,
+                a: 1.5,
+            },
+            GlassDrop {
+                x: 4.25,
+                y: -1.0,
+                a: 0.5,
+            },
+        ],
+        motes: vec![GlassMote {
+            x: 0.5,
+            y: 0.75,
+            r: 0.2,
+        }],
+    };
+    let mut bytes = rainy().encode();
+    bytes.extend_from_slice(&layout.encode());
+    assert_eq!(bytes.len(), GLAS_BYTES + 4 * (3 + 9));
+    assert_eq!(GlassParams::decode(&bytes), Ok(rainy()));
+    assert_eq!(GlassLayout::decode(&bytes), Ok(Some(layout.clone())));
+    // None without one, or with a word 48 that is not a layout (a newer writer's field).
+    assert_eq!(GlassLayout::decode(&rainy().encode()), Ok(None));
+    let mut other = rainy().encode();
+    other.extend_from_slice(&[0xff; 12]);
+    assert_eq!(GlassLayout::decode(&other), Ok(None));
+    assert!(GlassLayout::decode(&bytes[..bytes.len() - 1]).is_err());
+    let bad = |f: &dyn Fn(&mut GlassLayout)| {
+        let mut l = layout.clone();
+        f(&mut l);
+        let mut b = rainy().encode();
+        b.extend_from_slice(&l.encode());
+        GlassLayout::decode(&b)
+    };
+    assert!(bad(&|l| l.drops[0].a = 0.0).is_err());
+    assert!(bad(&|l| l.drops[0].a = 51.0).is_err());
+    assert!(bad(&|l| l.drops[1].x = f32::NAN).is_err());
+    assert!(bad(&|l| l.motes[0].r = -1.0).is_err());
+    assert!(bad(&|l| l.motes[0].y = 20_000.0).is_err());
+    assert!(bad(&|l| l.drops = vec![l.drops[0]; MAX_DROPS + 1]).is_err());
+    assert!(bad(&|l| l.drops.clear()).is_ok());
+}
+
+#[test]
+fn a_laid_out_pane_takes_its_drops_and_motes_as_they_come() {
+    // Two drops that overlap stay two (the simulation merged what it merges), the coverage fields
+    // scatter nothing, and the mote is where it was put and stops what crosses it.
+    let drops = vec![
+        GlassDrop {
+            x: 0.0,
+            y: 0.0,
+            a: 2.0,
+        },
+        GlassDrop {
+            x: 3.0,
+            y: 0.0,
+            a: 2.0,
+        },
+    ];
+    let mote = GlassMote {
+        x: -8.0,
+        y: 5.0,
+        r: 0.5,
+    };
+    let params = GlassParams {
+        dust_opacity: 1.0,
+        ..rainy()
+    };
+    let g = FrontGlass::laid_out(
+        params,
+        Some(GlassLayout {
+            drops: drops.clone(),
+            motes: vec![mote],
+        }),
+        &camera(),
+    );
+    assert_eq!(g.drops(), &drops[..]);
+    assert_eq!(g.motes(), &[mote]);
+    assert_eq!(
+        g.cross(&camera(), &ray_to(mote.x, mote.y, false)),
+        Crossed::Blocked
+    );
+    assert!(matches!(
+        g.cross(&camera(), &ray_to(0.0, 0.0, true)),
+        Crossed::Through { bent: true, .. }
+    ));
+    // Its payload carries the layout; without one, the pane scatters as before.
+    let back = GlassLayout::decode(&g.encode()).expect("valid");
+    assert_eq!(back.as_ref(), g.layout());
+    assert_eq!(FrontGlass::new(params, &camera()).encode(), params.encode());
+    // An empty layout is a clean pane, whatever the coverage fields say.
+    assert!(FrontGlass::laid_out(params, Some(GlassLayout::default()), &camera()).is_clear());
+}
