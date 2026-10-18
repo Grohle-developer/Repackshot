@@ -17,6 +17,11 @@
 // the air (the part each left, its centre in the world, the radius of its sphere), which the track keeps frame by frame
 // (`PartsTrack.falling`), the render draws (the WETF section, for an engine with bit 9) and Fast too. `partsShown` says
 // what the frame holds, for the meter: rain, dust and snow, on how many parts, the drops on them and in the air.
+//
+// S3f: the drops are organic (rt_phys::wet_parts): they grow, let go past their critical size, gather the drops on their
+// path, merge with a neck that relaxes, leave a rivulet, hang and pinch off. Every changed drop's record carries its
+// shape (rt_core::weather::DropShape: 15 numbers, `DropShape` here), which the track keeps per version
+// (`PartsTrack.shapes`), the render draws (the shape tail of WETP, for an engine with bit 10) and Fast too.
 
 import { PARTS_CELL_MM, PARTS_FEED, PARTS_MAX_SAMPLES, SET_PIECES_AS_FILM } from '../data/wet-parts';
 import { DUST_REPOSE_DEG, SNOW_REPOSE_DEG, wettability, wettabilityFamilyOf, type WettabilityFamily } from '../data/wettability';
@@ -31,9 +36,42 @@ import type { ProjectState } from './store';
 export const WPT1_VERSION = 1;
 /**
  * The version of the record format (and of the simulation it records): part of every key. 2 (S3d): the drops in the
- * air, and the drips and splashes that land later than they leave.
+ * air, and the drips and splashes that land later than they leave. 3 (S3f): the shapes of the drops, and the organic
+ * drops (the gathering, the merges that relax, the rivulets, the drops that hang at an edge and pinch off).
  */
-export const PARTS_FORMAT_VERSION = 2;
+export const PARTS_FORMAT_VERSION = 3;
+/**
+ * S3f: a drop's shape (rt_core::weather::DropShape, its floats in the order of the WETP tail): axis[3] aspect bulge
+ * taper, merge_axis[3] merge_along merge_across neck shift, sag pinch. The axes are in the part's object space.
+ */
+export type DropShape = readonly number[];
+/** S3f: the floats of a shape. */
+export const SHAPE_FLOATS = 15;
+/** S3f: a round cap. */
+export const ROUND_SHAPE: DropShape = Object.freeze([0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0]);
+/** S3f: true for a round cap. */
+export function isRoundShape(s: DropShape): boolean {
+  return s.length === SHAPE_FLOATS && s.every((v, i) => v === ROUND_SHAPE[i]);
+}
+/** S3f: true when every value of a shape is finite and in its range (rt_core::weather `DropShape::is_valid`). */
+export function isValidShape(s: DropShape): boolean {
+  if (s.length !== SHAPE_FLOATS || !s.every(Number.isFinite)) return false;
+  const axis = (i: number) => Math.max(Math.abs(s[i]), Math.abs(s[i + 1]), Math.abs(s[i + 2])) <= 1e6;
+  const within = (v: number, lo: number, hi: number) => v >= lo && v <= hi;
+  return (
+    axis(0) &&
+    axis(6) &&
+    within(s[3], 1, 16) &&
+    within(s[4], -2, 2) &&
+    within(s[5], -0.95, 0.95) &&
+    within(s[9], 0.1, 16) &&
+    within(s[10], 0.1, 16) &&
+    within(s[11], 0, 0.95) &&
+    within(s[12], -16, 16) &&
+    within(s[13], 0, 8) &&
+    within(s[14], 0, 0.95)
+  );
+}
 /** A frame that has not come. */
 export const NEVER = 0xffffffff;
 /** The depth of snow a step of its byte stands for, mm (rt_core::weather::SNOW_STEP_MM). */
@@ -105,6 +143,15 @@ export function partsRenderDry(state: ProjectState, readsWetParts: boolean | und
  */
 export function partsRenderNoFlight(state: ProjectState, readsWetParts: boolean | undefined, readsWetFlight: boolean | undefined): boolean {
   return readsWetParts === true && readsWetFlight === false && partsFeedingEffects(state).some((e) => PARTS_FEED[e.preset] === 'DROPS');
+}
+
+/**
+ * S3f: the render would draw the drops on the parts round although some effect rains on them: its engine draws the
+ * weather of the parts (bit 8) but not the shapes of the drops (`readsWetShapes` false: bit 10, render/engine.ts; an
+ * engine of S3c or S3d). Unknown is no reason to warn, nor an engine without bit 8.
+ */
+export function partsRenderRound(state: ProjectState, readsWetParts: boolean | undefined, readsWetShapes: boolean | undefined): boolean {
+  return readsWetParts === true && readsWetShapes === false && partsFeedingEffects(state).some((e) => PARTS_FEED[e.preset] === 'DROPS');
 }
 
 /**
@@ -284,6 +331,8 @@ export interface PartsTrack {
    * in a track of before (no drop in the air).
    */
   falling?: string;
+  /** S3f: the shape of every version of every drop (`DropShape`, f32 × 15 each, in the order of `drops`). Absent in a track of before (round drops). */
+  shapes?: string;
 }
 
 /** S3d: a drop in the air at a frame: the part it left (its index in the track), its centre (world) and its radius. */
@@ -294,8 +343,16 @@ export interface FallingDropFrame {
 }
 
 /** What the parts hold at a frame: per part its samples' bytes and its drops. */
+/** A drop on a part at a frame: its triangle, its centre (object space), its contact radius; S3f: its shape. */
+export interface PartsFrameDrop {
+  triangle: number;
+  position: Vec3;
+  radius: number;
+  shape?: DropShape;
+}
+
 export interface PartsFrame {
-  parts: { values: Uint8Array; drops: { triangle: number; position: Vec3; radius: number }[] }[];
+  parts: { values: Uint8Array; drops: PartsFrameDrop[] }[];
   /** Drops on all the parts and drips so far (the meter). */
   drops: number;
   drips: number;
@@ -333,6 +390,12 @@ class Words {
   u32(v: number): void {
     this.room(4);
     this.view.setUint32(this.length, v >>> 0, true);
+    this.length += 4;
+  }
+
+  f32(v: number): void {
+    this.room(4);
+    this.view.setFloat32(this.length, v, true);
     this.length += 4;
   }
 
@@ -390,7 +453,9 @@ export function parseLayout(bytes: Uint8Array): { cellMm: number; parts: { trian
 /**
  * The track of a run, a frame at a time from the engine's records (rt_phys::wet_parts `WetParts::frame`):
  * `u32 changed; (u32 id part tri; f32 x y z a)[changed]; u32 gone; u32 ids[gone]; u32 wetted; u32 samples[];
- * u32 wiped; u32 samples[]; u32 drips; u32 drops`. The first record is frame 0 (the dry parts at step 0).
+ * u32 wiped; u32 samples[]; u32 drips; u32 drops; u32 falling; (u32 id part; f32 x y z r)[falling]`; S3f: then
+ * `u32 shaped (= changed); f32 shape[15][changed]` (a record of before, without it: round drops). The first record is
+ * frame 0 (the dry parts at step 0).
  */
 export class PartsTrackWriter {
   private readonly versions = new Words();
@@ -398,6 +463,8 @@ export class PartsTrackWriter {
   private readonly wiped = new Words();
   private readonly counts = new Words();
   private readonly falling = new Words();
+  /** S3f: the shape of each version. */
+  private readonly shapes = new Words();
   /** The version of each live drop (its index among the versions). */
   private readonly live = new Map<number, number>();
   private count = 0;
@@ -438,6 +505,21 @@ export class PartsTrackWriter {
     const frame = this.count;
     const nc = word(0);
     if (1 + 7 * nc > words) throw new Error('parts record: truncated');
+    // S3f: the shapes come at the end (none in a record of before): check them before anything is written.
+    let shapesAt = -1;
+    {
+      let end = 1 + 7 * nc;
+      end += 1 + word(end);
+      end += 1 + word(end);
+      end += 1 + word(end);
+      end += 2;
+      end += 1 + 6 * word(end);
+      if (end < words) {
+        if (word(end) !== nc || end + 1 + 15 * nc !== words) throw new Error('parts record: the shapes are not one per changed drop');
+        for (let k = 0; k < 15 * nc; k++) if (!Number.isFinite(view.getFloat32(4 * (end + 1 + k), true))) throw new Error('parts record: a shape that is not finite');
+        shapesAt = end + 1;
+      }
+    }
     const close = (id: number) => {
       const v = this.live.get(id);
       if (v === undefined) return;
@@ -454,6 +536,8 @@ export class PartsTrackWriter {
       this.versions.raw(record.subarray(4 * at, 4 * at + 28));
       this.versions.u32(frame);
       this.versions.u32(NEVER);
+      if (shapesAt >= 0) this.shapes.raw(record.subarray(4 * (shapesAt + 15 * k), 4 * (shapesAt + 15 * (k + 1))));
+      else for (const v of ROUND_SHAPE) this.shapes.f32(v);
     }
     let at = 1 + 7 * nc;
     const ng = word(at);
@@ -482,7 +566,7 @@ export class PartsTrackWriter {
     at += 2;
     const nf = word(at);
     if (at + 1 + 6 * nf > words) throw new Error('parts record: truncated');
-    if (4 * (at + 1 + 6 * nf) !== record.byteLength) throw new Error('parts record: bytes after the end');
+    if (4 * (at + 1 + 6 * nf) !== record.byteLength && shapesAt < 0) throw new Error('parts record: bytes after the end');
     const fallingAt = this.falling.length;
     this.falling.u32(nf);
     for (let k = 0; k < nf; k++) {
@@ -513,6 +597,7 @@ export class PartsTrackWriter {
       wiped: toBase64(this.wiped.data()),
       counts: toBase64(this.counts.data()),
       falling: toBase64(this.falling.data()),
+      shapes: toBase64(this.shapes.data()),
     };
     return track;
   }
@@ -534,6 +619,8 @@ interface DecodedParts {
   /** S3d: the words of the drops in the air, and where each frame's begin (its count), or null (a track of before). */
   falling: Uint32Array | null;
   fallingAt: Uint32Array | null;
+  /** S3f: the shape of each version (15 floats each), or null (a track of before: round drops). */
+  shapes: Float32Array | null;
 }
 
 const decodedTracks = new WeakMap<PartsTrack, DecodedParts | null>();
@@ -605,7 +692,15 @@ function decodeParts(track: PartsTrack): DecodedParts | null {
     }
     if (at !== falling.length) return null;
   }
-  return { layout, first, versions, versionFloats, wetFrame, wipeStart, wipeFrames, counts, falling, fallingAt };
+  // S3f: the shapes, one per version.
+  let shapes: Float32Array | null = null;
+  if (track.shapes !== undefined) {
+    const w = words(track.shapes, SHAPE_FLOATS);
+    if (!w || w.length !== (versions.length / 9) * SHAPE_FLOATS) return null;
+    shapes = new Float32Array(w.buffer);
+    for (let v = 0; v < versions.length / 9; v++) if (!isValidShape(Array.from(shapes.subarray(SHAPE_FLOATS * v, SHAPE_FLOATS * (v + 1))))) return null;
+  }
+  return { layout, first, versions, versionFloats, wetFrame, wipeStart, wipeFrames, counts, falling, fallingAt, shapes };
 }
 
 function decoded(track: PartsTrack): DecodedParts | null {
@@ -639,6 +734,7 @@ export function isPartsTrack(x: unknown): x is PartsTrack {
     typeof t.wiped === 'string' &&
     typeof t.counts === 'string' &&
     (t.falling === undefined || typeof t.falling === 'string') &&
+    (t.shapes === undefined || typeof t.shapes === 'string') &&
     decoded(t as PartsTrack) !== null
   );
 }
@@ -692,7 +788,10 @@ export function partsFrame(track: PartsTrack, index: number): PartsFrame | null 
   ids.sort((a, b) => a.id - b.id);
   for (const { v } of ids) {
     const fl = d.versionFloats;
-    parts[d.versions[9 * v + 1]].drops.push({ triangle: d.versions[9 * v + 2], position: [fl[9 * v + 3], fl[9 * v + 4], fl[9 * v + 5]], radius: fl[9 * v + 6] });
+    const drop: PartsFrameDrop = { triangle: d.versions[9 * v + 2], position: [fl[9 * v + 3], fl[9 * v + 4], fl[9 * v + 5]], radius: fl[9 * v + 6] };
+    // S3f: its shape, when the track has them.
+    if (d.shapes) drop.shape = Array.from(d.shapes.subarray(SHAPE_FLOATS * v, SHAPE_FLOATS * (v + 1)));
+    parts[d.versions[9 * v + 1]].drops.push(drop);
   }
   // S3d: the drops in the air at this frame.
   const falling: FallingDropFrame[] = [];
@@ -737,7 +836,7 @@ export function recordedParts(state: ProjectState, pose: Pose | null): { track: 
  * them (null): each triangle's resolution and its samples' bytes, in that order, and the drops on those triangles
  * (their index in the instance's mesh). Null when the track is damaged.
  */
-export function partWeather(track: PartsTrack, frame: PartsFrame, k: number, tris: readonly number[] | null): { resolution: Uint8Array; values: Uint8Array; drops: { triangle: number; position: Vec3; radius: number }[] } | null {
+export function partWeather(track: PartsTrack, frame: PartsFrame, k: number, tris: readonly number[] | null): { resolution: Uint8Array; values: Uint8Array; drops: PartsFrameDrop[] } | null {
   const res = partsResolution(track, k);
   const p = frame.parts[k];
   if (!res || !p) return null;

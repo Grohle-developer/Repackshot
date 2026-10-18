@@ -251,6 +251,11 @@ export interface EngineInfo {
    * the drips and splashes only once they land, and the ambient section says so. Absent: not known.
    */
   wetFlight?: boolean;
+  /**
+   * S3f: the engine draws the drops on the parts with their shapes (bit 10, render/engine.ts `readsWetShapes`): without
+   * it the render draws them round, and the ambient section says so. Absent: not known.
+   */
+  wetShapes?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }
