@@ -36,6 +36,8 @@ mod image;
 mod job;
 mod prepared;
 mod report;
+pub mod style;
+pub mod test_model;
 mod tiles;
 
 #[cfg(test)]
@@ -46,12 +48,12 @@ mod tests;
 pub use conditioning::DEPTH_FAR;
 pub use image::{LinearImage, Passes, Rgb8Image};
 pub use job::{
-    Job, MaterialInfo, PostError, Settings, Tolerances, MAX_ATTEMPTS, MAX_MATERIALS, MAX_PIXELS,
-    MAX_SIDE, MAX_STRENGTH, RETRY_FACTOR,
+    Job, MaterialInfo, PostError, Settings, Style, Tolerances, BAND_GAIN_AT_100, MAX_ATTEMPTS,
+    MAX_MATERIALS, MAX_PIXELS, MAX_SIDE, MAX_STRENGTH, RETRY_FACTOR,
 };
 pub use prepared::FLOOR_NAME;
 pub use report::{
-    number as report_number, string as report_string, Check, MaterialCheck, Report, Verdict,
+    number as report_number, string as report_string, Capped, Check, MaterialCheck, Report, Verdict,
 };
 pub use rt_core::color::Tonemap;
 /// `partId` and `materialId` of the studio floor in the passes (`FLOOR_ID` of `src/core/passes.ts`): a
@@ -290,6 +292,7 @@ fn base_report(plan: &Plan) -> Report {
         detail: Check::floor(1.0, t.detail_ssim),
         focus: Check::ceiling(0.0, t.focus),
         materials: Vec::new(),
+        capped: Capped::default(),
         reason: None,
         model_key: plan.job.model_key.clone(),
         runtime: plan.job.runtime.clone(),
@@ -368,7 +371,7 @@ pub fn accept(
     let scale = plan.scale(attempt);
     let cand = guard::candidate(&prep, &model, plan.sigma_low, scale, plan.steps);
     let caps = Caps::of(&plan.job, scale);
-    let m = checks::measure(&prep, &cand.rgba, &cand.disp, &caps);
+    let m = checks::measure(&prep, &cand.rgba, &cand.disp, &caps, &cand.style);
 
     let t = &plan.job.tolerances;
     report.outside = Check::ceiling(m.outside as f32, 0.0);
@@ -379,15 +382,18 @@ pub fn accept(
         .regions
         .iter()
         .zip(&m.colour)
-        .map(|(r, &(mean, p95))| MaterialCheck {
+        .zip(&cand.kept)
+        .map(|((r, &(mean, p95)), &kept)| MaterialCheck {
             material_id: r.id,
             name: r.name.clone(),
             delta_e_mean: mean,
             delta_e_p95: p95,
             limit: t.delta_e_mean,
             ok: mean <= t.delta_e_mean && p95 <= t.delta_e_p95,
+            kept,
         })
         .collect();
+    report.capped = cand.capped;
 
     let mut failed = Vec::new();
     if !report.outside.ok {

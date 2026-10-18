@@ -121,7 +121,7 @@ fn strengths_follow_intervention_and_the_retry_factor() {
     // The JSON a host reads carries them.
     let json = p.to_json();
     assert!(
-        json.contains("\"strengths\":[0.2,0.12,0.072,0.0432]"),
+        json.contains("\"strengths\":[0.3,0.18,0.108,0.0648]"),
         "{json}"
     );
     assert!(json.contains("\"maxAttempts\":4"), "{json}");
@@ -212,7 +212,9 @@ fn the_output_is_always_the_jobs_size() {
 #[test]
 fn an_identity_model_changes_nothing_across_tiles() {
     let scene = fixture::scene();
-    let job = fixture::job(FULL);
+    // Without the style's own grade (X6), which is the guard's and not the model's.
+    let mut job = fixture::job(FULL);
+    job.settings.style_strength = 0;
     assert_eq!(plan(&job).unwrap().tiles.len(), 2);
     let (image, report) = run_with(&job, &scene, fixture::identity);
     assert_eq!(report.verdict, Verdict::Accepted, "{report:?}");
@@ -271,7 +273,8 @@ fn checks_of(job: &Job, scene: &Scene, image: &LinearImage, attempt: u32) -> che
     let prep = Prepared::new(job, &scene.image, scene.passes());
     let disp = display(job, image);
     let caps = prepared::Caps::of(job, p.scale(attempt));
-    checks::measure(&prep, &image.rgba, &disp, &caps)
+    let style = crate::guard::style_for(&prep, p.sigma_low(), p.scale(attempt));
+    checks::measure(&prep, &image.rgba, &disp, &caps, &style)
 }
 
 /// How far the hand-made moved edges go: beyond the edge limit (4 px since C1; they were 3 px
@@ -321,6 +324,9 @@ fn a_material_colour_change_is_limited_to_the_tolerance() {
     // Caps that let more colour through than the ΔE tolerance: the regions step must limit it.
     let mut job = fixture::job(FULL);
     job.tolerances.cap_bounce = 0.5;
+    // The style's own grade (X6) darkens these highlights through the tone curve; this test is
+    // about the colour the model brought.
+    job.settings.style_strength = 0;
     let (image, report) = run_with(&job, &scene, tinted);
     assert_eq!(report.verdict, Verdict::Accepted, "{:?}", report.reason);
     let cap = report.materials.iter().find(|m| m.name == "Cap").unwrap();
@@ -524,7 +530,14 @@ fn global_warm(r: &TileRequest) -> Rgb8Image {
 fn each_control_at_zero_leaves_its_aspect_unchanged() {
     let scene = fixture::scene();
     let d0 = display(&fixture::job(FULL), &scene.image);
+    // Light and Bounce without the style's own grade (X6), which changes both on its own.
     let with = |f: fn(&mut Settings)| {
+        let mut s = FULL;
+        s.style_strength = 0;
+        f(&mut s);
+        fixture::job(s)
+    };
+    let full = |f: fn(&mut Settings)| {
         let mut s = FULL;
         f(&mut s);
         fixture::job(s)
@@ -553,9 +566,9 @@ fn each_control_at_zero_leaves_its_aspect_unchanged() {
     );
     // Style: a change common to the whole image passes at 100 and not at all at 0 (Bounce at 0,
     // or what of it varies from place to place would pass as local colour).
-    let (on, _) = run_with(&with(|s| s.bounce = 0), &scene, global_warm);
+    let (on, _) = run_with(&full(|s| s.bounce = 0), &scene, global_warm);
     let (off, _) = run_with(
-        &with(|s| {
+        &full(|s| {
             s.bounce = 0;
             s.style_strength = 0
         }),
@@ -783,11 +796,14 @@ fn the_colour_measure_is_ciede2000_of_what_is_not_allowed() {
     let d = image::Display::of(&job);
     let show = |c: [f32; 3]| d.apply(c[0], c[1], c[2]);
     let a = [0.5f32, 0.25, 0.1];
-    assert_eq!(colour_delta(&d, a, show(a), a, show(a), [0.0; 3], 0.0), 0.0);
+    assert_eq!(
+        colour_delta(&d, a, show(a), a, show(a), [0.0; 3], 0.0, [0.0; 3]),
+        0.0
+    );
     let b = [0.25f32, 0.5, 0.1];
     let direct = color::delta_e_2000(color::lab(show(a)), color::lab(show(b)));
     assert_eq!(
-        colour_delta(&d, a, show(a), b, show(b), [0.0; 3], 0.0),
+        colour_delta(&d, a, show(a), b, show(b), [0.0; 3], 0.0, [0.0; 3]),
         direct
     );
 }
@@ -1084,4 +1100,342 @@ fn the_fixture_report_is_the_checked_in_one() {
             "{name}: {line}"
         );
     }
+}
+
+// ------------------------------------------------------------------ X6: every control, step by step
+
+/// The steps every control is measured at.
+const STEPS: [u32; 5] = [0, 25, 50, 75, 100];
+
+fn run_test_model(s: Settings) -> (LinearImage, Report) {
+    let scene = fixture::scene();
+    run(
+        &fixture::job(s),
+        &scene.image,
+        &scene.passes(),
+        test_model::model,
+    )
+    .unwrap()
+}
+
+/// Pixels of the open product regions (not the background, not the locked LED).
+fn product(scene: &Scene) -> Vec<usize> {
+    (0..(W * H) as usize)
+        .filter(|&p| scene.part[p] != 0 && scene.material[p] != fixture::LED)
+        .collect()
+}
+
+/// Mean |ln(b / a)| of the scene luminance over `pixels`.
+fn lum_change(a: &LinearImage, b: &LinearImage, pixels: &[usize]) -> f32 {
+    let l = |img: &LinearImage, p: usize| image::luma(&img.rgba[p * 4..p * 4 + 3]).max(1e-6);
+    let sum: f32 = pixels
+        .iter()
+        .map(|&p| (rt_core::fmath::ln(l(b, p)) - rt_core::fmath::ln(l(a, p))).abs())
+        .sum();
+    sum / pixels.len() as f32
+}
+
+/// Mean change of the colour (ln r/g and ln b/g, scene) over `pixels`.
+fn colour_change(a: &LinearImage, b: &LinearImage, pixels: &[usize]) -> f32 {
+    let ln = |v: f32| rt_core::fmath::ln(v.max(1e-6));
+    let chroma = |img: &LinearImage, p: usize| {
+        let c = &img.rgba[p * 4..p * 4 + 3];
+        [ln(c[0]) - ln(c[1]), ln(c[2]) - ln(c[1])]
+    };
+    let sum: f32 = pixels
+        .iter()
+        .map(|&p| {
+            let (x, y) = (chroma(a, p), chroma(b, p));
+            (x[0] - y[0]).abs() + (x[1] - y[1]).abs()
+        })
+        .sum();
+    sum / pixels.len() as f32
+}
+
+/// The mid band (between σ 1.5 and σ 6 px) of the change of log luminance, its mean magnitude
+/// over `pixels`: the micro-variation Wear lets in.
+fn mid_band_change(a: &LinearImage, b: &LinearImage, pixels: &[usize]) -> f32 {
+    let n = (W * H) as usize;
+    let d: Vec<f32> = (0..n)
+        .map(|p| {
+            let l = |img: &LinearImage| image::luma(&img.rgba[p * 4..p * 4 + 3]).max(1e-6);
+            rt_core::fmath::ln(l(b)) - rt_core::fmath::ln(l(a))
+        })
+        .collect();
+    let fine = blur::gaussian(&d, W as usize, H as usize, 1.5);
+    let coarse = blur::gaussian(&d, W as usize, H as usize, 6.0);
+    let sum: f32 = pixels.iter().map(|&p| (fine[p] - coarse[p]).abs()).sum();
+    sum / pixels.len() as f32
+}
+
+/// `values` strictly increase, the first is (all but) 0 and the last is clearly above it.
+fn assert_rises(what: &str, values: &[f32]) {
+    assert!(values[0] < 1e-5, "{what}: nothing at 0: {values:?}");
+    for w in values.windows(2) {
+        assert!(
+            w[1] > w[0] * 1.05 + 1e-6,
+            "{what} rises step by step: {values:?}"
+        );
+    }
+    assert!(
+        values[values.len() - 1] > 1e-3,
+        "{what} is visible: {values:?}"
+    );
+}
+
+#[test]
+fn every_band_control_rises_step_by_step_with_the_test_model() {
+    let scene = fixture::scene();
+    let all = product(&scene);
+    let body: Vec<usize> = all
+        .iter()
+        .copied()
+        .filter(|&p| scene.material[p] == fixture::BODY && scene.coc[p] <= 1.0)
+        .collect();
+    // Each control from 0 to 100 with the others at their defaults, measured against the same
+    // job with that control at 0: the effect is the control's alone.
+    type Set = fn(&mut Settings, u32);
+    type Measure = fn(&LinearImage, &LinearImage, &[usize]) -> f32;
+    let controls: [(&str, Set, Measure, &[usize]); 4] = [
+        ("Light", |s, v| s.light = v, lum_change, &all),
+        ("Bounces", |s, v| s.bounce = v, colour_change, &all),
+        ("Wear", |s, v| s.wear = v, mid_band_change, &body),
+        (
+            "Style strength",
+            |s, v| s.style_strength = v,
+            lum_change,
+            &all,
+        ),
+    ];
+    for (name, set, measure, pixels) in controls {
+        let at = |v: u32| {
+            let mut s = Settings::DEFAULT;
+            set(&mut s, v);
+            run_test_model(s)
+        };
+        let (zero, _) = at(0);
+        let values: Vec<f32> = STEPS
+            .iter()
+            .map(|&v| {
+                let (img, report) = at(v);
+                assert_ne!(report.verdict, Verdict::Rejected, "{name} {v}: {report:?}");
+                measure(&zero, &img, pixels)
+            })
+            .collect();
+        eprintln!("X6 {name}: {values:?}");
+        assert_rises(name, &values);
+    }
+}
+
+#[test]
+fn intervention_rises_step_by_step_and_asks_the_model_for_more() {
+    let scene = fixture::scene();
+    let all = product(&scene);
+    let mut asked = Vec::new();
+    let values: Vec<f32> = STEPS
+        .iter()
+        .map(|&v| {
+            let mut s = Settings::DEFAULT;
+            s.intervention = v;
+            let job = fixture::job(s);
+            let mut strengths = Vec::new();
+            let (img, _) = run(&job, &scene.image, &scene.passes(), |r: &TileRequest| {
+                strengths.push(r.strength);
+                test_model::model(r)
+            })
+            .unwrap();
+            asked.push(strengths.first().copied().unwrap_or(0.0));
+            lum_change(&scene.image, &img, &all) + colour_change(&scene.image, &img, &all)
+        })
+        .collect();
+    eprintln!("X6 Intervention: {values:?}, strengths {asked:?}");
+    assert_rises("Intervention", &values);
+    for (a, want) in asked.iter().zip([0.0f32, 0.15, 0.3, 0.45, 0.6]) {
+        assert!((a - want).abs() < 1e-6, "{asked:?}");
+    }
+}
+
+#[test]
+fn every_style_is_its_own_grade_and_warm_and_cool_go_their_ways() {
+    let scene = fixture::scene();
+    let all = product(&scene);
+    let at = |style: Style| {
+        let mut s = Settings::DEFAULT;
+        s.style = style;
+        s.style_strength = 100;
+        run_test_model(s).0
+    };
+    let images: Vec<LinearImage> = Style::ALL.iter().map(|&s| at(s)).collect();
+    for i in 0..images.len() {
+        for j in i + 1..images.len() {
+            let d = lum_change(&images[i], &images[j], &all)
+                + colour_change(&images[i], &images[j], &all);
+            assert!(
+                d > 2e-3,
+                "{:?} and {:?} differ: {d}",
+                Style::ALL[i],
+                Style::ALL[j]
+            );
+        }
+    }
+    // The mean of ln(r / b) over the product: warm above natural above cool.
+    let warmth = |img: &LinearImage| {
+        let ln = |v: f32| rt_core::fmath::ln(v.max(1e-6));
+        all.iter()
+            .map(|&p| ln(img.rgba[p * 4]) - ln(img.rgba[p * 4 + 2]))
+            .sum::<f32>()
+            / all.len() as f32
+    };
+    let (w, n, c) = (warmth(&images[3]), warmth(&images[0]), warmth(&images[4]));
+    assert!(
+        w > n + 0.02 && n > c + 0.02,
+        "warm {w}, natural {n}, cool {c}"
+    );
+    // A model that changes nothing still gets the style: it is the guard's own grade.
+    let mut s = Settings::DEFAULT;
+    s.style = Style::Warm;
+    s.style_strength = 100;
+    let (img, report) = run(
+        &fixture::job(s),
+        &scene.image,
+        &scene.passes(),
+        fixture::identity,
+    )
+    .unwrap();
+    assert_eq!(report.verdict, Verdict::Accepted, "{report:?}");
+    assert!(warmth(&img) > warmth(&scene.image) + 0.02);
+    // The background never takes it.
+    for p in (0..(W * H) as usize).filter(|&p| scene.part[p] == 0) {
+        assert_eq!(img.rgba[p * 4], scene.image.rgba[p * 4]);
+    }
+}
+
+#[test]
+fn another_seed_is_another_result_and_the_same_seed_the_same() {
+    let mut s = Settings::DEFAULT;
+    s.wear = 100;
+    let (a, _) = run_test_model(s);
+    let (b, _) = run_test_model(s);
+    s.seed = 1;
+    let (c, _) = run_test_model(s);
+    assert_eq!(a, b);
+    assert_ne!(a, c);
+}
+
+#[test]
+fn the_report_says_where_a_cap_held_a_band_back() {
+    // At Intervention 100 and every band at 100 the test model's light change exceeds its cap in
+    // part of the image: the report says how much, so the interface can say it.
+    let mut s = fixture::FULL;
+    s.seed = 0;
+    let (_, report) = run_test_model(s);
+    assert!(report.capped.light > 0.0, "{:?}", report.capped);
+    let json = report.to_json();
+    assert!(json.contains("\"capped\":{\"light\":"), "{json}");
+    // Nothing asked of a band: nothing held back there.
+    let mut none = Settings::DEFAULT;
+    none.light = 0;
+    let (_, report) = run_test_model(none);
+    assert_eq!(report.capped.light, 0.0);
+}
+
+#[test]
+fn style_strength_moves_both_the_grade_and_the_models_common_change() {
+    let scene = fixture::scene();
+    let all = product(&scene);
+    let at = |v: u32, model: fn(&TileRequest) -> Rgb8Image| {
+        let mut s = Settings::DEFAULT;
+        s.style = Style::Cinematic;
+        s.style_strength = v;
+        s.bounce = 0;
+        run(&fixture::job(s), &scene.image, &scene.passes(), model)
+            .unwrap()
+            .0
+    };
+    // The grade alone (a model that changes nothing): rises with Style strength.
+    let grade: Vec<f32> = STEPS
+        .iter()
+        .map(|&v| {
+            let img = at(v, fixture::identity);
+            lum_change(&scene.image, &img, &all) + colour_change(&scene.image, &img, &all)
+        })
+        .collect();
+    eprintln!("X6 style grade: {grade:?}");
+    assert_rises("the style's grade", &grade);
+    // The model's change common to the image, on top of the grade: rises with it too.
+    let common: Vec<f32> = STEPS
+        .iter()
+        .map(|&v| colour_change(&at(v, fixture::identity), &at(v, global_warm), &all))
+        .collect();
+    eprintln!("X6 style common: {common:?}");
+    assert_rises("the model's common change", &common);
+}
+
+#[test]
+fn wear_on_a_surface_across_the_depth_of_field_is_not_read_as_sharpening() {
+    // A smooth wear-allowing material in focus next to a studio floor far out of focus, in one
+    // block of the focus check whose mean circle of confusion is out of focus: the detail Wear may
+    // add to the material's part of it used to read as "sharpened what is out of focus" (X6: it
+    // rejected every Wear above 50 on the example bottle, whose gloss body meets the floor).
+    let (w, h) = (64u32, 64u32);
+    let n = (w * h) as usize;
+    let mut s = Settings::DEFAULT;
+    s.wear = 100;
+    let mut job = Job::new(w, h, s);
+    job.materials = vec![MaterialInfo {
+        id: 1,
+        name: "Gloss".into(),
+        allows_wear: true,
+        locked: false,
+    }];
+    let image = LinearImage {
+        width: w,
+        height: h,
+        rgba: (0..n).flat_map(|_| [0.18f32, 0.18, 0.2, 1.0]).collect(),
+    };
+    let inside = |p: usize| (p % w as usize) < 12;
+    let part: Vec<u32> = (0..n)
+        .map(|p| if inside(p) { 1 } else { FLOOR_ID })
+        .collect();
+    let coc: Vec<f32> = (0..n).map(|p| if inside(p) { 0.0 } else { 8.0 }).collect();
+    let normal: Vec<f32> = (0..n).flat_map(|_| [0.0f32, 0.0, 1.0]).collect();
+    let depth = vec![1.0f32; n];
+    let passes = Passes {
+        width: w,
+        height: h,
+        part_id: &part,
+        material_id: &part,
+        normal: Some(&normal),
+        depth: Some(&depth),
+        coc: Some(&coc),
+    };
+    // What Wear may bring: a fine variation of a few percent, in the material only.
+    let mut out = image.rgba.clone();
+    for p in (0..n).filter(|&p| inside(p) && (p % w as usize) < 8) {
+        let k = if (p / w as usize + p % w as usize).is_multiple_of(3) {
+            1.05
+        } else {
+            0.97
+        };
+        for c in 0..3 {
+            out[p * 4 + c] *= k;
+        }
+    }
+    let prep = Prepared::new(&job, &image, passes);
+    let caps = prepared::Caps::of(&job, 1.0);
+    let disp = display(
+        &job,
+        &LinearImage {
+            width: w,
+            height: h,
+            rgba: out.clone(),
+        },
+    );
+    let m = checks::measure(&prep, &out, &disp, &caps, &[]);
+    assert!(m.focus <= job.tolerances.focus, "focus {}", m.focus);
+    // The same detail where no Wear may go (the material does not allow it) is still caught.
+    job.materials[0].allows_wear = false;
+    let prep = Prepared::new(&job, &image, passes);
+    let m = checks::measure(&prep, &out, &disp, &caps, &[]);
+    assert!(m.focus > job.tolerances.focus, "focus {}", m.focus);
 }

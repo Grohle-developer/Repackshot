@@ -56,9 +56,11 @@ export interface AiPreviewState {
   /** 0..1 of the request in progress, as the service reports it. */
   progress: number;
   error: string | null;
+  /** X6: why the guard sent attempts of the last preview back, in its words (the progress' `reason`), in order. */
+  sentBack: string[];
 }
 
-const IDLE: AiPreviewState = { phase: 'IDLE', before: null, after: null, report: null, seconds: null, progress: 0, error: null };
+const IDLE: AiPreviewState = { phase: 'IDLE', before: null, after: null, report: null, seconds: null, progress: 0, error: null, sentBack: [] };
 
 /**
  * What outside the picture makes the preview stale: the window's AI settings and mode (the draft while it is edited),
@@ -194,15 +196,20 @@ export class AiPreviewController {
         this.set({ before: frame.image, after: null, report: null });
       }
       const { image, passes } = this.cache;
-      this.set({ phase: 'WORKING', before: image, progress: 0, error: null });
+      this.set({ phase: 'WORKING', before: image, progress: 0, error: null, sentBack: [] });
       const t0 = this.deps.now();
+      const sentBack: string[] = [];
       const result = await this.deps.service.post(
         { source: { kind: 'INLINE', image, passes }, settings: input.settings, prompt: input.prompt, negative: input.negative, modelKey: input.modelKey, ...(input.materials ? { materials: input.materials } : {}) },
-        (p: AiPostProgress) => live() && this.set({ progress: p.fraction }),
+        (p: AiPostProgress) => {
+          if (!live()) return;
+          if (p.reason && !sentBack.includes(p.reason)) sentBack.push(p.reason);
+          this.set({ progress: p.fraction });
+        },
         ctl.signal,
       );
       if (!live()) return;
-      this.set({ phase: 'READY', before: image, after: result.image, report: result.report, seconds: Math.max(0, (this.deps.now() - t0) / 1000), progress: 1, error: null });
+      this.set({ phase: 'READY', before: image, after: result.image, report: result.report, seconds: Math.max(0, (this.deps.now() - t0) / 1000), progress: 1, error: null, sentBack });
     } catch (e) {
       if (!live() || isAbort(e)) return;
       this.set({ phase: 'ERROR', error: e instanceof Error ? e.message : String(e), progress: 0 });

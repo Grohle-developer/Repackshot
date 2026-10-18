@@ -30,9 +30,10 @@ const WASM_PATHS = [process.env.REPACK_POST_WASM, 'public/engine/post.wasm', 'en
 const WASM = WASM_PATHS.find((p) => existsSync(p)) ?? null;
 if (!WASM && process.env.REPACK_REQUIRE_POST_WASM) throw new Error('post.wasm is required: npm run engine:build');
 
-const GUARD_REPORT_KEYS = ['verdict', 'usedFraction', 'attempts', 'size', 'outside', 'edges', 'detail', 'focus', 'materials', 'reason', 'modelKey', 'runtime', 'seed', 'seconds'];
+const GUARD_REPORT_KEYS = ['verdict', 'usedFraction', 'attempts', 'size', 'outside', 'edges', 'detail', 'focus', 'materials', 'capped', 'reason', 'modelKey', 'runtime', 'seed', 'seconds'];
+const CAPPED_KEYS = ['light', 'bounce', 'wear', 'style'];
 const CHECK_KEYS = ['ok', 'value', 'limit'];
-const MATERIAL_KEYS = ['materialId', 'name', 'deltaEMean', 'deltaEP95', 'limit', 'ok'];
+const MATERIAL_KEYS = ['materialId', 'name', 'deltaEMean', 'deltaEP95', 'limit', 'ok', 'kept'];
 
 /** Every field of GuardReport with its type, nothing else; `reason` optional. Returns what is wrong. */
 function reportProblems(r: unknown): string[] {
@@ -59,8 +60,15 @@ function reportProblems(r: unknown): string[] {
     for (const m of o.materials as Record<string, unknown>[]) {
       if (Object.keys(m).sort().join() !== [...MATERIAL_KEYS].sort().join()) out.push(`material keys ${Object.keys(m)}`);
       if (typeof m.materialId !== 'number' || typeof m.name !== 'string' || typeof m.ok !== 'boolean') out.push('material types');
-      for (const k of ['deltaEMean', 'deltaEP95', 'limit']) if (typeof m[k] !== 'number') out.push(`material ${k}`);
+      for (const k of ['deltaEMean', 'deltaEP95', 'limit', 'kept']) if (typeof m[k] !== 'number') out.push(`material ${k}`);
     }
+  // X6: where the caps held each band back, a share 0..1.
+  const capped = o.capped as Record<string, unknown> | undefined;
+  if (typeof capped !== 'object' || capped === null) out.push('capped is not an object');
+  else {
+    if (Object.keys(capped).sort().join() !== [...CAPPED_KEYS].sort().join()) out.push(`capped keys ${Object.keys(capped)}`);
+    for (const k of CAPPED_KEYS) if (typeof capped[k] !== 'number' || (capped[k] as number) < 0 || (capped[k] as number) > 1) out.push(`capped ${k}`);
+  }
   return out;
 }
 
@@ -90,7 +98,8 @@ describe('the guard report as rt-post writes it', () => {
     const by = Object.fromEntries(FIXTURE.scenarios.map((s) => [s.name, s.report as GuardReport]));
     expect(by.untouched.attempts).toBe(0);
     expect(by.limited.verdict).toBe('LIMITED');
-    expect(by.limited.usedFraction).toBeCloseTo(RETRY_FACTOR, 6);
+    // X6: with the band gains the light ramp moves the edges further, so it takes three retries (it took one).
+    expect(by.limited.usedFraction).toBeCloseTo(RETRY_FACTOR ** 3, 6);
     expect(by.rejected.size.ok).toBe(false);
     expect(by.forbidden.outside.value).toBe(0);
     // The LED is locked: it never changes.
@@ -99,14 +108,19 @@ describe('the guard report as rt-post writes it', () => {
 });
 
 describe('the binary job', () => {
-  it('is RPJ1 with the controls clamped and the overrides named', () => {
+  it('is RPJ2 with the controls clamped, the style’s code and the overrides named', () => {
     const job = { ...fx.job({ ...fx.FULL, light: 250, bounce: -3 }), tolerances: { edgesPx: 0.5 } };
     const bytes = encodeJob(job);
     const view = new DataView(bytes.buffer);
-    expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe('RPJ1');
+    expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe('RPJ2');
     expect([view.getUint32(4, true), view.getUint32(8, true), view.getUint32(12, true)]).toEqual([fx.W, fx.H, 1]);
     // intervention, light (clamped to 100), bounce (clamped to 0).
     expect([view.getUint32(20, true), view.getUint32(24, true), view.getUint32(28, true)]).toEqual([100, 100, 0]);
+    // X6: the style's code (its index in AI_STYLES) after Style strength, then the seed.
+    expect(view.getUint32(40, true)).toBe(0);
+    const warm = new DataView(encodeJob({ ...job, settings: { ...job.settings, style: 'WARM' } }).buffer);
+    expect(warm.getUint32(40, true)).toBe(3);
+    expect(warm.getUint32(44, true)).toBe(job.settings.seed);
     expect(new TextDecoder().decode(bytes)).toContain('edgesPx');
     expect(GUARD_TOLERANCE_KEYS).toContain('edgesPx');
   });
@@ -157,14 +171,11 @@ describe.skipIf(!WASM)('post.wasm against the native guard', { timeout: 300_000 
     expect(plan.tolerances.edgesPx).toBe(fx.LIMITED_EDGES_PX);
     // The provisional default, doubled in C1 (it was 2).
     expect(plan.tolerances.deltaEMean).toBe(4);
-    // Two attempts, two tiles each, at the plan's strengths.
-    expect(calls.map((c) => [c.tile, c.attempt])).toEqual([
-      [0, 0],
-      [1, 0],
-      [0, 1],
-      [1, 1],
-    ]);
+    // Four attempts (X6: the band gains move the ramp's edges further; it took two), two tiles each, at the plan's
+    // strengths.
+    expect(calls.map((c) => [c.tile, c.attempt])).toEqual([0, 1, 2, 3].flatMap((a) => [[0, a], [1, a]]));
     expect(calls[2].strength).toBeCloseTo(MAX_STRENGTH * RETRY_FACTOR, 6);
+    expect(calls[6].strength).toBeCloseTo(MAX_STRENGTH * RETRY_FACTOR ** 3, 6);
     expect(result.report.verdict).toBe('LIMITED');
     expect(result.image.width * result.image.height * 4).toBe(result.image.rgba.length);
   });
@@ -196,10 +207,10 @@ describe.skipIf(!WASM)('post.wasm against the native guard', { timeout: 300_000 
     } finally {
       session.close();
     }
-    expect([...new Set(progress.map((p) => p.attempt))]).toEqual([1, 2]);
+    expect([...new Set(progress.map((p) => p.attempt))]).toEqual([1, 2, 3, 4]);
     expect(progress.every((p) => p.maxAttempts === MAX_ATTEMPTS)).toBe(true);
     expect(progress.filter((p) => p.attempt === 1).every((p) => p.reason === undefined)).toBe(true);
-    expect(progress.filter((p) => p.attempt === 2).every((p) => typeof p.reason === 'string' && p.reason.length > 0)).toBe(true);
+    expect(progress.filter((p) => p.attempt > 1).every((p) => typeof p.reason === 'string' && p.reason.length > 0)).toBe(true);
     let last = 0;
     for (const p of progress) {
       expect(p.fraction).toBeGreaterThanOrEqual(last);
@@ -269,5 +280,53 @@ describe.skipIf(!WASM)('post.wasm against the native guard', { timeout: 300_000 
     await expect(run).rejects.toThrow();
     expect(stages).toEqual(['INFERENCE']);
     session.close();
+  });
+});
+
+// X6: the test model in post.wasm, and each control's effect through the web's own driver.
+describe.skipIf(!WASM)('X6: the test model through post.wasm', { timeout: 300_000 }, () => {
+  const load = () => PostGuard.fromBytes(readFileSync(WASM!));
+
+  it('is the native one, does more with more strength and nothing at 0', async () => {
+    const guard = await load();
+    const rgb = new Uint8Array(64 * 48 * 3).map((_, i) => 40 + ((i / 3) % 64) * 2);
+    const img = { width: 64, height: 48, rgb };
+    expect(guard.testModel(img, 0, 0, 0, 7).rgb).toEqual(rgb);
+    const diff = (s: number) => guard.testModel(img, 0, 0, s, 7).rgb.reduce((n, v, i) => n + Math.abs(v - rgb[i]), 0);
+    expect(diff(0.15)).toBeGreaterThan(0);
+    expect(diff(0.3)).toBeGreaterThan(diff(0.15));
+    expect(diff(0.6)).toBeGreaterThan(diff(0.3));
+    expect(guard.testModel(img, 0, 0, 0.3, 7).rgb).toEqual(guard.testModel(img, 0, 0, 0.3, 7).rgb);
+    expect(guard.testModel(img, 0, 0, 0.3, 8).rgb).not.toEqual(guard.testModel(img, 0, 0, 0.3, 7).rgb);
+  });
+
+  it('gives each band control a rising effect, and the style its own grade', async () => {
+    const guard = await load();
+    const world = fx.scene();
+    const run = async (patch: Partial<typeof fx.FULL>) => {
+      const job = fx.job({ ...fx.FULL, intervention: 50, light: 50, bounce: 40, wear: 20, styleStrength: 30, style: 'NATURAL', seed: 0, ...patch });
+      const session = guard.open(job, world.image, world.passes);
+      try {
+        return (await runGuarded(session, guard.testModelFor(session))).image;
+      } finally {
+        session.close();
+      }
+    };
+    const change = (a: Float32Array, b: Float32Array) => {
+      let n = 0;
+      for (let i = 0; i < a.length; i += 4) for (let c = 0; c < 3; c++) n += Math.abs(Math.log(Math.max(b[i + c], 1e-6)) - Math.log(Math.max(a[i + c], 1e-6)));
+      return n;
+    };
+    for (const key of ['light', 'bounce', 'wear', 'styleStrength', 'intervention'] as const) {
+      const zero = (await run({ [key]: 0 })).rgba;
+      const values: number[] = [];
+      for (const v of [0, 50, 100]) values.push(change(zero, (await run({ [key]: v })).rgba));
+      expect(values[0], key).toBe(0);
+      expect(values[1], key).toBeGreaterThan(0);
+      expect(values[2], key).toBeGreaterThan(values[1] * 1.2);
+    }
+    const warm = (await run({ style: 'WARM', styleStrength: 100 })).rgba;
+    const cool = (await run({ style: 'COOL', styleStrength: 100 })).rgba;
+    expect(change(warm, cool)).toBeGreaterThan(0);
   });
 });

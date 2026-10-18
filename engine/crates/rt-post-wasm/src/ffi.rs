@@ -296,3 +296,42 @@ pub unsafe extern "C" fn post_result(handle: u32, out: *mut u8) -> u32 {
         Err(status) => status,
     }
 }
+
+/// The test model (X6) on `width * height * 3` sRGB bytes at `ptr` whose top-left pixel is
+/// `(x0, y0)` of the image, at `strength` with `seed`, written to `out` (as many bytes).
+///
+/// # Safety
+///
+/// `ptr` and `out` must be null or point to `width * height * 3` readable (and writable) bytes.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn post_test_model(
+    ptr: *const u8,
+    width: u32,
+    height: u32,
+    x0: u32,
+    y0: u32,
+    strength: f32,
+    seed: u32,
+    out: *mut u8,
+) -> u32 {
+    let len = u64::from(width) * u64::from(height) * 3;
+    if len > u64::from(u32::MAX) {
+        return STATUS_BAD_ARGUMENT;
+    }
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    // SAFETY: forwarded contract; the slice lives for this call only.
+    let Some(input) = (unsafe { bytes(ptr, len as usize) }) else {
+        return STATUS_NULL_POINTER;
+    };
+    match crate::test_model_bytes(input, width, height, x0, y0, strength, seed) {
+        Ok(data) => {
+            // SAFETY: the caller promises room for as many bytes as it gave.
+            unsafe { write(out, &data) };
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}

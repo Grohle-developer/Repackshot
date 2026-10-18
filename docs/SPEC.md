@@ -1792,7 +1792,14 @@ error of each pixel's mean falls below a threshold from 0.5 to
 the noise is, in 8 × 8 blocks, and each pixel is still the mean of
 its own samples), advanced engine settings, in animation the range, the fps
 and the output (MP4/WebM video or frame sequence), and the
-**AI post-processing** with its settings (`AI-POST.md`). *Render* puts the
+**AI post-processing** with its settings (`AI-POST.md`): since X6 each band
+control (Light, Bounces, Wear, Style strength) is a gain on what the model did
+in its band (none at 0, as made at 50, twice at 100), the style is a colour
+grade the guard applies itself, and the section's preview is first a stored
+example (the reference scene by the Full engine with the test model, in
+`public/ai-preview/`) that follows the controls without calling a model, with
+*Preview my scene (Full engine)* for the job's own scene; the project still
+stores `ai.previewFullEngine`, which is no longer read. *Render* puts the
 job first in the **queue** and starts it; *+ Add to queue* puts it
 at the end. In the state, `render` stores the window's settings
 and the queue; each job carries its copy of the settings, state, progress,

@@ -237,8 +237,8 @@ wear), lights and environment, for the prompt.
    ControlNet, when the runtime supports it; *tile* for large
    outputs; prompt generated from the materials and lights, with a
    fixed negative ("do not change shapes, text or logos"); fixed seed.
-3. **Low intervention**: bounded `strength` (≤ 0.4 at the maximum of the
-   control), in tiles of ~1024² with overlap and soft blending for large
+3. **Low intervention**: bounded `strength` (≤ 0.6 at the maximum of the
+   control since X6; it was 0.4), in tiles of ~1024² with overlap and soft blending for large
    outputs, and padding to a multiple of 16 that is cropped afterwards: **the
    output resolution is exactly the job's**.
 4. **Deterministic guard**, always, from strongest to weakest:
@@ -250,6 +250,13 @@ wear), lights and environment, for the prompt.
      kept; the model's micro-detail (wear) enters only in the mid
      band and only inside the regions of materials that admit
      wear, with a cap.
+   - **The style's own grade** (X6): each style is also a colour grade the
+     guard applies itself, the same for any model — a tint of the shadows, a
+     tint of the highlights and a contrast, as a smooth gain that follows the
+     low band of the engine's luminance (`rt-post/src/style.rs`, mirrored in
+     `src/core/ai-style.ts`); by Style strength and Intervention, never on the
+     background or a locked material, and measured as asked for by the colour
+     check. Before X6 a style was only words for the model.
    - **Regions by id**: intervention per region, and a colour-change
      limit per material (mean and 95th-percentile ΔE₀₀; starting point 4 and 6,
      double the ≤ 2–3 of the beginning because of decision 2.1 of C1, to be calibrated
@@ -286,14 +293,24 @@ it appears disabled with the reason.
 **Configurator**, below, with controls from 0 to 100 and one sentence each.
 At 0, the corresponding aspect does not change:
 
-| Control | What it does | Default |
-| --- | --- | --- |
-| **Intervention** | How much the AI may change the image, in total | 50 (30 until C1) |
-| **Light** | More natural light: penumbras, soft highlights, highlight roll-off | 50 |
-| **Bounces** | Bounced light and ambient colour between surfaces | 40 |
-| **Wear and micro-detail** | Believable micro-variation and fingerprints, only in materials that admit wear | 20 |
-| **Style** | Dropdown: *Natural photographic* (default), *Clean catalogue*, *Editorial*, *Warm*, *Cool*, *Cinematic* | Natural |
-| **Style strength** | How much the style applies (colour and light mood only) | 30 |
+| Control | What it does | What it acts on (X6) | Default |
+| --- | --- | --- | --- |
+| **Intervention** | How much the AI may change the image, in total | The img2img strength asked of the model (`MAX_STRENGTH` × Intervention / 100, 0.6 at 100) and every cap of the guard | 50 (30 until C1) |
+| **Light** | More natural light: penumbras, soft highlights, highlight roll-off | The guard's band of local luminance: the model's change there × 0 at 0, × 1 at 50, × 2 at 100 | 50 |
+| **Bounces** | Bounced light and ambient colour between surfaces | The guard's band of local colour, same law, then each material's ΔE limit | 40 |
+| **Wear and micro-detail** | Believable micro-variation and fingerprints, only in materials that admit wear | The model's mid band, inside materials that admit wear, in focus and away from edges, same law | 20 |
+| **Style** | Dropdown: *Natural photographic* (default), *Clean catalogue*, *Editorial*, *Warm*, *Cool*, *Cinematic* | A colour grade the guard applies itself (§3.2 step 4, `rt-post/src/style.rs`), plus the words for the model | Natural |
+| **Style strength** | How much the style applies (colour and light mood only) | The grade's amount and the model's change common to the image, same law | 30 |
+
+Each band control is a **gain on what the model did in its band**: 50 lets it
+through as the model made it, 100 doubles it, 0 shuts it; the change is first
+clamped at the attempt's cap (the tolerance × the Intervention's share), so
+inside the cap the result is linear in the control. Where a cap held a band
+back, the report says over how much of the picture (`GuardReport.capped`),
+and how much of each material's colour change was kept (`kept`): the section
+and the results viewer say it in plain words. Under each control a line
+says what it acts on (*Asks the model for an img2img strength of 0.30…* for
+Intervention).
 
 **Own prompt** (X4b), below the controls: a multi-line field,
 empty by default, of up to 400 characters, with the note *Describe the light or the
@@ -333,19 +350,37 @@ real CLIP it is about 45): a model like that has little room left for the scene 
 almost none for the job's own.
 
 **Preview**, to the right of the configurator (or below in narrow
-windows): a frame in **Fast mode** from the job's camera,
-at 384–512 px, with the AI applied, and a **sliding divider** to see
-before and after. It updates **on release** of a control (not while
-dragging: each preview costs seconds), with the time measured in an
-auxiliary line (*≈ 9 s per change on this computer*) and the note *The preview
-starts from Fast mode; the final result starts from the full render*.
-Option *Use the full engine for the preview (slower)*.
+windows), with a **sliding divider** to see before and after. Since X6 it is
+first a **stored example** that calls no model: the reference scene (the
+example bottle, framed a little closer) rendered by the **Full engine**
+(`rt`, 512 × 288, 256 samples) and passed through the real guard
+(`post.wasm`) with the **test model** (§7.2) at every step of every control:
+0, 25, 50, 75 and 100 of Intervention, Light, Bounces, Wear and Style
+strength, every style at every strength, and four seeds at the defaults
+(161 images, WebP, 0.74 MB, `public/ai-preview/`, made by
+`tools/ai-preview-sheet.mjs`; `src/core/ai-preview-sheet.ts` is the grid and the
+lookup). It changes **the moment a slider moves**, with the nearest stored
+example (the control moved last at its value), and says what it is —
+*Example: reference scene, Full engine, test model; your render will
+differ* — at which values it was made and which of the person's differ
+(*Made at Intervention 50 · Light 50 · Bounces 50 · Wear 25 · Natural 25 —
+yours: Bounces 40, Wear 20, Style strength 30*), and what the guard did
+there in plain words. Below, **Preview my scene (Full engine)** runs the
+real pipeline once on the job's own scene, drawn by the Full engine at the
+job's samples and time, 384–512 px, with the time measured in an auxiliary
+line; its result (*Your scene · Full engine · the model*) stays until a
+control or the scene changes, and then the example comes back and the
+button says *again*. The option *Use the full engine for the preview* is
+gone (the button always uses it); `previewFullEngine` stays in the project
+and is no longer read.
 
 **When the job finishes**, the results viewer (`UI.md` §2.8) opens
 the two images with the sliding divider, and the guard's report in
 one line: *Checked: geometry ✓ · materials ✓ (ΔE max 1.8) ·
 resolution ✓ · focus ✓*, plus *The AI was limited to 23 % to respect
-the protections* when that happens. Both images can be saved; the
+the protections* when that happens (X6: with the checks that sent the stronger
+attempts back, and where a cap held a band back or a material's colour was
+kept, in the preview). Both images can be saved; the
 queue and the history show both thumbnails. With several variants
 (X4b), a strip of thumbnails picks the one the divider compares with the
 render (with its report), *Save this variant* or *Save all*, and the
@@ -400,6 +435,7 @@ with its blocks *Active model*, *Models* and *Hardware*:
 | **X3d** | Opus | The web, after X3c: ONNX Runtime Web with WebGPU in workers, **export the VAE encoder to ONNX** so that `ZIMAGE_WEB` exists, driver in a worker with `post.wasm`, OPFS cache with `sha256` and fragments of ≤ 1 GiB |
 | **X4** | Sonnet | **Done.** The interface of §4 against `AiPostService` (`src/core/ai.ts`), with a synthetic service until X3c: render-window section, configurator, chips, Fast-mode preview with the passes drawn by three.js and divider, guard report and divider in the results viewer, two thumbnails in the queue, settings in the *store* (`ROADMAP.md` X4) |
 | **X4b** | Opus | **Done.** The job's own prompt (if the model accepts it: `textPrompt`), variants (1 to 8, one render and N passes with consecutive seeds, thumbnail strip in the viewer) and system prompt in Settings, with the short version and the trimming for 77-*token* models (§4, §7.5b) |
+| **X6** | Opus | **Done.** Every control acts on what reaches the model or the guard, step by step (§4 table): the band gains, the style's own grade, `MAX_STRENGTH` 0.6, the caps and the kept colour in the report and in plain words; the deterministic **test model** (§7.2); the preview's **stored example** made by the Full engine and the test model, and *Preview my scene* with the Full engine (§4) |
 | ~~X5~~ | — | **Absorbed into U6** (Settings window, `ROADMAP.md`): the model manager of §5 and the selector of §2.2–§2.4 do not need the pipeline, so they arrive earlier. What is left for after X3 (checking live that the active model fits, and a one-image test) goes into X4 |
 
 ---
@@ -489,6 +525,20 @@ launcher's log, each returned attempt leaves *AI post N: attempt k of 4
 failed: <reason>*.
 With Intervention 0 the output is the input bit for bit, without calling the
 model.
+
+**The test model** (X6, `rt-post/src/test_model.rs`): a deterministic stand-in
+for an img2img model, for the tests, the stored example of §4 and the desktop
+pipeline's fake runtime (`rt-fake-sd`'s `model` image). It learns nothing and
+ignores the words, as a small img2img model largely does; at a given strength it
+does what a well-behaved one does to a product render in every band the guard
+separates: it pulls the low band of the luminance towards a mid tone (light),
+warms the shadows (bounce), warms the whole picture a little (common), adds a
+seeded 3–6 px micro-variation (mid band) and a per-pixel grain (high band, which
+no control lets through). Every change scales with the strength, 0 returns the
+input bit for bit, and the seed moves the grain, the micro-variation and a
+slight wobble of the light. `post.wasm` exports it (`post_test_model`,
+`PostGuard.testModel`), and `rt --ai-inputs` writes the linear image and the
+passes of a render for it.
 
 ### 7.3 · The desktop pipeline lives in the launcher
 

@@ -6,7 +6,7 @@
 // `setOutput` takes what it returned and `accept` guards, checks and decides (accepted, retry at a lower strength,
 // rejected). The model itself is not here: `runGuarded` is the trivial driver that calls it between the steps.
 
-import { MAX_ATTEMPTS, type AiGuardMaterial, type AiGuardTolerances, type AiPipelineSettings, type AiPostProgress, type AiPostResult, type GuardReport, type LinearImage } from '../core/ai';
+import { AI_STYLES, MAX_ATTEMPTS, type AiGuardMaterial, type AiGuardTolerances, type AiPipelineSettings, type AiPostProgress, type AiPostResult, type GuardReport, type LinearImage } from '../core/ai';
 import type { RenderPasses } from '../core/passes';
 
 /** The guard's tolerances as rt-post names them (`Tolerances::KEYS`), in its order. Provisional: X1b calibrates them. */
@@ -138,6 +138,8 @@ interface Exports {
   post_strength(handle: number, attempt: number): number;
   post_accept(handle: number, attempt: number): number;
   post_result(handle: number, out: number): number;
+  /** X6: the test model (rt-post's `test_model`), when this post.wasm has it. */
+  post_test_model?(ptr: number, width: number, height: number, x0: number, y0: number, strength: number, seed: number, out: number): number;
 }
 
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
@@ -151,7 +153,7 @@ function leBytes(a: Float32Array | Uint32Array): Uint8Array {
   return out;
 }
 
-/** The binary job rt-post reads (`Job::from_bytes`, magic RPJ1). */
+/** The binary job rt-post reads (`Job::from_bytes`, magic RPJ2: X6 added the style's code after Style strength). */
 export function encodeJob(job: PostJob): Uint8Array {
   const text = new TextEncoder();
   const strings: Uint8Array[] = [];
@@ -164,14 +166,14 @@ export function encodeJob(job: PostJob): Uint8Array {
   const model = str(job.modelKey);
   const runtime = str(job.runtime);
   const overrides = GUARD_TOLERANCE_KEYS.filter((k) => job.tolerances?.[k] !== undefined).map((k) => [str(k), job.tolerances![k]!] as const);
-  const size = 4 + 4 * 4 + 6 * 4 + 4 + job.materials.length * 12 + strings.reduce((n, b) => n + b.length, 0) + 8 + 4 + overrides.length * 8;
+  const size = 4 + 4 * 4 + 7 * 4 + 4 + job.materials.length * 12 + strings.reduce((n, b) => n + b.length, 0) + 8 + 4 + overrides.length * 8;
   const out = new Uint8Array(size);
   const view = new DataView(out.buffer);
   let at = 0;
   const u32 = (v: number) => (view.setUint32(at, v >>> 0, true), (at += 4));
   const f32 = (v: number) => (view.setFloat32(at, v, true), (at += 4));
   const bytes = (b: Uint8Array) => (u32(b.length), out.set(b, at), (at += b.length));
-  out.set([0x52, 0x50, 0x4a, 0x31], 0); // "RPJ1"
+  out.set([0x52, 0x50, 0x4a, 0x32], 0); // "RPJ2"
   at = 4;
   u32(job.width);
   u32(job.height);
@@ -180,6 +182,8 @@ export function encodeJob(job: PostJob): Uint8Array {
   const s = job.settings;
   const control = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
   for (const v of [s.intervention, s.light, s.bounce, s.wear, s.styleStrength]) u32(control(v));
+  // The style's code is its index in AI_STYLES (rt-post's `Style::code`); an unknown key is Natural.
+  u32(Math.max(0, AI_STYLES.indexOf(s.style)));
   u32(s.seed);
   u32(job.materials.length);
   job.materials.forEach((m, i) => {
@@ -216,6 +220,32 @@ export class PostGuard {
     const response = await fetch(url);
     if (!response.ok) throw new PostError(`post.wasm: ${response.status} ${response.statusText}`, 0);
     return PostGuard.fromBytes(await response.arrayBuffer());
+  }
+
+  /**
+   * The test model (X6, rt-post's `test_model`): a deterministic stand-in for an img2img model that acts in every band
+   * the guard separates and ignores the words. `x0, y0`: the image's pixel at the tile's top-left corner.
+   */
+  testModel(input: TileImage, x0: number, y0: number, strength: number, seed: number): TileImage {
+    const x = this.x;
+    if (!x.post_test_model) throw new PostError('this post.wasm has no test model (npm run engine:build)', 0);
+    if (input.rgb.length !== input.width * input.height * 3) throw new PostError('the test model’s input has the wrong number of bytes', 2);
+    const n = input.rgb.length;
+    const inPtr = upload(x, input.rgb);
+    try {
+      const rgb = readInto(x, n, (out) => x.post_test_model!(inPtr, input.width, input.height, x0, y0, strength, seed >>> 0, out), 'the test model');
+      return { width: input.width, height: input.height, rgb };
+    } finally {
+      x.post_free(inPtr, n);
+    }
+  }
+
+  /** The test model as `runGuarded` calls a model, for the tiles of `session`. */
+  testModelFor(session: PostSession): GuardedModel {
+    return (r) => {
+      const t = session.plan.tiles[r.tile];
+      return this.testModel({ width: r.width, height: r.height, rgb: r.input }, t.x, t.y, r.strength, r.seed);
+    };
   }
 
   /** `major.minor.patch` of the guard (the engine's version). */

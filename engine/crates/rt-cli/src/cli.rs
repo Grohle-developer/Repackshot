@@ -87,6 +87,9 @@ OPTIONS:
                             0 writes the image without denoise
         --keep-noisy        with --denoise, also write the image without denoise next to it
                             (<out>-noisy.png)
+        --ai-inputs <p>     also write what the AI post-processing starts from: the linear image
+                            as <p>.rpl (RPL1) and the scene's passes as <p>.rpp (RPP1); the scene
+                            must ask for its passes (tools/ai-preview-sheet.mjs)
         --adaptive          sample adaptively (RNDR.adaptive, E10): rounds of samples go to the
                             noisiest 8x8 blocks, at most --samples per pixel
         --noise <P>         with adaptive sampling, stop once every block's relative error of
@@ -299,6 +302,9 @@ pub struct Options {
     pub format: Option<OutputFormat>,
     /// `--bits`: bits per channel.
     pub bits: Option<u32>,
+    /// `--ai-inputs <prefix>` (X6): also write what the AI post-processing starts from, the linear
+    /// image (`<prefix>.rpl`, `RPL1`) and the scene's passes (`<prefix>.rpp`, `RPP1`).
+    pub ai_inputs: Option<PathBuf>,
 }
 
 impl Options {
@@ -764,6 +770,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--max-seconds" => options.max_seconds = Some(seconds(value(&mut it, arg)?, arg)?),
             "--denoise" => options.denoise = true,
             "--keep-noisy" => options.keep_noisy = true,
+            "--ai-inputs" => options.ai_inputs = Some(PathBuf::from(value(&mut it, arg)?)),
             "--denoise-strength" => {
                 let text = value(&mut it, arg)?;
                 match text.parse::<f32>() {
@@ -1695,6 +1702,18 @@ pub fn run(command: Command) -> Result<(), String> {
                 );
             }
 
+            if let Some(prefix) = &options.ai_inputs {
+                let passes = result
+                    .passes
+                    .as_ref()
+                    .ok_or("--ai-inputs needs a scene that asks for its passes (RNDR.passes)")?;
+                let (rpl, rpp) = crate::ai_inputs(&result.film, passes);
+                let at = |ext: &str| prefix.with_extension(ext);
+                for (path, bytes) in [(at("rpl"), rpl), (at("rpp"), rpp)] {
+                    write_file(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+                    println!("wrote {}", path.display());
+                }
+            }
             let spec = OutputSpec::resolve(options.format, options.bits, &output)?;
             let (exposure_ev, tonemap) = (
                 scene.render.exposure_ev,
@@ -1734,6 +1753,31 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Command, String> {
         parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn writes_the_ai_inputs_of_a_render() {
+        let Ok(Command::Render { options, .. }) =
+            parse(&["--example", "-o", "a.png", "--ai-inputs", "out/ai"])
+        else {
+            panic!("--ai-inputs parses");
+        };
+        assert_eq!(options.ai_inputs, Some(PathBuf::from("out/ai")));
+        // The files: RPL1 and RPP1, their headers and sizes.
+        let mut film = rt_core::image::Film::new(2, 1);
+        film.rgb = vec![2.0, 4.0, 6.0, 1.0, 1.0, 1.0];
+        film.weight = vec![2.0, 2.0];
+        film.alpha = vec![2.0, 1.0];
+        let passes = rt_core::passes::Passes::new(2, 1, rt_core::passes::PASS_ALL);
+        let (rpl, rpp) = crate::ai_inputs(&film, &passes);
+        assert_eq!(&rpl[..4], b"RPL1");
+        assert_eq!(rpl.len(), 16 + 2 * 16);
+        let f = |i: usize| f32::from_le_bytes(rpl[16 + i * 4..20 + i * 4].try_into().unwrap());
+        assert_eq!([f(0), f(1), f(2), f(3)], [1.0, 2.0, 3.0, 1.0]);
+        // Half covered: the colour over the coverage, straight alpha.
+        assert_eq!([f(4), f(5), f(6), f(7)], [1.0, 1.0, 1.0, 0.5]);
+        assert_eq!(&rpp[..4], b"RPP1");
+        assert_eq!(rpp.len(), 32 + passes.byte_len());
     }
 
     #[test]

@@ -16,7 +16,15 @@
 //! * **(c) Regions by id.** The background (`partId` 0) and locked materials never change; each
 //!   material's colour change is lowered until its ΔE₀₀ (mean and 95th percentile, measured as the
 //!   checks measure it) is within the tolerances.
+//! * **(d) The style's own grade** (X6, [`crate::style`]): a smooth gain from the low band of the
+//!   engine's luminance, the same for any model, by Style strength and the attempt's scale.
+//!
+//! X6: each band control is a gain on the model's change in its band (0 none, 50 as the model made
+//! it, 100 twice), the change clamped at the attempt's cap first; how much of the open image each
+//! cap held back is in the report (`capped`), so the interface can say where the guard limited an
+//! effect.
 
+use crate::blur::masked_low_pass as low_pass;
 use crate::blur::{gaussian, masked_low_pass};
 use crate::checks::{grade_of, lum_allow, region_deltas, RegionAllowance};
 use crate::image::{decode_table, encode8, ln_eps, luma, LUMA};
@@ -65,6 +73,66 @@ pub(crate) struct Candidate {
     pub disp: Vec<f32>,
     /// Per region: the fraction of its colour change that the ΔE limit kept.
     pub kept: Vec<f32>,
+    /// The style's own grade applied, scene log gain, 3 floats a pixel (empty when none).
+    pub style: Vec<f32>,
+    /// The share of the open image where each band's cap held the model's change back (X6).
+    pub capped: crate::report::Capped,
+}
+
+/// (d) The style's own grade of an attempt of `scale` over the open pixels: empty when it is 0.
+fn style_plane(
+    prep: &Prepared,
+    open: &[bool],
+    mask: &[f32],
+    sigma_low: f32,
+    scale: f32,
+) -> Vec<f32> {
+    let amount = crate::style::amount(prep.job, scale);
+    if amount <= 0.0 {
+        return Vec::new();
+    }
+    let (w, h) = (prep.w, prep.h);
+    let n = w * h;
+    let grade = crate::style::grade(prep.job.settings.style);
+    let y: Vec<f32> = (0..n).map(|p| luma(&prep.disp[p * 3..p * 3 + 3])).collect();
+    let low = low_pass(&y, mask, w, h, sigma_low);
+    let mut out = vec![0.0f32; n * 3];
+    for p in (0..n).filter(|&p| open[p]) {
+        let g = crate::style::gain_at(&grade, low[p], amount);
+        out[p * 3..p * 3 + 3].copy_from_slice(&g);
+    }
+    out
+}
+
+/// The style's own grade of an attempt of `scale` (what [`candidate`] applies), for measuring a
+/// result afresh.
+#[cfg(test)]
+pub(crate) fn style_for(prep: &Prepared, sigma_low: f32, scale: f32) -> Vec<f32> {
+    let open = prep.open_mask();
+    let mask: Vec<f32> = open.iter().map(|&o| if o { 1.0 } else { 0.0 }).collect();
+    style_plane(prep, &open, &mask, sigma_low, scale)
+}
+
+/// Counts of the pixels where a cap held a band back, over the pixels it applies to.
+#[derive(Clone, Copy, Default)]
+struct Tally {
+    held: u32,
+    of: u32,
+}
+
+impl Tally {
+    fn add(&mut self, held: bool) {
+        self.of += 1;
+        self.held += u32::from(held);
+    }
+
+    fn share(&self) -> f32 {
+        if self.of == 0 {
+            0.0
+        } else {
+            self.held as f32 / self.of as f32
+        }
+    }
 }
 
 /// How much of the mid band a pixel may take for its focus: all in focus, none out of focus.
@@ -80,7 +148,10 @@ fn focus_weight(prep: &Prepared, p: usize) -> f32 {
     }
 }
 
-/// Median per channel of a 3-channel plane over the open pixels.
+/// Median per channel of a 3-channel plane over the open pixels: the mean of the samples in the
+/// histogram's median bin. X6: it was the bin's centre, half a bin (5e-4) away from a change of
+/// exactly 0, which only cancelled out while Light and Style strength scaled it alike; with any
+/// other pair an identity model brightened the image by that much.
 fn median3(plane: &[f32], open: &[bool]) -> [f32; 3] {
     let mut out = [0.0f32; 3];
     for (c, o) in out.iter_mut().enumerate() {
@@ -90,7 +161,19 @@ fn median3(plane: &[f32], open: &[bool]) -> [f32; 3] {
                 hist.add(plane[p * 3 + c]);
             }
         }
-        *o = hist.quantile(0.5);
+        if hist.count() == 0 {
+            continue;
+        }
+        let bin = hist.median_bin();
+        let (mut sum, mut n) = (crate::prepared::Sum::default(), 0u32);
+        for (p, &is_open) in open.iter().enumerate() {
+            let v = plane[p * 3 + c];
+            if is_open && hist.bin_of(v) == bin {
+                sum.add(v);
+                n += 1;
+            }
+        }
+        *o = if n > 0 { sum.get() / n as f32 } else { 0.0 };
     }
     out
 }
@@ -140,6 +223,7 @@ fn limit_colour(
     chroma: &[f32],
     open: &[bool],
     caps: &Caps,
+    style: &[f32],
 ) -> Vec<f32> {
     let tol = &prep.job.tolerances;
     let regions = prep.regions.len();
@@ -175,7 +259,7 @@ fn limit_colour(
         };
         // The change common to the image as the check estimates it, on a uniform grid so that no
         // region weighs more than it does in the full image.
-        let grade = grade_of(prep, &|p| open[p] && grid(p), &scene, caps);
+        let grade = grade_of(prep, &|p| open[p] && grid(p), &scene, caps, style);
         let allow: Vec<RegionAllowance> = (0..regions as u32)
             .map(|r| RegionAllowance {
                 grade,
@@ -187,7 +271,7 @@ fn limit_colour(
             let s = scene(p);
             (s, prep.display.apply(s[0], s[1], s[2]))
         };
-        let deltas = region_deltas(prep, &shown, &take, &allow);
+        let deltas = region_deltas(prep, &shown, &take, &allow, style);
         for r in 0..regions {
             if !active[r] {
                 continue;
@@ -236,10 +320,15 @@ pub(crate) fn candidate(
     let lo: Vec<f32> = seen.iter().map(|&v| ln_eps(v)).collect();
     let lm: Vec<f32> = model.iter().map(|&v| ln_eps(v)).collect();
     let slope = slopes(prep, &open, &mask, sigma_low);
+    // (d) The style's own grade, known pixel by pixel (the checks take it as asked for).
+    let style = style_plane(prep, &open, &mask, sigma_low, scale);
     // The scene log gain, and its local colour part, which (c) may lower per region.
     let mut u = vec![0.0f32; n * 3];
     let mut chroma = vec![0.0f32; n * 3];
     let mut kept = vec![1.0f32; prep.regions.len()];
+    let (mut t_light, mut t_bounce, mut t_wear) =
+        (Tally::default(), Tally::default(), Tally::default());
+    let mut style_held = false;
 
     if !steps.transfer {
         for p in (0..n).filter(|&p| open[p]) {
@@ -265,18 +354,26 @@ pub(crate) fn candidate(
         }
         let common = median3(&low_scene, &open);
         let grade = common.map(|g| (a.style * g).clamp(-caps.style, caps.style));
+        style_held = caps.style > 0.0 && common.iter().any(|&g| (a.style * g).abs() > caps.style);
         for p in (0..n).filter(|&p| open[p]) {
             let l = [0, 1, 2].map(|c| low_scene[p * 3 + c] - common[c]);
             let y = LUMA[0] * l[0] + LUMA[1] * l[1] + LUMA[2] * l[2];
             let ty = (a.light * y).clamp(-caps.light, caps.light);
+            if caps.light > 0.0 {
+                t_light.add((a.light * y).abs() > caps.light);
+            }
             let mut x = l.map(|v| a.bounce * (v - y));
             let m = x[0].abs().max(x[1].abs()).max(x[2].abs());
+            if caps.bounce > 0.0 {
+                t_bounce.add(m > caps.bounce);
+            }
             if m > caps.bounce {
                 let k = if m > 0.0 { caps.bounce / m } else { 0.0 };
                 x = x.map(|v| v * k);
             }
+            let k = crate::checks::known_at(&style, p);
             for c in 0..3 {
-                u[p * 3 + c] = grade[c] + ty;
+                u[p * 3 + c] = grade[c] + ty + k[c];
                 chroma[p * 3 + c] = x[c];
             }
         }
@@ -310,6 +407,7 @@ pub(crate) fn candidate(
                         continue;
                     }
                     let mid = (fine[p] - coarse[p]) / slope[3][p];
+                    t_wear.add((a.wear * mid).abs() > caps.wear);
                     let tw = (a.wear * mid).clamp(-caps.wear, caps.wear) * weight;
                     for c in 0..3 {
                         u[p * 3 + c] += tw;
@@ -328,7 +426,7 @@ pub(crate) fn candidate(
 
         // (c) Each region keeps only the colour change its ΔE allows.
         if steps.regions {
-            kept = limit_colour(prep, &u, &chroma, &open, &caps);
+            kept = limit_colour(prep, &u, &chroma, &open, &caps, &style);
         }
         for p in (0..n).filter(|&p| open[p]) {
             let r = prep.region[p];
@@ -354,5 +452,16 @@ pub(crate) fn candidate(
         rgba[p * 4..p * 4 + 3].copy_from_slice(&g);
     }
     let disp = prep.display.image(&rgba);
-    Candidate { rgba, disp, kept }
+    Candidate {
+        rgba,
+        disp,
+        kept,
+        style,
+        capped: crate::report::Capped {
+            light: t_light.share(),
+            bounce: t_bounce.share(),
+            wear: t_wear.share(),
+            style: if style_held { 1.0 } else { 0.0 },
+        },
+    }
 }

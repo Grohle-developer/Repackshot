@@ -1910,22 +1910,40 @@ default, in the body of the window (`ui/panels/ai-post.ts`).
   the seed. Each change is a store action, undoable; dragging a
   control is **one** undo step. In a queue job being edited,
   the controls change the job's draft.
+- **What each control acts on** (X6): under each control's sentence, a line in
+  auxiliary text: Intervention, *Asks the model for an img2img strength of 0.30
+  and scales every cap of the guard* (the number follows the control); Light,
+  Bounces, Wear and Style strength, *none at 0, as the model made it at 50, twice
+  at 100* in their band; Style, *A colour grade the guard applies itself, the
+  same with any model, plus the words for the model*.
 - **Preview**, on the right (below in a narrow window; it stays in
-  view while the controls are scrolled): a frame in **Fast mode**
-  from the job's camera at 384–512 px, with the AI applied and the sliding
-  **divider** of U5 (*Before · After*). It updates **on release** of a
-  control, never while dragging (changes by a key or from a
-  list wait a short pause), and abandons the preview in progress if
-  another change arrives. Below: the size, **the guard's report line**
-  (the same as the viewport's), *≈ 0.4 s per change on this computer* —**measured**
-  around the pipeline call, with no figure until the first
-  preview—, the note *The preview starts from Fast mode; the final result
-  starts from the full render* and the option *Use the full engine for the
-  preview (slower)*, which starts from the tracer with the job's
-  budget. The frame and its passes from `AI-POST.md` §7.4 (drawn with
-  three.js: part and material ids from the RSB itself, depth, normals
-  in world space with Z up, albedo, circle of confusion of the simple lens) are
-  computed once and reused while only the controls change.
+  view while the controls are scrolled), with the sliding **divider** of U5
+  (*Before · After*). Since X6 it is first the **stored example**
+  (`AI-POST.md` §4): the reference scene rendered by the Full engine and
+  passed through the guard with the test model, at the nearest stored step
+  of the controls, which changes **as a slider moves** (also while it is
+  dragged: it calls no model). Below it, *Example: reference scene, Full
+  engine, test model; your render will differ*, the values it was made at
+  and those of the person's that differ (*Made at Intervention 50 · Light 50
+  · … — yours: Bounces 40, Wear and micro-detail 20, Style strength 30*), and
+  **what the guard did** as a short list in plain words (*The guard let all
+  of the AI’s change through*; *Light: the guard held the change of light at
+  its limit over 34 % of the picture*; *To keep the colour of “Paper”, the
+  guard let 71 % of its colour change through*; *The AI was limited to 60 %
+  to respect the protections: the stronger attempts changed the focus*).
+  Then **Preview my scene (Full engine)**: a frame of the job's own scene from
+  its camera at 384–512 px, drawn by the Full engine with the job's samples
+  and time, with the AI applied: the size, the guard's report line (the
+  same as the viewer's) and the same plain words, *≈ 9 s per preview of your
+  scene on this computer* —**measured** around the pipeline call, with no figure until the
+  first—. That result stays (*Your scene · Full engine · the model*) until a
+  control, the scene, the camera or the size changes; then the example comes
+  back and the button says *Preview my scene again (Full engine)*. The
+  option *Use the full engine for the preview* is gone. The frame's passes
+  (`AI-POST.md` §7.4) are computed once and reused while only the controls
+  change. Captures: `docs/ui/ai-x6-example-dark.png`,
+  `ai-x6-example-light.png`, `ai-x6-style.png`, `ai-x6-mine.png`,
+  `ai-x6-example-es.png`.
 - **Where it comes from** (X3c): in the desktop application, from the launcher's
   pipeline (`src/io/ai-post.ts`): the switch can be turned on when
   `/api/ai/runtime` says that the runtime and the active model are

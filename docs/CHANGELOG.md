@@ -5,6 +5,23 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### AI post-processing
+
+- **Every control does what its sentence says, step by step**: Light, Bounces, Wear and micro-detail and Style strength are now a gain on what the model did in their band (none at 0, as the model made it at 50, twice at 100), where before they could only let through half of it at their defaults; the default Intervention asks the model for an img2img strength of 0.3 (0.2 before; 0.6 at 100) (X6).
+- **The style is a real colour grade**: each of the six styles, *Natural* included, is a grade the guard applies itself, the same with any model; before, a style was only words for the model and the six gave the same pixels (X6).
+- **The preview is a stored example**: the reference scene rendered by the Full engine and passed through the guard with the test model at every step of every control, which changes as a slider moves without calling any model, says what it is and at which values it was made; *Preview my scene (Full engine)* runs the AI on the job's own scene, always drawn by the Full engine (X6).
+- **What the guard did, in plain words**: where its caps held Light, Bounces, Wear or the style's overall change back, how much of a material's colour change it kept, and which checks made it lower the strength; and under each control, what it acts on (X6).
+- Fixed: an AI model that changed nothing brightened the image by a hair (the guard's median of the overall change was half a histogram bin off); the focus check rejected the Wear a material in focus rightly took next to an out-of-focus floor (X6).
+
+### Engine
+
+- **`rt-post`**: the band gains (`BAND_GAIN_AT_100`), the styles' grades (`style.rs`), `MAX_STRENGTH` 0.6, the job's style (`RPJ2`; `RPJ1` still reads, as *Natural*), the report's `capped` and each material's `kept`, and a deterministic **test model** (`test_model.rs`) that `post.wasm` exports (`post_test_model`) and `rt-fake-sd` serves as its `model` image. `tests/fixtures/ai-guard.json` moves on purpose with the guard's new law (X6).
+- **`rt --ai-inputs <prefix>`** writes the linear image (`RPL1`) and the passes (`RPP1`) of a render, what the AI post-processing starts from (X6).
+
+### Tools
+
+- `tools/ai-preview-sheet.mjs` makes the stored example (`public/ai-preview/`, 161 WebP images, 0.74 MB) and a contact sheet; `tools/ai-x6-check.mjs` checks the section in the browser and makes its captures; `tools/ai-post-check.mjs` follows the new preview (X6).
+
 ### Scene and ambient
 
 - **Drips and splashes fall through the air**: the drop that drips off a part and those a splash throws fly with gravity and the air (at most at their terminal velocity) and settle afterwards, where they land, instead of at once; while they fall they show in *Fast*, in *Full* and in the render, and the physics bar says how many are in the air (S3d).

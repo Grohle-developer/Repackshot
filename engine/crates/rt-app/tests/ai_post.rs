@@ -257,7 +257,10 @@ fn a_final_render_goes_through_every_tile_and_the_guard_with_progress_per_tile()
     assert_eq!(reqs.len(), 2);
     for r in &reqs {
         assert_eq!((num(r, "width"), num(r, "height")), (656.0, 112.0));
-        assert_eq!(num(r, "strength"), f64::from(0.6f32 * 0.4f32));
+        assert_eq!(
+            num(r, "strength"),
+            f64::from(0.6f32 * rt_post::MAX_STRENGTH)
+        );
         assert_eq!(num(r, "seed"), 5.0);
         assert_eq!(text(r, "prompt"), "a studio photograph");
         let sp = r.get("sample_params").unwrap();
@@ -387,10 +390,10 @@ fn retries_lower_the_strength_by_the_retry_factor_then_deliver_the_engine_image(
         .map(|a| f64::from(plan.strength(a)))
         .collect();
     assert_eq!(asked, want);
-    // The same numbers worked out by hand: 0.8 × 0.6^attempt, then × 0.4, in f32.
+    // The same numbers worked out by hand: 0.8 × 0.6^attempt, then × MAX_STRENGTH (0.6 since X6), in f32.
     let mut scale = 0.8f32;
     for a in &asked {
-        assert_eq!(*a, f64::from(scale * 0.4));
+        assert_eq!(*a, f64::from(scale * rt_post::MAX_STRENGTH));
         scale *= 0.6;
     }
     // SD 1.5 has a depth ControlNet: every tile carried the depth image of the exact passes.
