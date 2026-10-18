@@ -6,6 +6,10 @@ Tick the points as you go. When reporting an issue, state the version and the nu
 
 ## Unreleased
 
+Nothing yet: the next points start at 162.
+
+## v0.1.22
+
 **The checklists of v0.1.2 to v0.1.21 still apply in full** (points 1 to 151). In addition:
 
 152. [ ] **Drops that grow and run.** Put a part with a steep face (or the example bottle) under *Rain* with *On the parts* and click *Start*. Small drops must stay where they land and grow; once one is large enough it must run down, taking the drops in its way and leaving a clean path, and get longer as it speeds up.

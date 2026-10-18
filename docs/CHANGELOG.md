@@ -5,6 +5,18 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.22 — 2026-10-18
+
+### Scene and ambient
+
+- **Drips and splashes fall through the air**: the drop that drips off a part and those a splash throws fly with gravity and the air (at most at their terminal velocity) and settle afterwards, where they land, instead of at once; while they fall they show in *Fast*, in *Full* and in the render, and the physics bar says how many are in the air (S3d).
+- **The meter says what is on the parts**: *Rain*, *Dust*, *Snow* or whatever there is together, on how many parts and, with rain, the drops on them and in the air (*Rain and dust on 4 parts: 1,443 drops, 12 in the air*), or *Nothing on the parts yet*; before, it said *Rain on the parts* even with only dust or snow (S3d).
+- **Notice for an engine that would not draw the drops in the air**: with an older render engine (with bit 8 and without bit 9), a drops effect says so below *On the parts* (S3d).
+- **Organic drops on the parts**: drops grow as rain lands on them and they merge, stay put until they pass the critical size of their face's tilt and material, then run down, taking the drops in their way, growing and speeding up; two drops that touch show a neck for a moment and their centre moves smoothly to where their water is; a large drop on a steep face leaves a rivulet of small beads behind it (S3f).
+- **Drops take shapes**: a running drop is stretched along its path with a rounder head and a thinner tail, a drop held on a slope bulges downhill, two that merge show a neck, and a hanging one stretches downward and pinches off, in *Fast*, in *Full* and in the render (S3f).
+- **Hanging and dripping one drop at a time**: a drop that reaches an open edge stops and hangs there instead of running off; under an edge or a face that looks down, it grows, necks and lets go of a single drop, about 60 % of its water, and what stays grows again (S3f).
+- **Notice for an engine that would draw the drops round**: with an older render engine (with bit 8 and without bit 10), a drops effect says so below *On the parts* (S3f).
+
 ### AI post-processing
 
 - **Every control does what its sentence says, step by step**: Light, Bounces, Wear and micro-detail and Style strength are now a gain on what the model did in their band (none at 0, as the model made it at 50, twice at 100), where before they could only let through half of it at their defaults; the default Intervention asks the model for an img2img strength of 0.3 (0.2 before; 0.6 at 100) (X6).
@@ -21,26 +33,6 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **Failures worded and bounded**: a refused key, a rate limit, a time-out, a network or server failure, an answer that is not a PNG or is far too large, and a redirect each have their message in English and Spanish; only time-outs, rate limits, network and server failures try again, at most *Tries of a call* times (2), waiting what the service asks up to 30 s (X7).
 - **The size sent**: each tile at the service's longest side or fixed sizes, and its answer brought back to the tile's size (X7).
 
-### Engine and launcher
-
-- **`rt-post`**: the band gains (`BAND_GAIN_AT_100`), the styles' grades (`style.rs`), `MAX_STRENGTH` 0.6, the job's style (`RPJ2`; `RPJ1` still reads, as *Natural*), the report's `capped` and each material's `kept`, and a deterministic **test model** (`test_model.rs`) that `post.wasm` exports (`post_test_model`) and `rt-fake-sd` serves as its `model` image. `tests/fixtures/ai-guard.json` moves on purpose with the guard's new law (X6).
-- **`rt --ai-inputs <prefix>`** writes the linear image (`RPL1`) and the passes (`RPP1`) of a render, what the AI post-processing starts from (X6).
-- **`ModelBackend`** in `rt-app`: the desktop pipeline's model call goes through one interface, the local runtime as before and a remote API through the system's `curl` (key through standard input, no redirects); `/api/ai/apikeys` and `aiRemote: 1` in `/api/info` (X7).
-
-### Tools
-
-- `tools/ai-preview-sheet.mjs` makes the stored example (`public/ai-preview/`, 161 WebP images, 0.74 MB) and a contact sheet; `tools/ai-x6-check.mjs` checks the section in the browser and makes its captures; `tools/ai-post-check.mjs` follows the new preview (X6).
-
-### Scene and ambient
-
-- **Drips and splashes fall through the air**: the drop that drips off a part and those a splash throws fly with gravity and the air (at most at their terminal velocity) and settle afterwards, where they land, instead of at once; while they fall they show in *Fast*, in *Full* and in the render, and the physics bar says how many are in the air (S3d).
-- **The meter says what is on the parts**: *Rain*, *Dust*, *Snow* or whatever there is together, on how many parts and, with rain, the drops on them and in the air (*Rain and dust on 4 parts: 1,443 drops, 12 in the air*), or *Nothing on the parts yet*; before, it said *Rain on the parts* even with only dust or snow (S3d).
-- **Notice for an engine that would not draw the drops in the air**: with an older render engine (with bit 8 and without bit 9), a drops effect says so below *On the parts* (S3d).
-- **Organic drops on the parts**: drops grow as rain lands on them and they merge, stay put until they pass the critical size of their face's tilt and material, then run down, taking the drops in their way, growing and speeding up; two drops that touch show a neck for a moment and their centre moves smoothly to where their water is; a large drop on a steep face leaves a rivulet of small beads behind it (S3f).
-- **Drops take shapes**: a running drop is stretched along its path with a rounder head and a thinner tail, a drop held on a slope bulges downhill, two that merge show a neck, and a hanging one stretches downward and pinches off, in *Fast*, in *Full* and in the render (S3f).
-- **Hanging and dripping one drop at a time**: a drop that reaches an open edge stops and hangs there instead of running off; under an edge or a face that looks down, it grows, necks and lets go of a single drop, about 60 % of its water, and what stays grows again (S3f).
-- **Notice for an engine that would draw the drops round**: with an older render engine (with bit 8 and without bit 10), a drops effect says so below *On the parts* (S3f).
-
 ### Engine
 
 - **Drops through the air in `rt_phys::wet_parts`**: the drip and the drops of a splash fly (gravity and a drag with Atlas, Srivastava and Sekhon's terminal velocity) and settle on the first face they meet from the front, in a later step; each frame lists them (S3d).
@@ -50,11 +42,21 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **Organic drops in `rt_phys::wet_parts`**: the merge looks along the path each drop swept, keeps the volume and relaxes the survivor to the centre of volume over a few capillary times; a sliding drop has Cox and Voinov's dynamic contact angles and leaves the beads of a rivulet once its rear angle falls far enough; drops held at open edges and under faces that look down neck and let go of 60 % of their water (Harkins and Brown); every frame carries the shapes of its changed drops (S3f).
 - **The shape tail of `WETP`**: one `DropShape` per drop after the drops (`SHP1`), which the engine meshes as deformed caps (16 × 8, the normals of their faces); bit 10 of the capabilities (`FEATURE_WET_SHAPES`, `/api/info` says 2047); an older engine ignores it and draws round caps (S3f).
 - New pinned hashes: the organic parts (`PINNED_S3F_PARTS`) and their scene with the drops' shapes (`PINNED_S3F_ORGANIC_4SPP`, `rt --write-s3f-organic-example`), the same in scalar, SSE2, AVX2, with 1, 4 and 16 threads, in `wasm32-wasip1` and in the real `rt.wasm`. `PINNED_WET_PARTS`, `PINNED_S3C_WET_4SPP`, `PINNED_S3D_FLIGHT_4SPP` and the six `PINNED_S3D_PASS_*` move, on purpose: the parts simulation is no longer S3d's; with S3d's scenes, the engine gives their earlier images (S3f).
+- **`rt-post`**: the band gains (`BAND_GAIN_AT_100`), the styles' grades (`style.rs`), `MAX_STRENGTH` 0.6, the job's style (`RPJ2`; `RPJ1` still reads, as *Natural*), the report's `capped` and each material's `kept`, and a deterministic **test model** (`test_model.rs`) that `post.wasm` exports (`post_test_model`) and `rt-fake-sd` serves as its `model` image. `tests/fixtures/ai-guard.json` moves on purpose with the guard's new law (X6).
+- **`rt --ai-inputs <prefix>`** writes the linear image (`RPL1`) and the passes (`RPP1`) of a render, what the AI post-processing starts from (X6).
+- **`ModelBackend`** in `rt-app`: the desktop pipeline's model call goes through one interface, the local runtime as before and a remote API through the system's `curl` (key through standard input, no redirects); `/api/ai/apikeys` and `aiRemote: 1` in `/api/info` (X7).
 
 ### Tools
 
 - `tools/s3d-check.mjs`: the note for an engine without bit 9 (in English and in Spanish; with dust, none), the drops in the air with the physics bar and the new meter with its capture, the meter with only dust, and the achromatic chrome; the sheet `out/rain-dust-sheet.html` carries the drops in the air of each photo of the parts and says how many there are (S3d).
 - `tools/s3f-strip.mjs`: the strip `docs/ui/rain-organic.png`, the S3f scene rendered by the native engine at six instants, aimed at the drop that slides; `rt --write-s3f-strip` writes its frames (S3f).
+- `tools/ai-preview-sheet.mjs` makes the stored example (`public/ai-preview/`, 161 WebP images, 0.74 MB) and a contact sheet; `tools/ai-x6-check.mjs` checks the section in the browser and makes its captures; `tools/ai-post-check.mjs` follows the new preview (X6).
+
+### Project
+
+- **All documentation is in English**, written for the public: the roadmap, the specification, the architecture, the interface guide, the changelog, the gallery and the release notes of every version. The manual Windows test plan moves out of the release notes into `docs/testing/windows-checklist.md`. The interface stays bilingual.
+- **`.github/workflows/release-notes.yml`**: replaces the notes of releases already published with their current `docs/release-notes/<tag>.md`, every release or one tag.
+- Fixed: the release workflow's smoke test failed with `fetch failed` when building `rt-cli` took longer than the launcher keeps an idle connection; the example scene is now built before the launcher starts.
 
 ## v0.1.21 — 2026-10-18
 
