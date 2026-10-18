@@ -836,7 +836,8 @@ pub enum FirstHit {
     /// An instance: its index, `t` along the ray and the unit shading normal facing the ray
     /// (both sides of a triangle count).
     Surface {
-        /// Instance index (the RSB instance order).
+        /// Instance index (the RSB instance order; S3d: for a drop on a part or in the air, that
+        /// part's, [`crate::scene::Scene::pass_instance`]).
         instance: u32,
         /// Ray parameter of the hit.
         t: f32,
@@ -908,7 +909,8 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
                 },
             );
             FirstHit::Surface {
-                instance: details.instance,
+                // S3d: a drop counts as its part.
+                instance: scene.pass_instance(details.instance, details.triangle),
                 t: details.t,
                 normal: prepared.bevel.pass_normal(scene, ray, &details),
                 albedo: weathered.map_or(albedo, |m| m.base_color),

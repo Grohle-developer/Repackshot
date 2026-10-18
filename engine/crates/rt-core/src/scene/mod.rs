@@ -981,9 +981,15 @@ pub struct Scene {
     /// instance. Set them with [`Scene::set_wet_parts`] (the RSB reader does), which meshes their
     /// drops.
     pub wet_parts: Vec<crate::weather::PartWeather>,
+    /// S3d: the drops in the air (`WETF`, [`crate::weather::FallingDrop`]), meshed as spheres after
+    /// the caps. Set them with [`Scene::set_wet_falling`] (the RSB reader does).
+    pub wet_falling: Vec<crate::weather::FallingDrop>,
     /// S3c: where the mesh of the drops' caps, its instance and its material (water) are, after the
     /// file's own: none without drops.
     pub caps: Option<Caps>,
+    /// S3d: the instance each cap lies on, then the instance each drop in the air left, in the
+    /// order of the caps' mesh ([`Scene::pass_instance`]).
+    pub cap_owners: Vec<u32>,
 }
 
 /// S3c: the mesh of the drops' caps, its instance and its material, each the last of its list
@@ -996,6 +1002,8 @@ pub struct Caps {
     pub instance: u32,
     /// Index of the material (water).
     pub material: u32,
+    /// S3d: how many caps the mesh holds first (the drops in the air come after them).
+    pub caps: u32,
 }
 
 impl Scene {
@@ -1100,6 +1108,25 @@ impl Scene {
         self.caps
     }
 
+    /// S3d: the instance the part and material passes name for a hit on triangle `triangle` of
+    /// instance `instance`: for a drop's cap the instance it lies on, for a drop in the air the
+    /// instance it left; any other hit, `instance` itself.
+    pub fn pass_instance(&self, instance: u32, triangle: u32) -> u32 {
+        let Some(c) = self.caps.filter(|c| c.instance == instance) else {
+            return instance;
+        };
+        let in_caps = c.caps * crate::weather::CAP_TRIANGLES;
+        let k = if triangle < in_caps {
+            triangle / crate::weather::CAP_TRIANGLES
+        } else {
+            c.caps + (triangle - in_caps) / crate::weather::SPHERE_TRIANGLES
+        };
+        match self.cap_owners.get(k as usize) {
+            Some(&owner) if owner != crate::weather::NO_INSTANCE => owner,
+            _ => instance,
+        }
+    }
+
     /// S3c: the instances of the file (all of them but the caps').
     pub fn file_instances(&self) -> &[Instance] {
         let all = self.geometry.instances();
@@ -1130,7 +1157,7 @@ impl Scene {
         crate::weather::check_parts(&parts, self.file_instances(), self.file_meshes())?;
         if self.file_instances().len() + self.geometry.particle_sets().len() + 1
             > crate::geometry::MAX_INSTANCES
-            && parts.iter().any(|p| !p.drops.is_empty())
+            && (parts.iter().any(|p| !p.drops.is_empty()) || !self.wet_falling.is_empty())
         {
             return Err("too many instances for the drops");
         }
@@ -1140,8 +1167,29 @@ impl Scene {
         Ok(())
     }
 
+    /// S3d: sets the drops in the air ([`crate::weather::FallingDrop`]) and meshes them with the
+    /// caps. Fails, leaving the scene as it was, when one names an instance that is not there, is out
+    /// of its range, or there is no room for the instance of the drops.
+    pub fn set_wet_falling(
+        &mut self,
+        drops: Vec<crate::weather::FallingDrop>,
+    ) -> Result<(), &'static str> {
+        crate::weather::check_falling(&drops, self.file_instances().len())?;
+        if self.file_instances().len() + self.geometry.particle_sets().len() + 1
+            > crate::geometry::MAX_INSTANCES
+            && !drops.is_empty()
+        {
+            return Err("too many instances for the drops");
+        }
+        self.detach_caps();
+        self.wet_falling = drops;
+        self.attach_caps();
+        Ok(())
+    }
+
     /// Takes the caps' mesh, instance and material out.
     fn detach_caps(&mut self) {
+        self.cap_owners.clear();
         let Some(c) = self.caps.take() else { return };
         let width = crate::geometry::BvhWidth::native();
         let sets = self.geometry.take_particles();
@@ -1155,16 +1203,28 @@ impl Scene {
         self.apply_section();
     }
 
-    /// Meshes the drops of [`Scene::wet_parts`] after the file's own (validated) instances.
+    /// Meshes the drops of [`Scene::wet_parts`] and those in the air ([`Scene::wet_falling`]) after
+    /// the file's own (validated) instances.
     fn attach_caps(&mut self) {
         let caps = crate::weather::caps_of(
             &self.wet_parts,
             self.geometry.instances(),
             self.geometry.meshes(),
         );
-        let Some(mesh) = crate::weather::cap_mesh(&caps) else {
+        let spheres: Vec<(Vec3, f32)> = self
+            .wet_falling
+            .iter()
+            .map(|d| (d.position, d.radius))
+            .collect();
+        let shapes: Vec<crate::weather::Cap> = caps.iter().map(|c| c.1).collect();
+        let Some(mesh) = crate::weather::water_mesh(&shapes, &spheres) else {
             return;
         };
+        let owners: Vec<u32> = caps
+            .iter()
+            .map(|c| c.0)
+            .chain(self.wet_falling.iter().map(|d| d.instance))
+            .collect();
         let width = crate::geometry::BvhWidth::native();
         let sets = self.geometry.take_particles();
         let mut instances = self.geometry.instances().to_vec();
@@ -1173,6 +1233,7 @@ impl Scene {
             mesh: meshes.len() as u32,
             instance: instances.len() as u32,
             material: self.materials.len() as u32,
+            caps: caps.len() as u32,
         };
         meshes.push(mesh);
         instances.push(Instance::new(at.mesh, Transform::IDENTITY, at.material));
@@ -1181,6 +1242,7 @@ impl Scene {
             Ok(g) => {
                 self.geometry = g;
                 self.caps = Some(at);
+                self.cap_owners = owners;
             }
             Err(_) => {
                 self.materials.pop();

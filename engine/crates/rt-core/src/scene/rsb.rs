@@ -98,9 +98,12 @@
 //!             after the INST sections): u32 instance triangles samples drops; f32 cap_angle_deg
 //!             porosity; u8 resolution[triangles], zero padding to 4; u8 (wet dust snow)[samples],
 //!             zero padding to 4; (u32 triangle; f32 x y z radius)[drops]
+//! WETF   4 B  the drops in the air (S3d, new, at most one, written after the WETP sections): u32
+//!             drops; (u32 instance; f32 x y z radius)[drops]   (world space; instance 0xffffffff:
+//!             none)
 //! ```
 //!
-//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT` and `GLAS` may appear at most once (a missing one means
+//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT`, `GLAS` and `WETF` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
 //! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP`, `PROG` and `WETP` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
@@ -175,6 +178,15 @@
 //! the file invalid. A file without `WETP` is the scene as before S3c; an engine of before skips the
 //! section (the page writes it only for an engine with [`crate::FEATURE_WET_PARTS`]). An update
 //! without `MESH` sections keeps the file's meshes and meshes the caps again.
+//!
+//! **Drops in the air** (S3d). `WETF` lists the drops the simulation has in the air in the frame
+//! (drips falling, the drops splashes throw): spheres of water in world space, meshed after the
+//! caps in the same mesh, instance and material ([`crate::weather::water_mesh`]). Each names the
+//! instance it left, which the part and material passes give for it (as they give a cap's part:
+//! [`crate::scene::Scene::pass_instance`]). An instance that is not there, a radius out of 0..50 mm,
+//! more than [`crate::weather::MAX_FALLING_DROPS`] or a second `WETF` make the file invalid. An
+//! engine of before skips it (the page writes it only for an engine with
+//! [`crate::FEATURE_WET_FLIGHT`]).
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
@@ -422,6 +434,8 @@ pub const TAG_SECT: [u8; 4] = *b"SECT";
 pub const TAG_GLAS: [u8; 4] = *b"GLAS";
 /// S3c: the rain, dust and snow on an instance ([`crate::weather`]).
 pub const TAG_WETP: [u8; 4] = *b"WETP";
+/// S3d: the drops in the air of the scene ([`crate::weather::FallingDrop`], at most one).
+pub const TAG_WETF: [u8; 4] = *b"WETF";
 
 /// Widest field of view of a panoramic camera, degrees (`CAMR.fov_x_deg`, `fov_y_deg`; K3).
 pub const MAX_FOV_DEG: f32 = 3600.0;
@@ -1160,6 +1174,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut section = None;
     let mut glass = None;
     let mut wet: Vec<crate::weather::PartWeather> = Vec::new();
+    let mut falling: Option<Vec<crate::weather::FallingDrop>> = None;
     let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
     // The profile each IES light names, by the light's position in `scene.lights`.
     let mut light_profiles: Vec<(usize, u32)> = Vec::new();
@@ -1248,6 +1263,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                     crate::weather::PartWeather::decode(payload)
                         .map_err(|reason| RsbError::Invalid { tag, reason })?,
                 );
+            }
+            TAG_WETF => {
+                if payload.len() < crate::weather::WETF_HEADER {
+                    return Err(RsbError::SectionTooShort { tag });
+                }
+                let drops = crate::weather::decode_falling(payload)
+                    .map_err(|reason| RsbError::Invalid { tag, reason })?;
+                set_once(&mut falling, tag, drops)?;
             }
             _ => {} // Unknown section: skipped for forward compatibility.
         }
@@ -1415,7 +1438,15 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             reason,
         }
     })?;
-    if wet.iter().any(|w| !w.drops.is_empty())
+    // S3d: the drops in the air, each from an instance of the file (or none).
+    let falling = falling.unwrap_or_default();
+    crate::weather::check_falling(&falling, instances.len()).map_err(|reason| {
+        RsbError::Invalid {
+            tag: TAG_WETF,
+            reason,
+        }
+    })?;
+    if (wet.iter().any(|w| !w.drops.is_empty()) || !falling.is_empty())
         && instances.len() + effects.len() + 1 > crate::geometry::MAX_INSTANCES
     {
         return Err(RsbError::Invalid {
@@ -1492,6 +1523,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     scene.section = section;
     // S3c: the weather of the instances, and the caps of their drops.
     scene.wet_parts = wet;
+    scene.wet_falling = falling;
     scene.attach_caps();
     scene.apply_section();
     Ok(scene)
@@ -1701,6 +1733,13 @@ impl Scene {
         // S3c: the weather of the instances, after them.
         for part in &self.wet_parts {
             w.section(TAG_WETP, |w| w.buf.extend_from_slice(&part.encode()));
+        }
+        // S3d: the drops in the air, after them.
+        if !self.wet_falling.is_empty() {
+            w.section(TAG_WETF, |w| {
+                w.buf
+                    .extend_from_slice(&crate::weather::encode_falling(&self.wet_falling))
+            });
         }
         // L5: the profiles the IES lights use, once each, in the order of first use. An IES light
         // without one is ignored by the engine and so is not written.

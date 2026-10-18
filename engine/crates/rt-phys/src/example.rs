@@ -472,3 +472,22 @@ pub fn s3c_wet_scene() -> rt_core::scene::Scene {
     scene.set_wet_parts(parts).expect("weather that fits");
     scene
 }
+
+/// S3d: the parity scene of the drops in the air: [`s3c_wet_scene`] with the drops [`wet_parts`]
+/// has in the air (drips and the drops splashes threw) in its `WETF` section, each from the
+/// instance of the part it left. `tests/wet_parts.rs` pins its image and its passes; `rt
+/// --write-s3d-flight-example` writes it.
+pub fn s3d_flight_scene() -> rt_core::scene::Scene {
+    let mut scene = s3c_wet_scene();
+    let falling = wet_parts()
+        .falling()
+        .iter()
+        .map(|&(part, position, radius)| rt_core::weather::FallingDrop {
+            instance: part,
+            position,
+            radius,
+        })
+        .collect();
+    scene.set_wet_falling(falling).expect("drops that fit");
+    scene
+}
