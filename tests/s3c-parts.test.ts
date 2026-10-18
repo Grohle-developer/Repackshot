@@ -461,6 +461,22 @@ describe('S3c: the physics bar wets the parts', () => {
     expect(clip().parts!.frames).toBe(4);
   });
 
+  it('a Dynamic part moves in the run and is not wetted where it stood: the other parts are', async () => {
+    const { ctx, store, runs } = app();
+    const part = allParts(store.get())[0];
+    store.dispatch({ type: 'physics/set', ids: [part], patch: { role: 'DYNAMIC' } });
+    phys.start(ctx);
+    await tick();
+    expect(runs).toHaveLength(1);
+    expect(runs[0].bodies).toBeGreaterThan(0);
+    const still = wetPartsSpec(store.get(), new Set([part]))!;
+    expect(still.parts.some((p) => p.node === part)).toBe(false);
+    expect(still.parts.length).toBe(wetPartsSpec(store.get())!.parts.length - 1);
+    expect(Array.from(runs[0].parts!)).toEqual(Array.from(wptBytes(still)));
+    phys.stop(ctx);
+    await tick();
+  });
+
   it('Drop wets nothing; Start with the effect switched off for the parts has nothing to do', async () => {
     const { ctx, store, runs } = app();
     store.dispatch({ type: 'effect/set', id: store.get().effects[0].id, patch: { wetParts: false } });

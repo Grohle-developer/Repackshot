@@ -81,6 +81,15 @@ export function partsFeedingEffects(state: ProjectState): AmbientEffect[] {
 }
 
 /**
+ * S3c: the render would draw the parts dry although some effect falls on them: the engine of the render does not draw
+ * the weather of the parts (`readsWetParts` false: bit 8 of its features, render/engine.ts `readsWetParts`; an engine of
+ * before S3c). Unknown (`undefined`: no engine yet) is no reason to warn.
+ */
+export function partsRenderDry(state: ProjectState, readsWetParts: boolean | undefined): boolean {
+  return readsWetParts === false && partsFeedingEffects(state).length > 0;
+}
+
+/**
  * The spec of the simulation of the parts: every visible part with a mesh that is not among `moving` (the bodies the
  * run moves: they are not wetted), where it stands, the wettability of its material's family (data/wettability.ts),
  * the set's pieces as a film; per effect that falls on them, its density (the particles it asks for over the volume
@@ -327,7 +336,7 @@ export function parseLayout(bytes: Uint8Array): { cellMm: number; parts: { trian
     at += pad;
     let total = 0;
     for (const r of resolution) {
-      if (r < 1 || r > 64) return null;
+      if (r < 1 || r > 255) return null;
       total += ((r + 1) * (r + 2)) / 2;
     }
     if (total !== samples) return null;

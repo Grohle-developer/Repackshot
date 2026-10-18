@@ -22,7 +22,7 @@ use rt_phys::Transform;
 
 /// Pinned hash of the parity parts after [`PARTS_STEPS`] ([`WetParts::hash`]); the page's test with
 /// the real `rt.wasm` (`tests/s3c-parts.test.ts`) checks the module against it.
-const PINNED_WET_PARTS: u32 = 0x9fb6_9a83;
+const PINNED_WET_PARTS: u32 = 0x6245_0071;
 
 /// A plate tilted `deg` about X (its slope runs down −Y for a positive angle) at `at`.
 fn tilted(deg: f32, at: Vec3) -> Transform {
@@ -148,6 +148,53 @@ fn the_samples_cover_every_triangle_and_keep_under_the_budget() {
         (corner - Vec3::new(-25.0, -25.0, 0.0)).length() < 1e-3,
         "{corner:?}"
     );
+}
+
+#[test]
+fn a_sliver_spends_samples_by_its_area_and_a_film_part_keeps_to_a_third() {
+    // A strip 400 mm long and 1 mm wide, two triangles (a slice of a backdrop's cove): its longest
+    // edge would give 400 steps; its area, 200 mm², gives 2√200 = 28.3: 29 steps of 1 mm.
+    let strip = PartsMesh {
+        positions: vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(400.0, 0.0, 0.0),
+            Vec3::new(400.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        ],
+        indices: vec![0, 1, 2, 0, 2, 3],
+    };
+    let one = WetParts::new(spec(
+        vec![strip],
+        vec![glass_part(0, Transform::IDENTITY)],
+        vec![],
+    ));
+    assert_eq!(one.resolution(0, 0), 29);
+    assert_eq!(one.cell_mm(), 1.0);
+    // A product beside a set whose film would take every sample at the product's cell: the film
+    // keeps to a third of the budget, the product's cell stays fine.
+    let mut film = glass_part(1, Transform::IDENTITY);
+    film.flags = PART_FILM;
+    let both = WetParts::new(PartsSpec {
+        max_samples: 30_000,
+        ..spec(
+            vec![
+                plate_mesh(50.0, 50.0, 2, 2),
+                plate_mesh(2000.0, 2000.0, 8, 8),
+            ],
+            vec![glass_part(0, Transform::IDENTITY), film],
+            vec![],
+        )
+    });
+    let on = |part: usize| {
+        (0..both.sample_count())
+            .filter(|&s| both.sample_part(s) == part)
+            .count()
+    };
+    assert!(on(1) <= 10_000, "{}", on(1));
+    assert!(on(0) + on(1) <= 30_000);
+    // 25 mm quads, diagonal 35.4 mm: the product keeps its 1 mm cell.
+    assert_eq!(both.resolution(0, 0), 36);
+    assert_eq!(both.cell_mm(), 1.0);
 }
 
 #[test]
@@ -643,7 +690,7 @@ fn the_parity_parts_have_a_pinned_hash() {
 
 /// Pinned hash of the S3c parity scene ([`s3c_wet_scene`]) at 4 samples per pixel;
 /// `tools/wasm-parity.mjs` checks the module against it (`rt --write-s3c-wet-example`).
-const PINNED_S3C_WET_4SPP: u32 = 0x7bad_d7de;
+const PINNED_S3C_WET_4SPP: u32 = 0x66fa_33ab;
 
 /// FNV-1a over the little-endian bytes of the resolved film (the hash of the render tests and of
 /// `tools/wasm-parity.mjs`).

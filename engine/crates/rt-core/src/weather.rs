@@ -39,7 +39,7 @@ use crate::scene::{Material, Scene, MATERIAL_EMISSIVE, MATERIAL_GLASS};
 /// The bytes of a `WETP` section's header.
 pub const WETP_HEADER: usize = 24;
 /// Most steps of a triangle's grid per side.
-pub const MAX_RESOLUTION: u32 = 64;
+pub const MAX_RESOLUTION: u32 = 255;
 /// Most drops of all the instances together.
 pub const MAX_WET_DROPS: usize = 4096;
 /// The depth of snow one step of its byte stands for, mm (255 steps: 5.1 mm).
@@ -117,7 +117,7 @@ impl Layers {
 ///  12  u32   drops
 ///  16  f32   cap_angle_deg   of its drops, 1..179
 ///  20  f32   porosity        how much a wet film darkens it, 0..1
-///  24  u8    resolution[triangles] (1..64), zero padding to 4
+///  24  u8    resolution[triangles] (1..255), zero padding to 4
 ///      u8    (wet dust snow)[samples], zero padding to 4
 ///      (u32 triangle; f32 x y z radius)[drops]   (object space; radius 0..50 mm)
 /// ```
@@ -146,7 +146,7 @@ fn padded(n: usize) -> usize {
 
 impl PartWeather {
     /// The weather of `instance`: its triangles' resolutions, their samples, its drops. Fails when
-    /// the samples are not the resolutions', a resolution is out of 1..64, a value is not finite or
+    /// the samples are not the resolutions', a resolution is out of 1..255, a value is not finite or
     /// out of its range.
     pub fn new(
         instance: u32,
@@ -160,7 +160,7 @@ impl PartWeather {
         let mut total = 0u64;
         for &r in &resolution {
             if r == 0 || u32::from(r) > MAX_RESOLUTION {
-                return Err("a triangle's resolution is out of 1..64");
+                return Err("a triangle's resolution is out of 1..255");
             }
             first.push(total as u32);
             total += u64::from(samples_of(u32::from(r)));

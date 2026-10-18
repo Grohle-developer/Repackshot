@@ -2104,6 +2104,10 @@ const TABLE = {
   'phys.glassTip': ['The front glass fed by the scene, as the simulator left it in the last frame', 'El cristal frontal alimentado por la escena, tal como lo dejó el simulador en el último fotograma'],
   'phys.parts': ['Parts: {drops} drops · {drips} drips', 'Piezas: {drops} gotas · {drips} goteos'],
   'ambient.wetParts': ['On the parts', 'Sobre las piezas'],
+  'ambient.wetPartsOldEngine': [
+    'The render engine in use does not draw the rain, dust and snow on the parts (an older engine): the render will show them dry and clean. Update the application to see them',
+    'El motor de render en uso no dibuja la lluvia, el polvo y la nieve sobre las piezas (un motor anterior): el render las enseñará secas y limpias. Actualiza la aplicación para verlas',
+  ],
   'ambient.wetPartsTip.DROPS': ['Start in the physics bar lets it fall on the parts: drops land and splash, merge, slide down and drip off the edges, leaving the surfaces wet. The recording is a Physics clip of the scene; Reset takes it away', 'Iniciar en la barra de físicas la deja caer en las piezas: las gotas se posan y salpican, se juntan, resbalan y gotean por las aristas, y dejan las superficies mojadas. La grabación es un clip de Físicas de la escena; Reiniciar la quita'],
   'ambient.wetPartsTip.DUST': ['Start in the physics bar lets it settle on the parts where they are flat enough for it to rest; rain running down wipes it. The recording is a Physics clip of the scene; Reset takes it away', 'Iniciar en la barra de físicas lo deja posarse en las piezas donde son lo bastante planas para que repose; la lluvia que resbala se lo lleva. La grabación es un clip de Físicas de la escena; Reiniciar la quita'],
   'ambient.wetPartsTip.SNOW': ['Start in the physics bar lets it pile up on the parts where they are flat enough to hold it. The recording is a Physics clip of the scene; Reset takes it away', 'Iniciar en la barra de físicas la deja acumularse en las piezas donde son lo bastante planas para sostenerla. La grabación es un clip de Físicas de la escena; Reiniciar la quita'],

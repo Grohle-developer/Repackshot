@@ -13,10 +13,12 @@
 //! **The surface's samples.** Every triangle carries a regular grid of `R` steps per side, the
 //! samples `(i, j)`, `i + j ≤ R`, at the barycentric weights `(1 − (i + j)/R, i/R, j/R)` of its
 //! corners (`(R + 1)(R + 2)/2` of them, row `j` after row `j − 1`: [`sample_index`]). `R` is the
-//! triangle's longest edge over the cell size, at least 1 and at most [`MAX_RESOLUTION`]; the cell
-//! grows until the scene keeps under its budget of samples. The samples hold what the renderer
-//! shades (the RSB `WETP` section, `rt_core::weather`): when each was first wet, when the rain last
-//! wiped its dust, how fast dust and snow pile on it.
+//! triangle's longest edge over the cell size, but no more than twice the side of the square of its
+//! area over it (a sliver's samples follow its area: [`resolution_of`]), at least 1 and at most
+//! [`MAX_RESOLUTION`]; the cell grows until the scene keeps under its budget of samples, of which
+//! the film parts (below) take a third at most when there are parts that take drops. The samples
+//! hold what the renderer shades (the RSB `WETP` section, `rt_core::weather`): when each was first
+//! wet, when the rain last wiped its dust, how fast dust and snow pile on it.
 //!
 //! **What arrives.** Each source ([`PartsSource`]) is an effect of the scene as a number density of
 //! particles and their mean velocity `v`. Through a surface whose normal is `n` pass
@@ -80,7 +82,7 @@ pub const MAX_SOURCES: usize = 64;
 /// Most drops on all the parts together (◆: each is a cap the renderer meshes).
 pub const MAX_PART_DROPS: usize = 4096;
 /// Most steps of a triangle's grid of samples per side.
-pub const MAX_RESOLUTION: u32 = 64;
+pub const MAX_RESOLUTION: u32 = 255;
 /// Most samples a spec may ask for.
 pub const MAX_SAMPLE_BUDGET: u32 = 4_000_000;
 /// A step that has not come (a sample never wet).
@@ -450,6 +452,22 @@ pub fn sample_index(r: u32, i: u32, j: u32) -> u32 {
 /// Samples of a triangle of resolution `r`.
 pub fn samples_of(r: u32) -> u32 {
     (r + 1) * (r + 2) / 2
+}
+
+/// The steps per side of a triangle whose longest edge is `longest` mm and whose area is `area`
+/// mm², at a cell of `cell` mm: the longest edge over the cell, but no more than twice the side of
+/// the square of the triangle's area over it (a sliver, a long thin strip of a backdrop's cove,
+/// would otherwise spend thousands of samples on a band a millimetre wide); at least 1 and at most
+/// [`MAX_RESOLUTION`].
+pub fn resolution_of(longest: f32, area: f32, cell: f32) -> u32 {
+    let r = (longest / cell)
+        .ceil()
+        .min((2.0 * area.max(0.0).sqrt() / cell).ceil());
+    if r.is_nan() || r < 1.0 {
+        1
+    } else {
+        (r as u32).min(MAX_RESOLUTION)
+    }
 }
 
 /// The share of particles that rest on a face `alpha_deg` from the horizontal under an angle of
@@ -935,35 +953,39 @@ impl WetParts {
                 to_object: inverse(&ps.transform),
             });
         }
-        // The cell that keeps every triangle's grid under the budget.
+        // The cells that keep every triangle's grid under the budget: the film parts (a set: large,
+        // flat, shaded, never walked) take a third of it at most when there are parts that take
+        // drops, which take the rest; a sliver's steps follow its area, not its longest edge.
         let longest = |t: &Tri| {
             let e = [t.v[1] - t.v[0], t.v[2] - t.v[1], t.v[0] - t.v[2]];
             e[0].length().max(e[1].length()).max(e[2].length())
         };
-        let res_of = |t: &Tri, cell: f32| {
-            let r = (longest(t) / cell).ceil();
-            if r.is_nan() || r < 1.0 {
-                1
-            } else {
-                (r as u32).min(MAX_RESOLUTION)
+        let res_of = |t: &Tri, cell: f32| resolution_of(longest(t), t.area, cell);
+        let is_film = |t: &Tri| parts[t.part as usize].film;
+        let fit = |film: bool, budget: u64| {
+            let mut cell = spec.cell_mm;
+            for _ in 0..200 {
+                let total: u64 = tris
+                    .iter()
+                    .filter(|t| is_film(t) == film)
+                    .map(|t| u64::from(samples_of(res_of(t, cell))))
+                    .sum();
+                if total <= budget {
+                    return (cell, total);
+                }
+                cell *= 1.25;
             }
+            (cell, budget)
         };
-        let mut cell = spec.cell_mm;
-        for _ in 0..200 {
-            let total: u64 = tris
-                .iter()
-                .map(|t| u64::from(samples_of(res_of(t, cell))))
-                .sum();
-            if total <= u64::from(spec.max_samples) {
-                break;
-            }
-            cell *= 1.25;
-        }
+        let budget = u64::from(spec.max_samples);
+        let any_drops = tris.iter().any(|t| !is_film(t));
+        let (film_cell, film_total) = fit(true, if any_drops { budget / 3 } else { budget });
+        let (cell, _) = fit(false, budget.saturating_sub(film_total));
         // The samples.
         let mut pos = Vec::new();
         let mut sample_tri = Vec::new();
         for (ti, t) in tris.iter_mut().enumerate() {
-            t.res = res_of(t, cell);
+            t.res = res_of(t, if is_film(t) { film_cell } else { cell });
             t.first = pos.len() as u32;
             let r = t.res;
             let inv = 1.0 / r as f32;

@@ -11,7 +11,8 @@ import { activeCamera } from '../src/core/camera';
 import { newFrontGlass, opticsOf } from '../src/core/optics';
 import type { ProjectState } from '../src/core/store';
 import { glassRendersClean } from '../src/core/wet';
-import { readsGlassLayout } from '../src/render/engine';
+import { partsRenderDry } from '../src/core/wet-parts';
+import { readsGlassLayout, readsWetParts } from '../src/render/engine';
 import { STRINGS } from '../src/ui/strings';
 import { apply, exampleState } from './helpers';
 
@@ -70,5 +71,28 @@ describe('S3c: the warning of an engine without bit 7', () => {
     expect(panel).toMatch(/u\.engineInfo\?\.glassLayout\] as const/);
     const main = readFileSync('src/main.ts', 'utf8');
     expect(main.match(/glassLayout: readsGlassLayout\((i|t)\.features\)/g)).toHaveLength(2);
+  });
+});
+
+describe('S3c: the warning of an engine without bit 8', () => {
+  it('warns when an effect falls on the parts and the engine does not draw their weather', () => {
+    let s = apply(exampleState(), { type: 'effect/add', preset: 'RAIN' });
+    // Not on the parts: nothing to draw.
+    expect(partsRenderDry(s, false)).toBe(false);
+    s = apply(s, { type: 'effect/set', id: s.effects[0].id, patch: { wetParts: true } });
+    expect(partsRenderDry(s, false)).toBe(true);
+    expect(partsRenderDry(s, true)).toBe(false);
+    expect(partsRenderDry(s, undefined)).toBe(false);
+    // Switched off, nothing falls.
+    expect(partsRenderDry(apply(s, { type: 'effect/set', id: s.effects[0].id, patch: { enabled: false } }), false)).toBe(false);
+    expect(readsWetParts(511)).toBe(true);
+    expect(readsWetParts(511 & ~256)).toBe(false);
+    expect(STRINGS.en['ambient.wetPartsOldEngine']).toMatch(/dry/);
+    expect(STRINGS.es['ambient.wetPartsOldEngine']).toMatch(/secas/);
+    const panel = readFileSync('src/ui/panels/insp-ambient.ts', 'utf8');
+    expect(panel).toMatch(/partsRenderDry\(store\.get\(\), ctx\.ui\.get\(\)\.engineInfo\?\.wetParts\)/);
+    expect(panel).toMatch(/u\.engineInfo\?\.wetParts\] as const/);
+    const main = readFileSync('src/main.ts', 'utf8');
+    expect(main.match(/wetParts: readsWetParts\((i|t)\.features\)/g)).toHaveLength(2);
   });
 });

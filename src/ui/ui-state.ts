@@ -241,6 +241,11 @@ export interface EngineInfo {
    * not known.
    */
   glassLayout?: boolean;
+  /**
+   * S3c: the engine draws the rain, dust and snow on the parts (bit 8, render/engine.ts `readsWetParts`): without it the
+   * render draws them dry, and the ambient section says so. Absent: not known.
+   */
+  wetParts?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

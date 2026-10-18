@@ -15,6 +15,14 @@
 //   clean  the same two photos without the glass.
 // Each shot also writes the pane's drops and motes (JSON) for the sheet's drawing of the glass.
 //
+// S3c adds the parts (the simulation of core/wet-parts.ts run in the engine, `wpt_*`, recorded into the scene's PHYSICS
+// clip, each shot the scene at its instant with the WETP sections of the frame the pose shows):
+//   bottle the example bottle on the Perfume type's set, framed as the rain row (28 mm, f/8), under Rain on the parts, a
+//          no wind (the set's tall card beside the bottle would keep a slanted rain off it), at 0, 2, 5 and 15 s; the
+//          falling rain hidden from the camera, so the parts read;
+//   set    the same under a dust cloud's density without wind, on the parts, at 0, 30 and 120 s;
+//   snow   the same under Snow on the parts, at 0, 10 and 30 s.
+//
 // Optional: REPACKSHOT_RAIN_DUST_SIZE (WxH, default 512x288), REPACKSHOT_RAIN_DUST_SPP (default 64).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -24,13 +32,14 @@ import { evaluate } from '../src/core/animation';
 import { activeCamera } from '../src/core/camera';
 import { windVector, type EffectPatch } from '../src/core/effects';
 import { newFrontGlass, opticsOf } from '../src/core/optics';
-import { glassClip } from '../src/core/physics';
+import { glassClip, partsClip } from '../src/core/physics';
+import { parseLayout, partsFrame, PartsTrackWriter, wetPartsKey, wetPartsSpec, wptBytes, writtenParts } from '../src/core/wet-parts';
 import type { ProjectState } from '../src/core/store';
 import { capAngleDeg, glassFrame, GlassTrackWriter, wetBytes, wetKey, wetSpec } from '../src/core/wet';
 import type { EffectKind } from '../src/data/effects';
 import { glassFrameRsb, projectScene, writeRsb } from '../src/io/rsb';
 import { engineGlassPane, hasGlassExports } from '../src/render/glass-pane';
-import { hasWetExports, WetSim } from '../src/render/phys-wasm';
+import { hasPartsExports, hasWetExports, PartsSim, WetSim } from '../src/render/phys-wasm';
 import { apply, exampleState } from './helpers';
 import { RT_WASM } from './wasm-engine';
 
@@ -71,6 +80,8 @@ interface Shot {
   dropCover: number;
   dustCover: number;
   samples: number;
+  /** S3c: the drops on the parts and the drips so far, the parts' samples wet, dusty, snowy (share of their samples). */
+  parts?: { drops: number; drips: number; wet: number; dust: number; snow: number };
 }
 
 describe.skipIf(!dir)('the rain and dust sheet: its scenes', () => {
@@ -81,7 +92,8 @@ describe.skipIf(!dir)('the rain and dust sheet: its scenes', () => {
     const rt = instance.exports;
     if (!hasWetExports(rt) || !hasGlassExports(rt)) throw new Error('this rt.wasm has no front glass (npm run engine:build)');
     const shots: Shot[] = [];
-    const view = { width, height, maxSamples: spp, maxSeconds: 0, drops: true, glassLayout: true };
+    const view = { width, height, maxSamples: spp, maxSeconds: 0, drops: true, glassLayout: true, wetParts: true };
+    if (!hasPartsExports(rt)) throw new Error('this rt.wasm does not wet the parts (npm run engine:build)');
 
     /** Simulates the glass of `s` for `seconds` at `fps`, records it into its clip, writes a shot at each of `times`. */
     const run = (row: string, label: string, s0: ProjectState, seconds: number, fps: number, times: number[]) => {
@@ -125,6 +137,45 @@ describe.skipIf(!dir)('the rain and dust sheet: its scenes', () => {
     run('dust', 'Dust motes, the lens looking 60° up', withGlass(withEffect(up, 'DUST_MOTES')), 120, 2, [0, 30, 120]);
     // Without its wind (the preset's breeze blows away from this lens).
     run('cloud', 'A dust cloud’s density without wind, the lens looking 60° up', withGlass(withEffect(up, 'DUST_CLOUD', { wind: [0, 0, 0] })), 120, 2, [0, 30, 120]);
+    /** S3c: simulates the parts of `s0` for `seconds` at `fps`, records them into their clip, writes a shot at each of `times`. */
+    const wetRun = (row: string, label: string, s0: ProjectState, seconds: number, fps: number, times: number[]) => {
+      const spec = wetPartsSpec(s0)!;
+      const bytes = wptBytes(spec);
+      const sim = new PartsSim(rt, bytes);
+      const lay = sim.layout();
+      const parts = parseLayout(lay)!;
+      const written = writtenParts(spec);
+      const meta = written.map((p, k) => ({ node: p.node, mesh: p.mesh, triangles: parts.parts[k].triangles, samples: parts.parts[k].samples, capAngleDeg: parts.parts[k].capAngleDeg, porosity: p.porosity }));
+      const w = new PartsTrackWriter(fps, wetPartsKey(bytes), meta, lay);
+      w.push(sim.frame());
+      const steps = 240 / fps;
+      for (let k = 1; k <= seconds * fps; k++) {
+        sim.step(steps);
+        w.push(sim.frame());
+      }
+      sim.free();
+      const track = w.track();
+      const s = apply(s0, { type: 'physics/begin', clips: [partsClip('rain-dust-parts', 0, track)] });
+      for (const t of times) {
+        const file = `${row}-${String(t).padStart(3, '0')}s`;
+        writeFileSync(join(dir!, `${file}.rsb`), writeRsb(projectScene(s, { ...view, pose: evaluate(s, t) }).scene));
+        const fr = partsFrame(track, t * fps)!;
+        let n = 0;
+        const share = [0, 0, 0];
+        for (const p of fr.parts) {
+          for (let i = 0; i < p.values.length; i += 3) {
+            n++;
+            for (let c = 0; c < 3; c++) if (p.values[i + c] > 0) share[c]++;
+          }
+        }
+        shots.push({ file, row, label: `${label}, ${t} s`, t, drops: 0, motes: 0, dropCover: 0, dustCover: 0, samples: spp, parts: { drops: fr.drops, drips: fr.drips, wet: share[0] / n, dust: share[1] / n, snow: share[2] / n } });
+      }
+    };
+    const bottle = apply(framed(), { type: 'studio/setPreset', key: 'PERFUME' }, { type: 'studio/build' });
+    const onParts = (s: ProjectState, preset: EffectKind, patch: EffectPatch = {}) => withEffect(s, preset, { ...patch, wetParts: true, camera: false });
+    wetRun('bottle', 'Rain on the parts, no wind', onParts(bottle, 'RAIN', { wind: [0, 0, 0] }), 15, 24, [0, 2, 5, 15]);
+    wetRun('set', 'A dust cloud’s density without wind, on the parts', onParts(bottle, 'DUST_CLOUD', { wind: [0, 0, 0] }), 120, 2, [0, 30, 120]);
+    wetRun('snow', 'Snow on the parts', onParts(bottle, 'SNOW'), 30, 4, [0, 10, 30]);
     // The clean photos.
     for (const [file, label, s] of [
       ['clean-rain', 'No glass (the rain row’s photo)', withEffect(looking, 'RAIN', { wind: windVector(6, towards) })],

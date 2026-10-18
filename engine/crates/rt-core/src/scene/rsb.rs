@@ -166,7 +166,7 @@
 //!
 //! **Wet parts** (S3c). A `WETP` section is what the simulation of the scene's rain, dust and snow
 //! left on instance `instance` ([`crate::weather`]): a grid of samples on each triangle of its mesh
-//! (`triangles` must be the mesh's, each `resolution` 1 to 64, `samples` their sum of
+//! (`triangles` must be the mesh's, each `resolution` 1 to 255, `samples` their sum of
 //! `(R + 1)(R + 2)/2`), each wet, dusty and snowy (bytes: 0..1 and 0.02 mm steps), shaded over the
 //! instance's material, and its drops, which the reader meshes as caps of water at `cap_angle_deg`
 //! in one more mesh, instance and material after the file's own ([`crate::scene::Caps`]; a drop

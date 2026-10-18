@@ -3,7 +3,7 @@
 // the scene clean) in the built app, with the local Chromium and swiftshader.
 //
 //   npm run engine:build && npm run build && node tools/s3c-check.mjs [--url http://localhost:4199] [--shots docs/ui]
-//       [--only warning,chrome]
+//       [--only warning,parts,rain,chrome]
 //
 // Without --url it serves dist/ with `vite preview` on port 4199 and stops it at the end.
 //
@@ -11,6 +11,14 @@
 //            has no warning; with one whose features are patched without bit 7 (tools/wasm-features.mjs, as an older
 //            engine reports them) it says the render will show the glass clean, in English and in Spanish; set by hand
 //            the warning goes.
+//   rain     the example bottle under Rain switched On the parts (one undo entry), with a wind: ▶ Start in the physics
+//            bar wets the parts alone, the bar counts the engine's drops and drips, the Fast viewport draws the recorded
+//            frame (its meter says how many drops on how many parts, and its pixels change); paused a few seconds in for
+//            the screenshot physics-rain-set.png; Stop is one undo entry, Reset takes the recording away and Undo brings it
+//            back.
+//   parts    the example with Rain switched On the parts: with the real rt.wasm (bit 8) no note; with one patched without
+//            bit 8 the effect's editor says the render will show the parts dry and clean, in English and in Spanish;
+//            switched off the parts again, the note goes.
 //   chrome   the rows S3c adds are achromatic in both themes.
 //
 // Results: out/s3c-check.json.
@@ -302,6 +310,125 @@ async function warningCheck(browser) {
   console.log(`warning: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
 }
 
+/** The note of an engine without bit 8 in the effect's editor: shown (its text) or null. */
+const partsDryNote = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector('[data-ambient="wet-parts-old-engine"]');
+    return el && el.getBoundingClientRect().height > 0 ? el.textContent : null;
+  });
+
+async function partsCheck(browser) {
+  const f = [];
+  const log = {};
+  if (!existsSync(join(ROOT, 'dist', 'engine', 'rt.wasm'))) {
+    results.parts = { ok: false, failures: ['dist/engine/rt.wasm is missing (npm run engine:build, then npm run build)'] };
+    console.log('parts: FAILED (no rt.wasm)');
+    return;
+  }
+  for (const [name, mask, lang] of [['current', null, 'en'], ['en', ~256, 'en'], ['es', ~256, 'es']]) {
+    const { page, context, errors } = await open(browser, `example=1&theme=dark&lang=${lang}&mode=fast&tour=0`, { featureMask: mask });
+    await page.locator(SECTION).scrollIntoViewIfNeeded();
+    await addFromGallery(page, 'RAIN');
+    log[`${name}Ready`] = await engineReady(page);
+    ok(log[`${name}Ready`], `${name}: the engine did not get ready`, f);
+    const sw = page.locator('[data-knob="ambient.wetParts"] [role="switch"]');
+    log[`${name}Before`] = await partsDryNote(page);
+    ok(log[`${name}Before`] === null, `${name}: a note before the effect falls on the parts: ${log[`${name}Before`]}`, f);
+    await sw.click();
+    await settle(page, 600);
+    if (mask === null) {
+      log.current = await partsDryNote(page);
+      ok(log.current === null, `the engine of this build is warned about: ${log.current}`, f);
+    } else {
+      const shown = await until(async () => (await partsDryNote(page)) !== null, 60000);
+      log[name] = await partsDryNote(page);
+      ok(shown && (lang === 'en' ? /show them dry and clean/ : /enseñará secas y limpias/).test(log[name] ?? ''), `${lang}: no note for an engine without bit 8: ${log[name]}`, f);
+      await sw.click();
+      await settle(page, 600);
+      log[`${name}Off`] = await partsDryNote(page);
+      ok(log[`${name}Off`] === null, `${lang}: the note stays with the parts switched off: ${log[`${name}Off`]}`, f);
+    }
+    ok(errors.length === 0, `${name}: errors in the page: ${errors.join(' | ')}`, f);
+    await context.close();
+  }
+  results.parts = { ok: f.length === 0, failures: f, ...log };
+  console.log(`parts: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
+}
+
+/** What the physics bar says. */
+const bar = (page) =>
+  page.evaluate(() => {
+    const q = (k) => document.querySelector(`[data-field="${k}"]`)?.textContent ?? '';
+    return { state: q('phys.state'), time: q('phys.time'), parts: q('phys.parts') };
+  });
+
+async function rainCheck(browser) {
+  const f = [];
+  const log = {};
+  if (!existsSync(join(ROOT, 'dist', 'engine', 'rt.wasm'))) {
+    results.rain = { ok: false, failures: ['dist/engine/rt.wasm is missing (npm run engine:build, then npm run build)'] };
+    console.log('rain: FAILED (no rt.wasm)');
+    return;
+  }
+  const { page, context, errors } = await open(browser, 'example=1&theme=dark&lang=en&mode=fast&tour=0');
+  await page.mouse.move(5, 500);
+  await settle(page, 800);
+  const before = await viewportPixels(page);
+  await page.locator(SECTION).scrollIntoViewIfNeeded();
+  await addFromGallery(page, 'RAIN');
+  // A wind of 3 m/s across the bottle: the rain reaches its sides too.
+  await typeIn(page, page.locator('[data-knob="ambient.wind"] [role="spinbutton"]'), 3);
+  const sw = page.locator('[data-knob="ambient.wetParts"] [role="switch"]');
+  log.switchVisible = await sw.isVisible();
+  ok(log.switchVisible, 'the effect has no On the parts switch among its visible knobs', f);
+  await sw.click();
+  await settle(page, 300);
+  log.undoSwitch = await undoTip(page);
+  ok(/On the parts/.test(log.undoSwitch ?? ''), `the switch is not one undo entry "On the parts": ${log.undoSwitch}`, f);
+  await page.click('.drawer-btn[data-drawer="physics"]');
+  await settle(page, 300);
+  await page.evaluate(() => {
+    // Pause from inside the page once three seconds are simulated with drops on the parts.
+    new MutationObserver(() => {
+      const q = (k) => document.querySelector(`[data-field="${k}"]`)?.textContent ?? '';
+      const time = Number((q('phys.time').match(/[0-9.]+/) ?? ['0'])[0]);
+      const drops = Number((q('phys.parts').match(/([0-9,]+) drops/)?.[1] ?? '0').replace(/,/g, ''));
+      if (!window.__rainPaused && q('phys.state') === 'Running' && time >= 3 && drops > 0) {
+        window.__rainPaused = [time, drops];
+        document.querySelector('[data-action="phys.pause"]').click();
+      }
+    }).observe(document.querySelector('.phys'), { subtree: true, childList: true, characterData: true });
+  });
+  await page.click('[data-action="phys.start"]');
+  await page.waitForFunction(() => document.querySelector('[data-field="phys.state"]')?.textContent === 'Paused', null, { timeout: 180000 });
+  log.paused = await bar(page);
+  ok(/Parts: [1-9][\d,]* drops · [\d,]+ drips/.test(log.paused.parts), `the bar does not count the drops on the parts: ${JSON.stringify(log.paused)}`, f);
+  await page.mouse.move(5, 500);
+  log.meter = await meterSays(page, /Rain on the parts: [1-9][\d,]* drops on [1-9]\d* parts/);
+  ok(/Rain on the parts: [1-9]/.test(log.meter ?? ''), `the Fast viewport does not draw the recorded parts: ${log.meter}`, f);
+  await settle(page, 1500);
+  const after = await viewportPixels(page);
+  log.pixelsChanged = changed(before, after);
+  ok(log.pixelsChanged > 500, `the Fast viewport did not draw the weather: ${log.pixelsChanged} pixels changed`, f);
+  await page.screenshot({ path: join(SHOTS, 'physics-rain-set.png') });
+  await page.click('[data-action="phys.stop"]');
+  await page.waitForFunction(() => document.querySelector('[data-field="phys.state"]')?.textContent?.startsWith('Stopped'), null, { timeout: 60000 });
+  log.undoRun = await undoTip(page);
+  ok(/Simulate/.test(log.undoRun ?? ''), `the run is not one undo entry: ${log.undoRun}`, f);
+  await page.click('[data-action="phys.reset"]');
+  await settle(page, 600);
+  log.meterAfterReset = await engineMeter(page);
+  ok(!/Rain on the parts/.test(log.meterAfterReset ?? ''), `Reset did not take the recording away: ${log.meterAfterReset}`, f);
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Control+z');
+  log.meterAfterUndo = await meterSays(page, /Rain on the parts/);
+  ok(/Rain on the parts/.test(log.meterAfterUndo ?? ''), `Undo did not bring the recording back: ${log.meterAfterUndo}`, f);
+  ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
+  await context.close();
+  results.rain = { ok: f.length === 0, failures: f, ...log };
+  console.log(`rain: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
+}
+
 async function chromeCheck(browser) {
   const f = [];
   const log = {};
@@ -309,7 +436,7 @@ async function chromeCheck(browser) {
     const { page, context, errors } = await open(browser, `example=1&theme=${theme}&lang=en&mode=fast&tour=0`, { featureMask: ~128 });
     await rainyGlass(page);
     await until(async () => (await oldEngineNote(page)) !== null, 60000);
-    const bad = await chromatic(page, GLASS);
+    const bad = [...(await chromatic(page, GLASS)), ...(await chromatic(page, '[data-knob="ambient.wetParts"]'))];
     log[theme] = bad;
     ok(bad.length === 0, `${theme}: colours in the chrome: ${bad.join(' | ')}`, f);
     ok(errors.length === 0, `${theme}: errors in the page: ${errors.join(' | ')}`, f);
@@ -331,8 +458,10 @@ try {
   await waitFor(BASE_URL);
   const { chromium } = await import('playwright-core');
   browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ['--no-sandbox', '--disable-gpu', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const only = opt('only', 'warning,chrome').split(',');
+  const only = opt('only', 'warning,parts,rain,chrome').split(',');
   if (only.includes('warning')) await warningCheck(browser);
+  if (only.includes('parts')) await partsCheck(browser);
+  if (only.includes('rain')) await rainCheck(browser);
   if (only.includes('chrome')) await chromeCheck(browser);
   writeFileSync(join(OUT, 's3c-check.json'), JSON.stringify(results, null, 2));
   const all = Object.values(results).every((r) => r.ok);
