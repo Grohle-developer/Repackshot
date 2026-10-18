@@ -491,3 +491,207 @@ pub fn s3d_flight_scene() -> rt_core::scene::Scene {
     scene.set_wet_falling(falling).expect("drops that fit");
     scene
 }
+
+/// S3f: steps of the organic parity scene (1.1 s: the drop that slides is near the foot of the
+/// pane, a rivulet's beads behind it).
+pub const ORGANIC_STEPS: u32 = 264;
+/// S3f: the steps of the frames of the strip of the organic scene (`docs/ui/rain-organic.png`).
+pub const ORGANIC_STRIP_STEPS: [u32; 6] = [0, 60, 120, 180, 240, 300];
+/// S3f: the drops seeded on the pane of the organic scene.
+pub const ORGANIC_SEEDS: u32 = 220;
+
+/// S3f: the organic parity scene's parts: a vertical glass pane (120 mm by 160 mm, its lower edge
+/// open at 20 mm above the floor, facing −Y) and a glass ceiling to its side (a plate facing down,
+/// 60 mm square at 150 mm), under a light rain blown onto the pane.
+pub fn organic_spec() -> crate::wet_parts::PartsSpec {
+    use crate::wet_parts::{PartsSource, PartsSourceKind, PartsSpec, WetPartSpec};
+    let glass = |mesh: u32, transform: Transform| WetPartSpec {
+        mesh,
+        transform,
+        advancing_deg: GLASS_ADVANCING_DEG,
+        receding_deg: GLASS_RECEDING_DEG,
+        soak_mm_s: 0.0,
+        flags: 0,
+    };
+    let mut ceiling = plate_mesh(60.0, 60.0, 3, 3);
+    ceiling
+        .indices
+        .chunks_exact_mut(3)
+        .for_each(|t| t.swap(1, 2));
+    PartsSpec {
+        seed: 7,
+        cell_mm: 1.0,
+        max_samples: 60_000,
+        repose_deg: DUST_REPOSE_DEG,
+        snow_repose_deg: SNOW_REPOSE_DEG,
+        meshes: vec![plate_mesh(120.0, 160.0, 6, 8), ceiling],
+        parts: vec![
+            glass(
+                0,
+                Transform::from_pose(
+                    Vec3::new(0.0, 0.0, 100.0),
+                    Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), std::f32::consts::FRAC_PI_2),
+                ),
+            ),
+            glass(1, Transform::translation(Vec3::new(130.0, -40.0, 150.0))),
+        ],
+        sources: vec![PartsSource {
+            kind: PartsSourceKind::Drops,
+            density: 4.0e-6,
+            velocity: Vec3::new(0.0, 2500.0, -6500.0),
+            size_mm: 1.4,
+            size_var: 0.4,
+        }],
+    }
+}
+
+/// S3f: the parts of [`organic_spec`] at the start: [`ORGANIC_SEEDS`] drops below their critical
+/// size scattered over the pane (from a hash, the same everywhere), a drop past it near the top of
+/// the pane that slides down through them, and one under the ceiling about to pinch off.
+pub fn organic_parts() -> crate::wet_parts::WetParts {
+    use rt_core::rng::mix64;
+    let mut parts = crate::wet_parts::WetParts::new(organic_spec());
+    let unit = |h: u64| (h >> 40) as f32 * (1.0 / 16_777_216.0);
+    let k = {
+        let t = 0.5 * (GLASS_ADVANCING_DEG + GLASS_RECEDING_DEG) * fmath::DEG_TO_RAD;
+        let (s, c) = fmath::sin_cos(t);
+        fmath::PI * (2.0 - 3.0 * c + c * c * c) / (3.0 * s * s * s)
+    };
+    let crit = parts.critical_radius(0, 1.0);
+    // The pane: 6 × 8 quads of 20 mm, two triangles each.
+    for n in 0..ORGANIC_SEEDS {
+        let h = mix64(0x53f0_0000_0000_0001 ^ u64::from(n));
+        let quad = (unit(h) * 48.0) as usize % 48;
+        let (u, v) = (unit(mix64(h ^ 1)), unit(mix64(h ^ 2)));
+        let (u, v) = if u + v > 1.0 {
+            (1.0 - u, 1.0 - v)
+        } else {
+            (u, v)
+        };
+        let a = crit * (0.15 + 0.5 * unit(mix64(h ^ 3)));
+        parts.add_drop(0, 2 * quad + (n as usize & 1), u, v, k * a * a * a);
+    }
+    // The drop past its size: near the top, in the middle (quad (2, 7), its upper triangle).
+    let big = crit * 1.25;
+    parts.add_drop(0, 2 * (7 * 6 + 2) + 1, 0.6, 0.2, k * big * big * big);
+    // Under the ceiling: a drop a little heavier than its contact line holds.
+    let hang = {
+        let t = 0.5 * (GLASS_ADVANCING_DEG + GLASS_RECEDING_DEG) * fmath::DEG_TO_RAD;
+        (2.0 * fmath::PI * crate::wet::SURFACE_TENSION * fmath::sin(t)
+            / (crate::wet::WATER_WEIGHT * k))
+            .sqrt()
+            * 1.03
+    };
+    parts.add_drop(1, 8, 0.3, 0.3, k * hang * hang * hang);
+    parts
+}
+
+/// S3f: the organic parity scene at step `steps` of [`organic_parts`]: the pane in a dark glossy
+/// paint (its drops read as highlights and refractions) and the ceiling in clear glass, seen close
+/// by a 150 mm lens at f/11 from the front, aimed a little above the largest drop on the pane (the
+/// one that slides, and what it gathered: its path above it), under one soft light; their weather
+/// with the shapes of the drops in `WETP` (bit 10) and the drops in the air in `WETF`.
+pub fn s3f_organic_scene_at(steps: u32) -> rt_core::scene::Scene {
+    use rt_core::color::Rgb;
+    use rt_core::scene::{
+        FloorMode, Instance, Light, LightKind, Material, Mesh, Transform as RtTransform,
+        MATERIAL_GLASS,
+    };
+    let spec = organic_spec();
+    let mut parts = organic_parts();
+    parts.step(steps);
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let largest = parts
+        .drop_states()
+        .into_iter()
+        .filter(|d| d.part == 0)
+        .fold(None, |m: Option<crate::wet_parts::DropState>, d| match m {
+            Some(x) if x.volume >= d.volume => Some(x),
+            _ => Some(d),
+        });
+    let at = largest.map_or(Vec3::new(0.0, 0.0, 130.0), |d| d.p);
+    let target = Vec3::new(at.x, 0.0, (at.z + 12.0).clamp(45.0, 155.0));
+    scene.camera.position = target + Vec3::new(-30.0, -330.0, 40.0);
+    scene.camera.target = target;
+    scene.camera.focal_mm = 150.0;
+    scene.camera.fstop = 11.0;
+    scene.camera.focus_dist = (target - scene.camera.position).length();
+    scene.floor.mode = FloorMode::None;
+    scene.environment.strength = 0.35;
+    let light = target + Vec3::new(-260.0, -380.0, 230.0);
+    scene.lights = vec![Light {
+        kind: LightKind::Rect,
+        position: light,
+        direction: (target - light).normalize(),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        size_x: 120.0,
+        size_y: 120.0,
+        color: Rgb::WHITE,
+        power: 10.0,
+        spread_deg: 180.0,
+        angle_deg: 0.0,
+        flags: scene.lights[0].flags,
+        ies: None,
+    }];
+    scene.materials = vec![
+        Material {
+            base_color: Rgb::new(0.015, 0.02, 0.035),
+            roughness: 0.3,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.9, 0.95, 0.95),
+            roughness: 0.0,
+            transmission: 1.0,
+            ..Material::default()
+        },
+    ];
+    let meshes: Vec<Mesh> = spec
+        .meshes
+        .iter()
+        .map(|m| Mesh::new(&m.positions, &[], &m.indices, 0).expect("a valid mesh"))
+        .collect();
+    let instances: Vec<Instance> = spec
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            Instance::new(
+                p.mesh,
+                RtTransform {
+                    rows: p.transform.rows,
+                },
+                k as u32,
+            )
+        })
+        .collect();
+    scene.geometry = rt_core::geometry::Geometry::new(meshes, instances).expect("a valid geometry");
+    scene.apply_section();
+    let weather = parts
+        .weather()
+        .iter()
+        .enumerate()
+        .map(|(k, w)| w.part_weather_shaped(k as u32, 0.0).expect("valid weather"))
+        .collect();
+    scene.set_wet_parts(weather).expect("weather that fits");
+    let falling = parts
+        .falling()
+        .iter()
+        .map(|&(part, position, radius)| rt_core::weather::FallingDrop {
+            instance: part,
+            position,
+            radius,
+        })
+        .collect();
+    scene.set_wet_falling(falling).expect("drops that fit");
+    scene
+}
+
+/// S3f: the organic parity scene after [`ORGANIC_STEPS`] (`tests/wet_parts.rs` pins its image; `rt
+/// --write-s3f-organic-example` writes it).
+pub fn s3f_organic_scene() -> rt_core::scene::Scene {
+    s3f_organic_scene_at(ORGANIC_STEPS)
+}

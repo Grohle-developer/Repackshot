@@ -58,6 +58,32 @@
 //! a level face. A drop that falls below the lowest of the parts and the studio floor (`z = 0`) is
 //! gone. None lands in the step it left: they are in the frames while they fly.
 //!
+//! **Organic drops** (S3f). A drop that keeps receiving rain grows by merging with what lands on it
+//! and with the drops it touches, and stays pinned until its weight along the face beats the hold of
+//! its contact line (Furmidge: the critical size of its tilt and of the wettability of its part).
+//! A drop that slides **gathers the drops on its path**: the merge looks along the segment it swept
+//! in the step, not only where it stopped, so it takes every drop it crossed and none beside it; it
+//! grows, and grows faster. **A merge keeps the volume** (the sum) and does not teleport: the survivor
+//! stays where it was and relaxes to the centre of volume of the two over a few capillary times
+//! (`√(ρ a³ / γ)` × [`MERGE_TIMES`]), its outline first spanning both with a neck between them. Its
+//! **shape** ([`rt_core::weather::DropShape`], [`WetParts::shapes`]) follows its physics: a pinned
+//! drop on a tilted face bulges downhill as its front contact angle climbs from the mean towards the
+//! advancing one and its rear one falls towards the receding one (by its load, the weight along the
+//! face over the hold); a sliding drop has the dynamic angles of Cox and Voinov (`θ³ = θ_A³ + 9 Ca Λ`
+//! at its front, `θ_R³ − 9 Ca Λ` at its rear, `Ca = μ v / γ`: Voinov, "Hydrodynamics of wetting",
+//! Fluid Dyn. 11 (1976); Cox, J. Fluid Mech. 168 (1986)), and stretches along its motion with a
+//! thinner tail as its rear angle falls (the corner of Podgorski, Flesselles and Limat, "Corners,
+//! cusps, and pearls in running drops", Phys. Rev. Lett. 87 (2001)). When the rear angle falls below
+//! [`RUN_REAR_SHARE`] of the receding one (a large drop on a steep face) it becomes a **continuous
+//! run**: it leaves behind it the beads of a rivulet, elongated along its path, which relax into
+//! small pinned drops that the next drop down the same path gathers. A drop that **hangs** (under a
+//! face that looks down, or held at an open edge of the mesh, where it now stops instead of running
+//! off) stretches along gravity as its weight nears what its contact line holds; past it, it necks
+//! over [`PINCH_TIMES`] capillary times and lets go of [`PINCH_OFF_SHARE`] of its water as one drop
+//! in the air (Harkins and Brown, "The determination of surface tension and the weight of falling
+//! drops", J. Am. Chem. Soc. 41 (1919): about 60 % of a pendant drop falls), the rest staying to grow
+//! again.
+//!
 //! **Parts as a film.** A part flagged [`PART_FILM`] (a set's backdrop, floor and cards: too large for
 //! drops one by one) takes no drops: each of its samples is wet at the first landing near it, a
 //! time drawn once from the exponential law of its share of the flux. Dust and snow are the same.
@@ -80,6 +106,7 @@ use crate::world::{Transform, STEP, STEPS_PER_SECOND};
 use rt_core::fmath;
 use rt_core::math::{Aabb, Vec3};
 use rt_core::rng::mix64;
+use rt_core::weather::DropShape;
 
 /// The magic number of a `WPT1` spec.
 pub const PARTS_MAGIC: &[u8; 4] = b"WPT1";
@@ -122,6 +149,49 @@ pub const SPLASH_ELEVATION_DEG: f32 = 30.0;
 pub const MAX_FALLING_DROPS: usize = 1024;
 /// S3d: the longest a drop flies, steps (10 s): past it, it is gone.
 pub const MAX_FLIGHT_STEPS: u32 = 2400;
+/// S3f: Cox–Voinov's `Λ = ln(L / l)`, the log of a drop's size over the microscopic length where its
+/// moving contact line's dissipation is cut off (◆: about 12 for millimetre drops and a nanometre).
+pub const COX_VOINOV_LOG: f32 = 12.0;
+/// S3f: how long a pinned drop grows along its downhill axis at its critical size, per unit of
+/// hysteresis `cos θ_R − cos θ_A` (◆ the shapes' exaggeration).
+pub const PIN_STRETCH: f32 = 1.0;
+/// S3f: how much longer a sliding drop grows as its rear contact angle falls from the receding one to
+/// 0 (◆).
+pub const SLIDE_STRETCH: f32 = 2.0;
+/// S3f: how much thinner its tail gets on the way (◆).
+pub const SLIDE_TAPER: f32 = 0.45;
+/// S3f: the most a drop is stretched along its axis, length over width (◆).
+pub const MAX_ASPECT: f32 = 4.0;
+/// S3f: a sliding drop whose rear contact angle falls below this share of the receding one runs on
+/// as a continuous run, leaving a rivulet (◆).
+pub const RUN_REAR_SHARE: f32 = 0.8;
+/// S3f: the width of the rivulet over the drop's (◆).
+pub const RUN_WIDTH: f32 = 0.2;
+/// S3f: the length of a bead of the rivulet over its width (◆).
+pub const RUN_BEAD: f32 = 3.0;
+/// S3f: how long a bead of the rivulet takes to relax into a round drop, capillary times (◆).
+pub const RUN_RELAX_TIMES: f32 = 60.0;
+/// S3f: how long a merge takes to relax, capillary times `√(ρ a³ / γ)` (◆ the neck's duration).
+pub const MERGE_TIMES: f32 = 4.0;
+/// S3f: the depth of the neck between two equal drops that just merged, a share of the width (◆; a
+/// smaller one into a larger, by their ratio of radii).
+pub const NECK_DEPTH: f32 = 0.5;
+/// S3f: how far a hanging drop stretches along gravity when its weight reaches its hold (◆).
+pub const HANG_SAG: f32 = 0.6;
+/// S3f: the neck under a hanging drop's contact line as it pinches off (◆).
+pub const HANG_PINCH: f32 = 0.6;
+/// S3f: how long a hanging drop past its hold takes to pinch off, capillary times (◆).
+pub const PINCH_TIMES: f32 = 3.0;
+/// S3f: the share of a hanging drop that falls when it pinches off (Harkins and Brown 1919); the rest
+/// stays.
+pub const PINCH_OFF_SHARE: f32 = 0.6;
+/// S3f: a face looks down (its drops hang) when gravity along its normal is more than this (a
+/// vertical face's rounding is not).
+const HANG_MIN: f32 = 1.0e-4;
+/// S3f: below this share left of a merge or of a bead's stretch, it is over.
+const RELAXED: f32 = 0.01;
+/// S3f: `ρ / γ` of water, s²/mm³ (the capillary time is `√(ρ a³ / γ)`).
+const CAPILLARY: f32 = RHO_SI / GAMMA_SI * 1.0e-9;
 /// Gravity, mm/s².
 const GRAVITY_MM: f32 = 9810.0;
 /// Density and viscosity of water in SI units for the splashing numbers (kg/m³, Pa·s), and its
@@ -569,6 +639,9 @@ struct Part {
     hysteresis: f32,
     sin_cap: f32,
     cap_deg: f32,
+    /// S3f: the advancing and receding contact angles, radians.
+    advancing: f32,
+    receding: f32,
     soak: f32,
     film: bool,
     to_object: Transform,
@@ -589,6 +662,70 @@ struct Drop {
     a: f32,
     /// New or moved since the last merge: it may touch another.
     fresh: bool,
+    /// S3f: where it was when this step's slide began: it swept the segment from there (world).
+    from: Vec3,
+    /// S3f: its velocity along the surface in its last slide, mm/s (zero when pinned).
+    vel: Vec3,
+    /// S3f: pinned, its weight along the face over the hold of its contact line (0..1).
+    load: f32,
+    /// S3f: sliding, its capillary number `μ v / γ` (0 when pinned).
+    ca: f32,
+    /// S3f: the merge it relaxes from.
+    merging: Merging,
+    /// S3f: a bead of a rivulet, relaxing.
+    bead: Bead,
+    /// S3f: hanging, its weight over what its contact line holds (0 when it does not hang).
+    hang: f32,
+    /// S3f: how far it has pinched off, 0..1.
+    pinch: f32,
+    /// S3f: held at an open edge of its mesh.
+    edge: bool,
+    /// S3f: how far it ran since the last bead of its rivulet, mm.
+    run: f32,
+}
+
+/// S3f: a merge a drop relaxes from (see [`WetParts::merge`]): its outline first spans the two drops
+/// along `axis`, stretched by `along` and `across` with a neck between them and off its centre by
+/// `shift` contact radii, all of it relaxing by the share `left`; `pull` is what is left of the way
+/// to the centre of volume of the two (world).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Merging {
+    axis: Vec3,
+    along: f32,
+    across: f32,
+    neck: f32,
+    shift: f32,
+    left: f32,
+    pull: Vec3,
+}
+
+impl Merging {
+    const NONE: Merging = Merging {
+        axis: Vec3::ZERO,
+        along: 1.0,
+        across: 1.0,
+        neck: 0.0,
+        shift: 0.0,
+        left: 0.0,
+        pull: Vec3::ZERO,
+    };
+}
+
+/// S3f: a bead of a rivulet: first `aspect` times as long as wide along `axis`, relaxing by the share
+/// `left`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Bead {
+    axis: Vec3,
+    aspect: f32,
+    left: f32,
+}
+
+impl Bead {
+    const NONE: Bead = Bead {
+        axis: Vec3::ZERO,
+        aspect: 1.0,
+        left: 0.0,
+    };
 }
 
 impl Drop {
@@ -602,8 +739,135 @@ impl Drop {
             volume,
             a: cbrt(volume / k),
             fresh: true,
+            from: p,
+            vel: Vec3::ZERO,
+            load: 0.0,
+            ca: 0.0,
+            merging: Merging::NONE,
+            bead: Bead::NONE,
+            hang: 0.0,
+            pinch: 0.0,
+            edge: false,
+            run: 0.0,
         }
     }
+}
+
+/// S3f: what the tests see of a drop on a part.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropState {
+    /// Its number.
+    pub id: u32,
+    /// Its part.
+    pub part: u32,
+    /// Its centre, world.
+    pub p: Vec3,
+    /// Its volume, mm³, and contact radius, mm.
+    pub volume: f32,
+    /// See [`DropState::volume`].
+    pub a: f32,
+    /// Its velocity along the surface in its last slide, mm/s (zero when pinned).
+    pub velocity: Vec3,
+    /// Held at an open edge.
+    pub edge: bool,
+    /// How far it has pinched off, 0..1 (hanging).
+    pub pinch: f32,
+    /// The share of a merge it has still to relax (0: none).
+    pub merging: f32,
+    /// The way left to the centre of volume of its last merge, world.
+    pub pull: Vec3,
+    /// A bead of a rivulet still relaxing.
+    pub bead: bool,
+}
+
+/// S3f: the capillary time of a drop of contact radius `a` mm, `√(ρ a³ / γ)`, seconds.
+fn capillary_time(a: f32) -> f32 {
+    (CAPILLARY * a * a * a).max(0.0).sqrt()
+}
+
+/// S3f: the distance from `q` to the segment `a b`.
+fn to_segment(q: Vec3, a: Vec3, b: Vec3) -> f32 {
+    let ab = b - a;
+    let l2 = ab.length_squared();
+    let t = if l2 > 0.0 {
+        ((q - a).dot(ab) / l2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (q - a - ab * t).length()
+}
+
+/// S3f: Cox–Voinov's dynamic contact angles of a drop sliding at capillary number `ca` on a surface
+/// of advancing and receding angles `advancing` and `receding` (radians): its front's and its
+/// rear's, `∛(θ_A³ + 9 Ca Λ)` and `∛(max(0, θ_R³ − 9 Ca Λ))`.
+pub fn dynamic_angles(advancing: f32, receding: f32, ca: f32) -> (f32, f32) {
+    let cv = 9.0 * ca.max(0.0) * COX_VOINOV_LOG;
+    (
+        cbrt(advancing * advancing * advancing + cv),
+        cbrt((receding * receding * receding - cv).max(0.0)),
+    )
+}
+
+/// S3f: the shape of a drop along its axis (left zero: the caller's) on a surface of contact angles
+/// `advancing_deg ≥ receding_deg`, from its physics: pinned (`ca` 0) with its weight along the face
+/// over the hold of its contact line `load` (0..1), or sliding at capillary number `ca`. Its front and
+/// rear contact angles (the mean moved by the load towards the advancing and the receding ones, or
+/// Cox–Voinov's dynamic ones, [`dynamic_angles`]) shear its top downhill by
+/// `q tan(θ̄/2) / tan θ̄`, `q = (θ_f − θ_b) / (θ_f + θ_b)` (the shear of a cap whose front and rear
+/// slopes are those angles, in the small-slope limit); it is longer by [`PIN_STRETCH`] × the
+/// hysteresis × the load, and sliding by [`SLIDE_STRETCH`] and thinner at its tail by
+/// [`SLIDE_TAPER`] as its rear angle falls from the receding one to 0.
+pub fn base_shape(advancing_deg: f32, receding_deg: f32, load: f32, ca: f32) -> DropShape {
+    let adv = advancing_deg.clamp(1.0, 179.0) * fmath::DEG_TO_RAD;
+    let rec = receding_deg.clamp(0.0, 179.0).min(advancing_deg) * fmath::DEG_TO_RAD;
+    let mean = 0.5 * (adv + rec);
+    let hysteresis = (fmath::cos(rec) - fmath::cos(adv)).max(0.0);
+    let (front, rear, aspect, taper) = if ca > 0.0 {
+        let (front, rear) = dynamic_angles(adv, rec, ca);
+        let fall = if rec > 0.0 {
+            (1.0 - rear / rec).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        (
+            front,
+            rear,
+            1.0 + PIN_STRETCH * hysteresis + SLIDE_STRETCH * fall,
+            SLIDE_TAPER * fall,
+        )
+    } else {
+        let l = load.clamp(0.0, 1.0);
+        (
+            mean + l * (adv - mean),
+            mean - l * (mean - rec),
+            1.0 + PIN_STRETCH * hysteresis * l,
+            0.0,
+        )
+    };
+    let q = if front + rear > 0.0 {
+        (front - rear) / (front + rear)
+    } else {
+        0.0
+    };
+    let m = mean.clamp(1.0 * fmath::DEG_TO_RAD, 85.0 * fmath::DEG_TO_RAD);
+    let (sh, ch) = fmath::sin_cos(0.5 * m);
+    let (sm, cm) = fmath::sin_cos(m);
+    DropShape {
+        aspect: aspect.clamp(1.0, MAX_ASPECT),
+        bulge: (q * (sh / ch) / (sm / cm)).clamp(-2.0, 2.0),
+        taper: taper.clamp(-0.95, 0.95),
+        ..DropShape::ROUND
+    }
+}
+
+/// The linear part of `t` applied to `v`.
+fn vector(t: &Transform, v: Vec3) -> Vec3 {
+    let r = &t.rows;
+    Vec3::new(
+        r[0][0] * v.x + r[0][1] * v.y + r[0][2] * v.z,
+        r[1][0] * v.x + r[1][1] * v.y + r[1][2] * v.z,
+        r[2][0] * v.x + r[2][1] * v.y + r[2][2] * v.z,
+    )
 }
 
 /// S3d: a drop in the air (a drip, a splash's drop), world space.
@@ -1004,6 +1268,8 @@ impl WetParts {
                 hysteresis,
                 sin_cap: fmath::sin(cap_deg * fmath::DEG_TO_RAD),
                 cap_deg,
+                advancing: ps.advancing_deg.clamp(1.0, 179.0) * fmath::DEG_TO_RAD,
+                receding: ps.receding_deg.clamp(0.0, 179.0) * fmath::DEG_TO_RAD,
                 soak: ps.soak_mm_s,
                 film: ps.flags & PART_FILM != 0,
                 to_object: inverse(&ps.transform),
@@ -1639,7 +1905,12 @@ impl WetParts {
         changed
     }
 
-    /// Drops past their critical size slide down, hanging ones drip; true when one moved.
+    /// Drops past their critical size slide down, hanging ones drip; true when one moved. S3f: a merge
+    /// relaxes first (the centre moves on towards the merged centre of volume); a hanging drop (under
+    /// a face that looks down, or held at an open edge) past its hold necks and lets go of
+    /// [`PINCH_OFF_SHARE`] of its water, the rest staying; a sliding drop that reaches an open edge
+    /// stops there and hangs; one fast enough for its rear angle to fall below [`RUN_REAR_SHARE`] of
+    /// the receding one leaves the beads of a rivulet behind it.
     fn slide(&mut self) -> bool {
         if self.drops.is_empty() {
             return false;
@@ -1648,33 +1919,112 @@ impl WetParts {
         let mut moved = false;
         let mut keep = vec![true; self.drops.len()];
         let mut drips: Vec<(u32, Vec3, Vec3, f32)> = Vec::new();
+        let mut beads: Vec<(u32, u32, Vec3, f32, Vec3, f32)> = Vec::new();
         let mut path = Vec::new();
         for (i, kept) in keep.iter_mut().enumerate() {
-            let d = self.drops[i];
+            let was = self.drops[i];
+            let mut d = was;
+            d.from = d.p;
             let part = self.parts[d.part as usize];
+            // S3f: a merge relaxes: on towards the centre of volume, the neck filling.
+            if d.merging.left > 0.0 {
+                let decay = fmath::exp(-STEP / (MERGE_TIMES * capillary_time(d.a)).max(STEP));
+                let go = d.merging.pull * (1.0 - decay);
+                let len = go.length();
+                if above(len, 1.0e-6) {
+                    let end =
+                        self.walk(d.tri, d.p, Course::Straight(go / len), len, &mut Vec::new());
+                    d.tri = end.tri;
+                    d.p = end.p;
+                }
+                d.merging.pull *= decay;
+                d.merging.left *= decay;
+                if d.merging.left < RELAXED {
+                    d.merging = Merging::NONE;
+                }
+                d.touched = true;
+                d.fresh = true;
+                moved = true;
+            }
+            // S3f: a bead of a rivulet relaxes into a round drop.
+            if d.bead.left > 0.0 {
+                d.bead.left *=
+                    fmath::exp(-STEP / (RUN_RELAX_TIMES * capillary_time(d.a)).max(STEP));
+                if d.bead.left < RELAXED {
+                    d.bead = Bead::NONE;
+                }
+                d.touched = true;
+            }
             let t = self.tris[d.tri as usize];
             let a = d.a;
             let gn = gravity.dot(t.n);
-            // A drop on a face that looks down hangs until its weight beats its contact line.
-            if gn > 0.0 {
-                let pull = WATER_WEIGHT * d.volume * gn;
+            // A drop on a face that looks down, or held at an open edge, hangs until its weight beats
+            // its contact line; S3f: then it necks and lets go of a share of its water.
+            if gn > HANG_MIN || d.edge {
+                let pull = WATER_WEIGHT * d.volume * if d.edge { 1.0 } else { gn };
                 let hold = PENDANT_HOLD * 2.0 * fmath::PI * a * SURFACE_TENSION * part.sin_cap;
-                if pull > hold {
-                    *kept = false;
-                    drips.push((d.part, d.p + t.n * a, Vec3::ZERO, d.volume));
+                d.hang = if hold > 0.0 { pull / hold } else { 2.0 };
+                if d.hang > 1.0 {
+                    d.pinch += STEP / (PINCH_TIMES * capillary_time(a)).max(STEP);
+                    d.touched = true;
                     moved = true;
+                    if d.pinch >= 1.0 {
+                        let off = d.volume * PINCH_OFF_SHARE;
+                        let left = d.volume - off;
+                        let tip = if d.edge {
+                            d.p + gravity * a + t.n * RAY_OFFSET
+                        } else {
+                            d.p + t.n * a
+                        };
+                        drips.push((d.part, tip, Vec3::ZERO, off));
+                        d.volume = left;
+                        d.a = cbrt(left / part.k);
+                        d.pinch = 0.0;
+                        d.hang *= (1.0 - PINCH_OFF_SHARE) * a / d.a.max(1.0e-6);
+                        d.fresh = true;
+                        *kept = left >= MIN_VOLUME;
+                    }
+                    self.put(i, d, &was);
                     continue;
                 }
+                if d.pinch > 0.0 {
+                    d.pinch =
+                        (d.pinch - STEP / (PINCH_TIMES * capillary_time(a)).max(STEP)).max(0.0);
+                    d.touched = true;
+                }
+                if d.edge {
+                    self.put(i, d, &was);
+                    continue;
+                }
+            } else if d.hang > 0.0 || d.pinch > 0.0 {
+                d.hang = 0.0;
+                d.pinch = 0.0;
+                d.touched = true;
             }
             let along = gravity - t.n * gn;
             let slope = along.length();
             if !above(slope, 1.0e-6) {
+                if d.ca > 0.0 || d.load > 0.0 {
+                    d.touched = true;
+                }
+                d.load = 0.0;
+                d.ca = 0.0;
+                d.vel = Vec3::ZERO;
+                self.put(i, d, &was);
                 continue;
             }
             // Furmidge: the weight along the face against the contact line's hold.
-            let excess =
-                WATER_WEIGHT * d.volume * slope - 2.0 * SURFACE_TENSION * part.hysteresis * a;
+            let weight = WATER_WEIGHT * d.volume * slope;
+            let hold = 2.0 * SURFACE_TENSION * part.hysteresis * a;
+            let excess = weight - hold;
             if excess <= 0.0 {
+                if d.ca > 0.0 {
+                    d.touched = true;
+                }
+                d.load = if hold > 0.0 { weight / hold } else { 0.0 };
+                d.ca = 0.0;
+                d.vel = Vec3::ZERO;
+                self.put(i, d, &was);
                 continue;
             }
             let speed = (excess / (SLIDE_DRAG * WATER_VISCOSITY * a)).min(MAX_SLIDE_SPEED);
@@ -1686,44 +2036,119 @@ impl WetParts {
             // The film it leaves behind, and the dust it takes.
             let film = (TRAIL_FILM_MM * 2.0 * a * end.moved).min(d.volume);
             self.shed += film;
-            let left = d.volume - film;
+            let mut left = d.volume - film;
             for w in path.windows(2) {
                 self.wipe(d.part, w[0], w[1], a, t.n);
             }
+            let first = path[1] - path[0];
+            let dir = if above(first.length(), 0.0) {
+                first.normalize()
+            } else {
+                along / slope
+            };
+            d.vel = (end.p - d.p) * STEPS_PER_SECOND as f32;
+            d.ca = WATER_VISCOSITY * speed / SURFACE_TENSION;
+            d.load = 1.0;
+            d.touched = true;
+            d.fresh = true;
             if end.off {
-                // Off the edge at the speed it slid, along its last stretch.
-                *kept = false;
-                let last = end.p - path[path.len().saturating_sub(2)];
-                let len = last.length();
-                let v = if above(len, 0.0) {
-                    last * (speed / len)
-                } else {
-                    Vec3::ZERO
-                };
-                drips.push((d.part, end.p, v, left));
+                // S3f: it stops at the open edge and hangs there (S3c: it ran off it, a drip).
+                d.tri = end.tri;
+                d.p = end.p;
+                d.volume = left;
+                d.a = cbrt(left / part.k);
+                d.edge = true;
+                d.vel = Vec3::ZERO;
+                d.ca = 0.0;
+                d.run = 0.0;
+                *kept = left >= MIN_VOLUME;
+                self.put(i, d, &was);
                 continue;
+            }
+            // S3f: a continuous run leaves the beads of a rivulet behind it, behind where it was.
+            let (_, rear) = dynamic_angles(part.advancing, part.receding, d.ca);
+            if rear <= RUN_REAR_SHARE * part.receding {
+                d.run += end.moved;
+                let shape = base_shape(
+                    part.advancing / fmath::DEG_TO_RAD,
+                    part.receding / fmath::DEG_TO_RAD,
+                    1.0,
+                    d.ca,
+                );
+                let width = RUN_WIDTH * 2.0 * a / shape.aspect.sqrt();
+                let length = RUN_BEAD * width;
+                if d.run >= length && above(width, 0.0) {
+                    d.run -= length;
+                    let ab = 0.5 * (length * width).sqrt();
+                    let vb = part.k * ab * ab * ab;
+                    if vb < 0.5 * left && vb >= MIN_VOLUME {
+                        let back = self.walk(
+                            d.tri,
+                            d.from,
+                            Course::Straight(-dir),
+                            1.02 * (a + ab),
+                            &mut Vec::new(),
+                        );
+                        if !back.off {
+                            beads.push((d.part, back.tri, back.p, vb, dir, RUN_BEAD));
+                            left -= vb;
+                        }
+                    }
+                }
+            } else {
+                d.run = 0.0;
             }
             if left < MIN_VOLUME {
                 *kept = false;
                 continue;
             }
-            self.drops[i] = Drop {
-                tri: end.tri,
-                p: end.p,
-                volume: left,
-                a: cbrt(left / part.k),
-                fresh: true,
-                touched: true,
-                ..d
-            };
+            d.tri = end.tri;
+            d.p = end.p;
+            d.volume = left;
+            d.a = cbrt(left / part.k);
+            self.put(i, d, &was);
         }
         if keep.iter().any(|k| !k) {
             self.keep_drops(&keep);
+        }
+        for (part, tri, p, volume, axis, aspect) in beads {
+            if self.drops.len() >= MAX_PART_DROPS {
+                // No room for the bead: its water stays lost with the run.
+                self.lost_water += volume;
+                continue;
+            }
+            let k = self.parts[part as usize].k;
+            let id = self.take_id();
+            let mut b = Drop::new(id, part, tri, p, volume, k);
+            b.bead = Bead {
+                axis,
+                aspect,
+                left: 1.0,
+            };
+            self.drops.push(b);
+            moved = true;
         }
         for (part, p, v, volume) in drips {
             self.drip(part, p, v, volume);
         }
         moved
+    }
+
+    /// S3f: puts drop `d` back at `i`, changed (for the frame) when what makes its shape changed from
+    /// `was`.
+    fn put(&mut self, i: usize, mut d: Drop, was: &Drop) {
+        let same = |x: f32, y: f32| x.to_bits() == y.to_bits();
+        if !(same(d.load, was.load)
+            && same(d.ca, was.ca)
+            && same(d.hang, was.hang)
+            && same(d.pinch, was.pinch)
+            && same(d.vel.x, was.vel.x)
+            && same(d.vel.y, was.vel.y)
+            && same(d.vel.z, was.vel.z))
+        {
+            d.touched = true;
+        }
+        self.drops[i] = d;
     }
 
     /// A drop of `volume` leaves part `part` at `p` with velocity `v` and falls (S3d: through the
@@ -1916,11 +2341,13 @@ impl WetParts {
         self.scratch = found;
     }
 
-    /// Merges the drops of a part that touch into one of their volume at their centre of mass,
-    /// until none touch. Only a drop that is new or moved since the last merge can touch another
-    /// (the others were apart then), so each pass looks around those, in index order: the survivor
-    /// takes the lower index and the place of the larger, moved along the surface towards the other;
-    /// it is new again for the next pass.
+    /// Merges the drops of a part that touch into one of their volume, until none touch. Only a drop
+    /// that is new or moved since the last merge can touch another (the others were apart then), so
+    /// each pass looks around those, in index order: S3f: along the segment each swept in this step
+    /// (a sliding drop takes every drop it crossed, and none beside its path). The survivor takes the
+    /// lower index and stays where it was: its centre relaxes to the centre of volume of the two over
+    /// the next steps ([`Merging`]: the centres they were relaxing to themselves count), its outline
+    /// first spanning both with a neck between them; it is new again for the next pass.
     fn merge(&mut self) {
         for _ in 0..256 {
             if !self.drops.iter().any(|d| d.fresh) {
@@ -1942,10 +2369,11 @@ impl WetParts {
                 if !alive[i] || !self.drops[i].fresh {
                     continue;
                 }
+                let (from, to) = (self.drops[i].from, self.drops[i].p);
                 let reach = self.drops[i].a + largest;
                 let pad = Vec3::new(reach, reach, reach);
                 near.clear();
-                grid.query(pos[i] - pad, pos[i] + pad, &mut near);
+                grid.query(from.min(to) - pad, from.max(to) + pad, &mut near);
                 near.sort_unstable();
                 let mut other = None;
                 for &j in near.iter() {
@@ -1954,7 +2382,7 @@ impl WetParts {
                         continue;
                     }
                     let (p, q) = (self.drops[i], self.drops[j]);
-                    if p.part == q.part && (q.p - p.p).length() < p.a + q.a {
+                    if p.part == q.part && to_segment(q.p, from, to) < p.a + q.a {
                         other = Some(j);
                         break;
                     }
@@ -1964,27 +2392,8 @@ impl WetParts {
                     continue;
                 };
                 let (keep, gone) = (i.min(j), i.max(j));
-                let (p, q) = (self.drops[keep], self.drops[gone]);
-                let volume = p.volume + q.volume;
-                let (big, small) = if q.volume > p.volume { (q, p) } else { (p, q) };
-                let shift = (small.p - big.p) * (small.volume / volume);
-                let n = self.tris[big.tri as usize].n;
-                let tangent = shift - n * shift.dot(n);
-                let len = tangent.length();
-                let (tri, at) = if len > 1.0e-6 {
-                    let end = self.walk(
-                        big.tri,
-                        big.p,
-                        Course::Straight(tangent / len),
-                        len,
-                        &mut Vec::new(),
-                    );
-                    (end.tri, end.p)
-                } else {
-                    (big.tri, big.p)
-                };
-                let k = self.parts[p.part as usize].k;
-                self.drops[keep] = Drop::new(p.id, p.part, tri, at, volume, k);
+                let (k, g) = (self.drops[keep], self.drops[gone]);
+                self.drops[keep] = self.merged(k, g);
                 alive[gone] = false;
                 merged = true;
             }
@@ -1992,6 +2401,140 @@ impl WetParts {
                 self.keep_drops(&alive);
             }
         }
+    }
+
+    /// S3f: drop `k` having taken drop `g`: their volume (the sum), where `k` was, relaxing to the
+    /// centre of volume of the two.
+    fn merged(&self, k: Drop, g: Drop) -> Drop {
+        let volume = k.volume + g.volume;
+        let part = &self.parts[k.part as usize];
+        let n = self.tris[k.tri as usize].n;
+        let tangent = |v: Vec3| v - n * v.dot(n);
+        // The centres each was relaxing to, and the centre of volume of the two.
+        let (ck, cg) = (k.p + k.merging.pull, g.p + g.merging.pull);
+        let centre = ck * (k.volume / volume) + cg * (g.volume / volume);
+        let mut out = Drop::new(k.id, k.part, k.tri, k.p, volume, part.k);
+        let a = out.a;
+        let line = tangent(cg - ck);
+        let d = line.length();
+        let pull = tangent(centre - k.p);
+        out.merging = if above(d, 1.0e-6) && above(a, 0.0) {
+            let e = line / d;
+            // Its outline: from the back of the one to the front of the other along the line.
+            let back = (ck - k.p).dot(e) - k.a;
+            let front = (cg - k.p).dot(e) + g.a;
+            let (small, big) = if k.a < g.a { (k.a, g.a) } else { (g.a, k.a) };
+            Merging {
+                axis: e,
+                along: (0.5 * (front - back) / a).clamp(0.1, 16.0),
+                across: (big / a).clamp(0.1, 16.0),
+                neck: if big > 0.0 {
+                    (NECK_DEPTH * small / big).clamp(0.0, 0.95)
+                } else {
+                    0.0
+                },
+                shift: (0.5 * (front + back) / a).clamp(-16.0, 16.0),
+                left: 1.0,
+                pull,
+            }
+        } else if above(pull.length(), 1.0e-6) {
+            Merging {
+                left: 1.0,
+                pull,
+                ..Merging::NONE
+            }
+        } else {
+            Merging::NONE
+        };
+        let lead = if g.volume > k.volume { g } else { k };
+        out.from = k.from;
+        out.vel = lead.vel;
+        out.ca = lead.ca;
+        out.load = lead.load;
+        out.edge = k.edge || g.edge;
+        out.run = lead.run;
+        out
+    }
+
+    /// S3f: the shape of drop `d` (axes in world space) from its physics: [`base_shape`] along its
+    /// motion when it slides, downhill when it is pinned on a slope; the stretch of a bead of a
+    /// rivulet, relaxing; the merge it relaxes from; the stretch and the neck of a hanging drop.
+    fn shape_of(&self, d: &Drop) -> DropShape {
+        let part = &self.parts[d.part as usize];
+        let n = self.tris[d.tri as usize].n;
+        let (adv, rec) = (
+            part.advancing / fmath::DEG_TO_RAD,
+            part.receding / fmath::DEG_TO_RAD,
+        );
+        let mut s = DropShape::ROUND;
+        let gravity = Vec3::new(0.0, 0.0, -1.0);
+        let downhill = gravity - n * gravity.dot(n);
+        let axis = if d.ca > 0.0 {
+            d.vel
+        } else if d.load > 0.0 {
+            downhill
+        } else {
+            Vec3::ZERO
+        };
+        if above(axis.length(), 1.0e-6) {
+            s = DropShape {
+                axis: axis.normalize(),
+                ..base_shape(adv, rec, d.load, d.ca)
+            };
+        }
+        if d.bead.left > 0.0 {
+            let aspect = 1.0 + (d.bead.aspect - 1.0) * d.bead.left;
+            if aspect > s.aspect {
+                s.axis = d.bead.axis;
+                s.aspect = aspect.clamp(1.0, MAX_ASPECT);
+                s.bulge = 0.0;
+                s.taper = 0.0;
+            }
+        }
+        let m = d.merging.left;
+        if m > 0.0 && above(d.merging.axis.length(), 0.0) {
+            s.merge_axis = d.merging.axis;
+            s.merge_along = (1.0 + (d.merging.along - 1.0) * m).clamp(0.1, 16.0);
+            s.merge_across = (1.0 + (d.merging.across - 1.0) * m).clamp(0.1, 16.0);
+            s.neck = (d.merging.neck * m).clamp(0.0, 0.95);
+            s.shift = (d.merging.shift * m).clamp(-16.0, 16.0);
+        }
+        if d.hang > 0.0 {
+            s.sag = (HANG_SAG * (d.hang.min(1.0) + d.pinch)).clamp(0.0, 8.0);
+            s.pinch = (HANG_PINCH * d.pinch).clamp(0.0, 0.95);
+        }
+        s
+    }
+
+    /// S3f: the shapes of the drops, in the order of [`WetParts::drops`], axes in world space.
+    pub fn shapes(&self) -> Vec<DropShape> {
+        self.drops.iter().map(|d| self.shape_of(d)).collect()
+    }
+
+    /// S3f: the drops as the tests see them, in the order of [`WetParts::drops`].
+    pub fn drop_states(&self) -> Vec<DropState> {
+        self.drops
+            .iter()
+            .map(|d| DropState {
+                id: d.id,
+                part: d.part,
+                p: d.p,
+                volume: d.volume,
+                a: d.a,
+                velocity: d.vel,
+                edge: d.edge,
+                pinch: d.pinch,
+                merging: d.merging.left,
+                pull: d.merging.pull,
+                bead: d.bead.left > 0.0,
+            })
+            .collect()
+    }
+
+    /// S3f: the shape of a drop in its part's object space.
+    fn object_shape(&self, d: &Drop) -> DropShape {
+        let to_object = &self.parts[d.part as usize].to_object;
+        self.shape_of(d).map_axes(|v| vector(to_object, v))
     }
 
     /// The layout of the samples, once per run: little-endian words
@@ -2055,12 +2598,16 @@ impl WetParts {
     /// u32 drops                         (on the parts now)
     /// u32 falling; per drop in the air now, by number:
     ///              u32 id part (the part it left); f32 x y z (world) r (the radius of its sphere)
+    /// u32 shaped (S3f: = changed); per changed drop, in the order above:
+    ///              f32 shape[15] (rt_core::weather::DropShape, axes in the part's object space)
     /// ```
     ///
     /// A drop's number is the order it came in; one that came and went between two frames is in
     /// `gone` only. The drops of a frame, by number, are what [`WetParts::weather`] gives. The drops
     /// in the air (S3d) are listed whole in every frame (they all move), with numbers of their own
-    /// that no drop on a part has; they are what [`WetParts::falling`] gives.
+    /// that no drop on a part has; they are what [`WetParts::falling`] gives. The shapes (S3f) are
+    /// those of the changed drops: a drop whose shape changes (it slides, relaxes from a merge,
+    /// hangs) is changed.
     pub fn frame(&mut self) -> Vec<u8> {
         let mut changed: Vec<usize> = (0..self.drops.len())
             .filter(|&i| self.drops[i].touched)
@@ -2084,6 +2631,10 @@ impl WetParts {
                 d.a.to_bits(),
             ]);
         }
+        let shapes: Vec<DropShape> = changed
+            .iter()
+            .map(|&i| self.object_shape(&self.drops[i]))
+            .collect();
         for d in self.drops.iter_mut() {
             d.touched = false;
         }
@@ -2107,6 +2658,11 @@ impl WetParts {
                 f.p.z.to_bits(),
                 r.to_bits(),
             ]);
+        }
+        // S3f: the shapes of the changed drops.
+        words.push(shapes.len() as u32);
+        for shape in &shapes {
+            words.extend(shape.to_floats().iter().map(|v| v.to_bits()));
         }
         self.gone_ids.clear();
         self.new_wet.clear();
@@ -2136,25 +2692,31 @@ impl WetParts {
                     dust: (s0..s1).map(|s| self.dust_at(s)).collect(),
                     snow_mm: (s0..s1).map(|s| self.snow_at(s)).collect(),
                     cap_angle_deg: p.cap_deg,
-                    drops: {
-                        let mut mine: Vec<&Drop> = self
-                            .drops
-                            .iter()
-                            .filter(|d| d.part as usize == pi)
-                            .collect();
-                        mine.sort_unstable_by_key(|d| d.id);
-                        mine.iter()
-                            .map(|d| (d.tri - p.first_tri, p.to_object.apply(d.p), d.a))
-                            .collect()
-                    },
+                    drops: self
+                        .mine(pi)
+                        .iter()
+                        .map(|d| (d.tri - p.first_tri, p.to_object.apply(d.p), d.a))
+                        .collect(),
+                    shapes: self.mine(pi).iter().map(|d| self.object_shape(d)).collect(),
                 }
             })
             .collect()
     }
 
-    /// FNV-1a (32 bits) of the steps, the drops in order, every sample's wet and wiped steps and
-    /// rates, and the drops in the air (S3d): what the native and WebAssembly builds are compared
-    /// by.
+    /// The drops of part `pi`, by number.
+    fn mine(&self, pi: usize) -> Vec<&Drop> {
+        let mut mine: Vec<&Drop> = self
+            .drops
+            .iter()
+            .filter(|d| d.part as usize == pi)
+            .collect();
+        mine.sort_unstable_by_key(|d| d.id);
+        mine
+    }
+
+    /// FNV-1a (32 bits) of the steps, the drops in order (S3f: with what makes their shapes), every
+    /// sample's wet and wiped steps and rates, and the drops in the air (S3d): what the native and
+    /// WebAssembly builds are compared by.
     pub fn hash(&self) -> u32 {
         let mut h: u32 = 0x811c_9dc5;
         let mut eat = |w: u32| {
@@ -2172,6 +2734,17 @@ impl WetParts {
             eat(d.p.y.to_bits());
             eat(d.p.z.to_bits());
             eat(d.volume.to_bits());
+            // S3f: what makes its shape, and what it relaxes from.
+            let m = &d.merging;
+            let b = &d.bead;
+            for v in [
+                d.vel.x, d.vel.y, d.vel.z, d.load, d.ca, m.axis.x, m.axis.y, m.axis.z, m.along,
+                m.across, m.neck, m.shift, m.left, m.pull.x, m.pull.y, m.pull.z, b.axis.x,
+                b.axis.y, b.axis.z, b.aspect, b.left, d.hang, d.pinch, d.run,
+            ] {
+                eat(v.to_bits());
+            }
+            eat(u32::from(d.edge));
         }
         for (&w, &x) in self.wet.iter().zip(&self.wiped) {
             eat(w);
@@ -2210,6 +2783,8 @@ pub struct Weather {
     pub cap_angle_deg: f32,
     /// Its drops: the triangle (in the mesh), the point (object space), the contact radius.
     pub drops: Vec<(u32, Vec3, f32)>,
+    /// S3f: their shapes (axes in object space), in the same order.
+    pub shapes: Vec<DropShape>,
 }
 
 /// The byte of a sample's wetness in a `WETP` section (`rt_core::weather`): 255 when wet.
@@ -2267,6 +2842,17 @@ impl Weather {
             porosity,
             drops,
         )
+    }
+
+    /// S3f: [`Weather::part_weather`] with the shapes of its drops (the shape tail), as an engine
+    /// with bit 10 reads it.
+    pub fn part_weather_shaped(
+        &self,
+        instance: u32,
+        porosity: f32,
+    ) -> Result<rt_core::weather::PartWeather, &'static str> {
+        self.part_weather(instance, porosity)?
+            .with_shapes(self.shapes.clone())
     }
 }
 

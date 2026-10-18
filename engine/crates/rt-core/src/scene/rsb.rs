@@ -97,7 +97,8 @@
 //! WETP  24 B  the rain, dust and snow on an instance (S3c, new, at most one per instance, written
 //!             after the INST sections): u32 instance triangles samples drops; f32 cap_angle_deg
 //!             porosity; u8 resolution[triangles], zero padding to 4; u8 (wet dust snow)[samples],
-//!             zero padding to 4; (u32 triangle; f32 x y z radius)[drops]
+//!             zero padding to 4; (u32 triangle; f32 x y z radius)[drops]; S3f: then
+//!             optionally "SHP1" u32 count (= drops) f32 shape[15][count] (each drop's shape)
 //! WETF   4 B  the drops in the air (S3d, new, at most one, written after the WETP sections): u32
 //!             drops; (u32 instance; f32 x y z radius)[drops]   (world space; instance 0xffffffff:
 //!             none)
@@ -187,6 +188,13 @@
 //! more than [`crate::weather::MAX_FALLING_DROPS`] or a second `WETF` make the file invalid. An
 //! engine of before skips it (the page writes it only for an engine with
 //! [`crate::FEATURE_WET_FLIGHT`]).
+//!
+//! **Drop shapes** (S3f). A `WETP` section may end in a shape tail, `SHP1` and one
+//! [`crate::weather::DropShape`] per drop (axes in the instance's object space): the reader meshes
+//! those caps deformed ([`crate::weather::shape_point`]). A tail with that tag whose count is not
+//! the drops' or with a value out of its range makes the file invalid. An engine of before ignores
+//! the tail (trailing bytes of a newer writer) and draws round caps; the page writes it only for an
+//! engine with [`crate::FEATURE_WET_SHAPES`].
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
