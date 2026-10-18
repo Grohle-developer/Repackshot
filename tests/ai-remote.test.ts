@@ -330,6 +330,14 @@ describe('the API backend against a local fake service', () => {
 const WASM = ['public/engine/post.wasm', 'engine/target/wasm32-unknown-unknown/release/rt_post_wasm.wasm'].find((p) => existsSync(p)) ?? null;
 if (!WASM && process.env.REPACK_REQUIRE_POST_WASM) throw new Error('post.wasm is required: npm run engine:build');
 
+/** The same floats, bit for bit. */
+function sameBits(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  const x = new Uint32Array(a.buffer, a.byteOffset, a.length);
+  const y = new Uint32Array(b.buffer, b.byteOffset, b.length);
+  return x.every((v, i) => v === y[i]);
+}
+
 describe.skipIf(!WASM)('the web pipeline: the guard of post.wasm on every API result', () => {
   const guard = () => PostGuard.fromBytes(readFileSync(WASM!));
   const request = (url: string, intervention = 100, tolerances?: AiPostRequest['tolerances']) => {
@@ -356,7 +364,8 @@ describe.skipIf(!WASM)('the web pipeline: the guard of post.wasm on every API re
     const { req, world } = request(svc.url(), 100, { deltaEMean: 0.5, deltaEP95: 0.5, edgesPx: 0 });
     const result: AiPostResult = await pipeline.post(req, () => undefined, new AbortController().signal);
     expect(result.report.verdict).toBe('REJECTED');
-    expect(result.image.rgba).toEqual(world.image.rgba);
+    // Compared as one verdict: a diff of a million floats takes far longer than the test.
+    expect(sameBits(result.image.rgba, world.image.rgba)).toBe(true);
     // Two tiles, four attempts.
     expect(svc.seen).toHaveLength(8);
   }, 180_000);
@@ -367,7 +376,8 @@ describe.skipIf(!WASM)('the web pipeline: the guard of post.wasm on every API re
     const { req, world } = request(svc.url(), 0);
     const result = await pipeline.post(req, () => undefined, new AbortController().signal);
     expect(svc.seen).toHaveLength(0);
-    expect(result.image.rgba).toEqual(world.image.rgba);
+    // Compared as one verdict: a diff of a million floats takes far longer than the test.
+    expect(sameBits(result.image.rgba, world.image.rgba)).toBe(true);
   }, 180_000);
 });
 

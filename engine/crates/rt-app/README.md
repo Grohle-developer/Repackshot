@@ -754,6 +754,22 @@ one of the Microsoft Visual C++ 2015–2022 environment's (`MSVCP140.dll`, `VCRU
 `System32`, and `vcRuntimeUrl` (Microsoft's official page) on the Windows ones: we do not
 redistribute those DLLs.
 
+## AI: the model through an API (X7)
+
+`/api/info` says `aiRemote: 1`. A post may carry `remote` (`docs/AI-POST.md` §8): the pipeline is the
+same (plan, tiles, the guard of `rt-post`, the retries, the report), and only the model call changes
+backend (`src/ai/backend.rs`: `ModelBackend`, with `LocalRuntime` as before and `RemoteApi` in
+`src/ai/remote.rs`). The launcher calls the API with the system's `curl`, its configuration (the key's
+header included) through standard input after `-q`, the body through a temporary file in
+`<data>/ai/api-calls/` removed after the call; never a redirect; only `https`, or `http` to this computer.
+
+| Endpoint | Contract |
+| --- | --- |
+| `POST /api/ai/post` with `remote` | `remote: {endpoint: {url, method, authHeader, authPrefix, headers, body: JSON\|MULTIPART, template (JSON text), response: JSON\|IMAGE, responsePath, maxSide, multipleOf, sizes}, options: {sendPasses, timeoutSeconds 10..600, attempts 1..5}, consentedHost, provider}` (`remoteJson` of `src/io/ai-post.ts`; no key). 400 `api-config` (an endpoint it cannot use) or `api-consent` (`consentedHost` is not the URL's host); 409 `api-no-key` (`reason: NO_API_KEY`) when the endpoint names a key header and no key is stored for its host. A failed call ends the post `FAILED` with `error` one of `api-auth`, `api-rate-limit`, `api-timeout`, `api-network`, `api-server`, `api-refused`, `api-too-large`, `api-format`, `api-oversize`, `api-redirect`, and `apiAttempts`, `apiStatus`, `apiDetail` (the service's words, masked). The report's `runtime` is `api:<host>` |
+| `GET /api/ai/apikeys` | `{keys: [{host, masked}]}`: the hosts with a key and its mask (`••••` and the last four characters); never a key |
+| `PUT /api/ai/apikeys` | `{host, key}`: stores it in `<data>/ai/api-keys.json` (0600 on Unix). 204; 400 `bad-key` |
+| `POST /api/ai/apikeys/forget` | `{host}`: forgets it. 204 |
+
 ## `.exe` icon and version
 
 `build.rs`, only when building for Windows with mingw-w64: writes a `.rc` with `VERSIONINFO`

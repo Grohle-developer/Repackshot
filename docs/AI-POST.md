@@ -30,6 +30,11 @@ anything is published.
    loosen any protection.
 4. **Local and private.** Everything runs on the machine; the image does not leave
    it. Nothing is uploaded to any server.
+   *X7 (2026-10-18):* **local by default; remote only by the person's choice.**
+   If the person chooses *Run the model ▸ Through an API* (§8), the render's
+   tiles go to the host they named, and only after they allowed that host
+   in place; the key stays on this computer. The guard (§3) runs here on
+   every image an API returns, with the same protections.
 5. **Honesty.** If the machine cannot run the model, the
    switch appears disabled with the reason. If the guard had to
    limit the intervention to respect the protections, it says by how much.
@@ -385,6 +390,15 @@ with its blocks *Active model*, *Models* and *Hardware*:
   scene and the job's own prompt, with *Restore default* and the note that the guard's
   protections do not depend on
   them (§4, *The words that go to the model*).
+- **Model by API** (X7, §8): *Run the model* (*On this computer* · *Through an
+  API*), *API* (the generic HTTP endpoint or a preset), *Endpoint* (a preset's
+  summary with the note that it was not tried against the live service, or the
+  generic endpoint's form: URL, method, key header and what goes before the key,
+  more headers, body JSON or multipart, template, answer JSON or the image
+  itself, where the image is, longest side, sides a multiple of, fixed sizes),
+  *API key* (stored on this computer only, shown masked, *Save key* · *Remove
+  key*), *Send the depth and edges too* (off), *Time limit of a call* (120 s),
+  *Tries of a call* (2) and *Allowed hosts* (each with *Revoke*).
 
 ---
 
@@ -400,6 +414,7 @@ with its blocks *Active model*, *Models* and *Hardware*:
 | **X3d** | Opus | The web, after X3c: ONNX Runtime Web with WebGPU in workers, **export the VAE encoder to ONNX** so that `ZIMAGE_WEB` exists, driver in a worker with `post.wasm`, OPFS cache with `sha256` and fragments of ≤ 1 GiB |
 | **X4** | Sonnet | **Done.** The interface of §4 against `AiPostService` (`src/core/ai.ts`), with a synthetic service until X3c: render-window section, configurator, chips, Fast-mode preview with the passes drawn by three.js and divider, guard report and divider in the results viewer, two thumbnails in the queue, settings in the *store* (`ROADMAP.md` X4) |
 | **X4b** | Opus | **Done.** The job's own prompt (if the model accepts it: `textPrompt`), variants (1 to 8, one render and N passes with consecutive seeds, thumbnail strip in the viewer) and system prompt in Settings, with the short version and the trimming for 77-*token* models (§4, §7.5b) |
+| **X7** | Opus | **Done.** The model through an API (§8): one `AiModelBackend` under the pipeline's model call, the local runtime as one implementation and remote APIs as another (a generic HTTP endpoint and two presets), the key on this computer only, consent per host, bounded tries, and the same guard on every result |
 | ~~X5~~ | — | **Absorbed into U6** (Settings window, `ROADMAP.md`): the model manager of §5 and the selector of §2.2–§2.4 do not need the pipeline, so they arrive earlier. What is left for after X3 (checking live that the active model fits, and a one-image test) goes into X4 |
 
 ---
@@ -696,3 +711,138 @@ made on a test machine:
    *Runtime* row, the GPU and its VRAM (*Settings ▸ AI post-processing ▸
    Hardware*), the times from step 5 and, if anything fails, the message
    verbatim.
+
+---
+
+## 8 · The model through an API: remote backends and privacy (X7)
+
+The person asked (2026-10-17) that the AI be "not only a local model, but also
+a connection through an API if the user wants it". X7 adds that **without
+changing the pipeline**: the guard's step machine (§7.2) calls one interface
+for each model pass, and what is behind it is either the local runtime or a
+remote service.
+
+### 8.1 · One interface under the model call
+
+- **`AiModelBackend`** (`src/core/ai-backend.ts`): `run(pass, signal)` for one
+  tile of one attempt (the padded 8-bit tile, its edges and depth, the
+  attempt's strength, the seed, the prompt and the negative), returning 8-bit
+  RGB; `kind` is `LOCAL` or `API`, `runtime` is what the report says. The
+  launcher has the same contract in Rust (`ModelBackend`,
+  `engine/crates/rt-app/src/ai/backend.rs`).
+- **Implementations.** Desktop, local: `LocalRuntime` (stable-diffusion.cpp's
+  `sd-server`, X3b/X3c) — the same job, progress and errors as before, and the
+  existing tests prove it. Desktop, remote: `RemoteApi`
+  (`rt-app/src/ai/remote.rs`), which calls the service with the system's
+  `curl`. Web, remote: `ApiBackend` (`src/io/ai-api.ts`, `fetch`), driven by
+  the page's own pipeline (`src/ai/api-service.ts`: the guard of `post.wasm`,
+  the same `rt-post`). The web's local runtime (ONNX Runtime Web, X3d) will be
+  one more implementation.
+- **Choosing.** *Settings ▸ AI post-processing ▸ Model by API ▸ Run the model*
+  (`ai.source`: `LOCAL` or `API`) is per installation, not per project. The
+  page routes every status and post to the local service or the API one
+  (`routeAiService`); with `LOCAL`, the local service gets the very same
+  request as before. The render window's AI line says which is active
+  (*Through an API · Stability AI · Stable Diffusion 3.5 · api.stability.ai*).
+
+### 8.2 · Endpoints and presets
+
+- **Generic HTTP image-to-image** (`GENERIC`): URL (`https`, or `http` only to
+  this computer), method (`POST`/`PUT`), the header that carries the key and
+  what goes before it (`Authorization`, `Bearer `), more headers (none may
+  carry the key), a JSON or multipart body from a **template** with
+  placeholders (`{{image}}` — a file part in a form, base64 in JSON —,
+  `{{image_base64}}`, `{{image_data_uri}}`, `{{prompt}}`, `{{negative}}`,
+  `{{strength}}`, `{{seed}}`, `{{width}}`, `{{height}}`, `{{size}}`, and with
+  the passes on `{{depth…}}`, `{{edges…}}`), the answer (JSON with the image at
+  a dotted path such as `data.0.b64_json`, base64 or a data URI; or the image
+  itself), and the sizes it takes. Values are inserted as values, never as
+  JSON text; a string that is exactly a numeric placeholder becomes a number.
+- **Presets** (`src/data/ai-api-presets.ts`), written only from the services'
+  public API documentation, **never tried against the live services** (no key
+  and no network here; `verified: false`):
+  - `STABILITY_SD3`: Stability AI, `POST /v2beta/stable-image/generate/sd3`,
+    multipart `mode=image-to-image` with `image`, `strength`, `seed`,
+    `negative_prompt`, `model=sd3.5-large`, `output_format=png`;
+    `Accept: application/json`, the image at `image`; read from the OpenAPI
+    document the service publishes (`https://api.stability.ai/v2alpha/openapi`,
+    v2beta, 2026-10-18).
+  - `OPENAI_EDIT`: OpenAI, `POST /v1/images/edits`, multipart with
+    `model=gpt-image-1`, `image`, `prompt` (the negative appended as
+    *Avoid: …*), `size` one of `1024x1024`, `1536x1024`, `1024x1536`; the
+    image at `data.0.b64_json`; read from OpenAI's published OpenAPI document
+    (github.com/openai/openai-openapi). It takes no strength or seed: the guard
+    still caps every change by the attempt's strength, so its retries still
+    lower the intervention.
+- The rules every implementation follows (hosts, template filling, the answer
+  path, base64, statuses, waits, sizes, masks, problems) are pure functions in
+  `src/core/ai-remote.ts` and `rt-app/src/ai/remote.rs`, checked against the
+  same cases (`tests/fixtures/ai-remote-cases.json`).
+
+### 8.3 · Privacy: the key and consent
+
+- **The key** is stored **only on this computer**, one per host, and is only
+  ever sent to the host it was saved for (a changed URL needs its own key).
+  Desktop: the launcher keeps it in `<data>/ai/api-keys.json` (0600 on Unix),
+  uses it itself, and the page can store, forget and list it masked
+  (`••••7f3a`), never read it back. `curl` gets it through standard input, so
+  it is never on a command line or in a request file. Web: the browser's local
+  storage of this site (`repackshot.ai.apiKeys`), with a warning in Settings
+  that anyone using this browser profile can read it. It is never in a setting,
+  a project file, the library, a log line or an error message (a service that
+  echoes it gets it masked). Tested in `tests/ai-remote.test.ts` and
+  `engine/crates/rt-app/tests/ai_remote.rs`.
+- **Consent.** Before the first render goes to a host, one question, **in
+  place** (UI.md §4.3: no modal): *Send renders to api.stability.ai? While the
+  AI is on, each render, in tiles of the image, leaves this computer for
+  api.stability.ai (Stability AI · …) to be processed there. Your projects and
+  your key stay here.* (with *and its depth and edge passes* when they are sent),
+  *Allow and send* · *Not now*. It is remembered per host
+  (`ai.apiConsent`) and can be revoked in *Allowed hosts*. The service refuses
+  to send to a host not allowed (`withApiConsent`), so neither the preview nor
+  a queued job can send first; a job then keeps its engine image and says why.
+  The launcher refuses a post whose URL is not the `consentedHost` it carries.
+- **What leaves.** The tiles of the image as the person sees it; the depth and
+  edge passes only with *Send the depth and edges too* (off by default) and a
+  template that asks for them. Never the project, the materials' names or the
+  key in the body.
+
+### 8.4 · Failures, tries and limits
+
+- Each call has a **time limit** (*Time limit of a call*, 120 s) and at most
+  **N tries** (*Tries of a call*, 2): only a time-out, a rate limit (429), a
+  network or a server failure (5xx) tries again, waiting what `Retry-After`
+  says (at most 30 s; longer is not waited for) or 1, 2, 4 s. A refused key
+  (401/403), a refused request, a redirect (never followed), an answer that is
+  not a PNG where expected, or one far too large (more than 64 MiB, a side
+  over 8192 px or more than 4× the pixels sent) fail at once. A failure ends
+  the AI step with a message in the interface's language (*The service is
+  limiting requests (HTTP 429). Gave up after 2 tries. The service said:
+  “slow down”*); the engine image is kept. Never a hang or a loop: at most
+  tiles × 4 guard attempts × tries calls.
+- The guard runs on **every** result: the same checks, the same report, and a
+  rejected result delivers the engine image unchanged (tested on both
+  platforms with a fake service that inverts the image).
+
+### 8.5 · The size sent
+
+The tiles are the existing ones (`rt-post`, ~1024² with overlap). A tile
+longer than the service's *Longest side* is scaled down to it, both sides
+rounded down to *Sides a multiple of*; a service with *Fixed sizes* gets the
+one nearest the tile's shape, the tile fitted inside and the rest filled with
+its edge. The answer is brought back to the canvas size, its tile part cut out
+and scaled to the tile's size before the guard sees it. A tile that already
+fits is sent and read back unchanged.
+
+### 8.6 · For the verdict ◆
+
+1. **Which presets ship** (Stability AI SD 3.5 image-to-image and OpenAI image
+   edits are proposed; others: fal.ai, Replicate — asynchronous, not built).
+2. **Whether the passes may be sent** at all, and the default (off: only the
+   image).
+3. **The default time limit and tries** (120 s, 2) and the 30 s cap on
+   `Retry-After`; the cost of a render is tiles × attempts calls.
+4. **The consent wording** (§8.3).
+5. **Where the key lives in the browser** (local storage of the site, with the
+   warning; alternatives: only for the session, or not at all on the web).
+6. Plain `http` only to this computer: whether a LAN service should be allowed.

@@ -5,6 +5,21 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### AI post-processing
+
+- **The model through an API**, if you choose it: *Settings ▸ AI post-processing ▸ Model by API ▸ Run the model ▸ Through an API*, per installation. The render window's AI line says which is active (*Through an API · … · host*) (X7).
+- **A generic HTTP image-to-image endpoint**: URL, method, the key's header, more headers, a JSON or multipart template with placeholders for the image, the prompt, the negative prompt, the strength and the seed, and where the image is in the answer; the problems are listed until it can be used (X7).
+- **Two presets** written from the services' public API documentation and not yet tried against the live services: Stability AI Stable Diffusion 3.5 image-to-image and OpenAI image edits (X7).
+- **The API key stays on this computer**: in the desktop application's data folder (the launcher calls the API itself and the page never reads the key back) or in this browser's local storage, with a warning; shown masked, sent only to the host it was saved for, and never in a project, the library, the settings, a log or a message (X7).
+- **Consent before the first send**: turning the AI on with a host never allowed asks in place, *Allow and send* · *Not now*; remembered per host and revocable in *Allowed hosts*. Nothing is sent before, not even the preview (X7).
+- **The guard on every API result**, with the same protections and report as a local model; a rejected result keeps the engine image unchanged (X7).
+- **Failures worded and bounded**: a refused key, a rate limit, a time-out, a network or server failure, an answer that is not a PNG or is far too large, and a redirect each have their message in English and Spanish; only time-outs, rate limits, network and server failures try again, at most *Tries of a call* times (2), waiting what the service asks up to 30 s (X7).
+- **The size sent**: each tile at the service's longest side or fixed sizes, and its answer brought back to the tile's size (X7).
+
+### Engine and launcher
+
+- **`ModelBackend`** in `rt-app`: the desktop pipeline's model call goes through one interface, the local runtime as before and a remote API through the system's `curl` (key through standard input, no redirects); `/api/ai/apikeys` and `aiRemote: 1` in `/api/info` (X7).
+
 ### Scene and ambient
 
 - **Drips and splashes fall through the air**: the drop that drips off a part and those a splash throws fly with gravity and the air (at most at their terminal velocity) and settle afterwards, where they land, instead of at once; while they fall they show in *Fast*, in *Full* and in the render, and the physics bar says how many are in the air (S3d).

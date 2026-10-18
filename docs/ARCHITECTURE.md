@@ -3736,6 +3736,13 @@ comment on why it is correct, the rest of the *crate* keeps
    says `aiPost: 1`; then the page uses `src/io/ai-post.ts` (`DesktopAiService`), and the queue
    writes the AI image from that linear light with the render's exposure and curve, like the
    engine's file.
+   *X7:* the model call goes through `ModelBackend` (`src/ai/backend.rs`): `LocalRuntime` (the
+   `sd-server` above) or `RemoteApi` (`src/ai/remote.rs`, a remote image-to-image API called with the
+   system's `curl`, the key from `<data>/ai/api-keys.json` through `curl`'s standard input), chosen by
+   the post's `remote`; `/api/ai/apikeys` stores, lists masked and forgets the keys, and `/api/info`
+   says `aiRemote: 1`. On the page, `src/ai/api-service.ts` routes between the local service and the
+   API one, and on the web runs the pipeline itself with `post.wasm` and `src/io/ai-api.ts` (`fetch`).
+   No new dependency (`AI-POST.md` §8).
 9. **Updating from the application** (P5, `src/update/`): `POST /api/update/install` with `{tag,
    assetUrl, sumsUrl}` (and `size`, only for progress), `GET /api/update` and `POST /api/update/cancel`;
    `/api/info` says `updateApi: 1` and `afterUpdate`. The launcher **decides what can be downloaded**, not

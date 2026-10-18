@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 162 files: 160 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 166 files: 164 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,16 +22,30 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 59 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 60 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d).
+Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI model through an API (X7).
 
 #### S3d · What remains of drops and dust on the parts (simulation)
 
 <a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="The example bottle in Fast in the rain with a 3 m/s wind and On the parts switched on, paused at 2 s: drops as caps on the body and the cap; the physics bar says Parts: 875 drops, 0 drips, 62 in the air; the status bar, Rain on 7 parts: 875 drops, 62 in the air."><br>
 `physics-rain-air.png` · `f36ca82` · The example's rain with a 3 m/s wind and *On the parts* switched on, paused at 2 simulated seconds with drops in the air (*Parts: 875 drops · 0 drips · 62 in the air*): *Fast* draws the frame's drops as caps and those in the air (the splashes that fly) as water spheres, small at this framing (S3d ◆1); the status bar says what is on the parts: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
+
+#### X7 · The AI through an API
+
+<a id="c-settings-ai-api"></a><img src="ui/settings-ai-api.png" width="480" alt="Settings, AI post-processing, the Model by API block: Run the model set to Through an API, the generic HTTP endpoint's form with a local test URL, the template with its placeholders, Renders go to the host, the API key stored and shown masked with the browser's warning, the passes off, the time limit, the tries and the allowed hosts."><br>
+`settings-ai-api.png` · `653b05a` · *Settings ▸ AI post-processing ▸ Model by API* with *Run the model ▸ Through an API* and the generic HTTP image-to-image endpoint pointed at a local test service: the form (URL, method, key header, template with its placeholders, where the image is in the answer, the sizes), *Renders go to 127.0.0.1:…*, the key stored and shown masked (*••••7f3a*) with the web's warning about local storage, *Send the depth and edges too* off, the time limit, the tries and *Allowed hosts*. `tools/ai-api-check.mjs`.
+
+<a id="c-settings-ai-api-preset"></a><img src="ui/settings-ai-api-preset.png" width="480" alt="The same block with the Stability AI preset: the endpoint's summary, the note that it was written from the public API documentation and not tried against the live service, and no key stored yet."><br>
+`settings-ai-api-preset.png` · `653b05a` · The same block with the *Stability AI · Stable Diffusion 3.5* preset: the endpoint's summary in monospace, the note that it was written from the service's public API documentation and not tried against the live service, and no key stored yet for *api.stability.ai*. `tools/ai-api-check.mjs`.
+
+<a id="c-ai-api-consent"></a><img src="ui/ai-api-consent.png" width="480" alt="The render window's AI post-processing section through an API: the switch off, the line Through an API, Generic HTTP image-to-image and the host, and under it the question asked in place before anything is sent, Send renders to the host?, with Allow and send and Not now."><br>
+`ai-api-consent.png` · `653b05a` · The render window's *AI post-processing* through an API: turning the switch on for a host never allowed asks first, in place under it and not in a window (*Send renders to 127.0.0.1:…? While the AI is on, each render, in tiles of the image, leaves this computer…*), with *Allow and send* and *Not now*; nothing has been sent yet. `tools/ai-api-check.mjs`.
+
+<a id="c-ai-api-section"></a><img src="ui/ai-api-section.png" width="480" alt="The same section after Allow and send: the switch on with the line Through an API, the six controls, the protections, and the preview made through the API with the divider and the guard's report Checked: geometry, materials, resolution, focus."><br>
+`ai-api-section.png` · `653b05a` · After *Allow and send*: the preview went through the test service and the guard, with the same report line as a local model (*Checked: geometry ✓ · materials ✓ · resolution ✓ · focus ✓*). `tools/ai-api-check.mjs`.
 
 ### v0.1.21 · 2026-10-18
 
@@ -897,6 +911,10 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 
 **Proposal for the README:** [`ai-results-viewer.png`](#c-ai-results-viewer) (v0.1.2): the AI result compared with the render using the divider and the guard's report.
 
+- [`settings-ai-api.png`](#c-settings-ai-api) · Unreleased · X7
+- [`settings-ai-api-preset.png`](#c-settings-ai-api-preset) · Unreleased · X7
+- [`ai-api-consent.png`](#c-ai-api-consent) · Unreleased · X7
+- [`ai-api-section.png`](#c-ai-api-section) · Unreleased · X7
 - [`ai-section-prompt.png`](#c-ai-section-prompt) · v0.1.5 · X4b
 - [`ai-results-variants.png`](#c-ai-results-variants) · v0.1.5 · X4b
 - [`settings-ai-prompt.png`](#c-settings-ai-prompt) · v0.1.5 · X4b

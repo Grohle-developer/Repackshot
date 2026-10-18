@@ -1086,8 +1086,12 @@ impl Ai {
                         post.id,
                         attempt + 1
                     );
-                    // The next attempt's slice starts where this one's ended; the page shows why.
+                    // The next attempt's slice starts where this one's ended; the page shows why. The
+                    // attempt moves on in the same state: a page that looked in between would see the
+                    // words of a failure next to the attempt that failed (it did, on a loaded machine).
                     post.set(|s| {
+                        s.attempt = next + 1;
+                        s.phase = "RETRY";
                         s.fraction = s.fraction.max(attempt_range(next).0);
                         s.last_failure = Some(reason);
                     });
