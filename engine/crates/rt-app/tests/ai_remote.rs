@@ -311,6 +311,12 @@ impl Ep {
     }
 }
 
+/// The strength a call carries for an attempt at `scale` of the full intervention (Intervention /
+/// 100 × RETRY_FACTOR^attempt): × `MAX_STRENGTH`, in `f32` as the plan makes it, rounded as sent.
+fn sent_strength(scale: f32) -> f64 {
+    rt_app::ai::remote::round_strength(f64::from(scale * rt_post::MAX_STRENGTH))
+}
+
 fn post_body(render: u32, intervention: u32, remote: &str) -> String {
     format!(
         "{{\"source\":{{\"kind\":\"RENDER\",\"renderId\":\"{render}\"}},\"settings\":{{\"intervention\":{intervention},\"light\":100,\"bounce\":40,\"wear\":0,\"style\":\"NATURAL\",\"styleStrength\":30,\"seed\":7}},\"prompt\":\"a studio photograph\",\"negative\":\"changed shape\",\"modelKey\":\"API_GENERIC\",\"materials\":[{{\"materialId\":1,\"name\":\"Coral\",\"allowsWear\":true,\"locked\":false}}],\"remote\":{remote}}}"
@@ -446,8 +452,9 @@ fn an_api_post_goes_through_the_guard_and_its_key_never_leaves_the_launcher() {
     assert!(!std::str::from_utf8(&r.body).unwrap().contains(KEY));
     assert_eq!(text(&body, "prompt"), "a studio photograph");
     assert_eq!(text(&body, "negative_prompt"), "changed shape");
-    // Numbers as numbers: the attempt's strength (Intervention 60 × 0.4) with three decimals, the seed.
-    assert_eq!(num(&body, "strength"), 0.24);
+    // Numbers as numbers: the attempt's strength (Intervention 60 × MAX_STRENGTH) with three
+    // decimals, the seed.
+    assert_eq!(num(&body, "strength"), sent_strength(0.6));
     assert_eq!(
         (
             num(&body, "seed"),
@@ -547,7 +554,7 @@ fn the_presets_send_a_form_and_a_fixed_size_and_read_their_answers() {
     for (name, value) in [
         ("mode", "image-to-image"),
         ("prompt", "a studio photograph"),
-        ("strength", "0.24"),
+        ("strength", format!("{}", sent_strength(0.6)).as_str()),
         ("seed", "7"),
         ("output_format", "png"),
     ] {
@@ -786,7 +793,10 @@ fn a_result_the_guard_rejects_delivers_the_engine_image_unchanged() {
             )
         })
         .collect();
-    assert_eq!(strengths, vec![0.4, 0.24, 0.144, 0.086]);
+    let planned: Vec<f64> = (0..4)
+        .map(|a| sent_strength(rt_post::RETRY_FACTOR.powi(a)))
+        .collect();
+    assert_eq!(strengths, planned);
     let engine = linear_of(&t.server.app.engine.kept(id).unwrap().image).unwrap();
     let img = image_of(&t, num(&end, "id") as u32);
     assert!(
