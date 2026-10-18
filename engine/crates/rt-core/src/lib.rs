@@ -126,6 +126,12 @@ pub const FEATURE_WET_PARTS: u32 = 256;
 /// the part and material passes. An engine without it skips the section (the drops in the air are
 /// not drawn), so the page writes none for it.
 pub const FEATURE_WET_FLIGHT: u32 = 512;
+/// Bit 10 of [`FEATURES`] (S3f): the engine draws the drops on the parts with their shapes (the
+/// shape tail of `WETP`, [`weather::DropShape`]: a sliding drop elongated along its motion with a
+/// thinner tail, a pinned one bulging downhill, two that merge with a neck between them, one that
+/// hangs stretched along gravity and pinching off). An engine without it ignores the tail and draws
+/// round caps, so the page writes none for it.
+pub const FEATURE_WET_SHAPES: u32 = 1024;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
@@ -139,7 +145,8 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_DROPS
     | FEATURE_GLASS_LAYOUT
     | FEATURE_WET_PARTS
-    | FEATURE_WET_FLIGHT;
+    | FEATURE_WET_FLIGHT
+    | FEATURE_WET_SHAPES;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

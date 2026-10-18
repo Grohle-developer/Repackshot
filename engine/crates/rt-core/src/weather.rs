@@ -36,6 +36,19 @@
 //! water in world space, meshed in the same mesh after the caps ([`SPHERE_SEGMENTS`] around by
 //! [`SPHERE_RINGS`] bands), with the same water and the same straight shadows, and in the passes
 //! each counts as the instance it left.
+//!
+//! **S3f: organic drops.** A `WETP` section may end in a **shape tail** ([`SHAPE_TAG`], then one
+//! [`DropShape`] per drop): what the simulation says each drop looks like, from its velocity, its
+//! contact angles, the tilt of its face and its volume. A drop is then a **deformed cap**
+//! ([`shape_point`]): the round cap sheared downhill by the difference of its front and rear contact
+//! angles (a pinned drop on a tilted face bulges downhill), stretched along its motion with a
+//! thinner tail (a sliding drop), stretched along the line to the drop it just merged with and
+//! pinched in the middle (the neck of two drops that merge), and stretched along gravity with a
+//! neck under its contact line (a drop that hangs and pinches off). Each step keeps its volume (the
+//! stretches are area-preserving or compensated in height, exactly for a paraboloid). A section with
+//! a tail is meshed finer ([`SHAPED_CAP_RINGS`]) and the deformed caps get the normals of their
+//! faces; an engine of before ignores the tail (trailing bytes) and draws round caps (bit 10 of the
+//! features, [`crate::FEATURE_WET_SHAPES`]).
 
 use crate::color::Rgb;
 use crate::fmath;
@@ -87,6 +100,229 @@ pub const WETF_DROP_BYTES: usize = 20;
 pub const MAX_FALLING_DROPS: usize = 4096;
 /// S3d: the instance of a drop in the air that left no instance of the file.
 pub const NO_INSTANCE: u32 = u32::MAX;
+/// S3f: the tag of the shape tail of a `WETP` section.
+pub const SHAPE_TAG: [u8; 4] = *b"SHP1";
+/// S3f: the floats of a drop's shape in the tail.
+pub const SHAPE_FLOATS: usize = 15;
+/// S3f: segments around a shaped cap (as a round one).
+pub const SHAPED_CAP_SEGMENTS: u32 = 16;
+/// S3f: rings of a shaped cap from its top to its contact circle (twice a round one's: a neck
+/// needs them).
+pub const SHAPED_CAP_RINGS: u32 = 8;
+/// S3f: triangles of a shaped cap.
+pub const SHAPED_CAP_TRIANGLES: u32 = SHAPED_CAP_SEGMENTS * (2 * SHAPED_CAP_RINGS - 1);
+/// S3f: the share of a paraboloid cap's volume that a neck of depth 1 takes from its width
+/// (`∫∫ h (1 − x²)² dA / ∫∫ h dA = 35/48` over the unit disc, `h = 1 − ρ²`).
+pub const NECK_VOLUME: f32 = 35.0 / 48.0;
+
+/// S3f: how a drop on a part is deformed from its round cap (the shape tail of `WETP`). The axes are
+/// in the instance's object space and need not be unit or tangent: the reader projects them onto the
+/// tangent plane of the drop's point; a zero axis leaves out what goes with it.
+///
+/// ```text
+/// f32 axis[3] aspect bulge taper  merge_axis[3] merge_along merge_across neck shift  sag pinch
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropShape {
+    /// The direction of its motion, or downhill for a pinned drop.
+    pub axis: Vec3,
+    /// Its length over its width along `axis`, 1..16 (the contact area kept).
+    pub aspect: f32,
+    /// How far its top is sheared along `axis`, in contact radii, −2..2.
+    pub bulge: f32,
+    /// Wider at its head (along `axis`) and thinner at its tail by this, −0.95..0.95.
+    pub taper: f32,
+    /// The line from where it was to the drop it merged with.
+    pub merge_axis: Vec3,
+    /// Its stretch along `merge_axis` and across it, 0.1..16 (its height keeps the volume).
+    pub merge_along: f32,
+    /// See [`DropShape::merge_along`].
+    pub merge_across: f32,
+    /// The depth of the neck between the two, 0..0.95.
+    pub neck: f32,
+    /// How far its outline is off its centre along `merge_axis`, in contact radii, −16..16.
+    pub shift: f32,
+    /// How much it stretches along gravity (hanging), 0..8: by `1 + sag`, thinner across.
+    pub sag: f32,
+    /// The neck of a hanging drop under its contact line, 0..0.95.
+    pub pinch: f32,
+}
+
+impl DropShape {
+    /// A round cap.
+    pub const ROUND: DropShape = DropShape {
+        axis: Vec3::ZERO,
+        aspect: 1.0,
+        bulge: 0.0,
+        taper: 0.0,
+        merge_axis: Vec3::ZERO,
+        merge_along: 1.0,
+        merge_across: 1.0,
+        neck: 0.0,
+        shift: 0.0,
+        sag: 0.0,
+        pinch: 0.0,
+    };
+
+    /// Its floats, in the order of the tail.
+    pub fn to_floats(&self) -> [f32; SHAPE_FLOATS] {
+        [
+            self.axis.x,
+            self.axis.y,
+            self.axis.z,
+            self.aspect,
+            self.bulge,
+            self.taper,
+            self.merge_axis.x,
+            self.merge_axis.y,
+            self.merge_axis.z,
+            self.merge_along,
+            self.merge_across,
+            self.neck,
+            self.shift,
+            self.sag,
+            self.pinch,
+        ]
+    }
+
+    /// The shape of floats in the order of the tail.
+    pub fn from_floats(f: [f32; SHAPE_FLOATS]) -> DropShape {
+        DropShape {
+            axis: Vec3::new(f[0], f[1], f[2]),
+            aspect: f[3],
+            bulge: f[4],
+            taper: f[5],
+            merge_axis: Vec3::new(f[6], f[7], f[8]),
+            merge_along: f[9],
+            merge_across: f[10],
+            neck: f[11],
+            shift: f[12],
+            sag: f[13],
+            pinch: f[14],
+        }
+    }
+
+    /// True when every value is finite and in its range.
+    pub fn is_valid(&self) -> bool {
+        let axis = |v: Vec3| v.is_finite() && v.abs().max_component() <= 1.0e6;
+        axis(self.axis)
+            && axis(self.merge_axis)
+            && (1.0..=16.0).contains(&self.aspect)
+            && (-2.0..=2.0).contains(&self.bulge)
+            && (-0.95..=0.95).contains(&self.taper)
+            && (0.1..=16.0).contains(&self.merge_along)
+            && (0.1..=16.0).contains(&self.merge_across)
+            && (0.0..=0.95).contains(&self.neck)
+            && (-16.0..=16.0).contains(&self.shift)
+            && (0.0..=8.0).contains(&self.sag)
+            && (0.0..=0.95).contains(&self.pinch)
+    }
+
+    /// True when it is a round cap.
+    pub fn is_round(&self) -> bool {
+        *self == DropShape::ROUND
+    }
+
+    /// The same shape with its axes carried by `f` (object to world: the linear part).
+    pub fn map_axes(&self, f: impl Fn(Vec3) -> Vec3) -> DropShape {
+        DropShape {
+            axis: f(self.axis),
+            merge_axis: f(self.merge_axis),
+            ..*self
+        }
+    }
+}
+
+/// S3f: the frame a cap is deformed in (world): its surface normal, its unit tangent axes and their
+/// normals in the plane (none for a zero axis), its contact radius and height, and gravity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShapeFrame {
+    /// Unit normal of the surface.
+    pub n: Vec3,
+    /// The drop's axis and its normal in the plane.
+    pub axis: Option<(Vec3, Vec3)>,
+    /// The merge's axis and its normal in the plane.
+    pub merge: Option<(Vec3, Vec3)>,
+    /// Contact radius, mm.
+    pub a: f32,
+    /// Height of the round cap, mm.
+    pub h: f32,
+    /// Unit gravity (`−Z`).
+    pub g: Vec3,
+}
+
+impl ShapeFrame {
+    /// The frame of `shape` (its axes in world space) on a cap of normal `n`, contact radius `a`
+    /// and contact angle `angle_deg`.
+    pub fn new(n: Vec3, shape: &DropShape, a: f32, angle_deg: f32) -> ShapeFrame {
+        let tangent = |v: Vec3| {
+            let t = v - n * v.dot(n);
+            let len = t.length();
+            (len > 1.0e-6 && len.is_finite()).then(|| {
+                let e = t / len;
+                (e, n.cross(e))
+            })
+        };
+        let theta = angle_deg.clamp(1.0, 179.0) * fmath::DEG_TO_RAD;
+        let (st, ct) = fmath::sin_cos(theta);
+        ShapeFrame {
+            n,
+            axis: tangent(shape.axis),
+            merge: tangent(shape.merge_axis),
+            a,
+            h: a / st * (1.0 - ct),
+            g: Vec3::new(0.0, 0.0, -1.0),
+        }
+    }
+}
+
+/// S3f: where the point `q` of a round cap (relative to the centre of its contact circle, world)
+/// goes under `shape` in frame `f`, in this order: the shear of its top by `bulge` (in contact radii
+/// at the top, none at the contact line), the taper of its width along the axis, the stretch along
+/// the axis by `√aspect` and across by its inverse; the merge's stretch, its neck
+/// (`1 − neck (1 − u²)²` of the width at `u` along the merge's axis) and shift, its height scaled
+/// to keep the volume; the stretch along gravity by `1 + sag` with the plane across it thinner by
+/// `√(1 + sag)` and pinched by `pinch · 4t(1 − t)` at height share `t`, the stretch compensated for
+/// the pinch. Every step keeps the volume of a paraboloid cap.
+pub fn shape_point(q: Vec3, f: &ShapeFrame, s: &DropShape) -> Vec3 {
+    let a = f.a.max(1.0e-6);
+    let z0 = q.dot(f.n);
+    let t = if f.h > 0.0 {
+        (z0 / f.h).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mut q = q;
+    if let Some((e, w)) = f.axis {
+        let x0 = q.dot(e) / a;
+        let y0 = q.dot(w) / a;
+        let x = x0 + s.bulge * t;
+        let y = y0 * (1.0 + s.taper * x0.clamp(-1.0, 1.0));
+        let st = s.aspect.max(1.0).sqrt();
+        q = (e * (x * st) + w * (y / st)) * a + f.n * z0;
+    }
+    if let Some((e, w)) = f.merge {
+        let xm = q.dot(e) / a;
+        let ym = q.dot(w) / a;
+        let z = q.dot(f.n);
+        let u = xm.clamp(-1.0, 1.0);
+        let k = 1.0 - u * u;
+        let pinch = 1.0 - s.neck * k * k;
+        let keep = s.merge_along * s.merge_across * (1.0 - NECK_VOLUME * s.neck);
+        let z = if keep > 0.0 { z / keep } else { z };
+        q = (e * (xm * s.merge_along + s.shift) + w * (ym * s.merge_across * pinch)) * a + f.n * z;
+    }
+    if s.sag > 0.0 || s.pinch > 0.0 {
+        let k = 1.0 + s.sag.max(0.0);
+        let c = s.pinch.clamp(0.0, 0.95);
+        let kt = k / (1.0 - 4.0 * c / 3.0 + 8.0 * c * c / 15.0);
+        let par = q.dot(f.g);
+        let perp = q - f.g * par;
+        let across = (1.0 - c * 4.0 * t * (1.0 - t)) / k.sqrt();
+        q = f.g * (par * kt) + perp * across;
+    }
+    q
+}
 
 /// The index of sample `(i, j)` of a triangle of resolution `r` among its samples (the order of
 /// `rt_phys::wet_parts`).
@@ -237,6 +473,8 @@ pub struct PartWeather {
     pub porosity: f32,
     /// Its drops.
     pub drops: Vec<WetDrop>,
+    /// S3f: the shape of each of its drops (the shape tail), or none: round caps.
+    pub shapes: Vec<DropShape>,
     /// The first sample of each triangle.
     first: Vec<u32>,
 }
@@ -291,11 +529,28 @@ impl PartWeather {
             cap_angle_deg,
             porosity,
             drops,
+            shapes: Vec::new(),
             first,
         })
     }
 
-    /// Reads a `WETP` payload (see the layout above). Trailing bytes are ignored (a newer writer's).
+    /// S3f: the same weather with the shapes of its drops (one each, in their order). Fails when
+    /// they are not one per drop or one is out of its range.
+    pub fn with_shapes(mut self, shapes: Vec<DropShape>) -> Result<PartWeather, &'static str> {
+        if !shapes.is_empty() && shapes.len() != self.drops.len() {
+            return Err("the shapes are not one per drop");
+        }
+        if !shapes.iter().all(DropShape::is_valid) {
+            return Err("a drop's shape is out of its range");
+        }
+        self.shapes = shapes;
+        Ok(self)
+    }
+
+    /// Reads a `WETP` payload (see the layout above). S3f: after the drops, a shape tail (the tag
+    /// [`SHAPE_TAG`], `u32 count` equal to the drops, `f32 shape[15][count]`: [`DropShape`]); a tail
+    /// with that tag that does not fit makes the section invalid. Other trailing bytes are ignored (a
+    /// newer writer's).
     pub fn decode(p: &[u8]) -> Result<PartWeather, &'static str> {
         let word = |at: usize| -> Result<u32, &'static str> {
             p.get(at..at + 4)
@@ -344,7 +599,26 @@ impl PartWeather {
                 radius: float(at + 16)?,
             });
         }
-        PartWeather::new(instance, resolution, values, cap_angle_deg, porosity, list)
+        let weather =
+            PartWeather::new(instance, resolution, values, cap_angle_deg, porosity, list)?;
+        // S3f: the shape tail.
+        if p.len() >= end + 8 && p[end..end + 4] == SHAPE_TAG {
+            let count = word(end + 4)? as usize;
+            if count != drops {
+                return Err("the shapes are not one per drop");
+            }
+            let mut shapes = Vec::with_capacity(count);
+            for k in 0..count {
+                let at = end + 8 + 4 * SHAPE_FLOATS * k;
+                let mut f = [0.0f32; SHAPE_FLOATS];
+                for (c, v) in f.iter_mut().enumerate() {
+                    *v = float(at + 4 * c)?;
+                }
+                shapes.push(DropShape::from_floats(f));
+            }
+            return weather.with_shapes(shapes);
+        }
+        Ok(weather)
     }
 
     /// The `WETP` payload.
@@ -374,6 +648,16 @@ impl PartWeather {
             out.extend_from_slice(&d.triangle.to_le_bytes());
             for v in [d.position.x, d.position.y, d.position.z, d.radius] {
                 out.extend_from_slice(&v.to_bits().to_le_bytes());
+            }
+        }
+        // S3f: the shape tail.
+        if !self.shapes.is_empty() {
+            out.extend_from_slice(&SHAPE_TAG);
+            out.extend_from_slice(&(self.shapes.len() as u32).to_le_bytes());
+            for s in &self.shapes {
+                for v in s.to_floats() {
+                    out.extend_from_slice(&v.to_bits().to_le_bytes());
+                }
             }
         }
         out
@@ -541,6 +825,8 @@ pub struct Cap {
     pub radius: f32,
     /// Contact angle, degrees.
     pub angle_deg: f32,
+    /// S3f: its shape (axes in world space), or none: round.
+    pub shape: Option<DropShape>,
 }
 
 /// The mesh of the caps (world space, the sphere's normals), `None` without any.
@@ -548,20 +834,37 @@ pub fn cap_mesh(caps: &[Cap]) -> Option<Mesh> {
     water_mesh(caps, &[])
 }
 
+/// S3f: the triangles of each cap in the mesh of `caps`: [`SHAPED_CAP_TRIANGLES`] when one of them
+/// has a shape, else [`CAP_TRIANGLES`].
+pub fn cap_triangles(caps: &[Cap]) -> u32 {
+    if caps.iter().any(|c| c.shape.is_some()) {
+        SHAPED_CAP_TRIANGLES
+    } else {
+        CAP_TRIANGLES
+    }
+}
+
 /// S3d: the mesh of the caps and, after them, of the drops in the air (spheres: centre and
-/// radius), world space: [`CAP_TRIANGLES`] triangles each cap, then [`SPHERE_TRIANGLES`] each
-/// sphere; `None` without any.
+/// radius), world space: [`cap_triangles`] triangles each cap, then [`SPHERE_TRIANGLES`] each
+/// sphere; `None` without any. S3f: when a cap has a shape every cap is meshed with
+/// [`SHAPED_CAP_RINGS`] rings, and a deformed one ([`shape_point`]) takes the normals of its faces.
 pub fn water_mesh(caps: &[Cap], spheres: &[(Vec3, f32)]) -> Option<Mesh> {
     if caps.is_empty() && spheres.is_empty() {
         return None;
     }
-    let per = 1 + CAP_RINGS * CAP_SEGMENTS;
+    let shaped = caps.iter().any(|c| c.shape.is_some());
+    let (segments, rings) = if shaped {
+        (SHAPED_CAP_SEGMENTS, SHAPED_CAP_RINGS)
+    } else {
+        (CAP_SEGMENTS, CAP_RINGS)
+    };
+    let per = 1 + rings * segments;
     let per_sphere = 2 + (SPHERE_RINGS - 1) * SPHERE_SEGMENTS;
     let vertices = caps.len() * per as usize + spheres.len() * per_sphere as usize;
     let mut positions = Vec::with_capacity(vertices);
     let mut normals = Vec::with_capacity(vertices);
     let mut indices = Vec::new();
-    let ring = |base: u32, r: u32, s: u32| base + 1 + (r - 1) * CAP_SEGMENTS + s % CAP_SEGMENTS;
+    let ring = |base: u32, r: u32, s: u32| base + 1 + (r - 1) * segments + s % segments;
     for c in caps {
         let n = c.normal;
         let helper = if n.z.abs() < 0.9 {
@@ -578,27 +881,51 @@ pub fn water_mesh(caps: &[Cap], spheres: &[(Vec3, f32)]) -> Option<Mesh> {
         let lift = 1.0e-3 * c.radius;
         let centre = c.centre - n * (big * ct) + n * lift;
         let base = positions.len() as u32;
+        let first_index = indices.len();
         positions.push(centre + n * big);
         normals.push(n);
-        for r in 1..=CAP_RINGS {
-            let phi = theta * r as f32 / CAP_RINGS as f32;
+        for r in 1..=rings {
+            let phi = theta * r as f32 / rings as f32;
             let (sp, cp) = fmath::sin_cos(phi);
-            for s in 0..CAP_SEGMENTS {
-                let psi = std::f32::consts::TAU * s as f32 / CAP_SEGMENTS as f32;
+            for s in 0..segments {
+                let psi = std::f32::consts::TAU * s as f32 / segments as f32;
                 let (ss, cs) = fmath::sin_cos(psi);
                 let dir = (u * cs + v * ss) * sp + n * cp;
                 positions.push(centre + dir * big);
                 normals.push(dir);
             }
         }
-        for s in 0..CAP_SEGMENTS {
+        for s in 0..segments {
             indices.extend_from_slice(&[base, ring(base, 1, s), ring(base, 1, s + 1)]);
         }
-        for r in 1..CAP_RINGS {
-            for s in 0..CAP_SEGMENTS {
+        for r in 1..rings {
+            for s in 0..segments {
                 let (a, b) = (ring(base, r, s), ring(base, r, s + 1));
                 let (c2, d) = (ring(base, r + 1, s), ring(base, r + 1, s + 1));
                 indices.extend_from_slice(&[a, c2, d, a, d, b]);
+            }
+        }
+        // S3f: the deformed cap, with the normals of its faces (turned the way the sphere's were).
+        if let Some(shape) = c.shape.filter(|s| !s.is_round()) {
+            let frame = ShapeFrame::new(n, &shape, c.radius, c.angle_deg);
+            let first = base as usize;
+            for p in positions[first..].iter_mut() {
+                *p = c.centre + shape_point(*p - c.centre, &frame, &shape);
+            }
+            let mut sum = vec![Vec3::ZERO; positions.len() - first];
+            for t in indices[first_index..].chunks_exact(3) {
+                let (i, j, k) = (t[0] as usize, t[1] as usize, t[2] as usize);
+                let face = (positions[j] - positions[i]).cross(positions[k] - positions[i]);
+                for x in [i, j, k] {
+                    sum[x - first] += face;
+                }
+            }
+            for (k, s) in sum.iter().enumerate() {
+                let m = s.normalize();
+                if m.length_squared() > 0.5 {
+                    let was = normals[first + k];
+                    normals[first + k] = if m.dot(was) < 0.0 { -m } else { m };
+                }
             }
         }
     }
@@ -690,7 +1017,7 @@ pub fn caps_of(
             continue;
         };
         let flip = if mesh.inside_out() { -1.0 } else { 1.0 };
-        for d in &p.drops {
+        for (i, d) in p.drops.iter().enumerate() {
             let Some([a, b, c]) = mesh.triangle(d.triangle as usize) else {
                 continue;
             };
@@ -706,6 +1033,10 @@ pub fn caps_of(
                     normal,
                     radius: d.radius,
                     angle_deg: p.cap_angle_deg,
+                    shape: p
+                        .shapes
+                        .get(i)
+                        .map(|s| s.map_axes(|v| inst.transform.vector(v))),
                 },
             ));
         }
@@ -901,6 +1232,7 @@ mod tests {
             normal: Vec3::new(0.0, 0.0, 1.0),
             radius: 2.0,
             angle_deg: 60.0,
+            shape: None,
         };
         let mesh = cap_mesh(&[c]).unwrap();
         assert_eq!(
@@ -1135,5 +1467,218 @@ mod tests {
         };
         assert!(scene.set_wet_falling(vec![bad]).is_err());
         assert!(scene.wet_falling.is_empty());
+    }
+
+    /// S3f: a shape of every kind.
+    fn shapes() -> Vec<DropShape> {
+        vec![
+            DropShape {
+                axis: Vec3::new(1.0, 0.0, 0.0),
+                aspect: 2.2,
+                bulge: 0.12,
+                taper: 0.3,
+                ..DropShape::ROUND
+            },
+            DropShape {
+                merge_axis: Vec3::new(0.0, 1.0, 0.0),
+                merge_along: 1.5,
+                merge_across: 0.8,
+                neck: 0.5,
+                shift: 0.4,
+                ..DropShape::ROUND
+            },
+            DropShape {
+                sag: 0.8,
+                pinch: 0.5,
+                ..DropShape::ROUND
+            },
+        ]
+    }
+
+    #[test]
+    fn a_shape_tail_goes_and_comes_back_an_old_reader_skips_it_and_bad_ones_are_refused() {
+        let drop = |x: f32| WetDrop {
+            triangle: 0,
+            position: Vec3::new(x, 0.0, 0.0),
+            radius: 1.5,
+        };
+        let plain = PartWeather::new(
+            2,
+            vec![2],
+            vec![[0; 3]; 6],
+            60.0,
+            0.0,
+            vec![drop(0.0), drop(5.0), drop(9.0)],
+        )
+        .unwrap();
+        let shaped = plain.clone().with_shapes(shapes()).unwrap();
+        let bytes = shaped.encode();
+        assert_eq!(PartWeather::decode(&bytes), Ok(shaped.clone()));
+        // Without shapes, the S3c layout, byte for byte; the tail comes after it, so a reader of
+        // before (which stops at the drops) reads the same drops, round.
+        let old = plain.encode();
+        assert_eq!(bytes[..old.len()], old[..]);
+        assert_eq!(&bytes[old.len()..old.len() + 4], &SHAPE_TAG);
+        assert_eq!(bytes.len(), old.len() + 8 + 3 * 4 * SHAPE_FLOATS);
+        assert_eq!(PartWeather::decode(&old), Ok(plain.clone()));
+        // Other trailing bytes are still a newer writer's, ignored.
+        let mut other = old.clone();
+        other.extend_from_slice(b"XXXX\x01\0\0\0");
+        assert_eq!(PartWeather::decode(&other), Ok(plain.clone()));
+        // A tail that is not one per drop, cut short, or out of its range is refused.
+        let mut bad = bytes.clone();
+        bad[old.len() + 4] = 2;
+        assert!(PartWeather::decode(&bad).is_err());
+        assert!(PartWeather::decode(&bytes[..bytes.len() - 4]).is_err());
+        let mut bad = bytes.clone();
+        let aspect = old.len() + 8 + 4 * 3;
+        bad[aspect..aspect + 4].copy_from_slice(&0.5f32.to_bits().to_le_bytes());
+        assert!(PartWeather::decode(&bad).is_err());
+        assert!(plain.clone().with_shapes(vec![DropShape::ROUND]).is_err());
+    }
+
+    /// The volume under a cap's mesh: its triangles' cones from the centre of its contact circle.
+    fn cap_volume_of(mesh: &Mesh, base: Vec3) -> f32 {
+        (0..mesh.triangle_count())
+            .map(|t| {
+                let [a, b, c] = mesh.triangle(t).unwrap();
+                (a - base).dot((b - base).cross(c - base)) / 6.0
+            })
+            .sum::<f32>()
+            .abs()
+    }
+
+    #[test]
+    fn a_shaped_cap_keeps_its_volume_and_takes_its_shape() {
+        let cap = |shape: Option<DropShape>| Cap {
+            centre: Vec3::ZERO,
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            radius: 2.0,
+            angle_deg: 60.0,
+            shape,
+        };
+        let round = cap_mesh(&[cap(Some(DropShape::ROUND))]).unwrap();
+        assert_eq!(round.triangle_count() as u32, SHAPED_CAP_TRIANGLES);
+        let v0 = cap_volume_of(&round, Vec3::ZERO);
+        // A round cap of 60° and 2 mm: π a³ (2 − 3 cos θ + cos³ θ) / (3 sin³ θ), within its mesh.
+        let exact = std::f32::consts::PI * 8.0 * (2.0 - 1.5 + 0.125) / (3.0 * 0.75f32.powf(1.5));
+        assert!((v0 / exact - 1.0).abs() < 0.04, "{v0} vs {exact}");
+        let points = |m: &Mesh| -> Vec<Vec3> {
+            (0..m.vertex_count())
+                .map(|i| m.position(i).unwrap())
+                .collect()
+        };
+        let extent = |p: &[Vec3], d: Vec3| {
+            p.iter().map(|q| q.dot(d)).fold(f32::NEG_INFINITY, f32::max)
+                - p.iter().map(|q| q.dot(d)).fold(f32::INFINITY, f32::min)
+        };
+        let all = shapes();
+        for (k, s) in all.iter().enumerate() {
+            let m = cap_mesh(&[cap(Some(*s))]).unwrap();
+            let v = cap_volume_of(&m, Vec3::ZERO);
+            assert!((v / v0 - 1.0).abs() < 0.04, "{k}: {v} vs {v0}");
+            for i in 0..m.vertex_count() {
+                let n = m.normal(i).unwrap();
+                assert!((n.length() - 1.0).abs() < 1e-3, "{k}: {n:?}");
+            }
+        }
+        // Sliding along +X: longer along it than across, its head (+X) wider than its tail, its top
+        // sheared forward.
+        let p = points(&cap_mesh(&[cap(Some(all[0]))]).unwrap());
+        let (x, y) = (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
+        assert!(extent(&p, x) > 1.9 * extent(&p, y));
+        let width_at = |pts: &[Vec3], sign: f32| {
+            pts.iter()
+                .filter(|q| q.x * sign > 0.6 && q.z < 0.05)
+                .map(|q| q.y.abs())
+                .fold(0.0f32, f32::max)
+        };
+        assert!(width_at(&p, 1.0) > width_at(&p, -1.0) * 1.2);
+        assert!(p[0].x > 0.1, "{:?}", p[0]);
+        // A neck between two lobes along +Y: narrower across its middle than at its lobes.
+        let p = points(&cap_mesh(&[cap(Some(all[1]))]).unwrap());
+        // (Its contact line: the neck at the middle of the two, the lobes away from it.)
+        let mid = 0.4 * 2.0;
+        let width = |near: bool| {
+            p.iter()
+                .filter(|q| q.z < 0.05 && ((q.y - mid).abs() < 0.3) == near)
+                .map(|q| q.x.abs())
+                .fold(0.0f32, f32::max)
+        };
+        assert!(
+            width(true) < 0.85 * width(false),
+            "{} vs {}",
+            width(true),
+            width(false)
+        );
+        // Hanging from a ceiling (its normal down, gravity along it): longer along gravity than a
+        // round cap is tall, thinner across.
+        let hanging = |shape| Cap {
+            normal: Vec3::new(0.0, 0.0, -1.0),
+            ..cap(shape)
+        };
+        let r = points(&cap_mesh(&[hanging(Some(DropShape::ROUND))]).unwrap());
+        let h = points(&cap_mesh(&[hanging(Some(all[2]))]).unwrap());
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        assert!(extent(&h, z) > 1.6 * extent(&r, z));
+        assert!(extent(&h, x) < extent(&r, x));
+        // And a round shape is the round cap.
+        assert!(DropShape::ROUND.is_round() && !all.iter().any(DropShape::is_round));
+    }
+
+    #[test]
+    fn the_passes_count_shaped_caps_by_their_own_triangles() {
+        use crate::geometry::{Geometry, Instance, Transform};
+        let at = |x: f32| Transform {
+            rows: [
+                [1.0, 0.0, 0.0, x],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 30.0],
+            ],
+        };
+        let mut scene = Scene {
+            geometry: Geometry::new(
+                vec![plate(40.0)],
+                vec![
+                    Instance::new(0, at(-50.0), 0),
+                    Instance::new(0, at(50.0), 0),
+                ],
+            )
+            .unwrap(),
+            materials: vec![Material::default()],
+            ..Scene::default()
+        };
+        let drop = WetDrop {
+            triangle: 0,
+            position: Vec3::new(20.0, -20.0, 0.0),
+            radius: 3.0,
+        };
+        let one = |instance| {
+            PartWeather::new(instance, vec![1, 1], vec![[0; 3]; 6], 70.0, 0.0, vec![drop])
+                .unwrap()
+                .with_shapes(vec![shapes()[0]])
+                .unwrap()
+        };
+        scene.set_wet_parts(vec![one(0), one(1)]).unwrap();
+        let caps = scene.caps().unwrap();
+        assert_eq!((caps.caps, caps.cap_triangles), (2, SHAPED_CAP_TRIANGLES));
+        assert_eq!(
+            scene.geometry.meshes()[caps.mesh as usize].triangle_count() as u32,
+            2 * SHAPED_CAP_TRIANGLES
+        );
+        // The first cap's triangles are instance 0's, the second's instance 1's.
+        assert_eq!(scene.pass_instance(caps.instance, 5), 0);
+        assert_eq!(
+            scene.pass_instance(caps.instance, SHAPED_CAP_TRIANGLES - 1),
+            0
+        );
+        assert_eq!(
+            scene.pass_instance(caps.instance, SHAPED_CAP_TRIANGLES + 5),
+            1
+        );
+        assert_eq!(
+            scene.pass_instance(caps.instance, 2 * SHAPED_CAP_TRIANGLES - 1),
+            1
+        );
     }
 }

@@ -1004,6 +1004,9 @@ pub struct Caps {
     pub material: u32,
     /// S3d: how many caps the mesh holds first (the drops in the air come after them).
     pub caps: u32,
+    /// S3f: the triangles of each cap ([`crate::weather::cap_triangles`]: more when the drops have
+    /// shapes).
+    pub cap_triangles: u32,
 }
 
 impl Scene {
@@ -1115,9 +1118,10 @@ impl Scene {
         let Some(c) = self.caps.filter(|c| c.instance == instance) else {
             return instance;
         };
-        let in_caps = c.caps * crate::weather::CAP_TRIANGLES;
+        let per = c.cap_triangles.max(1);
+        let in_caps = c.caps * per;
         let k = if triangle < in_caps {
-            triangle / crate::weather::CAP_TRIANGLES
+            triangle / per
         } else {
             c.caps + (triangle - in_caps) / crate::weather::SPHERE_TRIANGLES
         };
@@ -1234,6 +1238,7 @@ impl Scene {
             instance: instances.len() as u32,
             material: self.materials.len() as u32,
             caps: caps.len() as u32,
+            cap_triangles: crate::weather::cap_triangles(&shapes),
         };
         meshes.push(mesh);
         instances.push(Instance::new(at.mesh, Transform::IDENTITY, at.material));

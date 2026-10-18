@@ -59,6 +59,8 @@ USAGE:
     rt --write-s3b-wet-spec <pane.wet1>
     rt --write-s3c-wet-example <scene.rsb>
     rt --write-s3d-flight-example <scene.rsb>
+    rt --write-s3f-organic-example <scene.rsb>
+    rt --write-s3f-strip <dir>
     rt --write-s3c-parts-spec <parts.wpt1>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
@@ -222,6 +224,13 @@ OPTIONS:
         --write-s3d-flight-example <f>
                             S3d: write that scene with the drops the simulation has in the air
                             (drips and splashes, the WETF section) as an RSB file
+        --write-s3f-organic-example <f>
+                            S3f: write the parity scene of the organic drops (a pane whose drops
+                            grow, slide, gather each other, merge with a neck, leave a rivulet
+                            and hang, with their shapes in WETP) as an RSB file
+        --write-s3f-strip <dir>
+                            write the frames of that scene for the strip of docs/ui (one RSB
+                            file per frame, s3f-strip-<step>.rsb)
         --write-o3a-example <f>
                             write the O3a parity scene (the example through a stack of three
                             effect filters on the lens, and bokeh lights) as an RSB file
@@ -392,6 +401,9 @@ pub enum S3Example {
     WetParts,
     /// `rt_phys::example::s3d_flight_scene` (S3d): the same with the drops in the air.
     Flight,
+    /// `rt_phys::example::s3f_organic_scene` (S3f): a pane whose drops grow, slide and gather each
+    /// other, with their shapes.
+    Organic,
 }
 
 impl S3Example {
@@ -403,6 +415,7 @@ impl S3Example {
             S3Example::WetGlass => rt_phys::example::s3b_wet_scene(),
             S3Example::WetParts => rt_phys::example::s3c_wet_scene(),
             S3Example::Flight => rt_phys::example::s3d_flight_scene(),
+            S3Example::Organic => rt_phys::example::s3f_organic_scene(),
         }
     }
 }
@@ -587,6 +600,12 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// S3f: write the frames of the organic scene's strip (`rt_phys::example::ORGANIC_STRIP_STEPS`),
+    /// one RSB file each, into a directory.
+    WriteS3fStrip {
+        /// The directory.
+        dir: PathBuf,
+    },
     /// S3b: write the spec of the parity pane (`rt_phys::example::wet_spec`) as a `WET1` file.
     WriteWetSpec {
         /// WET1 file to write.
@@ -716,6 +735,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_l5 = None;
     let mut write_k3 = None;
     let mut write_s3 = None;
+    let mut write_strip = None;
     let mut write_wet = None;
     let mut write_parts = None;
     let mut write_e10 = None;
@@ -879,6 +899,10 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-s3d-flight-example" => {
                 write_s3 = Some((S3Example::Flight, PathBuf::from(value(&mut it, arg)?)))
             }
+            "--write-s3f-organic-example" => {
+                write_s3 = Some((S3Example::Organic, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--write-s3f-strip" => write_strip = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-s3c-parts-spec" => write_parts = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -1069,6 +1093,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-s3-*-example takes no other option".into());
         }
         return Ok(Command::WriteS3Example { which, path });
+    }
+    if let Some(dir) = write_strip {
+        if args.len() != 2 {
+            return Err("--write-s3f-strip takes no other option".into());
+        }
+        return Ok(Command::WriteS3fStrip { dir });
     }
     if let Some(path) = write_e10 {
         if args.len() != 2 {
@@ -1357,6 +1387,16 @@ pub fn run(command: Command) -> Result<(), String> {
             let bytes = which.scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteS3fStrip { dir } => {
+            std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            for steps in rt_phys::example::ORGANIC_STRIP_STEPS {
+                let path = dir.join(format!("s3f-strip-{steps}.rsb"));
+                let bytes = rt_phys::example::s3f_organic_scene_at(steps).to_rsb();
+                std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+                println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            }
             Ok(())
         }
         Command::WriteE6PatternsExample { path } => {

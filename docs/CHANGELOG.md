@@ -36,6 +36,10 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **Drips and splashes fall through the air**: the drop that drips off a part and those a splash throws fly with gravity and the air (at most at their terminal velocity) and settle afterwards, where they land, instead of at once; while they fall they show in *Fast*, in *Full* and in the render, and the physics bar says how many are in the air (S3d).
 - **The meter says what is on the parts**: *Rain*, *Dust*, *Snow* or whatever there is together, on how many parts and, with rain, the drops on them and in the air (*Rain and dust on 4 parts: 1,443 drops, 12 in the air*), or *Nothing on the parts yet*; before, it said *Rain on the parts* even with only dust or snow (S3d).
 - **Notice for an engine that would not draw the drops in the air**: with an older render engine (with bit 8 and without bit 9), a drops effect says so below *On the parts* (S3d).
+- **Organic drops on the parts**: drops grow as rain lands on them and they merge, stay put until they pass the critical size of their face's tilt and material, then run down, taking the drops in their way, growing and speeding up; two drops that touch show a neck for a moment and their centre moves smoothly to where their water is; a large drop on a steep face leaves a rivulet of small beads behind it (S3f).
+- **Drops take shapes**: a running drop is stretched along its path with a rounder head and a thinner tail, a drop held on a slope bulges downhill, two that merge show a neck, and a hanging one stretches downward and pinches off, in *Fast*, in *Full* and in the render (S3f).
+- **Hanging and dripping one drop at a time**: a drop that reaches an open edge stops and hangs there instead of running off; under an edge or a face that looks down, it grows, necks and lets go of a single drop, about 60 % of its water, and what stays grows again (S3f).
+- **Notice for an engine that would draw the drops round**: with an older render engine (with bit 8 and without bit 10), a drops effect says so below *On the parts* (S3f).
 
 ### Engine
 
@@ -43,10 +47,14 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **The `WETF` section**: the scene's drops in the air, which the engine draws as water spheres next to the caps; bit 9 of the capabilities (`FEATURE_WET_FLIGHT`, `/api/info` says 1023) (S3d).
 - **The drops with their part's id in the part and material passes**: a cap, that of the part it is on; a drop in the air, that of the part it came from (before, that of the caps' instance) (S3d).
 - New pinned hashes: the parity scene with the drops in the air (`PINNED_S3D_FLIGHT_4SPP`, `rt --write-s3d-flight-example`) and its six passes (`PINNED_S3D_PASS_*`), the same in scalar, SSE2, AVX2, with 1, 4 and 16 threads, in `wasm32-wasip1` and in the real `rt.wasm`. `PINNED_WET_PARTS` and `PINNED_S3C_WET_4SPP` move, on purpose: the parts simulation is no longer S3c's; with S3c's scene, the engine gives its earlier image (S3d).
+- **Organic drops in `rt_phys::wet_parts`**: the merge looks along the path each drop swept, keeps the volume and relaxes the survivor to the centre of volume over a few capillary times; a sliding drop has Cox and Voinov's dynamic contact angles and leaves the beads of a rivulet once its rear angle falls far enough; drops held at open edges and under faces that look down neck and let go of 60 % of their water (Harkins and Brown); every frame carries the shapes of its changed drops (S3f).
+- **The shape tail of `WETP`**: one `DropShape` per drop after the drops (`SHP1`), which the engine meshes as deformed caps (16 × 8, the normals of their faces); bit 10 of the capabilities (`FEATURE_WET_SHAPES`, `/api/info` says 2047); an older engine ignores it and draws round caps (S3f).
+- New pinned hashes: the organic parts (`PINNED_S3F_PARTS`) and their scene with the drops' shapes (`PINNED_S3F_ORGANIC_4SPP`, `rt --write-s3f-organic-example`), the same in scalar, SSE2, AVX2, with 1, 4 and 16 threads, in `wasm32-wasip1` and in the real `rt.wasm`. `PINNED_WET_PARTS`, `PINNED_S3C_WET_4SPP`, `PINNED_S3D_FLIGHT_4SPP` and the six `PINNED_S3D_PASS_*` move, on purpose: the parts simulation is no longer S3d's; with S3d's scenes, the engine gives their earlier images (S3f).
 
 ### Tools
 
 - `tools/s3d-check.mjs`: the note for an engine without bit 9 (in English and in Spanish; with dust, none), the drops in the air with the physics bar and the new meter with its capture, the meter with only dust, and the achromatic chrome; the sheet `out/rain-dust-sheet.html` carries the drops in the air of each photo of the parts and says how many there are (S3d).
+- `tools/s3f-strip.mjs`: the strip `docs/ui/rain-organic.png`, the S3f scene rendered by the native engine at six instants, aimed at the drop that slides; `rt --write-s3f-strip` writes its frames (S3f).
 
 ## v0.1.21 — 2026-10-18
 

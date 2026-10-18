@@ -3237,7 +3237,68 @@ longer settle at once or slide along the surface; they fly.
   `PINNED_WET_PARTS` (0x62450071 → 0xe1811f7e: the simulation changes) and
   `PINNED_S3C_WET_4SPP` (0x66fa33ab → 0x827ac33c: the `WETP`s of that
   simulation; S3c's `s3c-wet.rsb` still gives 0x66fa33ab with the new
-  engine).
+  engine). (S3f moved them again, on purpose: §5.2 duovicies.)
+
+### 5.2 duovicies · Organic drops and their shapes (S3f, `rt_phys::wet_parts`, `WETP`'s shape tail)
+
+What §5.2 vicies and unvicies do, with drops that behave as drops.
+
+- **State.** Each `Drop` carries, besides S3c's, where its slide began this
+  step (`from`: the segment it swept), its velocity, its Furmidge load (pinned)
+  or capillary number (sliding), the merge it relaxes from (`Merging`: the axis
+  between the two, the outline's stretch along and across it, its neck and shift,
+  the share left and the way left to the centre of volume), a bead of a rivulet
+  relaxing (`Bead`), its hanging load and how far it has pinched off, whether an
+  open edge holds it, and how far it ran since its last bead. `WetParts::hash`
+  eats it all.
+- **The step** (`slide`, in index order): a merge relaxes first (the centre
+  walks `1 − e^(−Δt/τ)` of the way left, `τ = MERGE_TIMES √(ρ a³ / γ)`); a
+  hanging drop (a face with `ĝ·n > 10⁻⁴`, or held at an edge with the whole
+  weight) past `2π a γ sin θ̄` pinches for `PINCH_TIMES` capillary times and
+  lets go of `PINCH_OFF_SHARE` into the air (S3d's `launch`, from rest); a
+  sliding drop gets Cox–Voinov's dynamic angles (`dynamic_angles`), stops and
+  hangs at an open edge (S3c ran it off), and past `RUN_REAR_SHARE` of its
+  receding angle leaves a bead behind the start of its step (its water taken).
+  `put` marks a drop changed when what makes its shape changes.
+- **The merge** (`merge`, `merged`): a fresh drop takes the first drop whose
+  centre is within the two radii of the segment it swept; the survivor (the
+  lower index) keeps its place, the summed volume, and a `Merging` towards the
+  centre of volume of the centres the two were relaxing to.
+- **Shapes** (`base_shape`, `shape_of`, `shapes`): `rt_core::weather::DropShape`,
+  15 floats: the axis (motion or downhill), aspect, bulge (the shear the front
+  and rear contact angles give), taper; the merge's axis, along, across, neck,
+  shift; sag and pinch. In world space for the tests, in the part's object
+  space in the frames (the record ends with `u32 shaped; f32 shape[15][changed]`)
+  and in `Weather::shapes` (`part_weather_shaped` writes them).
+- **The engine** (`rt_core::weather`). `PartWeather::shapes` and the shape tail
+  of `WETP` (`SHAPE_TAG = "SHP1"`, `u32 count = drops`, `f32[15]` each; invalid
+  when it does not fit, other trailing bytes ignored). `Cap::shape` carries the
+  axes to world space (the instance's linear part); `water_mesh` meshes every cap
+  with `SHAPED_CAP_RINGS = 8` rings when one has a shape (`cap_triangles`,
+  `Caps::cap_triangles` for `pass_instance`), deforms each shaped one with
+  `shape_point` in its tangent frame (`ShapeFrame`) and gives it the normals of
+  its faces (turned like the sphere's). Every step of `shape_point` keeps the
+  volume of a paraboloid cap. Bit 10, `FEATURE_WET_SHAPES` (1024; `/api/info`
+  says 2047).
+- **The page.** `core/wet-parts.ts`: `DropShape`, `PartsTrack.shapes` (one per
+  version), `PartsFrameDrop.shape`, `PARTS_FORMAT_VERSION` 3, `partsRenderRound`
+  (the note of bit 10); `io/rsb.ts`: `RsbWetPart.shapes` and the tail, only with
+  `SceneView.wetShapes` (`render/engine.ts` `readsWetShapes`) and a track with
+  shapes. *Fast* (`render/weather-preview.ts`): a shaped part's caps are an
+  `InstancedMesh` of its own 16 × 8 cap with five instanced attributes
+  (`localShape`: the shape in the cap's frame, gravity and the round height) and
+  a material whose vertex shader runs `wShape` (the twin of `shapePointLocal`)
+  on each vertex and takes the normal from the deformed surface.
+- **Pinned.** New: `PINNED_S3F_PARTS = 0x1c5a82bb` (`example::organic_parts`
+  after `ORGANIC_STEPS = 264`) and `PINNED_S3F_ORGANIC_4SPP = 0xbfb0b45a`
+  (`example::s3f_organic_scene`, `rt --write-s3f-organic-example`,
+  `tests/fixtures/s3f-organic.rsb`), in scalar, SSE2 and AVX2, with 1, 4 and 16
+  threads, in `wasm32-wasip1` and in the real `rt.wasm`. Moved, on purpose (the
+  simulation changes; S3d's fixtures give S3d's pins with the new engine):
+  `PINNED_WET_PARTS` 0xe1811f7e → 0xdc58fa46, `PINNED_S3C_WET_4SPP` 0x827ac33c →
+  0xfc96fb05, `PINNED_S3D_FLIGHT_4SPP` 0xf7b78a45 → 0x3ba00640 and the six
+  `PINNED_S3D_PASS_*`. `rt --write-s3f-strip <dir>` writes the frames of
+  `tools/s3f-strip.mjs`.
 
 ### 5.3 · In the browser: workers
 

@@ -1,19 +1,26 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 157) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 161) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
 
-**The checklists of v0.1.2 to v0.1.21 still apply in full** (points 1 to 151). In addition, for the AI model through an API (X7). They need an account with an image-to-image service and a key you can revoke; any of them costs that service's price per call.
+**The checklists of v0.1.2 to v0.1.21 still apply in full** (points 1 to 151). In addition:
 
-152. [ ] **Local stays local.** With *Settings ▸ AI post-processing ▸ Model by API ▸ Run the model* at *On this computer*, a render with AI must behave as before (the local model, nothing sent anywhere).
-153. [ ] **The key stays here.** Choose *Through an API* and a preset (or the generic endpoint), paste the key and *Save key*: the row must show only `••••` and its last four characters. Open `<data>\ai\api-keys.json`: the key is there, and it must not be in `<data>\settings.json`, in a saved `.repack` or in `<data>\logs\`.
-154. [ ] **Asked first.** In the render window, turn *AI post-processing* on: the question *Send renders to <host>?* must appear under the switch before anything is sent. *Not now* must leave it off.
-155. [ ] **Through the guard.** *Allow and send*, then a 1024 × 1024 render: the result must open with *Render \| AI* and the guard's line, and the history must keep both images. Note the time and the number of calls (the service's dashboard).
-156. [ ] **Failures.** Remove the key on the service's side (or paste a wrong one) and render again: the message must say the service refused the key, after one try, and the engine image must be kept. Unplug the network: it must say the service could not be reached, after the tries of *Tries of a call*.
-157. [ ] **What to record when reporting.** The service and preset used, the two images of 155 and the report line, the messages of 156 verbatim, and the `<data>\logs\` folder (it must not contain the key).
+152. [ ] **Drops that grow and run.** Put a part with a steep face (or the example bottle) under *Rain* with *On the parts* and click *Start*. Small drops must stay where they land and grow; once one is large enough it must run down, taking the drops in its way and leaving a clean path, and get longer as it speeds up.
+153. [ ] **Shapes in *Fast* and in *Full*.** Pause while a drop runs: in *Fast* and in a render in *Full* it must look stretched along its path, with a rounder head and a thinner tail, and the drops on a tilted face must lean downhill. Just after two drops touch, they must show a narrow neck for a moment.
+154. [ ] **Hanging and dripping.** Under the lower edge of a part (or under a face that looks down), a drop must hang, grow and then let go of a single drop, leaving a smaller one behind that grows again.
+155. [ ] **What to record when reporting.** A screenshot of 153 in *Fast* and the render in *Full*. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+For the AI model through an API (X7). They need an account with an image-to-image service and a key you can revoke; any of them costs that service's price per call.
+
+156. [ ] **Local stays local.** With *Settings ▸ AI post-processing ▸ Model by API ▸ Run the model* at *On this computer*, a render with AI must behave as before (the local model, nothing sent anywhere).
+157. [ ] **The key stays here.** Choose *Through an API* and a preset (or the generic endpoint), paste the key and *Save key*: the row must show only `••••` and its last four characters. Open `<data>\ai\api-keys.json`: the key is there, and it must not be in `<data>\settings.json`, in a saved `.repack` or in `<data>\logs\`.
+158. [ ] **Asked first.** In the render window, turn *AI post-processing* on: the question *Send renders to <host>?* must appear under the switch before anything is sent. *Not now* must leave it off.
+159. [ ] **Through the guard.** *Allow and send*, then a 1024 × 1024 render: the result must open with *Render \| AI* and the guard's line, and the history must keep both images. Note the time and the number of calls (the service's dashboard).
+160. [ ] **Failures.** Remove the key on the service's side (or paste a wrong one) and render again: the message must say the service refused the key, after one try, and the engine image must be kept. Unplug the network: it must say the service could not be reached, after the tries of *Tries of a call*.
+161. [ ] **What to record when reporting.** The service and preset used, the two images of 159 and the report line, the messages of 160 verbatim, and the `<data>\logs\` folder (it must not contain the key).
 
 ## v0.1.21
 
