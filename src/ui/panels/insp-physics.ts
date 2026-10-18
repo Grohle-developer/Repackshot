@@ -49,14 +49,19 @@ function categoryOf(s: ProjectState, id: NodeId): string | null {
  * Ambient section open), or the Ambient section without one.
  */
 export function showEffectOnParts(ctx: Ctx, id: string | null): void {
-  ctx.store.dispatch({ type: 'scene/select', ids: [], mode: 'set' });
+  // The interface first, so that the scene's inspector is built with the effect and Ambient open.
   const u = ctx.ui.get();
   ctx.ui.set({ ...(id ? { effectSelected: id } : {}), effectGallery: false, sections: { ...u.sections, ambient: false } });
+  ctx.store.dispatch({ type: 'scene/select', ids: [], mode: 'set' });
   requestAnimationFrame(() => {
-    const target = (id && document.querySelector<HTMLElement>(`[data-effect="${id}"] [data-knob="ambient.wetParts"]`)) || document.querySelector<HTMLElement>('[data-section="ambient"]');
+    // Already the scene's inspector (nothing was selected): it was not rebuilt, so open a folded Ambient by hand.
+    const sec = document.querySelector<HTMLElement>('.side-right [data-section="ambient"]');
+    if (sec?.hasAttribute('data-collapsed')) sec.querySelector<HTMLElement>('.section-head')?.click();
+    const row = id ? document.querySelector<HTMLElement>(`[data-effect="${id}"] [data-knob="ambient.wetParts"]`) : null;
+    const target = row ?? sec;
     if (!target) return;
     target.scrollIntoView({ block: 'center' });
-    target.querySelector<HTMLElement>('button.toggle')?.focus({ preventScroll: true });
+    row?.querySelector<HTMLElement>('button.toggle')?.focus({ preventScroll: true });
   });
 }
 
@@ -207,6 +212,7 @@ function weatherGroup(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLElement {
   surface.el.setAttribute('data-field', 'phys.surface');
   const auto = surface.el.querySelector('option[value="AUTO"]') as HTMLOptionElement;
   const mixed = surface.el.querySelector('option[value="MIXED"]') as HTMLOptionElement;
+  // Never offered in the list; shown as the value while the parts differ.
   mixed.hidden = true;
   const surfaceRow = field(t('phys.surface'), surface.el);
   surfaceRow.setAttribute('data-tip', t('phys.surfaceTip'));
@@ -226,7 +232,6 @@ function weatherGroup(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLElement {
       const moving = movingParts(s);
       dustMoving.style.display = v.parts.length > 0 && v.parts.every((p) => moving.has(p)) ? '' : 'none';
       auto.textContent = surfaceAutoLabel(v);
-      mixed.hidden = v.surface !== null;
       surface.set(v.surface ?? 'MIXED');
       // The size past which a drop runs, on the parts that get wet (the engine's formula).
       runLine.textContent = runSizeLine(s, ids);

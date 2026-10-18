@@ -53,8 +53,13 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
   // U16: what Start would simulate now.
   const plan = h('p', { class: 'phys-plan', style: 'margin:0 0 4px', 'data-field': 'phys.plan', 'aria-live': 'polite' });
   scope.watch(
-    (s, u) => [s.scene.nodes, s.materials, s.effects, s.camera, s.studio.floor, u.physics.state === 'STOPPED'] as const,
-    ([, , , , , stopped]) => {
+    // The active camera's glass and projection, not the whole camera: an orbit does not redo the plan.
+    (s, u) => {
+      const cam = s.camera.cameras[s.camera.active];
+      return [s.scene.nodes, s.materials, s.effects, s.camera.active, cam?.optics?.frontGlass, cam?.projection, s.studio.floor, u.physics.state === 'STOPPED'] as const;
+    },
+    (v) => {
+      const stopped = v[7];
       plan.style.display = stopped ? '' : 'none';
       if (stopped) plan.textContent = planLine(startPlan(ctx.store.get()));
     },
