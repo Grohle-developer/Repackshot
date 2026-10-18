@@ -226,6 +226,13 @@ kbd,
   transform: translateX(14px);
   background: var(--inv-ink);
 }
+/* U16: a selection whose parts differ: the knob in the middle, on a soft track. */
+.toggle[aria-checked='mixed'] {
+  background: var(--soft);
+}
+.toggle[aria-checked='mixed']::after {
+  transform: translateX(7px);
+}
 .toggle:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1202,4 +1209,13 @@ body.is-material-drag[data-drop='no'] * {
 }
 .drag-ghost.is-copy .drag-ghost-copy {
   display: inline-flex;
+}
+
+/* U16: the pointer of the Material section to Physics: one compact line under the material's name. */
+.phys-pointer {
+  font-size: var(--fs-label);
+  text-align: left;
+  color: var(--ink-1);
+  line-height: 1.35;
+  max-width: 100%;
 }

@@ -20,6 +20,11 @@
 // file carries it as is; `TrackWriter` appends to it without encoding it all again, and `trackPose` interpolates.
 // The clip's anchor is the node's position and rotation its frames refer to (where the run left it, once committed):
 // a node moved afterwards takes its whole recorded fall with it.
+//
+// U16: the Physics section of a part also says how the weather of the scene treats it (Physics ▸ Weather): whether it
+// gets wet (`getsWet`), whether dust and snow settle on it (`getsDust`), both on when absent, and the wettability family
+// it wets as (`surface`; absent: its material's, data/wettability.ts `wettabilityFamilyOf`). Only what differs from the
+// default is stored: `physics/set` drops `getsWet: true`, `getsDust: true` and `surface: null`.
 
 import { DEFAULT_DENSITY, DENSITY_BY_CATEGORY, FLOOR_SURFACE, PHYSICS_DEFAULTS, PHYSICS_LIMITS } from '../data/physics';
 import type { ClipAnchor, MotionClip } from './animation';
@@ -28,6 +33,7 @@ import type { MeshId } from './meshes';
 import { boundsOf, effectiveVisible, partsUnder, topMost, treeOrder, worldMatrix, type NodeId, type SceneNode, type Transform } from './scene';
 import type { ActionBase, ProjectState } from './store';
 import { cloneTransform, decomposeMatrix, isLocked } from './transform';
+import { isWettabilityFamily, type WettabilityFamily } from '../data/wettability';
 import type { GlassTrack } from './wet';
 import type { PartsTrack } from './wet-parts';
 
@@ -46,7 +52,16 @@ export interface PhysicsProps {
   bounciness?: number;
   /** GROUP or MODEL: each part is a body of its own. */
   asParts?: boolean;
+  /** U16, on a part: false keeps it dry (no drops, no film; it still shelters what is below it). Absent: it gets wet. */
+  getsWet?: boolean;
+  /** U16, on a part: false keeps dust and snow off it (it still shelters). Absent: they settle on it. */
+  getsDust?: boolean;
+  /** U16, on a part: the wettability family it wets as; absent: its material's (data/wettability.ts). */
+  surface?: WettabilityFamily;
 }
+
+/** What `physics/set` merges: a field set to null (or to its default) is cleared. */
+export type PhysicsPatch = { [K in keyof PhysicsProps]?: PhysicsProps[K] | null };
 
 /** One part of a body: its mesh and its world matrix when the simulation starts. */
 export interface PhysicsPiece {
@@ -634,7 +649,7 @@ export function physicsClip(id: string, mover: NodeId, start: number, track: Phy
 
 export type PhysicsAction =
   /** The Physics section of the inspector: merges `patch` into the nodes' properties (`density: null` clears it). */
-  | ({ type: 'physics/set'; ids: NodeId[]; patch: Partial<PhysicsProps> } & ActionBase)
+  | ({ type: 'physics/set'; ids: NodeId[]; patch: PhysicsPatch } & ActionBase)
   /** A simulation starts: its PHYSICS clips (one frame each), and the roles Drop gives. */
   | ({ type: 'physics/begin'; clips: MotionClip[]; roles?: Record<NodeId, PhysicsRole> } & ActionBase)
   /** It runs: the clips' tracks so far (their durations follow), and S3b's glass tracks. Same gesture as `begin`. */
@@ -647,12 +662,20 @@ export type PhysicsAction =
   /** Reset: the transforms the movers had before, and the simulation's clips taken away. A step of its own. */
   | ({ type: 'physics/reset'; transforms: Record<NodeId, Transform>; clips: string[] } & ActionBase);
 
-function setProps(nodes: Record<NodeId, SceneNode>, id: NodeId, patch: Partial<PhysicsProps>): boolean {
+/** U16: a value that is the default of its field (stored as nothing), or one the field cannot take. */
+function clears(k: keyof PhysicsProps, v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (k === 'getsWet' || k === 'getsDust') return v !== false;
+  if (k === 'surface') return !isWettabilityFamily(v);
+  return false;
+}
+
+function setProps(nodes: Record<NodeId, SceneNode>, id: NodeId, patch: PhysicsPatch): boolean {
   const node = nodes[id];
   if (!node) return false;
   const next: PhysicsProps = { ...(node.physics ?? {}) };
   for (const [k, v] of Object.entries(patch) as [keyof PhysicsProps, unknown][]) {
-    if (v === null || v === undefined) delete next[k];
+    if (clears(k, v)) delete next[k];
     else (next as Record<string, unknown>)[k] = v;
   }
   const same = JSON.stringify(next) === JSON.stringify(node.physics ?? {});

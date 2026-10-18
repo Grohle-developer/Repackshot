@@ -2,10 +2,15 @@
 // · ■ Stop · ↺ Reset, then what the simulator reports (simulated time, bodies awake) and the state, stopped by
 // default: nothing runs until the person starts it or drops something. Every run records itself into the animation.
 // S3b: with a front glass fed by the scene, what its last frame holds (drops, motes of dust).
+// U16: while stopped, one line says what Start would simulate, from the scene as it is (core/start-plan.ts): the
+// dynamic parts, the rain, dust and snow on the parts (and the parts that keep dry or clean), the front glass; or that
+// there is nothing to simulate, and how to give it something.
 
+import { startPlan } from '../../core/start-plan';
 import { h, icon } from '../dom';
 import { dyn } from '../names';
 import * as phys from '../physics';
+import { planLine } from '../physics-lines';
 import type { Ctx, Scope } from '../reactive';
 import { formatNumber, getLang, t } from '../strings';
 import type { PhysicsUi } from '../ui-state';
@@ -45,6 +50,16 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
   const parts = h('span', { class: 'aux tabular', 'data-field': 'phys.parts', 'data-tip': t('phys.partsTip') });
   const state = h('span', { class: 'phys-state', 'data-field': 'phys.state', role: 'status' });
   const note = h('p', { class: 'note', style: 'margin:0' });
+  // U16: what Start would simulate now.
+  const plan = h('p', { class: 'phys-plan', style: 'margin:0 0 4px', 'data-field': 'phys.plan', 'aria-live': 'polite' });
+  scope.watch(
+    (s, u) => [s.scene.nodes, s.materials, s.effects, s.camera, s.studio.floor, u.physics.state === 'STOPPED'] as const,
+    ([, , , , , stopped]) => {
+      plan.style.display = stopped ? '' : 'none';
+      if (stopped) plan.textContent = planLine(startPlan(ctx.store.get()));
+    },
+    (a, b) => a.every((x, i) => x === b[i]),
+  );
   scope.watch(
     (_s, u) => u.physics,
     (p) => {
@@ -86,6 +101,6 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       h('span', { style: 'flex:1' }),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('render.drawerClose'), 'data-tip': t('render.drawerClose'), onclick: () => ui.set({ drawer: null }) }, icon('close')),
     ),
-    h('div', { style: 'padding:8px var(--pad)' }, note),
+    h('div', { style: 'padding:8px var(--pad)' }, plan, note),
   );
 }
