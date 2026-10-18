@@ -752,7 +752,12 @@ except the two that build things: *Create studio* and *Render*.
    drops effect, another one: *drips and splashes will show only once they
    land*; S3f: if it draws them but not their shapes (bit 8 and not bit 10: an
    S3c or S3d engine), with a drops effect, another one: *the render engine in
-   use draws the drops on the parts round* (`ambient.wetShapesOldEngine`).
+   use draws the drops on the parts round* (`ambient.wetShapesOldEngine`); S3e:
+   if it draws them but not the studio floor's (bit 8 and not bit 11), with
+   *Studio ▸ Floor* on, another one: *the floor will show dry and clean*
+   (`ambient.wetFloorOldEngine`); and if it does not draw the dust's grains (bit
+   8 and not bit 13), with a dust effect: *the render engine in use draws the dust
+   on the parts as a layer, without its grains* (`ambient.wetMotesOldEngine`).
    **Advanced**, collapsed: region (*Around
    the scene* with a margin in mm, or *Own box* with centre and size),
    height band, *Amount by* (*Density · Count*) and, depending on the
@@ -1564,7 +1569,9 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   with its shape, a deformed cap: stretched along its path with a rounder head
   and a thinner tail as it runs, bulging downhill when it is held on a slope,
   with a neck for a moment after two merge, stretched downwards as it hangs and
-  pinches off) and the meter
+  pinches off; S3e: a part the run moves wet where it is, the studio floor's
+  cells over the shadow-catching floor —dust and snow where they cover it, darker
+  and glossier where wet—, the dust's grains where it is thick) and the meter
   adds what is really there (S3d): what (*Rain*, *Dust*, *Snow* or together:
   *Rain and dust*), on how many parts (those that have something) and, with rain, the
   drops on them and in the air: *Rain on 7 parts: 1,443 drops, 12 in the

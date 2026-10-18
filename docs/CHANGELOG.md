@@ -9,6 +9,16 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 - Fixed: *Focus ▸ Object* focused on the centre of the object's box, which lies inside a solid product: wide open (f/1) the face the camera sees was out of focus. It now focuses on the surface the camera sees at the centre of the object's outline (F1).
 
+### Scene and ambient
+
+- **Moving parts get wet as they move**: a *Dynamic* part in a run with an effect on the parts now gets wet where its body takes it, step by step, with the rain it meets as it moves (more when it moves into the rain, none when it falls with it); its drops ride on it, weigh nothing while it falls freely and are thrown about when it lands. Before, a moving part was left out and stayed dry. Dust and snow still settle only on the parts that stay (S3e).
+- **The studio floor gets wet**: with *Studio ▸ Floor* on, the floor under the effects' region gets wet, dusty and snowy, and the drips and splashes that fall on it leave wet spots; the render shows it on the shadow-catching floor (darker and with the water's reflection where wet, dust and snow where they cover it), and so does *Fast* (S3e).
+- **Finer dust and snow edges on the set**: the large pieces of a set take finer samples where a shadow crosses them, so the edge of a dust or snow shadow on a backdrop or a floor card is no longer seen in steps (S3e).
+- **Dust has grains**: where the dust on a part is thick, the render draws grains of the dust's size over its layer, and *Fast* the same grains (S3e).
+- **The wind pushes the drops in the air**: drips and splashes falling through the air drift with the wind of the rain (S3e).
+- **A drop runs down a sloping edge**: a drop that reaches the side edge of a tilted part runs along it, gathering what it meets, down to the lowest corner, where it hangs and drips; a level edge still holds it where it reached it (S3e).
+- **Notices for an engine that would not draw them**: with an older render engine, the *On the parts* switch says so when the floor would show dry, and when the dust would show without its grains (S3e).
+
 ## v0.1.22 — 2026-10-18
 
 ### Scene and ambient

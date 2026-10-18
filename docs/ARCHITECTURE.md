@@ -134,7 +134,7 @@ src/
     scene-type.ts           the scene type (K1): `scene.type`, the `scene/setType` action, and the `scene.typeBase` memory of what each type replaced so that going back leaves the project as it was except for what was touched; the values are `data/scene-types.ts`
     physics.ts              physics (S2): a node's Physics section, what is simulated (`physicsSpec`), the simulator's poses back to the nodes, the PHYSICS clip's track and its anchor, the `physics/*` actions (§5.6)
     wet.ts                  S3b: the front glass fed by the scene: what is simulated (`wetSpec`, `wetBytes`, the `wetKey` key), the glass track of the camera's PHYSICS clip (`GlassTrackWriter`, `glassFrame`, `recordedGlass`) and the glass as the engine reports it (`parseEnginePane`) (§5.2 novendecies); S3c: `glassRendersClean`, the warning for an engine without bit 7
-    wet-parts.ts            S3c: rain, dust and snow on the parts: what is simulated (`wetPartsSpec`, `wptBytes`, the `wetPartsKey` key), the parts track of the scene's PHYSICS clip (`PartsTrackWriter`, `partsFrame`, `recordedParts`, `partWeather`) and the warning for an engine without bit 8 (`partsRenderDry`) (§5.2 vicies)
+    wet-parts.ts            S3c: rain, dust and snow on the parts: what is simulated (`wetPartsSpec`, `wptBytes`, the `wetPartsKey` key), the parts track of the scene's PHYSICS clip (`PartsTrackWriter`, `partsFrame`, `recordedParts`, `partWeather`) and the warning for an engine without bit 8 (`partsRenderDry`) (§5.2 vicies; S3e: moving parts, the studio floor, fine samples and the motes' twin, §5.2 tervicies)
     effects.ts              the Ambient effects (S4a): the effect as data, its `effect/*` actions, the region, the count and the cap, the fields and the bytes of `FXAM`, the effects of a file; S3: the drop, the shape mix (`mixWeights`, `heaviestShape`) and the shape variation, the S3 fields only when there are any (`hasS3Fields`) and only for an engine that draws them
     section.ts              the section view (Q1): the plane as data (`state.section`), its `section/*` actions, from a click and an axis or from two points, resolved at an instant of the animation for the engines, which parts it cuts, which it caps and which are studio (`partIsExempt`)
     solid.ts                which meshes are closed solids (Q1): the same rule as the engine's `geometry/solid.rs`, so that Fast caps the same parts; and which way a closed surface faces (`solidOrientation`, K1)
@@ -3299,6 +3299,81 @@ What §5.2 vicies and unvicies do, with drops that behave as drops.
   0xfc96fb05, `PINNED_S3D_FLIGHT_4SPP` 0xf7b78a45 → 0x3ba00640 and the six
   `PINNED_S3D_PASS_*`. `rt --write-s3f-strip <dir>` writes the frames of
   `tools/s3f-strip.mjs`.
+
+### 5.2 tervicies · Moving parts, the studio floor, fine samples and motes (S3e, `rt_phys::wet_parts`, `WETG`, `WTP2`, the motes tail)
+
+What §5.2 vicies to duovicies do, on parts that move, on the studio floor, finer
+on the set, with the dust's grains and the wind.
+
+- **The spec** (`PartsSpec`, version 2 of `WPT1`; version 1 when it needs none of
+  it, `needs_v2`): per part `body` (`NO_BODY`: it stays); `PartsExtras`: `wind`,
+  `floor` (`FloorSpec`: z, the XY rectangle, the cell, the most cells),
+  `edge_cell_mm`, `edge_budget`.
+- **Moving parts** (`Mover`): the part's triangles and samples at rest, with a
+  `RayTree` and a `SampleGrid` there; `now`, `prev`, `prev2` (rest to world) and
+  `now_inv`. `step_with(world, ids, n)` steps `World` and the parts one step after
+  the other (`begin_poses` takes the bodies' poses at the start); `step_posed`
+  takes scripted poses. `move_parts` carries the triangles, normals, samples and
+  drops (projected back onto their triangle), sets the part's `to_object` and its
+  `gravity` (−Z less the second difference of its centre over `g`). The still
+  tree holds only the parts that stay; `cast` casts it and then each mover's tree
+  with the ray carried to its rest (rigid: the same distances). `land` builds,
+  each step, the movers' share of the flux with the rain's velocity less each
+  triangle's (`tri_velocity`); `near` reads a mover's grid at rest. Dust and snow
+  rates skip movers. The hash eats each mover's `now`.
+- **The floor** (`FloorGrid`): cells, their first wet step, their rates of dust
+  and snow, a film of exponential wet times per drops source, the cells first wet
+  since the frame before, the water landed. `fly` stops a drop at the floor's
+  plane over its rectangle unless a part takes it first (`on_floor`: a disc of
+  `LANDING_SPREAD` diameters). The layout and the record end with its blocks;
+  `floor_weather` gives `rt_core::weather::FloorWeather`.
+- **Fine samples** (`place_samples`): after S3c's two budgets, a film triangle
+  whose coarse grid (at most 24 steps a side probed) is partly in the open and
+  partly not for some source takes `edge_cell_mm`, up to `MAX_FINE_RESOLUTION`
+  (4095), the cell growing until those triangles keep under `edge_budget`. The
+  layout's flag 4 marks two-byte resolutions; `Weather::resolution` is `u16`.
+- **The edge run** (`run_edge`, before the hanging test): `edge_at` (`3 × tri +
+  k`) names the open edge a drop is held at; `open_edges` links each open edge to
+  the open edges of its part at its corners; the drop runs while `ρ g V |ĝ·ê|`
+  beats Furmidge's hold, from edge to edge, and stops where the boundary rises on
+  both sides.
+- **The wind**: `fly` takes the drag against `v − wind` (the S3d path when the
+  wind is nothing).
+- **The engine** (`rt_core::weather`). `PartWeather::resolution` is `u16`;
+  `wide()` and `decode_wide` (`WTP2`: `u16 resolution[triangles]`, zero padding
+  to 4). The motes tail (`MOTE_TAG = "MOT1"`, `MoteSpec`: size, variation, seed)
+  after the shape tail; `motes_on` places the grains (`hash32`, `unit32`),
+  `motes_of` carries them to world, `mote_mesh` meshes octahedra; the scene keeps
+  them after the caps (`Scene::motes`, `mote_owners`; `file_*` stop at the first
+  of the weather's own; `pass_instance` names a mote's part). `FloorWeather`
+  (`WETG`) and `WeatherSetup::floor_layers`; the integrator gives a visible floor
+  `floor_material` under its layers, and a shadow catcher picks, by
+  `catcher_shares` and the cut-outs' dimension, the dust and snow layer
+  (`catcher_cover`), the film's mirror (`catcher_film`) or the catcher, which
+  `catcher_wet` darkens. Bits 11, 12 and 13: `FEATURE_WET_FLOOR` (2048),
+  `FEATURE_WET_FINE` (4096), `FEATURE_WET_MOTES` (8192); `/api/info` says 16383.
+- **The host** (`rt-wasm`): `wpt_step_with(parts, world, n)` and `wpt_moving`.
+- **The page.** `core/wet-parts.ts`: `wetPartsSpec(state, moving)` (a map from
+  part to body), `WetFloorSpec`, `needsWpt2`, `wptBytes` (version 2),
+  `PARTS_FORMAT_VERSION` 4, the layout's `floor` and two-byte resolutions,
+  `PartsTrack.floor` and `motes`, `PartsFrame.floor`, `coarseWeather`, `motesOn`
+  (the twin of `motes_on`), `partsRenderNoFloor`, `partsRenderNoMotes`;
+  `data/wet-parts.ts`: `FLOOR_CELL_MM`, `FLOOR_MAX_CELLS`, `FLOOR_POROSITY`,
+  `PARTS_EDGE_CELL_MM`, `PARTS_EDGE_BUDGET`; `ui/physics.ts` passes the run's
+  bodies; `render/physics-worker.ts` steps moving parts with the bodies
+  (`PartsSim.stepWith`); `io/rsb.ts`: `RsbWetFloor` and `WETG`, `WTP2`, the motes
+  tail, with `SceneView.wetFloor`, `wetFine` and `wetMotes` (`render/engine.ts`
+  `readsWetFloor`, `readsWetFine`, `readsWetMotes`). *Fast*
+  (`render/weather-preview.ts`): `placeFloor` (a plane with the cells as its map,
+  patched to the catcher's layers) and `placeMotes` (instanced octahedra on the
+  part, following it).
+- **Pinned.** New: `PINNED_S3E_PARTS = 0x8cbf1fd2`, `PINNED_S3E_MOVING =
+  0x5a95d355`, `PINNED_S3E_FLOOR_4SPP = 0xa5311343`, `PINNED_S3E_MOVING_4SPP =
+  0xe7e964e9`, `PINNED_S3E_DUST_4SPP = 0xb19bc6f0` (`rt-phys/tests/wet_parts_s3e.rs`;
+  `rt --write-s3e-example`, `--write-s3e-moving-example`,
+  `--write-s3e-dust-example`; `--write-s3e-strip <dir>` writes the frames of
+  `tools/s3e-strip.mjs`), in scalar, SSE2 and AVX2, with 1, 4 and 16 threads, in
+  `wasm32-wasip1` and in the real `rt.wasm`. No earlier pin moves.
 
 ### 5.3 · In the browser: workers
 

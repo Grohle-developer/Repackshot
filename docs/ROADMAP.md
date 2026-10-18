@@ -12691,7 +12691,7 @@ a couple of millimetres.
 8. ◆ That in the passes a drop in the air is the part it came from (and not
    none).
 
-### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation) — **Opus** (after S3d) — proposed
+### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation) — **Opus** (after S3d) — done
 
 What remains of S3d, on top of `rt_phys::wet_parts` and `rt_core::weather`:
 
@@ -12740,6 +12740,254 @@ What remains of S3d, on top of `rt_phys::wet_parts` and `rt_core::weather`:
    edge run down it and gather at the lowest corner.
 7. **Acceptance criteria** that remain: the three sheets and the capture
    above.
+
+**Done.** All seven points, on top of `rt_phys::wet_parts` (S3c, S3d, S3f) and
+`rt_core::weather`, in the simulation, in the engine (*Full* and the render) and
+in *Fast*. No earlier pin moves (below).
+
+**0. Version 2 of the spec.** `WPT1` (the magic stays) reads version 1 and 2;
+version 2 adds, per part, `u32 body` (the dynamic body of the `PHY1` scene it
+moves with, by its order among the dynamic bodies; `0xffffffff`: it stays) and,
+after the sources, `f32 wind[3]`, the studio floor (`u32 1; f32 z x0 y0 x1 y1
+cell_mm; u32 max_cells`, or `u32 0`) and `f32 edge_cell_mm; u32 edge_budget`.
+A spec that needs none of them is written as version 1, so a spec of before
+keeps its bytes (`PartsSpec::needs_v2`, `core/wet-parts.ts` `needsWpt2`; the
+fixture `s3c-parts.wpt1` does not change). The page writes version 2
+(`wetPartsSpec`: every visible part, a moving one with its body; the wind; the
+floor when *Studio ▸ Floor* is on; the fine samples), and the record's format
+goes to 4 (`PARTS_FORMAT_VERSION`, key `wpt4:`).
+
+**1. Moving parts.** A part with a body keeps its geometry at rest (where it
+stood at step 0) with its own ray tree and sample grid there; each step it is
+carried where its body is (`WetParts::step_with(world, ids, n)`, which steps the
+bodies and the parts one step after the other, or `step_posed` with scripted
+poses; rest to now is the body's pose after the inverse of its pose at the
+start), its triangles, normals, samples and drops with it. Rain lands on it by
+its share of the flux it sees, with the rain's velocity less its own (a plate
+rising into rain at the rain's speed takes twice the drops, one falling with it
+none), only where nothing is in the way where it stands now; what is in the way
+of the other parts and of the drops in the air includes it where it is. Its
+drops feel gravity less the acceleration of its centre (◆1: in free fall they
+weigh nothing; the jolt of a landing makes them slide), and a drop that lands on
+it from the air meets it at the speed between them. Its records stay in its
+object space (`to_object` follows it), so the page's track, the render's `WETP`
+(on its instance, which the run's clips move) and *Fast* (its posed object) need
+nothing new. In the page the parts a run moves are no longer left out
+(`ui/physics.ts` `partsRun`: each with its body's index), and the worker steps
+them with the bodies (`wpt_step_with`, `wpt_moving`, `PartsSim.stepWith`).
+Dust and snow settle only on the parts that stay (below).
+
+**2. The studio floor.** A film of square cells over the rectangle of the
+effects' regions (◆2; 2 mm, at most 250,000 cells, the cell growing to keep
+under it, ◆3): the rain wets each cell at its first landing (an exponential
+time from its share of the flux, as the set's film parts), dust and snow pile
+on it at their rates (it is level: they always rest), all only where nothing is
+in the way upstream; the drops in the air that cross its plane over its
+rectangle land on it (the drips and the splashes' drops): each wets the cells
+within the spread of its landing and its water stays there; the floor is a
+film, so no drop stays on it and nothing splashes off it (◆4: no puddles).
+Below it, or past its rectangle, a drop is gone as before. The layout ends with
+the floor (its cells, their rates of dust and snow), each frame's record with
+the cells first wet since the frame before; `WetParts::floor_weather`.
+**`WETG`** (`rt_core::weather::FloorWeather`): `u32 nx ny; f32 x0 y0 cell z
+porosity; u32 flags (0); u8 (wet dust snow)[nx × ny]`, at most one; a hit on
+the floor reads it between the cells' centres. A visible floor is shaded as a
+matte diffuse of its colour under the layers (`floor_material`); a shadow
+catcher, which is how the page writes its floor, shows the layers by their
+share (◆5, `catcher_shares`): where dust and snow cover it, their layer, lit
+and shadowed by the scene (one choice per sample by the shares, the cut-outs'
+dimension); of the rest, the water film reflects by the Fresnel of water, as a
+mirror of roughness 0.03; the rest is the catcher, darkened where wet as a
+porous floor of a grey of 0.5 darkens (`catcher_wet`, `0.5^(wet × porosity)`,
+porosity 0.5, ◆6). Where nothing lies the floor is not touched: the image does
+not change a bit (test). **Bit 11**, `FEATURE_WET_FLOOR` (2048). *Fast* draws a
+plane over the shadow-catching floor with the same layers (`placeFloor`: the
+cells as a texture read between their centres).
+
+**3. Fine samples on the set.** The film triangles a shadow edge crosses (their
+coarse grid, probed at up to 24 steps a side, has points in the open and points
+under something for some source) take the fine cell (2 mm, ◆7) up to 4,095
+steps a side, within a budget of their own (300,000 samples in the page, ◆7;
+the cell grows until they keep under it). A resolution past 255 takes two bytes:
+in the layout (flag 4), and in the render as **`WTP2`**, a `WETP` with `u16
+resolution[triangles]` (`PartWeather::wide`, `decode_wide`). **Bit 12**,
+`FEATURE_WET_FINE` (4096); for an engine without it the page writes such a part
+as a `WETP` at 255 steps (`coarseWeather`: each point its nearest fine sample).
+On a 700 mm card whose two triangles the budget of a third of the samples left
+at about 7 mm, the edge of the dust shadow goes from steps of 7 mm to 2 mm.
+
+**4. The dust's motes.** Where a sample's share under dust `c` passes 0.3, grains
+of the dust effect's size (± its variation) at `MOTE_SHARE = 0.02` of the
+`−ln(1 − c) / (π r̄²)` grains per unit area its share stands for (◆8), each
+placed in the cell around its sample by a 32-bit hash of the seed, the triangle,
+the sample and its number (`motes_on`; at most 20,000 in a scene). The engine
+places them itself from the samples' dust: the `WETP`/`WTP2` section only ends
+in a motes tail (`MOT1` `f32 size_mm size_var; u32 seed`), and the reader meshes
+them after the caps as octahedra a third of their radius out of the surface (one
+more mesh, instance and material: dry dust, `weather::dust`; a mote counts in
+the passes as the instance it lies on). **Bit 13**, `FEATURE_WET_MOTES` (8192);
+an engine of before ignores the tail. *Fast* places the same grains
+(`motesOn`, the twin of `motes_on`: the same count for the same samples, by the
+engine's test number) as instanced octahedra on the part they lie on.
+
+**5. The wind on the drops in the air.** The drops in the air feel the drag of
+the air moving with the wind (`f32 wind[3]` of the spec: the wind of the effects
+that rain, weighted by their densities, ◆9), with S3d's law: the drag against
+the drop's velocity less the wind, so a drop never goes faster than the wind
+across it and falls at most at its terminal speed. Without wind the code is the
+S3d path, bit for bit (the S3d and S3f pins). A 2 mm drop let go 30 mm up in a
+3 m/s wind lands 12 to 30 mm downwind; a drip from a ledge 80 mm up in a 4 m/s
+wind lands more than 3 mm downwind of where it lets go, without wind under it.
+
+**6. A drop that runs along a side edge.** A drop held at an open edge runs along
+it, before it would hang, while its weight along the edge beats the hold of its
+contact line (Furmidge with `ρ g V |ĝ·ê|` against `2 γ a (cos θ_R − cos θ_A)`),
+at the speed a drop slides with that excess, from edge to edge of its part's
+open boundary (`open_edges`), wetting and wiping its trail as a sliding drop
+does; it stops at a corner past which the boundary rises on both sides (the
+lowest point), and there, as on a level edge, it hangs and lets go from rest
+(S3f ◆6). On a plate tilted 60° and rolled 12°, three drops that reach the side
+edge run down it and gather into one at the lowest corner; with no roll, the
+lower edge is level and holds each where it reached it.
+
+**7. The pins.** **New** (`rt-phys/tests/wet_parts_s3e.rs`):
+`PINNED_S3E_PARTS = 0x8cbf1fd2` (`rt_phys::example::s3e_parts` after 5 s: a
+bottle standing on the studio floor, a ledge that drips onto it under a side
+wind, a plate whose drops run down its side edge, a set card with fine samples,
+rain and dust; 82,560 samples with 2 refined triangles, 1,736 drops, 78 in the
+air, 4 drips, a floor of 320 × 290 cells of 2 mm with 63,958 wet and 612 drops
+landed on it), `PINNED_S3E_MOVING = 0x5a95d355` (`moving_parts_at`: the drop
+scene's box under rain, stepped with its body for 2 s: 746 drops, 272 in the
+air), and the images at 4 samples per pixel `PINNED_S3E_FLOOR_4SPP =
+0xa5311343` (`s3e_scene`: `WETG` on a shadow catcher, `WETF`, the edge runs),
+`PINNED_S3E_MOVING_4SPP = 0xe7e964e9` (`moving_scene_at`) and
+`PINNED_S3E_DUST_4SPP = 0xb19bc6f0` (`dust_scene_at(120, true)`: `WTP2` and
+the motes): the same in scalar, SSE2 and AVX2, with 1, 4 and 16 threads
+(`rt-cli`), in `wasm32-wasip1` scalar and simd128 (`cargo test -p rt-phys --test
+wet_parts_s3e`, new in CI) and in the real `rt.wasm` (`tools/wasm-parity.mjs`
+with `rt --write-s3e-example`, `--write-s3e-moving-example` and
+`--write-s3e-dust-example`, alone and with the passes). **No earlier pin
+moves:** `PINNED_WET_PARTS`, `PINNED_S3C_WET_4SPP`, `PINNED_S3D_FLIGHT_4SPP` and
+its six passes, `PINNED_S3F_PARTS` and `PINNED_S3F_ORGANIC_4SPP` hold, natively,
+in `wasm32-wasip1` and in the real `rt.wasm` with the fixtures of before
+(`s3c-wet.rsb`, `s3d-flight.rsb`, `s3f-organic.rsb`, unchanged): the side-edge
+run does not happen in those scenes (none of their drops reaches a sloping open
+edge in their time), the hash does not take the new edge index (it follows from
+the triangle and the point it already takes), and without a part that moves, a
+floor, a wind or fine samples every new path is the old one. `rt-app`:
+`/api/info` says 16383.
+
+**Tests** (each checked with its mutation: the test fails with it and passes
+without):
+- `rt-phys/tests/wet_parts_s3e.rs` (14): drops that reach a side edge run down
+  it and gather at the lowest corner (mutation: the run never starts); the
+  lowest edge holds each drop where it reached it, and a drop at a corner fed
+  past its hold lets go from rest (mutation: the weight along the face instead
+  of along the edge); the wind carries a drop in the air downwind and never
+  faster than itself, and a spec without wind is a spec of before (mutation: the
+  wind ignored); a drip under a side wind lands downwind and wets the floor where
+  it lands (mutations: the wind ignored; a landing on the floor that wets
+  nothing); a part that moves out from under a roof gets wet where it comes into
+  the rain, its drops ride on it on its surface, and pinned drops keep their
+  place in its space (mutations: the parts not moved; the drops not carried);
+  a part rising into rain sees twice the drops, one falling with it none
+  (mutation: the rain's velocity without the part's); a drop on a part in free
+  fall does not slide and slides once it stands (mutation: the body's
+  acceleration ignored); a dynamic body dropped in the rain gets wet on its faces,
+  the same however its steps are split; the studio floor gets wet at its rate in
+  the open and stays dry under a roof, its dust at its rate, and its frames list
+  its cells as they get wet (mutations: what is in the way ignored; the frame's
+  cells left out); a film triangle a shadow edge crosses takes fine samples (the
+  edge within 2 mm), one in the open does not, the budget holds, a spec of before
+  refines nothing and the weather travels as `WTP2` (mutation: no probe); version
+  2 round trips and bad ones are refused; the three pins and the three images.
+- `rt-core` (`weather_s3e_tests.rs`, 5): `WETG` goes and comes back, a newer
+  writer's tail is ignored, a cut one, no cells, a porosity past 1 or a cell that
+  is not finite are refused; the floor reads its cells between their centres and
+  nothing past them; a floor with nothing on it changes no pixel and its layers
+  change the image, visible and as a shadow catcher, through RSB, and a second
+  `WETG` makes the file invalid (mutations: the floor's layers ignored; a second
+  `WETG` allowed); `WTP2` carries two-byte resolutions and a `WETP` keeps its
+  bytes (mutation: never wide); the motes lie where the dust is thick, on its
+  rows only, as many as `MOTE_SHARE` says, the same every time, within the
+  budget, none without the tail, the tail goes and comes back and a reader of
+  before ignores it, and in a scene they are one more mesh, instance and
+  material after the caps, named as their part in the passes (mutations: no
+  threshold per sample; the tail not read; the passes naming the motes' own
+  instance). `rt-wasm`: the parts step with their world through the registry as
+  natively (`wpt_step_with`); bits 11 to 13. `rt-cli`: the three scenes with 1, 4
+  and 16 threads, their `--write-*` and `--write-s3e-strip`.
+- `tests/s3e-floor.test.ts` (9): a part the run moves goes with its body, the
+  wind of the rain, the studio floor under the effects' region and the fine
+  samples, version 2 byte by byte and version 1 without any (mutation: the body
+  not written); the floor in the layout and the record, each cell wet from its
+  frame, dusty and snowy at its rates, a damaged record refused, a track of
+  before without a floor (mutation: the floor's wet frames ignored); two-byte
+  resolutions in the layout and the coarser fallback; `WETG` only with bit 11 and
+  the floor on, `WTP2` with bit 12 and a `WETP` at 255 steps without, the motes
+  tail with bit 13 (mutations: the floor's switch ignored; no fallback; the tail
+  without the bit); *Fast*'s floor and motes, the motes following the part
+  (mutation: the floor's switch ignored); the motes' twin gives the engine's
+  number (mutation: no threshold per sample); the bits and the notes; with the
+  real `rt.wasm`, the engine reads the page's version 2 and steps a moving part
+  with its body, and renders the page's `WETG`, `WTP2` and motes tail.
+- `tests/s3c-parts.test.ts`: a *Dynamic* part now gets wet where its body takes
+  it (S3c left it out; on purpose; mutation: the bodies not passed);
+  `tests/s3d-flight.test.ts` and `tests/s3f-organic.test.ts`: the key is `wpt4:`.
+
+**Captures** (`tools/s3e-strip.mjs`, the native engine): `docs/ui/rain-moving.png`
+(the drop scene's box under rain at 0, 0.15, 0.25, 0.35, 0.5 and 2 s: it gets
+wet as it falls and lands), `docs/ui/rain-floor.png` (the S3e scene at 1, 3 and
+5 s over the studio floor, and close on the dry patch the ledge keeps from the
+rain with the drips that fell on it), `docs/ui/dust-motes.png` (the bottle on the
+set's card at 30 and 120 s of dust with its motes, and the edge of its dust
+shadow at 120 s without and with the fine samples).
+
+**What did not fit the plan.**
+- **Dust and snow settle only on the parts that stay.** A part that moves gets
+  wet (drops, wet samples, trails), but its samples have no rate of dust or snow:
+  the layout carries one rate per sample for the whole run, and a moving part's
+  would change with its pose. A part dropped into a dust cloud that comes to rest
+  stays clean.
+- **The floor is a film.** No drop stays on it, nothing splashes off it, and its
+  water is counted but not drawn as puddles (◆4); a drop is a wet spot.
+- **The sheets are engine scenes**, rendered by `rt` (`tools/s3e-strip.mjs`),
+  not the page's bottle on the *Fragrance* set (`tools/rain-dust-sheet.mjs` does
+  not have the floor, the motes or a moving part); the capture of a *Dynamic*
+  part getting wet is the drop scene's box, not a screenshot of the application.
+- **No new browser check:** the notes of bits 11 and 13 and *Fast*'s floor and
+  motes are covered by `tests/s3e-floor.test.ts` in Node.
+- **At a macro framing a 2 mm sawtooth remains** along a shadow edge: the grid
+  is triangular and read linearly, so a binary edge (open or not) still zigzags
+  by a cell. Halving the cell costs four times the samples (◆7).
+- **Mote placement in *Fast* is the engine's in doubles**: the same grains for
+  the same samples but for one whose count falls on a rounding edge (the
+  engine's logarithm is its own).
+- **A part that moves is never a film**, and a drop in the air hitting the back
+  of a part still goes through it (S3d ◆5).
+- **The floor's albedo pass** stays the floor's colour under its layers.
+
+**For the verdict** (rule 11, ◆; to be decided in *Judgement calls*):
+1. ◆ A drop on a moving part feels gravity less the acceleration of the part's
+   centre (from its poses), including the jolt of a landing; and the rain it
+   meets has the rain's velocity less the part's.
+2. ◆ The studio floor's rectangle: the union of the feeding effects' regions in
+   XY, at the floor's height (0).
+3. ◆ The floor's cell (2 mm) and its budget (250,000 cells).
+4. ◆ That the floor is a film: no puddles, no splashes off it.
+5. ◆ The shadow catcher under its layers: dust and snow shown by their cover,
+   the film reflecting by water's Fresnel as a mirror of roughness 0.03.
+6. ◆ The wet catcher darkened as a porous grey of 0.5, `0.5^(wet × 0.5)`, and the
+   visible floor shaded as a matte diffuse of its colour under the layers.
+7. ◆ The fine samples: 2 mm where a shadow edge crosses a film triangle, a budget
+   of 300,000 samples of their own, up to 4,095 steps a side.
+8. ◆ The motes: the threshold of 0.3, `MOTE_SHARE = 0.02`, the octahedron a third
+   of its radius out of the surface, dry dust, and 20,000 at most.
+9. ◆ The air of the drops in the air: the wind of the rain effects weighted by
+   their densities.
+10. ◆ A drop at a sloping edge runs along it before it would hang (a heavy drop
+    on a steep side edge runs rather than pinching off there), with the face's
+    hold.
 
 ### S3f · Organic drops — **Opus** (after S3d) — done
 
@@ -14251,7 +14499,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3b** · The rest of S3 (rain that settles and runs, dust that settles, the glass fed by the scene, the simulation in the worker with cache), with *Shape* out of *Advanced* and the glass approximated in *Fast* (S3 ◆5 and ◆9). **Done in part**: the *Shape*, the glass in *Fast* and everything that happens on the front glass; the parts' side, **S3c** (see S3b and S3c, after S3). **Done in part**: see S3b (the front glass); the rest, S3c.
 - **S3c** · Drops and dust on the parts: rain that settles, runs and drips over the meshes, snow, the wet mark on the material and dust per part (S3b, “S3c”); and a warning when the engine lacks bit 7 and the scene's glass would come out clean. **Done in part**: the warning (and the bit 8 one) and everything that happens on still parts, in the engine and in *Fast*; drops through the air, dust motes, moving parts and the studio floor, **S3d** (see S3c and S3d, after S3b). **Done in part**: see S3c; the rest, S3d.
 - **S3d** · What remains of drops and dust on the parts: dripping and splashes that fall through the air, dust motes, dynamic parts getting wet, the studio floor, finer samples on the set, the drops' part id and the meter text (S3c, “S3d”). **Done in part**: the meter text, the drops' part id in the passes and the dripping and splashes that fall through the air (in the simulation, the engine and *Fast*); the dust motes, moving parts, the studio floor and the set's fine samples, **S3e** (see S3d and S3e, after S3c).
-- **S3e** · The dust motes, dynamic parts that get wet as they move, the studio floor that gets wet and dusty, and the set's fine samples (S3d, “S3e”); and the wind pushing the drops in the air (S3d ◆2).
+- **S3e** · The dust motes, dynamic parts that get wet as they move, the studio floor that gets wet and dusty, and the set's fine samples (S3d, “S3e”); and the wind pushing the drops in the air (S3d ◆2). **Done**: see S3e, after S3d; its ◆ to decide.
 - **S3f** · Organic drops (the owner's request of 2026-10-18): drops that grow to their critical size and let go, gather the drops on their path, merge with a neck and no jump, leave a rivulet on a steep face, take shapes from their physics (in the engine, `WETP`'s shape tail with bit 10, and in *Fast*), and hang, neck and drip one drop at a time. **Done**: see S3f, after S3e; its ◆ to decide.
 
 - **O2** (the traced-lens sheet). Accepted as it stands:
