@@ -28,12 +28,14 @@
 //! instead of leaving a film of air, and the nested dielectrics of the renderer resolve the
 //! overlap by priority (◆ for the verdict).
 //!
-//! **Viscosity, cohesion, adhesion.** After the positions, XSPH blends each particle's velocity
-//! towards its neighbours' by the liquid's `viscosity` (a fraction per substep) and slows the
-//! motion along a wall by the same fraction, weighted by the wall's share (the liquid does not
-//! slip along its container; honey creeps). Before the step, Akinci's cohesion (its spline) and
-//! curvature terms pull the surface together, and adhesion draws the liquid towards the walls
-//! within reach, each scaled by the liquid's coefficient times gravity.
+//! **Viscosity, cohesion, adhesion.** After the positions, the velocities are blended towards
+//! the kernel's average of their neighbours' implicitly (`v = (v₀ + α v̄) / (1 + α)` by Jacobi
+//! rounds, `α = 22 ν Δt / h²` for the liquid's kinematic viscosity `ν`, plus XSPH's smoothing
+//! [`XSPH`]), the walls in the average as still neighbours of their share, so the liquid does not
+//! slip along its container and honey creeps; a stiff liquid takes about `α` rounds, at most
+//! [`MAX_VISCOUS_ITERATIONS`]. Before the step, Akinci's cohesion (its spline) and curvature terms
+//! pull the surface together, and adhesion draws the liquid towards the walls within reach, each
+//! scaled by the liquid's coefficient times gravity.
 //!
 //! **Determinism.** Every particle's update reads the state before the pass and writes only its
 //! own values (Jacobi), its neighbours come in a fixed order (by cell, then by index), and the

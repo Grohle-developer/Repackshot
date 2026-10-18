@@ -13,6 +13,13 @@ For moving parts, the studio floor, the set's fine samples and the dust's grains
 164. [ ] **Dust on the set and its grains.** Put the product on a set with a large floor card (for example *Fragrance*), add *Dust cloud* with *On the parts* and run for a minute: in a render in *Full*, the edge of the dust shadow on the card must be smooth, not in steps, and close up the dust must show small grains over its layer.
 165. [ ] **What to record when reporting.** A screenshot of 162 in *Fast*, and the renders of 163 and 164. If something fails, the message verbatim and the `<data>\logs\` folder.
 
+For liquids (S7).
+
+172. [ ] **Convert to liquid.** On the example bottle, right-click the *Cap* in the scene tree ▸ *Convert to liquid* ▸ *Honey*. The cap must disappear, *Cap (Honey)* appear at the end of the tree, selected, with its *Liquid* section in the inspector (*About … particles at … mm*), and the physics drawer open. *Undo* must bring the cap back in one step, and *Redo* make the honey again.
+173. [ ] **Pour it.** Click *Start*. The bar must count the particles (*Liquid: … particles*) and the honey must flow down over the collar and the bottle's shoulders in *Fast*; it must not go through the bottle. Pause after a second or two, switch to *Full* and render: the honey's surface must be the one *Fast* shows, amber and clear. *Reset* must take the recording away (the cap's shape comes back as the liquid part's).
+174. [ ] **A liquid in a glass.** Make a glass (a *Tube* primitive standing on the floor, with *Clear glass*) and a *Cylinder* inside it a little narrower and shorter, raised a few millimetres; convert the cylinder to *Water* and *Start*. The water must settle at the bottom of the tube without leaking through its wall or the floor; in a *Full* render, where the water touches the glass there must be no bright line of air between them.
+175. [ ] **What to record when reporting.** A screenshot of 173 in *Fast* and the renders of 173 and 174, the version in *Settings ▸ About* (an older desktop launcher shows a note in the *Liquid* section). If something fails, the message verbatim and the `<data>\logs\` folder.
+
 ## v0.1.22
 
 **The checklists of v0.1.2 to v0.1.21 still apply in full** (points 1 to 151). In addition:

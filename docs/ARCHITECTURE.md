@@ -135,6 +135,7 @@ src/
     physics.ts              physics (S2): a node's Physics section, what is simulated (`physicsSpec`), the simulator's poses back to the nodes, the PHYSICS clip's track and its anchor, the `physics/*` actions (§5.6)
     wet.ts                  S3b: the front glass fed by the scene: what is simulated (`wetSpec`, `wetBytes`, the `wetKey` key), the glass track of the camera's PHYSICS clip (`GlassTrackWriter`, `glassFrame`, `recordedGlass`) and the glass as the engine reports it (`parseEnginePane`) (§5.2 novendecies); S3c: `glassRendersClean`, the warning for an engine without bit 7
     wet-parts.ts            S3c: rain, dust and snow on the parts: what is simulated (`wetPartsSpec`, `wptBytes`, the `wetPartsKey` key), the parts track of the scene's PHYSICS clip (`PartsTrackWriter`, `partsFrame`, `recordedParts`, `partWeather`) and the warning for an engine without bit 8 (`partsRenderDry`) (§5.2 vicies; S3e: moving parts, the studio floor, fine samples and the motes' twin, §5.2 tervicies)
+    liquid.ts               S7: liquids: Convert to liquid and the Liquid section (`liquid/convert`, `liquid/set`), the LIQ1 a run is given (`liquidRunSpec`, `liquidKey`), the liquid track of a liquid part's PHYSICS clip (`LiquidTrackWriter`, `liquidRecord`), the surface a frame shows (`posedLiquidMesh`, `putLiquidMesh`, `setLiquidSurfacer`) and the materials' nested-dielectric priorities (`renderedPriority`) (§5.6 bis)
     effects.ts              the Ambient effects (S4a): the effect as data, its `effect/*` actions, the region, the count and the cap, the fields and the bytes of `FXAM`, the effects of a file; S3: the drop, the shape mix (`mixWeights`, `heaviestShape`) and the shape variation, the S3 fields only when there are any (`hasS3Fields`) and only for an engine that draws them
     section.ts              the section view (Q1): the plane as data (`state.section`), its `section/*` actions, from a click and an axis or from two points, resolved at an instant of the animation for the engines, which parts it cuts, which it caps and which are studio (`partIsExempt`)
     solid.ts                which meshes are closed solids (Q1): the same rule as the engine's `geometry/solid.rs`, so that Fast caps the same parts; and which way a closed surface faces (`solidOrientation`, K1)
@@ -162,7 +163,7 @@ src/
     sets.ts                 the sets (L6): apply, replace and remove their decoration (cards, sweep, floor, puddle), their look, Use the set’s camera
     wear.ts                 default wear values
     version.ts
-  data/                     CATALOGUES. Only data and types (§3); primitives.json + primitives.ts: the twelve shapes of Add ▸ Primitive (U9); physics.ts: densities per material family and the physics defaults (S2); effects.ts: the Ambient presets (S4a; S3 adds the drop, the mix and *Water drops*); front-glass.ts: the front glass values that the interface does not show, the ranges and the start of its controls (S3), and what each effect leaves on the scene-fed glass (`GLASS_FEED`, S3b); wettability.ts: the advancing and receding angles of water per material family and the angle of repose of dust (S3b), and since S3c wood and fabric, how much each family soaks up and how much wetting darkens it, the angle of repose of snow and the material family of a part (`wettabilityFamilyOf`); wet-parts.ts: what each effect leaves on the parts (`PARTS_FEED`), the cell and the sample budget and the cap of a simulation (S3c)
+  data/                     CATALOGUES. Only data and types (§3); primitives.json + primitives.ts: the twelve shapes of Add ▸ Primitive (U9); physics.ts: densities per material family and the physics defaults (S2); effects.ts: the Ambient presets (S4a; S3 adds the drop, the mix and *Water drops*); front-glass.ts: the front glass values that the interface does not show, the ranges and the start of its controls (S3), and what each effect leaves on the scene-fed glass (`GLASS_FEED`, S3b); wettability.ts: the advancing and receding angles of water per material family and the angle of repose of dust (S3b), and since S3c wood and fabric, how much each family soaks up and how much wetting darkens it, the angle of repose of snow and the material family of a part (`wettabilityFamilyOf`); wet-parts.ts: what each effect leaves on the parts (`PARTS_FEED`), the cell and the sample budget and the cap of a simulation (S3c); liquids.ts: the liquids' presets, how each moves and looks, the particle target and the priorities of the automatic rule (S7)
   render/                   WEB-SIDE ENGINES. They depend on core, never on ui
     engine.ts               the RenderEngine interface (§5)
     preview.ts              three.js: rasterised preview while the camera moves; `aiFrame` (X4): the Fast-mode frame and its passes
@@ -186,7 +187,7 @@ src/
     worker.ts               the worker: instantiates rt.wasm, receives the RSB scene, renders tiles
     pass-planes.ts          the engine's exact passes on the page (X2): gathers those of rt.wasm per tile and reads the launcher's RPP1
     physics-worker.ts       the simulator worker (S2): its rt.wasm, one simulation at a time, at the clock's pace and with acknowledgement (§5.6)
-    physics.ts  phys-wasm.ts  the client of that worker (`PhysicsClient`) and the typed wrapper of the `phys_*` exports (`PhysWorld`) and, S3b, `wet_*` (`WetSim`); S3c, `wpt_*` (`PartsSim`)
+    physics.ts  phys-wasm.ts  the client of that worker (`PhysicsClient`) and the typed wrapper of the `phys_*` exports (`PhysWorld`) and, S3b, `wet_*` (`WetSim`); S3c, `wpt_*` (`PartsSim`); S7, `liq_*` (`LiquidSim`, `liquidSurface`)
     glass-overlay.ts  glass-pane.ts  S3b: the approximation of the front glass in Fast (the maps over the glass, blurred by a pixel's footprint) and the glass as the engine places it (`rt_scene_glass`) (§5.2 novendecies)
     weather-preview.ts      S3c: the parts' rain, dust and snow in Fast: the recorded frame's samples in data textures read by a patch of the materials, and the drops as instanced caps (§5.2 vicies)
   ai/                       OPTIONAL AI POST-PROCESSING (X3). Depends on core (and data), never the other way round; the guard is NOT TypeScript: it is rt-post
@@ -246,8 +247,9 @@ src/
       viewport-labels.ts    the viewer's label tool: place with press and drag, Move label (M2a)
       animation.ts          the animation drawer (N6): transport and the three zones; anim-tree.ts (what is animated), anim-timeline.ts (ruler, bars, magnet, camera track with its fades), anim-props.ts (properties, the three-step wizard, a shot's, presets); components/curve-editor.ts, the two-handle curve (N1)
     texture-commands.ts     what the inspector's slots and labels do (M2a)
-    physics.ts              the running simulation (S2): Drop, Start, Pause, Stop, Reset, the clips that grow; S3b: and the camera's scene-fed front glass; S3c: and the parts (`partsRun`, without those the simulation moves)
+    physics.ts              the running simulation (S2): Drop, Start, Pause, Stop, Reset, the clips that grow; S3b: and the camera's scene-fed front glass; S3c: and the parts (`partsRun`, without those the simulation moves); S7: and the liquids (`liquidRun`: their clips and tracks, each frame's surface in hand)
     panels/physics.ts  panels/insp-physics.ts  the physics bar (drawer of the bottom bar) and the inspector's Physics section (S2)
+    liquid.ts  panels/insp-liquid.ts  S7: Convert to liquid and the Liquid section's edits, and the inspector's Liquid section
     anim-commands.ts        what the timeline does (N6): animation selection in step with the scene and the viewer, Animate…, duplicate, delete, reverse, split, pin in the exploded view, transport and keys
     graph-commands.ts       what the material editor and the inspector do with a graph: open, Simple ↔ Nodes, examples, edits (M3a)
 public/
@@ -288,7 +290,7 @@ engine/                     THE ENGINE. Cargo workspace, Rust, no external depen
   crates/rt-app/            desktop launcher `repackshot`: local server, window, native engine (§5.5)
   crates/rt-post/           the AI post-processing guard and all its work with pixels (AI-POST.md §7.2); rt-core does not know it
   crates/rt-post-wasm/      extern "C" exports of rt-post → public/engine/post.wasm
-  crates/rt-phys/           the rigid-body simulator (S2): XPBD, convex hulls, contacts, sleeping; PHY1 (§5.6); S3b: `wet`, rain and dust on the front glass, WET1 (§5.2 novendecies); S3c: `wet_parts`, rain, dust and snow on the parts, WPT1 (§5.2 vicies)
+  crates/rt-phys/           the rigid-body simulator (S2): XPBD, convex hulls, contacts, sleeping; PHY1 (§5.6); S3b: `wet`, rain and dust on the front glass, WET1 (§5.2 novendecies); S3c: `wet_parts`, rain, dust and snow on the parts, WPT1 (§5.2 vicies); S7: `liquid`, position-based fluids filled by ray parity and their surface by marching cubes, LIQ1 and LQF1 (§5.6 bis)
   crates/rt-sky/            offline tool `rt-sky` (E5c): spectral atmosphere simulator, Levenberg–Marquardt
                             fit of the physical sky and its table; writes rt-core/src/sky_table.rs,
                             src/core/sky-table.ts and tests/fixtures/sky-physical.json
@@ -553,7 +555,7 @@ It lives in `engine/`, a Cargo workspace with eight *crates*:
 | `rt-app` | Binary `repackshot`, the desktop launcher (§5.5): local server, window, native engine, data, machine | All of `std`, **no `unsafe`**; what it needs from the system it asks of system processes (`reg`, `nvidia-smi`) |
 | `rt-post` | **The own *denoise*** (E5b-1, `rt_post::denoise`, §5.2 bis) and **the AI post-processing guard** (X3a, `AI-POST.md` §3.2 and §7.2): conditioning (edges of id and normal changes, normalised depth), ~1024² tiles with ≥ 128 px overlap and raised-cosine blending, padding to a multiple of 16 and cropping, the guard (shading transfer, frequency separation, regions by id with ΔE₀₀), the checks and the step machine `plan` → `conditioning`/`tile_input` → `accept` with retries; a report shaped like `GuardReport` in hand-written JSON | The `rt-core` rules: no system APIs, `#![forbid(unsafe_code)]`, `f32`, deterministic (only the functions of `rt_core::fmath` and the tone curves of `rt_core::color`, no `f32::ln`/`exp`/`powf` from `std`). Depends on `rt-core`; `rt-core` does not know it exists. On the desktop `rt-app` links it (X3c: `src/ai/post.rs`, the native driver) |
 | `rt-sky` | **The physical sky, offline** (E5c): spectral atmosphere simulator (spherical shells, Rayleigh, aerosols by turbidity, ozone, Lambertian ground; single scattering by quadrature and multiple by deterministic Monte Carlo), fit of the Hošek–Wilkie form with an own Levenberg–Marquardt and the table with its recipe and its *hash* (`rt-sky table`); validation against low-noise skies, the CIE clear sky and Preetham (`rt-sky validate`) | All of `std` (threads, files) and `f64`, but reproducible: own elementary functions (`dmath`), one random stream per work item, same result with any number of threads. Depends on `rt-core` (reads and tests the table); `rt-core` does not know it |
-| `rt-phys` | **The rigid-body simulator** (S2, §5.6): extended position-based dynamics (XPBD), own convex hulls, contacts by separating axes, Coulomb friction, restitution, sleeping; the PHY1 format. S3b: `wet`, rain and dust on the front glass (drops anchored by Furmidge that slide and clean, dust with an angle of repose) and the WET1 format. S3c: `wet_parts`, rain, dust and snow on the parts' meshes (arrivals by the flow with what is in between, splashing, sliding from triangle to triangle, hanging and dripping, parts as film, dust and snow per sample) and the WPT1 format | The `rt-core` rules: no system APIs, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` and `rt_core::fmath`, deterministic with any number of threads (`std::thread::scope` only natively; in wasm, one). Depends on `rt-core`; `rt-core` does not know it |
+| `rt-phys` | **The rigid-body simulator** (S2, §5.6): extended position-based dynamics (XPBD), own convex hulls, contacts by separating axes, Coulomb friction, restitution, sleeping; the PHY1 format. S3b: `wet`, rain and dust on the front glass (drops anchored by Furmidge that slide and clean, dust with an angle of repose) and the WET1 format. S3c: `wet_parts`, rain, dust and snow on the parts' meshes (arrivals by the flow with what is in between, splashing, sliding from triangle to triangle, hanging and dripping, parts as film, dust and snow per sample) and the WPT1 format. S7: `liquid`, position-based fluids (Macklin and Müller 2013) with implicit viscosity, Akinci's cohesion and curvature and adhesion, filled by ray parity on a face-centred cubic lattice, swept against the static triangles, their surface by marching cubes; the LIQ1 and LQF1 formats | The `rt-core` rules: no system APIs, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` and `rt_core::fmath`, deterministic with any number of threads (`std::thread::scope` only natively; in wasm, one). Depends on `rt-core`; `rt-core` does not know it |
 | `rt-post-wasm` | `cdylib` with hand-written `extern "C"` exports (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, a separate module so that `rt.wasm` does not grow | Its `unsafe` lives only in `src/ffi.rs`, commented block by block; everything crosses as *little-endian* bytes, with no alignment required |
 
 **No external dependencies** means exactly that: no
@@ -637,6 +639,14 @@ Semantics fixed in E3 (the source of truth is the `rsb` module of
   (`INSTANCE_NO_SECTION`): the plane neither cuts nor caps that instance (the
   studio, §5.2 terdecies). `rt_features` and `/api/info` raise bit 2
   (value 4, `FEATURE_SECTION`). Rules in §5.2 terdecies.
+- **`NEST`** (S7, at most one; an earlier engine skips it and traces every clear
+  solid against the air): the materials' nested-dielectric priorities, `u32
+  count` (at most the `MATL` sections) and `u32 priority[count]` of the first
+  `count` materials (the others 0). Written after `SECT`, only when a priority is
+  above 0: without it, or with every priority 0, the bytes and the *hashes* are
+  those from before S7. More priorities than materials is an invalid file; an
+  update replaces them. `rt_features` and `/api/info` raise bit 14 (value 16384,
+  `FEATURE_NESTED_DIELECTRICS`). Rules in §5.6 bis.
 - **`CAMR`** (K3; 60 B as always, 76 B with the K3 fields): after
   `ortho_width`, `u32 projection` (0 the usual one, pinhole, simple
   lens or orthographic according to `ortho`; 1 equirectangular; 2 equidistant
@@ -3999,6 +4009,124 @@ the camera's glass clip, and `physics/grow` its track (`glass`);
 (of the scene), and `physics/grow` its track (`parts`); `PhysicsPort.run` receives
 the WPT1 bytes (§5.2 vicies).
 
+### 5.6 bis · Liquids (S7, `rt_phys::liquid`, LIQ1, LQF1) and nested dielectrics (`NEST`)
+
+**The simulator** (`engine/crates/rt-phys/src/liquid/`, only `std` and `rt-core`,
+written from the papers). `LiquidWorld::new(&LiquidSpec)` fills each liquid,
+`step(n)` / `step_with(n, runner)` advance at the S2 step (1/240 s) in `SUBSTEPS`
+(2) substeps of `ITERATIONS` (3) Jacobi density passes, `particles`,
+`velocities`, `hash` (FNV-1a of positions and velocities), `frame(i)` (the
+`LQF1` record), `surface(i)` (`SurfaceMesh`).
+
+- **Fill** (`fill.rs`). Candidate points on a face-centred cubic lattice of cell
+  `4^⅓ s` (the points of a grid of half a cell whose indices sum to an even
+  number); a point is inside when two of the three axis-aligned rays through it
+  cross the mesh an odd number of times, the crossings decided by exact `f64`
+  edge-function signs with a top-left rule (a ray through an edge or a vertex is
+  counted once). The spacing is then the one that makes the lattice hold the
+  mesh's volume exactly (`s_eff = cbrt(V / N)`, `cube_root` by Newton).
+- **Density** (`Fluid`). Position-based fluids (Macklin and Müller, 2013), in the
+  number-density form: `C_i = max(0, n_i / n₀ − 1)` with the kernel
+  `(1 − r²/h²)³`, `h = SMOOTHING` (2) spacings, `n₀ = REST_PACKING` (0.90) times
+  the lattice's sum (the settled liquid packs denser than the lattice: the
+  constant keeps its volume), plus the wall's share in closed form (the integral
+  of the kernel over the half space beyond the nearest contact plane, shifted by
+  `WALL_OVERLAP`, 0.1 spacings: the surface reaches into the glass and the
+  nested dielectrics resolve the overlap). Neighbours from a dense grid of cells
+  of `h`, nine x-runs per particle, in a fixed order.
+- **Walls** (`Walls`). The static triangles in a sorted (cell, triangle) grid,
+  two-sided; the floor; a domain box (the liquid's bounds grown by
+  `max(size, DOMAIN_MIN_SPACINGS)`, grown to the statics it touches within
+  `DOMAIN_REACH` margins). Each substep caches up to `CONTACTS` (3) contact planes
+  per particle (merged when their normals are within 25°); every move is swept
+  (Möller–Trumbore) and stops on the near side of a triangle, then pushed out to
+  `MIN_GAP` (0.25 spacings). Speed capped at `MAX_SPEED` (0.4 spacings per
+  substep).
+- **Viscosity, cohesion, adhesion.** Implicit viscosity by Jacobi rounds,
+  `v = (v₀ + α v̄) / (1 + α)` with `α = 22 ν Δt / h² + XSPH` and
+  `ceil(α)` rounds (1–16), the walls in `v̄` as still neighbours of their share
+  (no slip); Akinci, Akinci and Teschner's cohesion spline and curvature (2013),
+  with the colour field's outward normal; adhesion `(1 − d/h)²` towards the walls.
+- **Determinism.** Every pass reads the state before it and writes only its
+  particle; the passes are split into `set_workers` chunks that a `Runner` runs
+  (`Serial` runs them in reverse, so a test sees that the order does not matter;
+  real threads only natively, in `rt-cli` and in the tests). The same scene gives
+  the same `hash` with any chunks or threads, natively and in WebAssembly.
+- **Surface** (`surface.rs`). A field `Σ k(|x − x_i| / (SURFACE_RADIUS s))`
+  (2 spacings of reach) on a grid of `CELL` (0.5) spacings, at most
+  `MAX_GRID_POINTS` (2²²), its iso-surface at `ISO` (0.5) of the lattice's sum by
+  marching cubes with a table the module builds itself (the 256 cases from the
+  cube's faces: an ambiguous face separates its inside corners; segments
+  oriented inside-left, fanned and reversed to face out), vertices shared along
+  the slabs' edges; closed (every directed edge has its reverse; touching sheets
+  are allowed). `SurfaceMesh::to_bytes`: `u32 nv, ni; f32 positions[3nv],
+  normals[3nv]; u32 indices[ni]`.
+- **LIQ1** (`LiquidSpec`, written by `core/liquid.ts` `liquidRunSpec`):
+  `"LIQ1"`, `u32 version` (1), `u32 meshes` and per mesh `u32 nv, ni; f32
+  positions[3nv]; u32 indices[ni]`; `u32 statics` and per static `u32 mesh; f32
+  matrix[12]` (3 × 4 row-major, object → world); `u32 has_floor; f32 floor_z`;
+  `u32 liquids` and per liquid `u32 mesh; f32 matrix[12]; f32 spacing, density,
+  viscosity, cohesion, surface_tension, adhesion`.
+- **LQF1** (`frame_bytes`, `read_frame`, `mesh_from_frame`): `"LQF1"`, `u32
+  count`, `f32 spacing`, `f32 lo[3], hi[3]` (the particles' bounds), `u16 xyz`
+  per particle over the bounds, zero padding to a multiple of 12 bytes (whole
+  base64 groups, so the page appends records to its track as they come). The
+  surface is always rebuilt from the record, so a frame shows the same mesh
+  live and played back.
+- **The host** (`rt-wasm/src/liquid.rs`): `liq_new(ptr, len)`, `liq_step`,
+  `liq_steps`, `liq_liquids`, `liq_count`, `liq_hash`, `liq_frame`,
+  `liq_surface`, `liq_copy`, `liq_free`, and `liq_mesh` / `liq_mesh_copy` (the
+  surface of a record, without a world).
+- **In the browser.** `PhysicsPort.run` takes the LIQ1; the worker steps the
+  liquids after the bodies, one step at a time, in slices of at most
+  `SLICE_MS` (40 ms), and sends with each frame every liquid's record and
+  surface (`LiquidSim`). A run with a liquid does not settle by itself
+  (`MAX_LIQUID_SECONDS`, 20 s). `ui/physics.ts` grows a `PHYSICS` clip per
+  liquid part (`liquidClip`, `MotionClip.liquid`: `LiquidTrack` `{ fps, frames,
+  key, node, particles, spacing, record, data }`) through `physics/begin` and
+  `physics/grow` (`liquids`), and registers each frame's surface
+  (`putLiquidMesh`, the last 48 kept). `evaluate` gives `Pose.liquids` (the frame
+  of each liquid part); `posedLiquidMesh` gives the mesh of that frame (in hand,
+  or rebuilt from its record by the page's own module, `setLiquidSurfacer`,
+  which `main.ts` sets when the page's engine loads), which `io/rsb.ts`
+  `projectScene` and `render/preview.ts` (`applyLiquidGeometry`) draw as the
+  part's mesh: *Full* and *Fast* show the same surface.
+- **Through the *store*.** `liquid/convert` (`source`, `preset`: the source
+  hidden, the liquid part born at the root with its world-space mesh
+  `liquid:<id>:<mesh>`, its material and selected) and `liquid/set` (`preset`,
+  `spacingMm`, `null` for automatic), each one undo entry per gesture; a new
+  preset brings its look to the liquid's own material when nothing else wears it.
+
+**Nested dielectrics** (`rt_core::integrator::nested`; Schmidt and Budge,
+"Simple Nested Dielectrics in Ray Traced Images", JGT 2002). `Scene::priorities`
+(from `NEST`, by material index; past its end, 0). With any priority above 0
+(`Prepared::nested`), the path keeps an `Interior` list (at most `MAX_NESTED`, 8,
+entries of instance, priority and index): a hit on a clear solid (`GLASS` kind or
+transmissive, not thin) whose priority is below the top of the list is a **false
+hit**, crossed straight with nothing changed (at most `MAX_FALSE_HITS`, 64, per
+path); a true hit refracts at the relative index, own over the other's entering
+and the other's over own leaving (`relative_index`, `Bsdf::surface_nested`), and
+the medium inside is the top's (`inside_of`). Equal priorities: the last entered
+is the top. A hit on a solid of the same index as the other (within `MATCHED`,
+10⁻⁴) passes straight. Without priorities, the integrator takes the code of
+before, bit for bit (every pinned hash of `rt-core` holds). The page's rule
+(`renderedPriority`): a material's own `priority` (GLASS parameter, 0–9, engine
+only); else, with a liquid in the scene, 1 for a liquid's material
+(`LIQUID_PRIORITY`) and 2 for every other clear solid of the GLASS family
+(`CONTAINER_PRIORITY`); else 0. `SceneView.nested` (`render/engine.ts`
+`readsNested`, bit 14) writes `NEST`; `EngineInfo.nested` tells the Liquid
+section whether to say that the engine draws the liquid against air.
+
+**Pinned.** `PINNED_POUR = [(30, 0xc7dea15c), (60, 0xce0b812c)]`
+(`rt-phys/tests/liquid.rs`: `pour_spec`, a block of water falling into a glass,
+500 particles; `tests/fixtures/liquid-pour.json` for the page's check with the
+real `rt.wasm`), the same with 1, 2, 3, 5, 8 and 13 chunks and with 4 threads,
+in debug and release and in `wasm32-wasip1`; `PINNED_S7_LIQUID_4SPP =
+0xb61a_b0fc` (`rt --write-s7-liquid-example`: the poured water rendered in its
+glass with the priorities, 160 × 120 at 4 samples), the same in scalar, SSE2
+and AVX2, with 1, 4 and 16 threads and in the real `rt.wasm`. No earlier pin
+moves.
+
 ## 6 · Interface (`src/ui/`)
 
 - Components = functions `(store, props) => HTMLElement` that
@@ -4120,6 +4248,7 @@ seen are checked with `tools/box-select-check.mjs` and
 | Browser gestures | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright with the local Chromium over `dist/`, in Fast and in Full, with mouse, pen and finger; captures in `docs/ui/` (those of Full, in `out/`) |
 | Rain and dust on the glass (S3b) | `cargo test -p rt-phys --test wet` (also on `wasm32-wasip1`); `rt-core` `optics::glass::tests` and `render::s3_tests`; `tests/s3b-wet.test.ts`; `tools/s3b-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | A drop on glass at 30° stays up to Furmidge's critical radius (± 0.5 % of the `f64` calculation) and slides above it; two that touch add their volume (± 1 %); the trail cleans the dust; dust on a 60° face is < 10 % of that on a horizontal one; rain arrives at its flux and never on a face looking the other way; the same glass by single steps or together and rebuilt from its frames; the two pinned values on every SIMD path and in wasm; the `WET1` and the `GLAS` drop by drop byte for byte; the track (the cache) equal in two runs; the camera's clip, saved and opened; the bar runs it alone, one undo entry, *Reset* removes it; the approximation of *Fast* |
 | Rain, dust and snow on the parts (S3c) | `cargo test -p rt-phys --test wet_parts` (also on `wasm32-wasip1`); `rt-core` `weather::tests`; `rt-wasm` `parts`; `rt-cli/tests/example.rs`; `tests/s3c-parts.test.ts` and `tests/s3c-warning.test.ts`; `tools/s3c-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | The glass at 30° up to the critical radius and the trail's film; from face to face and the dripping over an open edge; merging ± 1 %; the trail cleans the dust; dust at 60° < 10 %; rain at its flux, never on a face turned away nor under a roof; hanging and dripping onto what is below, splashing without losing water; the film at its pace; the snow where it rests; by steps and by frames; the two pinned values on every SIMD path, with 1, 4 and 16 threads and in wasm; a `WETP` with nothing changes no pixel; the WPT1 byte for byte; the track equal in two runs; the scene's clip, saved and opened; the bar runs it alone; the warnings of bits 7 and 8 |
+| Liquids and nested dielectrics (S7) | `cargo test -p rt-phys --test liquid` (also on `wasm32-wasip1`); `rt_phys::liquid` unit tests (`fill`, `surface`); `rt-core` `integrator::nested` and `nested_tests`, `scene::rsb`; `rt-wasm` (bit 14); `rt-cli/tests/example.rs`; `tests/s7-liquids.test.ts`; `tools/s7-check.mjs`; the sheet `rt --liquid-sheet out` | A litre poured into a closed glass keeps its volume ± 3 % on the rendered surface; honey takes more than five times water's time to level; nothing goes through the glass; the fill holds the volume exactly; the surface closed and outward; the pinned pour with any chunks and threads and in wasm; a ray through a flat glass wall into water leaves at Snell's angle for 1.5/1.33, and without priorities as before, bit for bit; the presets against the sheet's; Convert and the Liquid section as one undo step each; the LIQ1 as the engine reads it; the track, the pose's frame, saved and opened; `NEST` only with bit 14 and a scene without priorities byte for byte as before; the older engine's note |
 | Physics (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | A sphere rests at `r ± 0.1` mm, a stack of three boxes holds for 5 s, a tilted box falls flat, a cube slides off a sphere, a ramp holds at μ 0.6 and lets it slide at 0.1, a thousand spheres settle (< 20 s in *release*), sleeping stops the simulation, pinned *hash* equal with 1 and N threads and in wasm; what is simulated, the poses back to the nodes, a simulation is one undo entry, *Reset* another, *Pause* freezes what is seen, the clip is saved, opened and played; three primitives that fall in the browser |
 | Engine Doctor (D1) | `tests/doctor-engine.test.ts` (a fake engine that simulates each state and the real `installDoctorFacts`), `tests/frame-scan.test.ts` (the reading of the accumulation and the pool's `status().scan` with fake *workers*), `tests/store.test.ts` (a listener's actions during an undo); `tools/doctor-engine-check.mjs` | Each check fires and its fix clears it (project through the *store*, one undo entry; what is not the project's, only the explanation and, if a Settings row limits it, the button that opens it); *Fix all* in one click; without engine facts, everything *unavailable* as before; thresholds at their boundaries; `sameImage` agrees with `touchesImage` of both engines; the phrases in both languages; in the browser, the Doctor with two engine warnings (`docs/ui/doctor-engine.png`) |
 | Viewer | `npm run screenshot` | Capture with the local Chromium (swiftshader); attached to the PR |
@@ -4231,6 +4360,14 @@ knows (an unknown role or an out-of-range number is removed), a `PHYSICS`
 clip whose track does not decode is removed, and a damaged anchor too
 (the clip then plays its frames as they are). A project from before
 S2 opens the same (`tests/fixtures/project-v2.json`). The schema stays at 2.
+S7: a liquid part carries its Liquid section (`liquid`: `{ "preset", "spacingMm",
+"source" }`) and the role `LIQUID`, and its world-space mesh is written like any
+other; its `PHYSICS` clip holds a `liquid` track (`{ "fps", "frames", "key",
+"node", "particles", "spacing", "record", "data" }`, `data` the frame records
+in base64) instead of `track`. On opening, a spacing out of range is brought
+within it, a source that is not in the scene is `null`, a `LIQUID` role on a
+part without the section is removed, and a clip whose liquid track does not
+decode is removed.
 On opening, the Doctor is run again over the state read (also in
 `migrateProject`), not only in `loadProject`.
 

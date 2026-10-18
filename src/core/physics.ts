@@ -218,7 +218,8 @@ export function shownBounciness(node: SceneNode | undefined): number {
 /** The movers of a set of nodes: a part, or a group (one body, or each of its parts when it falls as parts). */
 function moversOf(state: ProjectState, ids: readonly NodeId[]): { mover: NodeId; parts: NodeId[] }[] {
   const out: { mover: NodeId; parts: NodeId[] }[] = [];
-  const visible = (p: NodeId) => effectiveVisible(state, p) && !!state.scene.nodes[p]?.mesh;
+  // S7: a liquid part is poured, never dropped as a body.
+  const visible = (p: NodeId) => effectiveVisible(state, p) && !!state.scene.nodes[p]?.mesh && !state.scene.nodes[p]?.liquid;
   for (const id of topMost(state, ids)) {
     const node = state.scene.nodes[id];
     if (!node || isLocked(state, id)) continue;

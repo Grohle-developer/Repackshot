@@ -412,7 +412,8 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
     return;
   }
   const fps = state.animation.fps;
-  const targets = drop ? movableTargets(state, drop) : [];
+  // S7: a liquid part keeps its role (it is poured, not dropped).
+  const targets = drop ? movableTargets(state, drop).filter((id) => !state.scene.nodes[id]?.liquid) : [];
   const roles = drop ? Object.fromEntries(targets.map((id) => [id, 'DYNAMIC' as PhysicsRole])) : undefined;
   const label = drop ? L('undo.drop', { target: targetLabel(state, targets) }) : L('undo.simulate');
   const session: Session = {

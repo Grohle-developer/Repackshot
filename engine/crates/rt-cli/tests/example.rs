@@ -171,7 +171,8 @@ fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
     // S3b: and the pane the simulation of the rain left, laid out drop by drop. S3c: and the
     // parts the rain, dust and snow left their weather on, with their drops' caps. S3d: and the
     // drops in the air. S3f: and the drops with their shapes (deformed caps). S3e: and the studio
-    // floor's weather, a part that moved, the set's fine samples and the dust's motes.
+    // floor's weather, a part that moved, the set's fine samples and the dust's motes. S7: and
+    // the water poured into its glass, nested by priority.
     for which in [
         S3Example::Drops,
         S3Example::Glass,
@@ -182,6 +183,7 @@ fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
         S3Example::Floor,
         S3Example::Moving,
         S3Example::Dust,
+        S3Example::Liquid,
     ] {
         let scene = which.scene();
         let one = rt_cli::render(&scene, 2, 1);
@@ -227,6 +229,11 @@ fn write_s3_examples_produce_readable_rsb_files() {
             "s3e-moving.rsb",
         ),
         (S3Example::Dust, "--write-s3e-dust-example", "s3e-dust.rsb"),
+        (
+            S3Example::Liquid,
+            "--write-s7-liquid-example",
+            "s7-liquid.rsb",
+        ),
     ] {
         let path = scratch(name);
         let args = [flag.to_string(), path.to_str().unwrap().to_string()];

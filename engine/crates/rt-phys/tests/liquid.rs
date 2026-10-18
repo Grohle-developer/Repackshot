@@ -179,7 +179,7 @@ fn nothing_goes_through_the_glass() {
 }
 
 /// The pour's particle hash after these steps. The WebAssembly check
-/// (`tests/s7-liquid-engine.test.ts`, with the scene and these numbers in
+/// (`tests/s7-liquids.test.ts`, with the scene and these numbers in
 /// `tests/fixtures/liquid-pour.json`) and these tests run as WebAssembly must get the same.
 pub const PINNED_POUR: [(u32, u32); 2] = [(30, 0xc7de_a15c), (POUR_STEPS, 0xce0b_812c)];
 
