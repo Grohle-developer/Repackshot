@@ -80,6 +80,31 @@ export const FLAG_SELF_COLLISION = 1;
 /** CLT1 version (rt_phys::cloth::VERSION). */
 export const CLT1_VERSION = 1;
 
+/**
+ * The cloth props this version knows of what a project file holds (the rest dropped: a fabric of a later version, a value
+ * out of range, a damaged box), never a reason not to open it. Null when nothing is left.
+ */
+export function sanitizeClothProps(x: unknown): ClothProps | null {
+  if (typeof x !== 'object' || x === null || Array.isArray(x)) return null;
+  const c = x as Record<string, unknown>;
+  const out: ClothProps = {};
+  const num = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+  if (typeof c.fabric === 'string' && fabricPreset(c.fabric).key === c.fabric) out.fabric = c.fabric as FabricKey;
+  if (num(c.weightGsm, CLOTH_LIMITS.weight.min, CLOTH_LIMITS.weight.max)) out.weightGsm = c.weightGsm as number;
+  if (num(c.stiffness, CLOTH_LIMITS.stiffness.min, CLOTH_LIMITS.stiffness.max)) out.stiffness = c.stiffness as number;
+  if (num(c.thicknessMm, CLOTH_LIMITS.thickness.min, CLOTH_LIMITS.thickness.max)) out.thicknessMm = c.thicknessMm as number;
+  if (c.anchor === 'NONE' || c.anchor === 'TOP_EDGE' || c.anchor === 'BOX') out.anchor = c.anchor;
+  const triple = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((n) => num(n, 0, 1));
+  const b = c.box as { min?: unknown; max?: unknown } | undefined;
+  if (b && typeof b === 'object' && triple(b.min) && triple(b.max)) out.box = { min: [...b.min] as Vec3, max: [...b.max] as Vec3 };
+  if (num(c.pressure, CLOTH_LIMITS.pressure.min, CLOTH_LIMITS.pressure.max)) out.pressure = c.pressure as number;
+  if (typeof c.selfCollision === 'boolean') out.selfCollision = c.selfCollision;
+  if (typeof c.keepArea === 'boolean') out.keepArea = c.keepArea;
+  if (num(c.resolutionMm, CLOTH_LIMITS.resolution.min, CLOTH_LIMITS.resolution.max)) out.resolutionMm = c.resolutionMm as number;
+  if (Array.isArray(c.triangles) && c.triangles.length > 0 && c.triangles.every((t) => Number.isInteger(t) && (t as number) >= 0)) out.triangles = [...new Set(c.triangles as number[])].sort((p, q) => p - q);
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 // ---------------------------------------------------------------------------
 // Which parts are cloth, with what
 // ---------------------------------------------------------------------------
@@ -404,7 +429,7 @@ export function anchoredVertices(positions: Float32Array, indices: Uint32Array, 
     }
   }
   if (anchor === 'TOP_EDGE') {
-    // The open edge (an edge of one triangle), within a hair of the highest point.
+    // The open edge (an edge of one triangle), within a hair of its highest point.
     const count = new Map<string, number>();
     for (let i = 0; i < indices.length; i += 3) {
       for (let c = 0; c < 3; c++) {
@@ -419,8 +444,11 @@ export function anchoredVertices(positions: Float32Array, indices: Uint32Array, 
       open.add(a);
       open.add(b);
     }
+    // The highest open edge, not the highest point (a ridge inside the cloth is not an edge).
+    let top = -Infinity;
+    for (let v = 0; v < n; v++) if (open.has(weld[v])) top = Math.max(top, positions[3 * v + 2]);
     const tol = Math.max(0.5, 0.01 * Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]));
-    for (let v = 0; v < n; v++) if (open.has(weld[v]) && positions[3 * v + 2] >= hi[2] - tol) out[v] = 1;
+    for (let v = 0; v < n; v++) if (open.has(weld[v]) && positions[3 * v + 2] >= top - tol) out[v] = 1;
     return out;
   }
   const box = props.box ?? CLOTH_DEFAULTS.box;
@@ -832,14 +860,14 @@ function buildPosed(node: SceneNode, data: MeshData, sheet: ClothMesh, frame: Fl
 // ---------------------------------------------------------------------------
 
 /**
- * Drape over the part: the sheet of cloth laid over the selection (a PLANE primitive facing up): DRAPE_SHEET.size times
- * the longer side of its footprint, square, centred over it, DRAPE_SHEET.lift of its size above its top; of the
- * catalogue's DRAPE_MATERIAL. Null when the selection has nothing visible.
+ * Drape over the part: the sheet of cloth laid over the selection (a PLANE primitive facing up), square, centred over it:
+ * DRAPE_SHEET.size times the longer side of its footprint plus DRAPE_SHEET.height times its height, DRAPE_SHEET.lift of
+ * its size above its top; of the catalogue's DRAPE_MATERIAL. Null when the selection has nothing visible.
  */
 export function drapePlacement(state: ProjectState, ids: readonly NodeId[]): { params: { width: number; depth: number }; position: Vec3; material: string } | null {
   const b = boundsOf(state, ids, true);
   if (isEmptyBox(b)) return null;
-  const side = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]) * DRAPE_SHEET.size;
+  const side = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]) * DRAPE_SHEET.size + (b.max[2] - b.min[2]) * DRAPE_SHEET.height;
   if (!(side > 0)) return null;
   const size = Math.round(side * 10) / 10;
   const lift = boxMaxDim(b) * DRAPE_SHEET.lift;

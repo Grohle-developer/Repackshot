@@ -1,12 +1,18 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 161) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 166) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
 
-Nothing yet: the next points start at 162.
+For cloth (S9).
+
+162. [ ] **Drape over the part.** Open the example (or put a box on the floor), right click the product in the tree and choose *Drape over the part*. A sheet named *Cloth* must appear above it, the physics bar must open and say *Cloth: … vertices* while it runs, and the sheet must fall, fold over the product and stop by itself. Note how long it took to settle (the bar's simulated time and the wall clock). *Undo* once must remove the sheet and its recording together.
+163. [ ] **Fabrics.** Select the sheet and, in *Physics*, change *Fabric* to *Silk* and then to *Thick leather*, pressing *Start* after each (and *Reset* in between): silk must fold into many small wrinkles, thick leather into a few broad folds. Change *Weight*, *Stiffness* and *Thickness* and check that each is one undo step.
+164. [ ] **In *Fast* and in *Full*.** After a drape, the cloth must look the same in *Fast* and in a render in *Full* (the same folds), and scrubbing the timeline back must show the sheet falling.
+165. [ ] **Anchors and wind.** On a vertical plane with the role *Cloth* and *Anchors ▸ Top edge*, add an *Ambient* effect with wind and *Start*: the top edge must stay put and the cloth must flutter downwind.
+166. [ ] **What to record when reporting.** The renders of 163 (both fabrics) and of 164, the times of 162, and if something fails, the message verbatim and the `<data>\logs\` folder.
 
 ## v0.1.22
 

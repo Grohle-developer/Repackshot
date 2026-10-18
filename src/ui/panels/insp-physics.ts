@@ -276,7 +276,7 @@ function clothFields(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLElement {
   const drapeBtn = h('button', { type: 'button', class: 'btn', 'data-action': 'phys.drape', 'data-tip': t('ops.drapeAux'), onclick: () => phys.drape(ctx, ids) }, t('ops.drape'));
   return h(
     'div',
-    { class: 'stack', 'data-field': 'phys.cloth' },
+    { class: 'stack', 'data-field': 'phys.clothFields' },
     field(t('cloth.fabric'), fabric.el),
     h('div', { class: 'note', style: 'padding-left:112px' }, t('cloth.fabricAux')),
     field(t('cloth.weight'), weight.el),

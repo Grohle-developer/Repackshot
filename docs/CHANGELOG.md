@@ -5,6 +5,18 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Physics
+
+- **Cloth**: a new role in *Physics*, *Cloth*: a part (its face picked at the *Faces* level, or the whole part; a closed solid keeps its volume with *Pressure*) folds and drapes over what is under it when the physics bar's *Start* runs, colliding with itself, the other parts, the falling bodies and the floor, and blown by the wind of the *Ambient* effects (S9).
+- **Fabrics by type and weight**: silk 60 g/m², fine cotton 120, poplin 150, linen 200, wool 300, denim 400, canvas 600, felt 800, thin leather 900, thick leather 1,200 and neoprene 1,500, with *Weight*, *Stiffness* and *Thickness* on top; anchors along the top edge or inside a box; self-collision and *Keep area* (S9).
+- **Drape over the part**: in the context menu, the inspector and the palette, a sheet of cloth falls over the selection and drapes it, in one undo step (S9).
+- **Cloth is recorded** into the animation like every simulation, and the viewport in *Fast* and the render in *Full* draw the frame the playhead shows; the physics bar says how many vertices the simulator moves. With an engine built before this version the rest of the simulation runs without the cloth, and the bar says so (S9).
+
+### Engine
+
+- **Cloth in `rt_phys::cloth`**: extended position based dynamics with stretch, dihedral bending, area and pressure constraints, collisions with the cloth itself (a spatial hash grid), the rigid bodies, the floor and the static triangles, and the wind with gusts; the `CLT1` format and the `cloth_*` exports of `rt.wasm`. Deterministic: the same bits natively and in WebAssembly, on both SIMD paths and with any number of threads (S9).
+- The cloth's frames reach the render as the part's own mesh, so no new scene section or capability bit is needed (S9).
+
 ## v0.1.22 — 2026-10-18
 
 ### Scene and ambient

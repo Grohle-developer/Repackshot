@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 172 files: 170 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 176 files: 174 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,25 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 62 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: Unreleased and 23 versions, 21 with new screenshots; the screenshots are spread over 63 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Nothing yet: every screenshot in `docs/ui/` is already in a published version (the latest is v0.1.22).
+Cloth (S9).
+
+#### S9 · Cloth with real physics
+
+<a id="c-cloth-drape"></a><img src="ui/cloth-drape.png" width="960" alt="Two viewports in Fast side by side: a white box on the floor, and the same box after Drape over the part, a sheet of cloth at rest over it, flat on its top and hanging in soft folds down its sides."><br>
+`cloth-drape.png` · `HASH` · *Drape over the part* on a box, before and after: a sheet of fine cotton laid over it falls, folds over its edges and settles by itself, drawn in *Fast* from the recorded frame. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-bar"></a><img src="ui/cloth-bar.png" width="960" alt="The physics bar while the cloth runs: Simulated 1.88 s, Cloth: 1,089 vertices, Running."><br>
+`cloth-bar.png` · `HASH` · The physics bar while the cloth runs: the simulated time and *Cloth: 1,089 vertices*, the vertices the simulator moves. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-inspector"></a><img src="ui/cloth-inspector.png" width="320" alt="The inspector's Physics section with the role Cloth: Fabric Fine cotton · 120 g/m², Weight, Stiffness, Thickness, Anchors None, Top edge or Box, Pressure disabled for an open cloth, Self-collision, Keep area, Resolution with what it makes now, Face, and the Start and Drape over the part buttons."><br>
+`cloth-inspector.png` · `HASH` · The *Physics* section of a cloth: the fabric preset, *Weight* (from the fabric), *Stiffness*, *Thickness*, the anchors, *Pressure* (disabled: the sheet is open), *Self-collision*, *Keep area*, *Resolution* (*Now: 2,048 triangles, 10.6 mm*), which of the part is cloth, *Start* and *Drape over the part*. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-sheet"></a><img src="ui/cloth-sheet.png" width="960" alt="Four renders by the engine of the example bottle draped by a sheet: silk falls close around it in many small folds, linen and denim hang stiffer in broad panels, thick leather stands out as a bell with a few wide folds."><br>
+`cloth-sheet.png` · `HASH` · Four fabrics of the contact sheet `out/cloth-sheet.html` over the example bottle, rendered by the engine (*Full*): silk, linen, denim and thick leather, each as its simulation left it (S9 ◆1). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
 
 ### v0.1.22 · 2026-10-18
 
@@ -918,6 +932,10 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
 - [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
+- [`cloth-drape.png`](#c-cloth-drape) · Unreleased · S9
+- [`cloth-sheet.png`](#c-cloth-sheet) · Unreleased · S9
+- [`cloth-inspector.png`](#c-cloth-inspector) · Unreleased · S9
+- [`cloth-bar.png`](#c-cloth-bar) · Unreleased · S9
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

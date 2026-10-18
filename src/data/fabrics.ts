@@ -96,8 +96,8 @@ export const CLOTH_DEFAULTS = {
  * at most the resolution, or until one more split would pass `MAX_CLOTH_TRIANGLES`. Automatic resolution: the cloth's
  * longest side over `AUTO_DIVISIONS`.
  */
-export const MAX_CLOTH_TRIANGLES = 9000;
-export const AUTO_DIVISIONS = 64;
+export const MAX_CLOTH_TRIANGLES = 4096;
+export const AUTO_DIVISIONS = 32;
 
 /** How a cloth is held: nowhere, by the vertices along its top edge, or by those in a box. */
 export const CLOTH_ANCHORS = ['NONE', 'TOP_EDGE', 'BOX'] as const;
@@ -109,8 +109,11 @@ export type ClothAnchor = (typeof CLOTH_ANCHORS)[number];
  */
 export const GUST_PER_CHAOS = 0.5;
 
-/** Drape over the part: a sheet this many times the footprint of the selection, this far above its top (share of its size) (◆). */
-export const DRAPE_SHEET = { size: 1.6, lift: 0.08 } as const;
+/**
+ * Drape over the part: a square sheet whose side is `size` times the longer side of the selection's footprint plus
+ * `height` times its height (so that it hangs down its sides), `lift` of its size above its top (◆).
+ */
+export const DRAPE_SHEET = { size: 1.2, height: 1.2, lift: 0.08 } as const;
 
 /** The catalogue material (data/materials.ts) of the sheet Drape over the part lays: a plain cotton (its look is M5's). */
 export const DRAPE_MATERIAL = 'COTTON';
