@@ -751,6 +751,10 @@ const TABLE = {
   'camera.glassRecorded': ['Recorded: {frames} frames, {drops} drops and {motes} motes at the playhead', 'Grabado: {frames} fotogramas, {drops} gotas y {motes} motas en el cabezal'],
   'camera.glassNotRecorded': ['Nothing recorded yet: the glass is dry until a simulation runs', 'Aún no hay nada grabado: el cristal está seco hasta que corra una simulación'],
   'camera.glassStale': ['The scene changed since this was recorded: Start again to bring the glass up to date', 'La escena ha cambiado desde que se grabó: inicia otra vez para poner el cristal al día'],
+  'camera.glassOldEngine': [
+    'The render engine in use does not read a glass fed by the scene (an older engine): the render will show this glass clean. Update the application to see the drops and the dust',
+    'El motor de render en uso no lee un cristal alimentado por la escena (un motor anterior): el render enseñará este cristal limpio. Actualiza la aplicación para ver las gotas y el polvo',
+  ],
   'camera.glassOn': ['Front glass on', 'Cristal frontal activado'],
   'camera.glassDrops': ['Drops', 'Gotas'],
   'camera.glassDropsTip': ['How much of the glass the drops cover; drops that touch merge into one', 'Cuánto del cristal cubren las gotas; las que se tocan se juntan en una'],

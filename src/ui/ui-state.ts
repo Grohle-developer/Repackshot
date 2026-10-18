@@ -233,6 +233,12 @@ export interface EngineInfo {
   cores: number | null;
   /** D1: the engine can denoise (rt.wasm exports the denoiser; the native engine always can). Absent: not known. */
   denoise?: boolean;
+  /**
+   * S3c: the engine reads a front glass laid out drop by drop (bit 7 of its features, render/engine.ts
+   * `readsGlassLayout`): without it the render draws a glass fed by the scene clean, and the inspector says so. Absent:
+   * not known.
+   */
+  glassLayout?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

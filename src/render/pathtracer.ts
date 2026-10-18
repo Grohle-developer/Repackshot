@@ -666,6 +666,11 @@ export class PathTracerEngine implements RenderEngine {
     return this.pool.hasDenoiser;
   }
 
+  /** S3c: what the engine reads beyond the plain RSB (`rt_features` of its workers; render/engine.ts). */
+  get features(): number {
+    return this.pool.features;
+  }
+
   /** The engine's version, "major.minor.patch". */
   get version(): string {
     const v = this.pool.version;

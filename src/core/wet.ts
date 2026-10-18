@@ -13,7 +13,8 @@
 
 import { DUST_REPOSE_DEG, FRONT_GLASS_FAMILY, wettability } from '../data/wettability';
 import { GLASS_FEED } from '../data/front-glass';
-import type { CameraId } from './camera';
+import { isPanoramic, type CameraId } from './camera';
+import { glassFromScene } from './optics';
 import { effectVolumeM3, requestedParticles, type AmbientEffect } from './effects';
 import type { Vec3 } from './math';
 import type { Pose } from './animation';
@@ -81,6 +82,21 @@ export function toPane(axes: PaneAxes, v: Vec3): Vec3 {
 /** The effects that feed a pane fed by the scene: enabled, of a kind that leaves something, with particles. */
 export function feedingEffects(state: ProjectState): AmbientEffect[] {
   return state.effects.filter((e) => e.enabled && GLASS_FEED[e.preset] !== null && e.sizeMm > 0 && requestedParticles(state, e) > 0);
+}
+
+/**
+ * S3c: the render would draw camera `camera`'s front glass clean although the scene feeds it: the glass is on, fed by
+ * the scene (not through a panoramic camera, which has none), some effect rains or dusts on it, and the engine of the
+ * render does not read a pane laid out drop by drop (`readsLayout` false: bit 7 of its features, render/engine.ts
+ * `readsGlassLayout`; an engine of S3, such as an older desktop launcher). Unknown (`undefined`: no engine yet) is
+ * not a reason to warn.
+ */
+export function glassRendersClean(state: ProjectState, camera: CameraId, readsLayout: boolean | undefined): boolean {
+  if (readsLayout !== false) return false;
+  const cam = state.camera.cameras[camera];
+  const g = cam?.optics?.frontGlass;
+  if (!cam || !g?.on || !glassFromScene(g) || isPanoramic(cam.projection)) return false;
+  return feedingEffects(state).length > 0;
 }
 
 /**

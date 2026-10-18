@@ -76,6 +76,7 @@ import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
 import { wetBytes } from './core/wet';
 import { engineGlassPane, hasGlassExports } from './render/glass-pane';
+import { readsGlassLayout } from './render/engine';
 import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16 as exactWords16Of, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba as straightLinearRgbaOf, straightWords16 } from './render/tiles';
@@ -480,6 +481,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
       simdSupported: simdOk,
       cores,
       denoise: true,
+      glassLayout: readsGlassLayout(i.features),
       native: { threads: i.threads, isa: i.isa, simd: i.simd, os: i.os, arch: i.arch, engineVersion: i.engineVersion },
     });
     return;
@@ -501,7 +503,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
     }
     const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
     poolCfg = { backend: 'wasm', threads: cfg.threads, simd: cfg.simd };
-    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise });
+    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores, denoise: t.canDenoise, glassLayout: readsGlassLayout(t.features) });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`path tracer: ${reason}`);
