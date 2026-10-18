@@ -65,7 +65,7 @@ export type Space = 'LOCAL' | 'GLOBAL';
 /** Index of an axis: 0 = X, 1 = Y, 2 = Z. */
 export type Axis = 0 | 1 | 2;
 
-/** A pattern of linked copies (SPEC §3.1 "Patrón"), kept on its group so editing it regenerates the copies. */
+/** A pattern of linked copies (SPEC §3.1 "Pattern"), kept on its group so editing it regenerates the copies. */
 export interface PatternSpec {
   kind: 'LINEAR' | 'CIRCULAR';
   /** Copies including the original (1 or more). */

@@ -169,12 +169,14 @@ fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
     // S3: the drops, the mixes of shapes and the front glass are the same arithmetic whoever runs
     // them (the glass is laid out once per scene; the particles are evaluated in any order).
     // S3b: and the pane the simulation of the rain left, laid out drop by drop. S3c: and the
-    // parts the rain, dust and snow left their weather on, with their drops' caps.
+    // parts the rain, dust and snow left their weather on, with their drops' caps. S3d: and the
+    // drops in the air.
     for which in [
         S3Example::Drops,
         S3Example::Glass,
         S3Example::WetGlass,
         S3Example::WetParts,
+        S3Example::Flight,
     ] {
         let scene = which.scene();
         let one = rt_cli::render(&scene, 2, 1);
@@ -202,6 +204,11 @@ fn write_s3_examples_produce_readable_rsb_files() {
             S3Example::WetParts,
             "--write-s3c-wet-example",
             "s3c-wet.rsb",
+        ),
+        (
+            S3Example::Flight,
+            "--write-s3d-flight-example",
+            "s3d-flight.rsb",
         ),
     ] {
         let path = scratch(name);

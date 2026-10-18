@@ -1,4 +1,4 @@
-// The guard's report as the interface words it (AI-POST.md §4 "Al terminar", UI.md §2.8), for the results viewer
+// The guard's report as the interface words it (AI-POST.md §4 "When the job finishes", UI.md §2.8), for the results viewer
 // and the preview alike: the checked line and, when the guard had to step in, what it did.
 
 import type { GuardReport } from '../core/ai';

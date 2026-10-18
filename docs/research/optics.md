@@ -1,10 +1,10 @@
-# Investigación: simulación física de lentes (2026-10-13)
+# Research: physical lens simulation (2026-10-13)
 
-> Informe de investigación preparado por Sonnet para el líder, en inglés tal como se redactó. Las decisiones están en `docs/STUDIO-TOOLS.md` y en `docs/ROADMAP.md`. Las prescripciones salen de patentes caducadas y del artículo de Kolb et al. 1995; los nombres de marca no se usan en el producto.
+> Research report prepared for the lead, kept in English as it was written. The decisions are in `docs/STUDIO-TOOLS.md` and in `docs/ROADMAP.md`. The prescriptions come from expired patents and from Kolb et al. 1995; brand names are not used in the product.
 
 # Physically based lens simulation for Repackshot: research report (read-only; nothing written to the repo)
 
-Scratch material (scripts, patent PDFs, micro-benchmarks) is in `/tmp/claude-0/-home-user/9292497e-ab76-5535-bdee-b9953657075e/scratchpad/` (`pat/`, `bench/`, `papers/`, `bokeh/`, `wiki/`). It is not needed to use this report.
+The scratch material (scripts, patent PDFs, micro-benchmarks) was not kept in the repository. It is not needed to use this report.
 
 ## 0. Method, confidence, headline findings
 
@@ -19,7 +19,7 @@ Scratch material (scripts, patent PDFs, micro-benchmarks) is in `/tmp/claude-0/-
 - Hullin 2011, Steinert 2011 and Hanika 2014 PDFs returned 403 or an expired link. Statements about them rest on abstracts and on the papers that cite them. They are marked "(abstract only)".
 
 **Headline findings**
-1. A sequential real-lens trace gives you nearly everything on your list as outputs: distortion, optical and mechanical vignetting, cat's-eye bokeh, lateral and longitudinal CA, spherical aberration and its bokeh signatures, and focus breathing. This is the Kolb/Mitchell/Hanrahan 1995 approach [K95]. Only wave effects (starburst, diffraction rings, orbs), surface imperfections (onion rings, dust) and flare ghosts need extra machinery.
+1. A sequential real-lens trace gives nearly everything on the wish list as outputs: distortion, optical and mechanical vignetting, cat's-eye bokeh, lateral and longitudinal CA, spherical aberration and its bokeh signatures, and focus breathing. This is the Kolb/Mitchell/Hanrahan 1995 approach [K95]. Only wave effects (starburst, diffraction rings, orbs), surface imperfections (onion rings, dust) and flare ghosts need extra machinery.
 2. **Verified prescriptions.** Thirteen of the sixteen prescriptions in §2.3 are transcribed from expired patents or Kolb's printed table and checked as above. P14–P16 are my own textbook-formula designs and are labelled as such.
 3. **Spherical-aberration knob.** In the soft-focus patent design, moving one air gap sweeps marginal-ray spherical aberration from +3.3 % of f (over-corrected) through 0 to -8 % (under-corrected), with focus roughly preserved. This is a physical way to build an "SA character" slider (§2.3 P12).
 4. **Dispersion model.** A two-term Cauchy model from (nd, vd) matches a catalogue crown to 1e-4 and a flint to 2e-3 at 400 nm (my calculation). Adding a third term and the "normal-line" partial dispersion cuts the flint error to 2e-4. Generic nd/vd values are therefore enough, with no brand glass names.
@@ -328,7 +328,7 @@ Marginal-ray longitudinal SA as a fraction of f, at 0.35, 0.7 and 1.0 of the sta
 
 This is directly usable as a regression test and as input to "which bokeh character does each family have" (§1).
 
-### 2.6 Licensing caveats (not legal advice; owner or Fable to confirm)
+### 2.6 Licensing caveats (not legal advice; the lead to confirm)
 - **Facts vs databases.** Raw numbers are facts, which are not copyrightable in the US [Feist v. Rural Telephone, 499 U.S. 340 (1991), cited from memory]. The EU adds a sui generis database right for a substantial-investment compilation (Directive 96/9/EC, cited from memory). Re-keying each prescription from its own patent, with patent number and date as provenance, avoids both. Do not bulk-import a third-party curated lens database.
 - **Expiry.** Every patent above was filed 1895–1978. The US term is 20 years from filing for filings after 7 June 1995, and 17 years from grant for earlier grants, so all are long expired. Google's metadata showed "Expired - Lifetime" for US 4,256,373. US patent text is generally not copyright-restricted apart from notices permitted by 37 CFR 1.71(d)–(e) (from memory; verify).
 - **Examples are not products.** Patent embodiments differ from shipped lenses. Treat them as representative designs.
@@ -395,7 +395,7 @@ Retrofocus designs and telecentric designs are less prone to natural vignetting 
 
 ### 3.6 Polynomial optics
 - Hullin: Taylor expansion of the ray map in (x, y, dx, dy), concatenated and truncated to degree n; degree 3 captures the textbook aberrations, degree 5 changes the outcome only marginally for far more cost. Accuracy is best near the axis and degrades in the extreme periphery [HHH12].
-- Schrade: sparse orthogonal-matching-pursuit fits replace a Taylor expansion and allow degree 11–15, but "single-precision floating point variables are not precise enough" for the fitting step [S16 §5]. Fit offline in f64 and quantise to f32 for evaluation. Rule 8b says f32 everywhere, so this is a decision for Fable (see §7).
+- Schrade: sparse orthogonal-matching-pursuit fits replace a Taylor expansion and allow degree 11–15, but "single-precision floating point variables are not precise enough" for the fitting step [S16 §5]. Fit offline in f64 and quantise to f32 for evaluation. Rule 8b says f32 everywhere, so this is a judgement call for the lead (see §7).
 - Polynomials excel at cheap evaluation (one 200-term evaluation per ray) and at flare. They lose exactness for aspheric or extreme designs unless the degree rises [HHH12], [S16].
 
 ---
@@ -559,7 +559,7 @@ Use the stable intersection from the surface's tangent plane: `t = c r² / (B + 
 
 ## 7. Open decisions, caveats and unverified items
 
-**Decisions that belong to Fable (rule 11), not taken here**
+**Judgement calls that belong to the lead (rule 11), not taken here**
 1. Default bokeh character for product renders, and which of the sixteen prescriptions ship first.
 2. The "swirl" look: a physical outcome of a traced Petzval, or an artistic knob.
 3. Hybrid single-wavelength RGB scheme (§3.4) vs a full spectral move.

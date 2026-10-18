@@ -18,7 +18,7 @@ import { glassFrameIndex, type GlassTrack } from './wet';
 import { partsFrameIndex, type PartsTrack } from './wet-parts';
 
 /**
- * How the camera track changes into a shot (N1, SPEC §3.7 "Fundidos"): a cut, or a fade to a colour (black or white)
+ * How the camera track changes into a shot (N1, SPEC §3.7 "Fades"): a cut, or a fade to a colour (black or white)
  * of `duration` seconds centred on the cut: the image goes to the colour over the first half, the camera changes under
  * it, and the image comes back over the second half. Into the first shot, a fade from the colour at the start. A
  * cross-fade (two cameras at once) is a later phase.
@@ -401,7 +401,7 @@ export function shotTransition(shot: Pick<Shot, 'transition'>): ShotTransition {
 }
 
 /**
- * N1: the stretch of time the change into shot i covers, seconds (SPEC §3.7 "Fundidos"), or null for a cut. A FADE into
+ * N1: the stretch of time the change into shot i covers, seconds (SPEC §3.7 "Fades"), or null for a cut. A FADE into
  * shot i (i ≥ 1) straddles the cut: half of its length before and half after, never longer than half of either shot;
  * one into the first shot runs from 0 over its length (no longer than the shot). The timeline draws this very span.
  */
@@ -421,7 +421,7 @@ export function shotFadeSpan(shots: readonly Pick<Shot, 'duration' | 'transition
 }
 
 /**
- * N1: the camera track's fade to a colour at time t (SPEC §3.7 "Fundidos"). A FADE change into shot i (i ≥ 1) takes the
+ * N1: the camera track's fade to a colour at time t (SPEC §3.7 "Fades"). A FADE change into shot i (i ≥ 1) takes the
  * image to its colour over the half of its span before the cut and back over the half after, with the smooth curve;
  * one into the first shot is a fade from the colour over its span from 0 (`shotFadeSpan`). Where two overlap the
  * stronger one is seen. Null when no fade is under way.

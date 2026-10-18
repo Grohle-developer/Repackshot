@@ -1,4 +1,4 @@
-// Rain, dust and snow on the parts (phase S3c, SPEC §3.1 "Físicas", UI.md §2.5): what the ambient effects that fall on
+// Rain, dust and snow on the parts (phase S3c, SPEC §3.1 "Physics", UI.md §2.5): what the ambient effects that fall on
 // the parts (their `wetParts` switch) leave on the meshes of the scene. The engine simulates it (engine/crates/rt-phys
 // `wet_parts`, through rt.wasm's `wpt_*` in the physics worker, next to the rigid bodies of S2 and the front glass of
 // S3b) from a WPT1 spec (`wptBytes` writes it from `wetPartsSpec`): every visible part that does not move in the run,
@@ -12,6 +12,11 @@
 // io/rsb.ts) and the Fast preview (render/preview.ts) read the frame the playhead shows (`partsFrame`): each sample's
 // bytes of wet, dust and snow (the dust from its rate since the rain last wiped it, the snow from its rate), each drop
 // on its triangle in its part's object space.
+//
+// S3d: the drips and the drops splashes throw fly through the air (rt_phys::wet_parts): every frame records the drops in
+// the air (the part each left, its centre in the world, the radius of its sphere), which the track keeps frame by frame
+// (`PartsTrack.falling`), the render draws (the WETF section, for an engine with bit 9) and Fast too. `partsShown` says
+// what the frame holds, for the meter: rain, dust and snow, on how many parts, the drops on them and in the air.
 
 import { PARTS_CELL_MM, PARTS_FEED, PARTS_MAX_SAMPLES, SET_PIECES_AS_FILM } from '../data/wet-parts';
 import { DUST_REPOSE_DEG, SNOW_REPOSE_DEG, wettability, wettabilityFamilyOf, type WettabilityFamily } from '../data/wettability';
@@ -24,8 +29,11 @@ import type { ProjectState } from './store';
 
 /** The version of WPT1 this page writes (rt_phys::wet_parts::PARTS_VERSION). */
 export const WPT1_VERSION = 1;
-/** The version of the record format (and of the simulation it records): part of every key. */
-export const PARTS_FORMAT_VERSION = 1;
+/**
+ * The version of the record format (and of the simulation it records): part of every key. 2 (S3d): the drops in the
+ * air, and the drips and splashes that land later than they leave.
+ */
+export const PARTS_FORMAT_VERSION = 2;
 /** A frame that has not come. */
 export const NEVER = 0xffffffff;
 /** The depth of snow a step of its byte stands for, mm (rt_core::weather::SNOW_STEP_MM). */
@@ -87,6 +95,16 @@ export function partsFeedingEffects(state: ProjectState): AmbientEffect[] {
  */
 export function partsRenderDry(state: ProjectState, readsWetParts: boolean | undefined): boolean {
   return readsWetParts === false && partsFeedingEffects(state).length > 0;
+}
+
+/**
+ * S3d: the render would draw the parts wet but not the drops in the air (drips and splashes falling) although some effect
+ * rains on them: its engine draws the weather of the parts (bit 8) but not the drops in the air (`readsWetFlight` false:
+ * bit 9, render/engine.ts; an engine of S3c). Unknown is no reason to warn, nor an engine without bit 8 (the note of
+ * `partsRenderDry` says more).
+ */
+export function partsRenderNoFlight(state: ProjectState, readsWetParts: boolean | undefined, readsWetFlight: boolean | undefined): boolean {
+  return readsWetParts === true && readsWetFlight === false && partsFeedingEffects(state).some((e) => PARTS_FEED[e.preset] === 'DROPS');
 }
 
 /**
@@ -261,6 +279,18 @@ export interface PartsTrack {
   wiped: string;
   /** Per frame: u32 drops on the parts, u32 drips so far. */
   counts: string;
+  /**
+   * S3d: per frame, the drops in the air: u32 n; (u32 part; f32 x y z r (world, the radius of its sphere))[n]. Absent
+   * in a track of before (no drop in the air).
+   */
+  falling?: string;
+}
+
+/** S3d: a drop in the air at a frame: the part it left (its index in the track), its centre (world) and its radius. */
+export interface FallingDropFrame {
+  part: number;
+  position: Vec3;
+  radius: number;
 }
 
 /** What the parts hold at a frame: per part its samples' bytes and its drops. */
@@ -269,6 +299,8 @@ export interface PartsFrame {
   /** Drops on all the parts and drips so far (the meter). */
   drops: number;
   drips: number;
+  /** S3d: the drops in the air. */
+  falling: FallingDropFrame[];
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -365,6 +397,7 @@ export class PartsTrackWriter {
   private readonly wet = new Words();
   private readonly wiped = new Words();
   private readonly counts = new Words();
+  private readonly falling = new Words();
   /** The version of each live drop (its index among the versions). */
   private readonly live = new Map<number, number>();
   private count = 0;
@@ -388,6 +421,8 @@ export class PartsTrackWriter {
 
   /** Drops on the parts at the last frame, and drips so far. */
   lastDrops = 0;
+  /** S3d: drops in the air at the last frame. */
+  lastFalling = 0;
   get totalDrips(): number {
     return this.drips;
   }
@@ -443,10 +478,25 @@ export class PartsTrackWriter {
     this.drips += word(at);
     const drops = word(at + 1);
     if (drops !== this.live.size) throw new Error('parts record: the drops do not follow the frames before');
-    if (4 * (at + 2) !== record.byteLength) throw new Error('parts record: bytes after the end');
+    // S3d: the drops in the air, whole: u32 n; (u32 id part; f32 x y z r)[n].
+    at += 2;
+    const nf = word(at);
+    if (at + 1 + 6 * nf > words) throw new Error('parts record: truncated');
+    if (4 * (at + 1 + 6 * nf) !== record.byteLength) throw new Error('parts record: bytes after the end');
+    const fallingAt = this.falling.length;
+    this.falling.u32(nf);
+    for (let k = 0; k < nf; k++) {
+      const f = at + 1 + 6 * k;
+      if (word(f + 1) >= this.parts.length) {
+        this.falling.length = fallingAt;
+        throw new Error('parts record: a drop in the air from a part that is not there');
+      }
+      this.falling.raw(record.subarray(4 * (f + 1), 4 * (f + 6)));
+    }
     this.counts.u32(drops);
     this.counts.u32(this.drips);
     this.lastDrops = drops;
+    this.lastFalling = nf;
     this.count++;
   }
 
@@ -462,6 +512,7 @@ export class PartsTrackWriter {
       wet: toBase64(this.wet.data()),
       wiped: toBase64(this.wiped.data()),
       counts: toBase64(this.counts.data()),
+      falling: toBase64(this.falling.data()),
     };
     return track;
   }
@@ -480,6 +531,9 @@ interface DecodedParts {
   wipeStart: Uint32Array;
   wipeFrames: Uint32Array;
   counts: Uint32Array;
+  /** S3d: the words of the drops in the air, and where each frame's begin (its count), or null (a track of before). */
+  falling: Uint32Array | null;
+  fallingAt: Uint32Array | null;
 }
 
 const decodedTracks = new WeakMap<PartsTrack, DecodedParts | null>();
@@ -527,7 +581,31 @@ function decodeParts(track: PartsTrack): DecodedParts | null {
   const fill = wipeStart.slice(0, samples);
   const wipeFrames = new Uint32Array(wiped.length / 2);
   for (let k = 0; k < wiped.length; k += 2) wipeFrames[fill[wiped[k]]++] = wiped[k + 1];
-  return { layout, first, versions, versionFloats, wetFrame, wipeStart, wipeFrames, counts };
+  // S3d: the drops in the air, a block per frame.
+  let falling: Uint32Array | null = null;
+  let fallingAt: Uint32Array | null = null;
+  if (track.falling !== undefined) {
+    falling = words(track.falling, 1);
+    if (!falling) return null;
+    const floats = new Float32Array(falling.buffer);
+    fallingAt = new Uint32Array(track.frames);
+    let at = 0;
+    for (let f = 0; f < track.frames; f++) {
+      if (at >= falling.length) return null;
+      fallingAt[f] = at;
+      const n = falling[at];
+      if (at + 1 + 5 * n > falling.length) return null;
+      for (let k = 0; k < n; k++) {
+        const w = at + 1 + 5 * k;
+        if (falling[w] >= track.parts.length) return null;
+        for (let c = 1; c < 5; c++) if (!Number.isFinite(floats[w + c])) return null;
+        if (!(floats[w + 4] > 0)) return null;
+      }
+      at += 1 + 5 * n;
+    }
+    if (at !== falling.length) return null;
+  }
+  return { layout, first, versions, versionFloats, wetFrame, wipeStart, wipeFrames, counts, falling, fallingAt };
 }
 
 function decoded(track: PartsTrack): DecodedParts | null {
@@ -560,6 +638,7 @@ export function isPartsTrack(x: unknown): x is PartsTrack {
     typeof t.wet === 'string' &&
     typeof t.wiped === 'string' &&
     typeof t.counts === 'string' &&
+    (t.falling === undefined || typeof t.falling === 'string') &&
     decoded(t as PartsTrack) !== null
   );
 }
@@ -615,7 +694,17 @@ export function partsFrame(track: PartsTrack, index: number): PartsFrame | null 
     const fl = d.versionFloats;
     parts[d.versions[9 * v + 1]].drops.push({ triangle: d.versions[9 * v + 2], position: [fl[9 * v + 3], fl[9 * v + 4], fl[9 * v + 5]], radius: fl[9 * v + 6] });
   }
-  const value: PartsFrame = { parts, drops: d.counts[2 * f], drips: d.counts[2 * f + 1] };
+  // S3d: the drops in the air at this frame.
+  const falling: FallingDropFrame[] = [];
+  if (d.falling && d.fallingAt) {
+    const fl = new Float32Array(d.falling.buffer);
+    const at = d.fallingAt[f];
+    for (let k = 0; k < d.falling[at]; k++) {
+      const w = at + 1 + 5 * k;
+      falling.push({ part: d.falling[w], position: [fl[w + 1], fl[w + 2], fl[w + 3]], radius: fl[w + 4] });
+    }
+  }
+  const value: PartsFrame = { parts, drops: d.counts[2 * f], drips: d.counts[2 * f + 1], falling };
   frameCache.set(track, { frame: f, value });
   return value;
 }
@@ -675,4 +764,44 @@ export function partWeather(track: PartsTrack, frame: PartsFrame, k: number, tri
     return i === undefined ? [] : [{ ...d, triangle: i }];
   });
   return { resolution, values, drops };
+}
+
+/** S3d: what a frame holds on the parts, for the meter: rain (a wet sample, a drop on a part or in the air), dust, snow. */
+export interface PartsShown {
+  /** Parts that hold something (a wet, dusty or snowy sample, a drop). */
+  parts: number;
+  /** Drops on the parts, and in the air. */
+  drops: number;
+  falling: number;
+  rain: boolean;
+  dust: boolean;
+  snow: boolean;
+}
+
+/**
+ * S3d: what `frame` holds, over the parts `drawn` takes (all of them by default: the meter counts those the viewport
+ * draws). The drops in the air count when the part they left is drawn.
+ */
+export function partsShown(frame: PartsFrame, drawn: (k: number) => boolean = () => true): PartsShown {
+  const out: PartsShown = { parts: 0, drops: 0, falling: 0, rain: false, dust: false, snow: false };
+  frame.parts.forEach((p, k) => {
+    if (!drawn(k)) return;
+    let wet = p.drops.length > 0;
+    let dust = false;
+    let snow = false;
+    for (let i = 0; i < p.values.length; i += 3) {
+      wet ||= p.values[i] > 0;
+      dust ||= p.values[i + 1] > 0;
+      snow ||= p.values[i + 2] > 0;
+      if (wet && dust && snow) break;
+    }
+    if (wet || dust || snow) out.parts++;
+    out.drops += p.drops.length;
+    out.rain ||= wet;
+    out.dust ||= dust;
+    out.snow ||= snow;
+  });
+  out.falling = frame.falling.filter((f) => drawn(f.part)).length;
+  out.rain ||= out.falling > 0;
+  return out;
 }

@@ -1,4 +1,4 @@
-// The camera's Lens in the inspector (phase O2, UI.md §2.4 Camera ▸ Lens, STUDIO-TOOLS §1 "Editor de lentes"): the
+// The camera's Lens in the inspector (phase O2, UI.md §2.4 Camera ▸ Lens, STUDIO-TOOLS §1 "Lens editor"): the
 // simple lens (stored as `thin`) or a traced lens of src/data/lenses.json, chosen by character; for a traced lens its source, the lens
 // behind an adapter, the coating, the variable gap of the soft-focus lens and the iris; what the engine computes of
 // it (rule 10: the focal length, the back focus, the f-number in use and the T-stop, elements and groups, the length,

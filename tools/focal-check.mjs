@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Browser check of the focal length's switch (phase C2; ROADMAP "Decisiones de criterio" 1.7), with the local Chromium
+// Browser check of the focal length's switch (phase C2; ROADMAP "Judgement calls" 1.7), with the local Chromium
 // and swiftshader, on the built interface.
 //
 //   npm run build && node tools/focal-check.mjs [--url http://host:port] [--shots docs/ui]

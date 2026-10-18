@@ -1,5 +1,5 @@
 // Gradient noise of the material graphs (phase M3a): the definition the engine (M3b) implements bit for bit, in f32,
-// with ARCHITECTURE §5.2 quater ("El ruido") as the written contract. Two bases and a sum over octaves:
+// with ARCHITECTURE §5.2 quater ("The noise") as the written contract. Two bases and a sum over octaves:
 //
 //   - Perlin's improved gradient noise (K. Perlin, "Improving noise", SIGGRAPH 2002): the lattice's integer corners,
 //     a gradient per corner from one of twelve cube-edge directions, the quintic fade 6t⁵ − 15t⁴ + 10t³ and

@@ -1,0 +1,56 @@
+# Release notes: replace the notes of already-published GitHub releases with the current
+# `docs/release-notes/<tag>.md` of the selected ref. `release.yml` sets the notes only when it
+# creates a release, so a later rewrite of a notes file (a correction, a translation) reaches the
+# published release only through this workflow. Run by hand: `tag` empty edits every published
+# release that has a notes file; a tag (vX.Y.Z) edits only that one. A release without a notes
+# file keeps its notes; the packages are never touched.
+name: Release notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Only this release (vX.Y.Z); empty: every published release with a notes file'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Edit the published notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$TAG" ]; then
+            if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::tag must look like vX.Y.Z, got $TAG"
+              exit 1
+            fi
+            tags="$TAG"
+          else
+            tags="$(gh release list --limit 200 --json tagName --jq '.[].tagName')"
+          fi
+          edited=0
+          for tag in $tags; do
+            notes="docs/release-notes/$tag.md"
+            if [ ! -f "$notes" ]; then
+              echo "$tag: no $notes, notes kept"
+              continue
+            fi
+            gh release edit "$tag" --notes-file "$notes"
+            echo "$tag: notes replaced from $notes"
+            edited=$((edited + 1))
+          done
+          # A named tag without a notes file is a mistake in the input, not a no-op.
+          if [ -n "$TAG" ] && [ "$edited" -eq 0 ]; then
+            echo "::error::no notes file for $TAG"
+            exit 1
+          fi
+          echo "$edited release(s) edited"

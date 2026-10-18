@@ -1,7 +1,7 @@
 // The page's state kept by the desktop launcher (phase P3e, engine/crates/rt-app/src/appdata.rs):
 // the settings document, small named documents, the library, the results history, the thumbnail
 // cache and the space the data folder takes. A client over `NativeClient.request` (io/native.ts),
-// which adds the launch token; the contract is engine/crates/rt-app/README.md (§ Estado de la página).
+// which adds the launch token; the contract is engine/crates/rt-app/README.md (§ Page state).
 
 import type { NativeClient } from './native';
 import { NativeError } from './native';

@@ -1,5 +1,5 @@
-// The elements of a traced lens, edited (phase O2c, the triage's 1.5: «editar los elementos, cambiar tamaño o
-// distancias entre cada elemento, añadir uno nuevo, rotarlo 180º»). A lens of the catalogue is never edited in place:
+// The elements of a traced lens, edited (phase O2c, the triage's 1.5: “edit the elements, change the size or the
+// distances between each element, add a new one, rotate it 180º”). A lens of the catalogue is never edited in place:
 // editing starts from a copy of the surfaces the engine traces for it (`startEdit`: the person's coating and variable
 // gap already in), kept with the traced lens as `edited` (core/traced-lens.ts), at the design's own scale: the engine
 // scales the whole lens to the camera's focal length, as it does a catalogue lens. Pure and without a DOM, so that

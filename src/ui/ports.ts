@@ -37,6 +37,7 @@ import type { PluginRegistryEntry } from '../data/plugins';
 import type { PerfResult, Tool, VideoSupportUi } from './ui-state';
 import type { PhysicsRunHandle, PhysicsRunOptions, PhysicsSpec, PhysicsUpdate } from '../core/physics';
 import type { EnginePane, PaneAxes, WetPaneSpec } from '../core/wet';
+import type { PartsShown } from '../core/wet-parts';
 
 export interface PickResult {
   node: NodeId;
@@ -81,8 +82,8 @@ export interface EngineStatus {
    * without rt.wasm. Absent: no front glass.
    */
   glass?: { drops: number; motes: number; noEngine?: boolean };
-  /** Preview (S3c): the recorded rain, dust and snow on the parts it draws: the parts that carry it and their drops. */
-  parts?: { parts: number; drops: number };
+  /** Preview (S3c): the recorded rain, dust and snow on the parts it draws (S3d: what of it is there, on how many parts, the drops on them and in the air). */
+  parts?: PartsShown;
   watchdog?: number;
   /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
   shownKey?: string;

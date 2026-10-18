@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Browser check of focus with a click (user report 1.8, phase B1, phase F1), with the local Chromium and swiftshader.
+// Browser check of focus with a click (owner's report 1.8, phase B1, phase F1), with the local Chromium and swiftshader.
 //
 //   npm run build && node tools/focus-click-check.mjs [--url http://host:port]
 //

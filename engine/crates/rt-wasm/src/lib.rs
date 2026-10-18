@@ -1638,6 +1638,8 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_GLASS_LAYOUT, 128);
         // S3c: the rain, dust and snow on the parts.
         assert_eq!(rt_features() & rt_core::FEATURE_WET_PARTS, 256);
+        // S3d: the drops in the air.
+        assert_eq!(rt_features() & rt_core::FEATURE_WET_FLIGHT, 512);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.

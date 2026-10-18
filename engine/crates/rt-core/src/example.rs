@@ -213,7 +213,9 @@ pub fn scene() -> Scene {
         glass: None,
         textured: false,
         wet_parts: Vec::new(),
+        wet_falling: Vec::new(),
         caps: None,
+        cap_owners: Vec::new(),
     }
 }
 

@@ -63,6 +63,9 @@ function fnv1a(f32) {
 }
 
 async function main() {
+  // Before the launcher starts: building rt-cli can take longer than the server keeps an idle connection, and
+  // spawnSync blocks the event loop meanwhile, so fetch would reuse a socket the server has already closed.
+  const rsb = exampleScene();
   const wine = exe.endsWith('.exe') && process.platform !== 'win32';
   const dataDir = mkdtempSync(join(tmpdir(), 'repackshot-data-'));
   const cmd = wine ? 'wine' : exe;
@@ -104,7 +107,6 @@ async function main() {
     ].map((r) => r.status);
     if (refused.join() !== '404,404,400') fail(`the file API took an ungranted path: ${refused}`);
     console.log(`file API: ungranted write, ungranted read, a non-https URL -> ${refused.join(', ')}`);
-    const rsb = exampleScene();
     const posted = await api('/api/render?kind=final', { method: 'POST', body: rsb });
     if (!posted.ok) fail(`POST /api/render -> ${posted.status} ${await posted.text()}`);
     const { id } = await posted.json();

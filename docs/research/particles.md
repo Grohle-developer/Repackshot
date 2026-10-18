@@ -1,6 +1,6 @@
-# Investigación: partículas de todo tipo (2026-10-13)
+# Research: particles of every kind (2026-10-13)
 
-> Informe de investigación preparado por Sonnet para el líder, en inglés tal como se redactó. Las decisiones están en `docs/STUDIO-TOOLS.md` y en `docs/ROADMAP.md`.
+> Research report prepared for the lead, kept in English as it was written. The decisions are in `docs/STUDIO-TOOLS.md` and in `docs/ROADMAP.md`.
 
 # Particles "of every kind" for Repackshot: catalogue, methods, rendering, UX and phased plan
 
@@ -80,8 +80,8 @@ Roadmap context:
 - Engine has no external crates, is deterministic and portable, and uses `f32` throughout (rules 8, 8b).
 - UI is achromatic, every string exists in `es` and `en`, and mutations go through the store and are undoable (rules 4, 5, 6).
 - Catalogue keys are stable (rule 7).
-- No invented numbers in the UI; unfinished features are marked *próximamente* (rule 10).
-- Visual and photographic criteria and architecture decisions are Fable's (rule 11). Everything below is a proposal.
+- No invented numbers in the UI; unfinished features are marked *coming soon* (rule 10).
+- Visual and photographic criteria and architecture decisions belong to the lead (rule 11). Everything below is a proposal.
 
 ### 1.3 What KeyShot's public documentation shows (black-box only)
 
@@ -268,7 +268,7 @@ Take-aways for this product:
 
 ### 5.2 Proposed model: one scene node type, "Effect"
 
-All proposals (names, structure) are for Fable to ratify (CLAUDE.md rules 11, 12).
+All proposals (names, structure) are for the lead to ratify (CLAUDE.md rules 11, 12).
 
 - A new scene node, **Effect**, with Type and Preset. The animation wizard in `SPEC.md` §3.7 already uses a grid of grouped cards, so reuse that pattern.
 - Three levels of UI:
@@ -294,7 +294,7 @@ All proposals (names, structure) are for Fable to ratify (CLAUDE.md rules 11, 12
 
 ### 5.4 Preset list (generic names; Spanish in parentheses)
 
-Starting values are Fable's photographic decision (rule 11). I give none.
+Starting values are a photographic judgement call for the lead (rule 11). I give none.
 
 | Group | Presets |
 |---|---|
@@ -357,7 +357,7 @@ Effort is one experienced engineer in calendar weeks (estimate). Model assignmen
 
 ## 7. Risks, open questions and source caveats
 
-**Open decisions for Fable:**
+**Open judgement calls for the lead:**
 - Simulator location, time model, cache format, and the E8 question of how `rt` renders an animation.
 - Whether volumes can read `.vdb`. OpenVDB has no formal file-format specification; a public write-up exists [JFX] but it describes the codebase, so check the clean-room rules before relying on it. Safer: own volume format plus an importer for simpler formats.
 - Whether to use MIS-capable null-scattering estimators [NS19] from the start.

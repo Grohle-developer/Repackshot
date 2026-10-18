@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Browser check of the viewport's camera list and the scene's camera section (user report: no way to edit a camera
+// Browser check of the viewport's camera list and the scene's camera section (owner's report: no way to edit a camera
 // from the list, and the section did not say it was editing "Camera 1"), with the local Chromium and swiftshader.
 //
 //   npm run build && node tools/camera-menu-check.mjs [--shots docs/ui] [--url http://host:port]

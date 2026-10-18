@@ -1,4 +1,4 @@
-// Focus by distance, by point and by object (phase F1, SPEC §3.5 "Enfoque"): what a camera focuses on and how far
+// Focus by distance, by point and by object (phase F1, SPEC §3.5 "Focus"): what a camera focuses on and how far
 // that is from it, wherever the camera and the scene are (the store at rest, the playhead's pose, a gesture's live view,
 // every frame of an animation, a queued job).
 //
