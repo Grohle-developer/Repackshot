@@ -36,8 +36,8 @@ import { apply, exampleState } from './helpers';
 const added = (s: ProjectState, preset: EffectKind = 'DUST_MOTES') => apply(s, { type: 'effect/add', preset });
 
 describe('the catalogue of effects', () => {
-  it('has the eight presets of S4a with stable keys, and the three volumes of S5 coming soon', () => {
-    expect(AVAILABLE_EFFECTS.map((p) => p.key)).toEqual(['DUST_MOTES', 'POLLEN', 'RAIN', 'SNOW', 'DUST_CLOUD', 'ASH', 'BUBBLES', 'CONFETTI']);
+  it('has the eight presets of S4a and the drops of S3 with stable keys, and the three volumes of S5 coming soon', () => {
+    expect(AVAILABLE_EFFECTS.map((p) => p.key)).toEqual(['DUST_MOTES', 'POLLEN', 'RAIN', 'SNOW', 'DUST_CLOUD', 'ASH', 'BUBBLES', 'CONFETTI', 'WATER_DROPS']);
     expect(EFFECT_PRESETS.filter((p) => p.soon).map((p) => p.key)).toEqual(['HAZE', 'LIGHT_SHAFTS', 'GROUND_FOG']);
     // The FXAM kind codes are unique and never zero.
     const codes = EFFECT_PRESETS.map((p) => p.code);

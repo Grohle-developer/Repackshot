@@ -128,6 +128,55 @@ pub fn camera_sample_filtered(
     (ray, (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)), weight, path)
 }
 
+/// S3: a camera ray through the scene's front glass ([`crate::optics::glass`]): `None` when a
+/// mote or the way back towards the camera stops it; otherwise the ray it goes on as, its screen
+/// position (where a ray a drop bent now points, for the background image) and the share of its
+/// light that reaches the camera. A scene without a front glass, or a ray that nothing on the pane
+/// is in the way of, gives the ray back unchanged, bit for bit.
+pub fn through_glass(
+    scene: &Scene,
+    ray: Ray,
+    screen: (f32, f32),
+) -> Option<(Ray, (f32, f32), f32)> {
+    use crate::optics::glass::Crossed;
+    let Some(glass) = scene.glass.as_ref() else {
+        return Some((ray, screen, 1.0));
+    };
+    match glass.cross(&scene.camera, &ray) {
+        Crossed::Unchanged => Some((ray, screen, 1.0)),
+        Crossed::Blocked => None,
+        Crossed::Through { ray, weight, bent } => {
+            let screen = if bent {
+                screen_of(scene, ray.dir).unwrap_or(screen)
+            } else {
+                screen
+            };
+            Some((ray, screen, weight))
+        }
+    }
+}
+
+/// Where a pinhole at the camera's position would see the direction `dir` on the screen, `(u, v)`
+/// in `[0, 1]²` from the top left; `None` behind the camera or for an orthographic or panoramic
+/// one.
+fn screen_of(scene: &Scene, dir: crate::math::Vec3) -> Option<(f32, f32)> {
+    let camera = &scene.camera;
+    if !camera.through_lens() {
+        return None;
+    }
+    let (forward, right, up) = camera.basis();
+    let z = dir.dot(forward);
+    if z.is_nan() || z <= 1.0e-6 {
+        return None;
+    }
+    let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
+    let (sw, sh) = crate::optics::sensor_size(camera, width as f32 / height as f32);
+    let k = camera.focal_mm / z;
+    let u = 0.5 + dir.dot(right) * k / sw;
+    let v = 0.5 - dir.dot(up) * k / sh;
+    (u.is_finite() && v.is_finite()).then(|| (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)))
+}
+
 /// A camera sample: the ray, the screen position, the colour weight and what the lens's filters
 /// did ([`camera_sample_filtered`]).
 pub type CameraSample = (Ray, (f32, f32), Rgb, Option<crate::optics::FilterPath>);
@@ -373,6 +422,11 @@ fn render_tile_traced<T: Tracer>(
             let shade = |index: u32, sample: CameraSample, rays: &mut u64| -> (Rgb, f32) {
                 let sampler = PixelSampler::new(scene.render.seed, x, y, index);
                 let (ray, screen, weight, path) = sample;
+                // S3: through the front glass first; what it stops is dark and opaque.
+                let Some((ray, screen, kept)) = through_glass(scene, ray, screen) else {
+                    return (Rgb::BLACK, 1.0);
+                };
+                let weight = if kept < 1.0 { weight * kept } else { weight };
                 match (&path, scene.camera.lens.as_ref()) {
                     (Some(path), Some(lens)) if lens.connects() => {
                         let lights = prepared.lights().camera_lights();
@@ -391,6 +445,14 @@ fn render_tile_traced<T: Tracer>(
                         let mut sum = c * weight;
                         for i in 0..lens.filters().len() {
                             if let Some((to, light, w)) = lens.connection(path, lights, i) {
+                                // S3: a connection the front glass would bend or dim is left
+                                // out (its direction is the light's).
+                                if scene.glass.as_ref().is_some_and(|g| {
+                                    g.cross(&scene.camera, &to)
+                                        != crate::optics::glass::Crossed::Unchanged
+                                }) {
+                                    continue;
+                                }
                                 *rays += 1;
                                 let t_geometry = tracer.trace(&to).map_or(f32::INFINITY, |h| h.t);
                                 let t = t_geometry.min(prepared.floor_t(&to, true));
@@ -551,6 +613,12 @@ fn render_tile_albedo_traced(
                 let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
                 let ray = camera_ray(scene, &sampler, x, y);
                 rays += 1;
+                // S3: through the front glass, as the image's sample goes.
+                let Some((ray, _, _)) = through_glass(scene, ray, (0.0, 0.0)) else {
+                    film.add_albedo(x, y, Rgb::BLACK);
+                    film.add_alpha(x, y, 1.0);
+                    continue;
+                };
                 let hit = first_hit(scene, prepared, &tracer, &ray);
                 film.add_albedo(x, y, albedo_of(scene, hit));
                 film.add_alpha(x, y, coverage_of(hit));
@@ -563,6 +631,10 @@ fn render_tile_albedo_traced(
                 let sampler = PixelSampler::new(scene.render.seed, x, y, index);
                 let ray = camera_ray(scene, &sampler, x, y);
                 rays += 1;
+                let Some((ray, _, _)) = through_glass(scene, ray, (0.0, 0.0)) else {
+                    covered += 1.0;
+                    continue;
+                };
                 let hit = first_hit(scene, prepared, &tracer, &ray);
                 sum += albedo_of(scene, hit);
                 covered += coverage_of(hit);
@@ -637,6 +709,9 @@ mod section_tests;
 
 #[cfg(test)]
 mod k3_tests;
+
+#[cfg(test)]
+mod s3_tests;
 
 #[cfg(test)]
 mod tests {

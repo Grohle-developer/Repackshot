@@ -466,6 +466,47 @@ pub unsafe extern "C" fn rt_particles_eval(
     }
 }
 
+/// The shapes of the particles of an ambient effect (S3) for the Fast preview, in the order of
+/// [`rt_particles_eval`]: reads the `FXAM` payload of `params_len` bytes at `params_ptr` and writes
+/// at most `max` shape codes, one `u32` each (0 sphere, 1 disc, 2 capsule, 3 drop:
+/// `rt_sim::Shape::to_u32`), to `out_ptr`. Returns the number written, or `u32::MAX` when a pointer
+/// is null or the payload is invalid (then see [`rt_scene_error_len`]).
+///
+/// # Safety
+///
+/// `params_ptr` must be null or point to `params_len` readable bytes, and `out_ptr` null or to
+/// `max * 4` writable bytes (alignment is not required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_particles_shapes(
+    params_ptr: *const u8,
+    params_len: u32,
+    max: u32,
+    out_ptr: *mut u32,
+) -> u32 {
+    if params_ptr.is_null() || out_ptr.is_null() {
+        crate::set_error("rt_particles_shapes: null pointer");
+        return u32::MAX;
+    }
+    // SAFETY: non-null, and the caller promises `params_len` readable bytes; the slice does not
+    // outlive this call.
+    let params = unsafe { std::slice::from_raw_parts(params_ptr, params_len as usize) };
+    match crate::particles_shapes(params, max) {
+        Ok(out) => {
+            // SAFETY: at most `max` codes were evaluated, for which the caller promises room;
+            // byte-wise copy needs no alignment, and `out` is a fresh allocation.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    out.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    out.len() * std::mem::size_of::<u32>(),
+                );
+            }
+            out.len() as u32
+        }
+        Err(_) => u32::MAX,
+    }
+}
+
 /// Length in bytes of the lens information of scene `handle` (O2, JSON: [`crate::scene_lens_info`]),
 /// `u32::MAX` for a bad handle.
 #[no_mangle]

@@ -1,5 +1,5 @@
 use super::*;
-use crate::params::{FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
+use crate::params::{DROP_TAIL, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
 
 /// Floating dust in a box around a 300 mm part, with turbulence.
 fn dust(count: u32) -> AmbientParams {
@@ -385,4 +385,140 @@ fn tints_pick_the_palette_and_vary_within_the_variation() {
         spread = spread.max((c[0] - 1.0).abs());
     }
     assert!(spread > 0.3, "{spread}");
+}
+
+/// Rain of drops (S3): the rain of [`rain`] with the drop shape, no turbulence and one fall speed.
+fn drops(count: u32) -> AmbientParams {
+    AmbientParams {
+        shape: Shape::Drop,
+        turbulence: [0.0; 3],
+        fall_var: 0.0,
+        ..rain(count)
+    }
+}
+
+#[test]
+fn drops_trail_their_tip_behind_them_at_the_tail_s_length() {
+    let mut params = drops(500);
+    params.drop_tail = 2.0;
+    params.drop_tip = 0.2;
+    // The velocity is (800, 0, -6500) mm/s: the tip trails it, up and against the wind.
+    let v = [800.0f32, 0.0, -6500.0];
+    let speed = dot(v, v).sqrt();
+    for p in evaluate(&params, u32::MAX) {
+        assert_eq!(p.shape, Shape::Drop);
+        let len = dot(p.axis, p.axis).sqrt();
+        assert!(
+            (len - 2.0 * p.radius).abs() <= 1.0e-4 * p.radius.max(1.0),
+            "{len} {}",
+            p.radius
+        );
+        let along = dot(p.axis, v) / (len * speed);
+        assert!((along + 1.0).abs() < 1.0e-4, "{along}");
+        assert!(p.axis[2] > 0.0, "the tip points up: {:?}", p.axis);
+    }
+    // A tail that would bury the tip in the body sticks out by the floor.
+    params.drop_tail = 0.1;
+    for p in evaluate(&params, 50) {
+        let len = dot(p.axis, p.axis).sqrt();
+        let want = (1.0 - 0.2 + MIN_DROP_PROTRUSION) * p.radius;
+        assert!(
+            (len - want).abs() <= 1.0e-4 * p.radius.max(1.0),
+            "{len} vs {want}"
+        );
+    }
+    // A drop that does not move points along its life's random normal: unit times the tail.
+    let mut still = drops(200);
+    still.fall_speed = 0.0;
+    still.wind = [0.0; 3];
+    still.energy = 0.0;
+    for p in evaluate(&still, u32::MAX) {
+        let len = dot(p.axis, p.axis).sqrt();
+        assert!((len - DROP_TAIL * p.radius).abs() <= 1.0e-4 * p.radius.max(1.0));
+    }
+}
+
+#[test]
+fn a_shape_changes_no_position_and_a_mix_follows_its_weights() {
+    // The shape and the mix decide the axes and the shapes, never where the particles are, how big
+    // they are or their tints: the same centres, radii and tints as the capsules of S4a.
+    let capsules = evaluate(&rain(4000), u32::MAX);
+    for p in [
+        AmbientParams {
+            shape: Shape::Drop,
+            ..rain(4000)
+        },
+        AmbientParams {
+            mix: [1.0, 1.0, 1.0, 1.0],
+            shape_var: 0.5,
+            ..rain(4000)
+        },
+    ] {
+        for (a, b) in evaluate(&p, u32::MAX).iter().zip(&capsules) {
+            assert_eq!(
+                (a.centre, a.radius, a.tint, a.id),
+                (b.centre, b.radius, b.tint, b.id)
+            );
+        }
+    }
+    // Without a mix nor variation, the capsules are S4a's bit for bit (their S3 fields at the
+    // defaults), and their shape is the effect's.
+    assert!(capsules.iter().all(|p| p.shape == Shape::Capsule));
+    // A mix of 1 : 2 : 0 : 5 over 40 000 particles: each share within 1.5 % of its weight's.
+    let mixed = AmbientParams {
+        mix: [1.0, 2.0, 0.0, 5.0],
+        ..rain(40_000)
+    };
+    let all = evaluate(&mixed, u32::MAX);
+    let mut counts = [0usize; 4];
+    for p in &all {
+        counts[p.shape.to_u32() as usize] += 1;
+    }
+    for (k, w) in [1.0f32, 2.0, 0.0, 5.0].iter().enumerate() {
+        let share = counts[k] as f32 / all.len() as f32;
+        assert!((share - w / 8.0).abs() < 0.015, "shape {k}: {share}");
+    }
+    // Each particle keeps its shape at any instant (it is drawn once, not per life).
+    let later = evaluate(&at(mixed, 3.7), u32::MAX);
+    assert!(all.iter().zip(&later).all(|(a, b)| a.shape == b.shape));
+    assert_ne!(shapes_hash(&all), shapes_hash(&capsules[..0]));
+    // Discs of a mix have unit normals, capsules follow the velocity, spheres have no axis.
+    for p in &all {
+        match p.shape {
+            Shape::Disc => assert!((dot(p.axis, p.axis) - 1.0).abs() < 1.0e-4),
+            Shape::Sphere => assert_eq!(p.axis, [0.0; 3]),
+            _ => assert!(dot(p.axis, p.axis) > 0.0),
+        }
+    }
+}
+
+#[test]
+fn the_shape_variation_stretches_drops_and_capsules_each_its_own_way() {
+    let mut params = drops(3000);
+    params.shape_var = 0.5;
+    // A wide tip, so that no tail reaches its floor (1 - tip + MIN_DROP_PROTRUSION).
+    params.drop_tip = 0.9;
+    let all = evaluate(&params, u32::MAX);
+    let ratios: Vec<f32> = all
+        .iter()
+        .map(|p| dot(p.axis, p.axis).sqrt() / (DROP_TAIL * p.radius))
+        .collect();
+    let (lo, hi) = ratios
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(lo, hi), &r| (lo.min(r), hi.max(r)));
+    // Within ± 50 %, spread over most of it (the floor of the tail is far below).
+    assert!(lo >= 0.5 - 1.0e-4 && hi <= 1.5 + 1.0e-4, "{lo} {hi}");
+    assert!(lo < 0.55 && hi > 1.45, "{lo} {hi}");
+    let mean = ratios.iter().sum::<f32>() / ratios.len() as f32;
+    assert!((mean - 1.0).abs() < 0.03, "{mean}");
+    // The capsules of the same rain, by the same factor.
+    let mut streaks = rain(3000);
+    streaks.turbulence = [0.0; 3];
+    streaks.fall_var = 0.0;
+    streaks.shape_var = 0.5;
+    for (c, r) in evaluate(&streaks, u32::MAX).iter().zip(&ratios) {
+        let half = 0.5 * 0.015 * dot([800.0, 0.0, -6500.0], [800.0, 0.0, -6500.0]).sqrt();
+        let got = dot(c.axis, c.axis).sqrt() / half;
+        assert!((got - r).abs() < 1.0e-3, "{got} {r}");
+    }
 }

@@ -219,6 +219,6 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     disclosure(ctx, 'cameraLens', t('camera.lensSection'), tracedLensFields(ctx, scope, camId), true),
     bokehSection,
     opticsSection,
-    disclosure(ctx, 'cameraFilters', t('camera.filters'), filterFields(ctx, scope, camId), filtersOf(optics()).length > 0),
+    disclosure(ctx, 'cameraFilters', t('camera.filters'), filterFields(ctx, scope, camId), filtersOf(optics()).length > 0 || optics().frontGlass?.on === true),
   );
 }

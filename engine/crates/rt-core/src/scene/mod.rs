@@ -970,6 +970,9 @@ pub struct Scene {
     /// The material program of each material (M3b, `PROG`), by material index; a material past
     /// the end of the list has none.
     pub programs: Vec<Option<Arc<crate::program::Program>>>,
+    /// The front glass (S3, `GLAS`): drops and dust on a pane in front of the camera, laid out for
+    /// the camera ([`Scene::prepare_glass`] after the camera changes; the RSB reader does it).
+    pub glass: Option<crate::optics::glass::FrontGlass>,
     /// The meshes carry their UV sets in the file although it has no images and no texture
     /// block (M2b). The writer gives every mesh its UV sets when this is set or when the scene has
     /// images or texture blocks, as the page's writer does when the scene carries textures.
@@ -1006,6 +1009,20 @@ impl Scene {
         self.geometry =
             Geometry::with_particles(meshes, instances, sets, width).unwrap_or_default();
         self.apply_section();
+    }
+
+    /// Lays the front glass out again for the camera as it is now (S3): a host that changes the
+    /// camera of a scene with a front glass without going through the RSB reader calls it.
+    pub fn prepare_glass(&mut self) {
+        if let Some(glass) = &self.glass {
+            let params = *glass.params();
+            self.glass = Some(crate::optics::glass::FrontGlass::new(params, &self.camera));
+        }
+    }
+
+    /// Sets the front glass (S3; `None` removes it), laid out for the camera.
+    pub fn set_glass(&mut self, params: Option<crate::optics::glass::GlassParams>) {
+        self.glass = params.map(|p| crate::optics::glass::FrontGlass::new(p, &self.camera));
     }
 
     /// Puts [`Scene::section`] in the geometry, which cuts and caps what its queries see (Q1).

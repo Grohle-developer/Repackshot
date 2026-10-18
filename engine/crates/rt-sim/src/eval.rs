@@ -43,7 +43,16 @@
 //! the velocity, so its length is the distance travelled during `streak` seconds (rain without
 //! motion blur). A disc's axis is its unit normal: random per life, turning at `spin` turns per
 //! second (times a random factor in `[0.5, 1.5)` and a random sign) about a random axis; the sine
-//! of the angle comes from a table built once per effect with [`fmath::sin`].
+//! of the angle comes from a table built once per effect with [`fmath::sin`]. A drop's axis (S3)
+//! runs from the centre of its round body to the centre of its tip: `drop_tail` body radii long,
+//! against the velocity (the tip trails: a falling drop points up, a rising bubble down), or along
+//! the life's random normal when the particle does not move.
+//!
+//! **Mixes and variation** (S3). With a mix ([`AmbientParams::mix`]) each particle draws its shape
+//! once, from its own hash, with a probability proportional to the weights; without one every
+//! particle is the effect's `shape`. `shape_var` makes each particle's drop (or capsule) up to
+//! `± shape_var` longer or shorter, from another hash of its own. Both use salts no field of
+//! before S3 uses, so an effect without them gives the bits it gave.
 
 use crate::fmath;
 use crate::noise;
@@ -87,6 +96,13 @@ const SALT_PUSH: u64 = 0x5121_0000_0000_0012;
 const SALT_NORMAL: u64 = 0x5121_0000_0000_0013;
 const SALT_AXIS: u64 = 0x5121_0000_0000_0014;
 const SALT_TURBULENCE: u64 = 0x5121_0000_0000_0015;
+const SALT_SHAPE: u64 = 0x5121_0000_0000_0006;
+const SALT_SHAPE_VAR: u64 = 0x5121_0000_0000_0007;
+/// Shortest length of a drop's or a capsule's axis relative to its mean (the variation's floor).
+const MIN_SHAPE_FACTOR: f32 = 0.05;
+/// How far a drop's tip sphere sticks out of its body at the least, in body radii (shorter tails are
+/// lengthened to this: a tip inside the body would make the drop a plain sphere).
+pub const MIN_DROP_PROTRUSION: f32 = 0.05;
 
 /// One particle of an effect at the effect's instant.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -96,12 +112,14 @@ pub struct Particle {
     /// Radius, mm.
     pub radius: f32,
     /// Sphere: zero. Disc: its unit normal. Capsule: half its segment (the ends are
-    /// `centre ± axis`), mm.
+    /// `centre ± axis`), mm. Drop: from the centre of its body to the centre of its tip, mm.
     pub axis: [f32; 3],
     /// Seed of the particle's tint variation.
     pub tint: u32,
     /// The particle's id (its index in the effect).
     pub id: u32,
+    /// Its shape: the effect's, or the one it drew from the effect's mix (S3).
+    pub shape: Shape,
 }
 
 /// A uniform number in `[0, 1)` from the top 24 bits of a hash.
@@ -396,9 +414,32 @@ impl Evaluator {
             };
         }
 
-        let axis = match p.shape {
+        let shape = if p.mixed() {
+            p.shape_for(draw(SALT_SHAPE))
+        } else {
+            p.shape
+        };
+        // S3: how much longer or shorter this particle's drop or capsule is.
+        let stretch = if p.shape_var > 0.0 {
+            (1.0 + p.shape_var.clamp(0.0, 1.0) * signed(SALT_SHAPE_VAR)).max(MIN_SHAPE_FACTOR)
+        } else {
+            1.0
+        };
+        let axis = match shape {
             Shape::Sphere => [0.0; 3],
+            Shape::Capsule if p.shape_var > 0.0 => scale(velocity, 0.5 * p.streak * stretch),
             Shape::Capsule => scale(velocity, 0.5 * p.streak),
+            Shape::Drop => {
+                let tip = p.drop_tip.clamp(0.0, 1.0);
+                let tail = (p.drop_tail * stretch).max(1.0 - tip + MIN_DROP_PROTRUSION);
+                let speed = dot(velocity, velocity).sqrt();
+                let dir = if speed > 1.0e-6 {
+                    scale(velocity, -1.0 / speed)
+                } else {
+                    unit_vector(mix64(lb ^ SALT_NORMAL))
+                };
+                scale(dir, tail * radius)
+            }
             Shape::Disc => {
                 let n0 = unit_vector(mix64(lb ^ SALT_NORMAL));
                 if p.spin == 0.0 {
@@ -432,6 +473,7 @@ impl Evaluator {
             axis,
             tint: (mix64(base ^ SALT_TINT) >> 32) as u32,
             id,
+            shape,
         }
     }
 }
@@ -478,7 +520,9 @@ pub fn evaluate_range(params: &AmbientParams, start: u32, end: u32) -> Vec<Parti
 }
 
 /// FNV-1a (32 bits) over the little-endian bytes of every particle's centre, radius, axis and
-/// tint, in order: the hash the native and WebAssembly builds are compared by.
+/// tint, in order: the hash the native and WebAssembly builds are compared by. The shapes are not
+/// in it (it is S4a's hash, and an effect of one shape has its shape in its parameters); a mix of
+/// shapes is compared by [`shapes_hash`] as well.
 pub fn positions_hash(particles: &[Particle]) -> u32 {
     let mut h: u32 = 0x811c_9dc5;
     let mut eat = |word: u32| {
@@ -497,6 +541,19 @@ pub fn positions_hash(particles: &[Particle]) -> u32 {
             eat(v.to_bits());
         }
         eat(p.tint);
+    }
+    h
+}
+
+/// FNV-1a (32 bits) over the little-endian `u32` shape code ([`Shape::to_u32`]) of every particle,
+/// in order (S3): what `rt_particles_shapes` of the WebAssembly module writes, hashed the same way.
+pub fn shapes_hash(particles: &[Particle]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for p in particles {
+        for b in p.shape.to_u32().to_le_bytes() {
+            h ^= u32::from(b);
+            h = h.wrapping_mul(0x0100_0193);
+        }
     }
     h
 }

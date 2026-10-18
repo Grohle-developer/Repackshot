@@ -1,6 +1,6 @@
 # Galería de capturas
 
-Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 154 archivos: 152 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
+Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a mano qué hay y cómo se ve cuando toque llevarlo al `README.md`. Hay 157 archivos: 155 repartidos por versión (o sin publicar) y fase, y 2 en «Huérfanas».
 
 **De dónde salen.** Las hacen las herramientas de `tools/` (las `*-check.mjs`) con Chromium sin cabeza y renderizado por software (SwiftShader) y, para los renders del motor, el binario `rt` (por ejemplo `rt --sheet`). No son de un Windows real: lo que se ve es la interfaz en Chromium sobre Linux, y la ventana propia de Windows (WebView2) no está capturada.
 
@@ -22,11 +22,11 @@ Las capturas de `docs/ui/` reunidas por lo que trajo cada versión, para tener a
 
 ## Por versión
 
-De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas; las capturas se reparten en 55 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
+De la más nueva a la más antigua: 20 versiones, 17 con capturas nuevas; las capturas se reparten en 56 fases del ROADMAP y dos grupos sin fase. Dentro de cada versión, por fase, en el orden en que entraron.
 
 ### Sin publicar
 
-La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M3d), con sus nudos donde los pone *Completo*, y la tela de la familia tejida en *Rápido* cuando sus hilos se leen (M3e).
+La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M3d), con sus nudos donde los pone *Completo*, y la tela de la familia tejida en *Rápido* cuando sus hilos se leen (M3e); la forma de gota y la mezcla de formas de *Ambiente*, y el cristal frontal de la cámara (S3).
 
 #### M3d · La madera de la familia en *Rápido* por el camino del nodo *Madera*
 
@@ -37,6 +37,17 @@ La madera de la familia *Madera* en *Rápido* por el camino del nodo *Madera* (M
 
 <a id="c-m3e-fabric-fast"></a><img src="ui/m3e-fabric-fast.png" width="480" alt="Nueve bolas de tela en tres filas, el punto arriba, la lona en medio y el algodón abajo: a la izquierda la vista Rápida antes de M3e, de un color liso; en medio la vista Rápida ahora, con los puntos del punto y la trama de la lona horneados y el algodón liso como antes; a la derecha el modo Completo, con su tejido."><br>
 `m3e-fabric-fast.png` · `8a5591a` · La tela de la familia en una bola de 100 mm, el punto (arriba, 12,8 téxeles por hilo), la lona (en medio, 3,7) y el algodón (abajo, 1,3): a la izquierda, *Rápido* antes de M3e (el color medio de su tejido y su pelusa); en medio, *Rápido* ahora, el punto y la lona horneados por el nodo *Tela* con la pelusa encima, el algodón, por debajo de 2,5 téxeles por hilo, igual que antes; a la derecha, *Completo* (el `rt.wasm`). *Rápido* sale más claro que *Completo* en las tres columnas, como cualquier material bajo el mundo blanco. `tests/fabric-fast-browser.test.ts` con `REPACK_WRITE_CAPTURES=1`.
+
+#### S3 · Lluvia y polvo sobre el set y sobre la lente
+
+<a id="c-ambient-drops"></a><img src="ui/ambient-drops.png" width="480" alt="El frasco de ejemplo en Rápido con el efecto Gotas de agua: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, Ambiente ▸ Avanzado con la forma Gota elegida, su largo, su punta y la variación de forma."><br>
+`ambient-drops.png` · `ee18304` · El frasco de ejemplo en *Rápido* con el efecto *Gotas de agua*: gotas transparentes con su cuerpo redondo y la punta hacia arriba cayendo alrededor del producto; en el inspector, *Ambiente ▸ Avanzado* con la forma *Gota* elegida, su *Largo de la gota*, su *Punta* y la *Variación de forma*. `tools/s3-check.mjs --only drops`.
+
+<a id="c-ambient-mix"></a><img src="ui/ambient-mix.png" width="480" alt="El mismo efecto con la forma Mezcla: puntos, copos, estelas y gotas mezclados en el visor; en el inspector, un peso por forma y la línea con la parte que da cada uno."><br>
+`ambient-mix.png` · `ee18304` · El mismo efecto con la forma *Mezcla*: puntos, copos, estelas y gotas en el visor, cada partícula con la forma que le da el motor; en el inspector, un peso por forma (*Puntos*, *Copos*, *Estelas*, *Gotas*) y la línea con la parte que da cada uno. `tools/s3-check.mjs --only mix`.
+
+<a id="c-lens-glass"></a><img src="ui/lens-glass.png" width="480" alt="El frasco en Completo a través de un cristal mojado a 150 mm del objetivo, a f/16: discos blandos con la escena del revés dentro, cada uno una gota del cristal; en el inspector, Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal con sus gotas, su tamaño, el polvo, la semilla y la distancia."><br>
+`lens-glass.png` · `ee18304` · El frasco en *Completo* a través de un cristal mojado a 150 mm del objetivo, a f/16 y con gotas de 8 mm: discos blandos con la escena del revés dentro, cada uno una gota del cristal desenfocada; en el inspector, *Cámara ▸ Lente ▸ Filtros ▸ Cristal frontal* con *Gotas*, *Tamaño de gota*, *Polvo*, *Semilla* y *Distancia*. `tools/s3-check.mjs --only glass`.
 
 ### v0.1.19 · 2026-10-17
 
@@ -747,6 +758,7 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 
 **Propuesta para el README:** [`camera-bokeh.png`](#c-camera-bokeh) (v0.1.6): el selector de veinte tipos de bokeh con miniaturas renderizadas por el motor.
 
+- [`lens-glass.png`](#c-lens-glass) · Sin publicar · S3
 - [`o2c-lens-editor.png`](#c-o2c-lens-editor) · v0.1.19 · O2c
 - [`o2c-lens-modified.png`](#c-o2c-lens-modified) · v0.1.19 · O2c
 - [`o4-simple-optics.png`](#c-o4-simple-optics) · v0.1.18 · O4
@@ -832,6 +844,8 @@ El índice para el `README.md`: las capturas por área, con la más nueva primer
 - [`physics-bar.png`](#c-physics-bar) · v0.1.6 · S2
 - [`physics-drop.png`](#c-physics-drop) · v0.1.6 · S2 **← propuesta**
 - [`physics-drop-strip.png`](#c-physics-drop-strip) · v0.1.6 · S2
+- [`ambient-drops.png`](#c-ambient-drops) · Sin publicar · S3
+- [`ambient-mix.png`](#c-ambient-mix) · Sin publicar · S3
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

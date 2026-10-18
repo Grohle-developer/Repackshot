@@ -10,11 +10,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, playheadPose, poseActive, type Pose } from '../core/animation';
-import { effectFxam, effectRegion, engineParticleCap, fxamPayload, PREVIEW_PARTICLES, type AmbientEffect } from '../core/effects';
+import { effectFxam, effectRegion, engineParticleCap, fxamPayload, heaviestShape, mixWeights, PREVIEW_PARTICLES, type AmbientEffect } from '../core/effects';
 import type { MotionHint } from '../core/motion-hint';
 import type { FocusPlaneHint } from '../core/focus-plane';
 import { materialPreset } from '../data/materials';
-import { evalParticles, PARTICLE_FLOATS, previewTint, tintSeed, type RtParticleExports } from './particles';
+import { dropOutline, evalParticles, evalShapes, hasShapeExport, PARTICLE_FLOATS, previewTint, tintSeed, type RtParticleExports } from './particles';
+
+/** S3: the engine's code of each shape (rt_sim::Shape::to_u32). */
+const SHAPE_INDEX: Readonly<Record<AmbientEffect['shape'], number>> = { SPHERE: 0, DISC: 1, CAPSULE: 2, DROP: 3 };
 import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, isPanoramic, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { exteriorOf, verticalsOf } from '../core/interior-camera';
@@ -473,7 +476,7 @@ export class PreviewEngine implements RenderEngine {
   private particleEngine: RtParticleExports | null | undefined = undefined;
   private readonly effectsRoot = new THREE.Group();
   /** Per effect id: the payload last evaluated and its particles (a drag of an unrelated knob evaluates nothing). */
-  private readonly particleCache = new Map<string, { key: string; data: Float32Array | null }>();
+  private readonly particleCache = new Map<string, { key: string; data: Float32Array | null; shapes?: Uint32Array | null }>();
   private selectedEffect: string | null = null;
   private particleStats: { shown: number; total: number; boxesOnly: boolean } | null = null;
 
@@ -2209,7 +2212,7 @@ export class PreviewEngine implements RenderEngine {
       const key = `${n}|${Array.from(payload).join(',')}`;
       let cached = this.particleCache.get(e.id);
       if (!cached || cached.key !== key) {
-        cached = { key, data: evalParticles(rt, payload, n) };
+        cached = { key, data: evalParticles(rt, payload, n), shapes: undefined };
         this.particleCache.set(e.id, cached);
       }
       const data = cached.data;
@@ -2219,16 +2222,32 @@ export class PreviewEngine implements RenderEngine {
       const look = this.effectLook(e);
       const centre: Vec3 = [(region.min[0] + region.max[0]) / 2, (region.min[1] + region.max[1]) / 2, (region.min[2] + region.max[2]) / 2];
       const perPixel = this.worldPerPixel(centre);
-      if (e.shape === 'CAPSULE') {
+      // S3: each particle's shape (a mix asks the module; one shape is the effect's, or the heaviest of its mix when the
+      // module cannot say), and the particles of each way of drawing them.
+      const one = SHAPE_INDEX[heaviestShape(e)];
+      let shapes: Uint32Array | null = null;
+      if (mixWeights(e) && hasShapeExport(rt)) {
+        if (cached.shapes === undefined) cached.shapes = evalShapes(rt, payload, n);
+        shapes = cached.shapes;
+      }
+      const dots: number[] = [];
+      const streaks: number[] = [];
+      const drops: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const code = shapes && i < shapes.length ? shapes[i] : one;
+        (code === 2 ? streaks : code === 3 ? drops : dots).push(i);
+      }
+      const color = new THREE.Color().setRGB(look.color[0], look.color[1], look.color[2], THREE.LinearSRGBColorSpace);
+      if (streaks.length > 0) {
         // Streaks: thin cylinders along each capsule's segment, at least a pixel wide.
         const geo = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
-        const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(look.color[0], look.color[1], look.color[2], THREE.LinearSRGBColorSpace), transparent: true, opacity: look.clear ? 0.35 : 0.9, depthWrite: false });
-        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: look.clear ? 0.35 : 0.9, depthWrite: false });
+        const mesh = new THREE.InstancedMesh(geo, mat, streaks.length);
         const m = new THREE.Matrix4();
         const q = new THREE.Quaternion();
         const up = new THREE.Vector3(0, 1, 0);
         const axis = new THREE.Vector3();
-        for (let i = 0; i < count; i++) {
+        streaks.forEach((i, k) => {
           const o = i * PARTICLE_FLOATS;
           axis.set(data[o + 4], data[o + 5], data[o + 6]);
           const length = 2 * axis.length();
@@ -2236,23 +2255,57 @@ export class PreviewEngine implements RenderEngine {
           else q.identity();
           const r = Math.max(data[o + 3], 0.5 * perPixel);
           m.compose(new THREE.Vector3(data[o], data[o + 1], data[o + 2]), q, new THREE.Vector3(r, Math.max(length, 2 * r), r));
-          mesh.setMatrixAt(i, m);
-        }
+          mesh.setMatrixAt(k, m);
+        });
         mesh.instanceMatrix.needsUpdate = true;
         mesh.frustumCulled = false;
         this.effectsRoot.add(mesh);
-      } else {
-        // Dots: as wide as the particle at the region's centre, never under a pixel and a half.
-        const positions = new Float32Array(count * 3);
-        const colors = new Float32Array(count * 3);
-        for (let i = 0; i < count; i++) {
+      }
+      if (drops.length > 0) {
+        // S3, drops: the engine's outline turned about each drop's axis (its body at the particle's centre, the tip
+        // along the axis), stretched to the drop's own length, never under half a pixel wide.
+        const tail = Math.max(1e-3, e.dropTail);
+        const outline = dropOutline(tail, e.dropTip).map(([x, y]) => new THREE.Vector2(x, y));
+        const geo = new THREE.LatheGeometry(outline, 10);
+        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: look.clear ? 0.45 : 0.95, depthWrite: false });
+        const mesh = new THREE.InstancedMesh(geo, mat, drops.length);
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const up = new THREE.Vector3(0, 1, 0);
+        const axis = new THREE.Vector3();
+        const tint = new THREE.Color();
+        drops.forEach((i, k) => {
           const o = i * PARTICLE_FLOATS;
-          positions[i * 3] = data[o];
-          positions[i * 3 + 1] = data[o + 1];
-          positions[i * 3 + 2] = data[o + 2];
+          axis.set(data[o + 4], data[o + 5], data[o + 6]);
+          const length = axis.length();
+          if (length > 0) q.setFromUnitVectors(up, axis.clone().normalize());
+          else q.identity();
+          const real = data[o + 3];
+          const r = Math.max(real, 0.5 * perPixel);
+          // The outline's tip sits `tail` body radii up: this drop's own length over it.
+          const stretch = real > 0 && length > 0 ? length / (real * tail) : 1;
+          m.compose(new THREE.Vector3(data[o], data[o + 1], data[o + 2]), q, new THREE.Vector3(r, r * stretch, r));
+          mesh.setMatrixAt(k, m);
+          const t = previewTint(tintSeed(data, i), e.palette, e.tintVar);
+          mesh.setColorAt(k, tint.setRGB(t[0], t[1], t[2], THREE.LinearSRGBColorSpace));
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.frustumCulled = false;
+        this.effectsRoot.add(mesh);
+      }
+      if (dots.length > 0) {
+        // Dots: as wide as the particle at the region's centre, never under a pixel and a half.
+        const positions = new Float32Array(dots.length * 3);
+        const colors = new Float32Array(dots.length * 3);
+        dots.forEach((i, k) => {
+          const o = i * PARTICLE_FLOATS;
+          positions[k * 3] = data[o];
+          positions[k * 3 + 1] = data[o + 1];
+          positions[k * 3 + 2] = data[o + 2];
           const tint = previewTint(tintSeed(data, i), e.palette, e.tintVar);
-          for (let c = 0; c < 3; c++) colors[i * 3 + c] = look.color[c] * tint[c];
-        }
+          for (let c = 0; c < 3; c++) colors[k * 3 + c] = look.color[c] * tint[c];
+        });
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));

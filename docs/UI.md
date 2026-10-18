@@ -718,7 +718,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    cabecera, **Añadir**, que abre una **galería de tarjetas** en la propia
    sección (nombre e intención de cada preset: *Motas de polvo*, *Polen*,
    *Lluvia*, *Nieve*, *Polvareda*, *Ceniza*, *Burbujas que suben*,
-   *Confeti que cae*; *Calima*, *Haces de luz* y *Niebla baja* atenuadas y
+   *Confeti que cae* y, desde S3, *Gotas de agua*; *Calima*, *Haces de luz* y *Niebla baja* atenuadas y
    deshabilitadas, *próximamente*, y *Cancelar*). Debajo, la **lista** de
    efectos (vacía: una frase que invita a añadir uno): nombre, partículas
    que pide (o *Pide N partículas; el motor evalúa M* si pasa del tope),
@@ -731,9 +731,18 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    *Dirección del viento* (°), *Gravedad* (× g), *Variación* (%) y
    *Semilla* con *Barajar*. **Avanzado**, plegado: región (*Alrededor de
    la escena* con margen en mm, o *Caja propia* con centro y tamaño),
-   banda de alturas, *Cantidad por* (*Densidad · Cuenta*), forma (*Punto ·
-   Copo · Estela*), variación de tamaño, velocidad de caída ± variación, giro
-   (copo), largo de estela (estela), viento como vector, turbulencia
+   banda de alturas, *Cantidad por* (*Densidad · Cuenta*), **Forma** (una lista,
+   S3: *Punto · Copo · Estela · Gota · Mezcla*; cinco no caben como botones
+   en el ancho del inspector) y, según la forma: con *Mezcla*, un peso por
+   forma (*Puntos*, *Copos*, *Estelas*, *Gotas*, 0..4, deslizador y valor) y
+   una línea con la parte que da cada uno (*Punto 20 % · Copo 20 % · Estela
+   20 % · Gota 40 %* al elegir *Mezcla* por primera vez; sin ningún peso,
+   *Da peso a alguna forma*); con gotas, *Largo de la gota* (×, del centro
+   del cuerpo a la punta, en radios del cuerpo) y *Punta* (% del cuerpo); con
+   gotas o estelas, *Variación de forma* (%); cada uno es una entrada de
+   deshacer. Variación de tamaño, velocidad de caída ± variación, giro
+   (copo, o una mezcla con copos), largo de estela (estela, o una mezcla con
+   estelas), viento como vector, turbulencia
    (escala y velocidad), nube (centro, radio, suavidad), material (*El
    propio del efecto* o uno del catálogo), variación de tinte y tintes (hasta
    4), *Congelar en* (s), *Visible a cámara*, *Visible en reflejos* y *Proyecta
@@ -743,7 +752,12 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    *Completo* y *Render* el polvo, el polen y la polvareda se encienden a
    contraluz (su lóbulo hacia delante, sin mando propio: lo trae el
    material del preset) y la lluvia y las burbujas no dejan cáusticas; los
-   puntos de *Rápido* no cambian.
+   puntos de *Rápido* no cambian. Desde S3, *Rápido* dibuja las gotas como
+   gotas (el contorno del motor, girado alrededor de su eje y estirado a su
+   largo) y una mezcla con cada forma la suya (la forma de cada partícula la
+   da el motor, `rt_particles_shapes`).
+   ![una lluvia de gotas en Rápido](ambient-drops.png)
+   ![la mezcla de formas](ambient-mix.png)
 5. **Sección** (fase Q1) — La vista en sección (`SPEC.md` §3.1): un plano
    que quita un lado de la pieza y tapa el corte. Va **plegada** por defecto,
    con el **interruptor en la cabecera** (el primer encendido hace un plano
@@ -1053,6 +1067,18 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      aproximación; con filtros, el medidor del modo Rápido añade
      *Filtros: aproximación, el render lo hace el motor*.
      ![filtros](lens-filters.png)
+     Debajo de la pila, **Cristal frontal** (S3; la subsección se abre
+     también si está encendido): un interruptor *Cristal frontal activado*
+     y, encendido, *Gotas* (%, la parte del cristal que cubren; las que se
+     tocan se juntan), *Tamaño de gota* (mm), *Polvo* (%), *Semilla* con
+     *Otras gotas* (barajar) y *Distancia* (*Automática*, donde está el
+     elemento frontal, o en mm desde el centro del objetivo, hasta 200: una
+     ventana delante de la cámara). Cada cambio es una entrada de deshacer
+     (*Cámara: Cristal frontal activado*, *Cámara: Tamaño de gota*…). Una
+     nota dice que el modo Completo y el render lo trazan y que el Rápido no
+     lo dibuja; con una cámara panorámica, otra dice que no tiene elemento
+     frontal y el cristal no hace nada.
+     ![el cristal frontal mojado en Completo](lens-glass.png)
 7. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.

@@ -12,6 +12,20 @@
 //! end spheres (kept beyond the ends): every candidate root is the boundary of the convex
 //! capsule, so the nearest one in range is the entry or, from inside, the exit.
 //!
+//! **Drops** (S3). A drop is the convex hull of its round body (centre `c`, radius `r`) and of a
+//! smaller tip sphere (centre `c + a`, radius `r_t`): the two spheres joined by the cone tangent to
+//! both (half angle `β`, `sin β = (r − r_t) / |a|`). In the plane through its axis, a point at axial
+//! coordinate `s` and distance `ρ` from the axis lies on the cone where `ρ cos β + s sin β = r`, a
+//! quadratic in the ray's `t` that is solved from the point of the ray closest to `c` (so a tiny
+//! drop far away keeps its digits, as the sphere test does); the body counts where `s < r sin β`,
+//! the cone between that and `|a| + r_t sin β`, the tip beyond. Every root kept is on the boundary
+//! of the convex drop, so the nearest one in range is the entry or, from inside, the exit, as for
+//! the capsule. Widened for camera rays, a drop is scaled about its body's centre, so that its
+//! coverage is the square of the scale, as a sphere's.
+//!
+//! **Mixes** (S3). The particles of one set may have different shapes ([`rt_sim::AmbientParams::mix`]):
+//! the set keeps a shape per particle then, and every test dispatches on it.
+//!
 //! **Ids.** A hit names the particle by its id in the effect (`RayHit::triangle`), never by where
 //! it sits in the BVH's order, so the tie-break of the traversal, and with it every pixel, does not
 //! depend on how the tree was built.
@@ -263,7 +277,17 @@ impl ScreenGrid {
 pub struct ParticleSet {
     params: AmbientParams,
     footprint: PixelFootprint,
+    /// The shape of every particle, when they all have the same one.
     shape: Shape,
+    /// S3, a mix: the shape of each particle, in slot order (empty: every one is `shape`).
+    shapes: Vec<Shape>,
+    /// S3: a drop's tip radius over its body's (the effect's, clamped to `0..=1`).
+    tip: f32,
+    /// S3: the longest axis of a drop over its body's radius (0 without drops): how much more
+    /// than its radius a widened drop grows.
+    drop_reach: f32,
+    /// Some particle is a disc (a thin wall whatever its material).
+    discs: bool,
     // Per particle, in the order of the BVH's leaves.
     centres: Vec<Vec3>,
     radii: Vec<f32>,
@@ -329,6 +353,132 @@ fn keep(best: &mut Option<f32>, t: f32, t_min: f32, t_max: f32) {
     };
     if t >= t_min && t <= t_max && nearer {
         *best = Some(t);
+    }
+}
+
+/// The roots of the ray against a drop (S3, see the [module](self) documentation): its body sphere
+/// (centre `c`, radius `r`, kept where it is not inside the cone), the cone tangent to the body and
+/// to the tip (kept between its two circles of contact) and the tip sphere (centre `c + axis`,
+/// radius `r_tip`, kept beyond the cone); the unused entries are NaN. A tip inside the body (an axis
+/// shorter than `r − r_tip`) is the body alone.
+#[inline(always)]
+fn drop_roots(ray: &Ray, c: Vec3, r: f32, axis: Vec3, r_tip: f32) -> [f32; 6] {
+    let mut roots = [f32::NAN; 6];
+    let len = axis.length();
+    let body_only = len.is_nan() || len <= r - r_tip || len <= 0.0;
+    if body_only {
+        if let Some((t0, t1)) = sphere_roots(ray, c, r) {
+            roots[0] = t0;
+            roots[1] = t1;
+        }
+        return roots;
+    }
+    let u = axis * (1.0 / len);
+    let sin_b = ((r - r_tip) / len).clamp(0.0, 1.0);
+    let cos2 = (1.0 - sin_b * sin_b).max(0.0);
+    // Axial coordinates (from `c`) of the circles where the cone touches the body and the tip.
+    let s_body = r * sin_b;
+    let s_tip = len + r_tip * sin_b;
+    let along = |t: f32| (ray.at(t) - c).dot(u);
+    if let Some((t0, t1)) = sphere_roots(ray, c, r) {
+        if along(t0) < s_body {
+            roots[0] = t0;
+        }
+        if along(t1) < s_body {
+            roots[1] = t1;
+        }
+    }
+    if let Some((t0, t1)) = sphere_roots(ray, c + axis, r_tip) {
+        if along(t0) > s_tip {
+            roots[2] = t0;
+        }
+        if along(t1) > s_tip {
+            roots[3] = t1;
+        }
+    }
+    // The cone, from the point of the ray closest to the body's centre.
+    let dd = ray.dir.dot(ray.dir);
+    if dd.is_nan() || dd <= 0.0 {
+        return roots;
+    }
+    let tc = (c - ray.origin).dot(ray.dir) / dd;
+    let w = ray.origin + ray.dir * tc - c;
+    let s0 = w.dot(u);
+    let ds = ray.dir.dot(u);
+    let w_perp = w - u * s0;
+    let d_perp = ray.dir - u * ds;
+    let k = r - s0 * sin_b;
+    // a t² + 2 b t + cc = 0 in the shifted parameter.
+    let a = cos2 * d_perp.dot(d_perp) - ds * ds * sin_b * sin_b;
+    let b = cos2 * w_perp.dot(d_perp) + ds * sin_b * k;
+    let cc = cos2 * w_perp.dot(w_perp) - k * k;
+    let disc = b * b - a * cc;
+    if disc.is_nan() || disc < 0.0 || (a == 0.0 && b == 0.0) {
+        return roots;
+    }
+    let sq = disc.sqrt();
+    let q = -(b + if b < 0.0 { -sq } else { sq });
+    let candidates = if q == 0.0 {
+        [0.0, f32::NAN]
+    } else {
+        [cc / q, q / a]
+    };
+    for (slot, t) in candidates.into_iter().enumerate() {
+        let t = t + tc;
+        if t.is_finite() {
+            let s = along(t);
+            // Of the double cone, the nappe the drop is on (`r − s sin β >= 0` there).
+            if (s_body..=s_tip).contains(&s) {
+                roots[4 + slot] = t;
+            }
+        }
+    }
+    roots
+}
+
+/// The outward unit normal (not normalised) of a drop at a point `p` of its surface.
+#[inline]
+fn drop_normal(p: Vec3, c: Vec3, r: f32, axis: Vec3, r_tip: f32) -> Vec3 {
+    let len = axis.length();
+    if len.is_nan() || len <= r - r_tip || len <= 0.0 {
+        return p - c;
+    }
+    let u = axis * (1.0 / len);
+    let sin_b = ((r - r_tip) / len).clamp(0.0, 1.0);
+    let cos_b = (1.0 - sin_b * sin_b).max(0.0).sqrt();
+    let q = p - c;
+    let s = q.dot(u);
+    if s < r * sin_b {
+        return q;
+    }
+    if s > len + r_tip * sin_b {
+        return p - (c + axis);
+    }
+    let perp = (q - u * s).normalize();
+    perp * cos_b + u * sin_b
+}
+
+/// The signed distance from `p` to a drop's surface (negative inside): exact for the convex hull of
+/// two spheres (tests and tools).
+pub fn drop_distance(p: Vec3, c: Vec3, r: f32, axis: Vec3, r_tip: f32) -> f32 {
+    let len = axis.length();
+    if len.is_nan() || len <= r - r_tip || len <= 0.0 {
+        return (p - c).length() - r;
+    }
+    let u = axis * (1.0 / len);
+    let sin_b = ((r - r_tip) / len).clamp(0.0, 1.0);
+    let cos_b = (1.0 - sin_b * sin_b).max(0.0).sqrt();
+    let q = p - c;
+    let s = q.dot(u);
+    let rho = (q - u * s).length();
+    // The coordinate along a generator of the cone, from its circle on the body.
+    let along = s * cos_b - rho * sin_b;
+    if along < 0.0 {
+        (p - c).length() - r
+    } else if along > len * cos_b {
+        (p - (c + axis)).length() - r_tip
+    } else {
+        s * sin_b + rho * cos_b - r
     }
 }
 
@@ -406,20 +556,35 @@ impl ParticleSet {
         width: BvhWidth,
     ) -> ParticleSet {
         let shape = params.shape;
+        let mixed = particles.iter().any(|p| p.shape != shape);
+        let tip = params.drop_tip.clamp(0.0, 1.0);
         let n = particles.len();
         let centre = |p: &Particle| Vec3::new(p.centre[0], p.centre[1], p.centre[2]);
         let axis = |p: &Particle| Vec3::new(p.axis[0], p.axis[1], p.axis[2]);
         let mut boxes = Vec::with_capacity(n);
         let mut centroids = Vec::with_capacity(n);
+        let mut drop_reach = 0.0f32;
         for p in particles {
             let c = centre(p);
-            let extent = match shape {
-                Shape::Capsule => axis(p).abs() + Vec3::splat(p.radius),
-                _ => Vec3::splat(p.radius),
+            let (lo, hi) = match p.shape {
+                Shape::Capsule => {
+                    let extent = axis(p).abs() + Vec3::splat(p.radius);
+                    (-extent, extent)
+                }
+                Shape::Drop => {
+                    let a = axis(p);
+                    if p.radius > 0.0 {
+                        drop_reach = drop_reach.max(a.length() / p.radius);
+                    }
+                    let (body, tip_r) = (Vec3::splat(p.radius), Vec3::splat(p.radius * tip));
+                    ((-body).min(a - tip_r), body.max(a + tip_r))
+                }
+                _ => (Vec3::splat(-p.radius), Vec3::splat(p.radius)),
             };
             // Padded so that the rounding of the box test can never cut off a hit.
+            let extent = lo.abs().max(hi.abs());
             let pad = extent * 1.0e-4 + Vec3::splat(c.abs().max_component() * 1.0e-6);
-            boxes.push(Aabb::new(c - extent - pad, c + extent + pad));
+            boxes.push(Aabb::new(c + lo - pad, c + hi + pad));
             centroids.push(c);
         }
         let mut order: Vec<u32> = Vec::with_capacity(n);
@@ -438,6 +603,14 @@ impl ParticleSet {
             params: *params,
             footprint: PixelFootprint::NONE,
             shape,
+            shapes: if mixed {
+                order.iter().map(|i| pick(i).shape).collect()
+            } else {
+                Vec::new()
+            },
+            tip,
+            drop_reach,
+            discs: particles.iter().any(|p| p.shape == Shape::Disc),
             centres: order.iter().map(|i| centre(pick(i))).collect(),
             radii: order.iter().map(|i| pick(i).radius).collect(),
             axes: order.iter().map(|i| axis(pick(i))).collect(),
@@ -482,6 +655,7 @@ impl ParticleSet {
                     axis: [a.x, a.y, a.z],
                     tint: self.tints[s],
                     id: self.ids[s],
+                    shape: self.shape_at(s),
                 }
             })
             .collect()
@@ -509,8 +683,9 @@ impl ParticleSet {
                 );
                 farthest = farthest.max(footprint.at(p));
             }
-            // A little more than the widest radius, for the rounding of the box test.
-            0.5 * MIN_PIXELS * farthest * (1.0 + 1.0e-4)
+            // A little more than the widest radius, for the rounding of the box test; a drop is
+            // scaled about its body's centre, so its box grows by its reach as well (S3).
+            0.5 * MIN_PIXELS * farthest * (1.0 + self.drop_reach + self.tip) * (1.0 + 1.0e-4)
         } else {
             0.0
         };
@@ -528,7 +703,16 @@ impl ParticleSet {
         let r = self.camera_radius(slot);
         let rounding =
             |extent: Vec3| extent * 1.0e-4 + Vec3::splat(c.abs().max_component() * 1.0e-6);
-        if self.shape != Shape::Capsule {
+        let shape = self.shape_at(slot);
+        if shape == Shape::Drop {
+            let (axis, tip) = self.drop_at(slot, true);
+            let lo = Vec3::splat(-r).min(axis - Vec3::splat(tip));
+            let hi = Vec3::splat(r).max(axis + Vec3::splat(tip));
+            let pad = rounding(lo.abs().max(hi.abs()));
+            out.push(Aabb::new(c + lo - pad, c + hi + pad));
+            return;
+        }
+        if shape != Shape::Capsule {
             let extent = Vec3::splat(r);
             let pad = rounding(extent);
             out.push(Aabb::new(c - extent - pad, c + extent + pad));
@@ -697,6 +881,52 @@ impl ParticleSet {
         self.camera_pad
     }
 
+    /// The shape of the particle in `slot` (S3: a mix gives each its own).
+    #[inline(always)]
+    fn shape_at(&self, slot: usize) -> Shape {
+        if self.shapes.is_empty() {
+            self.shape
+        } else {
+            self.shapes[slot]
+        }
+    }
+
+    /// The axis and the tip radius of the drop in `slot`, as a camera ray sees it when `camera`
+    /// (widened: scaled about its body's centre by the widened radius over the real one).
+    #[inline(always)]
+    fn drop_at(&self, slot: usize, camera: bool) -> (Vec3, f32) {
+        let r = self.radii[slot];
+        let axis = self.axes[slot];
+        if camera && self.widened {
+            let w = self.camera_radius(slot);
+            if w > r && r > 0.0 {
+                let k = w / r;
+                return (axis * k, w * self.tip);
+            }
+        }
+        (axis, r * self.tip)
+    }
+
+    /// The shape of particle `id` (S3).
+    pub fn shape_of(&self, id: u32) -> Shape {
+        self.slot(id).map_or(self.shape, |s| self.shape_at(s))
+    }
+
+    /// True when particle `id` is a disc: a thin wall, whatever its material says.
+    pub fn is_disc(&self, id: u32) -> bool {
+        self.discs && self.shape_of(id) == Shape::Disc
+    }
+
+    /// True when some particle of the set is a disc.
+    pub fn has_discs(&self) -> bool {
+        self.discs
+    }
+
+    /// True when every particle of the set is a disc.
+    pub fn all_discs(&self) -> bool {
+        self.discs && self.shapes.is_empty()
+    }
+
     /// The same particles made of `material` (the effect's, `None` when its index is out of range:
     /// the default material): only whether they are clear ([`is_clear_material`]) is kept.
     pub fn with_material(mut self, material: Option<&Material>) -> ParticleSet {
@@ -787,11 +1017,17 @@ impl ParticleSet {
             self.radii[slot]
         };
         let mut best = None;
-        match self.shape {
+        match self.shape_at(slot) {
             Shape::Sphere => {
                 let (t0, t1) = sphere_roots(ray, c, r)?;
                 keep(&mut best, t0, t_min, t_max);
                 keep(&mut best, t1, t_min, t_max);
+            }
+            Shape::Drop => {
+                let (axis, tip) = self.drop_at(slot, camera);
+                for t in drop_roots(ray, c, r, axis, tip) {
+                    keep(&mut best, t, t_min, t_max);
+                }
             }
             Shape::Disc => {
                 let n = self.axes[slot];
@@ -827,10 +1063,18 @@ impl ParticleSet {
             self.radii[slot]
         };
         let mut far = t;
-        match self.shape {
+        match self.shape_at(slot) {
             Shape::Sphere => {
                 if let Some((_, t1)) = sphere_roots(ray, c, r) {
                     far = far.max(t1);
+                }
+            }
+            Shape::Drop => {
+                let (axis, tip) = self.drop_at(slot, camera);
+                for root in drop_roots(ray, c, r, axis, tip) {
+                    if root > far {
+                        far = root;
+                    }
                 }
             }
             Shape::Disc => {}
@@ -851,8 +1095,25 @@ impl ParticleSet {
             return Vec3::new(0.0, 0.0, 1.0);
         };
         let c = self.centres[slot];
-        let n = match self.shape {
+        let n = match self.shape_at(slot) {
             Shape::Sphere => p - c,
+            Shape::Drop => {
+                // On the real drop or on the widened one: the one whose surface `p` is nearer.
+                let (r, w) = (self.radii[slot], self.camera_radius(slot));
+                let (axis, tip) = self.drop_at(slot, false);
+                if w > r && self.widened {
+                    let (wa, wt) = self.drop_at(slot, true);
+                    let real = drop_distance(p, c, r, axis, tip).abs();
+                    let wide = drop_distance(p, c, w, wa, wt).abs();
+                    if wide < real {
+                        drop_normal(p, c, w, wa, wt)
+                    } else {
+                        drop_normal(p, c, r, axis, tip)
+                    }
+                } else {
+                    drop_normal(p, c, r, axis, tip)
+                }
+            }
             Shape::Disc => self.axes[slot],
             Shape::Capsule => {
                 let half = self.axes[slot];
@@ -882,7 +1143,7 @@ impl ParticleSet {
         if w <= r {
             return 1.0;
         }
-        match self.shape {
+        match self.shape_at(slot) {
             Shape::Capsule => {
                 let length = 2.0 * self.axes[slot].length();
                 let pi = crate::fmath::PI;
@@ -895,6 +1156,11 @@ impl ParticleSet {
     /// The tint seed of particle `id`.
     pub fn tint(&self, id: u32) -> u32 {
         self.slot(id).map_or(0, |s| self.tints[s])
+    }
+
+    /// The radius of a drop's tip over its body's (S3).
+    pub fn drop_tip(&self) -> f32 {
+        self.tip
     }
 
     /// Particle `id`'s real radius, centre and axis (tests and tools).
@@ -914,6 +1180,10 @@ mod tests {
             count: particles.len() as u32,
             ..AmbientParams::default()
         };
+        let particles: Vec<Particle> = particles
+            .into_iter()
+            .map(|p| Particle { shape, ..p })
+            .collect();
         ParticleSet::new(&params, &particles, footprint, BvhWidth::Four)
     }
 
@@ -924,6 +1194,7 @@ mod tests {
             axis,
             tint: id * 7,
             id,
+            shape: Shape::Sphere,
         }
     }
 
@@ -986,6 +1257,188 @@ mod tests {
         assert_eq!(capsule.hit(0, &past, 0.0, f32::MAX, false), None);
     }
 
+    /// The nearest `t` where the signed distance of a drop along `ray` turns negative, marched in
+    /// steps of `step` and refined by bisection; `None` when it never does in `0..t_max`.
+    fn marched(
+        ray: &Ray,
+        c: Vec3,
+        r: f32,
+        axis: Vec3,
+        tip: f32,
+        t_max: f32,
+        step: f32,
+    ) -> Option<f32> {
+        let sdf = |t: f32| drop_distance(ray.at(t), c, r, axis, tip);
+        let mut t = 0.0f32;
+        let mut prev = sdf(0.0);
+        if prev < 0.0 {
+            return None;
+        }
+        while t < t_max {
+            let next = t + step;
+            let d = sdf(next);
+            if d < 0.0 {
+                let (mut lo, mut hi) = (t, next);
+                for _ in 0..40 {
+                    let mid = 0.5 * (lo + hi);
+                    if sdf(mid) < 0.0 {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                return Some(hi);
+            }
+            prev = d;
+            t = next;
+        }
+        let _ = prev;
+        None
+    }
+
+    #[test]
+    fn drops_are_hit_where_their_surface_is_and_their_normals_point_out() {
+        use crate::rng::Pcg32;
+        let mut rng = Pcg32::seeded(3, 9);
+        let mut f = |lo: f32, hi: f32| lo + (hi - lo) * rng.next_f32();
+        let (mut hits, mut misses) = (0, 0);
+        for case in 0..400 {
+            let r = f(0.5, 4.0);
+            let tip_ratio = [0.0, 0.15, 0.5, 0.95][case % 4];
+            let len = r * f(0.3, 3.0);
+            let dir = Vec3::new(f(-1.0, 1.0), f(-1.0, 1.0), f(-1.0, 1.0)).normalize();
+            let axis = dir * len;
+            let c = Vec3::new(f(-2.0, 2.0), f(-2.0, 2.0), f(-2.0, 2.0));
+            let tip = r * tip_ratio;
+            let particle = Particle {
+                centre: [c.x, c.y, c.z],
+                radius: r,
+                axis: [axis.x, axis.y, axis.z],
+                tint: 0,
+                id: 0,
+                shape: Shape::Drop,
+            };
+            let params = AmbientParams {
+                shape: Shape::Drop,
+                count: 1,
+                drop_tip: tip_ratio,
+                ..AmbientParams::default()
+            };
+            let set = ParticleSet::new(&params, &[particle], PixelFootprint::NONE, BvhWidth::Four);
+            for _ in 0..20 {
+                // From outside, towards a point near the drop.
+                let o = Vec3::new(f(-1.0, 1.0), f(-1.0, 1.0), f(-1.0, 1.0)).normalize() * 20.0;
+                let aim = c
+                    + axis * f(-0.3, 1.3)
+                    + Vec3::new(f(-1.0, 1.0), f(-1.0, 1.0), f(-1.0, 1.0)) * (1.2 * r);
+                let ray = Ray::new(o, (aim - o).normalize());
+                let got = set.hit(0, &ray, 0.0, f32::MAX, false);
+                let want = marched(&ray, c, r, axis, tip, 60.0, 0.002);
+                match (got, want) {
+                    (Some(t), Some(m)) => {
+                        hits += 1;
+                        assert!((t - m).abs() < 4.0e-3, "case {case}: {t} vs {m}");
+                        let p = ray.at(t);
+                        assert!(drop_distance(p, c, r, axis, tip).abs() < 1.0e-3);
+                        // The normal is the distance's gradient, and faces the incoming ray.
+                        let n = set.normal(0, p);
+                        let e = 1.0e-3;
+                        let g = Vec3::new(
+                            drop_distance(p + Vec3::new(e, 0.0, 0.0), c, r, axis, tip)
+                                - drop_distance(p - Vec3::new(e, 0.0, 0.0), c, r, axis, tip),
+                            drop_distance(p + Vec3::new(0.0, e, 0.0), c, r, axis, tip)
+                                - drop_distance(p - Vec3::new(0.0, e, 0.0), c, r, axis, tip),
+                            drop_distance(p + Vec3::new(0.0, 0.0, e), c, r, axis, tip)
+                                - drop_distance(p - Vec3::new(0.0, 0.0, e), c, r, axis, tip),
+                        )
+                        .normalize();
+                        assert!(n.dot(g) > 0.999, "case {case}: {n:?} vs {g:?}");
+                        assert!(n.dot(ray.dir) < 0.0);
+                        // From inside, the exit: where it leaves, on the surface too.
+                        let out = set.exit(0, &ray, t, false);
+                        assert!(out >= t);
+                        assert!(drop_distance(ray.at(out), c, r, axis, tip).abs() < 1.0e-3);
+                        let inside = Ray::new(ray.at(0.5 * (t + out)), ray.dir);
+                        if out - t > 1.0e-2 {
+                            let t_in = set.hit(0, &inside, 0.0, f32::MAX, false).expect("exit");
+                            assert!((t_in - 0.5 * (out - t)).abs() < 2.0e-3);
+                        }
+                    }
+                    (None, None) => misses += 1,
+                    // A graze within the march's step either way.
+                    (Some(t), None) => {
+                        assert!(drop_distance(ray.at(t), c, r, axis, tip).abs() < 1.0e-3);
+                        let mid = set.exit(0, &ray, t, false);
+                        assert!(
+                            mid - t < 0.05,
+                            "case {case}: a hit the march missed: {t}..{mid}"
+                        );
+                    }
+                    (None, Some(m)) => {
+                        let depth = (0..200)
+                            .map(|k| drop_distance(ray.at(m + k as f32 * 1.0e-4), c, r, axis, tip))
+                            .fold(0.0f32, f32::min);
+                        assert!(
+                            depth > -1.0e-3,
+                            "case {case}: missed a hit at {m} ({depth})"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(hits > 3000 && misses > 1000, "{hits} {misses}");
+    }
+
+    #[test]
+    fn a_tiny_far_drop_keeps_its_digits_and_widens_as_a_scaled_copy() {
+        // 0.02 mm across at 2 m, tip up.
+        let p = Particle {
+            centre: [0.0, 2000.0, 0.0],
+            radius: 0.01,
+            axis: [0.0, 0.0, 0.016],
+            tint: 0,
+            id: 0,
+            shape: Shape::Drop,
+        };
+        let params = AmbientParams {
+            shape: Shape::Drop,
+            count: 1,
+            ..AmbientParams::default()
+        };
+        let set = ParticleSet::new(&params, &[p], PixelFootprint::NONE, BvhWidth::Four);
+        // Through the cone, between the body and the tip: x = 0.002 at z = 0.012.
+        let ray = Ray::new(Vec3::new(0.002, 0.0, 0.012), Vec3::new(0.0, 1.0, 0.0));
+        let t = set.hit(0, &ray, ray.t_min, f32::MAX, false).expect("hit");
+        let c = Vec3::new(0.0, 2000.0, 0.0);
+        let d = drop_distance(ray.at(t), c, 0.01, Vec3::new(0.0, 0.0, 0.016), 0.0015);
+        assert!(d.abs() < 2.0e-4, "{d}");
+        assert!((t - 2000.0).abs() < 0.01, "{t}");
+        // Above the tip it misses.
+        let above = Ray::new(Vec3::new(0.0, 0.0, 0.0185), Vec3::new(0.0, 1.0, 0.0));
+        assert_eq!(set.hit(0, &above, above.t_min, f32::MAX, false), None);
+        // Widened for camera rays: the drop scaled about its body, the coverage the scale's square.
+        let camera = Camera::default();
+        let footprint = PixelFootprint::of(&camera, 360, 200);
+        let set = ParticleSet::new(&params, &[p], footprint, BvhWidth::Four);
+        assert!(set.widened());
+        let w = 0.5 * MIN_PIXELS * footprint.at(c);
+        let k = w / 0.01;
+        assert!((set.coverage(0) - 1.0 / (k * k)).abs() < 1.0e-6);
+        let (axis, tip) = set.drop_at(0, true);
+        assert!((axis.z - 0.016 * k).abs() < 1.0e-6 * k && (tip - 0.0015 * k).abs() < 1.0e-6 * k);
+        let high = Ray::new(Vec3::new(0.0, 0.0, 0.017 * k), Vec3::new(0.0, 1.0, 0.0));
+        assert!(set.hit(0, &high, 0.0, f32::MAX, true).is_some());
+        assert!(set.hit(0, &high, 0.0, f32::MAX, false).is_none());
+        // The camera's pad holds the widened drop's whole box.
+        let mut boxes = Vec::new();
+        set.camera_boxes(0, &mut boxes);
+        let real = set.bounds();
+        let grow = (boxes[0].max - real.max)
+            .max_component()
+            .max((real.min - boxes[0].min).max_component());
+        assert!(grow <= set.camera_pad(), "{grow} > {}", set.camera_pad());
+    }
+
     #[test]
     fn camera_rays_see_at_least_the_minimum_size_and_the_coverage_says_by_how_much() {
         let camera = Camera::default(); // at (0, -1000, 0), 50 mm on 36 mm
@@ -1038,6 +1491,8 @@ mod grid_tests {
     use crate::rng::Pcg32;
     use crate::simd::Isa;
 
+    const MIX_SHAPES_FOR_TESTS: [Shape; 4] = rt_sim::MIX_SHAPES;
+
     /// `n` particles of `shape` in front of a camera at `(0, -1000, 100)` looking along +Y, from
     /// specks that camera rays widen to drops 30 mm across, and a few that reach the camera's
     /// plane or lie behind it.
@@ -1064,6 +1519,11 @@ mod grid_tests {
                         [a.x, a.y, a.z]
                     }
                     Shape::Capsule => [f(-15.0, 15.0), f(-15.0, 15.0), f(-40.0, 40.0)],
+                    Shape::Drop => {
+                        let a = Vec3::new(f(-1.0, 1.0), f(-1.0, 1.0), f(-1.0, 1.0)).normalize()
+                            * (radius * f(0.9, 3.0));
+                        [a.x, a.y, a.z]
+                    }
                 };
                 Particle {
                     centre,
@@ -1071,9 +1531,81 @@ mod grid_tests {
                     axis,
                     tint: 0,
                     id,
+                    shape,
                 }
             })
             .collect()
+    }
+
+    /// The nearest hit of `ray` among every particle of `set`, without its BVH: `(t, centre)`.
+    fn nearest(set: &ParticleSet, ray: &Ray) -> Option<(f32, Vec3)> {
+        let mut best: Option<(f32, Vec3)> = None;
+        for slot in 0..set.len() {
+            if let Some(t) = set.hit(slot, ray, ray.t_min, ray.t_max, false) {
+                if best.is_none_or(|(b, _)| t < b) {
+                    best = Some((t, set.centres[slot]));
+                }
+            }
+        }
+        best
+    }
+
+    #[test]
+    fn a_mix_hits_each_particle_as_its_own_shape() {
+        // S3: the particles of a mix as one set, and the same particles as four sets of one shape
+        // each: every ray meets the same particle at the same distance.
+        let width = crate::geometry::BvhWidth::native();
+        let mix: Vec<Particle> = (0..400u32)
+            .map(|id| {
+                let shape = MIX_SHAPES_FOR_TESTS[(id % 4) as usize];
+                Particle {
+                    id,
+                    ..particles(shape, 400, 60 + u64::from(id % 4))[id as usize]
+                }
+            })
+            .collect();
+        let params = |shape: Shape, n: usize| AmbientParams {
+            shape,
+            count: n as u32,
+            drop_tip: 0.2,
+            ..AmbientParams::default()
+        };
+        let mixed = ParticleSet::new(
+            &params(Shape::Sphere, mix.len()),
+            &mix,
+            PixelFootprint::NONE,
+            width,
+        );
+        let singles: Vec<ParticleSet> = MIX_SHAPES_FOR_TESTS
+            .iter()
+            .map(|&shape| {
+                let own: Vec<Particle> = mix
+                    .iter()
+                    .filter(|p| p.shape == shape)
+                    .enumerate()
+                    .map(|(i, p)| Particle { id: i as u32, ..*p })
+                    .collect();
+                ParticleSet::new(&params(shape, own.len()), &own, PixelFootprint::NONE, width)
+            })
+            .collect();
+        let mut rng = Pcg32::seeded(23, 4);
+        let mut f = |lo: f32, hi: f32| lo + (hi - lo) * rng.next_f32();
+        let mut hits = 0;
+        for _ in 0..4000 {
+            let o = Vec3::new(f(-600.0, 600.0), -1500.0, f(-300.0, 500.0));
+            let target = Vec3::new(f(-500.0, 500.0), f(-700.0, 400.0), f(-250.0, 450.0));
+            let ray = Ray::new(o, (target - o).normalize());
+            let want = singles.iter().filter_map(|s| nearest(s, &ray)).fold(
+                None,
+                |b: Option<(f32, Vec3)>, h| match b {
+                    Some(x) if x.0 <= h.0 => Some(x),
+                    _ => Some(h),
+                },
+            );
+            assert_eq!(nearest(&mixed, &ray), want);
+            hits += want.is_some() as u32;
+        }
+        assert!(hits > 200, "{hits}");
     }
 
     #[test]
@@ -1093,17 +1625,36 @@ mod grid_tests {
                 footprint.screen.map(|s| s.lens_radius > 0.0),
                 Some(fstop > 0.0)
             );
-            for (k, shape) in [Shape::Sphere, Shape::Disc, Shape::Capsule]
-                .into_iter()
-                .enumerate()
-            {
+            // S3: drops, and a mix of the four shapes (150 of each, ids in turn).
+            let mix: Vec<Particle> = (0..600u32)
+                .map(|id| {
+                    let shape = MIX_SHAPES_FOR_TESTS[(id % 4) as usize];
+                    Particle {
+                        id,
+                        ..particles(shape, 600, 40 + u64::from(id % 4))[id as usize]
+                    }
+                })
+                .collect();
+            let cases = [
+                (Shape::Sphere, particles(Shape::Sphere, 600, 0)),
+                (Shape::Disc, particles(Shape::Disc, 600, 1)),
+                (Shape::Capsule, particles(Shape::Capsule, 600, 2)),
+                (Shape::Drop, particles(Shape::Drop, 600, 3)),
+                (Shape::Sphere, mix),
+            ];
+            for (k, (shape, list)) in cases.into_iter().enumerate() {
                 let params = AmbientParams {
                     shape,
                     count: 600,
+                    drop_tip: 0.2,
                     ..AmbientParams::default()
                 };
-                let set =
-                    ParticleSet::new(&params, &particles(shape, 600, k as u64), footprint, width);
+                let set = ParticleSet::new(&params, &list, footprint, width);
+                assert_eq!(
+                    set.shapes.is_empty(),
+                    k < 4,
+                    "only the mix keeps its shapes"
+                );
                 assert!(set.widened());
                 let grid = set.grid.as_ref().expect("a grid");
                 assert!(!grid.everywhere.is_empty(), "some reach the camera's plane");
@@ -1161,6 +1712,7 @@ mod grid_tests {
                 axis: [0.0; 3],
                 tint: 0,
                 id,
+                shape: Shape::Sphere,
             })
             .collect();
         let params = AmbientParams {

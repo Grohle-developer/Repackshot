@@ -332,12 +332,13 @@ impl Prepared {
                 .material_of(i as u32)
                 .and_then(|id| scene.materials.get(id as usize))
         };
-        // A particle disc is a thin wall whatever its material says.
+        // A particle disc is a thin wall whatever its material says (S3: a set that mixes shapes
+        // may have some).
         let disc = |i: usize| {
             scene
                 .geometry
                 .particle_set(i as u32)
-                .is_some_and(|set| set.params().shape == rt_sim::Shape::Disc)
+                .is_some_and(|set| set.has_discs())
         };
         // M2b: an alpha image makes the opacity vary over the surface; M3b: so does a program.
         let textures = TextureSetup::new(scene);
@@ -462,11 +463,11 @@ impl Prepared {
 
     /// The material of particle `id` of the set whose hits report `i`, tinted by the particle's
     /// own variation (`rt_sim::tint_factor`); a disc's is always a thin wall (a flake has no
-    /// inside). `None` for an instance, or a set of spheres or capsules without tints.
+    /// inside). `None` for an instance, or a particle that is not a disc of a set without tints.
     pub(crate) fn particle_material(&self, scene: &Scene, i: u32, id: u32) -> Option<Material> {
         let set = scene.geometry.particle_set(i)?;
         let params = set.params();
-        let disc = params.shape == rt_sim::Shape::Disc;
+        let disc = set.is_disc(id);
         let tinted = params.tint_var > 0.0 || params.palette_count > 0;
         if !(tinted || disc) {
             return None;
@@ -494,12 +495,13 @@ impl Prepared {
     }
 
     /// The absorption inside what instance `i` (or the particle set of `i`) is made of: none for a
-    /// disc, which has no inside.
+    /// set of discs, which have no inside (the discs of a mix are thin walls by their material:
+    /// nothing goes into them).
     fn medium_inside(&self, scene: &Scene, i: u32) -> Option<Rgb> {
         if scene
             .geometry
             .particle_set(i)
-            .is_some_and(|set| set.params().shape == rt_sim::Shape::Disc)
+            .is_some_and(|set| set.all_discs())
         {
             return None;
         }

@@ -1027,7 +1027,7 @@ const services: AppServices = {
   captureViewport: () => (full && tracer ? tracer.capture() : preview ? preview.capture() : Promise.resolve(null)),
   exportScene(state) {
     // M2b: with the textures `rt` reads (the images decoded since the materials took them); M3b: and the programs; L5: and the IES lights.
-    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true, programs: true, ies: true });
+    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG', textures: true, programs: true, ies: true, drops: true });
     return new Blob([writeRsb(scene) as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
   },
   async importFile(file, options) {

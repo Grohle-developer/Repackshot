@@ -9,7 +9,7 @@
 //        [--passes] [--expect-passes 0x...,0x...,0x...,0x...,0x...,0x...]
 //        [--alpha] [--expect-alpha 0x12345678]
 //        [--denoise] [--expect-denoised 0x12345678]
-//        [--particles] [--expect-particles 0x12345678]
+//        [--particles] [--expect-particles 0x12345678] [--expect-shapes 0x12345678]
 //        [--adaptive] [--expect-adaptive 0x12345678]
 //        [--pick] [--expect-pick 0x12345678]
 //
@@ -44,6 +44,13 @@
 // a scene has the native hash too (`PINNED_AMBIENT_4SPP`): the module evaluates the particles
 // when it loads the scene.
 //
+// `--expect-shapes` (S3, with `--particles`) also asks `rt_particles_shapes` for the shape of every particle of every
+// effect, in the same order, and hashes their little-endian `u32` codes one after another (FNV-1a); it must equal
+// `PINNED_S3_DROPS_SHAPES` of crates/rt-core/src/render/s3_tests.rs (`rt --write-s3-drops-example`), whose particles are
+// `PINNED_S3_DROPS_PARTICLES` and image `PINNED_S3_DROPS_4SPP`. A scene with a front glass (`GLAS`, `rt
+// --write-s3-glass-example`) needs no option: the module lays the glass out when it loads the scene, and the image has
+// the native hash (`PINNED_S3_GLASS_4SPP`).
+//
 // `--adaptive` (E10) renders the scene adaptively as its RSB asks (`RNDR.adaptive`, `RNDR.noise_threshold`, at most
 // `RNDR.max_samples` per pixel; `rt --write-e10-example`): the first round, every 32-pixel tile through
 // `rt_render_tile_rgba`, then rounds of the blocks the module's own decision (`rt_adaptive_decide`) chooses, through
@@ -76,6 +83,7 @@ let denoise = false;
 let expectDenoised = null;
 let particles = false;
 let expectParticles = null;
+let expectShapes = null;
 let adaptive = false;
 let expectAdaptive = null;
 let pick = false;
@@ -97,6 +105,9 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--expect-particles') {
     particles = true;
     expectParticles = Number.parseInt(args[++i], 16) >>> 0;
+  } else if (args[i] === '--expect-shapes') {
+    particles = true;
+    expectShapes = Number.parseInt(args[++i], 16) >>> 0;
   }
   else if (args[i] === '--adaptive') adaptive = true;
   else if (args[i] === '--expect-adaptive') {
@@ -187,6 +198,35 @@ if (particles) {
   if (expectParticles !== null && h !== expectParticles) {
     console.error(`wasm-parity: the particles' hash ${hp} differs from the native one 0x${expectParticles.toString(16).padStart(8, '0')}`);
     process.exit(1);
+  }
+  if (expectShapes !== null) {
+    if (typeof rt.rt_particles_shapes !== 'function') {
+      console.error('wasm-parity: this rt_wasm.wasm has no shapes of particles (rt_particles_shapes)');
+      process.exit(1);
+    }
+    let hs = 0x811c9dc5;
+    for (const payload of effects) {
+      const count = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(12, true);
+      const inPtr = rt.rt_alloc(payload.length);
+      new Uint8Array(rt.memory.buffer, inPtr, payload.length).set(payload);
+      const outLen = Math.max(4, count * 4);
+      const outPtr = rt.rt_alloc(outLen);
+      const n = rt.rt_particles_shapes(inPtr, payload.length, count, outPtr);
+      if (n !== count) {
+        console.error(`wasm-parity: rt_particles_shapes returned ${n} for ${count} particles`);
+        process.exit(1);
+      }
+      const bytes = new Uint8Array(rt.memory.buffer, outPtr, count * 4);
+      for (let i = 0; i < bytes.length; i++) hs = Math.imul(hs ^ bytes[i], 0x01000193) >>> 0;
+      rt.rt_free(inPtr, payload.length);
+      rt.rt_free(outPtr, outLen);
+    }
+    const hsx = `0x${hs.toString(16).padStart(8, '0')}`;
+    console.log(`shapes: hash ${hsx}`);
+    if (hs !== expectShapes) {
+      console.error(`wasm-parity: the shapes' hash ${hsx} differs from the native one 0x${expectShapes.toString(16).padStart(8, '0')}`);
+      process.exit(1);
+    }
   }
 }
 

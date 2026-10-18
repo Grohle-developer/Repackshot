@@ -9,6 +9,7 @@
 // lens has a tilt of its own (`tracedTiltDeg`), and the shift is the camera's, whichever lens it has.
 
 import { BOKEH_NEUTRAL, bokehParams, bokehType, type BokehThin, type PupilProfile } from '../data/bokeh';
+import { FRONT_GLASS_LIMITS, FRONT_GLASS_START } from '../data/front-glass';
 import { LENS_FILTER_GRADES, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../data/lens-filters';
 import { DEFAULT_MASTER, newTracedLens, normalizeTracedLens, tracedLensTilts, type TracedLens } from './traced-lens';
 
@@ -23,6 +24,50 @@ export interface LensFilter {
   angleDeg: number;
   /** Star: 4, 6 or 8 points. */
   points: number;
+}
+
+/**
+ * S3: the front glass, a pane in front of the lens with drops and dust on it (data/front-glass.ts; the RSB `GLAS`
+ * section). Off, or with no drops and no dust, it changes nothing.
+ */
+export interface FrontGlass {
+  on: boolean;
+  /** Share of the pane under drops (before they merge), 0..0.9. */
+  drops: number;
+  /** Mean diameter of a drop's footprint, mm. */
+  dropSizeMm: number;
+  /** Share of the pane under dust, 0..0.5. */
+  dust: number;
+  seed: number;
+  /** Distance of the pane from the lens's centre, mm; 0: where a front element sits. */
+  distanceMm: number;
+}
+
+/** A pane as it starts when it is switched on. */
+export function newFrontGlass(): FrontGlass {
+  return { on: true, ...FRONT_GLASS_START };
+}
+
+/** A front glass of a project file within the engine's limits, or undefined when it is not one. */
+export function normalizeFrontGlass(g: unknown): FrontGlass | undefined {
+  if (typeof g !== 'object' || g === null || Array.isArray(g)) return undefined;
+  const r = g as Partial<Record<keyof FrontGlass, unknown>>;
+  const L = FRONT_GLASS_LIMITS;
+  const S = FRONT_GLASS_START;
+  return {
+    on: r.on === true,
+    drops: clamp(r.drops, L.drops.min, L.drops.max, S.drops),
+    dropSizeMm: clamp(r.dropSizeMm, L.dropSizeMm.min, L.dropSizeMm.max, S.dropSizeMm),
+    dust: clamp(r.dust, L.dust.min, L.dust.max, S.dust),
+    seed: Math.round(clamp(r.seed, 0, 0xffffffff, S.seed)),
+    distanceMm: clamp(r.distanceMm, L.distanceMm.min, L.distanceMm.max, S.distanceMm),
+  };
+}
+
+/** The front glass of optics that draws something (on, with drops or dust), or null. */
+export function frontGlassOf(o: CameraOptics | undefined): FrontGlass | null {
+  const g = o?.frontGlass;
+  return g && g.on && (g.drops > 0 || g.dust > 0) ? g : null;
 }
 
 /** The optics of a camera (CameraState.optics; absent on cameras made before O1, which are the neutral optics). */
@@ -55,6 +100,8 @@ export interface CameraOptics extends BokehThin {
    * artistic overrides; the pupil profile, the cat's eye, the tilt and the pictures belong to the thin lens.
    */
   traced?: TracedLens | null;
+  /** S3: the front glass (absent before S3: none). */
+  frontGlass?: FrontGlass;
 }
 
 /** The plain thin lens: what a camera without optics is. */
@@ -157,6 +204,7 @@ export function normalizeOptics(o: unknown): CameraOptics {
       ? { filters: r.filters.map(normalizeLensFilter).filter((f): f is LensFilter => f !== null).slice(0, MAX_LENS_FILTERS) }
       : {}),
     ...(r.traced !== undefined ? { traced: normalizeTracedLens(r.traced) } : {}),
+    ...(normalizeFrontGlass(r.frontGlass) ? { frontGlass: normalizeFrontGlass(r.frontGlass) } : {}),
   };
 }
 

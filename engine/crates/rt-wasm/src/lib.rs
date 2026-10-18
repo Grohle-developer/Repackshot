@@ -267,6 +267,20 @@ pub fn particles_eval(params: &[u8], max: u32) -> Result<Vec<f32>, u32> {
     Ok(out)
 }
 
+/// The shape codes of the first `max` particles of the ambient effect whose `FXAM` payload is
+/// `params` (S3: `rt_sim::Shape::to_u32`, in the order of [`particles_eval`]), for the Fast preview
+/// of a mix of shapes. An invalid payload records the error and gives [`STATUS_BAD_SCENE`].
+pub fn particles_shapes(params: &[u8], max: u32) -> Result<Vec<u32>, u32> {
+    let params = rt_sim::AmbientParams::decode(params).map_err(|e| {
+        set_error(&format!("FXAM: {e}"));
+        STATUS_BAD_SCENE
+    })?;
+    Ok(rt_sim::evaluate(&params, max)
+        .iter()
+        .map(|p| p.shape.to_u32())
+        .collect())
+}
+
 /// O2: what the engine computed of the traced lens of scene `handle` (focal length, back focus,
 /// f-number, T-stop, transmittance, distortion and relative illumination against image height:
 /// [`rt_core::optics::traced::LensInfo::to_json`]), or `{"traced":false}` for the thin lens (or
@@ -1542,6 +1556,9 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_IES, 8);
         // K3: the interior cameras (projection, exterior factor, instances hidden to the camera).
         assert_eq!(rt_features() & rt_core::FEATURE_CAMERAS, 16);
+        // M3c: the pattern nodes; S3: the drops and the front glass.
+        assert_eq!(rt_features() & rt_core::FEATURE_PATTERN_NODES, 32);
+        assert_eq!(rt_features() & rt_core::FEATURE_DROPS, 64);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.
@@ -1593,6 +1610,42 @@ mod tests {
         unsafe {
             rt_free(input, payload.len() as u32);
             rt_free(out, max * PARTICLE_FLOATS as u32 * 4);
+        }
+    }
+
+    #[test]
+    fn the_shapes_of_a_mix_through_the_c_api_are_the_simulators() {
+        // S3: the mix of the drops scene: what the preview splits by shape.
+        let scene = rt_core::example::s3_drops_scene();
+        let params = scene.effects[1];
+        assert!(params.mixed());
+        let payload = params.encode();
+        let input = upload(&payload);
+        let max = 400u32;
+        let out = rt_alloc(max * 4);
+        // SAFETY: both buffers come from `rt_alloc` with the sizes the call reads and writes.
+        let n = unsafe { rt_particles_shapes(input, payload.len() as u32, max, out.cast::<u32>()) };
+        assert_eq!(n, max);
+        let floats = read_floats(out, max as usize);
+        let expected = rt_sim::evaluate(&params, max);
+        for (p, f) in expected.iter().zip(&floats) {
+            assert_eq!(f.to_bits(), p.shape.to_u32());
+        }
+        assert!(expected.iter().any(|p| p.shape == rt_sim::Shape::Drop));
+        assert!(expected.iter().any(|p| p.shape == rt_sim::Shape::Disc));
+        let _guard = serial();
+        // SAFETY: as above; 100 bytes are readable at `input`, and null pointers are refused.
+        unsafe {
+            assert_eq!(
+                rt_particles_shapes(input, 100, max, out.cast::<u32>()),
+                u32::MAX
+            );
+            assert_eq!(
+                rt_particles_shapes(std::ptr::null(), 0, 1, out.cast::<u32>()),
+                u32::MAX
+            );
+            rt_free(input, payload.len() as u32);
+            rt_free(out, max * 4);
         }
     }
 }

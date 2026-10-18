@@ -477,9 +477,9 @@ fn geometry_validation_and_counts() {
     assert_eq!(g.bvh_stats().leaves, 3);
 }
 
-/// Three dense effects (spheres, discs, capsules) around the example's meshes, with a camera
-/// footprint that widens the smallest particles; the discs cast no shadow and the capsules are
-/// not seen by the camera.
+/// Four dense effects (spheres, discs, capsules and, S3, a mix of the four shapes with drops)
+/// around the example's meshes, with a camera footprint that widens the smallest particles; the
+/// discs cast no shadow and the capsules are not seen by the camera.
 fn particle_geometry(width: BvhWidth) -> Geometry {
     use rt_sim::{AmbientParams, Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
     let base = AmbientParams {
@@ -514,6 +514,20 @@ fn particle_geometry(width: BvhWidth) -> Geometry {
             wind: [1_500.0, -400.0, 0.0],
             streak: 0.01,
             flags: FLAG_REFLECTIONS | FLAG_SHADOW,
+            ..base
+        },
+        // S3: drops and a mix of every shape, the drops' and the capsules' lengths varying.
+        AmbientParams {
+            seed: 4,
+            size_mm: 5.0,
+            shape: Shape::Drop,
+            mix: [1.0, 1.0, 1.0, 3.0],
+            shape_var: 0.6,
+            drop_tip: 0.25,
+            fall_speed: 2_000.0,
+            wind: [600.0, 300.0, 0.0],
+            streak: 0.005,
+            spin: 0.3,
             ..base
         },
     ];
@@ -569,7 +583,7 @@ fn particles_match_brute_force_for_every_class_of_ray() {
         })
         .collect();
     // The particles of every set are hit, and the classes differ.
-    for set in 0..3 {
+    for set in 0..4 {
         let hits = reference[1]
             .iter()
             .filter(|(h, _)| h.is_some_and(|h| h.instance == first_set + set))
@@ -628,6 +642,7 @@ fn a_particle_hit_has_its_details() {
         assert!((d.normal - Vec3::new(0.0, -1.0, 0.0)).length() < 1.0e-3);
         assert_eq!(g.material_of(hit.instance), Some(0));
     }
-    assert!(g.particle_set(first_set + 3).is_none());
-    assert_eq!(g.particle_count(), 7_500);
+    assert!(g.particle_set(first_set + 3).is_some());
+    assert!(g.particle_set(first_set + 4).is_none());
+    assert_eq!(g.particle_count(), 10_000);
 }

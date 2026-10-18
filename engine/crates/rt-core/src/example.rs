@@ -210,6 +210,7 @@ pub fn scene() -> Scene {
         images: Vec::new(),
         textures: Vec::new(),
         programs: Vec::new(),
+        glass: None,
         textured: false,
     }
 }
@@ -1592,6 +1593,126 @@ pub fn ambient_scene() -> Scene {
         },
     ];
     scene.build_particles(Vec::new());
+    scene
+}
+
+/// The S3 parity scene of the drops: the example at 160 x 120 with two ambient effects, 2 500
+/// falling drops of water (the drop shape, clear and smooth: the camera sees them refract, shadow
+/// rays and rough paths cross them straight, their lengths varying by 40 %) and 3 000 opaque
+/// particles that mix the four shapes (spheres, flakes, streaks and drops in 1 : 1 : 1 : 2, with a
+/// palette and tint variation, casting shadows). `render/s3_tests.rs` pins its image, its particles
+/// and their shapes; `rt --write-s3-drops-example` writes it for `tools/wasm-parity.mjs`.
+pub fn s3_drops_scene() -> Scene {
+    use crate::scene::{AmbientParams, MATERIAL_GLASS};
+    use rt_sim::{Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
+    let mut scene = scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let first = scene.materials.len() as u32;
+    scene.materials.extend([
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::WHITE,
+            roughness: 0.0,
+            ior: 1.33,
+            transmission: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::splat(0.8),
+            roughness: 0.5,
+            ..Material::default()
+        },
+    ]);
+    let all = FLAG_CAMERA | FLAG_REFLECTIONS | FLAG_SHADOW;
+    let region = AmbientParams {
+        region_centre: [0.0, 0.0, 200.0],
+        region_half: [400.0, 300.0, 200.0],
+        ..AmbientParams::default()
+    };
+    scene.effects = vec![
+        AmbientParams {
+            kind: 3,
+            seed: 13,
+            time: 0.75,
+            count: 2_500,
+            size_mm: 3.0,
+            size_var: 0.5,
+            shape: Shape::Drop,
+            fall_speed: 4_000.0,
+            fall_var: 0.2,
+            wind: [600.0, 0.0, 0.0],
+            material_id: first,
+            flags: all,
+            shape_var: 0.4,
+            ..region
+        },
+        AmbientParams {
+            kind: 8,
+            seed: 21,
+            time: 0.75,
+            count: 3_000,
+            size_mm: 6.0,
+            size_var: 0.4,
+            shape: Shape::Drop,
+            fall_speed: 800.0,
+            fall_var: 0.4,
+            wind: [150.0, 60.0, 0.0],
+            turbulence: [15.0, 150.0, 40.0],
+            material_id: first + 1,
+            tint_var: 0.2,
+            flags: all,
+            streak: 0.01,
+            spin: 1.0,
+            palette_count: 3,
+            palette: [[0.9, 0.2, 0.2], [0.2, 0.5, 0.9], [0.95, 0.8, 0.2], [1.0; 3]],
+            mix: [1.0, 1.0, 1.0, 2.0],
+            drop_tail: 2.0,
+            drop_tip: 0.2,
+            shape_var: 0.3,
+            ..region
+        },
+    ];
+    scene.build_particles(Vec::new());
+    scene
+}
+
+/// The front glass of the S3 parity scene: a third of the pane under drops of 2 mm (± 60 %) at 60°,
+/// and dust over 3 % of it, motes of 0.4 mm that stop 90 % of a ray.
+pub fn wet_glass() -> crate::optics::glass::GlassParams {
+    crate::optics::glass::GlassParams {
+        seed: 5,
+        drop_coverage: 0.35,
+        drop_size_mm: 2.0,
+        drop_size_var: 0.6,
+        contact_angle_deg: 60.0,
+        ior: 1.333,
+        dust_coverage: 0.03,
+        dust_size_mm: 0.4,
+        dust_size_var: 0.5,
+        dust_opacity: 0.9,
+        ..crate::optics::glass::GlassParams::default()
+    }
+}
+
+/// The S3 parity scene of the front glass: the example at 160 x 120 through a 28 mm lens at f/8
+/// (closer, so that the product fills the frame as through the example's 85 mm), focused on the
+/// product, with a pane 25 mm in front of the lens that has drops and dust on it ([`wet_glass`]):
+/// the drops are soft discs with the scene upside down in them, the motes dark spots. A lens this
+/// wide sees a wide patch of the pane through a small aperture, which is when drops on a lens show
+/// (behind a long lens wide open they only lower the contrast). `render/s3_tests.rs` pins its
+/// image; `rt --write-s3-glass-example` writes it for `tools/wasm-parity.mjs`.
+pub fn s3_glass_scene() -> Scene {
+    let mut scene = scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let camera = &mut scene.camera;
+    let k = 28.0 / camera.focal_mm;
+    camera.position = camera.target + (camera.position - camera.target) * k;
+    camera.focal_mm = 28.0;
+    camera.fstop = 8.0;
+    camera.focus_dist = (camera.target - camera.position).length();
+    scene.set_glass(Some(wet_glass()));
     scene
 }
 

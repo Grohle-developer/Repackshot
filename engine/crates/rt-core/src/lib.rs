@@ -102,6 +102,12 @@ pub const FEATURE_CAMERAS: u32 = 16;
 /// without it refuses a program with them (an unknown opcode makes the RSB invalid), so the page
 /// writes such a material as the mean of its outputs for it, as for an engine without programs.
 pub const FEATURE_PATTERN_NODES: u32 = 32;
+/// Bit 6 of [`FEATURES`] (S3): the engine draws drops: the drop shape, the mixes of shapes and the
+/// shape variation of the ambient effects (the S3 fields of `FXAM`, [`rt_sim::params`]) and the
+/// front glass (`GLAS`, [`optics::glass`]). An engine without it reads a drop as a sphere, ignores
+/// a mix (every particle is the effect's shape) and skips `GLAS`, so the page writes an effect of
+/// drops or of a mix for it as the shape the most particles have, and no front glass.
+pub const FEATURE_DROPS: u32 = 64;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
@@ -111,7 +117,8 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_SECTION
     | FEATURE_IES
     | FEATURE_CAMERAS
-    | FEATURE_PATTERN_NODES;
+    | FEATURE_PATTERN_NODES
+    | FEATURE_DROPS;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

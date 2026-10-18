@@ -1,6 +1,6 @@
 //! Integration tests: the library entry points that `rt` is built from, no subprocesses.
 
-use rt_cli::cli::{parse_args, run, Command, K3View, Options};
+use rt_cli::cli::{parse_args, run, Command, K3View, Options, S3Example};
 use rt_core::scene::Scene;
 use std::path::PathBuf;
 
@@ -161,6 +161,52 @@ fn the_k3_views_render_the_same_pixels_on_one_four_and_sixteen_threads() {
         }
         let read = Scene::from_rsb(&scene.to_rsb()).expect("the scene reads back");
         assert_eq!(rt_cli::render(&read, 2, 4).film, one.film, "{view:?}");
+    }
+}
+
+#[test]
+fn the_s3_scenes_render_the_same_pixels_on_one_four_and_sixteen_threads() {
+    // S3: the drops, the mixes of shapes and the front glass are the same arithmetic whoever runs
+    // them (the glass is laid out once per scene; the particles are evaluated in any order).
+    for which in [S3Example::Drops, S3Example::Glass] {
+        let scene = which.scene();
+        let one = rt_cli::render(&scene, 2, 1);
+        for threads in [4, 16] {
+            let many = rt_cli::render(&scene, 2, threads);
+            assert_eq!(one.film, many.film, "{which:?}, {threads} threads");
+            assert_eq!(one.rays, many.rays, "{which:?}, {threads} threads");
+        }
+        let read = Scene::from_rsb(&scene.to_rsb()).expect("the scene reads back");
+        assert_eq!(rt_cli::render(&read, 2, 4).film, one.film, "{which:?}");
+    }
+}
+
+#[test]
+fn write_s3_examples_produce_readable_rsb_files() {
+    for (which, flag, name) in [
+        (S3Example::Drops, "--write-s3-drops-example", "s3-drops.rsb"),
+        (S3Example::Glass, "--write-s3-glass-example", "s3-glass.rsb"),
+    ] {
+        let path = scratch(name);
+        let args = [flag.to_string(), path.to_str().unwrap().to_string()];
+        let command = parse_args(&args).expect("valid arguments");
+        assert_eq!(
+            command,
+            Command::WriteS3Example {
+                which,
+                path: path.clone()
+            }
+        );
+        run(command).expect("write succeeds");
+        let bytes = std::fs::read(&path).expect("RSB written");
+        assert_eq!(Scene::from_rsb(&bytes), Ok(which.scene()));
+        let extra = [
+            flag.to_string(),
+            name.to_string(),
+            "--samples".into(),
+            "2".into(),
+        ];
+        assert!(parse_args(&extra).is_err());
     }
 }
 

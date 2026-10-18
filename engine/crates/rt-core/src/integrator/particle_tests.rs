@@ -121,6 +121,7 @@ fn one(centre: Vec3, radius: f32) -> Particle {
         axis: [0.0; 3],
         tint: 0,
         id: 0,
+        shape: Shape::Sphere,
     }
 }
 
@@ -461,4 +462,57 @@ fn smooth_drops_leave_their_lights_to_their_bsdf_rays_without_bias() {
         (mirror / reference - 1.0).abs() < 0.01,
         "{mirror} vs {reference}"
     );
+}
+
+#[test]
+fn the_discs_of_a_mix_are_thin_walls_and_its_drops_are_not() {
+    // S3: a mix of flakes and drops of a translucent material. A flake is a thin wall whatever the
+    // material says; a drop is a solid of it, as before S3 a drop of an effect of one shape was.
+    let translucent = Material {
+        base_color: Rgb::splat(0.9),
+        transmission: 0.8,
+        ior: 1.33,
+        ..Material::default()
+    };
+    let mut scene = Scene {
+        camera: front(200.0),
+        materials: vec![translucent],
+        environment: black(),
+        render: settings(8, 8),
+        ..Scene::default()
+    };
+    let params = AmbientParams {
+        count: 2,
+        shape: Shape::Drop,
+        mix: [0.0, 1.0, 0.0, 1.0],
+        material_id: 0,
+        flags: FLAG_CAMERA | FLAG_REFLECTIONS | FLAG_SHADOW,
+        ..AmbientParams::default()
+    };
+    let flake = Particle {
+        axis: [0.0, -1.0, 0.0],
+        shape: Shape::Disc,
+        ..one(Vec3::new(-20.0, 0.0, 0.0), 5.0)
+    };
+    let drop = Particle {
+        axis: [0.0, 0.0, 8.0],
+        id: 1,
+        shape: Shape::Drop,
+        ..one(Vec3::new(20.0, 0.0, 0.0), 5.0)
+    };
+    scene = with_particles(scene, Vec::new(), params, &[flake, drop]);
+    let prepared = Prepared::new(&scene);
+    let i = scene.geometry.instances().len() as u32;
+    let set = scene.geometry.particle_set(i).unwrap();
+    assert!(set.has_discs() && !set.all_discs());
+    assert!(set.is_disc(0) && !set.is_disc(1));
+    let thin = |id: u32| {
+        prepared
+            .particle_material(&scene, i, id)
+            .is_some_and(|m| m.flags & MATERIAL_FLAG_THIN != 0)
+    };
+    assert!(thin(0), "the flake is a thin wall");
+    assert!(!thin(1), "the drop is a solid");
+    // The mix has a thin wall of a clear part: shadow rays test it to cross it.
+    assert!(prepared.passable[i as usize], "shadow rays cross the flake");
 }
