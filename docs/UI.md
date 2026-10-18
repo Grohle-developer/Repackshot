@@ -740,8 +740,9 @@ except the two that build things: *Create studio* and *Render*.
    the seed the switch **On the parts**, one undo entry
    (*Undo: Rain: On the parts*, with the name of the effect), off by default and saved with the
    project; its help says what *Start* in the physics bar does with that
-   effect (rain: the drops settle and splash, merge, slide down and
-   drip off the edges, and leave the surfaces wet; dust settles
+   effect (rain: the drops settle and splash, grow and merge, let go past
+   their size, gather the drops on their way and leave a rivulet, hang at the
+   edges and drip, and leave the surfaces wet; dust settles
    where the part is flat enough and the rain that runs down carries it away;
    snow piles up where it is held) and that the recording is a clip of the scene's
    *Physics*. When on, if the render engine does not draw the
@@ -749,7 +750,10 @@ except the two that build things: *Create studio* and *Render*.
    says so: *the render will show them dry and clean*; S3d: if it draws it but not
    the drops in the air (it has bit 8 and not bit 9: an S3c engine), with a
    drops effect, another one: *drips and splashes will show only once they
-   land*. **Advanced**, collapsed: region (*Around
+   land*; S3f: if it draws them but not their shapes (bit 8 and not bit 10: an
+   S3c or S3d engine), with a drops effect, another one: *the render engine in
+   use draws the drops on the parts round* (`ambient.wetShapesOldEngine`).
+   **Advanced**, collapsed: region (*Around
    the scene* with a margin in mm, or *Own box* with centre and size),
    height band, *Amount by* (*Density · Count*) and, depending on the
    shape: with drops, *Drop length* (×, from the centre
@@ -1556,13 +1560,18 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   nothing: it says which frame the parts show, and *Reset* removes it. The
   *Fast* mode draws the frame at the playhead (the drops as water
   caps, the wet film brighter and the porous parts darker, the dust and the
-  snow on top; S3d: the drops in the air as water spheres) and the meter
+  snow on top; S3d: the drops in the air as water spheres; S3f: each drop
+  with its shape, a deformed cap: stretched along its path with a rounder head
+  and a thinner tail as it runs, bulging downhill when it is held on a slope,
+  with a neck for a moment after two merge, stretched downwards as it hangs and
+  pinches off) and the meter
   adds what is really there (S3d): what (*Rain*, *Dust*, *Snow* or together:
   *Rain and dust*), on how many parts (those that have something) and, with rain, the
   drops on them and in the air: *Rain on 7 parts: 1,443 drops, 12 in the
   air*, *Dust on 3 parts*, or *Nothing on the parts yet* before anything
   settles; *Full* and the render, with an engine that has bit 8 (the drops in the
-  air, with bit 9).
+  air, with bit 9; their shapes, with bit 10).
+  ![a drop that slides and gathers others, six frames](ui/rain-organic.png)
   ![the rain on the parts, paused](ui/physics-rain-set.png)
   ![the drops in the air, paused](ui/physics-rain-air.png)
 

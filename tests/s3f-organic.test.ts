@@ -208,6 +208,13 @@ describe('S3f: the shapes in the render and in Fast', () => {
     expect(slide[0][0]).toBeGreaterThan(0.05);
     // Hanging: longer along gravity than a round cap is tall.
     expect(extent(volume(all[2]).p, 2)).toBeGreaterThan(1.6 * extent(round.p, 2));
+    // On a face looking along +X, downhill (−Z of the part) and gravity are +X of the cap's own frame (its +Z the
+    // normal): the shape is turned into the cap's frame, not out of it.
+    const side = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0));
+    const turned = localShape([0, 0, -1, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0], side, down, 60);
+    expect(turned.axis[0]).toBeCloseTo(1, 6);
+    expect(turned.axis[1]).toBeCloseTo(0, 6);
+    expect(turned.gravity[0]).toBeCloseTo(1, 6);
     // Round is round.
     const r = localShape(ROUND_SHAPE, q, down, 60);
     expect(shapePointLocal([0.3, 0.2, 0.1], r)).toEqual([0.3, 0.2, 0.1]);

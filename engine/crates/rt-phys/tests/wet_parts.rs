@@ -1715,3 +1715,53 @@ fn the_s3f_scene_draws_the_drops_shaped_with_a_pinned_hash_on_every_simd_path() 
         assert_eq!(hash, PINNED_S3F_ORGANIC_4SPP, "{isa}");
     }
 }
+
+/// S3f: the shapes of the changed drops of a frame record, by number (its last block).
+fn frame_shapes(rec: &[u8]) -> std::collections::BTreeMap<u32, Vec<u32>> {
+    let w = |i: usize| u32::from_le_bytes(rec[4 * i..4 * i + 4].try_into().unwrap());
+    let nc = w(0) as usize;
+    let ids: Vec<u32> = (0..nc).map(|k| w(1 + 7 * k)).collect();
+    let mut at = 1 + 7 * nc;
+    for _ in 0..3 {
+        at += 1 + w(at) as usize;
+    }
+    at += 2;
+    at += 1 + 6 * w(at) as usize;
+    assert_eq!(w(at) as usize, nc);
+    ids.iter()
+        .enumerate()
+        .map(|(k, &id)| (id, (0..15).map(|c| w(at + 1 + 15 * k + c)).collect()))
+        .collect()
+}
+
+#[test]
+fn a_drop_whose_shape_changes_is_in_the_next_frame() {
+    // A drop pinned on glass at 30° takes a second one on its very point: at the merge its load is
+    // the larger drop's; at the next step it is its own, heavier, and its shape changes without it
+    // moving: the frame must say so.
+    let mut parts = WetParts::new(spec(
+        vec![plate_mesh(200.0, 200.0, 8, 8)],
+        vec![glass_part(0, tilted(30.0, Vec3::ZERO))],
+        vec![],
+    ));
+    let crit = parts.critical_radius(0, 0.5);
+    let k = k_of(GLASS_ADVANCING_DEG, GLASS_RECEDING_DEG);
+    let small = 0.5 * crit;
+    let tri = 2 * (4 * 8 + 4);
+    parts.add_drop(0, tri, 0.3, 0.3, k * small * small * small);
+    parts.step(2);
+    let mut seen = frame_shapes(&parts.frame());
+    parts.add_drop(0, tri, 0.3, 0.3, k * small * small * small);
+    for _ in 0..3 {
+        parts.step(1);
+        seen.extend(frame_shapes(&parts.frame()));
+    }
+    let states = parts.drop_states();
+    assert_eq!(states.len(), 1);
+    let now: Vec<u32> = parts.weather()[0].shapes[0]
+        .to_floats()
+        .iter()
+        .map(|v| v.to_bits())
+        .collect();
+    assert_eq!(seen[&states[0].id], now);
+}

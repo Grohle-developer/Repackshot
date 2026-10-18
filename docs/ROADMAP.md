@@ -12444,7 +12444,7 @@ What remains of S3d, on top of `rt_phys::wet_parts` and `rt_core::weather`:
    drops in the air that reach it (puddles: ◆ whether drops merge on the
    floor); in the engine a new section (`WETG`: the grid's origin, step and
    size and the three bytes per cell) that the `FLOR` shading reads like
-   `weather`'s layers (also in shadow-catcher mode, ◆), with a new bit (10); in
+   `weather`'s layers (also in shadow-catcher mode, ◆), with a new bit (11: S3f took 10); in
    *Fast*, the same patch in the floor material. Acceptance: the sheet with the
    wet floor under the bottle and its drip trail.
 3. **Fine samples on the set.** Either split the films' large triangles in
@@ -12461,6 +12461,234 @@ What remains of S3d, on top of `rt_phys::wet_parts` and `rt_core::weather`:
    motes.
 5. **Acceptance criteria** that remain: the three sheets and the capture
    above.
+
+### S3f · Organic drops — **Opus** (after S3d) — done
+
+The owner's request (2026-10-18): *"Rain drops that accumulate on a part
+should, once they reach a certain size, fall like a real drop, merging with
+the next drop in an organic way."* On top of `rt_phys::wet_parts` (S3c, S3d),
+`rt_core::weather` and *Fast*.
+
+**Audit of what existed (what was already right).**
+- **Growth to the critical size was already right.** A landing is a new drop
+  that merges with every drop it touches (by volume, at the centre of mass),
+  so a drop that keeps receiving rain grows; it stays pinned while Furmidge's
+  balance holds, `ρ g V sin α ≤ 2 γ a (cos θ_R − cos θ_A)`, the critical size
+  of its tilt and of its part's wettability, and slides past it. The S3c test
+  (glass at 30°, ± 0.5 % of the `f64` radius) already pinned it; S3f adds the
+  growth itself (below).
+- **Sliding** already grew faster with the volume (`v = excess / (C μ a)`),
+  left a trail (wet samples, the dust wiped, a 2 µm film of its water) and
+  merged with what it touched **where it stopped** each step.
+- **Not there:** the merge put the survivor at the centre of mass at once (a
+  jump of up to half the distance between the two); no drop had a shape (round
+  caps everywhere, in the engine and in *Fast*); no rivulet; a hanging drop
+  past its hold dripped whole, and a drop that slid to an open edge ran off it
+  as a drip.
+
+**1. Growth and letting go.** Unchanged physics, now tested as growth: drops
+of a fortieth of the critical volume fed onto one point of glass and of
+plastic at 20°, 45° and 90° merge into one that does not move while its
+volume is below 0.985 of the critical one and slides past 1.05 of it.
+
+**2. Gathering (the coalescence cascade).** The merge looks along the
+**segment each drop swept** in the step (`Drop::from` → `p`), so a sliding
+drop takes every drop it crossed and none beside its path. **A merge conserves
+the volume** (the sum, in `f32`) and **does not teleport**: the survivor (the
+lower number, as before) stays where it was and its centre relaxes to the
+volume-weighted centre of the two (the centres they were themselves relaxing
+to count) by `1 − e^(−Δt/τ)` a step, `τ = MERGE_TIMES × √(ρ a³ / γ)` (◆4,
+a few capillary times: about 10 steps for a 2 mm drop); below 1 % left the
+merge is over. It grows as it runs, and so runs faster (Furmidge's excess
+grows as `a³` against a hold that grows as `a`).
+
+**3. Rivulets and the continuous run.** A sliding drop has Cox and Voinov's
+dynamic contact angles (`θ_f³ = θ_A³ + 9 Ca Λ`, `θ_r³ = θ_R³ − 9 Ca Λ`,
+`Ca = μ v / γ`, `Λ = COX_VOINOV_LOG = 12`, ◆): when its rear angle falls
+below `RUN_REAR_SHARE = 0.8` of the receding one (a large drop on a steep
+face: glass from about 215 mm/s) it becomes a **continuous run** and leaves
+behind it, every `RUN_BEAD = 3` widths of `RUN_WIDTH = 0.2` of its own width
+(◆5), a bead of the rivulet: a drop of that footprint, elongated along the path
+(aspect 3), its water taken from the runner, which relaxes into a small round
+pinned drop over `RUN_RELAX_TIMES = 60` capillary times (◆5) and is gathered by
+the next drop down the same path. The trail of S3c (wet samples, wiped dust, the
+film) goes on as before.
+
+**4. Shapes (`DropShape`, 15 floats).** Driven by the drop's physics
+(`wet_parts::base_shape`, `WetParts::shapes`):
+- **pinned on a slope:** along the downhill axis, its front angle moves from
+  the mean towards the advancing one and its rear towards the receding one by
+  its load (the weight along the face over the hold, 0..1); its top is sheared
+  downhill by `q tan(θ̄/2) / tan θ̄`, `q = (θ_f − θ_r) / (θ_f + θ_r)` (the
+  shear of a cap whose front and rear slopes are those angles, small-slope
+  limit), and it is longer by `PIN_STRETCH × (cos θ_R − cos θ_A) × load`
+  (◆1): it bulges downhill;
+- **sliding:** along its velocity, the same shear with the dynamic angles,
+  longer by `SLIDE_STRETCH` and thinner at its tail by `SLIDE_TAPER` as its
+  rear angle falls from the receding one to 0 (◆1: the corner of Podgorski,
+  Flesselles and Limat 2001), at most `MAX_ASPECT = 4`;
+- **merging:** along the line between the two, its outline first spanning
+  both (`merge_along`, `merge_across`, off its centre by `shift`) with a neck
+  `NECK_DEPTH × r_small / r_big` deep (◆2), all relaxing with the merge;
+- **hanging:** stretched along gravity by `1 + HANG_SAG × (load + pinch)` and
+  pinched under its contact line by `HANG_PINCH × pinch` (◆1, ◆3).
+The shape is monotonic in speed and tilt (tested), continuous where a pinned
+drop lets go (load 1 is speed 0), and every deformation keeps the volume of a
+paraboloid cap exactly (area-preserving stretches, an odd taper, a shear, and
+the height compensated for the merge's footprint and neck, `35/48` of the
+neck's depth, and for the hanging pinch).
+
+**5. Hanging and dripping.** A drop under a face that looks down, or **held at
+an open edge** (a sliding drop now stops at the open edge it reaches and hangs
+there, instead of running off as a drip), hangs while `ρ g V (ĝ·n)` (the whole
+weight at an edge: Tate's law) is at most `2π a γ sin θ̄`; past it, it necks for
+`PINCH_TIMES = 3` capillary times (◆3) and lets go of `PINCH_OFF_SHARE = 0.6`
+of its water as **one drop in the air** (S3d's flight, from rest), the rest
+staying where it hung to grow again (Harkins and Brown 1919: about 60 % of a
+pendant drop falls). Below its hold, a neck that began relaxes.
+
+**6. In the record, the hash and the engine.** Each frame ends with the shapes
+of its changed drops (`u32 shaped; f32 shape[15][changed]`, axes in the part's
+object space; a drop whose shape changes is changed); `WetParts::hash` eats the
+state that makes them. **`WETP` with a shape tail, bit 10**
+(`FEATURE_WET_SHAPES = 1024`, `/api/info` says 2047): after the drops,
+`"SHP1"`, `u32 count` (= drops), `f32 shape[15][count]`; a tail with that tag
+that does not fit invalidates the file, other trailing bytes are still ignored.
+`rt_core::weather::shape_point` deforms the cap in its tangent frame; a section
+with a tail is meshed with `SHAPED_CAP_RINGS = 8` rings (16 × 8, 240 triangles a
+cap; `Caps::cap_triangles` maps a hit to its cap in the passes) and a deformed
+cap takes the normals of its faces. An engine of before ignores the tail
+(trailing bytes) and draws round caps; the page writes it only for an engine with
+bit 10 (`SceneView.wetShapes`, `readsWetShapes`), and only for a track with
+shapes. Under *On the parts*, a drops effect with an engine that has bit 8 but
+not 10 says *the render engine in use draws the drops on the parts round*
+(`ambient.wetShapesOldEngine`, `partsRenderRound`, en and es).
+
+**7. On the page and in *Fast*.** `PartsTrack.shapes` (f32 × 15 per version,
+base64); a record of before (no shapes) reads round, and a track that never had
+shapes has none; `PARTS_FORMAT_VERSION` 3 (key `wpt3:`). In *Fast* a part whose
+drops have shapes draws its caps with 8 rings and five instanced attributes (the
+shape in the cap's own frame: `localShape`), and the vertex shader moves every
+vertex the way the engine does (`shapePointLocal` is its TypeScript twin) with
+the normals of the deformed surface (differences along two tangents).
+
+**8. Pins.** **New:** `PINNED_S3F_PARTS = 0x1c5a82bb`
+(`rt_phys::example::organic_parts` after 264 steps: a vertical glass pane with
+220 seeded drops below their size and one past it near the top, and a glass
+ceiling with a drop about to pinch off, under a light rain; 365 drops, 1 sliding,
+8 relaxing a merge, 7 beads, 53 in the air, 1 drip) and `PINNED_S3F_ORGANIC_4SPP
+= 0xbfb0b45a` (`s3f_organic_scene`, its drops with their shapes), the same in
+scalar, SSE2 and AVX2, with 1, 4 and 16 threads (`rt-cli`), in `wasm32-wasip1`
+scalar and simd128 and in the real `rt.wasm` (`tools/wasm-parity.mjs` with `rt
+--write-s3f-organic-example`, alone and with the passes;
+`tests/s3f-organic.test.ts` with `tests/fixtures/s3f-organic.rsb`). **Moved, on
+purpose, all because the simulation changed and for no other reason:**
+`PINNED_WET_PARTS` `0xe1811f7e` → `0xdc58fa46` (the S3c parity parts: swept
+gathering, relaxing merges, rivulet beads on the steep faces, drops held at the
+plate's open edge instead of dripping, and the hash eats the shape state; 1 810
+drops, 7 held at an edge, 0 drips at 5 s against S3d's 1 951 and 5);
+`PINNED_S3C_WET_4SPP` `0x827ac33c` → `0xfc96fb05` and `PINNED_S3D_FLIGHT_4SPP`
+`0xf7b78a45` → `0x3ba00640` with its six passes (`ALBEDO 0x95e59402`, `NORMAL
+0x63734817`, `DEPTH 0x04dee46d`, `PART_ID` and `MATERIAL_ID 0x787b3f07`, `COC
+0x79183f06`), because those scenes carry the `WETP` and `WETF` of that
+simulation (they are written round, without the tail, as an engine of S3d reads
+them). The engine itself does not change their image: S3d's fixtures
+(`s3c-wet.rsb`, `s3d-flight.rsb` before this phase) render with the new engine to
+S3d's `0x827ac33c` and `0xf7b78a45` and S3d's six passes exactly (checked; the
+fixtures were then rewritten with `rt --write-s3c-wet-example` and
+`--write-s3d-flight-example`; the WPT1 `s3c-parts.wpt1` does not change). **No
+other pin moves.** `rt-app`: `/api/info` says 2047.
+
+**Tests** (each checked with its mutation: the test fails with it and passes
+without):
+- `rt-phys/tests/wet_parts.rs` (9 new, 4 redone): growth and letting go at the
+  critical size on glass and plastic at 20°, 45° and 90° (mutations: half the
+  hold; no merging); a drop that gathers the nine drops on its path and none of
+  the nine 6.5 mm beside it, grows by what it took and runs at least 1.3× faster
+  (mutation: a reach of 1.5 radii); the volume through a cascade of 400 drops and
+  three runners, every five steps to 2·10⁻⁵ (mutations: a merge that keeps 0.999
+  of the smaller; a bead whose water is not taken); the shape monotonic in load
+  and speed, continuous where the drop lets go, and on the parts in tilt and size
+  (mutations: the pinned or the sliding stretch reversed); a merge whose centre
+  moves at most 0.24 radii a step and ends at the centre of volume, with its
+  neck and outline at first (mutation: the whole way in one step); a drop that
+  reaches an open edge hangs, stretched along gravity, and once fed past its hold
+  necks for more than 10 steps and lets go of 60 %, the rest staying (mutations:
+  the edge that does not hold; the whole drop falling; no neck); a fast drop on a
+  vertical face leaves at least five beads on its path, elongated along it,
+  which relax and stay, and at 25° none (mutation: no run); the organic parts the
+  same however the steps are split, with frames in between, and their pin
+  (mutation: the hash without the shape state, killed by the pin); the S3f scene
+  through RSB, shaped (240 triangles a cap), another image than round, on every
+  SIMD path (mutations: the shapes not carried to the caps; the sphere's normals
+  kept, killed by the pin); a pinned drop that takes another on its very point is
+  in the next frame when its load (and so its shape) changes without it moving
+  (mutation: `put` not marking it changed; the redone frames test did not catch
+  it). The swept merge alone (an end-only merge) is caught only by the pins.
+  Redone: the hanging drop (it necks, lets go of 60 %
+  and the rest grows again), the drop from face to face (it stops at the edge),
+  two drops that merge (no jump, then the centre of volume), the frames (with
+  their shapes, by number, equal to the weather's).
+- `rt-core` (`weather::tests`, 3 new): the shape tail goes and comes back, an
+  S3c layout byte for byte before it, other trailing bytes ignored, a bad count,
+  a cut tail or a value out of range refused (mutation: the tail not read); a
+  shaped cap keeps its volume within 4 % for each kind, has unit normals, and
+  takes its form (longer along its motion with a wider head and a top sheared
+  forward; a neck narrower than its lobes; hanging longer along gravity)
+  (mutation: the merge's height not compensated); the passes count shaped caps
+  by their own triangles (mutation: counted as round). `rt-cli`: the S3f scene
+  with 1, 4 and 16 threads, `--write-s3f-organic-example` and `--write-s3f-strip`.
+  `rt-wasm` and `rt-app`: bit 10.
+- `tests/s3f-organic.test.ts` (7): the record keeps each changed drop's shape
+  with its version, a record of before reads round, a bad block is refused
+  before anything is written, a damaged track is not one, a track of before has
+  no shapes and the key is `wpt3:`; the WETP tail only for bit 10, byte for byte,
+  and none for a track without shapes; *Fast*'s shaped caps (8 rings, the shapes
+  in the cap's frame) and round ones for a track of before; the shader's twin
+  keeps the volume and gives each shape its form; the note of bit 10 and its
+  strings; with the real `rt.wasm`, the S3f scene's pin. `tests/s3d-flight.test.ts`:
+  the key is now `wpt3:`. The S3c test of the record caught the first version of
+  the writer, which gave every track round shapes (fixed: a track has shapes only
+  when a record carried them).
+
+**Capture.** `docs/ui/rain-organic.png` (`tools/s3f-strip.mjs`): the S3f scene at
+0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the
+pane: it slides down through the pinned drops, gathers them (the path above it is
+clean), grows, stretches as it speeds up, and leaves the beads of a rivulet.
+
+**What did not fit the plan.**
+- **The sweep rarely matters at these speeds.** At 250 mm/s a drop moves about
+  1 mm a step, less than its radius, so the end-only merge of S3c already caught
+  nearly everything on the path; the swept merge is kept because it is the
+  correct test, but no mutation of it alone is caught by a test (only the pins).
+- **An open edge holds every drop that reaches it**, side edges too: a drop
+  that reaches the side edge of a tilted plate stays there instead of running
+  along it (S3d ◆4, the drip off an edge at the speed it slid, is replaced: a
+  drop now stops and hangs at an edge and lets go from rest; ◆6).
+- **Physics and drawing share one round footprint for the merge:** the shapes
+  are drawn but the touch test is still between circles of the contact radius.
+- **The drawn volume is exact for a paraboloid**, not for the spherical cap:
+  within 4 % on the 16 × 8 mesh.
+- **Furmidge keeps the round width** `2a` for the hold, also for a stretched
+  drop (the S3c threshold test pins it).
+- **Bit 10 was proposed for S3e's `WETG`** (the studio floor): S3f takes it, so
+  S3e's floor needs bit 11.
+- **No new browser check** (`tools/s3f-check.mjs`): the note of bit 10 and *Fast*'s
+  shaped caps are covered by `tests/s3f-organic.test.ts` in Node, and the capture
+  is an engine strip, not a screenshot of the app.
+
+**For the verdict** (rule 11, ◆; to be decided in *Judgement calls*):
+1. ◆ The shapes' exaggeration: `PIN_STRETCH = 1`, `SLIDE_STRETCH = 2`,
+   `SLIDE_TAPER = 0.45`, `MAX_ASPECT = 4`, `HANG_SAG = 0.6`; the bulge is the
+   shear the contact angles give, without a gain.
+2. ◆ The neck: `NECK_DEPTH = 0.5` (equal drops) and its profile `(1 − u²)²`.
+3. ◆ Hanging: `PINCH_TIMES = 3` capillary times to pinch off and
+   `HANG_PINCH = 0.6`; `PINCH_OFF_SHARE = 0.6` is Harkins and Brown's.
+4. ◆ The merge's duration: `MERGE_TIMES = 4` capillary times.
+5. ◆ The rivulet: `RUN_REAR_SHARE = 0.8`, `RUN_WIDTH = 0.2`, `RUN_BEAD = 3`,
+   `RUN_RELAX_TIMES = 60`, and `COX_VOINOV_LOG = 12`.
+6. ◆ That an open edge holds every drop that reaches it, and lets go from rest
+   (S3d ◆4 replaced).
 
 ## M5 · Thread-by-thread weave and real fuzz — **Opus**, verdict **Fable** (after E6 and E9; the fuzz after S8)
 
@@ -13745,6 +13973,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3c** · Drops and dust on the parts: rain that settles, runs and drips over the meshes, snow, the wet mark on the material and dust per part (S3b, “S3c”); and a warning when the engine lacks bit 7 and the scene's glass would come out clean. **Done in part**: the warning (and the bit 8 one) and everything that happens on still parts, in the engine and in *Fast*; drops through the air, dust motes, moving parts and the studio floor, **S3d** (see S3c and S3d, after S3b). **Done in part**: see S3c; the rest, S3d.
 - **S3d** · What remains of drops and dust on the parts: dripping and splashes that fall through the air, dust motes, dynamic parts getting wet, the studio floor, finer samples on the set, the drops' part id and the meter text (S3c, “S3d”). **Done in part**: the meter text, the drops' part id in the passes and the dripping and splashes that fall through the air (in the simulation, the engine and *Fast*); the dust motes, moving parts, the studio floor and the set's fine samples, **S3e** (see S3d and S3e, after S3c).
 - **S3e** · The dust motes, dynamic parts that get wet as they move, the studio floor that gets wet and dusty, and the set's fine samples (S3d, “S3e”); and the wind pushing the drops in the air (S3d ◆2).
+- **S3f** · Organic drops (the owner's request of 2026-10-18): drops that grow to their critical size and let go, gather the drops on their path, merge with a neck and no jump, leave a rivulet on a steep face, take shapes from their physics (in the engine, `WETP`'s shape tail with bit 10, and in *Fast*), and hang, neck and drip one drop at a time. **Done**: see S3f, after S3e; its ◆ to decide.
 
 - **O2** (the traced-lens sheet). Accepted as it stands:
   - which lenses give cat's eye, bubble, creamy and swirl;
