@@ -102,6 +102,9 @@
 //! WETF   4 B  the drops in the air (S3d, new, at most one, written after the WETP sections): u32
 //!             drops; (u32 instance; f32 x y z radius)[drops]   (world space; instance 0xffffffff:
 //!             none)
+//! NEST   4 B  the nested dielectrics (S7, new, at most one, written after SECT, only when a
+//!             priority is above 0): u32 count (at most the materials); u32 priority[count], of the
+//!             first `count` materials (the others 0)
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT`, `GLAS` and `WETF` may appear at most once (a missing one means
@@ -195,6 +198,14 @@
 //! the drops' or with a value out of its range makes the file invalid. An engine of before ignores
 //! the tail (trailing bytes of a newer writer) and draws round caps; the page writes it only for an
 //! engine with [`crate::FEATURE_WET_SHAPES`].
+//!
+//! **Nested dielectrics** (S7). `NEST` gives the materials their priorities: a scene where one is
+//! above 0 traces its clear solids by the interior list of [`crate::integrator::nested`] (a liquid
+//! modelled overlapping its glass, of lower priority, meets the glass at the ratio of their
+//! indices, and the overlap is glass). A file without `NEST`, or with every priority 0, renders
+//! exactly as before S7; an engine of before skips the section (the page writes it only for an
+//! engine with [`crate::FEATURE_NESTED_DIELECTRICS`]). An update replaces the priorities (a file
+//! without `NEST` has none). More priorities than materials make the file invalid.
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
@@ -444,6 +455,8 @@ pub const TAG_GLAS: [u8; 4] = *b"GLAS";
 pub const TAG_WETP: [u8; 4] = *b"WETP";
 /// S3d: the drops in the air of the scene ([`crate::weather::FallingDrop`], at most one).
 pub const TAG_WETF: [u8; 4] = *b"WETF";
+/// The nested-dielectric priorities of the materials (S7).
+pub const TAG_NEST: [u8; 4] = *b"NEST";
 
 /// Widest field of view of a panoramic camera, degrees (`CAMR.fov_x_deg`, `fov_y_deg`; K3).
 pub const MAX_FOV_DEG: f32 = 3600.0;
@@ -1183,6 +1196,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut glass = None;
     let mut wet: Vec<crate::weather::PartWeather> = Vec::new();
     let mut falling: Option<Vec<crate::weather::FallingDrop>> = None;
+    let mut priorities: Option<Vec<u32>> = None;
     let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
     // The profile each IES light names, by the light's position in `scene.lights`.
     let mut light_profiles: Vec<(usize, u32)> = Vec::new();
@@ -1279,6 +1293,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                 let drops = crate::weather::decode_falling(payload)
                     .map_err(|reason| RsbError::Invalid { tag, reason })?;
                 set_once(&mut falling, tag, drops)?;
+            }
+            TAG_NEST => {
+                let count = r.u32()? as usize;
+                if count.saturating_mul(4) > payload.len() - 4 {
+                    return Err(RsbError::SectionTooShort { tag });
+                }
+                let list = (0..count).map(|_| r.u32()).collect::<Result<Vec<_>, _>>()?;
+                set_once(&mut priorities, tag, list)?;
             }
             _ => {} // Unknown section: skipped for forward compatibility.
         }
@@ -1446,6 +1468,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             reason,
         }
     })?;
+    // S7: a priority for each material at most.
+    let priorities = priorities.unwrap_or_default();
+    if priorities.len() > materials {
+        return Err(RsbError::Invalid {
+            tag: TAG_NEST,
+            reason: "more priorities than MATL sections",
+        });
+    }
     // S3d: the drops in the air, each from an instance of the file (or none).
     let falling = falling.unwrap_or_default();
     crate::weather::check_falling(&falling, instances.len()).map_err(|reason| {
@@ -1529,6 +1559,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     scene.render = render;
     scene.effects = effects;
     scene.section = section;
+    scene.priorities = priorities;
     // S3c: the weather of the instances, and the caps of their drops.
     scene.wet_parts = wet;
     scene.wet_falling = falling;
@@ -1802,6 +1833,15 @@ impl Scene {
                 w.u32(u32::from(plane.cap) * SECTION_CAP);
                 w.vec3(plane.normal);
                 w.f32(plane.distance);
+            });
+        }
+        // S7: the priorities, only when one is above 0 (a scene without keeps its bytes).
+        if self.priorities.iter().any(|&p| p > 0) {
+            w.section(TAG_NEST, |w| {
+                w.u32(self.priorities.len() as u32);
+                for &p in &self.priorities {
+                    w.u32(p);
+                }
             });
         }
         if !self.images.is_empty() {

@@ -216,6 +216,7 @@ pub fn scene() -> Scene {
         wet_falling: Vec::new(),
         caps: None,
         cap_owners: Vec::new(),
+        priorities: Vec::new(),
     }
 }
 

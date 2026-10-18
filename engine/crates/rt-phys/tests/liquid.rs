@@ -321,3 +321,60 @@ fn base64(bytes: &[u8]) -> String {
     }
     out
 }
+
+/// Pinned hash of the S7 parity scene ([`s7_scene`]: water in its glass, nested by priority) at
+/// 4 samples per pixel; `tools/wasm-parity.mjs` checks the module against it (`rt
+/// --write-s7-liquid-example`).
+const PINNED_S7_LIQUID_4SPP: u32 = 0xb61a_b0fc;
+
+/// FNV-1a over the little-endian bytes of the resolved film (the hash of the render tests and of
+/// `tools/wasm-parity.mjs`).
+fn film_hash(values: &[f32]) -> u32 {
+    values
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .fold(0x811c_9dc5u32, |h, b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        })
+}
+
+/// The film of `scene` at 4 samples per pixel on `isa`.
+fn render(scene: &rt_core::scene::Scene, isa: rt_core::simd::Isa) -> Vec<f32> {
+    use rt_core::render::{render_tile_prepared, tile_grid};
+    let (w, h) = (scene.render.width, scene.render.height);
+    let prepared = rt_core::integrator::Prepared::new(scene);
+    let mut film = rt_core::image::Film::new(w, h);
+    for tile in tile_grid(w, h, 32) {
+        for sample in 0..4 {
+            render_tile_prepared(scene, &prepared, tile, sample, &mut film, isa);
+        }
+    }
+    film.resolve()
+}
+
+#[test]
+fn the_s7_scene_has_a_pinned_hash_on_every_simd_path() {
+    use rt_phys::liquid::example::s7_scene;
+    let scene = s7_scene();
+    assert_eq!(scene.priorities, vec![0, 2, 1]);
+    // Through an RSB round trip: the priorities travel in NEST.
+    let read = rt_core::scene::Scene::from_rsb(&scene.to_rsb()).expect("read");
+    assert_eq!(read, scene);
+    assert!(rt_core::integrator::Prepared::new(&read).nested());
+    let mut found = Vec::new();
+    for isa in rt_core::simd::Isa::available() {
+        let hash = film_hash(&render(&read, isa));
+        eprintln!("S7 liquid at 4 spp on {}: {hash:#010x}", isa.name());
+        found.push((isa.name(), hash));
+    }
+    for (isa, hash) in found {
+        assert_eq!(hash, PINNED_S7_LIQUID_4SPP, "{isa}");
+    }
+    // Without the priorities it is another image (the liquid meets its glass as against air).
+    let mut plain = read.clone();
+    plain.priorities.clear();
+    assert_ne!(
+        film_hash(&render(&plain, rt_core::simd::Isa::detect())),
+        PINNED_S7_LIQUID_4SPP
+    );
+}

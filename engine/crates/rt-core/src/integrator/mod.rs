@@ -63,6 +63,15 @@
 //! With caustics, light of photon lights through a wall is the photon map's, as through any
 //! caster.
 //!
+//! **Nested dielectrics** (S7, [`nested`]): in a scene where some material has a priority above 0
+//! a path keeps the list of the clear solids it is inside. A surface that does not change the
+//! medium (entering a solid of lower priority than the one it is in, leaving one that is not the
+//! one it is in) is crossed straight, as a cut-out is (a straight event for multiple importance
+//! sampling); at the others the clear part refracts at the ratio of the indices on either side,
+//! and the inside's absorption and scattering are those of the solid of highest priority. A walk
+//! of a scattering medium still ends at the first surface it meets and leaves by its own index,
+//! and the photons of the caustics follow the plain rule. Without priorities none of this runs.
+//!
 //! **Anisotropy**: the shading frame's tangent runs around the instance's local Z axis through
 //! the centre of its mesh's bounds (the radial tangent Blender uses by default, which the
 //! catalogue's brushed metals are tuned for), projected onto the tangent plane; where that
@@ -70,6 +79,7 @@
 
 pub mod dispersion;
 pub mod medium;
+pub mod nested;
 
 use crate::bevel::BevelSetup;
 use crate::bitmap::Image;
@@ -271,6 +281,9 @@ pub struct Prepared {
     pub(crate) programs: ProgramSetup,
     /// The rain, dust and snow on the instances ([`crate::weather`], S3c).
     pub(crate) weather: crate::weather::WeatherSetup,
+    /// S7: the nested-dielectric priority of every material; empty when none is above 0 (then
+    /// every path follows the plain rule, [`nested`]).
+    priorities: Vec<u32>,
 }
 
 /// True when a shadow ray from a medium's exit vertex may cross a solid of `m` (E9b): smooth,
@@ -418,6 +431,49 @@ impl Prepared {
             textures,
             programs,
             weather,
+            priorities: if scene.priorities.iter().any(|&p| p > 0) {
+                (0..scene.materials.len())
+                    .map(|i| scene.priorities.get(i).copied().unwrap_or(0))
+                    .collect()
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    /// S7: whether the scene's clear solids nest by priority ([`nested`]).
+    pub fn nested(&self) -> bool {
+        !self.priorities.is_empty()
+    }
+
+    /// S7: the clear solid of instance `i` as the interior list holds it (its priority and index),
+    /// when the scene nests and the instance is a clear solid (not a particle set, not a thin
+    /// wall, not an emitter or a metal).
+    fn nested_solid(&self, scene: &Scene, i: u32) -> Option<nested::Entry> {
+        if self.priorities.is_empty() || scene.geometry.particle_set(i).is_some() {
+            return None;
+        }
+        let id = self.material_id(scene, i)?;
+        let m = &scene.materials[id];
+        medium::is_clear_solid(m).then(|| nested::Entry {
+            instance: i,
+            priority: self.priorities[id],
+            ior: m.ior.max(1.0),
+        })
+    }
+
+    /// S7: the absorption and the scattering medium inside the solid a path is in.
+    fn inside_of(
+        &self,
+        scene: &Scene,
+        top: Option<nested::Entry>,
+    ) -> (Option<Rgb>, Option<medium::ScatterMedium>) {
+        match top {
+            Some(t) => (
+                self.medium_inside(scene, t.instance),
+                self.scattering_of(scene, t.instance),
+            ),
+            None => (None, None),
         }
     }
 
@@ -1129,6 +1185,9 @@ pub fn radiance_weighted<T: Tracer>(
     let mut wall: Option<(u32, f32)> = None;
     // The wavelength the path carries since its first dispersive glass (E9c).
     let mut band: Option<dispersion::Band> = None;
+    // S7: the clear solids the path is inside, and the false hits it crossed (nested dielectrics).
+    let mut interior = nested::Interior::default();
+    let mut false_hits = 0u32;
     let mut cutouts = 0u32;
     // The weight of the widened particles a camera ray went through or shaded (their coverage).
     let mut alpha_weight = 1.0f32;
@@ -1421,6 +1480,37 @@ pub fn radiance_weighted<T: Tracer>(
             .and_then(|((l, porosity), m)| crate::weather::weathered(m, l, porosity));
         let material = weathered.as_ref().or(material);
 
+        // S7: a surface of a clear solid in a scene that nests them: a false hit is crossed
+        // straight (the list notes or forgets the solid), a true one refracts against the medium
+        // beyond it. An exit vertex of a walk is always a way out.
+        let solid = surface
+            .instance
+            .and_then(|(i, _)| prepared.nested_solid(scene, i));
+        let mut nested_other: Option<f32> = None;
+        if let (Some(entry), None) = (solid, exit) {
+            let crossing = interior.crossing(entry, surface.outside);
+            let matched = match crossing {
+                nested::Crossing::True { other } => {
+                    nested_other = Some(other);
+                    let eta = nested::relative_index(entry.ior, other, surface.outside);
+                    (eta - 1.0).abs() < nested::MATCHED
+                }
+                nested::Crossing::False => true,
+            };
+            if matched && false_hits < nested::MAX_FALSE_HITS {
+                false_hits += 1;
+                interior.pass(entry, surface.outside);
+                if crossing != nested::Crossing::False {
+                    // An index-matched interface: the medium beyond is the list's top now.
+                    (medium, scatter) = prepared.inside_of(scene, interior.top());
+                }
+                let origin = offset_origin(surface.hit_point, -surface.geometric);
+                offset += (origin - ray.origin).dot(ray.dir);
+                ray = Ray::new(origin, ray.dir);
+                continue;
+            }
+        }
+
         // Emitters reflect nothing: add their light and stop.
         if let (Some((instance, front)), Some(m)) = (surface.instance, material) {
             if m.is_emissive() {
@@ -1489,9 +1579,15 @@ pub fn radiance_weighted<T: Tracer>(
                         b
                     }
                 };
-                Bsdf::surface_at(m, surface.outside, b.index(m))
+                match nested_other {
+                    Some(other) => Bsdf::surface_nested(m, surface.outside, b.index(m), other),
+                    None => Bsdf::surface_at(m, surface.outside, b.index(m)),
+                }
             }
-            (None, Some(m)) => Bsdf::surface(m, surface.outside),
+            (None, Some(m)) => match nested_other {
+                Some(other) => Bsdf::surface_nested(m, surface.outside, m.ior, other),
+                None => Bsdf::surface(m, surface.outside),
+            },
             (None, None) => prepared.floor_bsdf,
         };
         // S4b: the forward lobe of a particle that has one (dust, pollen, a dust cloud).
@@ -1727,7 +1823,14 @@ pub fn radiance_weighted<T: Tracer>(
             }
             exit_pdf = next_exit;
             wall = next_wall;
-            if transmitted && beyond.is_none() {
+            if transmitted && beyond.is_none() && solid.is_some() {
+                // S7: into the solid or out of it by the list (an exit vertex leaves the walk's
+                // medium into what is beyond its surface); the inside is the list's top.
+                if let Some(entry) = solid {
+                    interior.pass(entry, surface.outside);
+                    (medium, scatter) = prepared.inside_of(scene, interior.top());
+                }
+            } else if transmitted && beyond.is_none() {
                 // Into the solid, or out of it.
                 medium = if surface.outside {
                     material.and_then(|_| {
@@ -1902,6 +2005,8 @@ fn exterior(scene: &Scene, seen: Rgb) -> Rgb {
     }
 }
 
+#[cfg(test)]
+mod nested_tests;
 #[cfg(test)]
 mod particle_tests;
 #[cfg(test)]

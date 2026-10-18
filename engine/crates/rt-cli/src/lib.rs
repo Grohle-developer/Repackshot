@@ -27,6 +27,7 @@ pub mod cli;
 pub mod filter_sheet;
 pub mod lens_catalogue;
 pub mod lens_sheet;
+pub mod liquid_sheet;
 pub mod pattern_sheet;
 pub mod scenes;
 pub mod sheet;

@@ -173,3 +173,127 @@ pub fn pour_spec() -> LiquidSpec {
         }],
     }
 }
+
+/// The priority the sheet and the parity scene give the glass (above the liquid's, so where the
+/// liquid's surface reaches into the glass's wall the overlap is glass).
+pub const GLASS_PRIORITY: u32 = 2;
+/// The priority they give the liquid.
+pub const LIQUID_PRIORITY: u32 = 1;
+
+/// Clear glass (index 1.5, smooth).
+pub fn glass_material() -> rt_core::scene::Material {
+    rt_core::scene::Material {
+        kind: rt_core::scene::MATERIAL_GLASS,
+        base_color: rt_core::color::Rgb::new(0.97, 0.99, 0.98),
+        roughness: 0.0,
+        ior: 1.5,
+        transmission: 1.0,
+        ..rt_core::scene::Material::default()
+    }
+}
+
+/// Water: index 1.333, a faint blue-green over 2 m.
+pub fn water_material() -> rt_core::scene::Material {
+    rt_core::scene::Material {
+        kind: rt_core::scene::MATERIAL_GLASS,
+        base_color: rt_core::color::Rgb::new(0.86, 0.95, 0.97),
+        roughness: 0.0,
+        ior: 1.333,
+        transmission: 1.0,
+        absorption_mm: 2000.0,
+        ..rt_core::scene::Material::default()
+    }
+}
+
+/// The scene of a liquid world as the page renders it: the static parts of `spec` in `glass`
+/// (priority [`GLASS_PRIORITY`]), each liquid's surface now (rebuilt from its frame record) in
+/// its material of `liquids` (priority [`LIQUID_PRIORITY`]), on the example's studio (its light,
+/// dome and floor), seen by `camera`.
+pub fn render_scene(
+    spec: &LiquidSpec,
+    world: &super::LiquidWorld,
+    glass: rt_core::scene::Material,
+    liquids: &[rt_core::scene::Material],
+    camera: rt_core::scene::Camera,
+    width: u32,
+    height: u32,
+) -> rt_core::scene::Scene {
+    use rt_core::scene::{Instance, Mesh, Transform as RtTransform};
+    let mut scene = rt_core::example::scene();
+    scene.camera = camera;
+    scene.render.width = width;
+    scene.render.height = height;
+    let floor = scene.materials[1].clone();
+    // The example's floor quad (its second mesh).
+    let mut meshes = vec![scene.geometry.meshes()[1].clone()];
+    let mut instances = vec![Instance::new(0, RtTransform::IDENTITY, 0)];
+    let mut materials = vec![floor, glass];
+    let mut priorities = vec![0, GLASS_PRIORITY];
+    for s in &spec.statics {
+        let m = &spec.meshes[s.mesh as usize];
+        meshes.push(Mesh::new(&m.positions, &[], &m.indices, 0).expect("a valid mesh"));
+        instances.push(Instance::new(
+            meshes.len() as u32 - 1,
+            RtTransform {
+                rows: s.transform.rows,
+            },
+            1,
+        ));
+    }
+    for i in 0..world.liquids() {
+        let surface = world.surface(i);
+        if surface.indices.is_empty() {
+            continue;
+        }
+        let material = liquids
+            .get(i)
+            .or(liquids.last())
+            .cloned()
+            .unwrap_or_default();
+        materials.push(material);
+        priorities.push(LIQUID_PRIORITY);
+        meshes.push(
+            Mesh::new(&surface.positions, &surface.normals, &surface.indices, 0)
+                .expect("a valid surface"),
+        );
+        instances.push(Instance::new(
+            meshes.len() as u32 - 1,
+            RtTransform::IDENTITY,
+            materials.len() as u32 - 1,
+        ));
+    }
+    scene.materials = materials;
+    scene.priorities = priorities;
+    scene.geometry = rt_core::geometry::Geometry::new(meshes, instances).expect("a valid geometry");
+    scene.apply_section();
+    scene
+}
+
+/// The S7 parity scene: [`pour_spec`] after [`POUR_STEPS`], water in its glass, seen from the
+/// front and a little above at 160 × 120. `tests/liquid.rs` pins its image; `rt
+/// --write-s7-liquid-example` writes it for `tools/wasm-parity.mjs`.
+pub fn s7_scene() -> rt_core::scene::Scene {
+    let spec = pour_spec();
+    let mut world = super::LiquidWorld::new(&spec);
+    world.step(POUR_STEPS);
+    let target = Vec3::new(0.0, 0.0, 25.0);
+    let position = Vec3::new(40.0, -230.0, 110.0);
+    let camera = rt_core::scene::Camera {
+        position,
+        target,
+        up: Vec3::new(0.0, 0.0, 1.0),
+        focal_mm: 85.0,
+        fstop: 0.0,
+        focus_dist: (target - position).length(),
+        ..rt_core::scene::Camera::default()
+    };
+    render_scene(
+        &spec,
+        &world,
+        glass_material(),
+        &[water_material()],
+        camera,
+        160,
+        120,
+    )
+}

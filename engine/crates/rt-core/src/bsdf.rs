@@ -367,6 +367,18 @@ impl Bsdf {
         Bsdf::surface_at(m, entering, m.ior)
     }
 
+    /// S7: [`Bsdf::surface_at`] at a true interface of nested dielectrics
+    /// ([`crate::integrator::nested`]): the clear part refracts at the ratio of the material's
+    /// `ior` to `other`, the index of the medium on the far side (leaving) or the near side
+    /// (entering), instead of against the air. Everything else is the material's own.
+    pub fn surface_nested(m: &Material, entering: bool, ior: f32, other: f32) -> Bsdf {
+        let mut b = Bsdf::surface_at(m, entering, ior);
+        if !b.thin {
+            b.eta = crate::integrator::nested::relative_index(ior.max(1.0), other, entering);
+        }
+        b
+    }
+
     /// [`Bsdf::surface`] with the index of refraction `ior` instead of the material's (the index
     /// of a dispersive glass at one wavelength, E9c).
     pub fn surface_at(m: &Material, entering: bool, ior: f32) -> Bsdf {
