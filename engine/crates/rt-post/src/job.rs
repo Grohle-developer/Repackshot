@@ -8,8 +8,14 @@
 use rt_core::color::Tonemap;
 use std::fmt;
 
-/// The img2img strength at Intervention 100 (`MAX_STRENGTH` in `src/core/ai.ts`).
-pub const MAX_STRENGTH: f32 = 0.4;
+/// The img2img strength at Intervention 100 (`MAX_STRENGTH` in `src/core/ai.ts`). X6 raised it
+/// from 0.4: at the default Intervention of 50 a small img2img model ran a fifth of its steps and
+/// changed next to nothing (◆, ROADMAP X6).
+pub const MAX_STRENGTH: f32 = 0.6;
+/// What a band control (Light, Bounce, Wear, Style strength) does at 100 to the model's change in
+/// its band (X6): 0 none, 50 the model's change as it made it, 100 twice that; the band's cap grows
+/// with it, so within the cap the result is linear in the control (◆, ROADMAP X6).
+pub const BAND_GAIN_AT_100: f32 = 2.0;
 /// Attempts before the guard gives up and the engine image is delivered unchanged
 /// (`MAX_ATTEMPTS` in `src/core/ai.ts`).
 pub const MAX_ATTEMPTS: u32 = 4;
@@ -42,6 +48,68 @@ impl fmt::Display for PostError {
 
 impl std::error::Error for PostError {}
 
+/// The configurator's styles (`AI_STYLES` of `src/core/ai.ts`), with their codes in the job's
+/// binary form. Since X6 the style is a real grade the guard applies ([`crate::style`]), not only
+/// words for the model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Style {
+    /// *Natural photographic*: a gentle lift of the shadows and roll-off of the highlights.
+    #[default]
+    Natural,
+    /// *Clean catalogue*: open shadows, a lower contrast, neutral whites.
+    Catalogue,
+    /// *Editorial*: a refined contrast, cool shadows and warm highlights, both slight.
+    Editorial,
+    /// *Warm*: warmer light, more in the highlights.
+    Warm,
+    /// *Cool*: cooler light, more in the highlights.
+    Cool,
+    /// *Cinematic*: teal shadows, warm highlights, a deeper contrast.
+    Cinematic,
+}
+
+impl Style {
+    /// Every style, in the order of `AI_STYLES` (their codes are their indices).
+    pub const ALL: [Style; 6] = [
+        Style::Natural,
+        Style::Catalogue,
+        Style::Editorial,
+        Style::Warm,
+        Style::Cool,
+        Style::Cinematic,
+    ];
+
+    /// The stable key of `AI_STYLES`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Style::Natural => "NATURAL",
+            Style::Catalogue => "CATALOGUE",
+            Style::Editorial => "EDITORIAL",
+            Style::Warm => "WARM",
+            Style::Cool => "COOL",
+            Style::Cinematic => "CINEMATIC",
+        }
+    }
+
+    /// The style of a key of `AI_STYLES`; `None` for another.
+    pub fn from_key(key: &str) -> Option<Style> {
+        Style::ALL.into_iter().find(|s| s.key() == key)
+    }
+
+    /// The code in the job's binary form.
+    pub fn code(self) -> u32 {
+        Style::ALL.iter().position(|&s| s == self).unwrap_or(0) as u32
+    }
+
+    /// The style of a code; an unknown one is *Natural* (as `normaliseAi` reads an unknown key).
+    pub fn from_code(code: u32) -> Style {
+        Style::ALL
+            .get(code as usize)
+            .copied()
+            .unwrap_or(Style::Natural)
+    }
+}
+
 /// The configurator's controls, each an integer 0..100 (values above 100 are read as 100).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
@@ -53,8 +121,11 @@ pub struct Settings {
     pub bounce: u32,
     /// Micro-variation and wear: the model's mid band, only in materials that allow wear.
     pub wear: u32,
-    /// The style's colour and light mood: the change common to the whole image.
+    /// The style's colour and light mood: the change common to the whole image, and the style's
+    /// own grade (X6).
     pub style_strength: u32,
+    /// The style whose grade applies (X6).
+    pub style: Style,
     /// The model's seed, echoed in the report.
     pub seed: u32,
 }
@@ -67,6 +138,7 @@ impl Settings {
         bounce: 40,
         wear: 20,
         style_strength: 30,
+        style: Style::Natural,
         seed: 0,
     };
 
@@ -77,6 +149,7 @@ impl Settings {
         bounce: 0,
         wear: 0,
         style_strength: 0,
+        style: Style::Natural,
         seed: 0,
     };
 }
@@ -317,9 +390,9 @@ impl Job {
     /// Reads the binary form ([`Job::to_bytes`]), little-endian:
     ///
     /// ```text
-    /// "RPJ1"
+    /// "RPJ2" (or "RPJ1", before X6: no style code, the style is Natural)
     /// u32 width, u32 height, u32 tonemap (RSB RNDR code), f32 exposure_ev
-    /// u32 intervention, light, bounce, wear, style_strength, seed
+    /// u32 intervention, light, bounce, wear, style_strength, [RPJ2: u32 style code], seed
     /// u32 material count, then per material: u32 id, u32 flags (bit 0 allows wear,
     ///     bit 1 locked), str name
     /// str model_key, str runtime
@@ -329,9 +402,11 @@ impl Job {
     /// where `str` is a `u32` byte length followed by UTF-8. Nothing may follow.
     pub fn from_bytes(bytes: &[u8]) -> Result<Job, PostError> {
         let mut r = Reader { bytes, pos: 0 };
-        if r.take(4)? != b"RPJ1" {
-            return Err(PostError::new("not a job: the magic RPJ1 is missing"));
-        }
+        let styled = match r.take(4)? {
+            b"RPJ2" => true,
+            b"RPJ1" => false,
+            _ => return Err(PostError::new("not a job: the magic RPJ2 is missing")),
+        };
         let width = r.u32()?;
         let height = r.u32()?;
         let tonemap = Tonemap::from_u32(r.u32()?);
@@ -342,6 +417,11 @@ impl Job {
             bounce: r.u32()?.min(100),
             wear: r.u32()?.min(100),
             style_strength: r.u32()?.min(100),
+            style: if styled {
+                Style::from_code(r.u32()?)
+            } else {
+                Style::Natural
+            },
             seed: r.u32()?,
         };
         let count = r.u32()? as usize;
@@ -393,7 +473,7 @@ impl Job {
     /// The binary form read by [`Job::from_bytes`]; tolerances that differ from the
     /// provisional defaults are written as overrides.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = b"RPJ1".to_vec();
+        let mut out = b"RPJ2".to_vec();
         let u32_ = |out: &mut Vec<u8>, v: u32| out.extend_from_slice(&v.to_le_bytes());
         u32_(&mut out, self.width);
         u32_(&mut out, self.height);
@@ -406,6 +486,7 @@ impl Job {
             s.bounce,
             s.wear,
             s.style_strength,
+            s.style.code(),
             s.seed,
         ] {
             u32_(&mut out, v);
@@ -516,6 +597,33 @@ mod tests {
         assert_eq!(bytes.windows(10).filter(|w| w == b"deltaEMean").count(), 1);
         let plain = Job::new(8, 8, Settings::NONE);
         assert_eq!(Job::from_bytes(&plain.to_bytes()), Ok(plain));
+        // X6: the style travels; every style comes back as itself.
+        for style in Style::ALL {
+            let mut j = sample();
+            j.settings.style = style;
+            assert_eq!(
+                Job::from_bytes(&j.to_bytes()).unwrap().settings.style,
+                style
+            );
+            assert_eq!(Style::from_key(style.key()), Some(style));
+        }
+        assert_eq!(Style::from_code(99), Style::Natural);
+        assert_eq!(Style::from_key("SEPIA"), None);
+    }
+
+    #[test]
+    fn a_job_of_before_x6_reads_as_natural() {
+        // RPJ1: the same fields without the style code.
+        let mut job = sample();
+        job.settings.style = Style::Warm;
+        let mut bytes = job.to_bytes();
+        bytes[..4].copy_from_slice(b"RPJ1");
+        let at = 4 + 4 * 4 + 5 * 4;
+        bytes.drain(at..at + 4);
+        let back = Job::from_bytes(&bytes).unwrap();
+        assert_eq!(back.settings.style, Style::Natural);
+        assert_eq!(back.settings.seed, job.settings.seed);
+        assert_eq!(back.materials, job.materials);
     }
 
     #[test]

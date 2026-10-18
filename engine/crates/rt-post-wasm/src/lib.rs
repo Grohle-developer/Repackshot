@@ -402,5 +402,28 @@ pub fn result_bytes(handle: u32) -> Result<Vec<u8>, u32> {
         .ok_or(STATUS_MISSING)
 }
 
+/// The test model (X6, `rt_post::test_model`) on `width × height` sRGB bytes whose top-left pixel
+/// is `(x0, y0)` of the job's image: what the web's tests and the preview sheet run as the model.
+pub fn test_model_bytes(
+    rgb: &[u8],
+    width: u32,
+    height: u32,
+    x0: u32,
+    y0: u32,
+    strength: f32,
+    seed: u32,
+) -> Result<Vec<u8>, u32> {
+    if u64::from(width) * u64::from(height) * 3 != rgb.len() as u64 {
+        set_error("the test model's image has the wrong number of bytes");
+        return Err(STATUS_BAD_ARGUMENT);
+    }
+    let input = rt_post::Rgb8Image {
+        width,
+        height,
+        rgb: rgb.to_vec(),
+    };
+    Ok(rt_post::test_model::apply(&input, x0, y0, strength, seed).rgb)
+}
+
 #[cfg(test)]
 mod tests;

@@ -364,6 +364,37 @@ pub fn render_until(
     )
 }
 
+/// What the AI post-processing starts from (X6, `--ai-inputs`): the film's linear image as `RPL1`
+/// (straight-alpha RGBA `f32`, the sums over the samples, the colour over the coverage where it is
+/// not opaque: `linear_of` of the launcher) and the passes as `RPP1` (`rt-app`'s `kept.rs`).
+pub fn ai_inputs(film: &Film, passes: &Passes) -> (Vec<u8>, Vec<u8>) {
+    let n = film.weight.len();
+    let mut rpl = Vec::with_capacity(16 + n * 16);
+    rpl.extend_from_slice(b"RPL1");
+    for v in [16u32, film.width, film.height] {
+        rpl.extend_from_slice(&v.to_le_bytes());
+    }
+    for p in 0..n {
+        let inv = 1.0 / film.weight[p].max(1.0);
+        let a = film.alpha[p] * inv;
+        let mut c = [0, 1, 2].map(|k| film.rgb[p * 3 + k] * inv);
+        let opaque = f64::from(a) >= 1.0 - 1.0e-6;
+        if !opaque {
+            c = if a > 0.0 { c.map(|v| v / a) } else { [0.0; 3] };
+        }
+        for v in [c[0], c[1], c[2], if opaque { 1.0 } else { a }] {
+            rpl.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    let mut rpp = Vec::with_capacity(32 + passes.byte_len());
+    rpp.extend_from_slice(b"RPP1");
+    for v in [32u32, passes.width, passes.height, passes.mask, 0, 0, 0] {
+        rpp.extend_from_slice(&v.to_le_bytes());
+    }
+    passes.write_planes(&mut rpp);
+    (rpl, rpp)
+}
+
 /// Puts the tile films (and the passes) of a render together.
 #[allow(clippy::too_many_arguments)]
 fn finish(

@@ -177,6 +177,7 @@ pub const FULL: Settings = Settings {
     bounce: 100,
     wear: 100,
     style_strength: 100,
+    style: crate::Style::Natural,
     seed: 7,
 };
 

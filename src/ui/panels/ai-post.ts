@@ -1,8 +1,13 @@
 // Render window ▸ AI post-processing (AI-POST.md §4, UI.md §2.7, phase X4): the switch with the model in use, the
 // six controls of the configurator (0..100 each with its sentence, and the style list), the protections as fixed
-// chips, *Another variation*, and the preview: a Fast-mode frame from the job's camera with the AI applied and a
-// divider for before and after. Every control is a store action (undoable, one entry per drag); the preview
-// updates when a control is released (ui/ai-preview.ts) and shows the time it measured.
+// chips, *Another variation*, and the preview with a divider for before and after. Every control is a store action
+// (undoable, one entry per drag).
+//
+// X6: the preview is first a **stored example** (src/core/ai-preview-sheet.ts, public/ai-preview/): the reference scene
+// rendered by the Full engine and passed through the real guard with the test model at every step of every control.
+// It follows the controls the moment they move, never calls a model, says what it is and at which values it was made,
+// and what the guard did there in plain words. *Preview my scene* runs the real pipeline on the job's own scene,
+// drawn by the Full engine (ui/ai-preview.ts), and its result shows until a control or the scene changes.
 //
 // The section works with `AiPort` (ui/ports.ts): the service says whether it can run and why not, and the
 // synthetic one of tests and screenshots (`?ai=synthetic`) answers `available`. Without a port (a build that
@@ -13,7 +18,8 @@
 // model with a token limit leaves out) and the number of variants next to *Another variation*, with the seeds they
 // take and, once the AI's time was measured on this computer, the time they would take. The preview stays one image.
 
-import { AI_STYLES, MAX_USER_PROMPT, MAX_VARIANTS, type AiRuntimeStatus, type AiStyle } from '../../core/ai';
+import { AI_STYLES, MAX_STRENGTH, MAX_USER_PROMPT, MAX_VARIANTS, type AiRuntimeStatus, type AiStyle } from '../../core/ai';
+import { pickExample, parseSheet, SHEET_DIR, type PreviewSheet, type SheetControl, type SheetPick } from '../../core/ai-preview-sheet';
 import { AI_PROTECTIONS, nextSeed, previewSize, switchAction, variantSeed, type SwitchAction } from '../../core/ai-post';
 import { normaliseUserPrompt, type ComposedPrompt, type PromptCut } from '../../core/ai-prompt';
 import { linearToRgba8 } from '../../core/ai-image';
@@ -24,7 +30,7 @@ import { aiStatusKey, promptContext, recommendationOf } from '../ai-query';
 import { hasModel, runtimeWatch } from '../ai-runtime-state';
 import { runtimeNotice } from './ai-runtime-notice';
 import { AiPreviewController, previewTriggers, sameTriggers, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
-import { reportText } from '../ai-report';
+import { guardWords, reportText } from '../ai-report';
 import * as cmd from '../commands';
 import { numberField, select, slider, textArea, toggle } from '../components/controls';
 import { splitCompare, type SplitCompare } from '../components/split-compare';
@@ -45,6 +51,31 @@ const REASON_KEYS = ['NO_RUNTIME', 'NO_MODEL', 'MODEL_UNSUPPORTED', 'NO_WEBGPU',
 
 /** The last time the pipeline took for one preview on this computer (measured), kept for the session. */
 const measured = new WeakMap<object, number>();
+
+/** The stored example's index (X6), fetched once a page; null when this build has none. */
+let sheetLoad: Promise<PreviewSheet | null> | null = null;
+function loadSheet(): Promise<PreviewSheet | null> {
+  sheetLoad ??= fetch(new URL(`${SHEET_DIR}index.json`, document.baseURI))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((v) => parseSheet(v))
+    .catch(() => null);
+  return sheetLoad;
+}
+/** The stored images, decoded once a page. */
+const sheetImages = new Map<string, Promise<HTMLImageElement | null>>();
+function sheetImage(file: string): Promise<HTMLImageElement | null> {
+  let p = sheetImages.get(file);
+  if (!p) {
+    const img = new Image();
+    img.src = new URL(`${SHEET_DIR}${file}`, document.baseURI).href;
+    p = img
+      .decode()
+      .then(() => img)
+      .catch(() => null);
+    sheetImages.set(file, p);
+  }
+  return p;
+}
 
 /** A linear image as a canvas (what the divider draws). */
 function toCanvas(img: { width: number; height: number; rgba: Float32Array }): HTMLCanvasElement {
@@ -118,14 +149,15 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     const st = ctx.store.get();
     const size = previewSize(s.width, s.height, status?.backend === 'CPU' ? 384 : 512);
     const camera = s.camera.kind === 'ONE' ? s.camera.id : null;
-    const fullEngine = s.ai.previewFullEngine ? { finishBy: s.finishBy, maxSamples: s.maxSamples, maxSeconds: s.maxSeconds } : null;
+    // X6: the preview of the person's own scene is always drawn by the Full engine (the user's request, 17-10).
+    const fullEngine = { finishBy: s.finishBy, maxSamples: s.maxSamples, maxSeconds: s.maxSeconds };
     // One image (the first variant's seed), with the words the job would send.
     const settings = { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed, userPrompt: s.ai.userPrompt };
     const pc = promptContext(ui.get(), status);
     const text = port.scenePrompt(st, settings, { system: pc.system, caps: pc.caps });
     return {
       // The picture depends on the scene, the camera, the look and the size; not on the AI controls.
-      frameKey: [st.scene.nodes, st.scene.roots, st.materials, st.studio, st.environment, st.camera, st.image, st.animation, size.width, size.height, camera, s.ai.previewFullEngine, fullEngine?.maxSamples, fullEngine?.maxSeconds, fullEngine?.finishBy],
+      frameKey: [st.scene.nodes, st.scene.roots, st.materials, st.studio, st.environment, st.camera, st.image, st.animation, size.width, size.height, camera, fullEngine.maxSamples, fullEngine.maxSeconds, fullEngine.finishBy],
       frame: (signal) => port.frame({ width: size.width, height: size.height, camera, fullEngine, signal }),
       settings,
       prompt: text.prompt,
@@ -176,6 +208,10 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
 
   // ------------------------------------------------------------------ the configurator
   const percent = new Map<AiPercentKey, ReturnType<typeof slider>>();
+  /** X6: each control's line on what it acts on (Intervention's says the strength it asks for). */
+  const hows = new Map<string, HTMLElement>();
+  /** The control moved last: the stored example prefers the one that has it at its value. */
+  let lastMoved: SheetControl | null = null;
   const rows: HTMLElement[] = [];
   const percentRow = (key: AiPercentKey): HTMLElement => {
     const name = t(dyn(`rw.ai.${key}`));
@@ -185,21 +221,27 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       max: 100,
       step: 1,
       ariaLabel: name,
-      onChange: (v, g) => patchAi({ [key]: v } as Partial<AiSettings>, g, undoOf(dyn(`rw.ai.${key}`))),
-      onHold: () => preview.hold(),
-      onRelease: () => preview.release(),
+      onChange: (v, g) => {
+        lastMoved = key;
+        patchAi({ [key]: v } as Partial<AiSettings>, g, undoOf(dyn(`rw.ai.${key}`)));
+      },
     });
     percent.set(key, ctl);
-    return h('div', { class: 'rw-ai-ctl', 'data-ai': key }, h('div', { class: 'rw-ai-ctl-name' }, name), ctl.el, h('div', { class: 'note' }, t(dyn(`rw.ai.${key}.aux`))));
+    const how = h('div', { class: 'note rw-ai-how', 'data-how': key }, t(dyn(`rw.ai.${key}.how`)));
+    hows.set(key, how);
+    return h('div', { class: 'rw-ai-ctl', 'data-ai': key }, h('div', { class: 'rw-ai-ctl-name' }, name), ctl.el, h('div', { class: 'note' }, t(dyn(`rw.ai.${key}.aux`))), how);
   };
   for (const key of ['intervention', 'light', 'bounce', 'wear'] as const) rows.push(percentRow(key));
   const styleSel = select(
     AI_STYLES.map((k) => ({ value: k, label: t(dyn(`rw.ai.style.${k}`)) })),
     ai().style,
-    (v) => patchAi({ style: (AI_STYLES as readonly string[]).includes(v) ? (v as AiStyle) : 'NATURAL' }, undefined, undoOf('rw.ai.style')),
+    (v) => {
+      lastMoved = 'style';
+      patchAi({ style: (AI_STYLES as readonly string[]).includes(v) ? (v as AiStyle) : 'NATURAL' }, undefined, undoOf('rw.ai.style'));
+    },
     t('rw.ai.style'),
   );
-  rows.push(h('div', { class: 'rw-ai-ctl', 'data-ai': 'style' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.ai.style')), styleSel.el, h('div', { class: 'note' }, t('rw.ai.style.aux'))));
+  rows.push(h('div', { class: 'rw-ai-ctl', 'data-ai': 'style' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.ai.style')), styleSel.el, h('div', { class: 'note' }, t('rw.ai.style.aux')), h('div', { class: 'note rw-ai-how', 'data-how': 'style' }, t('rw.ai.style.how'))));
   rows.push(percentRow('styleStrength'));
   // The protections: fixed chips with a lock, no switch (AI-POST.md §1).
   const protections = h(
@@ -280,67 +322,175 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
 
   // ------------------------------------------------------------------ the preview
   const frame = h('div', { class: 'rw-ai-frame', role: 'img', 'aria-label': t('rw.aiPreviewAlt') });
+  const sourceLine = h('div', { class: 'note rw-ai-source', 'data-ai-source': '' });
+  const valuesLine = h('div', { class: 'note tabular rw-ai-values' });
   const stateLine = h('div', { class: 'note rw-ai-state tabular', role: 'status' });
   const reportLine = h('div', { class: 'note rw-ai-report' });
   const reportNote = h('div', { class: 'note rw-ai-report-note' });
+  const guardList = h('ul', { class: 'note rw-ai-guard', 'aria-label': t('rw.aiGuardWords') });
   const timeLine = h('div', { class: 'note tabular rw-ai-time' });
-  const fullNote = h('div', { class: 'note' }, t('rw.aiPreviewNote'));
-  const full = toggle(ai().previewFullEngine, () => patchAi({ previewFullEngine: !ai().previewFullEngine }, undefined, L('undo.aiFullEngine')), t('rw.aiFullEngine'));
-  const fullRow = h('div', { class: 'rw-inline rw-ai-full' }, full.el, h('span', { class: 'rw-ai-full-label' }, t('rw.aiFullEngine')));
-  const previewCol = h('div', { class: 'rw-ai-preview' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.aiPreview')), frame, stateLine, reportLine, reportNote, timeLine, fullNote, fullRow);
+  const runMine = h('button', { type: 'button', class: 'btn', 'data-ai-run': '', 'data-tip': t('rw.aiRunMineTip'), onclick: () => runMyScene() }, t('rw.aiRunMine'));
+  const runRow = h('div', { class: 'rw-inline rw-ai-run' }, runMine);
+  const previewCol = h('div', { class: 'rw-ai-preview' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.aiPreview')), frame, sourceLine, valuesLine, stateLine, reportLine, reportNote, guardList, runRow, timeLine);
 
   let split: SplitCompare | null = null;
+  /** What the divider shows now: the two images and which they are. */
   let shown: { before: unknown; after: unknown } = { before: null, after: null };
   let divider: { position: number; mode: SplitMode } = { position: 0.5, mode: 'SPLIT' };
   /** Writes a text only when it changed: the progress ticks of a preview must not make the page churn. */
   const setText = (el: HTMLElement, text: string) => {
     if (el.textContent !== text) el.textContent = text;
   };
-  const showPreview = (s: AiPreviewState) => {
-    // The images: rebuilt only when they are new; the divider keeps where the person left it.
-    if (s.before !== shown.before || s.after !== shown.after) {
-      split?.destroy();
-      split = null;
-      shown = { before: s.before, after: s.after };
-      if (s.before) {
-        frame.style.aspectRatio = `${s.before.width} / ${s.before.height}`;
-        split = splitCompare({
-          a: toCanvas(s.before),
-          b: s.after ? toCanvas(s.after) : null,
-          labels: { a: t('rw.aiBefore'), b: t('rw.aiAfter') },
-          modeLabels: { a: t('rw.aiOnlyBefore'), b: t('rw.aiOnlyAfter'), split: t('split.split') },
-          position: divider.position,
-          mode: divider.mode,
-          onPosition: (p) => (divider = { ...divider, position: p }),
-          onMode: (m) => (divider = { ...divider, mode: m }),
-          zoomable: false,
-        });
-        frame.replaceChildren(split.el);
-        requestAnimationFrame(() => split?.fit());
-      } else frame.replaceChildren();
+  const setGuard = (lines: string[]) => {
+    const now = [...guardList.children].map((li) => li.textContent).join('\n');
+    if (now !== lines.join('\n')) guardList.replaceChildren(...lines.map((l) => h('li', {}, l)));
+    guardList.style.display = lines.length > 0 ? '' : 'none';
+  };
+  /** Shows two pictures under the divider; the divider keeps where the person left it, an image swap keeps the zoom. */
+  const showPair = (before: HTMLImageElement | HTMLCanvasElement, after: HTMLImageElement | HTMLCanvasElement | null, keys: { before: unknown; after: unknown }) => {
+    if (keys.before === shown.before && keys.after === shown.after) return;
+    // (A swap only when there already is an After: a divider made without one has no After to swap.)
+    if (split && keys.before === shown.before && after && shown.after) {
+      split.setB(after, t('rw.aiAfter'));
+      shown = keys;
+      return;
     }
-    frame.dataset.phase = s.phase;
-    frame.classList.toggle('is-working', s.phase === 'WORKING' || s.phase === 'FRAME');
-    // Nothing to show yet: a line in the frame says why.
-    if (!s.before) {
-      const text = s.phase === 'ERROR' ? t('rw.aiPreviewError', { reason: s.error ?? '' }) : s.phase === 'FRAME' ? t('rw.aiPreviewFrame') : t('rw.aiPreviewIdle');
-      const line = frame.querySelector('.rw-ai-empty');
-      if (line) setText(line as HTMLElement, text);
-      else frame.replaceChildren(h('div', { class: 'note rw-ai-empty' }, text));
+    split?.destroy();
+    shown = keys;
+    frame.style.aspectRatio = `${before.width} / ${before.height}`;
+    split = splitCompare({
+      a: before,
+      b: after,
+      labels: { a: t('rw.aiBefore'), b: t('rw.aiAfter') },
+      modeLabels: { a: t('rw.aiOnlyBefore'), b: t('rw.aiOnlyAfter'), split: t('split.split') },
+      position: divider.position,
+      mode: divider.mode,
+      onPosition: (p) => (divider = { ...divider, position: p }),
+      onMode: (m) => (divider = { ...divider, mode: m }),
+      zoomable: false,
+    });
+    frame.replaceChildren(split.el);
+    requestAnimationFrame(() => split?.fit());
+  };
+  const showEmpty = (text: string) => {
+    split?.destroy();
+    split = null;
+    shown = { before: null, after: null };
+    frame.replaceChildren(h('div', { class: 'note rw-ai-empty' }, text));
+  };
+
+  // The person's own scene (the button): what it was made with, so it shows only while that still holds.
+  let mineKey: string | null = null;
+  let mineCanvases: { before: HTMLCanvasElement; after: HTMLCanvasElement | null; of: unknown } | null = null;
+  /** The controls and the words that make a preview: the same key, the same picture. */
+  const settingsKey = () => {
+    const a = env.get().ai;
+    return JSON.stringify([a.intervention, a.light, a.bounce, a.wear, a.style, a.styleStrength, a.seed, a.userPrompt]);
+  };
+  const runMyScene = () => {
+    if (!port) return;
+    mineKey = settingsKey();
+    preview.refresh();
+    render();
+  };
+  /** The scene, the camera or the size changed: the preview of the scene made before no longer shows it. */
+  const forgetMine = () => {
+    mineKey = null;
+    preview.cancel();
+    render();
+  };
+
+  // The stored example.
+  let sheet: PreviewSheet | null | undefined;
+  void loadSheet().then((v) => {
+    sheet = v;
+    render();
+  });
+  const controlName = (c: SheetControl): string => t(dyn(`rw.ai.${c}`));
+  const valueText = (c: SheetControl, v: number | string): string => (c === 'style' ? t(dyn(`rw.ai.style.${v}`)) : String(v));
+  const exampleValues = (pick: SheetPick): string => {
+    const e = pick.entry.settings;
+    const parts = [`${controlName('intervention')} ${e.intervention}`];
+    if (e.intervention > 0) {
+      for (const c of ['light', 'bounce', 'wear'] as const) parts.push(`${controlName(c)} ${e[c]}`);
+      parts.push(`${t(dyn(`rw.ai.style.${e.style}`))} ${e.styleStrength}`);
     }
-    setText(
-      stateLine,
-      s.phase === 'FRAME' ? t('rw.aiPreviewFrame') : s.phase === 'WORKING' ? t('rw.aiPreviewWorking') : s.phase === 'ERROR' ? t('rw.aiPreviewError', { reason: s.error ?? '' }) : s.before ? t('rw.aiPreviewSize', { w: s.before.width, h: s.before.height }) : '',
-    );
+    const yours = pick.differs.map((d) => `${controlName(d.control)} ${valueText(d.control, d.yours)}`);
+    const line = t('rw.aiExampleAt', { values: parts.join(' · ') });
+    return yours.length > 0 ? `${line} — ${t('rw.aiExampleYours', { values: yours.join(', ') })}` : line;
+  };
+  const showExample = () => {
+    const a = env.get().ai;
+    if (sheet === undefined) {
+      showEmpty(t('rw.aiExampleLoading'));
+      setText(sourceLine, '');
+      setText(valuesLine, '');
+      setGuard([]);
+      return;
+    }
+    const pick = sheet ? pickExample(sheet, { intervention: a.intervention, light: a.light, bounce: a.bounce, wear: a.wear, style: a.style, styleStrength: a.styleStrength, seed: a.seed }, lastMoved) : null;
+    if (!sheet || !pick) {
+      showEmpty(t('rw.aiExampleMissing'));
+      setText(sourceLine, '');
+      setText(valuesLine, '');
+      setGuard([]);
+      return;
+    }
+    frame.dataset.example = pick.entry.key;
+    setText(sourceLine, t('rw.aiExampleLabel'));
+    setText(valuesLine, exampleValues(pick) + (pick.seedDiffers ? ` · ${t('rw.aiExampleSeed')}` : ''));
+    const r = pick.entry.report;
+    const words = guardWords({ verdict: r.verdict, usedFraction: r.usedFraction, ...(r.capped ? { capped: r.capped } : {}), materials: r.kept ? [r.kept] : [], sentBack: r.sentBack ?? [] });
+    setGuard(words);
+    setText(reportLine, '');
+    reportLine.style.display = 'none';
+    const note = r.verdict === 'REJECTED' ? t('rw.aiExampleRejected') : '';
+    setText(reportNote, note);
+    reportNote.style.display = note ? '' : 'none';
+    const want = pick.entry.file;
+    void Promise.all([sheetImage(sheet.before), sheetImage(want)]).then(([before, after]) => {
+      // Only if it is still the one to show (a slider may have moved on).
+      if (frame.dataset.example !== pick.entry.key || mineShowing()) return;
+      if (!before) return;
+      showPair(before, after, { before: sheet!.before, after: want });
+      // What is drawn (the checks and the captures wait for it: the images arrive after the controls move).
+      frame.dataset.drawn = pick.entry.key;
+    });
+  };
+  /** Whether the person's own preview is the one to show: made (or being made) with the controls of now. */
+  const mineShowing = () => mineKey !== null && mineKey === settingsKey();
+  const showMine = (s: AiPreviewState) => {
+    frame.dataset.example = '';
+    const model = activeModelLine(ctx);
+    setText(sourceLine, t('rw.aiMine', { model: status?.backend === 'SYNTHETIC' ? t('rw.aiSyntheticLine') : (model?.line ?? '') }));
+    setText(valuesLine, '');
+    if (s.before) {
+      if (!mineCanvases || mineCanvases.of !== s.after || mineCanvases.before.width !== s.before.width) mineCanvases = { before: toCanvas(s.before), after: s.after ? toCanvas(s.after) : null, of: s.after };
+      showPair(mineCanvases.before, mineCanvases.after, { before: s.before, after: s.after });
+    } else showEmpty(s.phase === 'ERROR' ? t('rw.aiPreviewError', { reason: s.error ?? '' }) : t('rw.aiPreviewFrameFull'));
     const rep = s.after && s.report ? reportText(s.report) : { checked: null, note: null };
     setText(reportLine, rep.checked ?? '');
     setText(reportNote, rep.note ?? '');
     reportLine.style.display = rep.checked ? '' : 'none';
     reportNote.style.display = rep.note ? '' : 'none';
+    const r = s.report;
+    setGuard(s.after && r ? guardWords({ verdict: r.verdict, usedFraction: r.usedFraction, ...(r.capped ? { capped: r.capped } : {}), materials: r.materials, sentBack: s.sentBack }).filter((l) => !(r.verdict === 'LIMITED' && l === rep.note)) : []);
+  };
+  const render = () => {
+    const s = preview.state;
+    frame.dataset.phase = mineShowing() ? s.phase : 'EXAMPLE';
+    frame.classList.toggle('is-working', mineShowing() && (s.phase === 'WORKING' || s.phase === 'FRAME'));
+    if (mineShowing()) showMine(s);
+    else showExample();
+    const working = mineShowing() && (s.phase === 'WORKING' || s.phase === 'FRAME');
+    setText(stateLine, working ? (s.phase === 'FRAME' ? t('rw.aiPreviewFrameFull') : t('rw.aiPreviewWorking')) : mineShowing() && s.phase === 'ERROR' ? t('rw.aiPreviewError', { reason: s.error ?? '' }) : mineShowing() && s.before ? t('rw.aiPreviewSize', { w: s.before.width, h: s.before.height }) : '');
+    stateLine.style.display = stateLine.textContent ? '' : 'none';
+    (runMine as HTMLButtonElement).disabled = !port || working;
+    setText(runMine, mineKey !== null && !mineShowing() ? t('rw.aiRunMineAgain') : t('rw.aiRunMine'));
     if (s.seconds !== null) measured.set(ui, s.seconds);
     setText(timeLine, s.seconds !== null ? t('rw.aiPreviewTime', { time: measuredText(s.seconds) }) : t('rw.aiPreviewTimeNone'));
   };
-  preview.subscribe(showPreview);
+  preview.subscribe(() => render());
 
   const grid = h('div', { class: 'rw-ai-grid' }, controls, previewCol);
 
@@ -368,8 +518,6 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       }
     }
     sync();
-    // Opening the section with the switch on (or the status arriving) makes the first preview.
-    preview.refresh();
   };
 
   const sync = () => {
@@ -410,9 +558,10 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     variantsField.set(a.variants);
     updatePrompt(document.activeElement === promptField.el ? promptField.el.value : undefined);
     updateVariants();
-    full.set(a.previewFullEngine);
-    fullNote.style.display = a.previewFullEngine ? 'none' : '';
+    setText(hows.get('intervention')!, t('rw.ai.intervention.how', { s: formatNumber((a.intervention / 100) * MAX_STRENGTH, getLang(), 2) }));
     frame.dataset.on = on ? '1' : '0';
+    // The example follows the controls at once (X6): it calls no model.
+    if (on) render();
   };
 
   // The model manager's snapshot is a new object at every tick of a download: the lines follow it, the preview does
@@ -427,7 +576,7 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       // The number of variants does not change the preview (it is one image): nothing to make again (X4b).
       const [a, b] = [v[0] as AiSettings, prev[0] as AiSettings];
       if (a !== b && v.slice(1).every((x, i) => Object.is(x, prev[i + 1])) && (Object.keys(a) as (keyof AiSettings)[]).every((k) => k === 'variants' || a[k] === b[k])) return;
-      preview.touch();
+      // X6: nothing is computed when a control moves; the example already follows it (sync above).
     },
     sameTriggers,
   );
@@ -444,19 +593,19 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       if (prev === undefined) return;
       // The scene's words changed with it: what a model with a limit leaves out may too.
       updatePrompt(document.activeElement === promptField.el ? promptField.el.value : undefined);
-      preview.touch();
+      forgetMine();
     },
     (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i])),
   );
   scope.watch(
     () => [env.get().width, env.get().height, env.get().camera] as unknown[],
-    (_v, prev) => prev !== undefined && preview.touch(),
+    (_v, prev) => prev !== undefined && forgetMine(),
     (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i])),
   );
-  // Unfolding the section is when the first preview is made.
+  // Unfolding the section shows the example; the person's own preview only comes from the button (X6).
   scope.watch(
     (_s, u) => u.sections['rw.ai'] ?? true,
-    (folded, prev) => prev !== undefined && !folded && preview.refresh(),
+    (folded, prev) => prev !== undefined && !folded && render(),
   );
   // What the service can do changes with what it is asked (the active model, which may be the recommendation for the
   // hardware, so the detection is started here as Settings does) and the models on this computer: ask again.

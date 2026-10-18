@@ -50,6 +50,24 @@ pub struct MaterialCheck {
     pub limit: f32,
     /// Both within their limits.
     pub ok: bool,
+    /// The fraction of the region's local colour change (Bounce) the ΔE limit kept (X6): 1 when
+    /// it kept all of it.
+    pub kept: f32,
+}
+
+/// The share of the open image where each band's cap held the model's change back (X6), 0..1:
+/// where the guard, not the control, decided how much of an effect there is. `style` is 1 when the
+/// change common to the image was held back, 0 when not.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Capped {
+    /// Light: the local change of luminance.
+    pub light: f32,
+    /// Bounce: the local change of colour.
+    pub bounce: f32,
+    /// Wear: the mid band, over the pixels that may take it.
+    pub wear: f32,
+    /// Style strength: the model's change common to the image.
+    pub style: f32,
 }
 
 /// ACCEPTED: passed at the asked strength. LIMITED: passed after the strength was lowered.
@@ -96,6 +114,8 @@ pub struct Report {
     pub focus: Check,
     /// Per material region present.
     pub materials: Vec<MaterialCheck>,
+    /// Where the caps held the bands back (X6).
+    pub capped: Capped,
     /// Why it was limited or rejected, in English, for the log.
     pub reason: Option<String>,
     /// `ai-models.json` key of the model.
@@ -147,17 +167,26 @@ impl Report {
         for (i, m) in self.materials.iter().enumerate() {
             let _ = write!(
                 s,
-                "{}{{\"materialId\":{},\"name\":{},\"deltaEMean\":{},\"deltaEP95\":{},\"limit\":{},\"ok\":{}}}",
+                "{}{{\"materialId\":{},\"name\":{},\"deltaEMean\":{},\"deltaEP95\":{},\"limit\":{},\"ok\":{},\"kept\":{}}}",
                 if i == 0 { "" } else { "," },
                 m.material_id,
                 string(&m.name),
                 number(m.delta_e_mean),
                 number(m.delta_e_p95),
                 number(m.limit),
-                m.ok
+                m.ok,
+                number(m.kept)
             );
         }
-        s.push_str("],");
+        let c = &self.capped;
+        let _ = write!(
+            s,
+            "],\"capped\":{{\"light\":{},\"bounce\":{},\"wear\":{},\"style\":{}}},",
+            number(c.light),
+            number(c.bounce),
+            number(c.wear),
+            number(c.style)
+        );
         if let Some(reason) = &self.reason {
             let _ = write!(s, "\"reason\":{},", string(reason));
         }
