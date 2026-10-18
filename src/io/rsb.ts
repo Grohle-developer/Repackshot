@@ -39,6 +39,7 @@ import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type Tex
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
 import { filtersOf, frontGlassOf, glassFromScene, isNeutralOptics, type CameraOptics, type FrontGlass, type LensFilter } from '../core/optics';
 import { paneAxes, recordedGlass, type GlassFrame, type PaneAxes } from '../core/wet';
+import { partWeather, recordedParts } from '../core/wet-parts';
 import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
@@ -603,6 +604,31 @@ export interface RsbScene {
   programs?: RsbProgram[];
   /** Q1: the section view's plane (SECT): `normal · p = distance` (mm), what stays is `<=`; absent: the whole model. */
   section?: RsbSection;
+  /** S3c: the rain, dust and snow on the instances (WETP, after INST), for an engine with bit 8. */
+  wetParts?: RsbWetPart[];
+}
+
+/** S3c: the payload of a WETP section (rt-core `weather::PartWeather`). */
+export interface RsbWetPart {
+  /** Its instance (the index among the instances the file means). */
+  instance: number;
+  /** The resolution of each triangle of the instance's mesh. */
+  resolution: Uint8Array;
+  /** Wet, dust and snow bytes of each sample. */
+  values: Uint8Array;
+  capAngleDeg: number;
+  porosity: number;
+  /** Its drops: their triangle in the mesh, their point in the instance's object space, their contact radius. */
+  drops: { triangle: number; position: readonly [number, number, number]; radius: number }[];
+}
+
+/** S3c: the header of a WETP payload, bytes (rt-core `weather::WETP_HEADER`). */
+export const WETP_HEADER = 24;
+export const TAG_WETP = 'WETP';
+
+/** The bytes of a WETP payload. */
+export function wetpBytes(p: RsbWetPart): number {
+  return WETP_HEADER + Math.ceil(p.resolution.length / 4) * 4 + Math.ceil(p.values.length / 4) * 4 + 20 * p.drops.length;
 }
 
 /** Q1: the section view's plane, as `SECT` holds it (core/section.ts `resolveSection`). */
@@ -931,6 +957,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
   if (withMeshes && images.length > 0) size += 8 + imagesBytes(images);
   if (instances) size += instances.length * (8 + INST_BYTES);
+  const wetParts = scene.wetParts ?? [];
+  for (const p of wetParts) size += 8 + wetpBytes(p);
   for (const p of programs) size += 8 + 4 + p.bytes.length;
   if (section) size += 8 + SECT_BYTES;
 
@@ -1066,6 +1094,26 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
         w.u32(inst.flags);
       });
     }
+  }
+  // S3c: the rain, dust and snow on the instances, after them (rt_core `Scene::to_rsb`).
+  for (const p of wetParts) {
+    w.section(TAG_WETP, wetpBytes(p), () => {
+      w.u32(p.instance);
+      w.u32(p.resolution.length);
+      w.u32(p.values.length / 3);
+      w.u32(p.drops.length);
+      w.f32(p.capAngleDeg);
+      w.f32(p.porosity);
+      w.raw(p.resolution);
+      w.pad((4 - (p.resolution.length % 4)) % 4);
+      w.raw(p.values);
+      w.pad((4 - (p.values.length % 4)) % 4);
+      for (const d of p.drops) {
+        w.u32(d.triangle);
+        w.vec(d.position);
+        w.f32(d.radius);
+      }
+    });
   }
   // An IES light without its profile is no light for the engine, and is not written (rt_core `Scene::to_rsb`).
   for (const l of written) {
@@ -1271,6 +1319,12 @@ export interface SceneView {
    * would draw the coverage fields, which such a pane has at 0, so the page writes no such pane for it.
    */
   glassLayout?: boolean;
+  /**
+   * S3c: write the rain, dust and snow on the parts (the frame of their recorded simulation at the pose's instant: a
+   * WETP section per instance of a recorded part) for an engine with bit 8 (render/engine.ts `readsWetParts`). Off by
+   * default: an engine of before skips the section, and the page writes what it reads.
+   */
+  wetParts?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -1845,7 +1899,7 @@ function subMesh(data: MeshData, tris: readonly number[], flat: boolean): RsbMes
   return { positions, normals, indices, materialId: 0, ...(uvs ? { uvs } : {}), ...(uvs2 ? { uvs2 } : {}) };
 }
 
-function partMeshes(node: SceneNode, data: MeshData): { key: string; mesh: RsbMesh; material: string | null }[] {
+function partMeshes(node: SceneNode, data: MeshData): { key: string; mesh: RsbMesh; material: string | null; tris?: readonly number[] }[] {
   const flat = node.smooth === false;
   const base = `${node.mesh!.id}|${flat ? 'f' : 's'}`;
   let cache = derived.get(data);
@@ -1871,7 +1925,7 @@ function partMeshes(node: SceneNode, data: MeshData): { key: string; mesh: RsbMe
       mesh = subMesh(data, g.tris, flat);
       cache!.set(key, mesh);
     }
-    return { key, mesh, material: g.material };
+    return { key, mesh, material: g.material, tris: g.tris };
   });
 }
 
@@ -2141,6 +2195,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const meshIndex = new Map<string, number>();
   const instances: RsbInstance[] = [];
   const passInstances: PassInstance[] = [];
+  // S3c: what each instance is made of: its part and that part's triangles (all of them, or a face group's).
+  const instanceParts: { node: NodeId; tris: readonly number[] | null }[] = [];
   let casterBounds: Bounds | null = null;
   let litEmitter = false;
   for (const id of allParts(state)) {
@@ -2167,6 +2223,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       const flags = (cutting && partIsExempt(state, id) ? INSTANCE_NO_SECTION : 0) | (view.cameras && hiddenToCamera(state, id) ? INSTANCE_NO_CAMERA : 0);
       instances.push({ mesh: mi, transform: rows, materialId, flags });
       passInstances.push({ node: id, material: part.material, materialId: materialId + 1 });
+      instanceParts.push({ node: id, tris: part.tris ?? null });
       // Automatic caustics: where the glass and polished metal are (E5b-1).
       if (view.caustics?.mode === 'AUTO') {
         const m = materials[materialId];
@@ -2300,8 +2357,27 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     render.causticRadius = c.radiusPx;
   }
 
+  // S3c: the recorded rain, dust and snow on the parts at the pose's frame, instance by instance, for an engine that
+  // draws it. A part whose mesh is no longer the one recorded is left dry.
+  const wetParts: RsbWetPart[] = [];
+  const recorded = view.wetParts ? recordedParts(state, pose) : null;
+  if (recorded) {
+    const index = new Map(recorded.track.parts.map((p, k) => [p.node, k] as const));
+    instanceParts.forEach((ip, i) => {
+      const k = index.get(ip.node);
+      const node = nodes[ip.node];
+      const tp = k === undefined ? undefined : recorded.track.parts[k];
+      const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
+      if (k === undefined || !tp || !data || node.mesh?.id !== tp.mesh || data.indices.length / 3 !== tp.triangles) return;
+      const w = partWeather(recorded.track, recorded.frame, k, ip.tris);
+      if (!w) return;
+      if (w.drops.length === 0 && w.values.every((v) => v === 0)) return;
+      wetParts.push({ instance: i, resolution: w.resolution, values: w.values, capAngleDeg: tp.capAngleDeg, porosity: tp.porosity, drops: w.drops });
+    });
+  }
+
   return {
-    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}), ...(section ? { section } : {}), ...(wetParts.length > 0 ? { wetParts } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

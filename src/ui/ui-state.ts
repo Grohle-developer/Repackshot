@@ -51,6 +51,8 @@ export interface PhysicsUi {
   canReset: boolean;
   /** S3b: the front glass of the run in progress or the last one, as its last frame left it (absent: none). */
   glass?: { drops: number; motes: number } | null;
+  /** S3c: the parts of the run in progress or the last one: the drops on them at the last frame, the drips so far. */
+  parts?: { drops: number; drips: number } | null;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of

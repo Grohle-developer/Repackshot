@@ -193,3 +193,91 @@ export class WetSim {
     this.handle = 0;
   }
 }
+
+/** S3c: the exports of rt.wasm that simulate rain, dust and snow on the parts (absent in an rt.wasm older than S3c). */
+export interface PartsExports {
+  memory: WebAssembly.Memory;
+  rt_alloc(len: number): number;
+  rt_free(ptr: number, len: number): void;
+  rt_scene_error_len(): number;
+  rt_scene_error_copy(ptr: number): void;
+  wpt_new(ptr: number, len: number): number;
+  wpt_free(handle: number): number;
+  wpt_step(handle: number, n: number): number;
+  wpt_steps(handle: number): number;
+  wpt_hash(handle: number): number;
+  wpt_layout(handle: number): number;
+  wpt_frame(handle: number): number;
+  wpt_copy(handle: number, out: number): number;
+}
+
+/** True when a compiled engine simulates the parts (S3c). */
+export function hasPartsExports(x: unknown): x is PartsExports {
+  const e = x as Partial<PartsExports> | null;
+  return !!e && typeof e.wpt_new === 'function' && typeof e.wpt_frame === 'function' && typeof e.wpt_layout === 'function' && typeof e.wpt_hash === 'function';
+}
+
+/** The parts of a scene under its rain, dust and snow inside an instance of rt.wasm (rt_phys::wet_parts). */
+export class PartsSim {
+  private handle: number;
+
+  /** Builds the parts of a WPT1 spec (core/wet-parts.ts); throws with the engine's message when the bytes are not one. */
+  constructor(
+    private readonly rt: PartsExports,
+    spec: Uint8Array,
+  ) {
+    const ptr = rt.rt_alloc(spec.length);
+    new Uint8Array(rt.memory.buffer, ptr, spec.length).set(spec);
+    this.handle = rt.wpt_new(ptr, spec.length);
+    rt.rt_free(ptr, spec.length);
+    if (this.handle === 0) {
+      const len = rt.rt_scene_error_len();
+      const at = rt.rt_alloc(Math.max(1, len));
+      rt.rt_scene_error_copy(at);
+      const message = new TextDecoder().decode(new Uint8Array(rt.memory.buffer, at, len).slice());
+      rt.rt_free(at, Math.max(1, len));
+      throw new Error(message || 'wpt_new failed');
+    }
+  }
+
+  private live(): number {
+    if (this.handle === 0) throw new Error('the parts were freed');
+    return this.handle;
+  }
+
+  step(n: number): void {
+    this.rt.wpt_step(this.live(), Math.max(0, Math.floor(n)));
+  }
+
+  get steps(): number {
+    return this.rt.wpt_steps(this.live());
+  }
+
+  /** FNV-1a of the parts: the native tests pin it. */
+  get hash(): number {
+    return this.rt.wpt_hash(this.live()) >>> 0;
+  }
+
+  private take(len: number): Uint8Array {
+    const out = this.rt.rt_alloc(Math.max(4, len));
+    this.rt.wpt_copy(this.live(), out);
+    const bytes = new Uint8Array(this.rt.memory.buffer, out, len).slice();
+    this.rt.rt_free(out, Math.max(4, len));
+    return bytes;
+  }
+
+  /** The layout of the samples (each triangle's resolution, the rates of dust and snow). */
+  layout(): Uint8Array {
+    return this.take(this.rt.wpt_layout(this.live()) >>> 0);
+  }
+
+  /** The record of a frame (the drops changed and gone, the samples wet and wiped, the drips); the next starts now. */
+  frame(): Uint8Array {
+    return this.take(this.rt.wpt_frame(this.live()) >>> 0);
+  }
+
+  free(): void {
+    if (this.handle !== 0) this.rt.wpt_free(this.handle);
+    this.handle = 0;
+  }
+}

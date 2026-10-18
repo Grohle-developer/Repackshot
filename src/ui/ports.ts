@@ -81,6 +81,8 @@ export interface EngineStatus {
    * without rt.wasm. Absent: no front glass.
    */
   glass?: { drops: number; motes: number; noEngine?: boolean };
+  /** Preview (S3c): the recorded rain, dust and snow on the parts it draws: the parts that carry it and their drops. */
+  parts?: { parts: number; drops: number };
   watchdog?: number;
   /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
   shownKey?: string;
@@ -617,7 +619,7 @@ export interface PhysicsPort {
    * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
    * is not there (npm run engine:build), or with the engine's message when the scene does not load.
    */
-  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null): PhysicsRunHandle;
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null): PhysicsRunHandle;
 }
 
 /**

@@ -83,7 +83,8 @@ function fakePane(halfExtentMm = 30): EnginePane {
 
 describe('S3b: the data', () => {
   it('the wettability table has its stable families, and glass and the repose are the engine’s parity values', () => {
-    expect(WETTABILITY.map((w) => w.key)).toEqual(['GLASS', 'PLASTIC', 'METAL', 'PAPER', 'PAINT']);
+    // Stable keys (rule 7): S3c added WOOD and FABRIC after them.
+    expect(WETTABILITY.map((w) => w.key).slice(0, 5)).toEqual(['GLASS', 'PLASTIC', 'METAL', 'PAPER', 'PAINT']);
     for (const w of WETTABILITY) expect(w.recedingDeg).toBeLessThanOrEqual(w.advancingDeg);
     const rust = readFileSync(EXAMPLE, 'utf8');
     const value = (name: string) => Number(new RegExp(`pub const ${name}: f32 = ([0-9.]+);`).exec(rust)![1]);

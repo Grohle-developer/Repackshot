@@ -5,6 +5,7 @@
 
 import { DEFAULT_MIX, EFFECT_PRESETS, EFFECT_SHAPES, effectPreset, type EffectKind, type EffectShape } from '../../data/effects';
 import { MATERIAL_PRESETS } from '../../data/materials';
+import { PARTS_FEED } from '../../data/wet-parts';
 import { effectCap, effectHasShape, engineParticleCap, MAX_PALETTE, mixWeights, requestedParticles, windPolar, windVector, type AmbientEffect, type EffectPatch } from '../../core/effects';
 import type { Vec3 } from '../../core/math';
 import type { ProjectState } from '../../core/store';
@@ -253,6 +254,13 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   const seedRow = field(t('ambient.seed'), watch(seedField, (e) => e.seed), shuffle);
   seedRow.setAttribute('data-knob', 'ambient.seed');
   seedRow.setAttribute('data-tip', t('ambient.seedTip'));
+  // S3c: the effect falls on the parts when the physics bar runs (rain wets them, dust and snow pile on them).
+  const feeds = PARTS_FEED[e0.preset];
+  const partsRow = feeds ? flag('ambient.wetParts', (e) => e.wetParts === true, (v) => ({ wetParts: v })) : null;
+  if (partsRow) {
+    partsRow.setAttribute('data-knob', 'ambient.wetParts');
+    partsRow.setAttribute('data-tip', t(feeds === 'DROPS' ? 'ambient.wetPartsTip.DROPS' : feeds === 'DUST' ? 'ambient.wetPartsTip.DUST' : 'ambient.wetPartsTip.SNOW'));
+  }
 
   // --- The shape (S3: a drop among them, or a mix of the four, each particle picking one by the weights). S3b: a knob
   // of its own, out of Advanced (decision S3 ◆5).
@@ -424,7 +432,7 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     field(t('ambient.name'), nameField.el),
     line,
     // S3b (decision S3 ◆5): the Shape is one of the visible knobs, after the size, with the weights of a mix under it.
-    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow),
+    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow, partsRow),
     section(ctx, 'ambient-advanced', t('ambient.advanced'), advanced, null, true),
     h('div', { class: 'note' }, t('ambient.previewNote')),
   );
