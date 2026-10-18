@@ -257,7 +257,10 @@ fn a_final_render_goes_through_every_tile_and_the_guard_with_progress_per_tile()
     assert_eq!(reqs.len(), 2);
     for r in &reqs {
         assert_eq!((num(r, "width"), num(r, "height")), (656.0, 112.0));
-        assert_eq!(num(r, "strength"), f64::from(0.6f32 * rt_post::MAX_STRENGTH));
+        assert_eq!(
+            num(r, "strength"),
+            f64::from(0.6f32 * rt_post::MAX_STRENGTH)
+        );
         assert_eq!(num(r, "seed"), 5.0);
         assert_eq!(text(r, "prompt"), "a studio photograph");
         let sp = r.get("sample_params").unwrap();

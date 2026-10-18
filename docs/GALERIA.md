@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 162 files: 160 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 167 files: 165 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,16 +22,30 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 59 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 22 versions, 19 with new screenshots; the screenshots are spread over 60 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d).
+Drips and splashes that fall through the air, and the meter that says what is on the parts (S3d); the AI section's stored example and the preview of the job's own scene with the Full engine (X6), which re-records, without changing place, `ai-section-dark.png`, `ai-section-light.png` and `ai-section-prompt.png` (X4, X4b).
 
 #### S3d · What remains of drops and dust on the parts (simulation)
 
 <a id="c-physics-rain-air"></a><img src="ui/physics-rain-air.png" width="480" alt="The example bottle in Fast in the rain with a 3 m/s wind and On the parts switched on, paused at 2 s: drops as caps on the body and the cap; the physics bar says Parts: 875 drops, 0 drips, 62 in the air; the status bar, Rain on 7 parts: 875 drops, 62 in the air."><br>
 `physics-rain-air.png` · `f36ca82` · The example's rain with a 3 m/s wind and *On the parts* switched on, paused at 2 simulated seconds with drops in the air (*Parts: 875 drops · 0 drips · 62 in the air*): *Fast* draws the frame's drops as caps and those in the air (the splashes that fly) as water spheres, small at this framing (S3d ◆1); the status bar says what is on the parts: *Rain on 7 parts: 875 drops, 62 in the air*. `tools/s3d-check.mjs --only air`.
+
+#### X6 · The AI that shows and its stored preview
+
+<a id="c-ai-x6-example-dark"></a><img src="ui/ai-x6-example-dark.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: under each control its sentence and a line on what it acts on; on the right the stored example of the bottle under the Before and After divider, the line Example: reference scene, Full engine, test model; your render will differ, the values it was made at and the person's that differ, what the guard did, and the button Preview my scene (Full engine). Dark and light theme."> <a id="c-ai-x6-example-light"></a><img src="ui/ai-x6-example-light.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: under each control its sentence and a line on what it acts on; on the right the stored example of the bottle under the Before and After divider, the line Example: reference scene, Full engine, test model; your render will differ, the values it was made at and the person's that differ, what the guard did, and the button Preview my scene (Full engine). Dark and light theme."><br>
+`ai-x6-example-dark.png` and `ai-x6-example-light.png` · `0f52127` · The AI section as it opens: under each control's sentence, what it acts on (*Asks the model for an img2img strength of 0.3 and scales every cap of the guard* for Intervention); the **stored example** (the example bottle by the Full engine, through the guard with the test model) under the divider, *Example: reference scene, Full engine, test model; your render will differ*, *Made at Intervention 50 · Light 50 · Bounces 50 · Wear and micro-detail 25 · Natural photographic 25 — yours: Bounces 40, Wear and micro-detail 20, Style strength 30*, what the guard did and *Preview my scene (Full engine)*. Dark and light theme. `tools/ai-x6-check.mjs`.
+
+<a id="c-ai-x6-style"></a><img src="ui/ai-x6-style.png" width="480" alt="The same section with the Warm style at strength 100: the stored example warmer on the After side of the divider, made at Warm 100."><br>
+`ai-x6-style.png` · `0f52127` · *Warm* at strength 100: the style's own grade in the stored example, which changed as the list did, without calling a model (decision X6 ◆4). `tools/ai-x6-check.mjs`.
+
+<a id="c-ai-x6-mine"></a><img src="ui/ai-x6-mine.png" width="480" alt="The section after Preview my scene: the job's own scene drawn by the Full engine under the divider, Your scene · Full engine · Synthetic test service, its size, the guard's report line and The guard let all of the AI's change through, and the measured time of the preview."><br>
+`ai-x6-mine.png` · `0f52127` · After *Preview my scene (Full engine)*: the job's own scene drawn by the Full engine with the AI applied (here the synthetic service), *Your scene · Full engine · …*, its size, the guard's report line and its plain words, and the measured time. `tools/ai-x6-check.mjs`.
+
+<a id="c-ai-x6-example-es"></a><img src="ui/ai-x6-example-es.png" width="480" alt="The AI section in Spanish: Ejemplo: escena de referencia, motor Completo, modelo de prueba; tu render será distinto, Hecho con Intervención 50…, and Vista previa de mi escena (motor Completo)."><br>
+`ai-x6-example-es.png` · `0f52127` · The same section in Spanish (*Ejemplo: escena de referencia, motor Completo, modelo de prueba; tu render será distinto*). `tools/ai-x6-check.mjs`.
 
 ### v0.1.21 · 2026-10-18
 
@@ -445,7 +459,7 @@ Caustics and own denoise, own lights and lights and cameras in the viewport, the
 #### X4b · Own prompt and variants
 
 <a id="c-ai-section-prompt"></a><img src="ui/ai-section-prompt.png" width="480" alt="The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %."><br>
-`ai-section-prompt.png` · `a40a6b4` · The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %.
+`ai-section-prompt.png` · `a40a6b4` · The AI post-processing section with an own prompt (“Late afternoon light, a calm mood”), four variants, intervention and light at 80 % and Warm style at 70 %. *(re-recorded in Unreleased: X6, the stored example)*
 
 <a id="c-ai-results-variants"></a><img src="ui/ai-results-variants.png" width="480" alt="The results viewer with the strip of four AI variants under the header; the third one, compared with the render using the divider."><br>
 `ai-results-variants.png` · `a40a6b4` · The results viewer with the strip of four AI variants under the header; the third one, compared with the render using the divider.
@@ -583,7 +597,7 @@ Desktop fixes (own window, data that survives a restart), dragging a material an
 #### X4 · Post-processing interface
 
 <a id="c-ai-section-dark"></a><img src="ui/ai-section-dark.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme."> <a id="c-ai-section-light"></a><img src="ui/ai-section-light.png" width="440" alt="The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme."><br>
-`ai-section-dark.png` and `ai-section-light.png` · `693762d` · The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-section-light.png` re-recorded in v0.1.18: C1, the factory intervention at 50 and the light theme's secondary text at 4.5:1)*
+`ai-section-dark.png` and `ai-section-light.png` · `693762d` · The render window's AI post-processing section with the synthetic test service: switch, controls for intervention, light, bounces, wear and style, own prompt, protections, variants and Before and After preview with divider. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-section-light.png` re-recorded in v0.1.18: C1, the factory intervention at 50 and the light theme's secondary text at 4.5:1)* *(both re-recorded in Unreleased: X6, the stored example and the line on what each control acts on)*
 
 <a id="c-ai-results-viewer"></a><img src="ui/ai-results-viewer.png" width="440" alt="The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme."> <a id="c-ai-results-light"></a><img src="ui/ai-results-light.png" width="440" alt="The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme."><br>
 `ai-results-viewer.png` and `ai-results-light.png` · `693762d` · The results viewer with an AI image: Render | AI divider, the guard's report on its own line and the notice that the AI was limited to respect the protections. Dark and light theme. *(re-recorded in v0.1.5)* *(`ai-results-light.png` re-recorded in v0.1.18: C1, the light theme's secondary text at 4.5:1)*
@@ -897,6 +911,11 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 
 **Proposal for the README:** [`ai-results-viewer.png`](#c-ai-results-viewer) (v0.1.2): the AI result compared with the render using the divider and the guard's report.
 
+- [`ai-x6-example-dark.png`](#c-ai-x6-example-dark) · Unreleased · X6
+- [`ai-x6-example-light.png`](#c-ai-x6-example-light) · Unreleased · X6
+- [`ai-x6-style.png`](#c-ai-x6-style) · Unreleased · X6
+- [`ai-x6-mine.png`](#c-ai-x6-mine) · Unreleased · X6
+- [`ai-x6-example-es.png`](#c-ai-x6-example-es) · Unreleased · X6
 - [`ai-section-prompt.png`](#c-ai-section-prompt) · v0.1.5 · X4b
 - [`ai-results-variants.png`](#c-ai-results-variants) · v0.1.5 · X4b
 - [`settings-ai-prompt.png`](#c-settings-ai-prompt) · v0.1.5 · X4b
