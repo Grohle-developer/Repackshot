@@ -106,8 +106,8 @@ describe('S3g: the surface each material wets as', () => {
     expect(of('LEATHER')).toBe('PAINT');
     expect(of('MILK')).toBe('GLASS');
     // Edited away from the catalogue, the paper is still paper; a material of the user's by its recipe.
-    const paper = instanceFromPreset('m', 'PAPER', 100)!;
-    expect(wettabilityFamilyOf({ ...paper, preset: null, edited: true })).toBe('PAPER');
+    const edited = { ...instanceFromPreset('m', 'PAPER', 100)!, preset: null, edited: true };
+    expect(wettabilityFamilyOf(edited)).toBe('PAPER');
     expect(wettabilityFamilyOf({ category: 'OTHER', family: 'SIMPLE', preset: null, origin: null, params: { metallic: 1, coat: 1 } })).toBe('PAINT');
     expect(wettabilityFamilyOf({ category: 'OTHER', family: 'SIMPLE', preset: null, origin: null, params: { metallic: 1 } })).toBe('METAL');
   });
