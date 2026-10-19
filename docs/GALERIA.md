@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 176 files: 174 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 177 files: 175 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,11 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 63 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 64 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Dust motes, moving parts, the studio floor and the set's fine samples (S3e).
+Dust motes, moving parts, the studio floor and the set's fine samples (S3e); water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f).
 
 #### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation)
 
@@ -41,6 +41,11 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e).
 
 <a id="c-dust-motes"></a><img src="ui/dust-motes.png" width="960" alt="Four frames of a dark glass bottle on a large light card under a dust cloud: at 30 and 120 s, the card and the bottle's foot covered with small bright grains, the side out of the dust's way clean; the last two, close on the edge of the dust's shadow on the card at 120 s, a coarse staircase of steps without the fine samples and a fine 2 mm sawtooth with them."><br>
 `dust-motes.png` · `112c98e` · The S3e dust scene (`rt_phys::example::dust_scene_at`) rendered by the native engine: the bottle on a 700 mm card of the set under a dust cloud at 30 and 120 s, with the motes (grains of dust the engine scatters where the dust is thick, S3e ◆8); then close on the edge of the dust's shadow on the card at 120 s, coarse (the card's own samples: steps of about 7 mm) and with the fine samples (2 mm where the edge crosses, ◆7), where a 2 mm sawtooth remains. `tools/s3e-strip.mjs`.
+
+#### S3g · Water that reads as water
+
+<a id="c-rain-bottle"></a><img src="ui/rain-bottle.png" width="480" alt="Close on the example bottle's painted body after 10 s of the default rain: round drops of different sizes, scattered, a few small clear ones, the white paper label at the right edge, and a white scale bar of 5 mm at the bottom left."><br>
+`rain-bottle.png` · `60b57a0` · The example bottle's painted body at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
 
 ### v0.1.22 · 2026-10-18
 
@@ -67,8 +72,8 @@ Drips and splashes that fall through the air, and the meter that says what is on
 
 #### S3f · Organic drops
 
-<a id="c-rain-organic"></a><img src="ui/rain-organic.png" width="480" alt="Six frames of a dark pane with water drops, at 0, 0.25, 0.5, 0.75, 1 and 1.25 s: a drop near the top slides down through smaller pinned drops, the path above it left clean, growing and getting longer with a rounder head as it speeds up; in the last frame a line of small beads runs down the pane where it passed."><br>
-`rain-organic.png` · `540471b` · The S3f parity scene (`rt_phys::example::s3f_organic_scene_at`) rendered by the native engine at 0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the pane: a drop past its critical size slides down a vertical pane through smaller pinned drops, gathers those on its path (the path above it is clean), grows and runs faster, stretched along its motion with a rounder head (S3f ◆1), and once fast enough leaves the beads of a rivulet (◆5), which the last frame shows above it. `tools/s3f-strip.mjs`.
+<a id="c-rain-organic"></a><img src="ui/rain-organic.png" width="480" alt="Six frames of a dark pane with water drops, at 0, 0.25, 0.5, 0.75, 1 and 1.25 s: a drop near the top slides down through smaller pinned drops, the path above it left clean, growing and getting longer with a rounder head as it speeds up; no line of beads behind it."><br>
+`rain-organic.png` · `540471b` · The S3f parity scene (`rt_phys::example::s3f_organic_scene_at`) rendered by the native engine at 0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the pane: a drop past its critical size slides down a vertical pane through smaller pinned drops, gathers those on its path (the path above it is clean), grows and runs faster, stretched along its motion with a rounder head (S3f ◆1). Re-recorded in Unreleased (S3g): it leaves its wet trail and no beads (S3f's last frame showed a rivulet's beads above it, ◆5). `tools/s3f-strip.mjs`.
 
 #### X7 · The AI through an API
 
@@ -931,11 +936,12 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
-- [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
+- [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f (re-recorded in Unreleased, S3g)
 - [`physics-rain-floor.png`](#c-physics-rain-floor) · Unreleased · S3e
 - [`rain-moving.png`](#c-rain-moving) · Unreleased · S3e
 - [`rain-floor.png`](#c-rain-floor) · Unreleased · S3e
 - [`dust-motes.png`](#c-dust-motes) · Unreleased · S3e
+- [`rain-bottle.png`](#c-rain-bottle) · Unreleased · S3g
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 
