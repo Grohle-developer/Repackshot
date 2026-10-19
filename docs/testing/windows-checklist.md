@@ -22,6 +22,14 @@ For cloth (S9).
 170. [ ] **Anchors and wind.** On a vertical plane with the role *Cloth* and *Anchors ▸ Top edge*, add an *Ambient* effect with wind and *Start*: the top edge must stay put and the cloth must flutter downwind.
 171. [ ] **What to record when reporting.** The renders of 167 (the three fabrics), 168 and 169, the times of 166, and if something fails, the message verbatim and the `<data>\logs\` folder.
 
+For the physics of each part in one place (U16).
+
+190. [ ] **One place.** Select the example bottle's *Body*: under the material's name a line must say *Physics: Static · gets wet as …*; a click on it must open the *Physics* section and bring it into view. The section must show *Motion* (the role, a line under it that says what the role does) and *Weather* (*Gets wet*, *Gets dust and snow*, *Surface* and a line *Drops start to run at about … mm across on a vertical face*). Switch the role to *Dynamic*: *Density*, the mass note and *Drop* must appear; back to *Static*, they must go and *Friction* and *Bounciness* stay.
+191. [ ] **The way to an effect.** With no ambient effect, *Weather* must say that nothing leaves rain, dust or snow on the parts, with *Open Ambient*. Add *Rain* and select the *Body* again: the button must say *Edit Rain* and take you to the rain in *Scene ▸ Ambient*, with *On the parts* right after *Shape*; its tooltip must end with *Each part chooses in Physics ▸ Weather*.
+192. [ ] **A part kept dry.** With *Rain* and *On the parts* on, select the *Cap*, switch *Gets wet* off and open the physics bar: it must say *Start simulates: rain on … parts (1 stays dry)*. Click *Start* and pause after a few seconds: in *Fast* and in a render in *Full*, the cap must have no drops and no wet look, and the collar under it must be as sheltered as before.
+193. [ ] **Mixed and one undo.** Select the *Cap* and the *Body* together: *Gets wet* must show its knob in the middle (mixed); a click must switch it on for both, and one *Undo* must bring the mix back. Select the whole bottle and set *Surface* to *Water-repellent*: the line must say about 1.9 mm, and after a *Start* in the rain the drops must run off the bottle sooner than with *From the material*. Save the project, open it again: the choices must still be there.
+194. [ ] **What to record when reporting.** A screenshot of the *Physics* section of 190, of the physics bar of 192 and a render of 192 in *Full*. If something fails, the message verbatim and the `<data>\logs\` folder.
+
 ## v0.1.22
 
 **The checklists of v0.1.2 to v0.1.21 still apply in full** (points 1 to 151). In addition:

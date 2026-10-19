@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 176 files: 174 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 178 files: 176 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,11 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: Unreleased and 23 versions, 20 of them with new screenshots; the screenshots are spread over 64 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Dust motes, moving parts, the studio floor and the set's fine samples (S3e). Cloth (S9).
+Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the physics of each part in one place (U16). Cloth (S9).
 
 #### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation)
 
@@ -41,6 +41,14 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e). Clo
 
 <a id="c-dust-motes"></a><img src="ui/dust-motes.png" width="960" alt="Four frames of a dark glass bottle on a large light card under a dust cloud: at 30 and 120 s, the card and the bottle's foot covered with small bright grains, the side out of the dust's way clean; the last two, close on the edge of the dust's shadow on the card at 120 s, a coarse staircase of steps without the fine samples and a fine 2 mm sawtooth with them."><br>
 `dust-motes.png` · `112c98e` · The S3e dust scene (`rt_phys::example::dust_scene_at`) rendered by the native engine: the bottle on a 700 mm card of the set under a dust cloud at 30 and 120 s, with the motes (grains of dust the engine scatters where the dust is thick, S3e ◆8); then close on the edge of the dust's shadow on the card at 120 s, coarse (the card's own samples: steps of about 7 mm) and with the fine samples (2 mm where the edge crosses, ◆7), where a 2 mm sawtooth remains. `tools/s3e-strip.mjs`.
+
+#### U16 · The physics of each part in one place
+
+<a id="c-physics-inspector"></a><img src="ui/physics-inspector.png" width="340" alt="The inspector of the example bottle's Body in the dark theme: the Material card with Metallic paint and, under its name, the underlined line Physics: Static · gets wet as Metal; its parameters; Textures, Wear and Part folded; the Physics section with the subhead Motion (the role under its label with Static, Dynamic, Cloth and Liquid, Static pressed, the line Stays where it is: things fall onto it and the weather settles on it, Friction and Bounciness) and the subhead Weather (Gets wet and Gets dust and snow on, Surface From the material (Metal), the line Drops start to run at about 4.9 mm across on a vertical face, and the note Nothing in the scene leaves rain, dust or snow on the parts: switch On the parts on in an effect, with the button Edit Rain)."><br>
+`physics-inspector.png` · `1de5766` · The example bottle's *Body* (metallic paint, which wets as *Metal*) with a *Rain* whose *On the parts* is off: under the material's name, the pointer *Physics: Static · gets wet as Metal* (a click opens the section); the *Physics* section in its two groups, **Motion** (the role, the line that says what it does, and the fields a static part uses, friction and bounciness, ◆5) and **Weather** (*Gets wet*, *Gets dust and snow*, *Surface* naming the material's family, *Drops start to run at about 4.9 mm across on a vertical face*, computed with the engine's formula, ◆3), and the note that nothing leaves rain, dust or snow on the parts, with *Edit Rain*. `tools/u16-check.mjs`.
+
+<a id="c-physics-drawer-summary"></a><img src="ui/physics-drawer-summary.png" width="960" alt="The physics drawer above the bottom bar, stopped: Start, Pause, Stop and Reset, the state Stopped, and the line Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry), above the note on how to start."><br>
+`physics-drawer-summary.png` · `1de5766` · The physics drawer, stopped, with the rain *On the parts*, the *Body* Dynamic and the *Cap* kept dry: the line *Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry)*, from the scene as it is (the five parts of the bottle and the set's pieces; ◆4). `tools/u16-check.mjs`.
 
 #### S9 · Cloth with real physics
 
@@ -950,6 +958,8 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`rain-moving.png`](#c-rain-moving) · Unreleased · S3e
 - [`rain-floor.png`](#c-rain-floor) · Unreleased · S3e
 - [`dust-motes.png`](#c-dust-motes) · Unreleased · S3e
+- [`physics-inspector.png`](#c-physics-inspector) · Unreleased · U16
+- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · Unreleased · U16
 - [`cloth-drape.png`](#c-cloth-drape) · Unreleased · S9
 - [`cloth-sheet.png`](#c-cloth-sheet) · Unreleased · S9
 - [`cloth-inspector.png`](#c-cloth-inspector) · Unreleased · S9

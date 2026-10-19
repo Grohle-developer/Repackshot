@@ -63,6 +63,9 @@
 // core/physics.ts) and the node's position and rotation it is relative to (`anchor`), all plain JSON in the state. A
 // file from before S2 has neither and opens as it always did; on open the section keeps only what this version
 // knows, a clip whose track does not decode is left out and so is a damaged anchor. The schema stays at 2.
+// U16: the section of a part also keeps its weather (`getsWet: false`, `getsDust: false`, `surface`: a wettability
+// family); a file from before U16 has none and opens with every part wet, dusty and of its material's family, and a
+// family this version does not know is dropped (the material's again).
 //
 // Cloth (S9): the role CLOTH and the section's cloth fields (`physics.cloth`, core/cloth.ts: fabric, weight, stiffness,
 // thickness, anchors, pressure, the face), and the PHYSICS clip of a cloth part, which records its shape instead of a
@@ -129,6 +132,7 @@ import { isPartsTrack } from '../core/wet-parts';
 import { isClothTrack, sanitizeClothProps } from '../core/cloth';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
+import { isWettabilityFamily } from '../data/wettability';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
 import { emptyBox } from '../core/math';
 import { createInitialState, type EnvironmentState, type ImageState, type ProjectState } from '../core/store';
@@ -362,6 +366,10 @@ function checkState(raw: RawState): ProjectState {
       if (typeof ph.friction === 'number' && Number.isFinite(ph.friction) && ph.friction >= 0) props.friction = ph.friction;
       if (typeof ph.bounciness === 'number' && Number.isFinite(ph.bounciness) && ph.bounciness >= 0 && ph.bounciness <= 1) props.bounciness = ph.bounciness;
       if (typeof ph.asParts === 'boolean') props.asParts = ph.asParts;
+      // U16: only what differs from the default is kept (true is the default of both switches).
+      if (ph.getsWet === false) props.getsWet = false;
+      if (ph.getsDust === false) props.getsDust = false;
+      if (isWettabilityFamily(ph.surface)) props.surface = ph.surface;
       if (Object.keys(props).length > 0) fixed.physics = props;
       else delete fixed.physics;
       emptied[id] = fixed;

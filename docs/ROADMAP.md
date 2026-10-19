@@ -14685,7 +14685,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3c** · Drops and dust on the parts: rain that settles, runs and drips over the meshes, snow, the wet mark on the material and dust per part (S3b, “S3c”); and a warning when the engine lacks bit 7 and the scene's glass would come out clean. **Done in part**: the warning (and the bit 8 one) and everything that happens on still parts, in the engine and in *Fast*; drops through the air, dust motes, moving parts and the studio floor, **S3d** (see S3c and S3d, after S3b). **Done in part**: see S3c; the rest, S3d.
 - **S3d** · What remains of drops and dust on the parts: dripping and splashes that fall through the air, dust motes, dynamic parts getting wet, the studio floor, finer samples on the set, the drops' part id and the meter text (S3c, “S3d”). **Done in part**: the meter text, the drops' part id in the passes and the dripping and splashes that fall through the air (in the simulation, the engine and *Fast*); the dust motes, moving parts, the studio floor and the set's fine samples, **S3e** (see S3d and S3e, after S3c).
 - **S3e** · The dust motes, dynamic parts that get wet as they move, the studio floor that gets wet and dusty, and the set's fine samples (S3d, “S3e”); and the wind pushing the drops in the air (S3d ◆2). **Done**: see S3e, after S3d; its ◆ decided in *Judgement calls*.
-- **S3f** · Organic drops (the owner's request of 2026-10-18): drops that grow to their critical size and let go, gather the drops on their path, merge with a neck and no jump, leave a rivulet on a steep face, take shapes from their physics (in the engine, `WETP`'s shape tail with bit 10, and in *Fast*), and hang, neck and drip one drop at a time. **Done**: see S3f, after S3e; its ◆ to decide.
+- **S3f** · Organic drops (the owner's request of 2026-10-18): drops that grow to their critical size and let go, gather the drops on their path, merge with a neck and no jump, leave a rivulet on a steep face, take shapes from their physics (in the engine, `WETP`'s shape tail with bit 10, and in *Fast*), and hang, neck and drip one drop at a time. **Done**: see S3f, after S3e; its ◆ decided in *Judgement calls*.
 
 - **O2** (the traced-lens sheet). Accepted as it stands:
   - which lenses give cat's eye, bubble, creamy and swirl;
@@ -14787,6 +14787,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S9** (cloth with real physics). Accepted as it stands: ◆1, the eleven presets' values (silk's bending lowered to 3e-7 N·m so its wrinkles are at least three times leather's); ◆2, fine cotton as the default fabric; ◆3, *Drape over the part*'s sheet (side 1.2 × footprint + 1.2 × height, 8 % above the top, the *Cotton* material); ◆4, the automatic resolution (longest side / 32, at most 4,096 triangles); ◆5, the wind (the effects' winds summed, gusts 0.5 × *Chaos*, drag coefficient 1); ◆6, the self-collision distance `max(thickness, ½ mean edge)` and settling at 6 mm/s for 0.5 s; ◆7, pressure 1 by default for a closed shell; ◆8, the top-edge tolerance (1 % of the size, at least 0.5 mm) and the default anchor box (the top tenth). The one-way coupling (a body falling on a cloth goes through it) and the per-vertex collision (a sharp convex edge can show through) are noted as the phase's limits, for a later phase if they matter in practice.
 - **X7** (the AI through an API). Accepted as it stands: ◆1, both presets ship (Stability SD 3.5 image-to-image and OpenAI image edits), each written from the service's published OpenAPI document and marked *not verified* in the interface until a run against the live service confirms it; ◆2, the depth and edge passes stay off by default, so only the image leaves the computer unless the user asks; ◆3, 120 s per call, 2 tries and a 30 s cap on `Retry-After`: the cost of a render (tiles × attempts × tries) is bounded and the setting says each try may be charged; ◆4, the consent wording, asked in place under the switch, per host and revocable; ◆5, in the browser the key lives in local storage with the warning shown under it; ◆6, plain `http` only to this computer: a service on the local network needs `https`. Plain `http` to a private address, with its own warning, is left for a later phase if it is asked for.
 - **S3e** (the studio floor, moving parts, fine samples, dust motes, the wind on the drops in the air, side edges). Accepted as it stands: ◆1, a drop on a moving part feels gravity minus the part's acceleration, the jolt of a landing included, and meets the rain at the rain's velocity minus the part's: the frame is the part's, as it physically is; ◆2, the floor's rectangle is the union of the feeding effects' regions, at z = 0; ◆3, 2 mm floor cells within 250,000; ◆4, the floor is a film, with no puddles and no splashes off it: **puddles and the splashes off the floor are left for a later phase**, if they are asked for; ◆5, the shadow catcher keeps its layers (cover for dust and snow, a water Fresnel film as a mirror of roughness 0.03); ◆6, the wet catcher darkens as a porous grey of 0.5 by `0.5^(wet×0.5)`, and a visible floor is a matte diffuse under its layers; ◆7, the fine samples of 2 mm where a shadow edge crosses, within 300,000 and up to 4,095 steps a side: the strip shows the coarse sawtooth gone and a 2 mm one left only at macro framing; ◆8, the motes (threshold 0.3, `MOTE_SHARE` 0.02, the octahedron a third of its radius out of the surface, dry dust, 20,000 at most); ◆9, the air of the drops in the air is the rain effects' wind weighted by their densities; ◆10, a drop at a sloping side edge runs along it with its face's hold before it would hang, and the lowest edge and corner keep S3f ◆6. That the studio floor stays dry under a set's own floor is right: the set's floor is a part, and it gets wet as one.
+- **U16** (the physics of each part in one place). Accepted as it stands: ◆1, `WATER_REPELLENT` at 120° advancing and 105° receding, no soak and no darkening, from Ray and Bartell (1953): a wax or coating on a product, whose drops run off at about 1.9 mm on a vertical face; ◆2, two flags (`PART_DRY`, no water; `PART_NO_DUST`, no dust or snow), and a drop in the air that meets a dry part is gone and counted as lost water; ◆3, the size line as it is (twice the critical contact radius on a vertical face, one decimal, a range for several families, *It keeps dry* when all are dry); ◆4, the drawer's counts as they are; ◆5, friction and bounciness for a static part too, since S2 uses both; ◆6, the mixed switch and that a click turns every part on; ◆7, the Spanish names (*Movimiento*, *Intemperie*, *Se moja*, *Coge polvo y nieve*, *Superficie*, *Hidrófugo*); ◆8, the pointer under the material's name. The role goes under its label, so that the four roles fit (the lead's change at review). That the example's metallic paint wets as *Metal* and its paper label as *Paint* (`wettabilityFamilyOf`, S3c) goes to **S3g** with the rest of the wettability table.
 
 **1.9** (double bar in aintfilm's LUT carousel) belongs to another
 repository; the triage notes that Repackshot also draws the plugin's recipe
@@ -15166,6 +15167,207 @@ traced lens by the contrast of 10 and 5 line pairs per millimetre, the maximum
 nearest the least confusion (the corner with distortion +1 stays open);
 a focus clip on a camera in *Point* wins, as now; a click on a
 glass focuses its front face.
+
+## U16 · The physics of each part in one place — **Opus** — done
+
+**Request** (2026-10-18): "it is not intuitive right now how to switch the
+physics of a material on or off". The controls were spread out: the part
+inspector's *Physics* section had the role and the rigid-body fields; whether
+the parts got rain, dust and snow was a single switch per effect, *On the
+parts*, after the *Seed* in the effect's inspector, and for every visible part;
+how water sat on a part (its wettability family, `wettabilityFamilyOf`) was
+derived silently from its material and could be neither seen nor changed; and
+nothing said what *Start* in the physics bar would simulate.
+
+**What** (the lead's design, final). (1) The part inspector's *Physics*
+section in two groups: **Motion** (the role, a line under it that says what the
+role does, and each field only where S2 uses it) and **Weather**, new: **Gets
+wet** and **Gets dust and snow** (switches, on by default) and **Surface** (*From
+the material (Paint)*, naming the family, then every wettability family by name,
+plus a new family `WATER_REPELLENT`), with a line under *Surface* computed with
+the engine's own formula, a note when no effect has *On the parts* on and a
+button to the first effect that can; edits on a group, a model, a
+multi-selection or the *Faces* level, one undo entry for every part concerned,
+mixed values indeterminate, saved with the project. (2) A pointer under the
+material's name that opens the *Physics* section. (3) The effect's *On the
+parts* right after *Shape*, its help saying that each part chooses. (4) One line
+in the physics drawer that says what *Start* will simulate. (5) The engine: the
+`WPT1` part flag `PART_DRY = 2`, a dry part that still shelters, with the
+minimum change to `rt_phys::wet_parts`.
+
+**Acceptance.** The store actions, undo and redo; the project round trip and
+older projects opening with the defaults; the spec writer (the dry flag, the
+dust switch, the surface); the page's critical size against the engine for
+every family at several tilts, from a fixture an engine test writes; the
+inspector (groups, mixed values, the note and its button, the pointer) and the
+drawer's line; an engine test in which a dry roof keeps the part below it dry
+and stays dry, failing when the flag is ignored; each test checked against the
+mutation that breaks it; the browser check `tools/u16-check.mjs` and its two
+captures; `npm run qa` and the engine's gates green.
+
+**Done.**
+
+- **The store** (`core/physics.ts`): a part's `physics` section gains
+  `getsWet?: boolean`, `getsDust?: boolean` and `surface?: WettabilityFamily`.
+  Only what differs from the default is stored: `physics/set` (now typed
+  `PhysicsPatch`) drops `getsWet: true`, `getsDust: true`, `surface: null` and a
+  family this version does not know, so a part back at its defaults has no
+  section and the bytes of its simulation are what they were before U16. The
+  project keeps the three fields (`io/project.ts`; a file from before opens with
+  every part wet, dusty and of its material's family; a damaged value is dropped).
+- **`core/part-weather.ts`**: `partWeatherOf`, `materialFamily`,
+  `surfaceFamily` (the one given, or the material's), `weatherParts` (every part
+  under the selection) and `weatherView` (the selection's values, `null` when
+  they differ); `criticalRadiusMm`, `rt_phys::wet::critical_radius` ported with
+  `core/f32math.ts` in the engine's order of operations, so it gives the same
+  `f32` bits, `sinOfTilt` and `runSizeMm` (twice the critical contact radius on a
+  face of a given tilt: 4.2 mm across for paint on a vertical face, 1.9 mm for
+  the water-repellent surface).
+- **The family** `WATER_REPELLENT` (`data/wettability.ts`, added after the seven,
+  rule 7): 120°/105°, no soak, no darkening, ◆1. No material wets as it by itself
+  (`wettabilityFamilyOf` is unchanged): a part takes it from its *Surface*.
+  `WETTABILITY_FAMILIES` and `isWettabilityFamily` come with it.
+- **The spec writer** (`core/wet-parts.ts`): `wetPartsSpec` writes each part's
+  `surfaceFamily` (its angles, soak and darkening) and marks `dry` and `noDust`;
+  `wptBytes` writes them as the part flags `PART_DRY` (2) and `PART_NO_DUST` (4)
+  besides `PART_FILM` (1). The parts stay in the spec: they shelter.
+- **The engine** (`rt_phys::wet_parts`, ◆2): `PART_DRY = 2`, the part takes no
+  water: it is not among the triangles drops land on (`prepare_sources`, and
+  `land` for a part that moves), its film samples get no wet time, and a drop in
+  the air that meets it is gone (`impact`, counted in `water_lost`);
+  `PART_NO_DUST = 4`, its samples get no dust or snow rate. Both stay in the ray
+  tree. Nothing else of the module changed (the drop physics are untouched):
+  the flag's parsing was already there (other bits were kept and ignored), so it
+  is a helper `flagged` and five guards. **No capability bit**: the parts
+  are simulated in the page's own `rt.wasm`, and what a render engine receives is
+  the recording.
+- **The inspector** (`ui/panels/insp-physics.ts`, `ui/physics-lines.ts` for the
+  sentences without the DOM): *Motion* with the role, its line (*Stays where it
+  is: things fall onto it and the weather settles on it*, *Falls and collides with
+  the rest*, or how to give one role to a mixed selection) and the fields of each
+  role (density, *As parts*, the mass note and *Drop* for *Dynamic*; friction and
+  bounciness for both, ◆5); *Weather* with the two switches (a mixed selection's
+  knob in the middle, `aria-checked="mixed"`, a click turns all on, ◆6), the
+  *Surface* list (*From the material (Paint)*, *From each part’s material* when
+  they differ, the eight families, *Mixed* while they differ), the size line
+  (◆3), a note when every part of the selection is one the run moves (dust and
+  snow settle only on parts that stay), and the note when no effect has *On the
+  parts* on with **Edit Rain** (the first effect that can; it opens *Scene ▸
+  Ambient* on it and focuses its switch) or **Open Ambient**. The Weather fields
+  set every part under the selection in one `physics/set`, one undo entry
+  (*Undo: Weather of Example bottle*); at the *Faces* level, the part of the
+  faces.
+- **The pointer** (`physicsPointer`): under the material's name and category,
+  *Physics: Static · gets wet as Paint* (*keeps dry*, *some keep dry*, *gets wet
+  as several surfaces*, *mixed roles*), a link-style button that opens the
+  folded *Physics* section and scrolls it into view (◆8).
+- **The effect** (`ui/panels/insp-ambient.ts`): *On the parts* and its notes
+  right after the *Shape* and the weights of a *Mix*, before *Energy*; its help
+  (`ambient.wetPartsTip.*`) ends *Each part chooses in Physics ▸ Weather*.
+- **The drawer** (`core/start-plan.ts`, `ui/panels/physics.ts`): while stopped,
+  *Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry) · the front
+  glass*, from the same selection the run makes (S2's bodies, S3c's spec, S3b's
+  glass), or *Nothing to simulate: make a part Dynamic, or switch “On the parts”
+  on in an effect* (◆4). *Start*'s enabled rules are S2's; its tooltip names the
+  weather of the parts too.
+- **Tests** (each checked against the mutation in its comment; 27 mutations, each
+  caught): `engine/crates/rt-phys/tests/wet_parts_u16.rs` (6, also added to the
+  CI's `wasm32-wasip1` run): a dry roof keeps the part below dry and stays dry
+  (the takers' guard removed: the rain lands on it and is thrown away, which it
+  catches by the lost water); a dry film part and a dry part that moves stay dry
+  (the film's and the movers' guards removed); a drip that falls on a dry part is
+  gone with its water accounted for (the guard of `impact` removed); a part
+  without dust takes no dust or snow and still shelters, the flags are
+  independent (the rates' guard removed); the flags round-trip; and the
+  critical radius of the eight families at 0, 5, 15, 30, 45, 60 and 90°, which
+  writes `tests/fixtures/u16-critical.json` (`REPACK_WRITE_FIXTURES=1 cargo test
+  -p rt-phys --test wet_parts_u16`) and fails when it is stale.
+  `tests/u16-weather.test.ts` (12): the table; the port's sine and radius, bit
+  for bit, against the fixture (Math.cos for fmath, the `2 ×` dropped); the
+  store (one undo step for all parts, the defaults stored as nothing, an unknown
+  family refused); the project and an older one (the loader not reading a field,
+  or taking any string as a surface); the writer's flags and family (a flag not
+  written, the surface ignored); the sentences, the note and its button, the
+  pointer, the plan (dry parts among the rain's, moving parts among the dust's,
+  the glass left out); and with the real `rt.wasm`, a dry roof through the page's
+  writer, one without dust, and *Surface* reaching the engine's cap angle.
+  `tests/u16-physics-browser.test.ts` (3, Chromium through Vite): the two groups,
+  the fields of each role, the switches, the surface, the note, the pointer
+  opening a folded section, mixed values and one undo step on a multi-selection
+  and on the model, the note's button focusing the rain's switch, *On the parts*
+  right after *Shape*, and the drawer's line (the Weather group left out, every
+  field for every role, mixed shown as the first part's value, a pointer that
+  only scrolls, a button that does not select the effect, one that leaves a
+  folded *Ambient* folded, the row back after the seed). `tests/s3c-parts.test.ts` expects the eighth family.
+- **Browser check** `tools/u16-check.mjs` (on `dist/`): the same path through
+  the interface, with the captures `docs/ui/physics-inspector.png` (the Material
+  card with its pointer and the *Physics* section with both groups, on the Body,
+  a rain without *On the parts*) and `docs/ui/physics-drawer-summary.png` (the
+  drawer with *Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry)*).
+
+**What did not fit the plan** (rule 12):
+
+- **`PART_DRY` takes no water, not dust or snow.** As written, the flag took no
+  drops, no film and no dust or snow; with one flag, *Gets wet* off would also
+  have switched dust and snow off, and *Gets dust and snow* off would have had
+  nothing to write. So two bits: `PART_DRY = 2` (no water) and `PART_NO_DUST = 4`
+  (no dust or snow); both together are what the brief called `PART_DRY` (◆2).
+- **The engine change also touches `impact`**: besides the takers and the rates,
+  a drop in the air (a drip from a part above, a splash) that meets a dry part
+  would land on it; `impact` is where it lands, and its first lines now let it go.
+- **Bounciness is shown for a static part too**: S2 takes the larger bounciness
+  of the two surfaces that touch (`world.rs` `push_manifold`), so a static part's
+  is used like its friction; hiding it would have hidden a working control (◆5).
+  *Drop* is shown only for *Dynamic*, as asked; a static part is still dropped
+  from *Part ▸ Drop* and its context menu.
+- **"rain on 5 parts (1 stays dry)"** is read as: 5 parts get the rain, and 1 more
+  under it keeps dry (the brief's example allows both readings, ◆4).
+- **On the parts follows the Shape's weights**: with *Mix*, the weights per shape
+  stay under the *Shape* they belong to, and *On the parts* comes after them.
+- **No effect that can**: the brief's button selects the first effect that can
+  leave something on the parts; without one, the note says to add *Rain*, *Snow*
+  or *Dust motes* and the button opens *Ambient*.
+- **The example's paper label wets as Paint**: `wettabilityFamilyOf` (S3c, ◆)
+  gives no material the *Paper* family; U16 does not change that mapping, and
+  *Surface* now lets a part take *Paper*.
+- **The role goes under its label** (the lead, at review): beside it, the four
+  roles did not fit the inspector's width and *Liquid* was clipped (in Spanish too);
+  the row is now `field … wide`, the control the whole width of the section, and
+  `tests/u16-physics-browser.test.ts` checks that no role button runs past the
+  section, in English and in Spanish (it fails with the row as it was).
+- **The inspector's tests run in Chromium**, as U15's: vitest runs in Node
+  without a DOM, so the sentences are tested in Node (`ui/physics-lines.ts`) and
+  the DOM through Vite in a real browser.
+
+**For the verdict** (rule 11, ◆; decided in *Judgement calls*):
+1. ◆ `WATER_REPELLENT`: advancing 120°, receding 105° (mean 112.5°, hysteresis
+   15°), no soak and no darkening, named *Water-repellent* (es *Hidrófugo*). From
+   Ray and Bartell, "Hysteresis of contact angle of water on paraffin. Effect of
+   surface roughness and of purity of paraffin", J. Colloid Sci. 8 (1953)
+   214–223: water on the smoothest purified paraffin films advances and recedes at
+   about 112° with no hysteresis; rougher films and coatings show 5° to 35°, the
+   roughness raising the advancing angle and lowering the receding one by the
+   same amount. 15° is low in that range: a wax or coating on a product, not a lab
+   film. Its drops run past 1.9 mm across on a vertical face (paint: 4.2 mm).
+2. ◆ Two flags rather than one (`PART_DRY` no water, `PART_NO_DUST` no dust or
+   snow), and that a drop in the air meeting a dry part is gone (counted as lost
+   water) rather than running off it.
+3. ◆ The size line: twice the critical contact radius on a vertical face, with
+   one decimal (*about 4.2 mm*; *about 4 mm* when the decimal is 0), a range by
+   part for a selection of several families, and *It keeps dry* when every part
+   is dry.
+4. ◆ The drawer's counts: *rain on N parts* the parts that get wet and *(k stays
+   dry)* those under it that keep dry; dust and snow counted on the parts that
+   stay; a group falling as one body counted by its parts; the front glass named
+   when it is fed by the scene, before the engine says anything of its pane.
+5. ◆ Friction and bounciness for a static part; density, *As parts*, the mass
+   note and *Drop* for a dynamic one only.
+6. ◆ The mixed switch (the knob in the middle on the soft track) and that a click
+   on it turns every part on.
+7. ◆ The Spanish names: *Movimiento*, *Intemperie* (Weather), *Se moja*, *Coge
+   polvo y nieve*, *Superficie*, *Hidrófugo*.
+8. ◆ The pointer's place and form: a link-style line under the material's name
+   and category, before *Change…*.
 
 ## Suggested order
 

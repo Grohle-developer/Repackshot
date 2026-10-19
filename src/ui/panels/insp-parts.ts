@@ -31,7 +31,7 @@ import { normalize } from '../components/palette';
 import { cameraFields } from './insp-scene';
 import { aimMenu } from './scene';
 import { texturesSection } from './insp-textures';
-import { physicsSection } from './insp-physics';
+import { physicsPointer, physicsSection } from './insp-physics';
 import * as phys from '../physics';
 import * as gc from '../graph-commands';
 
@@ -226,6 +226,8 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
           { class: 'stack', style: 'gap:4px;min-width:0' },
           nameEl,
           mat ? h('div', { class: 'aux' }, `${lbl(MATERIAL_CATEGORIES.find((c) => c.key === mat.category)!.label)} · ${t(dyn(`family.${mat.family}`))}`) : h('div', { class: 'note' }, mats.length > 1 ? t('material.mixedAux') : ''),
+          // U16: where the physics of the selection lives, in one line (the owner looked for it under the material).
+          physicsPointer(ctx, sc, faces && s.selection.faces ? [s.selection.faces.part] : ids),
           h('div', null, changeBtn),
         ),
       );

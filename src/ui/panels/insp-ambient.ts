@@ -255,7 +255,8 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   const seedRow = field(t('ambient.seed'), watch(seedField, (e) => e.seed), shuffle);
   seedRow.setAttribute('data-knob', 'ambient.seed');
   seedRow.setAttribute('data-tip', t('ambient.seedTip'));
-  // S3c: the effect falls on the parts when the physics bar runs (rain wets them, dust and snow pile on them).
+  // S3c: the effect falls on the parts when the physics bar runs (rain wets them, dust and snow pile on them); U16: on the
+  // parts that take it (each chooses in Physics ▸ Weather, as its help says).
   const feeds = PARTS_FEED[e0.preset];
   const partsRow = feeds ? flag('ambient.wetParts', (e) => e.wetParts === true, (v) => ({ wetParts: v })) : null;
   // S3c: the engine of the render does not draw the weather of the parts (bit 8): it would show them dry.
@@ -492,7 +493,8 @@ function editor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     field(t('ambient.name'), nameField.el),
     line,
     // S3b (decision S3 ◆5): the Shape is one of the visible knobs, after the size, with the weights of a mix under it.
-    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, ...knobs.slice(2), seedRow, partsRow, partsDry, partsNoFlight, partsRound, partsNoFloor, partsNoMotes),
+    // U16: On the parts right after the Shape (and its weights), with its notes: it was buried after the seed.
+    h('div', { class: 'stack', 'data-ambient': 'knobs' }, knobs[0], knobs[1], shapeRow, mixRows, partsRow, partsDry, partsNoFlight, partsRound, partsNoFloor, partsNoMotes, ...knobs.slice(2), seedRow),
     section(ctx, 'ambient-advanced', t('ambient.advanced'), advanced, null, true),
     h('div', { class: 'note' }, t('ambient.previewNote')),
   );

@@ -72,6 +72,10 @@ scale; the PHYSICS clip's baked track, base64 f32 written a frame at a time by `
 carried by the node's moves since its anchor; the `physics/*` actions, where a run is one gesture and Reset another
 step; the Doctor's dynamic-part-below-the-floor test). `animation.ts` plays PHYSICS clips first and `playheadPose`
 says what the viewport and a still show at the playhead, at 0 too for what a recorded simulation holds.
+U16: the section of a part also carries its weather (`getsWet`, `getsDust`, `surface`; the defaults are stored as
+nothing); `part-weather.ts` reads it (`partWeatherOf`, `surfaceFamily`, the selection's mixed `weatherView`) and ports
+the engine's critical radius bit for bit (`criticalRadiusMm`, `runSizeMm`); `wet-parts.ts` writes it as the WPT1 part
+flags `PART_DRY` and `PART_NO_DUST` and the family's angles; `start-plan.ts` says what Start would simulate.
 - `pass-files.ts` (N2): the passes the render window offers (alpha, depth, normals, part id; each one an engine pass of
   `passes.ts`), `PassesOutput` (which, and in which format, 16-bit PNG or EXR), the 16-bit words each becomes, the file
   names (`<image>_depth.exr`) and the part-id legend. `render.ts` gains the studio of a job (`StudioChoice`,
