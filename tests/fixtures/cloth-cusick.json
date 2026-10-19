@@ -1,0 +1,13 @@
+{
+  "SILK": { "dc": 0.1886, "nodes": 13, "steps": 872 },
+  "COTTON_FINE": { "dc": 0.5107, "nodes": 7, "steps": 960 },
+  "POPLIN": { "dc": 0.5433, "nodes": 6, "steps": 960 },
+  "LINEN": { "dc": 0.6712, "nodes": 6, "steps": 960 },
+  "WOOL": { "dc": 0.6735, "nodes": 6, "steps": 960 },
+  "DENIM": { "dc": 0.7572, "nodes": 6, "steps": 960 },
+  "CANVAS": { "dc": 0.8794, "nodes": 6, "steps": 532 },
+  "FELT": { "dc": 0.9206, "nodes": 1, "steps": 960 },
+  "LEATHER_THIN": { "dc": 0.9324, "nodes": 2, "steps": 960 },
+  "LEATHER_THICK": { "dc": 0.8843, "nodes": 6, "steps": 960 },
+  "NEOPRENE": { "dc": 0.9347, "nodes": 0, "steps": 960 }
+}

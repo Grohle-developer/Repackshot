@@ -504,8 +504,8 @@ fn parity_hashes(workers: usize, at: &[u32]) -> Vec<(u32, u32, u32)> {
 /// corners against the cloth's surface) and CLT1 version 2.
 pub const PINNED_CLOTH: [(u32, u32, u32); 3] = [
     (60, 0x8a44_38ab, 0x7ce8_0b31),
-    (240, 0x40bf_ccfc, 0x3b11_4ee3),
-    (CLOTH_STEPS, 0x15bb_ac03, 0x3b11_4ee3),
+    (240, 0xc592_5573, 0x3b11_4ee3),
+    (CLOTH_STEPS, 0x7aae_7d0f, 0x3b11_4ee3),
 ];
 
 #[test]
@@ -852,6 +852,10 @@ const WOVEN: [&str; 7] = [
     "CANVAS",
 ];
 
+/// Every preset on Cusick's tester; the drape coefficients and nodes are also the fixture
+/// `tests/fixtures/cloth-cusick.json`, which the contact sheet (`tests/cloth-dump.test.ts`) checks
+/// its own run of the same drapes in the real `rt.wasm` against. Natively only: a thread a preset.
+#[cfg(not(target_family = "wasm"))]
 #[test]
 fn cusick_drape_of_every_preset() {
     // Every preset at once, a thread each (they do not share anything).
@@ -900,6 +904,19 @@ fn cusick_drape_of_every_preset() {
         let dc = rows.iter().find(|r| r.0 == key).unwrap().2;
         assert!((0.8..=0.95).contains(&dc), "{key}: DC {dc}");
     }
+    let fixed: Vec<String> = rows
+        .iter()
+        .map(|(key, _, dc, n, _, steps)| {
+            format!("  \"{key}\": {{ \"dc\": {dc:.4}, \"nodes\": {n}, \"steps\": {steps} }}")
+        })
+        .collect();
+    fixture(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/cloth-cusick.json"
+        ),
+        &format!("{{\n{}\n}}\n", fixed.join(",\n")),
+    );
     let nodes = |key: &str| rows.iter().find(|r| r.0 == key).unwrap().3;
     assert!(
         nodes("SILK") > nodes("DENIM"),

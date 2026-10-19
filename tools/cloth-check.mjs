@@ -13,10 +13,13 @@
 //            after); one undo step (Undo: Drape cloth over Box); one Physics clip that "drapes as simulated";
 //   inspector the sheet selected: the Physics section with Cloth pressed and the cloth's fields (fabric, weight,
 //            stiffness, thickness, anchors, pressure for a closed shell only, self-collision, resolution);
-//   sheet    when out/cloth-sheet/ holds the contact sheet's renders (node tools/cloth-sheet.mjs), four of them side by side.
+//   sheet    when out/cloth-sheet/ holds the contact sheet's renders (node tools/cloth-sheet.mjs), four of them side by side,
+//            the cap close up under silk, and four presets on Cusick's drape tester from above.
 //
 // Screenshots (docs/ui): cloth-drape.png (before and after, side by side), cloth-inspector.png (the Physics section of
-// the sheet), cloth-bar.png (the bar while it runs), cloth-sheet.png (four fabrics of the contact sheet, by the engine).
+// the sheet), cloth-bar.png (the bar while it runs), cloth-sheet.png (four fabrics of the contact sheet, by the engine),
+// cloth-cap.png (the cap under silk, close up) and cloth-cusick.png (silk, linen, denim and thick leather on Cusick's
+// tester, with their drape coefficients and nodes).
 // Results: out/cloth-check.json.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -230,6 +233,17 @@ async function main() {
       const label = (k) => sheet.shots.find((s) => s.file === k)?.label ?? k;
       writeFileSync(join(SHOTS, 'cloth-sheet.png'), await strip(browser, pick.map((k) => readFileSync(join(dir, `${k}.png`))), pick.map(label), 360));
       log.sheet = pick;
+      if (existsSync(join(dir, 'silk_cap.png'))) {
+        writeFileSync(join(SHOTS, 'cloth-cap.png'), await strip(browser, [readFileSync(join(dir, 'silk_cap.png'))], [label('silk_cap')], 720));
+        log.cap = 'silk_cap';
+      }
+      const tester = pick.map((k) => `cusick_${k}`);
+      if (tester.every((k) => existsSync(join(dir, `${k}.png`)))) {
+        const shot = (k) => sheet.shots.find((s) => s.file === k);
+        const said = (k) => `${shot(k).label}: DC ${shot(k).dc.toFixed(2)}, ${shot(k).nodes} nodes`;
+        writeFileSync(join(SHOTS, 'cloth-cusick.png'), await strip(browser, tester.map((k) => readFileSync(join(dir, `${k}.png`))), tester.map(said), 360));
+        log.cusick = tester.map(said);
+      }
     } else log.sheet = 'not there (node tools/cloth-sheet.mjs)';
 
     log.errors = errors;

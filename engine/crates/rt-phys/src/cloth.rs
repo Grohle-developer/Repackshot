@@ -499,9 +499,6 @@ struct Bend {
     x2: u32,
     x3: u32,
     rest: f32,
-    /// The angle when last solved, followed through ±π (a fold that closes past flat, the cloth
-    /// passing through itself, keeps pushing back the same way instead of flipping).
-    angle: f32,
     compliance: f32,
     lambda: f32,
 }
@@ -1001,7 +998,6 @@ impl Cloth {
                     x2,
                     x3,
                     rest: theta,
-                    angle: theta,
                     compliance: 1.0 / k_theta.max(1.0e-30),
                     lambda: 0.0,
                 });
@@ -1673,9 +1669,7 @@ impl Cloth {
             if !above(sum, 0.0) {
                 continue;
             }
-            let angle = c.angle + wrap(theta - c.angle);
-            self.bend[k].angle = angle;
-            let dl = (-(angle - c.rest) - at * c.lambda) / sum;
+            let dl = (-wrap(theta - c.rest) - at * c.lambda) / sum;
             self.bend[k].lambda += dl;
             for j in 0..4 {
                 self.x[ids[j]] += g[j] * (dl * ws[j]);
