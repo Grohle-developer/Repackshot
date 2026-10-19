@@ -11781,7 +11781,8 @@ and `docs/ui/liquid-sheet.png` (the sheet; `rt --liquid-sheet out`, then
 1. ◆ The presets' numbers: densities and viscosities (honey 10,000 mm²/s and gel
    20,000 at the thick end so they read as thick), the cohesion, surface tension
    and adhesion coefficients, and the looks (colours, absorption distances,
-   indices; milk and orange juice by the catalogue's recipes).
+   indices; milk and orange juice by the catalogue's recipes; on the sheet red
+   wine's 6 mm absorption reads nearly black in a full glass).
 2. ◆ The particle target of the automatic size (about 4,000; 1–50 mm), which
    trades detail for the time a run takes in the browser.
 3. ◆ No slip at the walls (the walls in the viscosity as still neighbours: honey
