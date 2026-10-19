@@ -1,12 +1,40 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 194) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 209) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
 
-Nothing yet: the next points start at 195.
+Nothing yet: the next points start at 210.
+
+## v0.1.24
+
+**The checklists of v0.1.2 to v0.1.23 still apply in full** (points 1 to 194). In addition:
+
+For the API presets and the connection test.
+
+195. [ ] **Google Gemini preset.** In *Settings ▸ AI ▸ Model by API*, choose *Google · Gemini image*: the endpoint must read `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`, the key header must read `x-goog-api-key` with nothing before it, and the note must say the preset is written from the service's public documentation and not tried against the live service. Paste a key for that host and save it: the row must say `Stored for generativelanguage.googleapis.com: ••••<last 4>`.
+196. [ ] **xAI Grok Imagine preset.** Choose *xAI · Grok Imagine*: the endpoint must read `POST https://api.x.ai/v1/images/edits`, `Authorization: Bearer`, the model `grok-imagine-image-2.0`, and the answer path `data.0.b64_json`.
+197. [ ] **Test connection, working.** With a valid key stored for the endpoint's host, click *Test connection*: it must report that the service answered with an image. This makes one real call — a 512 × 512 grey tile with the prompt *Return this image unchanged.* — which the service may charge.
+198. [ ] **Test connection, failing.** Remove the stored key (or paste a wrong one) and click *Test connection*: it must report the failure in words — the service's own error, e.g. its auth error — and must not hang or crash.
+199. [ ] **The AI switch turns on.** With a valid endpoint and key configured, turn AI processing on in the render window: the switch must stay on, and it must not jump to Settings. With no endpoint configured at all, turning it on must open Settings (that is the intended behaviour for a missing endpoint).
+200. [ ] **What to record when reporting.** Screenshots of 195 and 196, the exact result lines of 197 and 198, and the state of the switch in 199. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+For the partial image on stop.
+
+201. [ ] **Pause saves the image so far.** Start a render with a long budget (e.g. 256 samples), let a few passes run and Pause the queue: a file `<name>-partial` must appear next to the job's output, and the results history must gain an entry named `<name>-partial`, marked *Partial*, with the samples it reached. The job goes back to *Waiting*.
+202. [ ] **Resume restarts, the partial stays.** Resume the paused job: it must start over from 0 samples, and the `-partial` file and its history entry must still be there when it finishes.
+203. [ ] **Stop saves the image so far.** Start a render and *Stop* the job being rendered: the job ends *Cancelled* and the `-partial` file and its history entry must be there.
+204. [ ] **A partial stopped mid-pass is not too bright.** Start a render and Pause it just after a pass has begun (before it finishes): the `-partial` image must show the scene at the samples reported, with no tile or region visibly brighter than the rest.
+205. [ ] **A video's stopped frame.** Start an animation/video job and Pause it mid-way: the stopped frame must be saved as a `<name>-partial.png` image — not fed to the encoder — and the job goes back to *Waiting*.
+206. [ ] **What to record when reporting.** The `-partial` files of 201 and 203, screenshots of the history entries with their samples, and the stopped frame of 205. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+For the render shortcuts.
+
+207. [ ] **Ctrl/⌘ ⏎ while typing does not render.** With the render window open, click into a text field (e.g. the AI prompt), type something and press Ctrl/⌘ ⏎: no job must start and the queue must stay as it was.
+208. [ ] **Ctrl/⌘ ⏎ outside a field still renders.** With the focus outside any field (e.g. after clicking the window's background), press Ctrl/⌘ ⏎: the render must run — or the render window must open if it was closed.
+209. [ ] **What to record when reporting.** The queue state before and after 207, and the render that 208 started. If something fails, the message verbatim and the `<data>\logs\` folder.
 
 ## v0.1.23
 

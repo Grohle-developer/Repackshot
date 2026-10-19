@@ -5,6 +5,8 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.24 — 2026-10-19
+
 ### AI post-processing
 
 - **New API presets**: Google Gemini (`gemini-2.5-flash-image`, key in `x-goog-api-key`, image at `candidates.0.content.parts.1.inlineData.data`) and xAI Grok Imagine (`grok-imagine-image-2.0`, image at `data.0.b64_json`), written from the services' public API documentation and not yet tried against the live services.
