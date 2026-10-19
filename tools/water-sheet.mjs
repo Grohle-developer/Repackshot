@@ -9,7 +9,9 @@
 // published measurements say.
 //
 //   npm run engine:build && node tools/water-sheet.mjs [--out out/water-sheet] [--samples 64] [--threads 2]
-//        [--bottle-shot docs/ui/rain-bottle.png]
+//        [--bottle-shot docs/ui/rain-bottle.png] [--reuse]
+//
+// With --reuse, what <out>/ already holds (the scenes, the table, the PNGs) is not made again.
 //
 // 1. builds the native engine if `engine/target/release/rt` is missing;
 // 2. writes the RSB files, the shots and the table's input through tests/water-dump.test.ts (skipped by `npm test`
@@ -36,6 +38,7 @@ const HTML = `${OUT}.html`;
 const SAMPLES = opt('samples', '64');
 const THREADS = opt('threads', '2');
 const BOTTLE_SHOT = opt('bottle-shot', null);
+const REUSE = args.includes('--reuse');
 const RT = join(ROOT, 'engine', 'target', 'release', 'rt');
 
 function run(cmd, cmdArgs, env = {}, cwd = ROOT) {
@@ -64,11 +67,12 @@ function findChromium() {
 
 mkdirSync(OUT, { recursive: true });
 if (!existsSync(RT)) run('cargo', ['build', '--release', '-p', 'rt-cli'], {}, join(ROOT, 'engine'));
-run('npx', ['vitest', 'run', 'tests/water-dump.test.ts'], { REPACKSHOT_WATER_DIR: OUT, REPACKSHOT_WATER_SPP: SAMPLES });
+if (!(REUSE && existsSync(join(OUT, 'shots.json')))) run('npx', ['vitest', 'run', 'tests/water-dump.test.ts'], { REPACKSHOT_WATER_DIR: OUT, REPACKSHOT_WATER_SPP: SAMPLES });
 const manifest = JSON.parse(readFileSync(join(OUT, 'shots.json'), 'utf8'));
-console.log(run(RT, ['--water-table', join(OUT, 'water.txt'), '-o', join(OUT, 'table.json')]).trim().split('\n').pop());
+if (!(REUSE && existsSync(join(OUT, 'table.json')))) console.log(run(RT, ['--water-table', join(OUT, 'water.txt'), '-o', join(OUT, 'table.json')]).trim().split('\n').pop());
 const table = JSON.parse(readFileSync(join(OUT, 'table.json'), 'utf8'));
 for (const shot of manifest.shots) {
+  if (REUSE && existsSync(join(OUT, `${shot.file}.png`))) continue;
   const said = run(RT, [join(OUT, `${shot.file}.rsb`), '-o', join(OUT, `${shot.file}.png`), '--samples', String(shot.samples), '--threads', THREADS]);
   console.log(`${shot.file}: ${said.trim().split('\n').pop()}`);
 }
@@ -165,7 +169,7 @@ if (BOTTLE_SHOT) {
   const page = join(OUT, 'bottle-shot.html');
   writeFileSync(
     page,
-    `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:#000}.img{position:relative;line-height:0}.bar{position:absolute;left:14px;bottom:16px;height:4px;background:#fff;box-shadow:0 0 0 1px #000}.barlabel{position:absolute;left:14px;bottom:24px;font:12px/1 system-ui,sans-serif;color:#fff;text-shadow:0 0 2px #000}</style>${figure(shot, `${shot.file}.png`).replace(/<figcaption>.*<\/figcaption>/, '')}`,
+    `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:#000}figure{margin:0}.img{position:relative;line-height:0}.bar{position:absolute;left:14px;bottom:16px;height:4px;background:#fff;box-shadow:0 0 0 1px #000}.barlabel{position:absolute;left:14px;bottom:24px;font:12px/1 system-ui,sans-serif;color:#fff;text-shadow:0 0 2px #000}</style>${figure(shot, `${shot.file}.png`).replace(/<figcaption>.*<\/figcaption>/, '')}`,
   );
   const { chromium } = await import('playwright-core');
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ['--no-sandbox', '--disable-gpu'] });
