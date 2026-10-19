@@ -75,14 +75,14 @@ export class PhysWorld {
     return this.handle;
   }
 
-  /** S9: the world's handle in its instance of rt.wasm (a cloth steps it with itself: `ClothSim.step`). */
-  get id(): number {
-    return this.live();
-  }
-
   /** Simulates `n` fixed steps. */
   step(n: number): void {
     this.rt.phys_step(this.live(), Math.max(0, Math.floor(n)));
+  }
+
+  /** S3e: the engine's handle of this world (for the parts that step with it; S9: and a cloth, `ClothSim.step`). */
+  get id(): number {
+    return this.live();
   }
 
   /** Every pose, POSE_FLOATS per body (a copy). */
@@ -215,6 +215,10 @@ export interface PartsExports {
   wpt_layout(handle: number): number;
   wpt_frame(handle: number): number;
   wpt_copy(handle: number, out: number): number;
+  /** S3e: steps the parts with a world's bodies (absent in an rt.wasm older than S3e). */
+  wpt_step_with?(handle: number, world: number, n: number): number;
+  /** S3e: how many of the parts move with a body. */
+  wpt_moving?(handle: number): number;
 }
 
 /** True when a compiled engine simulates the parts (S3c). */
@@ -253,6 +257,17 @@ export class PartsSim {
 
   step(n: number): void {
     this.rt.wpt_step(this.live(), Math.max(0, Math.floor(n)));
+  }
+
+  /** S3e: the parts that move with a body (0 for an rt.wasm older than S3e: it reads no body). */
+  get moving(): number {
+    return this.rt.wpt_moving ? this.rt.wpt_moving(this.live()) : 0;
+  }
+
+  /** S3e: `n` steps of these parts and of `world`'s bodies together, one after the other (the parts that move go with their bodies). */
+  stepWith(world: PhysWorld, n: number): void {
+    if (!this.rt.wpt_step_with) throw new Error('this rt.wasm does not step the parts with the bodies (npm run engine:build)');
+    this.rt.wpt_step_with(this.live(), world.id, Math.max(0, Math.floor(n)));
   }
 
   get steps(): number {

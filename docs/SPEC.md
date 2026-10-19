@@ -420,6 +420,28 @@ darker; dust, a matte brownish grey on top (darker when wet); snow, a
 matte white that covers according to its thickness (`1 − e^(−h / 0.5 mm)`); drops,
 water caps (index 1.333) on top of the part; those in the air, spheres of the
 same water. Without a recording, the parts are dry.
+**S3e: moving parts, the studio floor, the set's fine samples, the motes, the
+wind.** A part the run moves (*Dynamic*, S2) gets wet where its body takes it at
+each step: the rain it meets has the rain's velocity less its own, what is in
+the way is taken where it stands, and its drops feel gravity less its
+acceleration (in free fall they weigh nothing; the jolt of a landing makes them
+slide); dust and snow settle only on the parts that stay. With *Studio ▸ Floor*
+on, the **studio floor** under the effects' region gets wet, dusty and snowy as a
+film of 2 mm cells, and takes the drips and the drops that fall on it (a wet spot
+each: no puddles); the render draws it (bit 11, the `WETG` section) on the
+shadow-catching floor: dust and snow where they cover it, the water film's
+reflection and the floor darker where wet; *Fast* too. The large triangles of a
+set's film parts that a shadow edge crosses take **fine samples** (2 mm), so the
+edge of a dust or snow shadow on the set is no coarser; an engine with bit 12
+reads them as they are (`WTP2`), one without gets them at 255 steps a side. Where
+the dust is thick, the engine draws its **motes**, grains of the dust effect's
+size over the layer (bit 13, the motes tail of `WETP`), and *Fast* the same
+grains. The **wind** of the rain effects pushes the drops in the air (a drag
+towards it, the same terminal-velocity law). A drop that reaches a **sloping open
+edge** runs along it while its weight along the edge beats its hold, and stops at
+the lowest corner, where it hangs and lets go from rest; a level edge holds it.
+With bit 8 and without bit 11 the inspector warns that the floor will show dry;
+with a dust effect and without bit 13, that the dust will show without its grains.
 
 **Ambient** (phase S4a, `src/core/effects.ts`, catalogue
 `src/data/effects.ts`). **Stateless** air particles: suspended
@@ -1294,10 +1316,15 @@ it is repeated with the camera already focused until the pixel shows the same
 point. **Focus with a click** picks the exact pixel in
 the exact view: the engine's principal ray for that pixel (the camera
 looked through with its own frame, the playhead's pose, the viewport image
-around the frame, the lens with its distortion and its breathing),
-cast against the viewport geometry through both faces of each triangle
-(as the engine sees them) and with the section; the camera that receives it is the one that
-is seen (the one looked through, the playhead shot's, or the active one).
+around the frame, the lens with its distortion and its breathing) and the
+first part **the engine itself** meets along it in the view's whole scene:
+the surface the image shows at that pixel, the face the camera sees (since
+the owner's report of 2026-10-18; the engine's pick also steps over the parts
+hidden to the camera, as its camera rays do). Only where the engine shows no
+part of the scene there is the ray cast against the viewport geometry
+(through both faces of each triangle, with the section). The camera that
+receives it is the one that is seen (the one looked through, the playhead
+shot's, or the active one).
 
 **Focal length and size of what is in focus** (C2, `core/focal.ts`). Each camera carries
 the switch *Keep the size of what is in focus*,
@@ -1751,7 +1778,8 @@ sample got wet and those in which the rain cleaned it, the drops and drips of ea
 frame and, since S3d, the drops in the air of each frame —the part each one
 came from, its centre and its radius—, and, since S3f, the shape of each version
 of each drop, in base64; version 3 of the format, and a track of before, without
-them, is still read, its drops round): the cache. A part whose mesh is no longer the recorded one
+them, is still read, its drops round; S3e: the studio floor's cells as they got wet,
+and the dust's motes, version 4): the cache. A part whose mesh is no longer the recorded one
 stays dry. A track that cannot be read is removed on opening.
 **Cloth (S9).** A simulation with cloth gives a `PHYSICS` clip to each **cloth part**
 (`target` its node), in the same undo entry: it does not move the node, it says which frame

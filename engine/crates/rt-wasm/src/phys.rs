@@ -62,10 +62,20 @@ fn with<R>(handle: u32, f: impl FnOnce(&mut Loaded) -> R) -> Option<R> {
         .map(f)
 }
 
-/// S9: runs `f` on the rigid world of `handle` (the cloth steps it with itself), or `None` for a
-/// bad handle.
-pub(crate) fn with_world<R>(handle: u32, f: impl FnOnce(&mut World) -> R) -> Option<R> {
-    with(handle, |l| f(&mut l.world))
+/// S3e: runs `f` on the world of `handle` and the pose of each dynamic body of its scene (`None`:
+/// no mass), or `None` for a bad handle (S9: the cloth steps the world with itself through it).
+pub(crate) fn with_world<R>(
+    handle: u32,
+    f: impl FnOnce(&mut World, &[Option<u32>]) -> R,
+) -> Option<R> {
+    with(handle, |w| {
+        let ids: Vec<Option<u32>> = w
+            .ids
+            .iter()
+            .map(|&i| (i != u32::MAX).then_some(i))
+            .collect();
+        f(&mut w.world, &ids)
+    })
 }
 
 /// Forgets a world. True when there was one.

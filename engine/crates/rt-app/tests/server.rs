@@ -154,7 +154,11 @@ fn foreign_hosts_origins_and_missing_tokens_are_refused() {
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_FLIGHT, 512);
     // S3f: and the drops on the parts with their shapes.
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_SHAPES, 1024);
-    assert_eq!(info.get("features").unwrap().as_f64(), Some(2047.0));
+    // S3e: and the studio floor, the set's fine samples and the dust's motes.
+    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_FLOOR, 2048);
+    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_FINE, 4096);
+    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_MOTES, 8192);
+    assert_eq!(info.get("features").unwrap().as_f64(), Some(16383.0));
     assert_eq!(info.get("portable").unwrap().as_bool(), Some(false));
     assert!(!ok.text().contains(TOKEN), "the token is never echoed");
 }

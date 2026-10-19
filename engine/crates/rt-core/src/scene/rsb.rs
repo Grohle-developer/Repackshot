@@ -102,11 +102,18 @@
 //! WETF   4 B  the drops in the air (S3d, new, at most one, written after the WETP sections): u32
 //!             drops; (u32 instance; f32 x y z radius)[drops]   (world space; instance 0xffffffff:
 //!             none)
+//! WTP2  24 B  the rain, dust and snow on an instance whose resolutions take two bytes (S3e, new; at
+//!             most one WETP or WTP2 per instance): a WETP with u16 resolution[triangles] (1..4095),
+//!             zero padding to 4; S3e: WETP and WTP2 may end, after the shape tail, in "MOT1" f32
+//!             size_mm size_var u32 seed (the dust's motes)
+//! WETG  32 B  the rain, dust and snow on the studio floor (S3e, new, at most one, written after
+//!             WETF): u32 nx ny; f32 x0 y0 cell z porosity; u32 flags (0); u8 (wet dust snow)[nx ×
+//!             ny], zero padding to 4
 //! ```
 //!
-//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT`, `GLAS` and `WETF` may appear at most once (a missing one means
+//! `CAMR`, `ENVR`, `FLOR`, `RNDR`, `LENS`, `IMGS`, `SECT`, `GLAS`, `WETF` and `WETG` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
-//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP`, `PROG` and `WETP` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN`, `FXAM`, `IESP`, `PROG`, `WETP` and `WTP2` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -195,6 +202,20 @@
 //! the drops' or with a value out of its range makes the file invalid. An engine of before ignores
 //! the tail (trailing bytes of a newer writer) and draws round caps; the page writes it only for an
 //! engine with [`crate::FEATURE_WET_SHAPES`].
+//!
+//! **The studio floor, fine samples and motes** (S3e). `WETG` is what the simulation left on the
+//! studio floor (the plane of `FLOR`): a grid of square cells, each wet, dusty and snowy as a part's
+//! sample, which a hit on the floor reads between the cells' centres and shades over the floor
+//! ([`crate::weather::FloorWeather`]; a shadow catcher shows the dust and snow where they cover it
+//! and the water film's reflection). `WTP2` is a `WETP` whose triangles' resolutions take two bytes
+//! (up to 4095: the large triangles of a set that a shadow edge crosses). The motes tail lists no
+//! grain: the reader places the grains of the dust from the samples' dust and the tail's size and
+//! seed ([`crate::weather::motes_on`]) and meshes them after the caps (one more mesh, instance and
+//! material, dust; a mote counts in the passes as the instance it lies on). An engine of before
+//! skips `WETG` and `WTP2` (unknown sections) and ignores the motes tail (trailing bytes); the page
+//! writes them only for an engine with [`crate::FEATURE_WET_FLOOR`], [`crate::FEATURE_WET_FINE`]
+//! and [`crate::FEATURE_WET_MOTES`]. A second `WETG` or a cell count past
+//! [`crate::weather::MAX_FLOOR_CELLS`] makes the file invalid.
 //!
 //! **Section view** (Q1). `SECT` is the plane `normal · p = distance` (millimetres, world
 //! coordinates, Z up) of a section: everything on the side the normal points to is removed, from
@@ -444,6 +465,11 @@ pub const TAG_GLAS: [u8; 4] = *b"GLAS";
 pub const TAG_WETP: [u8; 4] = *b"WETP";
 /// S3d: the drops in the air of the scene ([`crate::weather::FallingDrop`], at most one).
 pub const TAG_WETF: [u8; 4] = *b"WETF";
+/// S3e: the rain, dust and snow on an instance whose triangles' resolutions take two bytes (the
+/// set's fine samples): a `WETP` with `u16 resolution[triangles]`.
+pub const TAG_WTP2: [u8; 4] = *b"WTP2";
+/// S3e: the rain, dust and snow on the studio floor.
+pub const TAG_WETG: [u8; 4] = *b"WETG";
 
 /// Widest field of view of a panoramic camera, degrees (`CAMR.fov_x_deg`, `fov_y_deg`; K3).
 pub const MAX_FOV_DEG: f32 = 3600.0;
@@ -1183,6 +1209,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut glass = None;
     let mut wet: Vec<crate::weather::PartWeather> = Vec::new();
     let mut falling: Option<Vec<crate::weather::FallingDrop>> = None;
+    let mut wet_floor: Option<crate::weather::FloorWeather> = None;
     let mut profiles: Vec<Arc<IesProfile>> = Vec::new();
     // The profile each IES light names, by the light's position in `scene.lights`.
     let mut light_profiles: Vec<(usize, u32)> = Vec::new();
@@ -1279,6 +1306,23 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
                 let drops = crate::weather::decode_falling(payload)
                     .map_err(|reason| RsbError::Invalid { tag, reason })?;
                 set_once(&mut falling, tag, drops)?;
+            }
+            TAG_WTP2 => {
+                if payload.len() < crate::weather::WETP_HEADER {
+                    return Err(RsbError::SectionTooShort { tag });
+                }
+                wet.push(
+                    crate::weather::PartWeather::decode_wide(payload)
+                        .map_err(|reason| RsbError::Invalid { tag, reason })?,
+                );
+            }
+            TAG_WETG => {
+                if payload.len() < crate::weather::WETG_HEADER {
+                    return Err(RsbError::SectionTooShort { tag });
+                }
+                let floor = crate::weather::FloorWeather::decode(payload)
+                    .map_err(|reason| RsbError::Invalid { tag, reason })?;
+                set_once(&mut wet_floor, tag, floor)?;
             }
             _ => {} // Unknown section: skipped for forward compatibility.
         }
@@ -1532,6 +1576,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     // S3c: the weather of the instances, and the caps of their drops.
     scene.wet_parts = wet;
     scene.wet_falling = falling;
+    scene.wet_floor = wet_floor;
     scene.attach_caps();
     scene.apply_section();
     Ok(scene)
@@ -1557,7 +1602,8 @@ impl Scene {
             bitmaps: &mut self.bitmaps,
             images: &mut self.images,
             lens: self.camera.lens.as_ref(),
-            caps: self.caps,
+            // S3e: the weather's own meshes begin with the caps' or, without drops, the motes'.
+            caps: self.caps.or(self.motes),
         };
         let scene = read_scene(bytes, Some(kept))?;
         *self = scene;
@@ -1740,7 +1786,9 @@ impl Scene {
         }
         // S3c: the weather of the instances, after them.
         for part in &self.wet_parts {
-            w.section(TAG_WETP, |w| w.buf.extend_from_slice(&part.encode()));
+            // S3e: two-byte resolutions in a section of their own.
+            let tag = if part.wide() { TAG_WTP2 } else { TAG_WETP };
+            w.section(tag, |w| w.buf.extend_from_slice(&part.encode()));
         }
         // S3d: the drops in the air, after them.
         if !self.wet_falling.is_empty() {
@@ -1748,6 +1796,10 @@ impl Scene {
                 w.buf
                     .extend_from_slice(&crate::weather::encode_falling(&self.wet_falling))
             });
+        }
+        // S3e: the studio floor's, after them.
+        if let Some(f) = &self.wet_floor {
+            w.section(TAG_WETG, |w| w.buf.extend_from_slice(&f.encode()));
         }
         // L5: the profiles the IES lights use, once each, in the order of first use. An IES light
         // without one is ignored by the engine and so is not written.

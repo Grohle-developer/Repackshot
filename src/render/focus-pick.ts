@@ -134,3 +134,44 @@ export function settledFocusPick<S, H extends { point: Vec3 }>(
 
 /** How still the point a settled pick meets has to hold, mm. */
 const SETTLED_MM = 1e-3;
+
+/** A scene written for the engine to pick in, and the node each of its instances was made from. */
+export interface PickScene {
+  rsb: Uint8Array;
+  /** The scene node instance `i` was made from (io/rsb.ts `ProjectScene.ids`); null for one the engine adds. */
+  nodeOf(instance: number): string | null;
+}
+
+/**
+ * The surface point (u, v) of a view shows as the engine renders it (owner's report, 2026-10-18: "focus on the point I
+ * clicked, on the visible face"): the engine's own first hit along the pixel's chief ray in the whole scene of the view
+ * (`rt_scene_pick` on what `sceneOf` writes), so what the click focuses on is what the image shows there, whatever the
+ * viewport's own geometry would have met (a part hidden to the camera or faded out, a part the preview draws where the
+ * pose or the physics put it differently). Settled like `settledFocusPick` for a lens that breathes. Null when the pixel
+ * shows no part of the scene (the background, the studio floor, something the engine adds of its own).
+ */
+export function settledScenePick<S>(
+  rt: RtFocusExports,
+  state: S,
+  u: number,
+  v: number,
+  sceneOf: (s: S) => PickScene,
+  focusedOn: ((s: S, hit: { node: string; point: Vec3 }) => S | null) | null,
+  tries = 4,
+): { node: string; point: Vec3 } | null {
+  let s = state;
+  let last: { node: string; point: Vec3 } | null = null;
+  for (let i = 0; i < tries; i++) {
+    const scene = sceneOf(s);
+    const pick = enginePick(rt, scene.rsb, u, v);
+    const node = pick?.hit ? scene.nodeOf(Math.round(pick.hit.instance)) : null;
+    if (!pick?.hit || !node || !pick.hit.point.every(Number.isFinite)) return last;
+    const hit = { node, point: pick.hit.point };
+    if (last && Math.hypot(hit.point[0] - last.point[0], hit.point[1] - last.point[1], hit.point[2] - last.point[2]) < SETTLED_MM) return hit;
+    last = hit;
+    const next = focusedOn ? focusedOn(state, hit) : null;
+    if (!next) return hit;
+    s = next;
+  }
+  return last;
+}

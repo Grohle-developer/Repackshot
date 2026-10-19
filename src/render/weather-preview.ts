@@ -13,12 +13,19 @@
 // (rt-core `weather::shape_point`): the instanced cap is finer (8 rings), each instance carries its shape in the cap's
 // own frame (contact radius 1, its normal +Z: `localShape`) and the vertex shader moves every vertex the same way
 // (`shapePointLocal` is its twin in TypeScript), with the normals of the deformed surface.
+//
+// S3e: the studio floor of the frame (`PartsFrame.floor`) is a plane over the shadow-catching floor that draws its cells
+// as the engine's catcher does: where dust and snow cover it, their layer, lit; where its film wets it, darker (a grey of
+// 0.5 darkened as a porous floor, ◆) and smoother. The dust's motes (the track's `motes`, placed as the engine places
+// them: core/wet-parts.ts `motesOn`) are grains, one instanced octahedron each, on the part they lie on, following it.
+// A part the run moves draws its weather on its posed object, as any part does.
 
 import * as THREE from 'three';
 import type { Pose } from '../core/animation';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
-import { isRoundShape, partsResolution, partsShown, recordedParts, SNOW_STEP_MM, type DropShape, type FallingDropFrame, type PartsShown, type PartsTrack } from '../core/wet-parts';
+import { isRoundShape, motesOn, partsResolution, partsShown, recordedParts, SNOW_STEP_MM, type DropShape, type FallingDropFrame, type FloorFrame, type PartsShown, type PartsTrack } from '../core/wet-parts';
+import { FLOOR_POROSITY } from '../data/wet-parts';
 
 /** The engine's look (rt-core `weather`, ◆ proposals there): the same numbers. */
 export const WEATHER_LOOK = {
@@ -303,6 +310,8 @@ interface PartWeatherDraw {
   caps: THREE.InstancedMesh | null;
   /** S3f: its caps are shaped (their own finer geometry, with the shapes as instance attributes). */
   shaped: boolean;
+  /** S3e: the dust's motes on it (grains in its object space), or none. */
+  motes: THREE.InstancedMesh | null;
   capAngle: number;
   /** Copies of the part's materials, by the base material. */
   materials: Map<THREE.Material, THREE.MeshPhysicalMaterial>;
@@ -413,6 +422,12 @@ export class WeatherPreview {
   /** S3d: the drops in the air (unit spheres, scaled), in the root's space. */
   private readonly sphere = new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_RINGS);
   private falling: THREE.InstancedMesh | null = null;
+  /** S3e: the dust's grains (a unit octahedron, scaled) and their dry dust. */
+  private readonly grain = new THREE.OctahedronGeometry(1, 0);
+  private readonly dustMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color(...WEATHER_LOOK.dustAlbedo), roughness: WEATHER_LOOK.dustRoughness, metalness: 0 });
+  /** S3e: the studio floor's plane and its cells. */
+  private floorMesh: THREE.Mesh | null = null;
+  private floorTex: THREE.DataTexture | null = null;
   /** What the frame holds on the parts that draw it (the meter: core/wet-parts.ts `partsShown`). */
   shown: PartsShown | null = null;
 
@@ -473,6 +488,7 @@ export class WeatherPreview {
       const had = this.parts.size > 0;
       this.clear();
       this.placeFalling([]);
+      this.placeFloor(null);
       this.track = null;
       this.frameKey = '';
       this.shown = null;
@@ -505,7 +521,7 @@ export class WeatherPreview {
       });
       const valTex = dataTexture(new Uint8Array(4 * first), THREE.RGBAFormat, THREE.UnsignedByteType);
       const uniforms: WeatherUniforms = { wTri: { value: dataTexture(tri, THREE.RGFormat, THREE.FloatType) }, wVal: { value: valTex }, wPorosity: { value: tp.porosity } };
-      this.parts.set(tp.node, { base, geometry, uniforms, valTex, normals, caps: null, shaped: false, capAngle: tp.capAngleDeg, materials: new Map(), used: new Set() });
+      this.parts.set(tp.node, { base, geometry, uniforms, valTex, normals, caps: null, shaped: false, motes: null, capAngle: tp.capAngleDeg, materials: new Map(), used: new Set() });
       changed = true;
     });
     for (const id of [...this.parts.keys()]) {
@@ -529,14 +545,20 @@ export class WeatherPreview {
         }
         p.valTex.needsUpdate = true;
         this.placeCaps(tp.node, p, fr.drops, objects.get(tp.node) ?? null);
+        this.placeMotes(tp.node, p, rec.track, k, fr.values, objects.get(tp.node) ?? null);
       });
+      // S3e: the studio floor.
+      this.placeFloor(state.studio.floor ? (rec.frame.floor ?? null) : null);
       // S3d: what the frame holds (on the parts drawn), and its drops in the air.
       const drawn = (k: number) => this.parts.has(rec.track.parts[k]?.node ?? '');
       this.shown = partsShown(rec.frame, drawn);
       this.placeFalling(rec.frame.falling.filter((f) => drawn(f.part)));
     } else {
-      // The parts may have moved (a clip of the pose): the caps follow them.
-      for (const [id, p] of this.parts) this.followCaps(p, objects.get(id) ?? null);
+      // The parts may have moved (a clip of the pose): the caps and the motes follow them.
+      for (const [id, p] of this.parts) {
+        this.followCaps(p, objects.get(id) ?? null);
+        if (p.motes) this.follow(p.motes, objects.get(id) ?? null);
+      }
     }
     return changed;
   }
@@ -653,16 +675,137 @@ export class WeatherPreview {
 
   /** The caps where the part stands: its object's matrix in the root's space. */
   private followCaps(p: PartWeatherDraw, obj: THREE.Object3D | null): void {
-    if (!p.caps) return;
+    if (p.caps) this.follow(p.caps, obj);
+  }
+
+  /** `m` where the part `obj` stands: its object's matrix in the root's space (S3e: the motes too). */
+  private follow(m: THREE.Object3D, obj: THREE.Object3D | null): void {
     if (!obj) {
-      p.caps.visible = false;
+      m.visible = false;
       return;
     }
     obj.updateWorldMatrix(true, false);
     this.root.updateWorldMatrix(true, false);
-    p.caps.matrix.copy(this.root.matrixWorld).invert().multiply(obj.matrixWorld);
-    p.caps.matrixWorldNeedsUpdate = true;
-    p.caps.visible = obj.visible;
+    m.matrix.copy(this.root.matrixWorld).invert().multiply(obj.matrixWorld);
+    m.matrixWorldNeedsUpdate = true;
+    m.visible = obj.visible;
+  }
+
+  /** S3e: the motes of part `k` of `track` at a frame (its samples' bytes `values`), in the part's object space. */
+  private placeMotes(id: NodeId, p: PartWeatherDraw, track: PartsTrack, k: number, values: Uint8Array, obj: THREE.Object3D | null): void {
+    const res = partsResolution(track, k);
+    const pos = p.geometry.getAttribute('position');
+    const motes =
+      track.motes && res
+        ? motesOn(res, values, (t) => (3 * t + 2 < pos.count ? [[pos.getX(3 * t), pos.getY(3 * t), pos.getZ(3 * t)], [pos.getX(3 * t + 1), pos.getY(3 * t + 1), pos.getZ(3 * t + 1)], [pos.getX(3 * t + 2), pos.getY(3 * t + 2), pos.getZ(3 * t + 2)]] : null), track.motes)
+        : [];
+    if (p.motes && p.motes.instanceMatrix.count < motes.length) {
+      p.motes.removeFromParent();
+      p.motes.dispose();
+      p.motes = null;
+    }
+    if (!p.motes && motes.length > 0) {
+      p.motes = new THREE.InstancedMesh(this.grain, this.dustMaterial, Math.max(64, motes.length));
+      p.motes.name = `motes:${id}`;
+      p.motes.matrixAutoUpdate = false;
+      p.motes.castShadow = false;
+      p.motes.userData.weatherCaps = true;
+      this.root.add(p.motes);
+    }
+    if (!p.motes) return;
+    this.follow(p.motes, obj);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const z = new THREE.Vector3(0, 0, 1);
+    motes.forEach((g, i) => {
+      q.setFromUnitVectors(z, new THREE.Vector3(...g.normal));
+      const c = new THREE.Vector3(g.position[0] + (g.normal[0] * g.radius) / 3, g.position[1] + (g.normal[1] * g.radius) / 3, g.position[2] + (g.normal[2] * g.radius) / 3);
+      m.compose(c, q, new THREE.Vector3(g.radius, g.radius, g.radius));
+      p.motes!.setMatrixAt(i, m);
+    });
+    p.motes.count = motes.length;
+    p.motes.instanceMatrix.needsUpdate = true;
+  }
+
+  /** S3e: the motes drawn on a part now (tests). */
+  motesDrawn(id: NodeId): number {
+    return this.parts.get(id)?.motes?.count ?? 0;
+  }
+
+  /** S3e: the studio floor's plane over the frame's cells (null: none). */
+  private placeFloor(fl: FloorFrame | null): void {
+    if (!fl) {
+      if (this.floorMesh) this.floorMesh.visible = false;
+      return;
+    }
+    const n = fl.nx * fl.ny;
+    if (!this.floorMesh || !this.floorTex || this.floorTex.image.width !== fl.nx || this.floorTex.image.height !== fl.ny) {
+      this.disposeFloor();
+      const data = new Uint8Array(4 * n);
+      const tex = new THREE.DataTexture(data, fl.nx, fl.ny, THREE.RGBAFormat, THREE.UnsignedByteType);
+      // Linear between the cells' centres, as the engine reads them.
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = false;
+      this.floorTex = tex;
+      // The cells are the material's map, read by the patch instead of three's colour lookup.
+      const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex, roughness: WEATHER_LOOK.dustRoughness, metalness: 0, transparent: true, depthWrite: false });
+      mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `{
+  vec4 wv = texture2D(map, vMapUv);
+  float wet = wv.r;
+  float dust = wv.g;
+  float depth = wv.b * 255.0 * ${f(SNOW_STEP_MM)};
+  float snow = depth > 0.0 ? 1.0 - exp(-depth / ${f(WEATHER_LOOK.snowCoverMm)}) : 0.0;
+  float cover = 1.0 - (1.0 - dust) * (1.0 - snow);
+  vec3 dustC = mix(${DUST}, ${DUST} * ${DUST}, wet);
+  vec3 coverC = mix(dustC, vec3(${f(WEATHER_LOOK.snowAlbedo)}), cover > 0.0 ? clamp(snow / cover, 0.0, 1.0) : 0.0);
+  float dark = 1.0 - pow(0.5, wet * ${f(FLOOR_POROSITY)});
+  float a = cover + (1.0 - cover) * dark;
+  diffuseColor = vec4(a > 0.0 ? coverC * cover / a : vec3(0.0), a);
+}`,
+        ).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, ${f(WEATHER_LOOK.wetCoatRoughness)}, texture2D(map, vMapUv).r * (1.0 - texture2D(map, vMapUv).g));`);
+      };
+      mat.customProgramCacheKey = () => 'repack-wet-floor';
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+      mesh.name = 'floor:weather';
+      mesh.receiveShadow = true;
+      mesh.renderOrder = 0;
+      mesh.userData.weatherCaps = true;
+      this.floorMesh = mesh;
+      this.root.add(mesh);
+    }
+    const data = this.floorTex!.image.data as Uint8Array;
+    for (let c = 0; c < n; c++) {
+      data[4 * c] = fl.values[3 * c];
+      data[4 * c + 1] = fl.values[3 * c + 1];
+      data[4 * c + 2] = fl.values[3 * c + 2];
+      data[4 * c + 3] = 255;
+    }
+    this.floorTex!.needsUpdate = true;
+    const w = fl.nx * fl.cell;
+    const h = fl.ny * fl.cell;
+    this.floorMesh!.scale.set(w, h, 1);
+    this.floorMesh!.position.set(fl.x0 + w / 2, fl.y0 + h / 2, fl.z + 0.02);
+    this.floorMesh!.visible = true;
+  }
+
+  /** S3e: the studio floor's cells drawn now (tests): their count, or 0. */
+  floorDrawn(): number {
+    return this.floorMesh?.visible && this.floorTex ? this.floorTex.image.width * this.floorTex.image.height : 0;
+  }
+
+  private disposeFloor(): void {
+    if (this.floorMesh) {
+      this.floorMesh.removeFromParent();
+      this.floorMesh.geometry.dispose();
+      (this.floorMesh.material as THREE.Material).dispose();
+      this.floorMesh = null;
+    }
+    this.floorTex?.dispose();
+    this.floorTex = null;
   }
 
   private drop(id: NodeId): void {
@@ -676,6 +819,10 @@ export class WeatherPreview {
       p.caps.removeFromParent();
       if (p.shaped) p.caps.geometry.dispose();
       p.caps.dispose();
+    }
+    if (p.motes) {
+      p.motes.removeFromParent();
+      p.motes.dispose();
     }
     this.parts.delete(id);
   }
@@ -692,6 +839,9 @@ export class WeatherPreview {
       this.falling = null;
     }
     this.sphere.dispose();
+    this.disposeFloor();
+    this.grain.dispose();
+    this.dustMaterial.dispose();
     this.capMaterial.dispose();
     this.shapedMaterial.dispose();
     for (const g of this.capGeometries.values()) g.dispose();

@@ -2113,6 +2113,14 @@ const TABLE = {
     'The render engine in use draws the drops on the parts round (an older engine): not stretched as they slide, bulging downhill, merging with a neck or hanging. Update the application to see their shapes',
     'El motor de render en uso dibuja redondas las gotas sobre las piezas (un motor anterior): sin estirarse al resbalar, abombarse cuesta abajo, juntarse con un cuello ni colgar. Actualiza la aplicación para ver su forma',
   ],
+  'ambient.wetFloorOldEngine': [
+    'The render engine in use draws the rain, dust and snow on the parts but not on the studio floor (an older engine): the floor will show dry and clean. Update the application to see it',
+    'El motor de render en uso dibuja la lluvia, el polvo y la nieve sobre las piezas pero no sobre el suelo del estudio (un motor anterior): el suelo se verá seco y limpio. Actualiza la aplicación para verlo',
+  ],
+  'ambient.wetMotesOldEngine': [
+    'The render engine in use draws the dust on the parts as a layer, without its grains (an older engine). Update the application to see them',
+    'El motor de render en uso dibuja el polvo sobre las piezas como una capa, sin sus granos (un motor anterior). Actualiza la aplicación para verlos',
+  ],
   'ambient.wetPartsOldEngine': [
     'The render engine in use does not draw the rain, dust and snow on the parts (an older engine): the render will show them dry and clean. Update the application to see them',
     'El motor de render en uso no dibuja la lluvia, el polvo y la nieve sobre las piezas (un motor anterior): el render las enseñará secas y limpias. Actualiza la aplicación para verlas',

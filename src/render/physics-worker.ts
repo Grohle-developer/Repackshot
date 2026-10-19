@@ -12,7 +12,8 @@
 //
 // S3c: and the parts under the scene's rain, dust and snow (a WPT1 spec): they step with the bodies too, the run starts
 // with the engine's layout of their samples and their record at step 0, each frame comes with their record, and a run
-// that wets them does not stop when its bodies sleep either.
+// that wets them does not stop when its bodies sleep either. S3e: when some of them move with a body, the engine steps
+// the parts and the bodies together, a step at a time (`wpt_step_with`), so they get wet where the bodies take them.
 //
 // S9: and cloth (a CLT1 spec): it steps the bodies' world with itself (they push it), each frame comes with its
 // vertices, and a run with cloth settles when the cloth does too. An rt.wasm without cloth runs the rest and says so.
@@ -100,11 +101,18 @@ function settled(r: Run): boolean {
 
 function stepBoth(r: Run, n: number): void {
   if (n <= 0) return;
-  // S9: the cloth steps the bodies with itself, a step ahead of it each time.
-  if (r.cloth) r.cloth.step(n, r.world);
-  else r.world?.step(n);
+  // S9: the cloth steps the bodies with itself, a step ahead of it each time; the parts then step on their own (with
+  // cloth in the run, the parts a body moves do not follow it). S3e: without cloth, parts that move step with the
+  // bodies, one step after the other (the engine does both).
+  if (r.cloth) {
+    r.cloth.step(n, r.world);
+    r.parts?.step(n);
+  } else if (r.world && r.parts && r.parts.moving > 0) r.parts.stepWith(r.world, n);
+  else {
+    r.world?.step(n);
+    r.parts?.step(n);
+  }
   r.pane?.step(n);
-  r.parts?.step(n);
   r.steps += n;
 }
 

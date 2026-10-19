@@ -69,7 +69,7 @@ pub fn step(handle: u32, world: u32, n: u32) -> bool {
             c.step(n, None);
             true
         } else {
-            crate::phys::with_world(world, |w| c.step(n, Some(w))).is_some()
+            crate::phys::with_world(world, |w, _| c.step(n, Some(w))).is_some()
         }
     })
     .unwrap_or(false)

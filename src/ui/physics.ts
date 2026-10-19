@@ -15,13 +15,15 @@
 // stops only by Stop or its time (it keeps raining). Drop runs the bodies alone. Reset takes the glass clip away too.
 //
 // S3c: Start also wets the parts when some effect falls on them (its switch in Scene ▸ Ambient, core/wet-parts.ts): every
-// visible part that does not move in the run steps under the effects in the same worker, each frame's record grows a
-// PHYSICS clip of the scene (the parts track, the cache), and such a run too stops only by Stop or its time.
+// visible part steps under the effects in the same worker, each frame's record grows a PHYSICS clip of the scene (the
+// parts track, the cache), and such a run too stops only by Stop or its time. S3e: a part the run moves gets wet where
+// its body takes it (the worker steps the two together), and the studio floor gets wet too.
 //
 // S9: Start also runs the parts whose role is Cloth (core/cloth.ts): their sheets step in the same worker with the bodies
 // (which push them), each frame's vertices grow a PHYSICS clip of each cloth part (its cloth track, the cache), and the run
 // settles when the cloth does too. Drape over the part adds a sheet of cloth above the selection and runs it alone, in the
-// same undo step. With an rt.wasm that does not simulate cloth, the rest runs and the bar says so.
+// same undo step. With an rt.wasm that does not simulate cloth, the rest runs and the bar says so. The wet parts leave the
+// cloth out.
 
 import { activeCamera, isPanoramic, type CameraId } from '../core/camera';
 import { nextIds } from '../core/ids';
@@ -116,6 +118,8 @@ interface PartsRun {
   parts: WetPartEntry[];
   writer: PartsTrackWriter | null;
   clip: string;
+  /** S3e: the dust's motes the track draws, or none. */
+  motes: { sizeMm: number; sizeVar: number; seed: number } | null;
 }
 
 /** S3b: the front glass of a run. */
@@ -248,7 +252,7 @@ function begin(session: Session, started: PhysicsStarted): void {
   const layout = started.parts ? parseLayout(started.parts.layout) : null;
   if (pr && started.parts && layout && layout.parts.length === pr.parts.length) {
     const meta = pr.parts.map((p, k) => ({ node: p.node, mesh: p.mesh, triangles: layout.parts[k].triangles, samples: layout.parts[k].samples, capAngleDeg: layout.parts[k].capAngleDeg, porosity: p.porosity }));
-    pr.writer = new PartsTrackWriter(session.fps, pr.key, meta, started.parts.layout);
+    pr.writer = new PartsTrackWriter(session.fps, pr.key, meta, started.parts.layout, pr.motes);
     pr.writer.push(started.parts.frame);
     pr.clip = nextIds('c', [...state.animation.clips.map((c) => c.id), ...session.clips.filter(Boolean), ...(g?.clip ? [g.clip] : [])], 1)[0];
     clips.push(partsClip(pr.clip, session.start, pr.writer.track()));
@@ -346,17 +350,26 @@ function glassRun(ctx: Ctx): GlassRun | 'NO_ENGINE' | null {
 }
 
 /**
- * S3c: the parts a Start wets: every visible part that the run does not move, when some effect falls on them, with the
- * bytes of the simulation (its WPT1) and their key; null when there is nothing to run.
+ * S3c: the parts a Start wets: every visible part, when some effect falls on them, with the bytes of the simulation (its
+ * WPT1) and their key; S3e: a part the run moves goes with its body (its index among the run's bodies, the PHY1 scene's
+ * dynamic ones), and the dust's motes come with the track. Null when there is nothing to run.
  */
 function partsRun(ctx: Ctx, spec: PhysicsSpec | null, cloth: ClothRun | null = null): PartsRun | null {
-  const moving = new Set([...(spec?.bodies ?? []).flatMap((b) => b.pieces.map((p) => p.part)), ...(cloth?.pieces ?? []).map((p) => p.part)]);
-  const parts = wetPartsSpec(ctx.store.get(), moving);
-  if (!parts) return null;
+  const moving = new Map<NodeId, number>();
+  (spec?.bodies ?? []).forEach((b, i) => b.pieces.forEach((p) => moving.set(p.part, i)));
+  // S9: with cloth in the run the cloth steps the bodies and the parts step on their own, so the cloth's parts and those
+  // the bodies move are left out (as before S3e).
+  const sheets = new Set((cloth?.pieces ?? []).map((p) => p.part));
+  const skip = sheets.size > 0 ? new Set([...sheets, ...moving.keys()]) : null;
+  const raw = wetPartsSpec(ctx.store.get(), skip ? new Map() : moving);
+  const parts = raw && skip ? { ...raw, parts: raw.parts.filter((p) => !skip.has(p.node)) } : raw;
+  if (!parts || parts.parts.length === 0) return null;
   const written = writtenParts(parts);
   if (written.length === 0) return null;
   const bytes = wptBytes(parts);
-  return { bytes, key: wetPartsKey(bytes), parts: written, writer: null, clip: '' };
+  const dust = parts.sources.find((s) => s.kind === 'DUST');
+  const motes = dust ? { sizeMm: dust.sizeMm, sizeVar: dust.sizeVar, seed: parts.seed } : null;
+  return { bytes, key: wetPartsKey(bytes), parts: written, writer: null, clip: '', motes };
 }
 
 function fail(session: Session, err: unknown): void {
