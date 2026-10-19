@@ -37,19 +37,30 @@ pub fn remember(path: &Path, port: u16) -> io::Result<()> {
 }
 
 /// Starts the server on the data folder's port: `requested` when it is not 0 (`--port`); else the
-/// remembered one when it is free; else a new free port, which is remembered.
-pub fn start(paths: &Paths, requested: u16, token: String, threads: usize) -> io::Result<Server> {
+/// remembered one when it is free; else a new free port, which is remembered. `open_file` is the
+/// project file passed on the command line, served once at startup (`/api/startup-project`).
+pub fn start(
+    paths: &Paths,
+    requested: u16,
+    token: String,
+    threads: usize,
+    open_file: Option<std::path::PathBuf>,
+) -> io::Result<Server> {
+    let options = || crate::server::Options {
+        open_file: open_file.clone(),
+        ..crate::server::Options::default()
+    };
     if requested != 0 {
-        return Server::start(paths.clone(), requested, token, threads);
+        return Server::start_with(paths.clone(), requested, token, threads, options());
     }
     let path = file(paths);
     if let Some(port) = remembered(&path) {
-        match Server::start(paths.clone(), port, token.clone(), threads) {
+        match Server::start_with(paths.clone(), port, token.clone(), threads, options()) {
             Ok(server) => return Ok(server),
             Err(e) => crate::log!("port {port} is taken ({e}): another one"),
         }
     }
-    let server = Server::start(paths.clone(), 0, token, threads)?;
+    let server = Server::start_with(paths.clone(), 0, token, threads, options())?;
     if let Err(e) = remember(&path, server.port()) {
         crate::log!("cannot remember the port in {}: {e}", path.display());
     }
