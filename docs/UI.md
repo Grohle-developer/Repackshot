@@ -1707,7 +1707,9 @@ queue goes on with the next); at the top *Clear finished* and a button
 that follows the state of the queue: **Pause** while it runs (stops the job
 in progress and frees the engine at once; the job goes back to *Waiting*),
 **Resume** after a pause (goes on with what was paused, and the paused job
-starts over: a render is not resumed halfway) and **Start queue** if
+starts over: a render is not resumed halfway; the image it had rendered so far
+is saved apart as `<name>-partial` and kept in the results history, marked
+*Partial*, so the work is not lost) and **Start queue** if
 not, disabled when nothing is waiting. A *Resume* pressed
 while the paused job is still stopping is not lost. The
 finished ones stay in the list with their thumbnail; a click opens the results
@@ -2441,13 +2443,18 @@ all the settings (P3e). Capture: `docs/ui/settings-ai-prompt.png`.
   an API chosen below. The guard checks every image either way, with the same
   protections.*
 - **API**: a list, *Generic HTTP image-to-image*, *Stability AI · Stable
-  Diffusion 3.5*, *OpenAI · image edits*.
+  Diffusion 3.5*, *OpenAI · image edits*, *Google · Gemini image*, *xAI ·
+  Grok Imagine*.
 - **Endpoint**: for a preset, its summary in the monospace style (*POST
   https://api.stability.ai/v2beta/stable-image/generate/sd3 · Multipart form ·
   image*), the note *Written from the service’s public API documentation and
   not tried against the live service yet…* with a link to the documentation,
   and for a service without strength or seed, the note that the guard limits
-  how much changes. For the generic endpoint, a form in two columns: *URL*,
+  how much changes. **Test connection** sends one minimal call through the
+  endpoint as configured — a 512 × 512 solid grey tile, *Return this image
+  unchanged.* — and reports *Connection works: the service answered with an
+  image.* or the call's error in words; the image sent is synthetic, never a
+  render. For the generic endpoint, a form in two columns: *URL*,
   *Method*, *Key header*, *Before the key*, *More headers* (one a line, *Name:
   value*), *Body* (*JSON* · *Multipart form*), *Answer* (*JSON with the image* ·
   *The image itself*), *Template* (monospace, with the list of placeholders
@@ -2800,6 +2807,11 @@ shortcuts* in the menu):
 | `Tab` | Fold and unfold the side panels |
 | `Esc` | Return from *Look through*; leave *Move* or *Scale*; deselect; close palette or menu |
 | `Del` | Delete the selection |
+
+Shortcuts with `Ctrl/⌘` work while typing in a field — except `Ctrl/⌘ ⏎`
+and `Ctrl/⌘ ⇧ ⏎`: typing a prompt and pressing them does not start a
+render (a render is long and starts the queue; the render window's own ⏎
+skips typing the same way).
 
 ---
 
