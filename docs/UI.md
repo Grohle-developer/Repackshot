@@ -741,7 +741,7 @@ except the two that build things: *Create studio* and *Render*.
    (*Undo: Rain: On the parts*, with the name of the effect), off by default and saved with the
    project; its help says what *Start* in the physics bar does with that
    effect (rain: the drops settle and splash, grow and merge, let go past
-   their size, gather the drops on their way and leave a rivulet, hang at the
+   their size, gather the drops on their way and leave a wet streak, hang at the
    edges and drip, and leave the surfaces wet; dust settles
    where the part is flat enough and the rain that runs down carries it away;
    snow piles up where it is held) and that the recording is a clip of the scene's
@@ -1569,7 +1569,7 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   with its shape, a deformed cap: stretched along its path with a rounder head
   and a thinner tail as it runs, bulging downhill when it is held on a slope,
   with a neck for a moment after two merge, stretched downwards as it hangs and
-  pinches off; S3e: a part the run moves wet where it is, the studio floor's
+  pinches off, its outline always the drop's contact area —S3g—; S3e: a part the run moves wet where it is, the studio floor's
   cells over the shadow-catching floor —dust and snow where they cover it, darker
   and glossier where wet—, the dust's grains where it is thick) and the meter
   adds what is really there (S3d): what (*Rain*, *Dust*, *Snow* or together:

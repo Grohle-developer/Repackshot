@@ -1357,7 +1357,7 @@ fn a_sliding_drop_gathers_the_drops_on_its_path_and_none_beside_it() {
 #[test]
 fn volume_is_conserved_through_any_merge_cascade() {
     // A pane at 70° crowded with 400 small drops from a hash and three past their size at its top:
-    // merges into merges, runs, beads.
+    // merges into merges, runs (S3f: and beads; S3g: none on glass).
     use rt_core::rng::mix64;
     let unit = |h: u64| (h >> 40) as f32 / 16_777_216.0;
     let (w, h) = (160.0f32, 240.0f32);

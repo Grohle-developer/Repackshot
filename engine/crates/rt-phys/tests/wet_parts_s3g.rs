@@ -134,9 +134,14 @@ fn a_typical_runner_on_a_vertical_pane_leaves_its_trail_and_no_beads() {
     }
 }
 
+/// Pinned hash of the pearling run (six runners of twice their critical size down a vertical pane of
+/// advancing 40° and receding 12°, three seconds): the same natively and in `wasm32-wasip1`, scalar
+/// and simd128.
+const PINNED_S3G_PEARLS: u32 = 0x533b_5c9d;
+
 /// The pearls of six runners down a pane of `adv`/`rec` 1000 mm tall: per lane, the heights of the
-/// pearls it left and the runner's contact radius at the end.
-fn pearling_lanes(adv: f32, rec: f32, share: f32) -> Vec<(Vec<f32>, Vec<f32>, f32)> {
+/// pearls it left and the runner's contact radius at the end; and the run's hash.
+fn pearling_lanes(adv: f32, rec: f32, share: f32) -> (Vec<(Vec<f32>, Vec<f32>, f32)>, u32) {
     let k = k_of(adv, rec);
     let crit = critical_radius(adv, rec, 1.0);
     let mut parts = WetParts::new(spec(
@@ -153,7 +158,7 @@ fn pearling_lanes(adv: f32, rec: f32, share: f32) -> Vec<(Vec<f32>, Vec<f32>, f3
     let runners: Vec<u32> = parts.drop_states().iter().map(|d| d.id).collect();
     parts.step(720);
     let states = parts.drop_states();
-    lanes
+    let lanes = lanes
         .iter()
         .map(|&x| {
             let near = |d: &&rt_phys::wet_parts::DropState| (d.p.x - x).abs() < 25.0;
@@ -173,7 +178,8 @@ fn pearling_lanes(adv: f32, rec: f32, share: f32) -> Vec<(Vec<f32>, Vec<f32>, f3
                 runner.a,
             )
         })
-        .collect()
+        .collect();
+    (lanes, parts.hash())
 }
 
 #[test]
@@ -181,7 +187,7 @@ fn past_the_pearling_transition_a_runner_leaves_sparse_small_irregular_pearls() 
     // A surface that water wets well (advancing 40°, receding 12°: the rear angle of a runner
     // reaches the pearling one at a few mm/s): six runners of twice their critical size.
     let (adv, rec) = (40.0f32, 12.0f32);
-    let lanes = pearling_lanes(adv, rec, 2.0);
+    let (lanes, hash) = pearling_lanes(adv, rec, 2.0);
     let mut gaps = Vec::new();
     let mut count = 0;
     let mut largest = 0.0f32;
@@ -212,8 +218,10 @@ fn past_the_pearling_transition_a_runner_leaves_sparse_small_irregular_pearls() 
     assert!(gaps.len() >= 8, "{} gaps", gaps.len());
     assert!(sd / mean > 0.3, "spacings {mean} ± {sd}: {gaps:?}");
     // And none from the same runners on glass, whose rear angle never falls that far.
-    let glass = pearling_lanes(GLASS_ADVANCING_DEG, GLASS_RECEDING_DEG, 2.0);
+    let (glass, _) = pearling_lanes(GLASS_ADVANCING_DEG, GLASS_RECEDING_DEG, 2.0);
     assert!(glass.iter().all(|(z, _, _)| z.is_empty()), "{glass:?}");
+    eprintln!("S3g pearls: {hash:#010x}");
+    assert_eq!(hash, PINNED_S3G_PEARLS);
 }
 
 /// Every drop of `parts` at every one of `frames` frames of `steps` steps: its outline's area over

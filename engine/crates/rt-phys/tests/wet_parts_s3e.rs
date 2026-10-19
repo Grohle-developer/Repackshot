@@ -156,7 +156,7 @@ fn drops_that_reach_a_side_edge_run_down_it_and_gather_at_the_lowest_corner() {
             .any(|d| d.edge && (d.p - lowest).length() > 20.0);
     }
     assert!(reached_side, "the drops reach the side edge first");
-    // (The beads of their rivulets stay behind them on the face: S3f.)
+    // (S3f left the beads of their rivulets behind them on the face; S3g: only their trails.)
     let d: Vec<_> = parts
         .drop_states()
         .into_iter()

@@ -19,6 +19,8 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **The wind pushes the drops in the air**: drips and splashes falling through the air drift with the wind of the rain (S3e).
 - **A drop runs down a sloping edge**: a drop that reaches the side edge of a tilted part runs along it, gathering what it meets, down to the lowest corner, where it hangs and drips; a level edge still holds it where it reached it (S3e).
 - **Notices for an engine that would not draw them**: with an older render engine, the *On the parts* switch says so when the floor would show dry, and when the dust would show without its grains (S3e).
+- **Water that reads as water**: a drop running down a part leaves a continuous wet streak behind it instead of a dotted line of equal beads; only a drop running fast over a surface water wets well (paper, for example) sheds a few small pearls, at irregular distances (S3g).
+- **Drops drawn their real size**: the outline of every drop is its contact with the surface in every state, so two drops that just merged and a drop hanging from an edge no longer look larger (or smaller) than they are; a hanging drop stays where its contact line is and stretches below it (S3g).
 
 ## v0.1.22 — 2026-10-18
 

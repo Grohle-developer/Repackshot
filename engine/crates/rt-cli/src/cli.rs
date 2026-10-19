@@ -231,8 +231,8 @@ OPTIONS:
                             (drips and splashes, the WETF section) as an RSB file
         --write-s3f-organic-example <f>
                             S3f: write the parity scene of the organic drops (a pane whose drops
-                            grow, slide, gather each other, merge with a neck, leave a rivulet
-                            and hang, with their shapes in WETP) as an RSB file
+                            grow, slide, gather each other, merge with a neck, leave their
+                            trail and hang, with their shapes in WETP) as an RSB file
         --write-s3f-strip <dir>
                             write the frames of that scene for the strip of docs/ui (one RSB
                             file per frame, s3f-strip-<step>.rsb)

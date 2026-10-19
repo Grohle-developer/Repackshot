@@ -495,7 +495,7 @@ pub fn s3d_flight_scene() -> rt_core::scene::Scene {
 }
 
 /// S3f: steps of the organic parity scene (1.1 s: the drop that slides is near the foot of the
-/// pane, a rivulet's beads behind it).
+/// pane, its trail behind it; S3g: no beads).
 pub const ORGANIC_STEPS: u32 = 264;
 /// S3f: the steps of the frames of the strip of the organic scene (`docs/ui/rain-organic.png`).
 pub const ORGANIC_STRIP_STEPS: [u32; 6] = [0, 60, 120, 180, 240, 300];

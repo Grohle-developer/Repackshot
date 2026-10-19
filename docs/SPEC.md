@@ -326,15 +326,23 @@ critical size of its tilt and of its part's wettability; a sliding drop
 **gathers the drops on the path** it swept in each step (and none beside it),
 grows and runs faster; a merge **keeps the volume** and the survivor's centre
 relaxes to the centre of volume of the two over a few capillary times
-(`√(ρ a³ / γ)`), without a jump. Fast enough for its rear contact angle (Cox
-and Voinov's dynamic angles) to fall below 0.8 of the receding one, a drop
-becomes a **continuous run** and leaves the beads of a rivulet behind it,
-elongated along its path, which relax into small pinned drops. Each drop has a
+(`√(ρ a³ / γ)`), without a jump. **S3g:** a sliding drop leaves its
+continuous wet trail and nothing else; only past the **pearling** transition
+(its rear contact angle, by Cox and Voinov's dynamic angles, down to 10°: a
+capillary number of `(θ_R³ − θ_p³) / 9Λ`, which the runners on the usual
+surfaces of a product never reach, only those on a surface water wets well,
+such as paper) does it shed **pearls** behind it: sparse (twelve of its contact
+diameters apart on average, at irregular distances drawn from an exponential
+law), small (at most a quarter of its contact radius), round and pinned where
+they fall. (S3f's continuous run, a line of equal beads behind every fast
+runner, is gone.) Each drop has a
 **shape** from its physics (a `DropShape`): stretched along its motion with a
 rounder head and a thinner tail as it slides, bulging downhill when it is pinned
 on a slope (its front angle towards the advancing one, its rear towards the
-receding one, by its load), spanning the two drops with a neck after a merge,
-stretched along gravity as it hangs; every deformation keeps its volume. A drop
+receding one, by its load), along the two drops with a neck after a merge,
+stretched along gravity as it hangs (S3g: its contact line where it is, thinner
+above it); every deformation keeps its volume, and (S3g) its outline keeps the
+drop's contact area `π a²` in every state. A drop
 **held at an open edge** or under a face looking down hangs until its weight
 passes what its contact line holds, then necks and lets go of 0.6 of its water
 as one drop in the air (Harkins and Brown), the rest staying to grow again.
