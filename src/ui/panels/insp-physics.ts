@@ -98,6 +98,10 @@ function motionGroup(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLElement {
     { full: true, ariaLabel: t('phys.role') },
   );
   role.el.setAttribute('data-field', 'phys.role');
+  // The four roles do not fit beside a label in the inspector's width (the last one was clipped): the control goes
+  // under its label, the whole width of the section.
+  const roleRow = field(t('phys.role'), role.el);
+  roleRow.classList.add('wide');
   // U16: what the chosen role does, in one line.
   const roleLine = h('p', { class: 'note', style: 'margin:0', 'data-field': 'phys.roleLine' });
   const inherits = h('p', { class: 'note', style: 'margin:0' });
@@ -168,7 +172,7 @@ function motionGroup(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLElement {
     'div',
     { class: 'stack', 'data-phys-group': 'motion' },
     h('div', { class: 'subhead' }, t('phys.motion')),
-    field(t('phys.role'), role.el),
+    roleRow,
     roleLine,
     inherits,
     densityRows,

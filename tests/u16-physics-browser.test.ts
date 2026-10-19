@@ -103,6 +103,32 @@ describe.skipIf(!executablePath)('U16: the physics of each part in one place, in
     }
   }
 
+  it('the four roles fit in the inspector, in English and in Spanish (none is clipped)', async () => {
+    // Mutation checked: the role back beside its label (field without `wide`) clips the last role in both languages.
+    for (const lang of ['en', 'es']) {
+      const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+      const page = await context.newPage();
+      await page.goto(`${url}?lang=${lang}&example=1&tour=0&mode=fast&select=body`, { waitUntil: 'load', timeout: 60000 });
+      await page.waitForSelector('#app[data-ready="1"]', { timeout: 120000 });
+      await settle(page, 300);
+      const clipped = await page.evaluate(() => {
+        const seg = document.querySelector('.side-right [data-field="phys.role"]') as HTMLElement | null;
+        if (!seg) return ['no role control'];
+        // The control may run past its own row: what counts is the section the person sees.
+        const section = seg.closest('[data-section="physics"]') as HTMLElement | null;
+        const box = (section ?? seg).getBoundingClientRect();
+        return [...seg.querySelectorAll('button')]
+          .filter((b) => {
+            const r = b.getBoundingClientRect();
+            return r.right > box.right + 0.5 || r.left < box.left - 0.5 || b.scrollWidth > b.clientWidth + 0.5;
+          })
+          .map((b) => b.textContent ?? '');
+      });
+      expect(clipped, lang).toEqual([]);
+      await context.close();
+    }
+  });
+
   it('Motion and Weather on a part; each role shows its fields; the switches, the surface and the note', async () => {
     const page = await open('select=body');
     let v = await physicsView(page);
