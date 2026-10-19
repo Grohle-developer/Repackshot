@@ -61,7 +61,7 @@ import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
 import { abortError, adaptiveProgress, budgetLimits, budgetOf, budgetProgress, runAdaptive, runPasses, type PassBudget } from './schedule';
 import { Accumulator, assignTiles, chooseScale, Generations, LIVE_ALBEDO_SAMPLES, livePassCap, MAX_PASS_SAMPLES, nextPass, scaledSize, TILE, type Tile, type TileResult } from './tiles';
-import { AdaptiveState, BLOCK, rescaledPlane, rescaledSums, type BlockWork } from './adaptive';
+import { AdaptiveState, BLOCK, rescaledPlane, rescaledSums, rescaledSumsTiles, type BlockWork } from './adaptive';
 import type { ViewportLimit } from '../core/settings';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
@@ -512,6 +512,8 @@ export interface RenderedPixels {
   renderId?: number;
   /** E5b-1: `data` and `sum` are the engine's denoised image. */
   denoised?: boolean;
+  /** Stopped before its budget with `partialOnAbort`: `data` and `sum` are the accumulation so far, at `samples`. */
+  partial?: boolean;
   /** E5b-1, with Advanced ▸ Also save without denoise: the same render before denoise (8-bit, and its sums with `keepLinear`). */
   noisy?: { data: Uint8ClampedArray; sum?: Float32Array };
 }
@@ -1521,32 +1523,47 @@ export class PathTracerEngine implements RenderEngine {
           this.finalPass = null;
         }
       };
-      const result = adaptive
-        ? await runAdaptive(budget, adaptive, {
-            now: () => performance.now(),
-            pass,
-            decide: () => adaptive.decide(acc.sum, 4, acc.lum2),
-            aborted: () => signal?.aborted === true,
-            progress: (samples, _ms, left) => {
-              done = samples;
-              eta = left;
-              report();
-            },
-          })
-        : await runPasses(budget, {
-            now: () => performance.now(),
-            pass,
-            aborted: () => signal?.aborted === true,
-            progress: (samples) => {
-              done = samples;
-              report();
-            },
-          });
-      done = result.samples;
+      // Stopped with `partialOnAbort` (the queue): the accumulation so far is kept — the passes already done stay
+      // in `acc`, `done` their samples — and the image below is tonemapped from it and handed back as partial.
+      // Anything else (another abort, a failure) throws as before.
+      let partial = false;
+      try {
+        const result = adaptive
+          ? await runAdaptive(budget, adaptive, {
+              now: () => performance.now(),
+              pass,
+              decide: () => adaptive.decide(acc.sum, 4, acc.lum2),
+              aborted: () => signal?.aborted === true,
+              progress: (samples, _ms, left) => {
+                done = samples;
+                eta = left;
+                report();
+              },
+            })
+          : await runPasses(budget, {
+              now: () => performance.now(),
+              pass,
+              aborted: () => signal?.aborted === true,
+              progress: (samples) => {
+                done = samples;
+                report();
+              },
+            });
+        done = result.samples;
+      } catch (err) {
+        if (!(opts.partialOnAbort && signal?.aborted && done > 0)) throw err;
+        partial = true;
+      }
       const tone0f = this.source.tone(state);
       // E10: an adaptive image goes on as sums rescaled to its most samples (what the files, the display and the denoiser
-      // read as sums of `done` samples), every pixel's own count for the denoiser.
-      const sums = adaptive ? rescaledSums(acc.sum, acc.width, acc.height, acc.blockSamples, done) : acc.sum;
+      // read as sums of `done` samples), every pixel's own count for the denoiser. A partial stopped mid-pass reads the
+      // same way: the tiles that got the interrupted pass's samples are rescaled back to `done`, the last completed
+      // pass's count, so no tile comes out brighter than it should.
+      const sums = adaptive
+        ? rescaledSums(acc.sum, acc.width, acc.height, acc.blockSamples, done)
+        : partial && acc.sampleRange.max > done
+          ? rescaledSumsTiles(acc.sum, acc.width, acc.tiles, acc.samples, done)
+          : acc.sum;
       const lum2 = adaptive && denoise ? rescaledPlane(acc.lum2, acc.width, acc.height, acc.blockSamples, done) : acc.lum2;
       const counts = adaptive ? adaptive.pixelCounts() : undefined;
       // The engine's denoiser on the finished image (all the workers; the viewport may have its share back).
@@ -1574,7 +1591,8 @@ export class PathTracerEngine implements RenderEngine {
           ? { data: await this.pool.tonemap(sums, opts.width, opts.height, done, tone.exposureEv, tone.tonemap), ...(opts.keepLinear ? { sum: sums } : {}) }
           : undefined;
       const seconds = (performance.now() - t0) / 1000;
-      opts.onProgress?.({ jobId: null, progress: 1, samples: done, seconds });
+      // A partial image reports its own progress, never 1: it stopped before its budget.
+      opts.onProgress?.({ jobId: null, progress: partial ? budgetProgress(budget, done, seconds * 1000) : 1, samples: done, seconds });
       return {
         width: opts.width,
         height: opts.height,
@@ -1583,8 +1601,10 @@ export class PathTracerEngine implements RenderEngine {
         seconds,
         exposureEv: tone.exposureEv,
         tonemap: tone.tonemap,
+        ...(partial ? { partial: true } : {}),
         ...(opts.keepLinear ? { sum: image } : {}),
-        ...(passes && opts.passes?.length ? { passes: passes.resolve() } : {}),
+        // A partial image carries no pass files: the queue saves only its main image (and main.ts skips their encoding).
+        ...(passes && opts.passes?.length && !partial ? { passes: passes.resolve() } : {}),
         ...(denoised ? { denoised: true } : {}),
         ...(noisy ? { noisy } : {}),
       };

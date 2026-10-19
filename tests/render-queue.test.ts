@@ -26,6 +26,8 @@ interface Fake {
   hold: boolean;
   release(): void;
   fail: string | null;
+  /** The engine hands back the accumulation so far (a stopped render with progress). */
+  partial: boolean;
 }
 
 function makeCtx(): Fake {
@@ -36,6 +38,7 @@ function makeCtx(): Fake {
     requests: [],
     saved: [],
     hold: false,
+    partial: false,
     release: () => {
       const w = waiters;
       waiters = [];
@@ -56,7 +59,7 @@ function makeCtx(): Fake {
         });
       }
       req.onProgress?.(0.5, 2, 0.1);
-      return { file: new Blob([new Uint8Array(10)]), display: null, width: req.width, height: req.height, samples: 4, seconds: 0.25 };
+      return { file: new Blob([new Uint8Array(10)]), display: null, width: req.width, height: req.height, samples: 4, seconds: 0.25, ...(fake.partial ? { partial: true } : {}) };
     },
     results: {
       persistent: async () => results.persistent,
@@ -217,6 +220,22 @@ describe('Render and + Add to queue', () => {
     expect(statuses(f)).toEqual(['CANCELLED']);
     expect(ctx.store.get().render.running).toBeNull();
     expect(f.saved).toEqual([]);
+  });
+
+  it('a render stopped with progress saves the image so far as <name>-partial and keeps it in the history', async () => {
+    const f = makeCtx();
+    f.partial = true;
+    await cmd.renderFromWindow(f.ctx);
+    await queueSettled(f.ctx);
+    // The queue asked for the accumulation on a stop, and the job still ends as stopped.
+    expect(f.requests[0]).toMatchObject({ partialOnAbort: true });
+    const [job] = f.ctx.store.get().render.queue;
+    expect(job.status).toBe('CANCELLED');
+    expect(f.saved).toEqual(['Bottle_Camera 1_0001-partial.png']);
+    const [r] = f.ctx.ui.get().results;
+    expect([r.name, r.partial, r.samples, r.jobId]).toEqual(['Bottle_Camera 1_0001-partial.png', true, 4, job.id]);
+    expect(job.resultIds).toEqual([r.id]);
+    expect(f.ctx.ui.get().toasts.at(-1)?.text).toBe('Stopped: the image so far is saved as Bottle_Camera 1_0001-partial.png.');
   });
 
   it('without the engine the job fails with the reason; nothing is saved', async () => {

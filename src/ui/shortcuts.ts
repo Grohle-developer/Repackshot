@@ -27,6 +27,15 @@ export interface AppAction {
   run(ctx: Ctx): void | ConfirmSpec | null | Promise<void>;
 }
 
+/**
+ * Whether the action fires while the person types in a text field: only the `global` ones do. Render and
+ * Render now are not global on purpose — typing a prompt and pressing Ctrl/⌘ ⏎ must not start a render
+ * the person did not ask for (the render window's own ⏎ already skips typing the same way).
+ */
+export function firesWhileTyping(a: AppAction): boolean {
+  return a.global === true;
+}
+
 const setTool = (tool: Tool) => (ctx: Ctx) => cmd.setTool(ctx, tool);
 const level = (l: SelectionLevel) => (ctx: Ctx) => cmd.setLevel(ctx, l);
 
@@ -38,8 +47,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'open', label: 'action.open', keys: 'mod+o', global: true, run: (ctx) => void cmd.openProject(ctx) },
   { id: 'save', label: 'action.save', keys: 'mod+s', global: true, run: (ctx) => void cmd.saveProject(ctx) },
   { id: 'saveAs', label: 'action.saveAs', keys: 'mod+shift+s', global: true, run: (ctx) => void cmd.saveProject(ctx, { saveAs: true }) },
-  { id: 'render', label: 'action.render', keys: 'mod+enter', global: true, run: (ctx) => cmd.openRenderWindow(ctx) },
-  { id: 'renderNow', label: 'action.renderNow', keys: 'mod+shift+enter', global: true, run: (ctx) => cmd.renderNow(ctx) },
+  { id: 'render', label: 'action.render', keys: 'mod+enter', run: (ctx) => cmd.openRenderWindow(ctx) },
+  { id: 'renderNow', label: 'action.renderNow', keys: 'mod+shift+enter', run: (ctx) => cmd.renderNow(ctx) },
   { id: 'viewportMode', label: 'action.viewportMode', keys: 'mod+shift+r', global: true, run: (ctx) => cmd.toggleViewportMode(ctx) },
   // U11: the live denoise of the Full viewport (the top bar's Denoise, the meter's, Advanced ▸ Denoise ▸ Viewport).
   { id: 'viewportDenoise', label: 'action.viewportDenoise', keys: 'd', run: (ctx) => cmd.toggleViewportDenoise(ctx) },
