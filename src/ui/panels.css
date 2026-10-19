@@ -446,6 +446,12 @@
 .phys-state {
   color: var(--ink-1);
 }
+/* U16: what Start simulates, in one line, above the note. */
+.phys-plan {
+  font-size: var(--fs-label);
+  color: var(--ink-1);
+  line-height: 1.45;
+}
 
 /* Animation drawer (N6): three zones. Left the tree of what is animated, centre the ruler and the bars, right the
    properties of the selected animation; the transport above. The tree and the lanes are one grid: the tree column is

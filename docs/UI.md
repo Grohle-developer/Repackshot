@@ -736,16 +736,19 @@ except the two that build things: *Create studio* and *Render*.
    *Wind direction* (°), *Gravity* (× g), *Variation* (%) and
    *Seed* with *Shuffle*. With an effect that leaves something on the parts (S3c:
    *Rain* and *Water drops*, drops; *Dust motes*, *Pollen*, *Dust cloud* and
-   *Ash*, dust; *Snow*, snow; the bubbles and the confetti, nothing), after
-   the seed the switch **On the parts**, one undo entry
+   *Ash*, dust; *Snow*, snow; the bubbles and the confetti, nothing), the switch
+   **On the parts**, since U16 right after the *Shape* (and the weights of a
+   *Mix*, which belong to it), with its notes: it was after the seed, out of
+   sight. One undo entry
    (*Undo: Rain: On the parts*, with the name of the effect), off by default and saved with the
    project; its help says what *Start* in the physics bar does with that
    effect (rain: the drops settle and splash, grow and merge, let go past
    their size, gather the drops on their way and leave a rivulet, hang at the
    edges and drip, and leave the surfaces wet; dust settles
    where the part is flat enough and the rain that runs down carries it away;
-   snow piles up where it is held) and that the recording is a clip of the scene's
-   *Physics*. When on, if the render engine does not draw the
+   snow piles up where it is held), that the recording is a clip of the scene's
+   *Physics* and, since U16, which parts take it: *Each part chooses in
+   Physics ▸ Weather*. When on, if the render engine does not draw the
    wetness of the parts (it lacks bit 8: an older engine), a note below
    says so: *the render will show them dry and clean*; S3d: if it draws it but not
    the drops in the air (it has bit 8 and not bit 9: an S3c engine), with a
@@ -1150,7 +1153,7 @@ except the two that build things: *Create studio* and *Render*.
 **With one or several parts selected:**
 
 1. **Material** — Card of the current material: spherical thumbnail,
-   name, category, and a *Change…* button that unfolds the **catalogue**:
+   name, category, the **Physics pointer** (U16) and a *Change…* button that unfolds the **catalogue**:
    category tabs (`MATERIAL_CATEGORIES`), a 4-column grid of spheres
    with the name below, text filter. Click assigns to the
    selection at the chosen level (§4.1); **dragging also works**: the
@@ -1158,7 +1161,15 @@ except the two that build things: *Create studio* and *Render*.
    tree (§2.2), and `Alt` on dropping gives an own copy. The sphere of the
    material card is dragged the same way (except that of the default neutral
    material, which is nothing to distribute) and **links** the target with
-   that instance. At the *Faces* level the catalogue appears when a face is
+   that instance. The **Physics pointer** (U16, request: "it is not
+   intuitive right now how to switch the physics of a material on or off"):
+   under the material's name and category, one compact line in link style,
+   *Physics: Static · gets wet as Paint* (the role of the selection, or
+   *mixed roles*; then *gets wet as* the family it wets as —the one chosen
+   in *Physics ▸ Weather ▸ Surface* or its material's—, *gets wet as several
+   surfaces*, *keeps dry* or *some keep dry*); a click opens the *Physics*
+   section if it is folded and scrolls it into view (`phys.pointer`); at the
+   *Faces* level it speaks of the part of the faces. At the *Faces* level the catalogue appears when a face is
    selected (until then, the inspector says *Click on a face…*) and
    the drop lands on the face under the cursor. Below, the
    **parameters** of the material's family: colour, metal, roughness,
@@ -1258,21 +1269,66 @@ except the two that build things: *Create studio* and *Render*.
    radius; the Fast preview shows them sharp*): the engine draws it since E6
    (`ARCHITECTURE.md` §5.2 septies); three.js cannot do it
    cheaply and the *Fast* view does not try.
-5. **Physics** (phase S2; `SPEC.md` §3.1) — **Role**, segmented:
+5. **Physics** (phases S2 and U16; `SPEC.md` §3.1) — everything about how
+   the selection takes part in a simulation, in two groups (U16: before, the
+   weather of the parts was a switch per effect, buried in the effect's
+   inspector, and how water sits on a part could not be seen).
+   **Motion.** **Role**, segmented:
    *Static · Dynamic · Cloth · Liquid*, with *Cloth* and *Liquid*
    disabled and a tooltip saying *coming soon*; with several nodes of
-   different roles, none marked. If the part falls with a dynamic
+   different roles, none marked. Under it, **one line** that says what the
+   role does (U16): *Stays where it is: things fall onto it and the weather
+   settles on it* (Static), *Falls and collides with the rest* (Dynamic),
+   *The selection has more than one role: choose one to give it to all*
+   (mixed). If the part falls with a dynamic
    group that does not fall *as parts*, a note says so (*Falls with Cap,
-   as one body*). **Density** in kg/m³, draggable; below it, in
+   as one body*). Then **only the fields the role uses** (U16, S2's
+   semantics): **Density** in kg/m³, draggable; below it, in
    auxiliary text, where it comes from (*From the material (Metal): 7 800 kg/m³*, *Without a
    material: 1 000 kg/m³ (water)* or *Its own density*, with the button *Use
-   the material’s*). **Friction** (0–2) and **Bounciness** (0–1),
-   with slider and value (U15). With a group or a model, the **As parts** switch
-   and its note. A note says that the mass is the density times the volume of
-   the convex hull, and the **Drop** button. Each change is a
+   the material’s*) — Dynamic only. **Friction** (0–2) and **Bounciness** (0–1),
+   with slider and value (U15) — for both Static and Dynamic: the simulator
+   takes the geometric mean of the frictions and the larger bounciness of
+   the two surfaces that touch, so a static part's own are used too. With a
+   group or a model, the **As parts** switch and its note — Dynamic only. A
+   note says that the mass is the density times the volume of the convex
+   hull, and the **Drop** button — Dynamic only (a static part is dropped
+   from *Part ▸ Drop* or its context menu). A mixed selection shows the
+   fields of both roles. Each change is a
    store action and a drag a single undo entry
-   (*Undo: Physics of Body*). At the *Faces* level, the section edits
-   the part of the face.
+   (*Undo: Physics of Body*). At the *Faces* level, the section edits the part
+   of the faces.
+   **Weather** (U16). How the rain, dust and snow of the effects that fall on
+   the parts (*On the parts*, Scene ▸ Ambient) treat **each part**:
+   **Gets wet** (switch, on by default: off, no drop and no film of water
+   stays on the part, and it still shelters what is below it),
+   **Gets dust and snow** (switch, on by default: off, no dust or snow
+   settles on it, and it still shelters) and **Surface** (a list: *From the
+   material (Paint)*, naming the family its material wets as —*From each
+   part’s material* when they differ—, then every wettability family by
+   name: *Glass, Plastic, Metal, Paper, Paint, Wood, Fabric,
+   Water-repellent*). Under *Surface*, one line computed with the engine's
+   own formula (`rt_phys::wet::critical_radius`, ported bit for bit:
+   `core/part-weather.ts`): *Drops start to run at about 4.2 mm across on a
+   vertical face* (twice the critical contact radius on a vertical face; with
+   parts of several families, *about 1.9 to 4.2 mm …, by part*; with every
+   part dry, *It keeps dry: no drop stays on it, and it still shelters what is
+   below it*). When every part of the selection is one the run moves, a note
+   says that dust and snow settle only on parts that stay. When **no effect
+   of the scene has *On the parts* on**, a note: *Nothing in the scene leaves
+   rain, dust or snow on the parts: switch “On the parts” on in an effect*,
+   with a button **Edit Rain** (the first effect that can leave something on
+   the parts): it selects nothing, opens *Scene ▸ Ambient* on that effect and
+   brings its *On the parts* switch into view, with the focus on it; without
+   any such effect, the note says to add *Rain*, *Snow* or *Dust motes* and the
+   button is **Open Ambient**. The Weather fields edit **every part** under the
+   selection (a group's, a model's, a multi-selection's; at the *Faces* level,
+   the part of the faces) in **one** undo entry (*Undo: Weather of Example
+   bottle*); when the parts differ, a switch shows **indeterminate** (its knob
+   in the middle, `aria-checked="mixed"`; a click turns it on for all) and the
+   list shows *Mixed*. Only what differs from the default is saved with the
+   project (`physics.getsWet`, `getsDust`, `surface`).
+   ![the Physics section with both groups, on the example bottle's Body](ui/physics-inspector.png)
 
 **With a primitive selected** (phase U9), before *Material*, the
 **Primitive** section: *Shape* (the name, as text), and one field per
@@ -1509,7 +1565,8 @@ a material— and the wizard at step 1), `docs/ui/animation-n1-cards.png`
 `docs/ui/animation-n1-curve.png` (the custom curve with a handle moved).
 
 **Physics drawer, the physics bar** (phase S2; `SPEC.md` §3.1 and §3.7):
-**▶ Start** (simulates the parts whose role is *Dynamic* and, S3b, the
+**▶ Start** (simulates the parts whose role is *Dynamic*, S3c the rain, dust
+and snow of the effects *On the parts* on the parts that take them and, S3b, the
 front glass of the active camera if the scene feeds it) · **⏸ Pause**,
 which becomes **▶ Resume** while paused · **■ Stop** · **↺
 Reset**; then, what the simulator says —**simulated time**
@@ -1518,9 +1575,19 @@ Reset**; then, what the simulator says —**simulated time**
 and at the end how it ended (*It stopped by itself: everything is at rest*, *Stopped where
 it was*, *Stopped after 30 s of simulated time*, *The simulator needs the engine*).
 Nothing runs until something is started or dropped. Before the
-simulator says anything, no time and no bodies: they are not invented. Below, a
+simulator says anything, no time and no bodies: they are not invented. Below,
+while stopped, **one line that says what *Start* will simulate** (U16), from
+the scene as it is and with the same selection the run makes
+(`core/start-plan.ts`): *Start simulates: 2 dynamic parts · rain on 5 parts
+(1 stays dry) · the front glass* —the parts the bodies move, the rain on the
+parts that get wet and how many under it keep dry, *dust*, *snow* or *dust and
+snow* on the parts that stay and how many keep clean, and the active camera's
+front glass when the scene feeds it—, or *Nothing to simulate: make a part
+Dynamic, or switch “On the parts” on in an effect*; *Start*'s enabled rules are
+those of S2 (a click with nothing to simulate says so). Then a
 note: how to start, and while it runs, that the viewport shows it in *Fast*
 (the *Full* mode waits for it to stop).
+![the physics drawer with its line of what Start simulates](ui/physics-drawer-summary.png)
 
 - **Pause** freezes the simulation where the viewport shows it (whatever the
   simulator sends meanwhile waits for *Resume*); **Stop** confirms
@@ -1585,7 +1652,10 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
 Captures (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (the bar
 paused, in the middle of a fall), `docs/ui/physics-drop.png` (three
 primitives before and after *Drop*) and
-`docs/ui/physics-drop-strip.png` (six instants of the recorded clip).
+`docs/ui/physics-drop-strip.png` (six instants of the recorded clip). U16
+(`tools/u16-check.mjs`): `docs/ui/physics-inspector.png` (the Physics section
+with both groups, on the example bottle's Body) and
+`docs/ui/physics-drawer-summary.png` (the drawer with its line).
 
 **Queue drawer**: list of jobs in order (thumbnail, name, camera,
 size, *Finish by*, AI yes or no, state and progress), draggable to
