@@ -22,9 +22,13 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 24 versions, 21 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
+
+Nothing yet: every screenshot in `docs/ui/` is already in a published version (the latest is v0.1.23).
+
+### v0.1.23 · 2026-10-19
 
 Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the physics of each part in one place (U16). Cloth (S9).
 
@@ -954,16 +958,16 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
 - [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
-- [`physics-rain-floor.png`](#c-physics-rain-floor) · Unreleased · S3e
-- [`rain-moving.png`](#c-rain-moving) · Unreleased · S3e
-- [`rain-floor.png`](#c-rain-floor) · Unreleased · S3e
-- [`dust-motes.png`](#c-dust-motes) · Unreleased · S3e
-- [`physics-inspector.png`](#c-physics-inspector) · Unreleased · U16
-- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · Unreleased · U16
-- [`cloth-drape.png`](#c-cloth-drape) · Unreleased · S9
-- [`cloth-sheet.png`](#c-cloth-sheet) · Unreleased · S9
-- [`cloth-inspector.png`](#c-cloth-inspector) · Unreleased · S9
-- [`cloth-bar.png`](#c-cloth-bar) · Unreleased · S9
+- [`physics-rain-floor.png`](#c-physics-rain-floor) · v0.1.23 · S3e
+- [`rain-moving.png`](#c-rain-moving) · v0.1.23 · S3e
+- [`rain-floor.png`](#c-rain-floor) · v0.1.23 · S3e
+- [`dust-motes.png`](#c-dust-motes) · v0.1.23 · S3e
+- [`physics-inspector.png`](#c-physics-inspector) · v0.1.23 · U16
+- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · v0.1.23 · U16
+- [`cloth-drape.png`](#c-cloth-drape) · v0.1.23 · S9
+- [`cloth-sheet.png`](#c-cloth-sheet) · v0.1.23 · S9
+- [`cloth-inspector.png`](#c-cloth-inspector) · v0.1.23 · S9
+- [`cloth-bar.png`](#c-cloth-bar) · v0.1.23 · S9
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 

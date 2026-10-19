@@ -189,6 +189,13 @@ after each *commit* (or the lead does).
    - Public notes in `docs/release-notes/v0.1.22.md`; the Windows checklist is points 152 to 161 in `docs/testing/windows-checklist.md` (**the next one starts at 162**).
    - **Next phase:** S3e (moving parts getting wet, the studio floor, the set's fine samples, dust motes, wind on the drops in the air, drops running along a side edge).
 
+4q. **Release v0.1.23 published** (2026-10-19; four *assets*; the images in the notes resolve). Included, each through its PR, with their ◆ decided in *Judgement calls*:
+   - **F1** (focus on what the engine shows; *Focus ▸ Object* on the surface the camera sees): PR #70, `50ab2a6`, and PR #71, `90d2a98`.
+   - **S3e** (moving parts getting wet, the studio floor, the set's fine samples, dust motes, wind on the drops in the air, drops running along a side edge): PR #73, `a07de84`.
+   - **U16** (the physics of each part in one place): PR #74, `41d4b95`.
+   - **S9** (cloth with real physics, XPBD): PR #72, `daf91c1`.
+   - Public notes in `docs/release-notes/v0.1.23.md`; the Windows checklist is points 162 to 194 in `docs/testing/windows-checklist.md` (**the next one starts at 195**).
+
 **PR and release rule (owner's request, 2026-10-17):** **one PR per change** (each phase, or each loose fix, in its PR to `main`: from its branch `wip/ccr-8df3f848/<phase>` after merging `main` into it and passing the gates; the lead's documents, from the session branch), and **releases that group several changes** (one every two or three merged phases, or sooner if a fix the owner is waiting for goes in), with their own version PR from the session branch (version, CHANGELOG, notes) and `release.yml` on `main`. Up to 2026-10-17 one release per change was made (v0.1.7 to v0.1.13).
 5. **Release v0.1.6 published** (2026-10-14, run 38600597560 on `c413669`, tag `v0.1.6`, release 412955577): the four *assets* uploaded by the workflow (Windows 11 portable 329 872 B, Linux portable 11 158 342 B, installer 9 426 684 B, `SHA256SUMS.txt`). The first attempt (run 38599628176) failed in the *smoke test* because it read the launcher's frame with a 48 B header (U11 raised it to 52): fix in `packaging/smoke.mjs` (PR #8). **`film-0.1.0.rpk` is missing as an asset**: the session's GitHub proxy rejects binary bodies (only JSON), so the owner uploads it by hand (the file was delivered in the chat; sha `a60dd9ed…3d8a`, 1 956 072 B); until then *Settings ▸ Plugins ▸ Install* from the registry fails the download (installing from a file does work).
    (procedure in `ROADMAP.md` P1 and `release-notes/`): also upload
