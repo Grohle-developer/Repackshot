@@ -100,6 +100,17 @@ the same pins, and `npx vitest run tests/physics-engine.test.ts` from the reposi
 fixture through the real `rt.wasm`'s `phys_*` exports and must give the same hashes
 (`REPACK_REQUIRE_RT_WASM=1` makes a missing module an error instead of a skip).
 
+The cloth's parity (S9): `cargo test -p rt-phys --test cloth` pins the cloth's and the rigid world's
+hashes of the cloth parity scene at 60, 240 and 480 steps (`PINNED_CLOTH` in
+`crates/rt-phys/tests/cloth.rs`), equal with 1, 3 and 8 narrow-phase chunks and in parallel threads,
+and writes the scene's `CLT1` and `PHY1` bytes and those hashes to `../tests/fixtures/cloth-drape.json`,
+every fabric preset to `../tests/fixtures/cloth-fabrics.json` and each preset's drape on Cusick's
+tester (drape coefficient, nodes, steps) to `../tests/fixtures/cloth-cusick.json`
+(`REPACK_WRITE_FIXTURES=1 cargo test -p rt-phys --test cloth` rewrites them). The same tests run as
+WebAssembly, scalar and with `+simd128`, with the same pins (all but the fixtures' and Cusick's,
+which runs a thread a preset), and `npx vitest run tests/cloth-engine.test.ts` steps the fixture
+through the real `rt.wasm` and `rt-simd.wasm`.
+
 ## The desktop application
 
 ```sh

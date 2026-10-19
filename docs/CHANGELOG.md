@@ -21,6 +21,18 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **Notices for an engine that would not draw them**: with an older render engine, the *On the parts* switch says so when the floor would show dry, and when the dust would show without its grains (S3e).
 - **The physics of each part in one place**: a part's *Physics* section has two groups, *Motion* (the role, a line that says what it does, and only the fields that role uses) and *Weather*: whether the part gets wet, whether dust and snow settle on it (a part kept dry or clean still shelters what is below it) and its *Surface*, its material's or one chosen, with the size at which its drops start to run; a new *Water-repellent* surface beads water up and lets it run off early. Edits apply to every part of a group, a model or a multi-selection in one undo step. Under the material's name, a line says the part's physics and opens the section; an effect's *On the parts* now comes right after its *Shape*; and the physics bar says what *Start* will simulate, or that there is nothing to simulate and how to give it something (U16).
 
+### Physics
+
+- **Cloth**: a new role in *Physics*, *Cloth*: a part (its face picked at the *Faces* level, or the whole part; a closed solid keeps its volume with *Pressure*) folds and drapes over what is under it when the physics bar's *Start* runs, colliding with itself, the other parts, the falling bodies and the floor, and blown by the wind of the *Ambient* effects. Sharp edges and corners (the rim of a cap, the edges of a box) stay under the cloth instead of showing through it between its vertices (S9).
+- **Fabrics by type and weight**: silk 60 g/m², fine cotton 120, poplin 150, linen 200, wool 300, denim 400, canvas 600, felt 800, thin leather 900, thick leather 1,200 and neoprene 1,500, each with its stretch, its shear (a woven fabric's threads scissor far more easily than they stretch, so it drapes over a dome in soft folds instead of creasing like paper) and its bending rigidity, measured on the simulated versions of the textile laboratory's cantilever and drape tests; *Weight*, *Stiffness* (on the stretch, the shear and the bending alike) and *Thickness* on top; anchors along the top edge or inside a box; self-collision and *Keep area* (S9).
+- **Drape over the part**: in the context menu, the inspector and the palette, a sheet of cloth falls over the selection and drapes it, in one undo step (S9).
+- **Cloth is recorded** into the animation like every simulation, and the viewport in *Fast* and the render in *Full* draw the frame the playhead shows; the physics bar says how many vertices the simulator moves. With an engine built before this version the rest of the simulation runs without the cloth, and the bar says so (S9).
+
+### Engine
+
+- **Cloth in `rt_phys::cloth`**: extended position based dynamics with an orthotropic membrane per triangle (stretch along the warp and the weft and shear between them, after Strain Based Dynamics), dihedral bending calibrated so that a cantilever measures the fabric's rigidity, area and pressure constraints; collisions with the cloth itself (a spatial hash grid), the rigid bodies, the floor and the static triangles, and of the cloth's surface with the sharp vertices and edges of the parts and of the bodies' hulls (point against triangle and edge against edge); the wind with gusts; the `CLT1` format (version 2) and the `cloth_*` exports of `rt.wasm`. Deterministic: the same bits natively and in WebAssembly, on both SIMD paths and with any number of threads (S9).
+- The cloth's frames reach the render as the part's own mesh, so no new scene section or capability bit is needed (S9).
+
 ## v0.1.22 — 2026-10-18
 
 ### Scene and ambient

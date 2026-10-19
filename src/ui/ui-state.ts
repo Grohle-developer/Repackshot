@@ -46,13 +46,17 @@ export interface PhysicsUi {
   awake: number;
   bodies: number;
   /** How the last run ended (null: none yet), or why it could not start. */
-  ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | null;
+  ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | 'NO_CLOTH' | null;
   /** Reset has something to undo: a run in progress, or the last one's clips and poses. */
   canReset: boolean;
   /** S3b: the front glass of the run in progress or the last one, as its last frame left it (absent: none). */
   glass?: { drops: number; motes: number } | null;
   /** S3c: the parts of the run in progress or the last one: the drops on them at the last frame, the drips so far. */
   parts?: { drops: number; drips: number; falling?: number } | null;
+  /** S9: the cloth of the run in progress or the last one: its pieces and the vertices the simulator moves. */
+  cloth?: { pieces: number; vertices: number } | null;
+  /** S9: the run had cloth and this engine does not simulate it (an rt.wasm before S9). */
+  noCloth?: boolean;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of

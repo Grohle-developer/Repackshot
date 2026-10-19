@@ -1217,10 +1217,10 @@ const services: AppServices = {
   // The rigid body simulator (S2): rt-phys in a worker of its own, with the scalar rt.wasm (started on the first
   // simulation). In the desktop window too: the page serves the same module.
   physics: typeof Worker === 'undefined' ? null : {
-    run(spec, options, onUpdate, wet, parts) {
+    run(spec, options, onUpdate, wet, parts, cloth) {
       // S3b: the front glass fed by the scene steps with the bodies (or alone, without any). S3c: and the wet parts (their
-      // WPT1, written by ui/physics.ts: it needs the parts it wrote).
-      return physicsClient.run(spec.bodies.length > 0 ? writePhysicsScene(spec) : null, spec.bodies.length, options, onUpdate, wet ? wetBytes(wet) : null, parts ?? null);
+      // WPT1, written by ui/physics.ts: it needs the parts it wrote). S9: and the cloth (its CLT1, likewise).
+      return physicsClient.run(spec.bodies.length > 0 ? writePhysicsScene(spec) : null, spec.bodies.length, options, onUpdate, wet ? wetBytes(wet) : null, parts ?? null, cloth ?? null);
     },
   },
   // S3b: the engine's front glass of a camera (the page's rt.wasm, once loaded).

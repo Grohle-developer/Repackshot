@@ -1,6 +1,6 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 161) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 171) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
@@ -12,6 +12,15 @@ For moving parts, the studio floor, the set's fine samples and the dust's grains
 163. [ ] **The studio floor.** With *Studio ▸ Floor* and *Shadow* on, no set floor over it (on the example, switch off *Backdrop* and *Set floor* under *Scene ▸ In the set*) and *Rain* with *On the parts*, run for a few seconds and pause: in *Fast* and in a render in *Full* the floor around the product must look darker and glossy where wet, and a dry patch must stay under the product (and under anything that shelters the floor).
 164. [ ] **Dust on the set and its grains.** Put the product on a set with a large floor card (for example *Fragrance*), add *Dust cloud* with *On the parts* and run for a minute: in a render in *Full*, the edge of the dust shadow on the card must be smooth, not in steps, and close up the dust must show small grains over its layer.
 165. [ ] **What to record when reporting.** A screenshot of 162 in *Fast*, and the renders of 163 and 164. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+For cloth (S9).
+
+166. [ ] **Drape over the part.** Open the example (or put a box on the floor), right click the product in the tree and choose *Drape over the part*. A sheet named *Cloth* must appear above it, the physics bar must open and say *Cloth: … vertices* while it runs, and the sheet must fall, fold over the product and stop by itself. Note how long it took to settle (the bar's simulated time and the wall clock). *Undo* once must remove the sheet and its recording together.
+167. [ ] **Fabrics.** Select the sheet and, in *Physics*, change *Fabric* to *Silk*, then *Denim* and then *Thick leather*, pressing *Start* after each (and *Reset* in between): silk must fold into many small wrinkles, denim must hang in soft rounded folds (not in flat panels with sharp creases, like paper), thick leather into a few broad folds. Change *Weight*, *Stiffness* and *Thickness* and check that each is one undo step.
+168. [ ] **Sharp edges stay under the cloth.** With *Silk* over the example, render in *Full* close up on the cap: its rim must not show through the cloth anywhere; do the same with a box under the sheet, looking at its edges and corners.
+169. [ ] **In *Fast* and in *Full*.** After a drape, the cloth must look the same in *Fast* and in a render in *Full* (the same folds), and scrubbing the timeline back must show the sheet falling.
+170. [ ] **Anchors and wind.** On a vertical plane with the role *Cloth* and *Anchors ▸ Top edge*, add an *Ambient* effect with wind and *Start*: the top edge must stay put and the cloth must flutter downwind.
+171. [ ] **What to record when reporting.** The renders of 167 (the three fabrics), 168 and 169, the times of 166, and if something fails, the message verbatim and the `<data>\logs\` folder.
 
 For the physics of each part in one place (U16).
 

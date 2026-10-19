@@ -67,6 +67,12 @@
 // family); a file from before U16 has none and opens with every part wet, dusty and of its material's family, and a
 // family this version does not know is dropped (the material's again).
 //
+// Cloth (S9): the role CLOTH and the section's cloth fields (`physics.cloth`, core/cloth.ts: fabric, weight, stiffness,
+// thickness, anchors, pressure, the face), and the PHYSICS clip of a cloth part, which records its shape instead of a
+// pose (`cloth`: the mesh, the face and the splits it was recorded on, and the vertices per frame as base64 f32). A file
+// from before S9 has none; on open the cloth fields keep what this version knows and a cloth clip that does not decode
+// is left out. The schema stays at 2.
+//
 // IES lights (L5): an own light of type IES keeps its photometric profile in `studio.lights[].ies` (`{ name, text, base }`: the
 // file's text, one character per byte, and the power the light came in with), so the project opens elsewhere without the
 // file; it is plain JSON in the state, a file from before L5 has none and opens as it always did, and on open a profile
@@ -123,6 +129,7 @@ import { migrateRender, syncOutputSize } from '../core/render';
 import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { isGlassTrack } from '../core/wet';
 import { isPartsTrack } from '../core/wet-parts';
+import { isClothTrack, sanitizeClothProps } from '../core/cloth';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { isWettabilityFamily } from '../data/wettability';
@@ -351,7 +358,10 @@ function checkState(raw: RawState): ProjectState {
       if (!isObject(ph)) throw damaged(`${at}.physics is damaged`);
       const fixed: SceneNode = { ...(emptied[id] ?? n) };
       const props: PhysicsProps = {};
-      if (ph.role === 'STATIC' || ph.role === 'DYNAMIC') props.role = ph.role;
+      // S9: CLOTH, with its cloth fields as this version knows them.
+      if (ph.role === 'STATIC' || ph.role === 'DYNAMIC' || ph.role === 'CLOTH') props.role = ph.role;
+      const cloth = sanitizeClothProps(ph.cloth);
+      if (cloth) props.cloth = cloth;
       if (typeof ph.density === 'number' && Number.isFinite(ph.density) && ph.density > 0) props.density = ph.density;
       if (typeof ph.friction === 'number' && Number.isFinite(ph.friction) && ph.friction >= 0) props.friction = ph.friction;
       if (typeof ph.bounciness === 'number' && Number.isFinite(ph.bounciness) && ph.bounciness >= 0 && ph.bounciness <= 1) props.bounciness = ph.bounciness;
@@ -445,9 +455,10 @@ function checkState(raw: RawState): ProjectState {
   // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project. S3b: a PHYSICS
   // clip of the camera records its front glass instead (a glass track, core/wet.ts), checked the same way.
   // S3c: a PHYSICS clip of the scene records the rain, dust and snow on the parts (a parts track, core/wet-parts.ts).
+  // S9: a PHYSICS clip of a cloth part records its shape instead (a cloth track, core/cloth.ts).
   const recorded = (c: Record<string, unknown>) => {
     const kind = (c.target as { kind?: unknown } | undefined)?.kind;
-    return kind === 'CAMERA' ? isGlassTrack(c.glass) : kind === 'SCENE' ? isPartsTrack(c.parts) : isTrack(c.track);
+    return kind === 'CAMERA' ? isGlassTrack(c.glass) : kind === 'SCENE' ? isPartsTrack(c.parts) : 'cloth' in c ? isClothTrack(c.cloth) : isTrack(c.track);
   };
   if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !recorded(c))) {
     s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !recorded(c))) };

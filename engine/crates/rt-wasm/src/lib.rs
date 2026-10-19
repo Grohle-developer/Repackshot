@@ -27,6 +27,7 @@ use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset};
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+pub mod cloth;
 pub mod ffi;
 pub mod parts;
 pub mod phys;

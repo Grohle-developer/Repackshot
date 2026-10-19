@@ -202,7 +202,7 @@ The full **context menu** of a row (phase U3, with the actions of
 `SPEC.md` §3.1): Frame · Move (activates the gizmo) · **Scale…**
 (phase U9: the inline panel of §2.3, next to the row) · Rest on the
 floor · Centre · Centre and rest · **Drop** (phase S2) ·
-Reset transform ·
+**Drape over the part** (phase S9) · Reset transform ·
 Set pivot ▸ (centre, base, origin, picked point) · Set as
 camera target · **Keep in focus** (F1: the camera in view switches to
 *Focus ▸ Object* on the row or the part, at the level of the selection) ·
@@ -226,6 +226,15 @@ as one body unless it has *As parts*. It is disabled with the
 selection locked. The whole fall is **one** undo entry
 (*Undo: Drop 3 parts*). There is no *Part* menu in the header
 in this version: its place is this context menu.
+
+**Drape over the part** (phase S9; the same menu in the viewport, the buttons of the *Part*
+section and of the cloth's *Physics* section, and the palette, *Drape cloth over the
+selection*) lays a sheet of cloth over the selection —a plane named *Cloth*, of fine cotton
+and the catalogue's *Cotton*, square, its side 1.2 times the longer side of the selection's
+footprint plus 1.2 times its height, a little above its top— with the role *Cloth*, opens the **Physics** drawer and
+runs it alone: it falls and drapes over the selection and whatever is under it, and stops
+by itself when it settles. Adding it, its role and the run are **one** undo entry
+(*Undo: Drape cloth over Box*). Disabled with nothing visible selected.
 
 **Cameras**: list of saved cameras with the active one marked. Buttons:
 *New from current view*, *Duplicate*, *Delete*. Click activates the
@@ -1269,16 +1278,17 @@ except the two that build things: *Create studio* and *Render*.
    radius; the Fast preview shows them sharp*): the engine draws it since E6
    (`ARCHITECTURE.md` §5.2 septies); three.js cannot do it
    cheaply and the *Fast* view does not try.
-5. **Physics** (phases S2 and U16; `SPEC.md` §3.1) — everything about how
+5. **Physics** (phases S2, S9 and U16; `SPEC.md` §3.1) — everything about how
    the selection takes part in a simulation, in two groups (U16: before, the
    weather of the parts was a switch per effect, buried in the effect's
    inspector, and how water sits on a part could not be seen).
    **Motion.** **Role**, segmented:
-   *Static · Dynamic · Cloth · Liquid*, with *Cloth* and *Liquid*
-   disabled and a tooltip saying *coming soon*; with several nodes of
+   *Static · Dynamic · Cloth · Liquid*, with *Liquid*
+   disabled and a tooltip saying *coming soon* (*Cloth* since S9); with several nodes of
    different roles, none marked. Under it, **one line** that says what the
    role does (U16): *Stays where it is: things fall onto it and the weather
    settles on it* (Static), *Falls and collides with the rest* (Dynamic),
+   *Hangs, drapes and folds over what is under it* (Cloth),
    *The selection has more than one role: choose one to give it to all*
    (mixed). If the part falls with a dynamic
    group that does not fall *as parts*, a note says so (*Falls with Cap,
@@ -1298,6 +1308,21 @@ except the two that build things: *Create studio* and *Render*.
    store action and a drag a single undo entry
    (*Undo: Physics of Body*). At the *Faces* level, the section edits the part
    of the faces.
+   **With the role *Cloth*** (phase S9), the cloth's fields in place of density,
+   friction, bounciness and *As parts*: **Fabric** (a list of the presets with their
+   weight: *Silk · 60 g/m²* … *Neoprene · 1,500 g/m²*; changing it puts back the preset's
+   weight and thickness), **Weight** in g/m², draggable, with where it comes from (*From the
+   fabric (Silk): 60 g/m²* or *Its own weight*, and *Use the fabric’s*), **Stiffness** (×,
+   0.1–10, slider and value: on the fabric's stretch, shear and bending alike), **Thickness** (mm: the
+   distance at which it collides), **Anchors** segmented (*None · Top edge · Box*; with *Box*,
+   two rows *From* and *To* of three % fields, X Y Z of the cloth's extent), **Pressure** (×,
+   0–3, enabled only for a closed shell; open, the note says so), **Self-collision** and
+   **Keep area** switches, **Resolution** (mm, 0 automatic, with what it makes now: *Now:
+   2,048 triangles, 13.3 mm*), **Face** (*The whole part is cloth* or *48 triangles of the part
+   are cloth; the rest holds them*, with *Use the selected faces* at the *Faces* level and
+   *The whole part*), a note and the **Start** and **Drape over the part** buttons. Each change
+   is a store action (`physics/cloth`), a drag a single undo entry.
+   ![the Physics section of a cloth](ui/cloth-inspector.png)
    **Weather** (U16). How the rain, dust and snow of the effects that fall on
    the parts (*On the parts*, Scene ▸ Ambient) treat **each part**:
    **Gets wet** (switch, on by default: off, no drop and no film of water
@@ -1619,6 +1644,18 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   simulated · 4 s*), in the same undo
   entry; *Reset* removes it too.
   ![the rain on the glass, paused](ui/physics-rain.png)
+- **Cloth** (S9). *Start* runs the parts whose role is *Cloth* with the *Dynamic* ones (which
+  push them) or alone; *Drop* does not, *Drape over the part* runs its sheet alone. The bar
+  adds what the engine moves (*Cloth: 1,089 vertices*: the vertices of its sheets, split to
+  their resolution); a run with cloth stops by itself when the bodies sleep and the cloth has
+  settled. Its recording is a **Simulation** clip of each cloth part (*Cloth drapes as
+  simulated · 2.4 s*), which does not move the part: it says which frame of its cloth the part
+  shows, in *Fast* and in *Full*; *Reset* removes it. With an engine that does not simulate
+  cloth (one built before S9) the rest runs and the bar says *Cloth left out: this engine
+  does not simulate it* (a toast says to rebuild it); a run of cloth alone says *This engine
+  does not simulate cloth: rebuild it (npm run engine:build)*.
+  ![the cloth while it runs](ui/cloth-bar.png)
+  ![a box before and after Drape over the part](ui/cloth-drape.png)
 - **The parts** (S3c). With some effect *On the parts*, *Start* wets,
   dusts and snows the visible parts that the simulation does not move (the
   *Dynamic* ones not: they would be wet where they were), with the bodies or alone;
@@ -1655,7 +1692,10 @@ primitives before and after *Drop*) and
 `docs/ui/physics-drop-strip.png` (six instants of the recorded clip). U16
 (`tools/u16-check.mjs`): `docs/ui/physics-inspector.png` (the Physics section
 with both groups, on the example bottle's Body) and
-`docs/ui/physics-drawer-summary.png` (the drawer with its line).
+`docs/ui/physics-drawer-summary.png` (the drawer with its line). S9
+(`tools/cloth-check.mjs`): `docs/ui/cloth-bar.png`, `docs/ui/cloth-drape.png`,
+`docs/ui/cloth-inspector.png` and `docs/ui/cloth-sheet.png` (four fabrics of the contact sheet
+`out/cloth-sheet.html`, `tools/cloth-sheet.mjs`, rendered by the engine).
 
 **Queue drawer**: list of jobs in order (thumbnail, name, camera,
 size, *Finish by*, AI yes or no, state and progress), draggable to

@@ -86,6 +86,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'centerRest', label: 'action.centerRest', run: (ctx) => cmd.centerAndRest(ctx) },
   // Physics (S2): Drop the selection, and the physics bar.
   { id: 'drop', label: 'action.drop', run: (ctx) => phys.drop(ctx, selectedNodes(ctx.store.get())) },
+  // S9: Drape over the part.
+  { id: 'drape', label: 'action.drape', run: (ctx) => phys.drape(ctx, selectedNodes(ctx.store.get())) },
   { id: 'physics', label: 'action.physics', run: (ctx) => ctx.ui.set({ drawer: 'physics' }) },
   { id: 'reset', label: 'action.reset', run: (ctx) => cmd.resetTransform(ctx) },
   { id: 'cameraTarget', label: 'action.cameraTarget', run: (ctx) => cmd.setCameraTarget(ctx) },
