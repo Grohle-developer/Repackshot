@@ -5,6 +5,8 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.23 — 2026-10-19
+
 ### Camera and lens
 
 - **Focus with a click takes what the image shows**: the point is the engine's own first hit in the whole scene along the clicked pixel's ray, the face the camera sees there, not the viewport's geometry along that ray; the engine's pick also steps over parts hidden to the camera, as the camera does (F1).
