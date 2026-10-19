@@ -15064,9 +15064,9 @@ captures; `npm run qa` and the engine's gates green.
   `land` for a part that moves), its film samples get no wet time, and a drop in
   the air that meets it is gone (`impact`, counted in `water_lost`);
   `PART_NO_DUST = 4`, its samples get no dust or snow rate. Both stay in the ray
-  tree. Nothing else of the file changed (another phase is changing the drop
-  physics there): the flag's parsing was already there (other bits were kept and
-  ignored), a helper `flagged` and five guards. **No capability bit**: the parts
+  tree. Nothing else of the module changed (the drop physics are untouched):
+  the flag's parsing was already there (other bits were kept and ignored), so it
+  is a helper `flagged` and five guards. **No capability bit**: the parts
   are simulated in the page's own `rt.wasm`, and what a render engine receives is
   the recording.
 - **The inspector** (`ui/panels/insp-physics.ts`, `ui/physics-lines.ts` for the
