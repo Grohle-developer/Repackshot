@@ -1,4 +1,13 @@
 {
-  "SILK": { "weightGsm": 60, "stretch": 2000, "bend": 3e-7, "damping": 0.6, "thicknessMm": 1, "friction": 0.3 },
-  "LEATHER_THICK": { "weightGsm": 1200, "stretch": 20000, "bend": 2e-3, "damping": 2, "thicknessMm": 3, "friction": 0.6 }
+  "SILK": { "weightGsm": 60, "stretch": 2000, "shear": 20, "bend": 3e-7, "damping": 0.6, "thicknessMm": 1, "friction": 0.3 },
+  "COTTON_FINE": { "weightGsm": 120, "stretch": 3000, "shear": 35, "bend": 5e-6, "damping": 0.8, "thicknessMm": 1, "friction": 0.5 },
+  "POPLIN": { "weightGsm": 150, "stretch": 4000, "shear": 45, "bend": 8e-6, "damping": 0.8, "thicknessMm": 1, "friction": 0.5 },
+  "LINEN": { "weightGsm": 200, "stretch": 5000, "shear": 55, "bend": 2e-5, "damping": 1, "thicknessMm": 1, "friction": 0.55 },
+  "WOOL": { "weightGsm": 300, "stretch": 2500, "shear": 40, "bend": 3e-5, "damping": 1.2, "thicknessMm": 1.5, "friction": 0.6 },
+  "DENIM": { "weightGsm": 400, "stretch": 8000, "shear": 100, "bend": 6e-5, "damping": 1.2, "thicknessMm": 1.5, "friction": 0.6 },
+  "CANVAS": { "weightGsm": 600, "stretch": 12000, "shear": 140, "bend": 2e-4, "damping": 1.5, "thicknessMm": 1.5, "friction": 0.6 },
+  "FELT": { "weightGsm": 800, "stretch": 3000, "shear": 750, "bend": 5e-4, "damping": 2, "thicknessMm": 3, "friction": 0.7 },
+  "LEATHER_THIN": { "weightGsm": 900, "stretch": 10000, "shear": 1000, "bend": 5e-4, "damping": 1.5, "thicknessMm": 2, "friction": 0.6 },
+  "LEATHER_THICK": { "weightGsm": 1200, "stretch": 20000, "shear": 2000, "bend": 2e-3, "damping": 2, "thicknessMm": 3, "friction": 0.6 },
+  "NEOPRENE": { "weightGsm": 1500, "stretch": 1500, "shear": 500, "bend": 1.5e-3, "damping": 2.5, "thicknessMm": 3, "friction": 0.8 }
 }

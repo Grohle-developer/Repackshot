@@ -698,32 +698,71 @@ pub fn s3f_organic_scene() -> rt_core::scene::Scene {
 
 // --- S9: cloth -----------------------------------------------------------------------------------
 
-/// S9: silk, 60 g/m² (`SILK` of `src/data/fabrics.ts`; the tests and the fixture
-/// `tests/fixtures/cloth-fabrics.json` check that the two agree).
-pub const SILK: crate::cloth::ClothParams = crate::cloth::ClothParams {
-    mass_per_area: 0.06,
-    stretch: 2000.0,
-    bend: 3.0e-7,
-    damping: 0.6,
-    thickness: 1.0,
-    friction: 0.3,
-    area: 0.0,
-    pressure: 0.0,
-    flags: crate::cloth::FLAG_SELF_COLLISION,
-};
+/// S9: a fabric of `weight` g/m², `stretch` and `shear` N/m, `bend` N·m, `damping` 1/s,
+/// `thickness` mm and `friction`, colliding with itself, its warp along world X.
+pub const fn fabric(
+    weight: f32,
+    stretch: f32,
+    shear: f32,
+    bend: f32,
+    damping: f32,
+    thickness: f32,
+    friction: f32,
+) -> crate::cloth::ClothParams {
+    crate::cloth::ClothParams {
+        mass_per_area: weight / 1000.0,
+        stretch,
+        shear,
+        bend,
+        damping,
+        thickness,
+        friction,
+        area: 0.0,
+        pressure: 0.0,
+        warp: crate::cloth::WARP,
+        flags: crate::cloth::FLAG_SELF_COLLISION,
+    }
+}
 
-/// S9: thick leather, 1,200 g/m² (`LEATHER_THICK` of `src/data/fabrics.ts`).
-pub const LEATHER_THICK: crate::cloth::ClothParams = crate::cloth::ClothParams {
-    mass_per_area: 1.2,
-    stretch: 20000.0,
-    bend: 2.0e-3,
-    damping: 2.0,
-    thickness: 3.0,
-    friction: 0.6,
-    area: 0.0,
-    pressure: 0.0,
-    flags: crate::cloth::FLAG_SELF_COLLISION,
-};
+/// S9: the fabric presets of `src/data/fabrics.ts`, by key and in its order (the tests and the
+/// fixture `tests/fixtures/cloth-fabrics.json` check that the two agree).
+pub const FABRICS: [(&str, crate::cloth::ClothParams); 11] = [
+    ("SILK", fabric(60.0, 2000.0, 20.0, 3.0e-7, 0.6, 1.0, 0.3)),
+    (
+        "COTTON_FINE",
+        fabric(120.0, 3000.0, 35.0, 5.0e-6, 0.8, 1.0, 0.5),
+    ),
+    ("POPLIN", fabric(150.0, 4000.0, 45.0, 8.0e-6, 0.8, 1.0, 0.5)),
+    ("LINEN", fabric(200.0, 5000.0, 55.0, 2.0e-5, 1.0, 1.0, 0.55)),
+    ("WOOL", fabric(300.0, 2500.0, 40.0, 3.0e-5, 1.2, 1.5, 0.6)),
+    ("DENIM", fabric(400.0, 8000.0, 100.0, 6.0e-5, 1.2, 1.5, 0.6)),
+    (
+        "CANVAS",
+        fabric(600.0, 12000.0, 140.0, 2.0e-4, 1.5, 1.5, 0.6),
+    ),
+    ("FELT", fabric(800.0, 3000.0, 750.0, 5.0e-4, 2.0, 3.0, 0.7)),
+    (
+        "LEATHER_THIN",
+        fabric(900.0, 10000.0, 1000.0, 5.0e-4, 1.5, 2.0, 0.6),
+    ),
+    (
+        "LEATHER_THICK",
+        fabric(1200.0, 20000.0, 2000.0, 2.0e-3, 2.0, 3.0, 0.6),
+    ),
+    (
+        "NEOPRENE",
+        fabric(1500.0, 1500.0, 500.0, 1.5e-3, 2.5, 3.0, 0.8),
+    ),
+];
+
+/// S9: silk, 60 g/m² (`SILK` of [`FABRICS`]).
+pub const SILK: crate::cloth::ClothParams = FABRICS[0].1;
+
+/// S9: denim, 400 g/m² (`DENIM` of [`FABRICS`]).
+pub const DENIM: crate::cloth::ClothParams = FABRICS[5].1;
+
+/// S9: thick leather, 1,200 g/m² (`LEATHER_THICK` of [`FABRICS`]).
+pub const LEATHER_THICK: crate::cloth::ClothParams = FABRICS[9].1;
 
 /// S9: a flat sheet of `size_x × size_y` mm centred on `center`, facing up, `nx × ny` squares each
 /// split along alternating diagonals (so the sheet has no preferred direction to fold in).
@@ -753,6 +792,44 @@ pub fn cloth_sheet(
                 indices.extend_from_slice(&[a, b, c, a, c, d]);
             } else {
                 indices.extend_from_slice(&[a, b, d, b, c, d]);
+            }
+        }
+    }
+    (positions, indices)
+}
+
+/// S9: a flat disc of `radius` mm centred on `center`, facing up, of `rings` concentric rings of
+/// vertices (ring `k` of `6 k`, evenly spaced), each joined to the one inside it by a strip of
+/// triangles that advances along whichever ring's next vertex comes first by angle: triangles of
+/// about the same size everywhere, with no preferred direction but the six of its sectors.
+pub fn cloth_disc(radius: f32, rings: u32, center: Vec3) -> (Vec<Vec3>, Vec<u32>) {
+    let mut positions = vec![center];
+    let start = |k: u32| if k == 0 { 0 } else { 1 + 3 * k * (k - 1) };
+    let count = |k: u32| if k == 0 { 1 } else { 6 * k };
+    for k in 1..=rings {
+        let r = radius * k as f32 / rings as f32;
+        for i in 0..count(k) {
+            let (s, c) = fmath::sin_cos(std::f32::consts::TAU * i as f32 / count(k) as f32);
+            positions.push(center + Vec3::new(c * r, s * r, 0.0));
+        }
+    }
+    let mut indices = Vec::new();
+    for k in 1..=rings {
+        let (outer, inner) = (count(k), count(k - 1));
+        let (o0, i0) = (start(k), start(k - 1));
+        let (mut i, mut j) = (0u32, 0u32);
+        // Walk both rings once around by angle (as fractions of a turn: i / outer, j / inner).
+        while i < outer || (k > 1 && j < inner) {
+            let a = o0 + i % outer;
+            let b = i0 + j % inner;
+            let next_outer = (i + 1) as u64 * inner as u64;
+            let next_inner = (j + 1) as u64 * outer as u64;
+            if k == 1 || (i < outer && (j >= inner || next_outer <= next_inner)) {
+                indices.extend_from_slice(&[b, a, o0 + (i + 1) % outer]);
+                i += 1;
+            } else {
+                indices.extend_from_slice(&[b, a, i0 + (j + 1) % inner]);
+                j += 1;
             }
         }
     }
@@ -804,12 +881,14 @@ pub fn cloth_parity_spec() -> crate::cloth::ClothSpec {
             params: crate::cloth::ClothParams {
                 mass_per_area: 0.12,
                 stretch: 3000.0,
+                shear: 35.0,
                 bend: 5.0e-6,
                 damping: 0.8,
                 thickness: 1.5,
                 friction: 0.4,
                 area: 0.0,
                 pressure: 0.0,
+                warp: crate::cloth::WARP,
                 flags: crate::cloth::FLAG_SELF_COLLISION,
             },
         }],

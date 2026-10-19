@@ -6,22 +6,36 @@
 //!
 //! **What is cloth.** Each piece is a triangle mesh in world millimetres (the face of a part, or
 //! the shell of a solid), welded by exact position (the importers split the vertices along seams),
-//! with a fabric's parameters: mass per area, stretch stiffness, bending rigidity, damping and the
-//! thickness at which it collides. Its vertices are particles of `mass per area × a third of the
-//! area of their triangles`; an anchored vertex does not move.
+//! with a fabric's parameters: mass per area, stiffness against stretching along its threads and
+//! against shearing between them, bending rigidity, damping and the thickness at which it
+//! collides. Its vertices are particles of `mass per area × a third of the area of their
+//! triangles`; an anchored vertex does not move.
 //!
 //! **Constraints**, every one in the compliant form of XPBD
 //! (`Δλ = (−C − α̃λ) / (Σ wᵢ|∇ᵢC|² + α̃)`, `α̃ = α/h²`, the multiplier starting at zero in each
 //! substep and accumulated over its [`CLOTH_ITERATIONS`] iterations):
 //!
-//! * **stretch**: every edge keeps its rest length, `C = |xᵢ − xⱼ| − L`, compliance `L² / (K A)`
-//!   for a membrane stiffness `K` (N/m) and the edge's share `A` of the area of its triangles;
+//! * **membrane**, orthotropic, per triangle, as in Müller, Chentanez, Kim and Macklin, "Strain
+//!   Based Dynamics" (SCA 2014): the triangle's rest shape in the 2D coordinates of its warp and
+//!   weft (the warp is the fabric's grain direction, world X unless the spec says otherwise,
+//!   projected onto the triangle's rest plane; [`grain`]), the deformation gradient
+//!   `F = [x₁ − x₀, x₂ − x₀] D⁻¹` and its columns `F_u` (along the warp) and `F_v` (the weft); three
+//!   constraints: warp stretch `|F_u| − 1`, weft stretch `|F_v| − 1` and shear `F̂_u · F̂_v` (the
+//!   cosine of the angle between the threads, normalised so that it does not stretch), with
+//!   compliance `1 / (k A)` for the triangle's rest area `A` and a stiffness `k` (N/m): the
+//!   stretch stiffness for the first two, the much lower shear stiffness of a woven fabric for
+//!   the third (its threads scissor long before they stretch: what lets it drape over a dome in
+//!   folds instead of creasing like paper);
 //! * **bending**: every edge between two triangles keeps its rest dihedral angle,
 //!   `C = θ − θ₀`, with `θ = atan2((n̂₁ × n̂₂)·ê, n̂₁·n̂₂)` (no `acos`: it is exact and stable when
 //!   the sheet is flat) and the gradients of Bridson, Marino and Fedkiw, "Simulation of Clothing
-//!   with Folds and Wrinkles" (SCA 2003); the compliance is that of the discrete shells of
-//!   Grinspun, Hirani, Desbrun and Schröder (SCA 2003), `(A₁ + A₂) / (3 B |e|²)` for a bending
-//!   rigidity `B` (N·m);
+//!   with Folds and Wrinkles" (SCA 2003); the stiffness has the form of the discrete shells of
+//!   Grinspun, Hirani, Desbrun and Schröder (SCA 2003), `f B |e|² / (A₁ + A₂)` for a bending
+//!   rigidity `B` (N·m), with the factor `f` ([`BEND_CALIBRATION`]) measured on a sheet of squares
+//!   split along alternating diagonals: bent into a cylinder along its warp it stores `f` times the
+//!   continuum's `½ B κ²` per area ([`Cloth::bending_energy`]), and a cantilever of it, its
+//!   vertices free to settle, measures `B` with `f = 4/3` (Grinspun's `f = 3` is more than twice
+//!   too stiff on it);
 //! * **area** (optional): every triangle keeps its area, `C = |N| − |N₀|` with `N` twice its area
 //!   vector, compliance `4 A₀ / K`;
 //! * **pressure** (optional, a closed shell): the volume it encloses is `pressure × V₀`, one global
@@ -31,12 +45,22 @@
 //! against particle within a self-collision distance through a spatial hash grid rebuilt every
 //! step (Müller, "Ten Minute Physics"; pairs closer than that distance at rest are left out); the
 //! dynamic bodies of the rigid [`World`] it runs with (a ball exactly; a hull by its farthest face
-//! plane; one way: the bodies push the cloth, it does not push them); the floor; and the static
-//! triangles last (a particle that went through a face in the substep goes back to the side it
-//! came from, so a fast particle cannot tunnel through a thin wall; then out to its thickness from
-//! the nearest point of the surface). Friction is Coulomb's at the level of
-//! positions: the tangential motion of a contact in a substep is cancelled while it is under `μ`
-//! times the depth it was pushed out, and cut by that much otherwise.
+//! plane; one way: the bodies push the cloth, it does not push them); the floor; the static
+//! triangles (a particle that went through a face in the substep goes back to the side it came
+//! from, so a fast particle cannot tunnel through a thin wall; then out to its thickness from the
+//! nearest point of the surface); and last the **sharp features** of the static parts and of the
+//! hulls against the cloth's surface, so that a corner or a rim cannot poke through a cloth
+//! triangle between its particles: every vertex of a feature against every cloth triangle
+//! (point–triangle) and every edge of one against every cloth edge (edge–edge), each kept at the
+//! cloth's thickness on the side it was on at the start of the substep (a feature that crossed the
+//! cloth in the substep goes back), the cloth moving alone (the feature does not move) by its
+//! barycentric weights and inverse masses. A feature edge is one where the surface folds by more
+//! than [`FEATURE_ANGLE`], or by enough for a triangle of this cloth to dip into it by a tenth of
+//! the thickness ([`FEATURE_DIP`]), or ends (an open rim); a feature vertex, an end of a feature
+//! edge. The candidates of each step come from a hash grid of the cloth's triangles.
+//! Friction is Coulomb's at the level of positions: the tangential motion of a contact in a
+//! substep is cancelled while it is under `μ` times the depth it was pushed out, and cut by that
+//! much otherwise.
 //!
 //! **Wind** (S4a): each triangle feels the drag of the air moving past it,
 //! `½ ρ C_d A |vₙ| vₙ n̂` with `vₙ` the normal part of the wind relative to the triangle, the wind
@@ -44,7 +68,7 @@
 //! (`rt_sim::noise::curl`) at the triangle's centre, drifting with time.
 //!
 //! **Determinism.** `f32` with IEEE operations, `sqrt` and `fmath` only; every list is built in an
-//! order that depends on the input alone (sorted edges, a hash grid filled and read in particle
+//! order that depends on the input alone (sorted edges, hash grids filled and read in element
 //! order), so a run gives the same bits everywhere, natively and in WebAssembly, whatever the
 //! number of threads the rigid world splits its narrow phase over; [`Cloth::hash`] is the check.
 
@@ -59,15 +83,41 @@ use std::collections::HashMap;
 
 /// The magic number of a cloth spec.
 pub const MAGIC: &[u8; 4] = b"CLT1";
-/// The version this reader understands.
-pub const VERSION: u32 = 1;
+/// The version this simulator writes; it reads this one and version 1 (without the shear and
+/// the warp, which then read as [`V1_SHEAR_SHARE`] of the stretch and [`WARP`]).
+pub const VERSION: u32 = 2;
+/// A version 1 spec's shear stiffness, as a share of its stretch stiffness: that of an isotropic
+/// sheet of Poisson's ratio 0.3, `1 / (2 (1 + ν))`, which is what that version's springs along
+/// every edge (the diagonals too) amounted to.
+pub const V1_SHEAR_SHARE: f32 = 1.0 / 2.6;
+/// The warp direction of a fabric unless its spec gives one: world X.
+pub const WARP: Vec3 = Vec3::new(1.0, 0.0, 0.0);
+/// A triangle whose plane is within this angle of square to the warp direction (`|warp
+/// projected| < sin` of it) takes as its warp the direction `Z × warp` projected instead (world Y
+/// for the default warp).
+pub const WARP_FALLBACK_DEG: f32 = 20.0;
+/// A static edge where the surface folds by more than this (the angle between the normals of its
+/// two triangles, degrees), or by more than [`FEATURE_DIP`] allows, or an edge of only one
+/// triangle, is a sharp feature the cloth's surface collides with (not only its particles); so are
+/// its two vertices.
+pub const FEATURE_ANGLE: f32 = 10.0;
+/// A cloth triangle of side `e` resting with its particles at the thickness `t` over a ridge that
+/// folds by `φ` dips about `e φ / 4` towards it: a ridge is a feature too when that dip would pass
+/// this share of the thinnest cloth's thickness, at the cloth's mean edge (`φ > 4 × share × t /
+/// e`), so that a coarse cloth does not sink into a finely faceted curve either.
+pub const FEATURE_DIP: f32 = 0.1;
 /// Substeps per fixed step of [`STEP`] seconds.
-pub const CLOTH_SUBSTEPS: u32 = 6;
-/// Iterations of the stretch (and area and pressure) constraints per substep; the bending is solved
-/// in the first. One, as "Small Steps" has it, diverged on a fine sheet (64 × 64 squares hanging
-/// from a row blew up whatever the number of substeps, in a bare loop of distance constraints too);
-/// two are stable.
+pub const CLOTH_SUBSTEPS: u32 = 8;
+/// Iterations of every constraint per substep. Bending is solved in each: with fewer, a stiff
+/// fabric (a heavy leather on a sheet of 6 mm triangles) bends visibly more than its rigidity
+/// says, the few iterations of XPBD leaving its constraints softer than their compliance.
 pub const CLOTH_ITERATIONS: u32 = 2;
+/// The factor on the discrete-shell bending stiffness `B |e|² / (A₁ + A₂)`: a sheet of squares
+/// split along alternating diagonals bent into a cylinder along its warp stores `½ B κ²` per
+/// area with the factor 1, but once its vertices settle (its squares fold a little along their
+/// diagonals) it keeps three quarters of that; with `4 / 3` a cantilever of it measures `B`
+/// (Peirce's test, `tests/cloth.rs`).
+pub const BEND_CALIBRATION: f32 = 4.0 / 3.0;
 /// `ClothParams::flags`: the piece collides with itself (and with the other pieces that do).
 pub const FLAG_SELF_COLLISION: u32 = 1;
 /// Density of air, kg/mm³.
@@ -94,8 +144,11 @@ const PER_M2_TO_PER_MM2: f32 = 1.0e-6;
 pub struct ClothParams {
     /// kg/m².
     pub mass_per_area: f32,
-    /// Membrane stiffness against stretching, N/m.
+    /// Membrane stiffness against stretching along the warp and along the weft, N/m.
     pub stretch: f32,
+    /// Membrane stiffness against shearing (the warp and the weft turning towards each other),
+    /// N/m per radian.
+    pub shear: f32,
     /// Bending rigidity, N·m.
     pub bend: f32,
     /// Damping of the particles' velocity, 1/s.
@@ -108,6 +161,8 @@ pub struct ClothParams {
     pub area: f32,
     /// A closed shell encloses this times its rest volume (0: no pressure).
     pub pressure: f32,
+    /// The warp's direction, world (projected onto each triangle's rest plane; [`grain`]).
+    pub warp: Vec3,
     /// [`FLAG_SELF_COLLISION`].
     pub flags: u32,
 }
@@ -117,12 +172,14 @@ impl Default for ClothParams {
         ClothParams {
             mass_per_area: 0.15,
             stretch: 5000.0,
+            shear: 50.0,
             bend: 1.0e-5,
             damping: 1.0,
             thickness: 1.0,
             friction: 0.5,
             area: 0.0,
             pressure: 0.0,
+            warp: WARP,
             flags: FLAG_SELF_COLLISION,
         }
     }
@@ -266,11 +323,12 @@ impl ClothSpec {
     /// Reads a `CLT1` spec:
     ///
     /// ```text
-    /// "CLT1"  u32 version (1)
+    /// "CLT1"  u32 version (2; 1 is read too)
     /// u32 pieces; per piece: u32 vertices, u32 indices, f32 positions[3 × vertices] (world mm),
     ///         u32 indices[], u32 pinned[⌈vertices / 32⌉] (bit v % 32 of word v / 32),
-    ///         f32 mass per area (kg/m²), stretch (N/m), bend (N·m), damping (1/s),
-    ///         thickness (mm), friction, area (N/m, 0 off), pressure (0 off); u32 flags
+    ///         f32 mass per area (kg/m²), stretch (N/m), shear (N/m; not in version 1),
+    ///         bend (N·m), damping (1/s), thickness (mm), friction, area (N/m, 0 off),
+    ///         pressure (0 off), warp[3] (world; not in version 1); u32 flags
     /// u32 statics; per static: u32 vertices, u32 indices, f32 positions[], u32 indices[]
     /// u32 floor (0 none, 1 yes), f32 z, f32 friction
     /// f32 wind[3] (mm/s), f32 gust, f32 gust scale (mm), f32 gust speed (mm/s), u32 seed
@@ -281,9 +339,9 @@ impl ClothSpec {
             return Err("CLT1: not a cloth spec".into());
         }
         let version = r.u32()?;
-        if version != VERSION {
+        if version != VERSION && version != 1 {
             return Err(format!(
-                "CLT1: version {version}, this simulator reads {VERSION}"
+                "CLT1: version {version}, this simulator reads 1 and {VERSION}"
             ));
         }
         let mut spec = ClothSpec::default();
@@ -303,15 +361,26 @@ impl ClothSpec {
                     }
                 }
             }
+            let (mass_per_area, stretch) = (r.f32()?, r.f32()?);
+            let shear = if version == 1 {
+                stretch * V1_SHEAR_SHARE
+            } else {
+                r.f32()?
+            };
+            let (bend, damping, thickness, friction) = (r.f32()?, r.f32()?, r.f32()?, r.f32()?);
+            let (area, pressure) = (r.f32()?, r.f32()?);
+            let warp = if version == 1 { WARP } else { r.vec3()? };
             let params = ClothParams {
-                mass_per_area: r.f32()?,
-                stretch: r.f32()?,
-                bend: r.f32()?,
-                damping: r.f32()?,
-                thickness: r.f32()?,
-                friction: r.f32()?,
-                area: r.f32()?,
-                pressure: r.f32()?,
+                mass_per_area,
+                stretch,
+                shear,
+                bend,
+                damping,
+                thickness,
+                friction,
+                area,
+                pressure,
+                warp,
                 flags: r.u32()?,
             };
             spec.pieces.push(ClothPiece {
@@ -365,12 +434,16 @@ impl ClothSpec {
             for v in [
                 q.mass_per_area,
                 q.stretch,
+                q.shear,
                 q.bend,
                 q.damping,
                 q.thickness,
                 q.friction,
                 q.area,
                 q.pressure,
+                q.warp.x,
+                q.warp.y,
+                q.warp.z,
             ] {
                 put_f32(&mut out, v);
             }
@@ -403,14 +476,18 @@ impl ClothSpec {
     }
 }
 
+/// The orthotropic membrane of one triangle (Strain Based Dynamics).
 #[derive(Clone, Copy, Debug)]
-struct Stretch {
-    a: u32,
-    b: u32,
-    rest: f32,
-    compliance: f32,
-    /// The multiplier, accumulated over the iterations of a substep.
-    lambda: f32,
+struct Membrane {
+    tri: [u32; 3],
+    /// The inverse of the rest shape `D = [p₁ − p₀, p₂ − p₀]` in the triangle's warp and weft
+    /// coordinates, row by row: `F_u = (x₁ − x₀) m₀₀ + (x₂ − x₀) m₁₀`, `F_v = (x₁ − x₀) m₀₁ +
+    /// (x₂ − x₀) m₁₁`.
+    inv: [f32; 4],
+    /// Compliance of the warp, the weft and the shear, `1 / (k A)`.
+    compliance: [f32; 3],
+    /// The multipliers, accumulated over the iterations of a substep.
+    lambda: [f32; 3],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -422,6 +499,9 @@ struct Bend {
     x2: u32,
     x3: u32,
     rest: f32,
+    /// The angle when last solved, followed through ±π (a fold that closes past flat, the cloth
+    /// passing through itself, keeps pushing back the same way instead of flipping).
+    angle: f32,
     compliance: f32,
     lambda: f32,
 }
@@ -465,6 +545,36 @@ pub fn dihedral(x0: Vec3, x1: Vec3, x2: Vec3, x3: Vec3) -> (f32, [Vec3; 4]) {
     (theta, [g0, g1, g2, g3])
 }
 
+/// The warp and weft directions of a triangle of unit normal `n` for a fabric whose warp runs along
+/// `warp` (world): `warp` projected onto the triangle's plane, or, when the plane is within
+/// [`WARP_FALLBACK_DEG`] of square to it, `Z × warp` projected (world Y for the default warp X;
+/// world X for a warp along Z); the weft is `n × warp`. Both unit and in the plane.
+pub fn grain(n: Vec3, warp: Vec3) -> (Vec3, Vec3) {
+    let d = if above(warp.length_squared(), 0.0) {
+        warp.normalize()
+    } else {
+        WARP
+    };
+    let mut u = d - n * n.dot(d);
+    let (s, _) = fmath::sin_cos(WARP_FALLBACK_DEG.to_radians());
+    if u.length_squared() < s * s {
+        let z = Vec3::new(0.0, 0.0, 1.0).cross(d);
+        let alt = if above(z.length_squared(), 1.0e-6) {
+            z
+        } else {
+            WARP
+        };
+        u = alt - n * n.dot(alt);
+    }
+    let u = if above(u.length_squared(), 0.0) {
+        u.normalize()
+    } else {
+        // Only for a degenerate normal: any direction will do.
+        WARP
+    };
+    (u, n.cross(u))
+}
+
 /// The angle `a` brought into (−π, π].
 fn wrap(a: f32) -> f32 {
     let pi = std::f32::consts::PI;
@@ -492,6 +602,134 @@ fn crossing(from: Vec3, to: Vec3, v: &[Vec3; 3], n: Vec3, before: f32) -> Option
     let t = before / span;
     let x = from + (to - from) * t;
     ((closest_on_triangle(x, v[0], v[1], v[2]) - x).length() <= 1.0e-3).then_some(t)
+}
+
+/// Appends to `verts` and `edges` the sharp features of a static mesh: its edges where the surface
+/// folds by more than `fold` radians (the angle between the normals of the two triangles), or that
+/// belong to one triangle or to more than two, and the vertices at their ends. The mesh is welded
+/// by exact position first (the importers split vertices along seams), in index order.
+pub fn sharp_features(
+    positions: &[Vec3],
+    indices: &[u32],
+    fold: f32,
+    verts: &mut Vec<Vec3>,
+    edges: &mut Vec<[Vec3; 2]>,
+) {
+    let mut weld: HashMap<[u32; 3], u32> = HashMap::new();
+    let mut points: Vec<Vec3> = Vec::new();
+    let mut id = Vec::with_capacity(positions.len());
+    for &p in positions {
+        if !p.is_finite() {
+            id.push(u32::MAX);
+            continue;
+        }
+        let next = points.len() as u32;
+        let i = *weld.entry(key(p)).or_insert(next);
+        if i == next {
+            points.push(p);
+        }
+        id.push(i);
+    }
+    let mut tris: Vec<([u32; 3], Vec3)> = Vec::new();
+    for t in indices.chunks_exact(3) {
+        let Some(ids) = t
+            .iter()
+            .map(|&v| id.get(v as usize).copied().filter(|i| *i != u32::MAX))
+            .collect::<Option<Vec<u32>>>()
+        else {
+            continue;
+        };
+        let ids = [ids[0], ids[1], ids[2]];
+        if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
+            continue;
+        }
+        let [a, b, c] = ids.map(|i| points[i as usize]);
+        let n = (b - a).cross(c - a);
+        if !above(n.length(), 0.0) {
+            continue;
+        }
+        tris.push((ids, n.normalize()));
+    }
+    // (low, high, triangle, whether the triangle runs low → high).
+    let mut sides: Vec<(u32, u32, u32, bool)> = Vec::with_capacity(tris.len() * 3);
+    for (k, (t, _)) in tris.iter().enumerate() {
+        for s in 0..3 {
+            let (a, b) = (t[s], t[(s + 1) % 3]);
+            sides.push((a.min(b), a.max(b), k as u32, a < b));
+        }
+    }
+    sides.sort_unstable();
+    let (sin_half, cos_half) = fmath::sin_cos(0.5 * fold);
+    let cos_fold = cos_half * cos_half - sin_half * sin_half;
+    let mut corner = vec![false; points.len()];
+    let mut i = 0;
+    while i < sides.len() {
+        let mut j = i + 1;
+        while j < sides.len() && sides[j].0 == sides[i].0 && sides[j].1 == sides[i].1 {
+            j += 1;
+        }
+        let sharp = if j - i == 2 {
+            let (n1, n2) = (tris[sides[i].2 as usize].1, tris[sides[i + 1].2 as usize].1);
+            // Wound the same way along the edge, one of them is the other way round.
+            let n2 = if sides[i].3 == sides[i + 1].3 {
+                -n2
+            } else {
+                n2
+            };
+            n1.dot(n2) < cos_fold
+        } else {
+            true
+        };
+        if sharp {
+            let (a, b) = (sides[i].0, sides[i].1);
+            edges.push([points[a as usize], points[b as usize]]);
+            corner[a as usize] = true;
+            corner[b as usize] = true;
+        }
+        i = j;
+    }
+    for (p, c) in points.iter().zip(&corner) {
+        if *c {
+            verts.push(*p);
+        }
+    }
+}
+
+/// The parameters `(s, t)` of the closest points of the lines `p₀ + s (p₁ − p₀)` and
+/// `q₀ + t (q₁ − q₀)`, and the unit normal `(p₁ − p₀) × (q₁ − q₀)`; none when they are within a
+/// degree of parallel (or a segment has no length).
+fn line_closest(p0: Vec3, p1: Vec3, q0: Vec3, q1: Vec3) -> Option<(f32, f32, Vec3)> {
+    let (d1, d2, r) = (p1 - p0, q1 - q0, p0 - q0);
+    let n = d1.cross(d2);
+    let (a, e) = (d1.length_squared(), d2.length_squared());
+    let nn = n.length_squared();
+    // sin² of the angle between them under (1°)².
+    if !(above(a, 0.0) && above(e, 0.0)) || nn < 3.0e-4 * a * e {
+        return None;
+    }
+    let (b, c, f) = (d1.dot(d2), d1.dot(r), d2.dot(r));
+    let den = a * e - b * b;
+    let s = (b * f - c * e) / den;
+    let t = (a * f - b * c) / den;
+    Some((s, t, n * (1.0 / nn.sqrt())))
+}
+
+fn contains(b: &Aabb, p: Vec3) -> bool {
+    b.min.x <= p.x
+        && p.x <= b.max.x
+        && b.min.y <= p.y
+        && p.y <= b.max.y
+        && b.min.z <= p.z
+        && p.z <= b.max.z
+}
+
+fn overlap(a: &Aabb, b: &Aabb) -> bool {
+    a.min.x <= b.max.x
+        && b.min.x <= a.max.x
+        && a.min.y <= b.max.y
+        && b.min.y <= a.max.y
+        && a.min.z <= b.max.z
+        && b.min.z <= a.max.z
 }
 
 /// Weld key of a position: its bits (with −0 as +0).
@@ -522,11 +760,25 @@ pub struct Cloth {
     /// For each vertex of each piece, in order, its particle.
     vertex_particle: Vec<u32>,
     tris: Vec<[u32; 3]>,
-    stretch: Vec<Stretch>,
+    /// The edges of the cloth, once each (lower particle first), and the three of each triangle.
+    edges: Vec<[u32; 2]>,
+    tri_edges: Vec<[u32; 3]>,
+    membrane: Vec<Membrane>,
     bend: Vec<Bend>,
     area: Vec<AreaConstraint>,
     volumes: Vec<Volume>,
     statics: StaticMesh,
+    /// The sharp features of the static parts (world mm): vertices and edges.
+    static_verts: Vec<Vec3>,
+    static_edges: Vec<[Vec3; 2]>,
+    /// The features of this step: the static ones and those of the hulls, each with the body it
+    /// belongs to (`u32::MAX`: static).
+    feat_verts: Vec<(Vec3, u32)>,
+    feat_edges: Vec<([Vec3; 2], u32)>,
+    /// (feature vertex, cloth triangle) and (feature edge, cloth edge) pairs that may touch in
+    /// this step.
+    vf: Vec<(u32, u32)>,
+    ee: Vec<(u32, u32)>,
     floor: Option<(f32, f32)>,
     wind: ClothWind,
     /// The wind each triangle feels in this step (mm/s).
@@ -563,11 +815,19 @@ impl Cloth {
             piece_of: Vec::new(),
             vertex_particle: Vec::new(),
             tris: Vec::new(),
-            stretch: Vec::new(),
+            edges: Vec::new(),
+            tri_edges: Vec::new(),
+            membrane: Vec::new(),
             bend: Vec::new(),
             area: Vec::new(),
             volumes: Vec::new(),
             statics: StaticMesh::default(),
+            static_verts: Vec::new(),
+            static_edges: Vec::new(),
+            feat_verts: Vec::new(),
+            feat_edges: Vec::new(),
+            vf: Vec::new(),
+            ee: Vec::new(),
             floor: spec.floor,
             wind: spec.wind,
             tri_wind: Vec::new(),
@@ -581,11 +841,19 @@ impl Cloth {
             pairs: Vec::new(),
             query: Vec::new(),
         };
-        for s in &spec.statics {
-            c.statics.add(&s.positions, &s.indices, 0.5, 0.0);
-        }
         for (k, piece) in spec.pieces.iter().enumerate() {
             c.add_piece(k as u32, piece);
+        }
+        let fold = c.feature_fold();
+        for s in &spec.statics {
+            c.statics.add(&s.positions, &s.indices, 0.5, 0.0);
+            sharp_features(
+                &s.positions,
+                &s.indices,
+                fold,
+                &mut c.static_verts,
+                &mut c.static_edges,
+            );
         }
         c.tri_wind = vec![Vec3::ZERO; c.tris.len()];
         c
@@ -653,6 +921,32 @@ impl Cloth {
             self.friction.push(p.friction.max(0.0));
             self.damping.push(p.damping.max(0.0));
         }
+        // The membrane of each triangle, in its rest frame of warp and weft.
+        let stiff = p.stretch.max(1.0e-6);
+        let shear = p.shear.max(1.0e-6);
+        let tri_area = |t: &[u32; 3], x: &[Vec3]| {
+            let [a, b, c] = t.map(|i| x[i as usize]);
+            0.5 * (b - a).cross(c - a).length()
+        };
+        for t in &tris {
+            let [x0, x1, x2] = t.map(|i| self.x[i as usize]);
+            let nn = (x1 - x0).cross(x2 - x0);
+            let a = 0.5 * nn.length();
+            let (u, v) = grain(nn.normalize(), p.warp);
+            let (e1, e2) = (x1 - x0, x2 - x0);
+            let (p1, p2) = ((e1.dot(u), e1.dot(v)), (e2.dot(u), e2.dot(v)));
+            let det = p1.0 * p2.1 - p2.0 * p1.1;
+            if !above(det.abs(), 0.0) {
+                continue;
+            }
+            let inv = [p2.1 / det, -p2.0 / det, -p1.1 / det, p1.0 / det];
+            self.membrane.push(Membrane {
+                tri: *t,
+                inv,
+                compliance: [1.0 / (stiff * a), 1.0 / (stiff * a), 1.0 / (shear * a)],
+                lambda: [0.0; 3],
+            });
+        }
         // The edges, sorted, with the triangles on each side.
         let tri0 = self.tris.len() as u32;
         let mut edges: Vec<(u32, u32, u32, u32)> = Vec::with_capacity(tris.len() * 3);
@@ -663,12 +957,8 @@ impl Cloth {
             }
         }
         edges.sort_unstable();
-        let stiff = p.stretch.max(1.0e-6);
         let bend = p.bend.max(0.0) * NM_TO_KG_MM2;
-        let tri_area = |t: &[u32; 3], x: &[Vec3]| {
-            let [a, b, c] = t.map(|i| x[i as usize]);
-            0.5 * (b - a).cross(c - a).length()
-        };
+        let mut tri_edges = vec![[u32::MAX; 3]; tris.len()];
         let mut closed = !edges.is_empty();
         let mut rest_sum = 0.0f32;
         let mut rest_n = 0u32;
@@ -679,22 +969,17 @@ impl Cloth {
                 j += 1;
             }
             let (a, b) = (edges[i].0, edges[i].1);
-            let rest = (self.x[a as usize] - self.x[b as usize]).length();
-            let mut share = 0.0f32;
+            let id = self.edges.len() as u32;
+            self.edges.push([a, b]);
             for e in &edges[i..j] {
-                share += tri_area(&tris[(e.2 - tri0) as usize], &self.x) / 3.0;
+                let slots = &mut tri_edges[(e.2 - tri0) as usize];
+                if let Some(s) = slots.iter_mut().find(|s| **s == u32::MAX) {
+                    *s = id;
+                }
             }
-            if above(rest, 0.0) {
-                self.stretch.push(Stretch {
-                    a,
-                    b,
-                    rest,
-                    compliance: rest * rest / (stiff * share.max(1.0e-12)),
-                    lambda: 0.0,
-                });
-                rest_sum += rest;
-                rest_n += 1;
-            }
+            let rest = (self.x[a as usize] - self.x[b as usize]).length();
+            rest_sum += rest;
+            rest_n += 1;
             if j - i != 2 {
                 closed = false;
             }
@@ -709,19 +994,21 @@ impl Cloth {
                 let (theta, _) = dihedral(pos(x0), pos(x1), pos(x2), pos(x3));
                 let areas =
                     tri_area(&t1, &self.x) + tri_area(&tris[(e2.2 - tri0) as usize], &self.x);
-                let k_theta = bend * 3.0 * rest * rest / areas.max(1.0e-12);
+                let k_theta = BEND_CALIBRATION * bend * rest * rest / areas.max(1.0e-12);
                 self.bend.push(Bend {
                     x0,
                     x1,
                     x2,
                     x3,
                     rest: theta,
+                    angle: theta,
                     compliance: 1.0 / k_theta.max(1.0e-30),
                     lambda: 0.0,
                 });
             }
             i = j;
         }
+        self.tri_edges.extend_from_slice(&tri_edges);
         if p.area > 0.0 {
             for (ti, t) in tris.iter().enumerate() {
                 let a0 = tri_area(t, &self.x);
@@ -755,6 +1042,23 @@ impl Cloth {
                 });
             }
         }
+    }
+
+    /// The fold (radians) beyond which a static edge is a feature for this cloth:
+    /// [`FEATURE_ANGLE`], or less for a thin cloth of long edges ([`FEATURE_DIP`]).
+    fn feature_fold(&self) -> f32 {
+        let thinnest = self.thickness.iter().fold(f32::INFINITY, |m, t| m.min(*t));
+        let mut sum = 0.0f32;
+        for [a, b] in &self.edges {
+            sum += (self.rest[*a as usize] - self.rest[*b as usize]).length();
+        }
+        let mean = sum / self.edges.len().max(1) as f32;
+        let dip = if above(mean, 0.0) && thinnest.is_finite() {
+            4.0 * FEATURE_DIP * thinnest / mean
+        } else {
+            f32::INFINITY
+        };
+        FEATURE_ANGLE.to_radians().min(dip)
     }
 
     fn volume_of(&self, tris: &[u32]) -> f32 {
@@ -812,6 +1116,44 @@ impl Cloth {
         &self.tris
     }
 
+    /// The bending energy the cloth's hinges store with its particles at `x` (one per particle),
+    /// kg·mm²/s² (µJ): `Σ ½ (θ − θ₀)² / α`.
+    pub fn bending_energy(&self, x: &[Vec3]) -> f32 {
+        let mut e = 0.0f32;
+        for c in &self.bend {
+            let p = |i: u32| x[i as usize];
+            let (theta, _) = dihedral(p(c.x0), p(c.x1), p(c.x2), p(c.x3));
+            let d = wrap(theta - c.rest);
+            e += 0.5 * d * d / c.compliance;
+        }
+        e
+    }
+
+    /// The membrane energy the cloth's triangles store with its particles at `x`, kg·mm²/s²:
+    /// `Σ ½ C² / α` over the warp, weft and shear of each.
+    pub fn membrane_energy(&self, x: &[Vec3]) -> f32 {
+        let mut e = 0.0f32;
+        for c in &self.membrane {
+            let [x0, x1, x2] = c.tri.map(|i| x[i as usize]);
+            let [m00, m01, m10, m11] = c.inv;
+            let (e1, e2) = (x1 - x0, x2 - x0);
+            let (fu, fv) = (e1 * m00 + e2 * m10, e1 * m01 + e2 * m11);
+            let (lu, lv) = (fu.length(), fv.length());
+            if !(above(lu, 0.0) && above(lv, 0.0)) {
+                continue;
+            }
+            let cs = fu.dot(fv) / (lu * lv);
+            for (value, compliance) in [
+                (lu - 1.0, c.compliance[0]),
+                (lv - 1.0, c.compliance[1]),
+                (cs, c.compliance[2]),
+            ] {
+                e += 0.5 * value * value / compliance;
+            }
+        }
+        e
+    }
+
     /// FNV-1a (32 bits) over the little-endian bytes of every particle's position.
     pub fn hash(&self) -> u32 {
         let mut h: u32 = 0x811c_9dc5;
@@ -862,8 +1204,8 @@ impl Cloth {
                 self.x[i] += v * h;
             }
             let alpha = 1.0 / (h * h);
-            for c in self.stretch.iter_mut() {
-                c.lambda = 0.0;
+            for c in self.membrane.iter_mut() {
+                c.lambda = [0.0; 3];
             }
             for c in self.bend.iter_mut() {
                 c.lambda = 0.0;
@@ -871,13 +1213,9 @@ impl Cloth {
             for c in self.area.iter_mut() {
                 c.lambda = 0.0;
             }
-            for it in 0..CLOTH_ITERATIONS {
-                self.solve_stretch(alpha);
-                // Bending is soft next to the stretch: once per substep is enough (and it is the
-                // dearest of the constraints).
-                if it == 0 {
-                    self.solve_bend(alpha);
-                }
+            for _ in 0..CLOTH_ITERATIONS {
+                self.solve_membrane(alpha);
+                self.solve_bend(alpha);
                 self.solve_area(alpha);
                 self.solve_volumes();
             }
@@ -889,6 +1227,7 @@ impl Cloth {
             }
             self.collide_floor();
             self.collide_statics();
+            self.collide_features(world, h);
             let inv = 1.0 / h;
             for i in 0..n {
                 if self.w[i] == 0.0 {
@@ -966,6 +1305,167 @@ impl Cloth {
             self.body_cand.sort_unstable();
         }
         self.gather_pairs();
+        self.gather_features(world);
+    }
+
+    /// The features of this step (the static ones and the hulls' where they are now) and the
+    /// cloth triangles and edges each may touch: the moving triangles, each in a box that holds its
+    /// particles' reach in the step, in a hash grid of cells as big as the biggest box (by the
+    /// cell of its low corner); a feature vertex looks in the eight cells below it, a feature edge,
+    /// cut in pieces no longer than a cell, in the 27 around the low corner of each.
+    fn gather_features(&mut self, world: Option<&World>) {
+        self.feat_verts.clear();
+        self.feat_edges.clear();
+        self.vf.clear();
+        self.ee.clear();
+        self.feat_verts
+            .extend(self.static_verts.iter().map(|p| (*p, u32::MAX)));
+        self.feat_edges
+            .extend(self.static_edges.iter().map(|e| (*e, u32::MAX)));
+        if let Some(world) = world {
+            for b in 0..world.body_count() as u32 {
+                let Some(c) = world.collider(b) else { continue };
+                let Shape::Hull(hull) = c.shape else {
+                    continue;
+                };
+                let at = |v: Vec3| c.center + c.rotation.rotate(v);
+                self.feat_verts
+                    .extend(hull.vertices.iter().map(|v| (at(*v), b)));
+                for e in &hull.edges {
+                    let (a, z) = (hull.vertices[e.a as usize], hull.vertices[e.b as usize]);
+                    self.feat_edges.push(([at(a), at(z)], b));
+                }
+            }
+        }
+        if self.feat_verts.is_empty() && self.feat_edges.is_empty() {
+            return;
+        }
+        let reach = |c: &Cloth, i: usize| {
+            c.v[i].length() * STEP * 1.5 + GRAVITY * STEP * STEP + c.thickness[i] + 1.0
+        };
+        let mut boxes: Vec<(u32, Aabb)> = Vec::new();
+        let mut size = 0.0f32;
+        let mut all = Aabb::EMPTY;
+        for (k, t) in self.tris.iter().enumerate() {
+            if t.iter().all(|&i| self.w[i as usize] == 0.0) {
+                continue;
+            }
+            let mut b = Aabb::EMPTY;
+            for &i in t {
+                let (p, r) = (self.x[i as usize], reach(self, i as usize));
+                b = b.union(Aabb::new(p - Vec3::splat(r), p + Vec3::splat(r)));
+            }
+            let e = b.max - b.min;
+            size = size.max(e.x).max(e.y).max(e.z);
+            all = all.union(b);
+            boxes.push((k as u32, b));
+        }
+        if boxes.is_empty() || !(size.is_finite() && above(size, 0.0)) {
+            return;
+        }
+        let table = (2 * boxes.len()).next_power_of_two();
+        let cell = |p: Vec3| {
+            [
+                (p.x / size).floor() as i32,
+                (p.y / size).floor() as i32,
+                (p.z / size).floor() as i32,
+            ]
+        };
+        let slot = |c: [i32; 3]| {
+            let h = (c[0] as u32).wrapping_mul(92_837_111)
+                ^ (c[1] as u32).wrapping_mul(689_287_499)
+                ^ (c[2] as u32).wrapping_mul(283_923_481);
+            (h as usize) & (table - 1)
+        };
+        let slots: Vec<usize> = boxes.iter().map(|(_, b)| slot(cell(b.min))).collect();
+        let mut start = vec![0u32; table + 1];
+        for &sl in &slots {
+            start[sl + 1] += 1;
+        }
+        for k in 0..table {
+            start[k + 1] += start[k];
+        }
+        let mut fill = start.clone();
+        let mut cells = vec![0u32; boxes.len()];
+        for (k, &sl) in slots.iter().enumerate() {
+            cells[fill[sl] as usize] = k as u32;
+            fill[sl] += 1;
+        }
+        let around = |c: [i32; 3], lo: i32, near: &mut Vec<u32>| {
+            for dx in lo..=1 {
+                for dy in lo..=1 {
+                    for dz in lo..=1 {
+                        let sl = slot([c[0] + dx, c[1] + dy, c[2] + dz]);
+                        near.extend_from_slice(&cells[start[sl] as usize..start[sl + 1] as usize]);
+                    }
+                }
+            }
+        };
+        let mut near: Vec<u32> = Vec::new();
+        for (fv, &(p, _)) in self.feat_verts.iter().enumerate() {
+            if !contains(&all, p) {
+                continue;
+            }
+            near.clear();
+            let c = cell(p);
+            for dx in -1..=0 {
+                for dy in -1..=0 {
+                    for dz in -1..=0 {
+                        let sl = slot([c[0] + dx, c[1] + dy, c[2] + dz]);
+                        near.extend_from_slice(&cells[start[sl] as usize..start[sl + 1] as usize]);
+                    }
+                }
+            }
+            near.sort_unstable();
+            near.dedup();
+            for &k in &near {
+                let (t, b) = boxes[k as usize];
+                if contains(&b, p) {
+                    self.vf.push((fv as u32, t));
+                }
+            }
+        }
+        for (fe, &([a, z], _)) in self.feat_edges.iter().enumerate() {
+            if !overlap(&all, &Aabb::new(a.min(z), a.max(z))) {
+                continue;
+            }
+            let pieces = (((z - a).length() / size).ceil() as u32).clamp(1, 1 << 16);
+            near.clear();
+            for k in 0..pieces {
+                let p0 = a + (z - a) * (k as f32 / pieces as f32);
+                let p1 = a + (z - a) * ((k + 1) as f32 / pieces as f32);
+                let piece = Aabb::new(p0.min(p1), p0.max(p1));
+                if !overlap(&all, &piece) {
+                    continue;
+                }
+                let first = near.len();
+                around(cell(piece.min), -1, &mut near);
+                // Only the boxes that meet this piece.
+                let mut keep = first;
+                for q in first..near.len() {
+                    let k = near[q];
+                    if overlap(&boxes[k as usize].1, &piece) {
+                        near[keep] = k;
+                        keep += 1;
+                    }
+                }
+                near.truncate(keep);
+            }
+            near.sort_unstable();
+            near.dedup();
+            for &k in &near {
+                let t = boxes[k as usize].0;
+                for &e in &self.tri_edges[t as usize] {
+                    if e != u32::MAX {
+                        self.ee.push((fe as u32, e));
+                    }
+                }
+            }
+        }
+        self.vf.sort_unstable();
+        self.vf.dedup();
+        self.ee.sort_unstable();
+        self.ee.dedup();
     }
 
     /// The self-collision pairs of this step, through a hash grid of the particles.
@@ -1048,7 +1548,7 @@ impl Cloth {
                 if (self.x[i] - self.x[ju]).length_squared() >= reach * reach {
                     continue;
                 }
-                // Close at rest: neighbours of the same piece, which the stretch keeps apart.
+                // Close at rest: neighbours of the same piece, which the membrane keeps apart.
                 if self.piece_of[i] == self.piece_of[ju]
                     && (self.rest[i] - self.rest[ju]).length_squared() < d * d
                 {
@@ -1104,25 +1604,50 @@ impl Cloth {
         }
     }
 
-    fn solve_stretch(&mut self, alpha: f32) {
-        for k in 0..self.stretch.len() {
-            let c = self.stretch[k];
-            let (a, b) = (c.a as usize, c.b as usize);
-            let (wa, wb) = (self.w[a], self.w[b]);
-            if wa + wb == 0.0 {
+    /// The membrane's three constraints of each triangle in turn: warp, weft, shear.
+    fn solve_membrane(&mut self, alpha: f32) {
+        for k in 0..self.membrane.len() {
+            let c = self.membrane[k];
+            let ids = c.tri.map(|i| i as usize);
+            let ws = ids.map(|i| self.w[i]);
+            if ws[0] + ws[1] + ws[2] == 0.0 {
                 continue;
             }
-            let d = self.x[a] - self.x[b];
-            let len = d.length();
-            if !above(len, 0.0) {
-                continue;
+            let [m00, m01, m10, m11] = c.inv;
+            for j in 0..3 {
+                let x0 = self.x[ids[0]];
+                let (e1, e2) = (self.x[ids[1]] - x0, self.x[ids[2]] - x0);
+                let (fu, fv) = (e1 * m00 + e2 * m10, e1 * m01 + e2 * m11);
+                let (lu, lv) = (fu.length(), fv.length());
+                if !(above(lu, 0.0) && above(lv, 0.0)) {
+                    break;
+                }
+                let (uh, vh) = (fu * (1.0 / lu), fv * (1.0 / lv));
+                let (value, g1, g2) = match j {
+                    0 => (lu - 1.0, uh * m00, uh * m10),
+                    1 => (lv - 1.0, vh * m01, vh * m11),
+                    _ => {
+                        let cs = uh.dot(vh);
+                        let du = (vh - uh * cs) * (1.0 / lu);
+                        let dv = (uh - vh * cs) * (1.0 / lv);
+                        (cs, du * m00 + dv * m01, du * m10 + dv * m11)
+                    }
+                };
+                let g = [-(g1 + g2), g1, g2];
+                let at = c.compliance[j] * alpha;
+                let mut sum = at;
+                for q in 0..3 {
+                    sum += ws[q] * g[q].length_squared();
+                }
+                if !above(sum, 0.0) {
+                    continue;
+                }
+                let dl = (-value - at * self.membrane[k].lambda[j]) / sum;
+                self.membrane[k].lambda[j] += dl;
+                for q in 0..3 {
+                    self.x[ids[q]] += g[q] * (dl * ws[q]);
+                }
             }
-            let at = c.compliance * alpha;
-            let dl = (-(len - c.rest) - at * c.lambda) / (wa + wb + at);
-            self.stretch[k].lambda += dl;
-            let n = d * (dl / len);
-            self.x[a] += n * wa;
-            self.x[b] -= n * wb;
         }
     }
 
@@ -1148,7 +1673,9 @@ impl Cloth {
             if !above(sum, 0.0) {
                 continue;
             }
-            let dl = (-wrap(theta - c.rest) - at * c.lambda) / sum;
+            let angle = c.angle + wrap(theta - c.angle);
+            self.bend[k].angle = angle;
+            let dl = (-(angle - c.rest) - at * c.lambda) / sum;
             self.bend[k].lambda += dl;
             for j in 0..4 {
                 self.x[ids[j]] += g[j] * (dl * ws[j]);
@@ -1325,6 +1852,143 @@ impl Cloth {
         }
     }
 
+    /// Friction at a contact point that is the combination `bary` of the particles `ids`, pushed
+    /// `depth` along the unit `n`, against a surface that moved `surface` in this substep: as
+    /// [`Cloth::contact`]'s, the tangential correction shared by weight and inverse mass.
+    fn friction_at(&mut self, ids: &[usize], bary: &[f32], n: Vec3, depth: f32, surface: Vec3) {
+        let mut mu = 0.0f32;
+        let mut d = Vec3::ZERO;
+        let mut sum = 0.0f32;
+        for (j, &i) in ids.iter().enumerate() {
+            d += (self.x[i] - self.prev[i]) * bary[j];
+            sum += self.w[i] * bary[j] * bary[j];
+            mu = mu.max(self.friction[i]);
+        }
+        if !(above(mu, 0.0) && above(sum, 0.0)) {
+            return;
+        }
+        let d = d - surface;
+        let t = d - n * d.dot(n);
+        let tl = t.length();
+        if !above(tl, 0.0) {
+            return;
+        }
+        let k = if tl <= mu * depth {
+            1.0
+        } else {
+            mu * depth / tl
+        };
+        for (j, &i) in ids.iter().enumerate() {
+            self.x[i] -= t * (k * self.w[i] * bary[j] / sum);
+        }
+    }
+
+    /// How far the surface of body `body` (`u32::MAX`: static) moves at `p` in a substep of `h`.
+    fn feature_motion(world: Option<&World>, body: u32, p: Vec3, h: f32) -> Vec3 {
+        match world.and_then(|w| w.collider(body)) {
+            Some(c) if body != u32::MAX => (c.velocity + c.spin.cross(p - c.center)) * h,
+            _ => Vec3::ZERO,
+        }
+    }
+
+    /// The sharp features against the cloth's surface: each feature vertex out of each cloth
+    /// triangle it is over (within the triangle), each feature edge out of each cloth edge it
+    /// passes (within both), to the thickness on the side it was at the start of the substep;
+    /// an edge that crossed is put back only if it passed within both at the start too (else it
+    /// went round an end, which the vertex there answers for).
+    fn collide_features(&mut self, world: Option<&World>, h: f32) {
+        for k in 0..self.vf.len() {
+            let (fv, t) = self.vf[k];
+            let (p, body) = self.feat_verts[fv as usize];
+            let ids = self.tris[t as usize].map(|i| i as usize);
+            let ws = ids.map(|i| self.w[i]);
+            let [a0, b0, c0] = ids.map(|i| self.prev[i]);
+            let n0 = (b0 - a0).cross(c0 - a0);
+            if !above(n0.length_squared(), 0.0) {
+                continue;
+            }
+            let side = if (p - a0).dot(n0) >= 0.0 { 1.0 } else { -1.0 };
+            let [a, b, c] = ids.map(|i| self.x[i]);
+            let n = (b - a).cross(c - a);
+            let nl = n.length();
+            if !above(nl, 0.0) || n.dot(n0) <= 0.0 {
+                continue;
+            }
+            let n = n * (1.0 / nl);
+            let th = ids.iter().fold(0.0f32, |m, &i| m.max(self.thickness[i]));
+            let d = side * (p - a).dot(n);
+            if d >= th {
+                continue;
+            }
+            let (e1, e2, q) = (b - a, c - a, p - a);
+            let (d00, d01, d11) = (e1.dot(e1), e1.dot(e2), e2.dot(e2));
+            let (d20, d21) = (q.dot(e1), q.dot(e2));
+            let den = d00 * d11 - d01 * d01;
+            if !above(den, 0.0) {
+                continue;
+            }
+            let v = (d11 * d20 - d01 * d21) / den;
+            let w = (d00 * d21 - d01 * d20) / den;
+            let bary = [1.0 - v - w, v, w];
+            if bary.iter().any(|x| *x < 0.0) {
+                continue;
+            }
+            let sum: f32 = (0..3).map(|j| ws[j] * bary[j] * bary[j]).sum();
+            if !above(sum, 0.0) {
+                continue;
+            }
+            // The cloth goes away from the feature.
+            let dir = n * -side;
+            let depth = th - d;
+            for j in 0..3 {
+                self.x[ids[j]] += dir * (ws[j] * bary[j] * depth / sum);
+            }
+            let surface = Self::feature_motion(world, body, p, h);
+            self.friction_at(&ids, &bary, dir, depth, surface);
+        }
+        for k in 0..self.ee.len() {
+            let (fe, e) = self.ee[k];
+            let ([q0, q1], body) = self.feat_edges[fe as usize];
+            let [ia, ib] = self.edges[e as usize].map(|i| i as usize);
+            let (wa, wb) = (self.w[ia], self.w[ib]);
+            if wa + wb == 0.0 {
+                continue;
+            }
+            let (pa0, pb0) = (self.prev[ia], self.prev[ib]);
+            let Some((s0, t0, n0)) = line_closest(pa0, pb0, q0, q1) else {
+                continue;
+            };
+            let unit = |x: f32| (0.0..=1.0).contains(&x);
+            let within = unit(s0) && unit(t0);
+            let off = ((pa0 + (pb0 - pa0) * s0) - (q0 + (q1 - q0) * t0)).dot(n0);
+            let side = if off >= 0.0 { 1.0 } else { -1.0 };
+            let (pa, pb) = (self.x[ia], self.x[ib]);
+            let Some((s1, t1, n1)) = line_closest(pa, pb, q0, q1) else {
+                continue;
+            };
+            if !(unit(s1) && unit(t1)) {
+                continue;
+            }
+            let n1 = if n1.dot(n0) < 0.0 { -n1 } else { n1 };
+            let d = side * ((pa + (pb - pa) * s1) - (q0 + (q1 - q0) * t1)).dot(n1);
+            let th = self.thickness[ia].max(self.thickness[ib]);
+            if d >= th || (d < 0.0 && !within) {
+                continue;
+            }
+            let bary = [1.0 - s1, s1];
+            let sum = wa * bary[0] * bary[0] + wb * bary[1] * bary[1];
+            if !above(sum, 0.0) {
+                continue;
+            }
+            let dir = n1 * side;
+            let depth = th - d;
+            self.x[ia] += dir * (wa * bary[0] * depth / sum);
+            self.x[ib] += dir * (wb * bary[1] * depth / sum);
+            let surface = Self::feature_motion(world, body, q0 + (q1 - q0) * t1, h);
+            self.friction_at(&[ia, ib], &bary, dir, depth, surface);
+        }
+    }
+
     fn collide_bodies(&mut self, world: &World, h: f32) {
         for k in 0..self.body_cand.len() {
             let (i, b) = self.body_cand[k];
@@ -1495,6 +2159,159 @@ mod tests {
         let mut up = flat;
         up[2].z = 0.1;
         assert!(f(up) < 0.0);
+    }
+
+    /// A sheet of `n × n` squares of `side` mm (split along alternating diagonals), of `params`.
+    fn sheet(n: u32, side: f32, params: ClothParams) -> Cloth {
+        let mut positions = Vec::new();
+        for j in 0..=n {
+            for i in 0..=n {
+                positions.push(Vec3::new(i as f32 * side, j as f32 * side, 0.0));
+            }
+        }
+        let at = |i: u32, j: u32| j * (n + 1) + i;
+        let mut indices = Vec::new();
+        for j in 0..n {
+            for i in 0..n {
+                let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+                if (i + j) % 2 == 0 {
+                    indices.extend_from_slice(&[a, b, c, a, c, d]);
+                } else {
+                    indices.extend_from_slice(&[a, b, d, b, c, d]);
+                }
+            }
+        }
+        let count = positions.len();
+        Cloth::new(&ClothSpec {
+            pieces: vec![ClothPiece {
+                positions,
+                indices,
+                pinned: vec![false; count],
+                params,
+            }],
+            ..ClothSpec::default()
+        })
+    }
+
+    #[test]
+    fn the_bending_stores_the_calibrated_share_of_the_continuum_on_a_cylinder() {
+        // Bent along its warp (about Y) and along its weft (about X) into a cylinder of radius R,
+        // the alternating-diagonal sheet stores `BEND_CALIBRATION × ½ B κ²` over the area its
+        // hinges span: every hinge across the bend turns by `κ a`, those along it not at all.
+        let (n, side, r) = (40u32, 2.0f32, 300.0f32);
+        let params = ClothParams {
+            bend: 1.0e-5,
+            ..ClothParams::default()
+        };
+        let c = sheet(n, side, params);
+        let flat: Vec<Vec3> = (0..c.particle_count()).map(|i| c.particle(i)).collect();
+        assert_eq!(c.bending_energy(&flat), 0.0);
+        let b = params.bend * NM_TO_KG_MM2;
+        let spanned = (n - 1) as f32 * side * n as f32 * side;
+        let continuum = 0.5 * b / (r * r) * spanned;
+        let bent = |along_x: bool| -> Vec<Vec3> {
+            flat.iter()
+                .map(|p| {
+                    let s = if along_x { p.x } else { p.y };
+                    let (sn, cs) = fmath::sin_cos(s / r);
+                    let (u, z) = (r * sn, r * (1.0 - cs));
+                    if along_x {
+                        Vec3::new(u, p.y, z)
+                    } else {
+                        Vec3::new(p.x, u, z)
+                    }
+                })
+                .collect()
+        };
+        for along_x in [true, false] {
+            let ratio = c.bending_energy(&bent(along_x)) / continuum;
+            assert!(
+                (ratio / BEND_CALIBRATION - 1.0).abs() < 0.01,
+                "bent along {}: {ratio} of the continuum",
+                if along_x { "the warp" } else { "the weft" }
+            );
+        }
+    }
+
+    #[test]
+    fn the_membrane_stores_its_stiffness_along_the_warp_the_weft_and_in_shear() {
+        let params = ClothParams {
+            stretch: 4000.0,
+            shear: 60.0,
+            ..ClothParams::default()
+        };
+        let (n, side) = (8u32, 5.0f32);
+        let c = sheet(n, side, params);
+        let flat: Vec<Vec3> = (0..c.particle_count()).map(|i| c.particle(i)).collect();
+        assert!(c.membrane_energy(&flat) < 1.0e-6);
+        let area = (n as f32 * side).powi(2);
+        let moved = |f: &dyn Fn(Vec3) -> Vec3| flat.iter().map(|p| f(*p)).collect::<Vec<_>>();
+        let (eps, gamma) = (0.01f32, 0.02f32);
+        // N/m is kg/s²: ½ k ε² A in kg·mm²/s².
+        let warp = c.membrane_energy(&moved(&|p| Vec3::new(p.x * (1.0 + eps), p.y, 0.0)));
+        let weft = c.membrane_energy(&moved(&|p| Vec3::new(p.x, p.y * (1.0 + eps), 0.0)));
+        let shear = c.membrane_energy(&moved(&|p| Vec3::new(p.x + gamma * p.y, p.y, 0.0)));
+        let want = |k: f32, s: f32| 0.5 * k * s * s * area;
+        for (name, got, w) in [
+            ("warp", warp, want(params.stretch, eps)),
+            ("weft", weft, want(params.stretch, eps)),
+            ("shear", shear, want(params.shear, gamma)),
+        ] {
+            assert!((got / w - 1.0).abs() < 0.02, "{name}: {got} against {w}");
+        }
+        // The threads scissor far more easily than they stretch.
+        assert!(shear < 0.1 * warp);
+    }
+
+    #[test]
+    fn the_warp_runs_along_x_and_falls_back_to_y_on_a_face_square_to_it() {
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        let (u, v) = grain(z, WARP);
+        assert!((u - Vec3::new(1.0, 0.0, 0.0)).length() < 1.0e-6);
+        assert!((v - Vec3::new(0.0, 1.0, 0.0)).length() < 1.0e-6);
+        // A face looking along X takes Y.
+        let (u, _) = grain(Vec3::new(1.0, 0.0, 0.0), WARP);
+        assert!((u - Vec3::new(0.0, 1.0, 0.0)).length() < 1.0e-6);
+        // A tilted one keeps X projected while it can.
+        let n = Vec3::new(0.5, 0.0, 0.866_025_4);
+        let (u, v) = grain(n, WARP);
+        assert!(u.dot(n).abs() < 1.0e-6 && v.dot(n).abs() < 1.0e-6 && u.x > 0.8);
+        // Another warp.
+        let (u, _) = grain(z, Vec3::new(1.0, 1.0, 0.0));
+        assert!((u.x - u.y).abs() < 1.0e-6 && u.x > 0.7);
+    }
+
+    #[test]
+    fn a_version_1_spec_reads_with_the_shear_of_an_isotropic_sheet() {
+        let spec = ClothSpec {
+            pieces: vec![ClothPiece {
+                positions: vec![
+                    Vec3::ZERO,
+                    Vec3::new(1.0, 0.0, 0.0),
+                    Vec3::new(0.0, 1.0, 0.0),
+                ],
+                indices: vec![0, 1, 2],
+                pinned: vec![false; 3],
+                params: ClothParams {
+                    shear: ClothParams::default().stretch * V1_SHEAR_SHARE,
+                    ..ClothParams::default()
+                },
+            }],
+            ..ClothSpec::default()
+        };
+        let v2 = spec.to_bytes();
+        // Version 1: the same without the shear (after the stretch) and the warp (before the flags).
+        let mut v1 = v2.clone();
+        v1[4..8].copy_from_slice(&1u32.to_le_bytes());
+        let params_at = 4 + 4 + 4 + 8 + 3 * 12 + 3 * 4 + 4;
+        let flags_at = params_at + 12 * 4;
+        let mut cut = v1[..params_at + 8].to_vec();
+        cut.extend_from_slice(&v1[params_at + 12..flags_at - 12]);
+        cut.extend_from_slice(&v1[flags_at..]);
+        assert_eq!(ClothSpec::parse(&cut).unwrap(), spec);
+        let mut v3 = v2.clone();
+        v3[4..8].copy_from_slice(&3u32.to_le_bytes());
+        assert!(ClothSpec::parse(&v3).is_err());
     }
 
     #[test]
