@@ -42,7 +42,7 @@ export interface ClothProps {
   fabric?: FabricKey;
   /** g/m²; absent: the preset's. */
   weightGsm?: number;
-  /** A factor on the preset's stretch and bending stiffness; absent: 1. */
+  /** A factor on the preset's stretch, shear and bending stiffness; absent: 1. */
   stiffness?: number;
   /** The distance at which it collides, mm; absent: the preset's. */
   thicknessMm?: number;
@@ -65,20 +65,25 @@ export interface ClothProps {
 /** What the simulator is given for one cloth part (the engine's units: kg/m², N/m, N·m, 1/s, mm). */
 export interface ClothParamsResolved {
   massPerArea: number;
+  /** Along the warp and along the weft, N/m. */
   stretch: number;
+  /** Between them, N/m (per radian). */
+  shear: number;
   bend: number;
   damping: number;
   thickness: number;
   friction: number;
   area: number;
   pressure: number;
+  /** The direction of the warp (world): world X (rt_phys::cloth::WARP), projected onto each triangle by the engine. */
+  warp: Vec3;
   selfCollision: boolean;
 }
 
 /** `rt_phys::cloth::FLAG_SELF_COLLISION`. */
 export const FLAG_SELF_COLLISION = 1;
-/** CLT1 version (rt_phys::cloth::VERSION). */
-export const CLT1_VERSION = 1;
+/** CLT1 version (rt_phys::cloth::VERSION): 2 carries each piece's shear and warp. */
+export const CLT1_VERSION = 2;
 
 /**
  * The cloth props this version knows of what a project file holds (the rest dropped: a fabric of a later version, a value
@@ -131,7 +136,7 @@ export function clothParts(state: ProjectState): NodeId[] {
   return partsUnder(state, roots).filter((p) => effectiveVisible(state, p) && !!state.scene.nodes[p]?.mesh && !isLocked(state, p));
 }
 
-/** The fabric of some props, with Weight, Stiffness and Thickness on top. */
+/** The fabric of some props, with Weight, Stiffness (on its stretch, shear and bending alike) and Thickness on top. */
 export function clothParams(props: ClothProps): ClothParamsResolved {
   const f = fabricPreset(props.fabric);
   const finite = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -140,12 +145,14 @@ export function clothParams(props: ClothProps): ClothParamsResolved {
   return {
     massPerArea: weight / 1000,
     stretch: f.stretch * k,
+    shear: f.shear * k,
     bend: f.bend * k,
     damping: f.damping,
     thickness: clamp(finite(props.thicknessMm, f.thicknessMm), CLOTH_LIMITS.thickness.min, CLOTH_LIMITS.thickness.max),
     friction: f.friction,
     area: props.keepArea === true ? f.stretch * k : 0,
     pressure: clamp(finite(props.pressure, CLOTH_DEFAULTS.pressure), CLOTH_LIMITS.pressure.min, CLOTH_LIMITS.pressure.max),
+    warp: [1, 0, 0],
     selfCollision: props.selfCollision !== false,
   };
 }
@@ -533,7 +540,7 @@ function worldTriangles(data: MeshData, indices: ArrayLike<number>, world: Mat4)
 /** The CLT1 bytes of a spec (rt_phys::cloth `ClothSpec::parse` reads them). */
 export function cltBytes(spec: ClothRunSpec): Uint8Array {
   let size = 8 + 4;
-  for (const p of spec.pieces) size += 8 + p.positions.length * 4 + p.indices.length * 4 + Math.ceil(p.positions.length / 3 / 32) * 4 + 36;
+  for (const p of spec.pieces) size += 8 + p.positions.length * 4 + p.indices.length * 4 + Math.ceil(p.positions.length / 3 / 32) * 4 + 52;
   size += 4;
   for (const s of spec.statics) size += 8 + s.positions.length * 4 + s.indices.length * 4;
   size += 12 + 28;
@@ -567,7 +574,7 @@ export function cltBytes(spec: ClothRunSpec): Uint8Array {
       u32(bits);
     }
     const q = p.params;
-    for (const v of [q.massPerArea, q.stretch, q.bend, q.damping, q.thickness, q.friction, q.area, q.pressure]) f32(v);
+    for (const v of [q.massPerArea, q.stretch, q.shear, q.bend, q.damping, q.thickness, q.friction, q.area, q.pressure, ...q.warp]) f32(v);
     u32(q.selfCollision ? FLAG_SELF_COLLISION : 0);
   }
   u32(spec.statics.length);

@@ -2,16 +2,18 @@
 // write it (tests/fixtures/cloth-drape.json: its CLT1 and PHY1 bytes and the hashes they pin), stepped by the real
 // rt.wasm through render/phys-wasm.ts (the cloth stepping the rigid world with itself, as the physics worker does), must
 // give the native hashes at every checkpoint, with the scalar build and with the SIMD one: native = wasm, whatever the
-// SIMD path. And a CLT1 the interface writes (core/cloth.ts) loads in the engine and drapes over the box under it.
+// SIMD path. And a CLT1 the interface writes (core/cloth.ts) loads in the engine and drapes over the box under it; silk
+// laid over the example bottle by Drape over the part leaves no edge of the cap or of the bottle through the cloth.
 // Skipped without rt.wasm (npm run engine:build) unless REPACK_REQUIRE_RT_WASM is set.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { clothSpec, cltBytes } from '../src/core/cloth';
+import { clothSpec, cltBytes, drapePlacement } from '../src/core/cloth';
 import { defaultParams } from '../src/core/primitives';
 import { createInitialState, reduce } from '../src/core/store';
 import { ClothSim, hasClothExports, hasPhysExports, PhysWorld, type ClothExports, type PhysExports } from '../src/render/phys-wasm';
 import type { PhysicsReply, PhysicsRequest } from '../src/render/physics-worker';
+import { apply, exampleState } from './helpers';
 import { RT_WASM } from './wasm-engine';
 
 interface Fixture {
@@ -33,6 +35,60 @@ async function engine(path: string): Promise<PhysExports & ClothExports> {
   const e = instance.exports;
   if (!hasPhysExports(e) || !hasClothExports(e)) throw new Error(`${path} does not simulate cloth: npm run engine:build`);
   return e as unknown as PhysExports & ClothExports;
+}
+
+type V = [number, number, number];
+const sub = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a: V, b: V): V => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a: V, b: V) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** Whether the segment p0 p1 passes through the triangle a b c, strictly inside both (Möller and Trumbore). */
+function pierces(p0: V, p1: V, a: V, b: V, c: V): boolean {
+  const e1 = sub(b, a);
+  const e2 = sub(c, a);
+  const d = sub(p1, p0);
+  const h = cross(d, e2);
+  const det = dot(e1, h);
+  if (Math.abs(det) < 1e-12) return false;
+  const s = sub(p0, a);
+  const u = dot(s, h) / det;
+  const q = cross(s, e1);
+  const v = dot(d, q) / det;
+  const t = dot(e2, q) / det;
+  return u > 0 && v > 0 && u + v < 1 && t > 0 && t < 1;
+}
+
+/** The edges of a mesh (each once) that pass through a triangle of the cloth. */
+function edgesThrough(mesh: { positions: Float32Array; indices: Uint32Array }, cloth: Float32Array, tris: Uint32Array): number {
+  const at = (p: Float32Array, i: number): V => [p[3 * i], p[3 * i + 1], p[3 * i + 2]];
+  const boxes: { lo: V; hi: V; k: number }[] = [];
+  for (let t = 0; t < tris.length; t += 3) {
+    const [a, b, c] = [at(cloth, tris[t]), at(cloth, tris[t + 1]), at(cloth, tris[t + 2])];
+    boxes.push({ lo: [0, 1, 2].map((k) => Math.min(a[k], b[k], c[k])) as V, hi: [0, 1, 2].map((k) => Math.max(a[k], b[k], c[k])) as V, k: t });
+  }
+  const seen = new Set<string>();
+  let through = 0;
+  for (let t = 0; t < mesh.indices.length; t += 3) {
+    for (let s = 0; s < 3; s++) {
+      const i = mesh.indices[t + s];
+      const j = mesh.indices[t + ((s + 1) % 3)];
+      const p0 = at(mesh.positions, i);
+      const p1 = at(mesh.positions, j);
+      const key = [p0, p1].map((p) => p.join(',')).sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const lo = [0, 1, 2].map((k) => Math.min(p0[k], p1[k]));
+      const hi = [0, 1, 2].map((k) => Math.max(p0[k], p1[k]));
+      for (const b of boxes) {
+        if (b.lo[0] > hi[0] || b.hi[0] < lo[0] || b.lo[1] > hi[1] || b.hi[1] < lo[1] || b.lo[2] > hi[2] || b.hi[2] < lo[2]) continue;
+        if (pierces(p0, p1, at(cloth, tris[b.k]), at(cloth, tris[b.k + 1]), at(cloth, tris[b.k + 2]))) {
+          through++;
+          break;
+        }
+      }
+    }
+  }
+  return through;
 }
 
 describe.skipIf(!RT_WASM)('cloth in rt.wasm', () => {
@@ -93,6 +149,30 @@ describe.skipIf(!RT_WASM)('cloth in rt.wasm', () => {
     }
     expect(() => new ClothSim(rt, new TextEncoder().encode('PHY1 not cloth'))).toThrow(/CLT1/);
   }, 120_000);
+
+  it('silk laid over the example bottle by Drape over the part leaves no edge of the cap or the bottle through it', async () => {
+    const rt = await engine(RT_WASM!);
+    const base = exampleState();
+    const place = drapePlacement(base, base.scene.roots)!;
+    let s = apply(base, { type: 'scene/addPrimitive', kind: 'PLANE', params: place.params, position: place.position, name: 'Cloth', material: place.material });
+    s = apply(s, { type: 'physics/set', ids: [s.selection.ids[0]], patch: { role: 'CLOTH', cloth: { fabric: 'SILK' } } });
+    const spec = clothSpec(s)!;
+    const sim = new ClothSim(rt, cltBytes(spec));
+    try {
+      // Until it settles, or three seconds.
+      for (let k = 0; k < 72 && !sim.settled; k++) sim.step(10);
+      const p = sim.positions();
+      const through = spec.statics.map((m) => edgesThrough(m, p, spec.pieces[0].indices));
+      expect(spec.statics.length).toBeGreaterThanOrEqual(5);
+      expect(through, `edges through the cloth, part by part, after ${sim.steps} steps`).toEqual(spec.statics.map(() => 0));
+      // And it is over the bottle: down past the cap's top (121 mm).
+      let low = Infinity;
+      for (let i = 2; i < p.length; i += 3) low = Math.min(low, p[i]);
+      expect(low).toBeLessThan(100);
+    } finally {
+      sim.free();
+    }
+  }, 300_000);
 
   it('the physics worker runs a cloth alone: its vertices at step 0 and at every frame, and it settles', async () => {
     const replies: PhysicsReply[] = [];

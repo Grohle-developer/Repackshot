@@ -1,16 +1,20 @@
 // The fabrics a cloth is made of (phase S9, ROADMAP S9): presets by fabric type and weight per area, with what the
-// simulator needs of each (engine/crates/rt-phys `cloth`): its mass per area, its membrane stiffness against stretching,
-// its bending rigidity, the damping of its motion, the distance at which it collides (Thickness) and its friction. The
-// keys are stable (rule 7: added, never renamed). How the fabric looks is its material (M5), not this table.
+// simulator needs of each (engine/crates/rt-phys `cloth`): its mass per area, its membrane stiffness against stretching
+// along its threads and against shearing between them, its bending rigidity, the damping of its motion, the distance at
+// which it collides (Thickness) and its friction. The keys are stable (rule 7: added, never renamed). How the fabric looks
+// is its material (M5), not this table.
 //
 // The values are this phase's proposals for the lead's verdict (rule 11, ◆ in the ROADMAP's S9): the weights are the
-// usual ones of each fabric; the stiffness and bending are of the order of the published measurements of fabrics
+// usual ones of each fabric; the stiffness, shear and bending are of the order of the published measurements of fabrics
 // (Kawabata's KES-F: bending rigidity from a few thousandths of a gf·cm²/cm for a light silk to tens for a leather, 1 gf·cm²/cm being
-// 9.8·10⁻⁵ N·m), chosen so that the drape of each reads as that fabric on the contact sheet (out/cloth-sheet.html); the
-// collision thickness is at least a millimetre, so the cloth never draws into the surface it rests on.
+// 9.8·10⁻⁵ N·m; shear rigidity G of a woven fabric about 0.5 to 2 gf/cm/°, 1 gf/cm/° being 56 N/m per radian), chosen
+// so that the drape of each reads as that fabric on the contact sheet (out/cloth-sheet.html) and on Cusick's drape tester
+// (rt-phys's tests: the drape coefficient and nodes of each); the felt, the leathers and neoprene are not woven, their
+// shear a large share of their stretch. The collision thickness is at least a millimetre, so the cloth never draws into
+// the surface it rests on.
 //
-// SILK and LEATHER_THICK are also the fabrics of the engine's tests (rt_phys::example `SILK`, `LEATHER_THICK`): the
-// fixture tests/fixtures/cloth-fabrics.json carries the engine's values, and tests/cloth.test.ts checks they agree.
+// They are also the fabrics of the engine's tests (rt_phys::example `FABRICS`): the fixture
+// tests/fixtures/cloth-fabrics.json carries the engine's values, and tests/cloth.test.ts checks they agree.
 
 import type { Label } from './types';
 
@@ -32,8 +36,10 @@ export interface FabricPreset {
   label: Label;
   /** Weight, grams per square metre (the usual way a fabric is sold). */
   weightGsm: number;
-  /** Membrane stiffness against stretching, N/m (force per metre of width for a strain of 1). */
+  /** Membrane stiffness against stretching along the warp and the weft, N/m (force per metre of width for a strain of 1). */
   stretch: number;
+  /** Membrane stiffness against shearing (the warp and the weft turning towards each other), N/m per radian. */
+  shear: number;
   /** Bending rigidity, N·m. */
   bend: number;
   /** Damping of its motion, 1/s. */
@@ -45,17 +51,17 @@ export interface FabricPreset {
 }
 
 export const FABRIC_PRESETS: readonly FabricPreset[] = [
-  { key: 'SILK', label: { en: 'Silk', es: 'Seda' }, weightGsm: 60, stretch: 2000, bend: 3e-7, damping: 0.6, thicknessMm: 1, friction: 0.3 },
-  { key: 'COTTON_FINE', label: { en: 'Fine cotton', es: 'Algodón fino' }, weightGsm: 120, stretch: 3000, bend: 5e-6, damping: 0.8, thicknessMm: 1, friction: 0.5 },
-  { key: 'POPLIN', label: { en: 'Poplin', es: 'Popelina' }, weightGsm: 150, stretch: 4000, bend: 8e-6, damping: 0.8, thicknessMm: 1, friction: 0.5 },
-  { key: 'LINEN', label: { en: 'Linen', es: 'Lino' }, weightGsm: 200, stretch: 5000, bend: 2e-5, damping: 1, thicknessMm: 1, friction: 0.55 },
-  { key: 'WOOL', label: { en: 'Wool', es: 'Lana' }, weightGsm: 300, stretch: 2500, bend: 3e-5, damping: 1.2, thicknessMm: 1.5, friction: 0.6 },
-  { key: 'DENIM', label: { en: 'Denim', es: 'Vaquero' }, weightGsm: 400, stretch: 8000, bend: 1e-4, damping: 1.2, thicknessMm: 1.5, friction: 0.6 },
-  { key: 'CANVAS', label: { en: 'Canvas', es: 'Lona' }, weightGsm: 600, stretch: 12000, bend: 3e-4, damping: 1.5, thicknessMm: 1.5, friction: 0.6 },
-  { key: 'FELT', label: { en: 'Felt', es: 'Fieltro' }, weightGsm: 800, stretch: 3000, bend: 5e-4, damping: 2, thicknessMm: 3, friction: 0.7 },
-  { key: 'LEATHER_THIN', label: { en: 'Thin leather', es: 'Cuero fino' }, weightGsm: 900, stretch: 10000, bend: 5e-4, damping: 1.5, thicknessMm: 2, friction: 0.6 },
-  { key: 'LEATHER_THICK', label: { en: 'Thick leather', es: 'Cuero grueso' }, weightGsm: 1200, stretch: 20000, bend: 2e-3, damping: 2, thicknessMm: 3, friction: 0.6 },
-  { key: 'NEOPRENE', label: { en: 'Neoprene', es: 'Neopreno' }, weightGsm: 1500, stretch: 1500, bend: 1.5e-3, damping: 2.5, thicknessMm: 3, friction: 0.8 },
+  { key: 'SILK', label: { en: 'Silk', es: 'Seda' }, weightGsm: 60, stretch: 2000, shear: 20, bend: 3e-7, damping: 0.6, thicknessMm: 1, friction: 0.3 },
+  { key: 'COTTON_FINE', label: { en: 'Fine cotton', es: 'Algodón fino' }, weightGsm: 120, stretch: 3000, shear: 35, bend: 5e-6, damping: 0.8, thicknessMm: 1, friction: 0.5 },
+  { key: 'POPLIN', label: { en: 'Poplin', es: 'Popelina' }, weightGsm: 150, stretch: 4000, shear: 45, bend: 8e-6, damping: 0.8, thicknessMm: 1, friction: 0.5 },
+  { key: 'LINEN', label: { en: 'Linen', es: 'Lino' }, weightGsm: 200, stretch: 5000, shear: 55, bend: 2e-5, damping: 1, thicknessMm: 1, friction: 0.55 },
+  { key: 'WOOL', label: { en: 'Wool', es: 'Lana' }, weightGsm: 300, stretch: 2500, shear: 40, bend: 3e-5, damping: 1.2, thicknessMm: 1.5, friction: 0.6 },
+  { key: 'DENIM', label: { en: 'Denim', es: 'Vaquero' }, weightGsm: 400, stretch: 8000, shear: 100, bend: 6e-5, damping: 1.2, thicknessMm: 1.5, friction: 0.6 },
+  { key: 'CANVAS', label: { en: 'Canvas', es: 'Lona' }, weightGsm: 600, stretch: 12000, shear: 140, bend: 2e-4, damping: 1.5, thicknessMm: 1.5, friction: 0.6 },
+  { key: 'FELT', label: { en: 'Felt', es: 'Fieltro' }, weightGsm: 800, stretch: 3000, shear: 750, bend: 5e-4, damping: 2, thicknessMm: 3, friction: 0.7 },
+  { key: 'LEATHER_THIN', label: { en: 'Thin leather', es: 'Cuero fino' }, weightGsm: 900, stretch: 10000, shear: 1000, bend: 5e-4, damping: 1.5, thicknessMm: 2, friction: 0.6 },
+  { key: 'LEATHER_THICK', label: { en: 'Thick leather', es: 'Cuero grueso' }, weightGsm: 1200, stretch: 20000, shear: 2000, bend: 2e-3, damping: 2, thicknessMm: 3, friction: 0.6 },
+  { key: 'NEOPRENE', label: { en: 'Neoprene', es: 'Neopreno' }, weightGsm: 1500, stretch: 1500, shear: 500, bend: 1.5e-3, damping: 2.5, thicknessMm: 3, friction: 0.8 },
 ];
 
 /** The fabric a new cloth starts with. */
@@ -70,7 +76,7 @@ export function fabricPreset(key: string | undefined): FabricPreset {
 export const CLOTH_LIMITS = {
   /** g/m². */
   weight: { min: 10, max: 5000 },
-  /** A factor on the preset's stretch and bending stiffness. */
+  /** A factor on the preset's stretch, shear and bending stiffness alike. */
   stiffness: { min: 0.1, max: 10 },
   /** mm. */
   thickness: { min: 0.1, max: 50 },

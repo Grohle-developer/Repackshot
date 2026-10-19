@@ -92,13 +92,17 @@ describe('the fabric catalogue', () => {
     expect(FABRIC_PRESETS.map((f) => f.key)).toEqual(['SILK', 'COTTON_FINE', 'POPLIN', 'LINEN', 'WOOL', 'DENIM', 'CANVAS', 'FELT', 'LEATHER_THIN', 'LEATHER_THICK', 'NEOPRENE']);
     expect(FABRIC_PRESETS.map((f) => f.weightGsm)).toEqual([60, 120, 150, 200, 300, 400, 600, 800, 900, 1200, 1500]);
     for (const f of FABRIC_PRESETS) {
-      for (const v of [f.weightGsm, f.stretch, f.bend, f.damping, f.thicknessMm, f.friction]) expect(v).toBeGreaterThan(0);
+      for (const v of [f.weightGsm, f.stretch, f.shear, f.bend, f.damping, f.thicknessMm, f.friction]) expect(v).toBeGreaterThan(0);
+      // The threads scissor more easily than they stretch.
+      expect(f.shear).toBeLessThan(f.stretch);
       expect(f.label.en && f.label.es).toBeTruthy();
     }
     expect(fabricPreset('NOT_A_FABRIC').key).toBe(DEFAULT_FABRIC);
-    // rt_phys::example::{SILK, LEATHER_THICK}, written by the engine's tests.
+    // rt_phys::example::FABRICS, written by the engine's tests: every preset, every value.
     const engine = JSON.parse(readFileSync('tests/fixtures/cloth-fabrics.json', 'utf8')) as Record<string, Record<string, number>>;
+    expect(Object.keys(engine)).toEqual(FABRIC_PRESETS.map((f) => f.key));
     for (const [key, values] of Object.entries(engine)) {
+      expect(Object.keys(values).sort()).toEqual(Object.keys(fabricPreset(key)).filter((k) => k !== 'key' && k !== 'label').sort());
       const f = fabricPreset(key);
       expect(f.key).toBe(key);
       for (const [k, v] of Object.entries(values)) expect(f[k as keyof typeof f], `${key}.${k}`).toBeCloseTo(v, 9);
@@ -110,8 +114,11 @@ describe('the fabric catalogue', () => {
     const silk = fabricPreset('SILK');
     const p = clothParams({ fabric: 'SILK', weightGsm: 90, stiffness: 2, thicknessMm: 4, keepArea: true, selfCollision: false });
     expect(p.massPerArea).toBeCloseTo(0.09, 9);
+    // Stiffness scales the stretch, the shear and the bending alike.
     expect(p.stretch).toBe(silk.stretch * 2);
+    expect(p.shear).toBe(silk.shear * 2);
     expect(p.bend).toBe(silk.bend * 2);
+    expect(p.warp).toEqual([1, 0, 0]);
     expect(p.thickness).toBe(4);
     expect(p.area).toBe(silk.stretch * 2);
     expect(p.selfCollision).toBe(false);
@@ -252,7 +259,7 @@ describe('what the simulators are given', () => {
     const bytes = cltBytes(spec);
     const view = new DataView(bytes.buffer);
     expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe('CLT1');
-    expect(view.getUint32(4, true)).toBe(1);
+    expect(view.getUint32(4, true)).toBe(2);
     expect(view.getUint32(8, true)).toBe(1);
     const p = spec.pieces[0];
     const nv = p.positions.length / 3;
@@ -268,10 +275,14 @@ describe('what the simulators are given', () => {
     }
     expect(pinned).toBe([...p.pinned].filter(Boolean).length);
     expect(pinned).toBeGreaterThan(0);
-    expect(view.getFloat32(at, true)).toBeCloseTo(p.params.massPerArea, 6);
-    expect(view.getUint32(at + 32, true)).toBe(0); // no self-collision
+    // Mass per area, stretch, shear, bend, damping, thickness, friction, area, pressure, the warp, the flags.
+    const q = p.params;
+    const floats = [q.massPerArea, q.stretch, q.shear, q.bend, q.damping, q.thickness, q.friction, q.area, q.pressure, ...q.warp];
+    floats.forEach((v, k) => expect(view.getFloat32(at + 4 * k, true), `float ${k}`).toBeCloseTo(v, 6));
+    expect(q.shear).not.toBe(q.stretch);
+    expect(view.getUint32(at + 48, true)).toBe(0); // no self-collision
     // Statics, floor and wind fill the rest exactly.
-    at += 36;
+    at += 52;
     const statics = view.getUint32(at, true);
     expect(statics).toBe(spec.statics.length);
     at += 4;
@@ -463,7 +474,7 @@ function cltVertices(bytes: Uint8Array): Float32Array {
     const ni = view.getUint32(at + 4, true);
     at += 8;
     for (let i = 0; i < nv * 3; i++) out.push(view.getFloat32(at + 4 * i, true));
-    at += nv * 12 + ni * 4 + Math.ceil(nv / 32) * 4 + 36;
+    at += nv * 12 + ni * 4 + Math.ceil(nv / 32) * 4 + 52;
   }
   return Float32Array.from(out);
 }
