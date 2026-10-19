@@ -55,7 +55,8 @@ import { BrowserKeyStore, LauncherKeyStore, type ApiKeyStore } from './io/api-ke
 import { ApiPipeline, apiService, routeAiService } from './ai/api-service';
 import { PostGuard } from './ai/post-wasm';
 import { apiActive } from './core/ai-api-settings';
-import { ApiCallError } from './core/ai-remote';
+import { ApiCallError, hostOf, type ApiErrorCode } from './core/ai-remote';
+import { pingBackend } from './ai/api-ping';
 import { withApiConsent, withApiWords } from './ui/ai-api';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
@@ -746,6 +747,7 @@ void apiKeysReady.then((keys) => {
   // What asked before the store was known (Settings, the AI section's status) asks again.
   ui.set({ aiApiKeys: ui.get().aiApiKeys + 1 });
 });
+
 // C1: every request carries the guard's tolerances of Settings (the queue's and the preview's alike). X7: an API post
 // only to a host the person allowed, and its failures in the interface's words.
 const aiService: AiPostService = withGuardTolerances(
@@ -1016,6 +1018,8 @@ const services: AppServices = {
       ...(kept && !wanted ? { passesInLauncher: true } : {}),
       // U14: the queue's live view of the job (its box and cadence are the queue's).
       ...(req.frameBox && req.onFrame ? { frameBox: req.frameBox, onFrame: req.onFrame } : {}),
+      // Stopped (Pause, Stop this job): the queue keeps the accumulation so far as a partial image.
+      ...(req.partialOnAbort ? { partialOnAbort: true } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds, p.adaptive),
     });
     // The file in the job's format from the 8-bit pixels and, for 16 bits, EXR, the 32-bit TIFF and DNG, the linear sums.
@@ -1056,10 +1060,11 @@ const services: AppServices = {
     };
     const { file, display } = await encode(px.data, px.sum);
     // E5b-1, Also save without denoise: the same render before the engine's denoiser, in the same format.
-    const noisyFile = px.noisy ? (await encode(px.noisy.data, px.noisy.sum)).file : undefined;
+    // A partial image carries only its main image: no noisy companion, no pass files (the queue saves neither).
+    const noisyFile = px.noisy && !px.partial ? (await encode(px.noisy.data, px.noisy.sum)).file : undefined;
     // N2: the pass files, from the planes the engine rendered with the image.
     let extras: { name: string; blob: Blob }[] | undefined;
-    if (wanted) {
+    if (wanted && !px.partial) {
       if (!px.passes) throw new Error(t('render.noPasses'));
       const legend = wanted.keys.includes('partId') ? partLegendOf(project, req.camera) : undefined;
       extras = (await encodePassFiles(px.passes, wanted, { imageName: req.imageName ?? 'render.png', dpi: req.dpi, ...(legend ? { legend } : {}) })).map((f) => ({ name: f.name, blob: f.blob }));
@@ -1073,6 +1078,7 @@ const services: AppServices = {
       seconds: px.seconds,
       tone: { exposureEv: px.exposureEv, tonemap: px.tonemap },
       ...(kept && px.renderId !== undefined ? { renderId: String(px.renderId) } : {}),
+      ...(px.partial ? { partial: true } : {}),
       ...(px.denoised ? { denoised: true } : {}),
       ...(noisyFile ? { noisyFile } : {}),
       ...(extras ? { extras } : {}),
@@ -1166,6 +1172,7 @@ const services: AppServices = {
   },
   models: modelsService.manager,
   apiKeys: null,
+  apiPing: null,
   // The launcher keeps what it detected on the desktop ("Detect again" asks it to look again); WebGPU on the web.
   hardware: (again) => platform.hardware(again),
   storage: platform.storage,
@@ -1235,6 +1242,37 @@ const services: AppServices = {
   },
   graphPreview: graphWorkers ? { previews: (program, channel) => graphWorkers.previews(program, channel) } : null,
   lens: { info: engineLensInfo, check: engineLensCheck },
+};
+
+// The ping test (Settings ▸ AI ▸ Model by API ▸ Test connection): the web version calls the endpoint itself
+// (the page holds the key); the desktop version asks the launcher through /api/ai/ping (it holds the key).
+// A 404 from the launcher means a launcher that predates the ping route.
+services.apiPing = async (endpoint, options, signal) => {
+  const host = hostOf(endpoint.url);
+  if (!host) throw new ApiCallError('api-config', 'the URL has no host');
+  const native = await nativeReady;
+  if (native) {
+    const res = await native.request('/api/ai/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, options, consentedHost: host }),
+      signal,
+    });
+    if (res.ok) return;
+    let code: ApiErrorCode = 'api-config';
+    let message = 'this version of the application cannot test the connection';
+    try {
+      const body = (await res.json()) as { error?: string; message?: string };
+      if (res.status !== 404 && body.error) {
+        code = body.error as ApiErrorCode;
+        message = body.message ?? body.error;
+      }
+    } catch {
+      // Keep the fallback: the launcher did not answer with an error object.
+    }
+    throw new ApiCallError(code, message, 1, res.status);
+  }
+  await pingBackend(new ApiBackend(endpoint, options, browserKeys.key(host), { fetch: (input, init) => fetch(input, init) }), signal);
 };
 
 const app = mountApp(appEl, store, ui, services);

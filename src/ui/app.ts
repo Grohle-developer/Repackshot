@@ -21,7 +21,7 @@ import { viewportPanel } from './panels/viewport';
 import type { AppServices } from './ports';
 import { dynamic, Root, Scope, type Ctx } from './reactive';
 import { preventedByGuard } from './guards';
-import { ACTIONS, matches } from './shortcuts';
+import { ACTIONS, firesWhileTyping, matches } from './shortcuts';
 import { lengthText, setLengthUnit } from './components/controls';
 import { focusModeOf } from '../core/focus';
 import { cameraName } from './names';
@@ -117,7 +117,7 @@ function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
     if (!a.keys) continue;
     const specs = [a.keys, ...(a.altKeys ?? [])];
     if (!specs.some((k) => matches(e, k))) continue;
-    if (typing && !a.global) return false;
+    if (typing && !firesWhileTyping(a)) return false;
     if (overlay && !a.global && !a.keys.startsWith('mod+')) return false;
     // Tab folds the panels only when focus is not on a control (keyboard navigation keeps working).
     if (a.id === 'panels') {

@@ -1,5 +1,5 @@
 // The ways to reach a model through an API (phase X7, AI-POST.md §8.2): the generic endpoint the person describes,
-// and presets for two well-known services, written **only from their public API documentation** and never tried
+// and presets for well-known services, written **only from their public API documentation** and never tried
 // against the live services from here (no keys, and no network in the tests): `verified` stays false until someone
 // runs one for real (◆ the lead chooses which presets ship). Stable keys: add, never rename.
 //
@@ -15,11 +15,28 @@
 //   key as a bearer token; the answer `{ data: [{ b64_json }] }`. It takes no strength, seed or negative prompt: the
 //   negative goes in the prompt's words, and how much changes is left to the guard (it caps every change by the
 //   attempt's strength, so its retries still lower the intervention).
+// - Google, Gemini image editing: the image-generation documentation at ai.google.dev (read 2026-10-19), path
+//   `POST /v1beta/models/gemini-2.5-flash-image:generateContent`: JSON with `contents[0].parts` (a text part with the
+//   prompt, an `inlineData` part with the PNG as base64) and `generationConfig` with `responseModalities: [TEXT, IMAGE]`
+//   and `seed`; the key in `x-goog-api-key` (no `Bearer` prefix). The answer is `candidates[0].content.parts`: the
+//   model usually answers text first and the image second, so the preset reads `parts.1`; when it answers the image
+//   alone, the image is at `parts.0` and the response path has to change to it. The project needs the Generative
+//   Language API enabled. It takes no strength or negative prompt: the negative goes in the prompt's words.
+// - xAI, Grok Imagine image editing: the REST reference at docs.x.ai (read 2026-10-19), path
+//   `POST /v1/images/edits`: JSON with `model=grok-imagine-image-2.0`, `prompt`, `image` as `{ url, type: image_url }`
+//   (the url a data URI of the PNG) and `response_format=b64_json`; the key as a bearer token; the answer
+//   `{ data: [{ b64_json }] }`. It takes no strength, seed or negative prompt: the negative goes in the prompt's
+//   words. The API may answer 202 with a `request_id` (a deferred request, polled at `GET /v1/images/{request_id}`);
+//   the generic endpoint makes one call and does not poll, so a deferred answer fails as `api-format`.
+// - Not presets, on purpose: Together AI (its image inputs are URLs — `image_url`, `reference_images` — and the docs
+//   do not say a data URI is accepted) and Ideogram (its edit answers a URL, and the endpoint only reads base64 or a
+//   data URI from the answer). Both would need the endpoint to grow (an upload, a download of the answer) before a
+//   preset could be written from their docs alone.
 
 import type { Label } from './types';
 
 /** The ways to reach a model through an API (Settings ▸ AI post-processing ▸ Model by API). Stable keys: add, never rename. */
-export const API_PROVIDERS = ['GENERIC', 'STABILITY_SD3', 'OPENAI_EDIT'] as const;
+export const API_PROVIDERS = ['GENERIC', 'STABILITY_SD3', 'OPENAI_EDIT', 'GOOGLE_GEMINI', 'XAI_IMAGINE'] as const;
 export type ApiProvider = (typeof API_PROVIDERS)[number];
 
 export const API_METHODS = ['POST', 'PUT'] as const;
@@ -159,6 +176,63 @@ export const API_PRESETS: readonly ApiPreset[] = [
         [1536, 1024],
         [1024, 1536],
       ],
+    },
+  },
+  {
+    key: 'GOOGLE_GEMINI',
+    label: { en: 'Google · Gemini image editing (gemini-2.5-flash-image)', es: 'Google · edición de imágenes con Gemini (gemini-2.5-flash-image)' },
+    docs: 'https://ai.google.dev/gemini-api/docs/image-generation',
+    verified: false,
+    takes: { strength: false, seed: true, negative: false },
+    endpoint: {
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      method: 'POST',
+      authHeader: 'x-goog-api-key',
+      authPrefix: '',
+      headers: { Accept: 'application/json' },
+      body: 'JSON',
+      template: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: '{{prompt}} Avoid: {{negative}}' },
+              { inlineData: { mimeType: 'image/png', data: '{{image_base64}}' } },
+            ],
+          },
+        ],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'], seed: '{{seed}}' },
+      }),
+      response: 'JSON',
+      responsePath: 'candidates.0.content.parts.1.inlineData.data',
+      maxSide: 1024,
+      multipleOf: 16,
+      sizes: [],
+    },
+  },
+  {
+    key: 'XAI_IMAGINE',
+    label: { en: 'xAI · Grok Imagine image editing', es: 'xAI · edición de imágenes con Grok Imagine' },
+    docs: 'https://docs.x.ai/developers/rest-api-reference/inference/images',
+    verified: false,
+    takes: { strength: false, seed: false, negative: false },
+    endpoint: {
+      url: 'https://api.x.ai/v1/images/edits',
+      method: 'POST',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      headers: {},
+      body: 'JSON',
+      template: JSON.stringify({
+        model: 'grok-imagine-image-2.0',
+        prompt: '{{prompt}} Avoid: {{negative}}',
+        image: { url: '{{image_data_uri}}', type: 'image_url' },
+        response_format: 'b64_json',
+      }),
+      response: 'JSON',
+      responsePath: 'data.0.b64_json',
+      maxSide: 1024,
+      multipleOf: 16,
+      sizes: [],
     },
   },
 ];

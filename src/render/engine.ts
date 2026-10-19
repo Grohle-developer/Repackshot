@@ -309,6 +309,12 @@ export interface RenderOptions {
   /** U14: the picture `frameBox` asked for. */
   onFrame?: (frame: LiveFrame) => void;
   /**
+   * Stopped (Pause, Stop): hand back the accumulation so far as a partial image instead of throwing the abort, when
+   * at least one pass finished; the caller saves it and still treats the render as stopped. Without it (the preview,
+   * Measure) an abort throws as before. Only the queue sets it.
+   */
+  partialOnAbort?: boolean;
+  /**
    * E10, Finish by Noise (core/render.ts `adaptiveOf`): sample adaptively to this noise target (a fraction), at most
    * `maxSamples` per pixel; with `finishBy` NOISE the render ends when every block is under it.
    */

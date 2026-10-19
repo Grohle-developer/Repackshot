@@ -4,7 +4,9 @@
 // history. *Render* runs only the jobs it just put first ("render just this
 // one"); *Start queue* runs every waiting job in order; *Pause* stops now (the
 // engine is free at once) and the job in progress waits again (a render cannot
-// resume halfway); *Resume* goes on with what was paused. Pausing and resuming
+// resume halfway); what it had rendered so far is saved apart (`<name>-partial`,
+// in the results history when it is the job's first frame), so the work is not
+// lost. *Resume* goes on with what was paused. Pausing and resuming
 // are taken at once, even while the stopped job is still winding down: a
 // Resume pressed then is not lost, it carries on in the same loop.
 //
@@ -284,6 +286,13 @@ export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult,
   }
   const gone = new Set(evicted);
   ctx.ui.set({ results: [meta, ...ctx.ui.get().results.filter((r) => r.id !== meta.id && !gone.has(r.id))] });
+}
+
+/** The file name of a render stopped before its budget: `-partial` before the extension. */
+export function partialName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+  return dot > slash && dot > 0 ? `${name.slice(0, dot)}-partial${name.slice(dot)}` : `${name}-partial`;
 }
 
 /** The file name of a render's image before denoise (E5b-1): `-noisy` before the extension. */
@@ -638,6 +647,8 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         ...(look ? { state: project } : {}),
         ...(passes ? { passes, imageName: names[k] } : {}),
         signal,
+        // Stopped (Pause, Stop this job): the engine hands back the accumulation so far, saved below as `-partial`.
+        partialOnAbort: true,
         onProgress: (p, samples, seconds, adaptive) => tick(p, samples, seconds, false, adaptive),
         frameBox: live.frameBox,
         onFrame: live.onFrame,
@@ -647,6 +658,45 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         ...(withAi && k === 0 && (await renderSource()) ? { aiPasses: true } : {}),
       };
       const out = await ctx.services.renderFrame(req);
+      // Stopped (Pause, Stop this job) with progress: the engine handed back the accumulation so far. It is saved
+      // apart (`<name>-partial`), kept in the history when it is the job's first frame, and the job still ends as
+      // stopped (the throw below): a stopped job starts over on Resume, but the work it had done is not lost.
+      if (out.partial) {
+        const st = ctx.store.get();
+        const frameName = writer ? outputFileName(s.name, nameValues(st, job, cam, f.n ?? 1, date), 'png', true) : names[k];
+        const name = partialName(frameName);
+        const where = await save(name, out.file);
+        saved.push(name);
+        if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
+        if (k === 0) {
+          const camId = cam ?? st.camera.active;
+          const meta: ResultMeta = {
+            id: resultId(now()),
+            jobId: job.id,
+            name,
+            createdAt: now(),
+            width: out.width,
+            height: out.height,
+            dpi: s.dpi,
+            samples: out.samples,
+            seconds: out.seconds,
+            cameraId: anim ? null : camId,
+            camera: anim ? t('rw.cameraTrack') : cameraName(st, st.camera.cameras[camId]),
+            format: writer ? 'PNG' : s.format,
+            bitDepth: writer ? 8 : s.bitDepth,
+            savedTo: where === 'FOLDER' && s.destination.kind === 'FOLDER' ? s.destination : { kind: 'DOWNLOADS' },
+            thumb: await thumbnailOf(out.display ?? out.file),
+            bytes: out.file.size + (out.display?.size ?? 0),
+            ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
+            partial: true,
+          };
+          await recordResult(ctx, meta, out);
+          resultIds.push(meta.id);
+          patchJob(ctx, job.id, { resultIds: [...resultIds] });
+        }
+        ctx.ui.toast(t('render.partialSaved', { name }));
+        throw new DOMException('aborted', 'AbortError');
+      }
       if (signal.aborted) throw new DOMException('aborted', 'AbortError');
       // N1: a video's frame goes to the encoder; a frame of a sequence, or an image, to its file.
       let where: 'DOWNLOAD' | 'FOLDER' = s.destination.kind === 'FOLDER' ? 'FOLDER' : 'DOWNLOAD';

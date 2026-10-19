@@ -5,6 +5,17 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### AI post-processing
+
+- **New API presets**: Google Gemini (`gemini-2.5-flash-image`, key in `x-goog-api-key`, image at `candidates.0.content.parts.1.inlineData.data`) and xAI Grok Imagine (`grok-imagine-image-2.0`, image at `data.0.b64_json`), written from the services' public API documentation and not yet tried against the live services.
+- **Fixed: `{{image_base64}}` (and `{{depth_base64}}`, `{{edges_base64}}`) never filled.** The placeholder pattern allowed only letters and underscores, no digits, so a template using `{{image_base64}}` validated as *no image* and the render window's AI switch only ever opened Settings, never turned on. The pattern now takes digits too, on the page and in the launcher, and the shared cases cover it.
+- **Test connection** (Settings ▸ AI ▸ Model by API): one minimal call through the endpoint as configured — a 512 × 512 solid grey tile, *Return this image unchanged.* — reporting whether the service answered with an image, or the call's error in words. On desktop it runs through the launcher (`POST /api/ai/ping`) with the stored key; on the web through the same code path as a render's call.
+
+### Queue and render
+
+- **Stopping a render saves the image so far**: pausing the queue, or *Stop* on the job being rendered, keeps the accumulation up to where the render had reached — saved apart as `<name>-partial` (a video's stopped frame as a PNG) and kept in the results history, marked *Partial*, with the samples it reached. The stopped job still starts over on *Resume*: a render is not resumed halfway, but the work it had done is no longer thrown away.
+- **Fixed: the queue no longer starts from a `Ctrl/⌘ ⏎` pressed while typing.** The Render shortcuts were global, so they fired even inside a text field — typing a prompt and pressing the usual confirm gesture started a render without the Render button ever being pressed (only Pause was then available, as while a queue runs). Render and Render now are no longer global: they still work with the focus outside a field.
+
 ## v0.1.23 — 2026-10-19
 
 ### Camera and lens

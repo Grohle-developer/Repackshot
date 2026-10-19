@@ -64,6 +64,12 @@ export interface ResultMeta {
    * and the controls it was given, and the result it came from. Absent for what a render job wrote.
    */
   provenance?: ResultProvenance;
+  /**
+   * The render was stopped before its budget (Pause, or Stop this job): the image is the accumulation so far, at
+   * `samples` samples, not the finished render. A stopped job still starts over on Resume; the partial is what is
+   * kept of the work it had done.
+   */
+  partial?: boolean;
 }
 
 /** Every AI variant of a result, the first one first (a result of before X4b has one at most). */

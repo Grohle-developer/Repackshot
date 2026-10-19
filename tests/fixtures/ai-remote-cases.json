@@ -77,6 +77,7 @@
    "body": "JSON",
    "template": {
     "image": "{{image_data_uri}}",
+    "b64": "{{image_base64}}",
     "prompt": "{{prompt}}",
     "negative_prompt": "{{negative}}",
     "strength": "{{strength}}",
@@ -97,6 +98,7 @@
    },
    "expect": {
     "image": "data:image/png;base64,SU1H",
+    "b64": "SU1H",
     "prompt": "a \"studio\" photo",
     "negative_prompt": "blur, {{x}}",
     "strength": 0.24,
@@ -298,7 +300,7 @@
     {
      "name": "b64",
      "kind": "text",
-     "value": "{{image_base64}}"
+     "value": "SU1H"
     },
     {
      "name": "n",
