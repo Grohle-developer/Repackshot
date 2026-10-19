@@ -94,6 +94,11 @@
 //! drops one by one) takes no drops: each of its samples is wet at the first landing near it, a
 //! time drawn once from the exponential law of its share of the flux. Dust and snow are the same.
 //!
+//! **Parts that keep dry** (U16). A part flagged [`PART_DRY`] takes no water: no drop lands on it,
+//! its samples are never wet as a film, and a drop in the air that meets it is gone. A part flagged
+//! [`PART_NO_DUST`] takes no dust and no snow (its samples have no rates). Either way it stays in
+//! the way of what falls: the parts below it are as sheltered as under any other.
+//!
 //! **What it gives.** [`WetParts::layout`] once (the samples of each triangle, the rates of dust and
 //! snow), [`WetParts::frame`] per frame (the drops, the samples wet and wiped since the frame
 //! before, the drips), [`WetParts::weather`] the state at the last step as the renderer takes it,
@@ -139,6 +144,12 @@ pub const MAX_SAMPLE_BUDGET: u32 = 4_000_000;
 pub const NEVER: u32 = u32::MAX;
 /// `WetPartSpec::flags` bit 0: the part takes no drops one by one, its samples wet as a film.
 pub const PART_FILM: u32 = 1;
+/// U16: `WetPartSpec::flags` bit 1: the part takes no water (no drops, no film, none of the drops in
+/// the air that meet it) and still shelters what is below it.
+pub const PART_DRY: u32 = 2;
+/// U16: `WetPartSpec::flags` bit 2: the part takes no dust and no snow and still shelters what is
+/// below it. With [`PART_DRY`] it takes nothing at all.
+pub const PART_NO_DUST: u32 = 4;
 /// Mundo, Sommerfeld and Tropea's splashing threshold of `K = We^½ Re^¼`.
 pub const SPLASH_K: f32 = 57.7;
 /// The most of a drop's volume a splash throws (at `K ≥ 2 × SPLASH_K`, from none at the threshold).
@@ -310,7 +321,7 @@ pub struct WetPartSpec {
     pub receding_deg: f32,
     /// How fast a porous material soaks a drop in, mm³ per mm² of contact per second (0: never).
     pub soak_mm_s: f32,
-    /// [`PART_FILM`]; other bits are kept and ignored.
+    /// [`PART_FILM`], [`PART_DRY`] and [`PART_NO_DUST`]; other bits are kept and ignored.
     pub flags: u32,
     /// S3e: the dynamic body of the rigid-body scene (`PHY1`) it moves with, by its order among the
     /// scene's dynamic bodies, or [`NO_BODY`]: it stays where it stands.
@@ -353,7 +364,8 @@ pub struct PartsExtras {
 /// "WPT1"  u32 version (1 or 2); u32 seed; f32 cell_mm; u32 max_samples; f32 repose_deg snow_repose_deg;
 /// u32 meshes; per mesh: u32 vertices indices; f32 positions[3 × vertices]; u32 indices[]
 /// u32 parts; per part: u32 mesh; f32 rows[12] (the 3 × 4 object-to-world matrix by rows);
-///            f32 advancing_deg receding_deg soak_mm_s; u32 flags (1: a film);
+///            f32 advancing_deg receding_deg soak_mm_s;
+///            u32 flags (1: a film; U16: 2: dry, 4: no dust or snow);
 ///            v2: u32 body (the PHY1 dynamic body it moves with; 0xffffffff: it stays)
 /// u32 sources; per source: u32 kind (0 drops, 1 dust, 2 snow); f32 density (per mm³);
 ///              f32 velocity[3] (world, mm/s); f32 size_mm size_var
@@ -1907,7 +1919,12 @@ impl WetParts {
                         let cos = -dir.dot(t.n);
                         // S3e: a part that moves takes its share step by step, where it stands.
                         let p = &self.parts[t.part as usize];
-                        if !(cos > 0.0 && t.area > 0.0) || p.film || p.mover.is_some() {
+                        // U16: a dry part takes none (it stays in the way: `blocked`).
+                        if !(cos > 0.0 && t.area > 0.0)
+                            || p.film
+                            || p.mover.is_some()
+                            || self.flagged(t.part, PART_DRY)
+                        {
                             continue;
                         }
                         sum += cos * t.area;
@@ -1919,7 +1936,7 @@ impl WetParts {
                     let spread = 0.5 * LANDING_SPREAD * s.size_mm;
                     let reach = fmath::PI * spread * spread * (1.0 + var * var / 3.0);
                     for pi in 0..self.parts.len() {
-                        if !self.parts[pi].film {
+                        if !self.parts[pi].film || self.flagged(pi as u32, PART_DRY) {
                             continue;
                         }
                         let (a, b) = (
@@ -1966,10 +1983,11 @@ impl WetParts {
                         let t = &self.tris[self.sample_tri[smp as usize] as usize];
                         let n = t.n;
                         let cos = -dir.dot(n);
-                        // S3e: dust and snow settle on the parts that stay.
+                        // S3e: dust and snow settle on the parts that stay; U16: and take them.
                         if !above(cos, 0.0)
                             || n.z <= 0.0
                             || self.parts[t.part as usize].mover.is_some()
+                            || self.flagged(t.part, PART_NO_DUST)
                         {
                             continue;
                         }
@@ -2228,6 +2246,11 @@ impl WetParts {
         (self.landed, self.splashes, self.drips)
     }
 
+    /// U16: part `part` carries `flag` ([`PART_DRY`], [`PART_NO_DUST`]).
+    fn flagged(&self, part: u32, flag: u32) -> bool {
+        self.spec.parts[part as usize].flags & flag != 0
+    }
+
     /// The critical contact radius of part `part` on a face `sin α` steep.
     pub fn critical_radius(&self, part: usize, sin_alpha: f32) -> f32 {
         let s = &self.spec.parts[part];
@@ -2319,6 +2342,10 @@ impl WetParts {
         let mut moving_total = 0.0f32;
         if !self.movers.is_empty() && s.density > 0.0 && speed > 0.0 && s.size_mm > 0.0 {
             for m in &self.movers {
+                // U16: a dry part that moves takes no rain either.
+                if self.flagged(m.part, PART_DRY) {
+                    continue;
+                }
                 let p = &self.parts[m.part as usize];
                 for ti in p.first_tri..p.first_tri + p.tris {
                     let t = &self.tris[ti as usize];
@@ -2414,6 +2441,11 @@ impl WetParts {
         let t = self.tris[ti as usize];
         let part_index = t.part as usize;
         let mut volume = fmath::PI / 6.0 * d * d * d;
+        // U16: a drop in the air that meets a dry part is gone (the part took it out of the way).
+        if self.flagged(t.part, PART_DRY) {
+            self.lost_water += volume;
+            return false;
+        }
         self.wet_disc(t.part, p, t.n, 0.5 * LANDING_SPREAD * d, false);
         if self.parts[part_index].film {
             return false;

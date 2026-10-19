@@ -254,7 +254,27 @@ crate, in a *worker*). Each node may carry its *Physics* section
 - Coulomb **friction** (`friction`, 0–2, 0.5 by default; the same
   for static and dynamic) and **bounciness** (`bounciness`, 0–1, 0.2).
   Between two surfaces, the geometric mean of the frictions and the
-  larger of the bounciness values; the floor has 0.6 and 0.2.
+  larger of the bounciness values; the floor has 0.6 and 0.2. So a static
+  part's own friction and bounciness count too; its density does not.
+- **Weather** (U16, on a `PART`; Physics ▸ Weather in the inspector): how the
+  rain, dust and snow of the effects that fall on the parts (below) treat it.
+  **Gets wet** (`getsWet`, true by default: false, the part takes no water —no
+  drop lands or stays on it, its samples never get wet as a film, and a drop
+  in the air that meets it is gone—), **Gets dust and snow** (`getsDust`,
+  true by default: false, no dust or snow settles on it) and **Surface**
+  (`surface`: a key of the wettability table, `src/data/wettability.ts`;
+  absent, the family its material gives, `wettabilityFamilyOf`). A part that
+  keeps dry or bare **stays in the way** of what falls: the parts below it
+  are as sheltered as under any other. Only what differs from the default is
+  stored (`physics/set` drops `getsWet: true`, `getsDust: true` and
+  `surface: null`); an edit of a group, a model or a multi-selection sets
+  each part under it, in one undo entry; a project from before U16 opens
+  with every part wet, dusty and of its material's family, and a family this
+  version does not know is dropped. The inspector states the size past which
+  a drop runs down a vertical face of the part's family: twice the critical
+  contact radius of the engine's Furmidge balance below
+  (`rt_phys::wet::critical_radius`, computed by the page bit for bit with the
+  engine's `f32` functions, `src/core/part-weather.ts`).
 
 **What is simulated** (`physicsSpec`). With *Drop*, the selection (of
 each branch, the topmost node); with *Start*, the nodes whose role is
@@ -297,15 +317,19 @@ dust; *Snow*, snow; bubbles and confetti, nothing). The visible parts
 that the simulation does not move get wet (a *Dynamic* one would get wet where it was),
 where they are at the start, in world mm, as triangle meshes
 (`engine/crates/rt-phys` `wet_parts`, in the S2 *worker*, with its format
-`WPT1`); each one with the **wettability** of its material's family
-(`src/data/wettability.ts` `wettabilityFamilyOf`: the *Metal*,
+`WPT1`); each one with the **wettability** of its family —U16: the one
+its *Surface* gives it, otherwise its material's— (`src/data/wettability.ts` `wettabilityFamilyOf`: the *Metal*,
 *Plastic*, *Glass* category —and an emitter, as glass—, *Wood* and *Fabric* have their own; the
 rest, by their recipe: metallic as metal, the rest as paint; S3g: the catalogue's paper and
 board wet as paper, and a clear-coated one —a car or metallic paint, a glaze, a coated
 carbon fibre— as paint, whatever its metallic flakes; S3c adds
 wood, 85°/40°, and fabric, 110°/40°, and how long a porous material takes to drink
 a drop and how much getting wet darkens it: paper 0.05 mm/s and 1, wood 0.01 and 0.6,
-fabric 0.5 and 1). The parts of a **set** (backdrop, floor, cards) do not carry drops
+fabric 0.5 and 1; U16 adds **water-repellent**, 120°/105°, a waxed or coated
+surface on which water beads up and runs off early, which no material gives
+by itself: a part takes it from its *Surface*). U16: a part that does not get
+wet carries the `WPT1` part flag 2 (*dry*), one without dust or snow the flag 4;
+both stay in the spec as obstacles. The parts of a **set** (backdrop, floor, cards) do not carry drops
 one by one: they get wet as a **film**. Each triangle carries a grid of
 samples of at least 1 mm on a side (which grows until it fits in 150,000 samples
 in total, of which the set takes a third at most; a sliver, by its

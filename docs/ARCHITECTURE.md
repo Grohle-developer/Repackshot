@@ -135,6 +135,8 @@ src/
     physics.ts              physics (S2): a node's Physics section, what is simulated (`physicsSpec`), the simulator's poses back to the nodes, the PHYSICS clip's track and its anchor, the `physics/*` actions (§5.6)
     wet.ts                  S3b: the front glass fed by the scene: what is simulated (`wetSpec`, `wetBytes`, the `wetKey` key), the glass track of the camera's PHYSICS clip (`GlassTrackWriter`, `glassFrame`, `recordedGlass`) and the glass as the engine reports it (`parseEnginePane`) (§5.2 novendecies); S3c: `glassRendersClean`, the warning for an engine without bit 7
     wet-parts.ts            S3c: rain, dust and snow on the parts: what is simulated (`wetPartsSpec`, `wptBytes`, the `wetPartsKey` key), the parts track of the scene's PHYSICS clip (`PartsTrackWriter`, `partsFrame`, `recordedParts`, `partWeather`) and the warning for an engine without bit 8 (`partsRenderDry`) (§5.2 vicies; S3e: moving parts, the studio floor, fine samples and the motes' twin, §5.2 tervicies)
+    part-weather.ts         U16: how the weather treats each part (Physics ▸ Weather): `partWeatherOf` (gets wet, gets dust and snow, the surface given), `surfaceFamily`, the selection's mixed `weatherView`, and the engine's `critical_radius` ported bit for bit (`criticalRadiusMm`, `runSizeMm`, with `f32math`) (§5.2 quattuorvicies)
+    start-plan.ts           U16: what ▶ Start would simulate (`startPlan`): the parts the bodies move, the rain, dust and snow on the parts and the parts that keep dry or bare, the front glass
     effects.ts              the Ambient effects (S4a): the effect as data, its `effect/*` actions, the region, the count and the cap, the fields and the bytes of `FXAM`, the effects of a file; S3: the drop, the shape mix (`mixWeights`, `heaviestShape`) and the shape variation, the S3 fields only when there are any (`hasS3Fields`) and only for an engine that draws them
     section.ts              the section view (Q1): the plane as data (`state.section`), its `section/*` actions, from a click and an axis or from two points, resolved at an instant of the animation for the engines, which parts it cuts, which it caps and which are studio (`partIsExempt`)
     solid.ts                which meshes are closed solids (Q1): the same rule as the engine's `geometry/solid.rs`, so that Fast caps the same parts; and which way a closed surface faces (`solidOrientation`, K1)
@@ -247,7 +249,8 @@ src/
       animation.ts          the animation drawer (N6): transport and the three zones; anim-tree.ts (what is animated), anim-timeline.ts (ruler, bars, magnet, camera track with its fades), anim-props.ts (properties, the three-step wizard, a shot's, presets); components/curve-editor.ts, the two-handle curve (N1)
     texture-commands.ts     what the inspector's slots and labels do (M2a)
     physics.ts              the running simulation (S2): Drop, Start, Pause, Stop, Reset, the clips that grow; S3b: and the camera's scene-fed front glass; S3c: and the parts (`partsRun`, without those the simulation moves)
-    panels/physics.ts  panels/insp-physics.ts  the physics bar (drawer of the bottom bar) and the inspector's Physics section (S2)
+    physics-lines.ts        U16: the sentences of Physics ▸ Motion and Weather, the Material section's pointer and the drawer's line of what Start simulates, without the DOM (tested in Node)
+    panels/physics.ts  panels/insp-physics.ts  the physics bar (drawer of the bottom bar) and the inspector's Physics section (S2); U16: the section in two groups, Motion and Weather, the Material section's pointer to it and the drawer's line of what Start simulates
     anim-commands.ts        what the timeline does (N6): animation selection in step with the scene and the viewer, Animate…, duplicate, delete, reverse, split, pin in the exploded view, transport and keys
     graph-commands.ts       what the material editor and the inspector do with a graph: open, Simple ↔ Nodes, examples, edits (M3a)
 public/
@@ -3443,6 +3446,45 @@ was wrong (the sources are in `docs/ROADMAP.md`, S3g).
   hold. The fixtures `s3c-wet.rsb`, `s3d-flight.rsb` and `s3f-organic.rsb` are
   written again (`s3c-parts.wpt1`, a spec, does not change).
 
+### 5.2 quattuorvicies · Parts that keep dry (U16, `rt_phys::wet_parts` part flags)
+
+Each part says how the weather of the scene treats it (the node's `physics.getsWet`,
+`getsDust` and `surface`, `core/part-weather.ts`), and the simulation of the parts
+(§5.2 vicies) honours it.
+
+- **WPT1** keeps its layout: the part's `flags` word gains two bits besides
+  `PART_FILM` (1). `PART_DRY` (2): the part takes no water: it is not among the
+  triangles that drops land on (`prepare_sources`, and `land` for a part that
+  moves), its film samples get no wet time, and a drop in the air that meets it
+  (a drip, a splash) is gone (`impact`: counted in `water_lost`). `PART_NO_DUST`
+  (4): its samples get no dust or snow rate. Either way the part stays in the
+  ray tree, so it shelters what is below it exactly as before. A part with
+  neither bit writes the bytes it wrote before, so the key of an earlier
+  recording (`wetPartsKey`) does not change.
+- **No capability bit**: the parts are simulated in the page's own `rt.wasm` (the
+  physics *worker*), never by a render engine; what the render receives is the
+  recording, in which a dry part simply has no wet samples and no drops, and a
+  bare one no dust or snow rates (the layout's per-part flags already say which
+  rates follow).
+- **The family**: `wetPartsSpec` writes the angles, soak and darkening of the
+  part's `surfaceFamily` (its *Surface*, or its material's); the table gains
+  `WATER_REPELLENT` (120°/105°, ◆).
+- **The critical size the inspector states** is `rt_phys::wet::critical_radius`
+  (Furmidge: `a_c = √(2 γ (cos θ_R − cos θ_A) / (ρ g K(θ̄) sin α))`) computed by
+  the page with `core/f32math.ts` in the engine's order of operations, so it
+  gives the same `f32` bits: `engine/crates/rt-phys/tests/wet_parts_u16.rs` writes
+  `tests/fixtures/u16-critical.json` (every family at 0, 5, 15, 30, 45, 60 and
+  90°, the sine and the radius as bits) and `tests/u16-weather.test.ts` requires
+  the port to match each one.
+- **Tests**: `wet_parts_u16.rs` (a dry roof keeps the part below it dry and stays
+  dry; a dry film part and a dry part that moves stay dry; a drip that falls on a
+  dry part is gone, its water accounted for; a part without dust takes no dust or
+  snow and still shelters; the flags are independent and round-trip; the
+  fixture), also on `wasm32-wasip1`; `tests/u16-weather.test.ts` (the store, the
+  project, the writer, the port, the sentences, the plan, and a dry roof through
+  the page's writer and the real `rt.wasm`); `tests/u16-physics-browser.test.ts`
+  (the inspector and the drawer in Chromium); `tools/u16-check.mjs` (captures).
+
 ### 5.3 · In the browser: workers
 
 `src/render/pathtracer.ts` implements `RenderEngine` with a **pool of
@@ -4185,6 +4227,7 @@ seen are checked with `tools/box-select-check.mjs` and
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | The 72 earlier setups without new fields and with the same rig as before against the 16 types (fixture); the product types with their set's lights at their level; no card in the frame (16 focal lengths, three shapes, three aspect ratios, the set's camera: polygon clipping against the camera pyramid, and a visible case so that the test does not pass on its own); apply, replace, remove with another setup and with *Reset*, *Create studio* with a set, one undo entry; the decoration is neither the product nor looked at by the Doctor; the pool (its share of the level, where it falls, its power); *Use the set’s camera*; the gradient as the RSB's background image; the thumbnails: each one's RSB scene as the code builds it now and the manifest's PNG, and the *hash* of one pinned; measurements on the thumbnails with the acceptance thresholds in `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` prints them) |
 | Browser gestures | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright with the local Chromium over `dist/`, in Fast and in Full, with mouse, pen and finger; captures in `docs/ui/` (those of Full, in `out/`) |
 | Rain and dust on the glass (S3b) | `cargo test -p rt-phys --test wet` (also on `wasm32-wasip1`); `rt-core` `optics::glass::tests` and `render::s3_tests`; `tests/s3b-wet.test.ts`; `tools/s3b-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | A drop on glass at 30° stays up to Furmidge's critical radius (± 0.5 % of the `f64` calculation) and slides above it; two that touch add their volume (± 1 %); the trail cleans the dust; dust on a 60° face is < 10 % of that on a horizontal one; rain arrives at its flux and never on a face looking the other way; the same glass by single steps or together and rebuilt from its frames; the two pinned values on every SIMD path and in wasm; the `WET1` and the `GLAS` drop by drop byte for byte; the track (the cache) equal in two runs; the camera's clip, saved and opened; the bar runs it alone, one undo entry, *Reset* removes it; the approximation of *Fast* |
+| The physics of each part in one place (U16) | `cargo test -p rt-phys --test wet_parts_u16` (also on `wasm32-wasip1`); `tests/u16-weather.test.ts`, `tests/u16-physics-browser.test.ts`; `tools/u16-check.mjs` | A dry roof keeps the part below dry and stays dry, and so do a dry film part and a dry moving part; a drip on a dry part is gone with its water accounted for; no dust or snow on a part without them, which still shelters; the flags independent and in the bytes; the page's critical radius the engine's bits for every family at seven tilts; the store (one undo step for every part, defaults stored as nothing), the project and an older one; the writer's flags and family; the sentences and the plan; the inspector's groups, mixed values, note and pointer, the effect's row after Shape and the drawer's line in Chromium |
 | Rain, dust and snow on the parts (S3c) | `cargo test -p rt-phys --test wet_parts` (also on `wasm32-wasip1`); `rt-core` `weather::tests`; `rt-wasm` `parts`; `rt-cli/tests/example.rs`; `tests/s3c-parts.test.ts` and `tests/s3c-warning.test.ts`; `tools/s3c-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | The glass at 30° up to the critical radius and the trail's film; from face to face and the dripping over an open edge; merging ± 1 %; the trail cleans the dust; dust at 60° < 10 %; rain at its flux, never on a face turned away nor under a roof; hanging and dripping onto what is below, splashing without losing water; the film at its pace; the snow where it rests; by steps and by frames; the two pinned values on every SIMD path, with 1, 4 and 16 threads and in wasm; a `WETP` with nothing changes no pixel; the WPT1 byte for byte; the track equal in two runs; the scene's clip, saved and opened; the bar runs it alone; the warnings of bits 7 and 8 |
 | Physics (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | A sphere rests at `r ± 0.1` mm, a stack of three boxes holds for 5 s, a tilted box falls flat, a cube slides off a sphere, a ramp holds at μ 0.6 and lets it slide at 0.1, a thousand spheres settle (< 20 s in *release*), sleeping stops the simulation, pinned *hash* equal with 1 and N threads and in wasm; what is simulated, the poses back to the nodes, a simulation is one undo entry, *Reset* another, *Pause* freezes what is seen, the clip is saved, opened and played; three primitives that fall in the browser |
 | Engine Doctor (D1) | `tests/doctor-engine.test.ts` (a fake engine that simulates each state and the real `installDoctorFacts`), `tests/frame-scan.test.ts` (the reading of the accumulation and the pool's `status().scan` with fake *workers*), `tests/store.test.ts` (a listener's actions during an undo); `tools/doctor-engine-check.mjs` | Each check fires and its fix clears it (project through the *store*, one undo entry; what is not the project's, only the explanation and, if a Settings row limits it, the button that opens it); *Fix all* in one click; without engine facts, everything *unavailable* as before; thresholds at their boundaries; `sameImage` agrees with `touchesImage` of both engines; the phrases in both languages; in the browser, the Doctor with two engine warnings (`docs/ui/doctor-engine.png`) |

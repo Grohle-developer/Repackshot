@@ -30,13 +30,20 @@
 // cells under the effects' region (the WETG section, for an engine with bit 11; `PartsFrame.floor`), the set's film
 // triangles that a shadow edge crosses take fine samples (two-byte resolutions: WTP2, bit 12), the dust leaves its
 // motes (the motes tail, bit 13), and the wind of the effects pushes the drops in the air.
+//
+// U16: each part says how the weather treats it (Physics ▸ Weather, core/part-weather.ts): a part that does not get wet
+// is flagged dry (rt_phys::wet_parts::PART_DRY: no drops, no film, the drops in the air that meet it gone), one that
+// takes no dust or snow is flagged so (PART_NO_DUST: no rates); either stays in the spec and shelters what is below it.
+// Its family is the one it is given, or its material's. The page runs the simulation in its own rt.wasm, so the flags
+// need no capability bit; a part with neither flag writes the bytes it wrote before.
 
 import { FLOOR_CELL_MM, FLOOR_MAX_CELLS, PARTS_CELL_MM, PARTS_EDGE_BUDGET, PARTS_EDGE_CELL_MM, PARTS_FEED, PARTS_MAX_SAMPLES, SET_PIECES_AS_FILM } from '../data/wet-parts';
-import { DUST_REPOSE_DEG, SNOW_REPOSE_DEG, wettability, wettabilityFamilyOf, type WettabilityFamily } from '../data/wettability';
+import { DUST_REPOSE_DEG, SNOW_REPOSE_DEG, wettability, type WettabilityFamily } from '../data/wettability';
 import type { Pose } from './animation';
 import { effectRegion, effectVolumeM3, requestedParticles, type AmbientEffect } from './effects';
 import type { Mat4, Vec3 } from './math';
 import { getMesh, type MeshData, type MeshId } from './meshes';
+import { partWeatherOf, surfaceFamily } from './part-weather';
 import { allParts, effectiveVisible, isSetPiece, worldMatrix, type NodeId } from './scene';
 import type { ProjectState } from './store';
 
@@ -96,6 +103,10 @@ export const SNOW_STEP_MM = 0.02;
 const STEPS = 240;
 /** WPT1 part flags: a film (rt_phys::wet_parts::PART_FILM). */
 const PART_FILM = 1;
+/** U16: WPT1 part flags: no water on it (rt_phys::wet_parts::PART_DRY). */
+export const PART_DRY = 2;
+/** U16: WPT1 part flags: no dust or snow on it (rt_phys::wet_parts::PART_NO_DUST). */
+export const PART_NO_DUST = 4;
 
 /** An effect as the parts see it (a source of WPT1). */
 export interface PartsSourceSpec {
@@ -124,6 +135,10 @@ export interface WetPartEntry {
   porosity: number;
   /** A set's piece: no drops one by one, a film. */
   film: boolean;
+  /** U16: it does not get wet (Physics ▸ Weather ▸ Gets wet off): it takes no water and still shelters. */
+  dry?: boolean;
+  /** U16: dust and snow do not settle on it (Gets dust and snow off): it still shelters. */
+  noDust?: boolean;
   /**
    * S3e: the dynamic body it moves with (its order among the spec's bodies: the PHY1 scene's dynamic bodies); absent: it
    * stays where it stands.
@@ -251,9 +266,10 @@ export function wetPartsSpec(state: ProjectState, moving: ReadonlyMap<NodeId, nu
     const node = state.scene.nodes[id];
     if (!node?.mesh || !effectiveVisible(state, id) || !getMesh(node.mesh.id)) continue;
     const body = moving.get(id);
-    const material = node.material ? state.materials[node.material] : undefined;
-    const family = wettabilityFamilyOf(material);
+    // U16: the family it is given in Physics ▸ Weather, or its material's; and whether it keeps dry or bare.
+    const family = surfaceFamily(state, id);
     const w = wettability(family);
+    const weather = partWeatherOf(node);
     parts.push({
       node: id,
       mesh: node.mesh.id,
@@ -264,6 +280,8 @@ export function wetPartsSpec(state: ProjectState, moving: ReadonlyMap<NodeId, nu
       soakMmPerS: w.soakMmPerS,
       porosity: w.porosity,
       film: body === undefined && SET_PIECES_AS_FILM && isSetPiece(node),
+      ...(weather.getsWet ? {} : { dry: true }),
+      ...(weather.getsDust ? {} : { noDust: true }),
       ...(body !== undefined ? { body } : {}),
     });
   }
@@ -300,7 +318,8 @@ function rows(m: Mat4): number[] {
  *
  *   "WPT1"  u32 version (1 or 2); u32 seed; f32 cell_mm; u32 max_samples; f32 repose_deg snow_repose_deg;
  *   u32 meshes; per mesh: u32 vertices indices; f32 positions[3 × vertices]; u32 indices[]
- *   u32 parts; per part: u32 mesh; f32 rows[12]; f32 advancing_deg receding_deg soak_mm_s; u32 flags (1: a film);
+ *   u32 parts; per part: u32 mesh; f32 rows[12]; f32 advancing_deg receding_deg soak_mm_s;
+ *              u32 flags (1: a film; U16: 2: dry, 4: no dust or snow);
  *              v2: u32 body (0xffffffff: it stays)
  *   u32 sources; per source: u32 kind (0 drops, 1 dust, 2 snow); f32 density; f32 velocity[3]; f32 size_mm size_var
  *   v2: f32 wind[3]; u32 floor (0, 1); [f32 z x0 y0 x1 y1 cell_mm; u32 max_cells]; f32 edge_cell_mm; u32 edge_budget
@@ -360,7 +379,7 @@ export function wptBytes(spec: WetPartsSpec, meshes: (id: MeshId) => MeshData | 
     f32(part.advancingDeg);
     f32(part.recedingDeg);
     f32(part.soakMmPerS);
-    u32(part.film ? PART_FILM : 0);
+    u32((part.film ? PART_FILM : 0) | (part.dry ? PART_DRY : 0) | (part.noDust ? PART_NO_DUST : 0));
     if (v2) u32(part.body ?? NO_BODY);
   }
   u32(spec.sources.length);

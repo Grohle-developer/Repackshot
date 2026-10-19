@@ -395,6 +395,10 @@ jobs:
           # their pinned parts and images.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3e
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3e
+          # U16: the parts that keep dry, and the critical radius of every family the inspector states (the fixture
+          # the page's port matches bit for bit).
+          cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_u16
+          RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_u16
           # S3g: runners that leave their trail and no beads, pearls past the transition, outlines of the contact area,
           # and the pinned run of the pearls.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3g

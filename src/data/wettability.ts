@@ -12,10 +12,19 @@
 // front glass has drawn its drops with since S3 (data/front-glass.ts). In S3b only the front glass uses the table; the
 // other families wait for the drops on the parts (S3c). `tests/s3b-wet.test.ts` checks that GLASS and DUST_REPOSE_DEG
 // are the engine's parity values (rt_phys::example).
+//
+// U16 adds WATER_REPELLENT, a waxed or coated surface on which water beads up and runs off early, which no material
+// wets as by itself: a part takes it, or any other family, in its inspector (Physics ▸ Weather ▸ Surface, the node's
+// `physics.surface`, core/part-weather.ts). Its angles are ◆ a proposal from Ray and Bartell, "Hysteresis of contact
+// angle of water on paraffin. Effect of surface roughness and of purity of paraffin", J. Colloid Sci. 8 (1953)
+// 214–223: water on the smoothest purified paraffin films advances and recedes at about 112° with no hysteresis; on
+// rougher films and coatings the hysteresis is 5° to 35°, the roughness raising the advancing angle and lowering the
+// receding one by the same amount. A wax or a coating on a product is not that smooth: its mean, 112.5°, with a
+// hysteresis of 15°, low in that range. `tests/u16-weather.test.ts` checks the table against the engine's fixture.
 
 import type { Label } from './types';
 
-export type WettabilityFamily = 'GLASS' | 'PLASTIC' | 'METAL' | 'PAPER' | 'PAINT' | 'WOOD' | 'FABRIC';
+export type WettabilityFamily = 'GLASS' | 'PLASTIC' | 'METAL' | 'PAPER' | 'PAINT' | 'WOOD' | 'FABRIC' | 'WATER_REPELLENT';
 
 export interface Wettability {
   key: WettabilityFamily;
@@ -45,7 +54,17 @@ export const WETTABILITY: readonly Wettability[] = [
   { key: 'WOOD', label: { en: 'Wood', es: 'Madera' }, advancingDeg: 85, recedingDeg: 40, soakMmPerS: 0.01, porosity: 0.6 },
   // S3c: woven cloth: a drop sits a moment and soaks in, the cloth darkens where it went.
   { key: 'FABRIC', label: { en: 'Fabric', es: 'Tela' }, advancingDeg: 110, recedingDeg: 40, soakMmPerS: 0.5, porosity: 1 },
+  // U16: waxed or coated: water beads up and runs off early (◆, Ray and Bartell 1953, above). Never from a material.
+  { key: 'WATER_REPELLENT', label: { en: 'Water-repellent', es: 'Hidrófugo' }, advancingDeg: 120, recedingDeg: 105, soakMmPerS: 0, porosity: 0 },
 ];
+
+/** U16: the family keys, in the table's order. */
+export const WETTABILITY_FAMILIES: readonly WettabilityFamily[] = WETTABILITY.map((w) => w.key);
+
+/** U16: a family this version knows (a project's `physics.surface`). */
+export function isWettabilityFamily(v: unknown): v is WettabilityFamily {
+  return typeof v === 'string' && WETTABILITY.some((w) => w.key === v);
+}
 
 export function wettability(key: WettabilityFamily): Wettability {
   return WETTABILITY.find((w) => w.key === key) ?? WETTABILITY[0];
