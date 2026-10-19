@@ -139,9 +139,13 @@ fn a_typical_runner_on_a_vertical_pane_leaves_its_trail_and_no_beads() {
 /// and simd128.
 const PINNED_S3G_PEARLS: u32 = 0x533b_5c9d;
 
-/// The pearls of six runners down a pane of `adv`/`rec` 1000 mm tall: per lane, the heights of the
-/// pearls it left and the runner's contact radius at the end; and the run's hash.
-fn pearling_lanes(adv: f32, rec: f32, share: f32) -> (Vec<(Vec<f32>, Vec<f32>, f32)>, u32) {
+/// A lane of the pearling run: the heights of the pearls its runner left, their contact radii, and
+/// the runner's contact radius at the end.
+type Lane = (Vec<f32>, Vec<f32>, f32);
+
+/// The pearls of six runners down a pane of `adv`/`rec` 1000 mm tall, lane by lane; and the run's
+/// hash.
+fn pearling_lanes(adv: f32, rec: f32, share: f32) -> (Vec<Lane>, u32) {
     let k = k_of(adv, rec);
     let crit = critical_radius(adv, rec, 1.0);
     let mut parts = WetParts::new(spec(

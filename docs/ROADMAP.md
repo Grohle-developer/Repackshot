@@ -13269,6 +13269,12 @@ breaks the surface tension."* On top of `rt_phys::wet_parts` (S3c to S3f),
    published values for real outdoor surfaces, corrections as ◆.
 4. **Coordination.** U16 adds the `WPT1` part flag `PART_DRY = 2`: left to it;
    S3g keeps `WPT1` as it is.
+5. **The surfaces of the example** (added to (iv)): `wettabilityFamilyOf` (S3c ◆)
+   gives the example bottle the wrong ones: its metallic paint (category
+   *Other*, metallic 0.65, clear coat 1) wets as *Metal*, and no material maps
+   to *Paper* (the label wets as *Paint*). Clear-coated paints to `PAINT`, the
+   paper and board materials to `PAPER`, bare metals staying `METAL`; tests on
+   the catalogue's materials, each with its mutation.
 
 **Acceptance.** A typical runner on a vertical pane leaves 0 beads; past the
 threshold, the coefficient of variation of the pearls' spacing is above 0.3 and
@@ -13302,10 +13308,11 @@ every tilt takes the same water: 2.0 × 10⁻⁵ drops per mm³ of 1.2 mm ± 40 
 drop at every frame, as area-equivalent diameters over the contact diameter; a
 pinned and a sliding drop's outline was already 1.00.) The drops depin at their
 critical size (the median within 6 % of it, the 90th percentile 4 to 34 % past
-it: a merge overshoots), and the critical size goes as `1/√sin α`. On the bottle
-(`tests/water-dump.test.ts`): at 20 s 783 drops (S3f: 1003), the body's down
-from 700 to 483 (no beads); the largest on a level face, the top of the cap,
-20.2 mm across in both (below).
+it: a merge overshoots), and the critical size goes as `1/√sin α`. On the
+bottle (`tests/water-dump.test.ts`, with its surfaces corrected: What, 5): at
+20 s 830 drops (S3f: 1003), the painted body's 478 (S3f, wetting as metal: 700,
+its beads among them), the paper label's 160 (S3f, as paint: 108); the largest
+on a level face, the top of the cap, 20.2 mm across in both (below).
 
 **Against the literature** (each checked against the text read; where a claim
 is quoted from another paper, that paper is named):
@@ -13403,7 +13410,19 @@ be read are of clean laboratory surfaces, none of weathered outdoor ones: water
 on a silicon wafer's native oxide 65°/35° (Li et al. 2023), on a coated glass
 64–86°/20–38° (Liang and Tietze 2017, at the onset on a tilted plate), on PMMA
 69.9°/47.2° and 67.5°/43.8° (de la Madrid et al. 2023), on polystyrene 95°/78°
-(Li et al. 2023). Proposals in ◆7.
+(Li et al. 2023). Proposals in ◆7. **The mapping, fixed** (5): a material made
+from the catalogue's paper or board (`PAPER_PRESETS`, by its `preset` or, once
+edited, its `origin`) wets as paper; among the materials of no category of
+their own, a clear-coated one (`coat` ≥ 0.5) wets as paint before its metallic
+flakes or its weave are looked at; the categories keep their families (a bare
+metal stays metal, a glossy plastic plastic). In the catalogue this moves the
+metallic paint (*Metal* → *Paint*), the coated carbon fibre (*Fabric*, which
+soaks water like cloth, → *Paint*) and the paper and the cardboard (*Paint* →
+*Paper*); the car paint, the ceramic, the rubber and the leather stay paint.
+The example bottle: base plastic, body paint (85°/60°), label paper (100°/20°,
+it soaks), collar and cap metal. No pin or fixture moves with it: the engine's
+parity scenes give their angles themselves, and the page's fixtures are the
+engine's.
 
 **What made drops look too big**, then: the outlines of merges and hanging
 drops (fixed), S3f's beads (gone), and two things that remain (below): a drop on
@@ -13452,17 +13471,22 @@ The record's format goes to 5 (`wpt5:`): the same bytes of another simulation.
 - `wet_parts.rs`: S3f's rivulet test becomes "no beads, fast or slow"; the merge
   test checks the outline's proportions and its area; the organic pin test no
   pearls. `rt-cli`: `--water-table` and its input.
-- `tests/s3g-water.test.ts` (4): *Fast*'s hanging drop keeps its contact line
+- `tests/s3g-water.test.ts` (6): *Fast*'s hanging drop keeps its contact line
   and volume and `hangStretch` keeps the paraboloid's volume (mutation: *Fast*'s
   stretch of S3f, also caught by `tests/s3f-organic.test.ts`); format 5; the
-  tip in English and Spanish. `tests/water-dump.test.ts` (skipped by `npm test`)
+  tip in English and Spanish; every catalogue material wets as its surface
+  (clear-coated paints paint, paper and board paper, each category its own, an
+  edited paper still paper) and the example bottle's parts as theirs
+  (mutations: the coat not looked at, as in S3c; no material as paper, as in
+  S3c; the coat looked at before the category, which made a glossy plastic
+  paint). `tests/water-dump.test.ts` (skipped by `npm test`)
   writes the sheet's scenes.
 
 **Captures.** `docs/ui/rain-organic.png` re-recorded (`tools/s3f-strip.mjs`):
 the runner slides down through the pinned drops and gathers them with no line
 of beads behind it. `docs/ui/rain-bottle.png` (`tools/water-sheet.mjs
---bottle-shot`): the example bottle's painted body at 10 s of the default rain,
-30 mm across, square-on, with a 5 mm bar.
+--bottle-shot`): the example bottle's painted body (wetting as paint) at 10 s of
+the default rain, 30 mm across, square-on, with a 5 mm bar.
 
 **What did not fit the plan.**
 - **(iii) is not done**: no published model found (above).
@@ -13514,6 +13538,9 @@ of beads behind it. `docs/ui/rain-bottle.png` (`tools/water-sheet.mjs
    rim of a level face holds there within Gibbs's limits and spills over; a drop
    past the capillary length drawn (and weighed) as a puddle
    `2 √(γ/ρg) sin(θ/2)` tall.
+9. ◆ The mapping's thresholds: a clear coat of 0.5 or more makes a material of
+   no category of its own wet as paint; paper and board are known by their
+   catalogue keys only (an imported paper-like material wets as paint).
 
 ## M5 · Thread-by-thread weave and real fuzz — **Opus**, verdict **Fable** (after E6 and E9; the fuzz after S8)
 

@@ -300,7 +300,9 @@ where they are at the start, in world mm, as triangle meshes
 `WPT1`); each one with the **wettability** of its material's family
 (`src/data/wettability.ts` `wettabilityFamilyOf`: the *Metal*,
 *Plastic*, *Glass* category —and an emitter, as glass—, *Wood* and *Fabric* have their own; the
-rest, by their recipe: metallic as metal, the rest as paint; S3c adds
+rest, by their recipe: metallic as metal, the rest as paint; S3g: the catalogue's paper and
+board wet as paper, and a clear-coated one —a car or metallic paint, a glaze, a coated
+carbon fibre— as paint, whatever its metallic flakes; S3c adds
 wood, 85°/40°, and fabric, 110°/40°, and how long a porous material takes to drink
 a drop and how much getting wet darkens it: paper 0.05 mm/s and 1, wood 0.01 and 0.6,
 fabric 0.5 and 1). The parts of a **set** (backdrop, floor, cards) do not carry drops

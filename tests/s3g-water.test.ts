@@ -5,9 +5,13 @@
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { PARTS_FORMAT_VERSION, wetPartsKey } from '../src/core/wet-parts';
+import { instanceFromPreset } from '../src/core/materials';
+import { PARTS_FORMAT_VERSION, wetPartsKey, wetPartsSpec } from '../src/core/wet-parts';
+import { MATERIAL_PRESETS } from '../src/data/materials';
+import { wettabilityFamilyOf } from '../src/data/wettability';
 import { capGeometry, hangStretch, localShape, SHAPED_CAP_RINGS, shapePointLocal } from '../src/render/weather-preview';
 import { STRINGS } from '../src/ui/strings';
+import { apply, exampleState } from './helpers';
 
 /** A drop hanging under a ceiling (gravity along the cap's outward normal), stretched and pinched. */
 const HANGING = [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0.9, 0.4];
@@ -76,5 +80,45 @@ describe('S3g: the record of a run', () => {
     expect(en).toContain('leave a wet streak');
     expect(es).toContain('dejan un rastro mojado');
     expect(en).not.toContain('rivulet');
+  });
+});
+
+describe('S3g: the surface each material wets as', () => {
+  /** The family the catalogue's material `key` wets as, made as a part takes it. */
+  const of = (key: string) => wettabilityFamilyOf(instanceFromPreset('m', key, 100));
+
+  it('clear-coated paints wet as paint, paper and board as paper, bare metals as metal, the rest by their category', () => {
+    // A painted, clear-coated surface wets as its coat, whatever its metallic flakes (S3c took the metallic paint for
+    // a metal) or its weave (the carbon fibre's).
+    for (const key of ['PAINT_MET', 'CAR_PAINT', 'CERAMIC', 'CARBON']) expect(of(key), key).toBe('PAINT');
+    // No material wet as paper (S3c: the paper label wet as paint).
+    for (const key of ['PAPER', 'CARDBOARD']) expect(of(key), key).toBe('PAPER');
+    for (const p of MATERIAL_PRESETS) {
+      if (p.category === 'METAL') expect(of(p.key), p.key).toBe('METAL');
+      if (p.category === 'PLASTIC') expect(of(p.key), p.key).toBe('PLASTIC');
+      if (p.category === 'WOOD') expect(of(p.key), p.key).toBe('WOOD');
+      if (p.category === 'FABRIC') expect(of(p.key), p.key).toBe('FABRIC');
+      if (p.category === 'GLASS' || p.category === 'EMISSIVE') expect(of(p.key), p.key).toBe('GLASS');
+    }
+    // A glossy plastic's coat is the plastic's own; rubber and leather stay paint; a liquid wets as glass.
+    expect(of('ABS_GLOSS')).toBe('PLASTIC');
+    expect(of('RUBBER')).toBe('PAINT');
+    expect(of('LEATHER')).toBe('PAINT');
+    expect(of('MILK')).toBe('GLASS');
+    // Edited away from the catalogue, the paper is still paper; a material of the user's by its recipe.
+    const paper = instanceFromPreset('m', 'PAPER', 100)!;
+    expect(wettabilityFamilyOf({ ...paper, preset: null, edited: true })).toBe('PAPER');
+    expect(wettabilityFamilyOf({ category: 'OTHER', family: 'SIMPLE', preset: null, origin: null, params: { metallic: 1, coat: 1 } })).toBe('PAINT');
+    expect(wettabilityFamilyOf({ category: 'OTHER', family: 'SIMPLE', preset: null, origin: null, params: { metallic: 1 } })).toBe('METAL');
+  });
+
+  it('the example bottle: its base plastic, its metallic-paint body paint, its label paper, its collar and cap metal', () => {
+    let s = apply(exampleState(), { type: 'effect/add', preset: 'RAIN' });
+    s = apply(s, { type: 'effect/set', id: s.effects[s.effects.length - 1].id, patch: { wetParts: true } });
+    const spec = wetPartsSpec(s)!;
+    const by = Object.fromEntries(spec.parts.map((p) => [s.scene.nodes[p.node].key, p.family]));
+    expect(by).toEqual({ base: 'PLASTIC', body: 'PAINT', label: 'PAPER', collar: 'METAL', cap: 'METAL' });
+    const label = spec.parts.find((p) => s.scene.nodes[p.node].key === 'label')!;
+    expect([label.advancingDeg, label.recedingDeg, label.porosity]).toEqual([100, 20, 1]);
   });
 });
