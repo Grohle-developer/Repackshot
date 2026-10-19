@@ -159,7 +159,10 @@ fn foreign_hosts_origins_and_missing_tokens_are_refused() {
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_FINE, 4096);
     assert_eq!(rt_core::FEATURES & rt_core::FEATURE_WET_MOTES, 8192);
     // S7: and the nested dielectrics (a liquid in its glass).
-    assert_eq!(rt_core::FEATURES & rt_core::FEATURE_NESTED_DIELECTRICS, 16384);
+    assert_eq!(
+        rt_core::FEATURES & rt_core::FEATURE_NESTED_DIELECTRICS,
+        16384
+    );
     assert_eq!(info.get("features").unwrap().as_f64(), Some(32767.0));
     assert_eq!(info.get("portable").unwrap().as_bool(), Some(false));
     assert!(!ok.text().contains(TOKEN), "the token is never echoed");
