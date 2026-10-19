@@ -54,6 +54,8 @@ fn a_litre_poured_into_a_closed_glass_keeps_its_volume() {
         at = steps;
         let mesh = w.surface(0);
         let v = mesh.volume() / litre;
+        // The numbers the roadmap quotes (`--nocapture`).
+        eprintln!("litre at {:.2} s: {v:.4} L", steps as f32 / 240.0);
         assert!(
             (v - 1.0).abs() < 0.03,
             "at {:.2} s the surface holds {v:.4} L",
@@ -126,6 +128,10 @@ fn honey_takes_at_least_five_times_longer_than_water_to_level() {
     let steps = (5.0 * t_water * 240.0).ceil() as u32;
     honey.step(steps);
     let uneven = unevenness(&honey);
+    eprintln!(
+        "water level at {t_water:.3} s; honey at {:.3} s: unevenness {uneven:.3}",
+        steps as f32 / 240.0
+    );
     assert!(
         uneven > LEVEL,
         "honey is level ({uneven:.3}) at {:.2} s, five times water's {t_water:.2} s",

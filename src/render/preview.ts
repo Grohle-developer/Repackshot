@@ -2308,7 +2308,6 @@ export class PreviewEngine implements RenderEngine {
 
   // ------------------------------------------------------------------ ambient effects (S4a)
 
-  /** rt.wasm for the particles (null: there is none; the region boxes are drawn instead). */
   /** S7: the liquids' surfacer has come (or gone): the recorded liquids draw their frame's surface. */
   refreshLiquids(): void {
     if (!this.state) return;
@@ -2316,6 +2315,7 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /** rt.wasm for the particles (null: there is none; the region boxes are drawn instead). */
   setParticleEngine(rt: RtParticleExports | null): void {
     this.particleEngine = rt;
     this.particleCache.clear();

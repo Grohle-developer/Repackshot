@@ -528,14 +528,19 @@ mod tests {
 
     #[test]
     fn a_block_of_particles_has_its_volume() {
-        // A close-packed block of 2 mm particles (a cube of 40 mm, filled as a liquid is).
+        // A close-packed block of particles 2 mm apart (cubes of 40 and 60 mm, filled as a liquid
+        // is) has the volume they stand for on their lattice, `N s³`. (The fill's own spacing makes
+        // them stand for the cube's volume; how far that is from `N s³` depends on how the lattice
+        // falls against the cube's faces, and the simulation settles the liquid at it.)
         let s = 2.0f32;
-        let cube = crate::example::box_mesh(Vec3::splat(20.0));
-        let (pts, used) = crate::liquid::fill::fill(&cube.positions, &cube.indices, s);
-        let m = surface(&pts, used);
-        assert!(watertight(&m.indices));
-        let want = 40.0f64.powi(3);
-        let got = m.volume();
-        assert!((got / want - 1.0).abs() < 0.03, "{got} vs {want}");
+        for half in [20.0f32, 30.0] {
+            let cube = crate::example::box_mesh(Vec3::splat(half));
+            let (pts, _) = crate::liquid::fill::fill(&cube.positions, &cube.indices, s);
+            let m = surface(&pts, s);
+            assert!(watertight(&m.indices));
+            let want = pts.len() as f64 * f64::from(s).powi(3);
+            let got = m.volume();
+            assert!((got / want - 1.0).abs() < 0.03, "{half}: {got} vs {want}");
+        }
     }
 }

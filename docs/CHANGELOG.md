@@ -20,6 +20,12 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **A drop runs down a sloping edge**: a drop that reaches the side edge of a tilted part runs along it, gathering what it meets, down to the lowest corner, where it hangs and drips; a level edge still holds it where it reached it (S3e).
 - **Notices for an engine that would not draw them**: with an older render engine, the *On the parts* switch says so when the floor would show dry, and when the dust would show without its grains (S3e).
 
+### Physics
+
+- **Liquids**: right-click a part ▸ **Convert to liquid** ▸ *Water*, *Oil*, *Honey*, *Milk*, *Gel*, *Syrup*, *Orange juice* or *Red wine*: the part is hidden and a liquid part takes its shape, with the preset's look; *Start* in the physics bar fills it with particles and pours it into the parts that hold it and onto the floor, each liquid flowing as it should (honey slow and clinging, water quick to level). The run is recorded on the timeline like a fall, and each frame shows the liquid's surface in *Fast*, in *Full* and in the render. One undo step converts, another the run; *Reset* takes it away (S7).
+- **The Liquid section** of the inspector changes the liquid and the particle size (automatic from the part's volume, or your own), and says how many particles to expect and, after a run, how many there are (S7).
+- **A liquid inside its glass**: where a liquid touches the glass that holds it, the render bends the light at the ratio of the two (water in glass), not as two surfaces against air, so there is no bright line of air at the contact. A glass material has a *Nested priority* for overlapping clear solids (0, automatic: the glass holds the liquid). With an older render engine, the Liquid section says the contact is drawn as against air (S7).
+
 ## v0.1.22 — 2026-10-18
 
 ### Scene and ambient

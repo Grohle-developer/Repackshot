@@ -654,9 +654,15 @@ export type PhysicsAction =
   /** Reset: the transforms the movers had before, and the simulation's clips taken away. A step of its own. */
   | ({ type: 'physics/reset'; transforms: Record<NodeId, Transform>; clips: string[] } & ActionBase);
 
-function setProps(nodes: Record<NodeId, SceneNode>, id: NodeId, patch: Partial<PhysicsProps>): boolean {
+function setProps(nodes: Record<NodeId, SceneNode>, id: NodeId, given: Partial<PhysicsProps>): boolean {
   const node = nodes[id];
   if (!node) return false;
+  // S7: LIQUID is the role of a liquid part (Convert to liquid makes one) and of nothing else, and a liquid part keeps it.
+  let patch = given;
+  if (patch.role !== undefined && (node.liquid ? patch.role !== 'LIQUID' : patch.role === 'LIQUID')) {
+    const { role: _role, ...rest } = patch;
+    patch = rest;
+  }
   const next: PhysicsProps = { ...(node.physics ?? {}) };
   for (const [k, v] of Object.entries(patch) as [keyof PhysicsProps, unknown][]) {
     if (v === null || v === undefined) delete next[k];

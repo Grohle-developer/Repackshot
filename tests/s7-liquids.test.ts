@@ -599,6 +599,15 @@ describe('S7: the physics bar pours the liquid', () => {
     expect(store.get().scene.nodes[glass].physics?.role).toBe('DYNAMIC');
   });
 
+  it('a liquid part keeps its role, and LIQUID is no role for a solid one', () => {
+    const { state, liquid } = poured();
+    const glass = Object.values(state.scene.nodes).find((n) => n.name === 'glass')!.id;
+    const s = apply(state, { type: 'physics/set', ids: [liquid, glass], patch: { role: 'DYNAMIC', friction: 0.3 } });
+    expect(s.scene.nodes[liquid].physics).toEqual({ role: 'LIQUID', friction: 0.3 });
+    expect(s.scene.nodes[glass].physics).toEqual({ role: 'DYNAMIC', friction: 0.3 });
+    expect(apply(state, { type: 'physics/set', ids: [glass], patch: { role: 'LIQUID' } })).toBe(state);
+  });
+
   it('the rain on the parts leaves the liquid out (its surface is rebuilt every frame)', () => {
     const { state, liquid } = poured();
     let s = apply(state, { type: 'effect/add', preset: 'RAIN' });

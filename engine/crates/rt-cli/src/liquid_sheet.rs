@@ -12,9 +12,9 @@
 
 use crate::render_progressive;
 use crate::sheet::image_stats;
-use rt_core::color::Rgb;
+use rt_core::color::{Rgb, Tonemap};
 use rt_core::math::Vec3;
-use rt_core::scene::{Camera, Material, MATERIAL_GLASS};
+use rt_core::scene::{Camera, Material, DENOISE_IMAGE, MATERIAL_GLASS};
 use rt_phys::example::box_mesh;
 use rt_phys::liquid::example::{glass_material, glass_mesh, render_scene};
 use rt_phys::liquid::{LiquidParams, LiquidSource, LiquidSpec, LiquidWorld, Runner, StaticPiece};
@@ -283,11 +283,20 @@ pub fn run(
             size.1,
         );
         scene.render.max_depth = 24;
+        // The engine's own denoiser, as the render's *Denoise* (the glass's caustics on the floor are
+        // slow to converge; the liquid is what the sheet is for).
+        scene.render.denoise |= DENOISE_IMAGE;
         if !nested {
             scene.priorities.clear();
         }
         let out = render_progressive(&scene, samples, threads, None);
-        let rgb8 = out.to_rgb8(&scene);
+        let rgb8 = match out.denoised(threads) {
+            Some(clean) => clean.to_srgb8_tonemapped(
+                scene.render.exposure_ev,
+                Tonemap::from_u32(scene.render.tonemap),
+            ),
+            None => out.to_rgb8(&scene),
+        };
         let path = images.join(format!("{file}.png"));
         crate::write_png(&path, size.0, size.1, &rgb8)
             .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -303,14 +312,14 @@ pub fn run(
             mean: image_stats(&rgb8).mean_luminance,
         });
         let page = dir.join("liquid-sheet.html");
-        std::fs::write(&page, html(&entries, size))
+        std::fs::write(&page, html(&entries, size, threads))
             .map_err(|e| format!("{}: {e}", page.display()))?;
     }
     Ok(entries)
 }
 
 /// The sheet as a self-contained page.
-pub fn html(entries: &[Entry], size: (u32, u32)) -> String {
+pub fn html(entries: &[Entry], size: (u32, u32), threads: usize) -> String {
     let mut s = String::new();
     s.push_str(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
@@ -334,9 +343,10 @@ pub fn html(entries: &[Entry], size: (u32, u32)) -> String {
          into it from 44 mm above its bottom, simulated by position based fluids for two seconds \
          at a spacing of {SPACING} mm, and its surface rebuilt by marching cubes; rendered {}x{} \
          with the glass at priority 2 and the liquid at 1 (nested dielectrics), filmic curve, \
-         exposure 0. Then water a quarter of a second into the pour, and water at rest without \
-         the priorities. Each caption gives the particles, the simulation's time on this machine \
-         (four threads), the rendered surface's volume over the poured volume and the render.</p>\n\
+         exposure 0, denoised by the engine's denoiser. Then water a quarter of a second into the \
+         pour, and water at rest without the priorities. Each caption gives the particles, the \
+         simulation's time on this machine ({threads} threads), the rendered surface's volume over \
+         the poured volume and the render.</p>\n\
          <div class=\"grid\">",
         size.0, size.1
     );

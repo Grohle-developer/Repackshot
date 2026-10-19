@@ -87,7 +87,8 @@ describe('E9 material parameters', () => {
   it('the glass family shows the medium after its transmission, with strings in both languages', () => {
     const keys = FAMILY_PARAMS.GLASS.map((p) => p.key);
     const at = keys.indexOf('transmission');
-    expect(keys.slice(at)).toEqual(['transmission', 'absorptionMm', 'walls', 'scatterMm', 'scatterColor', 'scatterG', 'abbe']);
+    // S7 adds the nested priority at the end (engine only).
+    expect(keys.slice(at)).toEqual(['transmission', 'absorptionMm', 'walls', 'scatterMm', 'scatterColor', 'scatterG', 'abbe', 'priority']);
     const g = FAMILY_PARAMS.GLASS.find((p) => p.key === 'scatterG')!;
     expect([g.min, g.max, g.fallback]).toEqual([-0.9, 0.9, 0]);
     for (const key of ['scatterMm', 'scatterColor', 'scatterG']) {

@@ -236,8 +236,13 @@ mod tests {
         assert!(pts
             .iter()
             .all(|p| p.x.abs() < 50.0 && p.y.abs() < 50.0 && p.z.abs() < 50.0));
-        // Each point's nearest neighbours are the close packing's: 12 at 1.12 spacings.
-        let p0 = pts[pts.len() / 2];
+        // Each point's nearest neighbours are the close packing's: 12 at 1.12 spacings (of the
+        // lattice's, 6.25 mm; `s` is the volume each stands for). The point nearest the box's
+        // centre, all of whose neighbours are inside.
+        let p0 = *pts
+            .iter()
+            .min_by(|a, b| a.length().total_cmp(&b.length()))
+            .expect("points");
         let near = pts
             .iter()
             .filter(|q| ((**q - p0).length() / 6.25 - 1.1225).abs() < 0.01)
