@@ -289,7 +289,8 @@ pub fn placeholders_in(text: &str) -> Vec<String> {
         match after.find("}}") {
             Some(j) => {
                 let name = &after[..j];
-                if !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') {
+                // A placeholder's name: lowercase letters, digits and underscores (the `*_base64` ones need the digits).
+                if !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') {
                     if !out.iter().any(|o| o == name) {
                         out.push(name.to_string());
                     }
@@ -566,7 +567,7 @@ fn number_of(name: &str, v: &Values) -> f64 {
 /// The one placeholder a string is, exactly.
 fn whole_placeholder(s: &str) -> Option<&str> {
     let inner = s.strip_prefix("{{")?.strip_suffix("}}")?;
-    (!inner.is_empty() && inner.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+    (!inner.is_empty() && inner.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'))
         .then_some(inner)
 }
 
@@ -580,7 +581,7 @@ fn substitute(s: &str, v: &Values) -> String {
                 if !after[..j].is_empty()
                     && after[..j]
                         .bytes()
-                        .all(|b| b.is_ascii_lowercase() || b == b'_') =>
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') =>
             {
                 out.push_str(&rest[..i]);
                 out.push_str(&text_of(&after[..j], v));

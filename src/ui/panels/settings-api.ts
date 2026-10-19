@@ -8,7 +8,7 @@ import { apiConnection } from '../../core/ai-api-settings';
 import { API_BODIES, API_METHODS, API_RESPONSES, validKey, type ApiEndpoint, type ApiProblem } from '../../core/ai-remote';
 import type { Settings } from '../../core/settings';
 import { GENERIC_ENDPOINT } from '../../data/ai-api-presets';
-import { consentPatch, consentQuestion } from '../ai-api';
+import { apiErrorText, consentPatch, consentQuestion } from '../ai-api';
 import * as cmd from '../commands';
 import { numberField, select, textArea, textField } from '../components/controls';
 import { showConfirmIn } from '../components/widgets';
@@ -52,6 +52,48 @@ export function endpointRow(ctx: Ctx, scope: Scope): HTMLElement {
   const parts = rowShell('ai.apiEndpoint', { control: null, stacked: true });
   const body = h('div', { class: 'sw-value-block sw-api', 'data-value': 'ai.apiEndpoint' });
   parts.el.insertBefore(body, parts.ctrlEl);
+  // The ping test: one minimal call against the endpoint (a synthetic 16 × 16 image, never a render). The button
+  // is disabled while the endpoint has problems, while no key is stored for a host that takes one, or while a
+  // test is running; the result line says what came back, in words.
+  const pingBtn = h('button', { type: 'button', class: 'btn', 'data-api-ping': '' }, t('set.ai.api.ping'));
+  const pingResult = h('div', { class: 'note', role: 'status', 'aria-live': 'polite', 'data-api-ping-result': '' });
+  parts.el.insertBefore(h('div', { class: 'sw-inline sw-api-ping' }, pingBtn, pingResult), parts.ctrlEl);
+  let pingTesting = false;
+  let pingRun = 0;
+  const refreshPing = async () => {
+    const run = ++pingRun;
+    const c = apiConnection(ctx.ui.get().settings);
+    const store = ctx.services.apiKeys ?? null;
+    const hasKey = !c.needsKey || (c.host !== null && store !== null && (await store.has(c.host).catch(() => false)));
+    if (run !== pingRun) return;
+    pingBtn.disabled = !ctx.services.apiPing || c.problems.length > 0 || !hasKey || pingTesting;
+    if (!pingTesting) pingResult.textContent = hasKey ? '' : t('set.ai.api.pingNoKey', { host: c.host ?? '' });
+  };
+  pingBtn.addEventListener('click', () => {
+    const ping = ctx.services.apiPing;
+    if (!ping || pingTesting) return;
+    const c = apiConnection(ctx.ui.get().settings);
+    if (c.problems.length > 0) return;
+    pingTesting = true;
+    pingBtn.disabled = true;
+    pingResult.textContent = t('set.ai.api.pinging');
+    void ping(c.endpoint, c.options, new AbortController().signal)
+      .then(() => {
+        pingResult.textContent = t('set.ai.api.pingOk');
+      })
+      .catch((e: unknown) => {
+        pingResult.textContent = apiErrorText(e) ?? t('set.ai.api.pingFailed', { reason: e instanceof Error ? e.message : String(e) });
+      })
+      .finally(() => {
+        pingTesting = false;
+        void refreshPing();
+      });
+  });
+  scope.watch(
+    (_s, u) => [u.settings['ai.apiProvider'], u.settings['ai.apiEndpoint'], u.settings['ai.apiSendPasses'], u.settings['ai.apiTimeout'], u.settings['ai.apiAttempts'], u.aiApiKeys] as const,
+    () => void refreshPing(),
+    (a, b) => a.every((x, i) => x === b[i]),
+  );
   const status = h('div', { class: 'note sw-api-status', role: 'status', 'aria-live': 'polite' });
   const set = (patch: Partial<ApiEndpoint>) => cmd.setSetting(ctx, 'ai.apiEndpoint', { ...ctx.ui.get().settings['ai.apiEndpoint'], ...patch });
   let drawn = '';
@@ -66,7 +108,7 @@ export function endpointRow(ctx: Ctx, scope: Scope): HTMLElement {
         body.append(
           h('code', { class: 'sw-path', translate: 'no', 'data-api-summary': '' }, t('set.ai.api.presetLine', { method: e.method, url: e.url, body: t(dyn(`set.ai.api.body.${e.body}`)), answer: e.response === 'JSON' ? e.responsePath : t('set.ai.api.response.IMAGE') })),
           h('p', { class: 'note', 'data-api-untested': '' }, t('set.ai.api.untested'), ' ', c.preset.docs ? link(c.preset.docs, t('set.ai.api.docs')) : null),
-          ...(c.preset.takes.strength ? [] : [h('p', { class: 'note' }, t('set.ai.api.takesNone'))]),
+          ...(c.preset.takes.strength ? [] : [h('p', { class: 'note' }, t(c.preset.takes.seed ? 'set.ai.api.takesNoStrengthNegative' : 'set.ai.api.takesNone'))]),
         );
       } else {
         const e = s['ai.apiEndpoint'];

@@ -246,6 +246,50 @@ describe('the API backend against a local fake service', () => {
     expect([sent.width, sent.height]).toEqual([1536, 1024]);
   });
 
+  it('Google preset: the key in x-goog-api-key with no prefix, the prompt and the image in contents, the answer at parts.1', async () => {
+    const svc = await fake((req, res) => {
+      const body = JSON.parse(utf8(req.body)) as { contents: { parts: { inlineData?: { data: string } }[] }[] };
+      const data = body.contents[0].parts[1].inlineData?.data ?? '';
+      res
+        .writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ok' }, { inlineData: { mimeType: 'image/png', data } }] } }] }));
+    });
+    const e = { ...apiPreset('GOOGLE_GEMINI').endpoint, url: svc.url('/v1beta/models/gemini-2.5-flash-image:generateContent') };
+    const out = await backend(e).run(pass(), new AbortController().signal);
+    expect([out.width, out.height]).toEqual([96, 64]);
+    expect(out.rgb).toEqual(pass().input);
+    const req = svc.seen[0];
+    expect(req.headers['x-goog-api-key']).toBe(KEY);
+    expect(req.headers.authorization).toBeUndefined();
+    const body = JSON.parse(utf8(req.body)) as { contents: { parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] }[]; generationConfig: { responseModalities: string[]; seed: number } };
+    expect(body.contents[0].parts[0].text).toBe('a studio photograph Avoid: changed shape');
+    expect(body.contents[0].parts[1].inlineData?.mimeType).toBe('image/png');
+    expect(String(body.contents[0].parts[1].inlineData?.data)).toMatch(/^[A-Za-z0-9+/=]+$/);
+    expect(body.generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'], seed: 7 });
+  });
+
+  it('xAI preset: the image as a data URI in image.url, the negative in the prompt, the answer at data.0.b64_json', async () => {
+    const svc = await fake((req, res) => {
+      const body = JSON.parse(utf8(req.body)) as { image: { url: string } };
+      const uri = body.image.url;
+      const data = uri.slice(uri.indexOf('base64,') + 7);
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ b64_json: data }] }));
+    });
+    const e = { ...apiPreset('XAI_IMAGINE').endpoint, url: svc.url('/v1/images/edits') };
+    const out = await backend(e).run(pass(), new AbortController().signal);
+    expect([out.width, out.height]).toEqual([96, 64]);
+    expect(out.rgb).toEqual(pass().input);
+    const req = svc.seen[0];
+    expect(req.headers.authorization).toBe(`Bearer ${KEY}`);
+    const body = JSON.parse(utf8(req.body)) as { model: string; prompt: string; image: { url: string; type: string }; response_format: string; seed?: number };
+    expect(body.model).toBe('grok-imagine-image-2.0');
+    expect(body.prompt).toBe('a studio photograph Avoid: changed shape');
+    expect(body.image.type).toBe('image_url');
+    expect(body.image.url).toMatch(/^data:image\/png;base64,/);
+    expect(body.response_format).toBe('b64_json');
+    expect(body).not.toHaveProperty('seed');
+  });
+
   it('a refused key fails at once, with the status and the service words, and never the key', async () => {
     const svc = await fake(status(401, JSON.stringify({ message: `invalid key ${KEY}` })));
     const err = await failure(backend(generic(svc.url()), { attempts: 5 }).run(pass(), new AbortController().signal));
