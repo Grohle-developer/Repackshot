@@ -45,7 +45,7 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e); wat
 #### S3g · Water that reads as water
 
 <a id="c-rain-bottle"></a><img src="ui/rain-bottle.png" width="480" alt="Close on the example bottle's painted body after 10 s of the default rain: round drops of different sizes, scattered, a few small clear ones, the white paper label at the right edge, and a white scale bar of 5 mm at the bottom left."><br>
-`rain-bottle.png` · `60b57a0` · The example bottle's painted body at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
+`rain-bottle.png` · `432216f` · The example bottle's painted body (wetting as paint) at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
 
 ### v0.1.22 · 2026-10-18
 
