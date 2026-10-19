@@ -85,7 +85,7 @@ export function liquidSection(ctx: Ctx, scope: Scope, ids: NodeId[]): HTMLElemen
     field(t('liquid.preset'), preset.el),
     motion,
     field(t('liquid.spacing'), spacing.el),
-    field('', auto.el),
+    field(t('liquid.spacingAuto'), auto.el),
     count,
     from,
     h('p', { class: 'note', style: 'margin:0' }, t('liquid.note')),

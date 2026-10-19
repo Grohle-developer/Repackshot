@@ -272,10 +272,14 @@ mod tests {
 
     #[test]
     fn one_axis_alone_fills_nothing() {
-        // A single triangle: the rays across it find one crossing and say inside, the other
-        // two axes run along its plane and see nothing, so no point has two votes.
+        // A box's bottom and top alone (no sides): between them the rays along Z cross one of
+        // the two and say inside, the rays along X and Y cross nothing and say outside, so no
+        // point has two votes.
         let m = box_mesh(Vec3::new(10.0, 10.0, 10.0));
-        let (pts, _) = fill(&m.positions, &m.indices[..3], 2.0);
+        let (pts, _) = fill(&m.positions, &m.indices[24..36], 2.0);
         assert!(pts.is_empty());
+        // With the sides, every axis agrees.
+        let (all, _) = fill(&m.positions, &m.indices, 2.0);
+        assert!(!all.is_empty());
     }
 }

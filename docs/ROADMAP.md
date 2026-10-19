@@ -11599,7 +11599,7 @@ cross one stops on its side), the floor and a domain box; the wall's share of
 the density in closed form. Fixed step, deterministic: every pass reads the
 state before it, in chunks a `Runner` may put on threads; the same particles
 with any chunks or threads and in wasm. Each frame, per liquid, an `LQF1`
-record (16-bit positions over their bounds) and the **surface by marching
+record (16-bit positions over the run's box) and the **surface by marching
 cubes** rebuilt from that record (a table the module builds from the cube's
 faces; closed and outward), so the live and the replayed frame are the same mesh.
 
@@ -11680,28 +11680,32 @@ glass as against air.
 
 **Tests** (each checked with its mutation: the test fails with it and passes
 without):
-- `rt-phys/tests/liquid.rs` (9): the litre (mutation: {MUT_LITRE}); honey
+- `rt-phys/tests/liquid.rs` (9): the litre (mutation: the rest density at the
+  lattice's own, `REST_PACKING` 1); honey
   against water (mutation: the viscosity left out of `α`); nothing through the
   glass (mutation: the moves not swept); the pinned pour and its independence of
   chunks and threads; a frame record is the particles to the quantum and its
   surface the world's (`mesh_from_frame`); LIQ1 written and read back; the
   page's fixture is the checked-in one; the S7 image on every SIMD path.
   `liquid::fill` (4: a box holds its volume with 12 neighbours at the lattice's
-  distance, a sphere, one axis alone fills nothing (the vote), cube roots) and
-  `liquid::surface` (4: every case closes its loops, random fields close, a
-  sphere's volume within 0.5 % facing out, a block of particles with the volume
-  they stand for on their lattice within 3 %).
+  distance, a sphere, a box's bottom and top alone fill nothing (mutation: one
+  vote of three keeps a point), cube roots) and `liquid::surface` (4: every case
+  closes its loops, random fields close, a sphere's volume within 0.5 % facing
+  out, a block of particles with the volume they stand for on their lattice
+  within 3 % (mutation: the lattice's sum over a simple cubic lattice, the bug
+  this caught while it was built)).
 - `rt-core`: `integrator::nested` (3: a liquid in its glass meets it at the
   ratio, solids that do not overlap get the plain indices, of equal priorities
   the last entered is the inside) and `integrator::nested_tests` (3: the strip
   at Snell's angle, off by half a degree it moves, and without priorities it is
-  not there (mutation: the relative index left out); the BSDF at the ratio
-  (mutation: `surface_nested` with the plain index); the E9 scene the same with
-  priorities (mutation: a false hit that is not crossed straight)); `scene::rsb`
+  not there (mutations: the relative index as against air; a false hit not
+  crossed straight); the BSDF at the ratio (mutation: the relative index as
+  against air); the E9 scene the same with priorities (mutation: leaving a
+  solid does not take it off the list)); `scene::rsb`
   (`NEST` read, written only with a priority, more priorities than materials
   invalid); `rt-wasm` (bit 14); `rt-cli/tests/example.rs` (the S7 scene on 1, 4
   and 16 threads and `--write-s7-liquid-example`).
-- `tests/s7-liquids.test.ts` (22; mutations run on each): the presets' keys and
+- `tests/s7-liquids.test.ts` (21; mutations run on each): the presets' keys and
   both languages, and the sheet's numbers equal to them (a preset's number
   changed on one side); Convert as one undo step, the part hidden and its world
   shape (mutations: the source left visible; the local mesh; a mirrored part not
@@ -11710,19 +11714,23 @@ without):
   (mutations: the hidden source as a container; the preset's viscosity left
   out); the track (mutations: records not padded to 12; a track of the wrong
   length accepted); the pose's frame and its surface in the render (mutations:
-  the RSB ignoring the posed mesh; the module's surfacer not used); saved and
+  the RSB ignoring the posed mesh; the module's surfacer not used), and the
+  timeline saying the liquid flows; saved and
   opened (mutations: the liquid clip dropped; a lost source kept; the role
   dropped); `NEST` only with bit 14 (mutation: written without it), a scene
   without a liquid byte for byte as before (mutations: the automatic rule
   without a liquid; an own priority ignored), the glass above the liquid
   (mutation: equal priorities); the physics bar (mutations: Start not pouring;
   the liquids' time; Reset keeping the clip); a liquid is no body and no solid
-  (mutations: a static of the liquid; Drop moving it; Drop setting its role);
+  (mutations: a static of the liquid; Drop moving it; Drop setting its role),
+  and `physics/set` keeping a liquid's role and giving LIQUID to no solid
+  (mutation: the role taken as given);
   the rain leaves it out (mutation: the weather on it); the older engine's
   note; and with the real `rt.wasm`: the native pour's hashes, particles and
   triangles and the page's surface of a record equal to the worker's; the
-  page's LIQ1 filled within 10 % of its volume's count, inside the glass; the
-  engine reading the page's `NEST` (the image changes with it).
+  page's LIQ1 filled within 10 % of its volume's count, inside the glass
+  (mutation: the glass left out of the LIQ1); the engine reading the page's
+  `NEST` on a liquid modelled into its glass (mutation: `NEST` never written).
 - `tools/s7-check.mjs` (the built app in Chromium, not part of `npm run qa`):
   `pour`: the example's Cap ▸ Convert to liquid ▸ Honey (one undo entry, the
   row, the Liquid section and its estimate), *Start*, paused at 1 s: the bar
@@ -11744,7 +11752,10 @@ and `docs/ui/liquid-sheet.png` (the sheet; `rt --liquid-sheet out`, then
   `rt_phys::liquid` (S2's rigid bodies did not fit; noted for a later phase).
 - **Two liquids of a run do not meet**: each flows as if alone, against the same
   containers.
-- **Slow in the browser.** The worker is single-threaded wasm: {PERF}. The run
+- **Slow in the browser.** The worker is single-threaded wasm: on the machine this
+  was built on (shared and loaded), the 3,630 particles of an 18 ml block take
+  about 24 ms a step (1/240 s) and their surface about 34 ms a frame, so a
+  simulated second takes about seven. The run
   goes slower than real time and the bar says how far it is; the native sheet
   uses threads.
 - **The surface is a smoothed density** (2 spacings of reach): thin sheets and

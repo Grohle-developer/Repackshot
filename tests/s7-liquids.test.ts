@@ -47,6 +47,7 @@ import { hasLiquidExports, LiquidSim, liquidSurface } from '../src/render/phys-w
 import * as phys from '../src/ui/physics';
 import type { AppServices, PhysicsPort } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
+import { clipSentence } from '../src/ui/sentence';
 import { STRINGS } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { apply, exampleState } from './helpers';
@@ -425,6 +426,9 @@ describe('S7: the record of a run (the cache) and the surface of a frame', () =>
     expect(evaluate(state, 10).liquids).toEqual({ [liquid]: { clip: 'c1', frame: 2 } });
     const pose = playheadPose(state)!;
     expect(Object.keys(pose.nodes)).toEqual([]);
+    // The timeline says what it is: the liquid flows (it does not fall as a body).
+    expect(clipSentence(state, state.animation.clips[0], 'en')).toMatch(/flows as simulated/);
+    expect(clipSentence(state, state.animation.clips[0], 'es')).toMatch(/fluye según la simulación/);
     // No surface in hand and no module to rebuild it: the part shows its own mesh.
     setLiquidSurfacer(null);
     expect(posedLiquidMesh(state, pose, liquid)).toBeNull();
@@ -677,13 +681,18 @@ describe('S7: through the real engine', () => {
     sim.step(48);
     const head = readRecordHeader(sim.frame(0))!;
     expect(head.particles).toBe(n);
-    // The record's bounds stay inside the glass (inner 40 × 40 above its bottom at 3 mm), give or take a spacing.
-    const v = new DataView(sim.frame(0).buffer);
+    // The particles stay inside the glass (inner 40 × 40 above its bottom at 3 mm): the record's positions are 65535ths
+    // of the run's box.
+    const frame = sim.frame(0);
+    const v = new DataView(frame.buffer, frame.byteOffset);
     const lo = [12, 16, 20].map((o) => v.getFloat32(o, true));
     const hi = [24, 28, 32].map((o) => v.getFloat32(o, true));
-    expect(lo[0]).toBeGreaterThan(-20 - 2.5);
-    expect(hi[0]).toBeLessThan(20 + 2.5);
-    expect(lo[2]).toBeGreaterThan(3 - 2.5);
+    const at = (i: number, k: number) => lo[k] + (v.getUint16(36 + 6 * i + 2 * k, true) / 65535) * (hi[k] - lo[k]);
+    for (let i = 0; i < n; i++) {
+      expect(Math.abs(at(i, 0))).toBeLessThan(20);
+      expect(Math.abs(at(i, 1))).toBeLessThan(20);
+      expect(at(i, 2)).toBeGreaterThan(3);
+    }
     expect(surfaceMesh(sim.surface(0))!.indices.length).toBeGreaterThan(0);
     sim.free();
   }, 120_000);
@@ -691,11 +700,18 @@ describe('S7: through the real engine', () => {
   it.skipIf(!RT_WASM)('the engine reads the page’s NEST: the liquid in its glass renders otherwise with the priorities', async () => {
     const { loadRt, renderWithPasses, fnv1a, resolveRgb } = await import('./wasm-engine');
     const rt = await loadRt();
-    const { state } = poured();
-    const view = { width: 32, height: 24, maxSamples: 2, maxSeconds: 0, transparent: false };
+    // The block modelled into the glass's bottom (as a settled liquid reaches into its glass): where they overlap is
+    // the glass's with the priorities, both's without.
+    const s = glassState();
+    const block = Object.values(s.scene.nodes).find((n) => n.name === 'block')!.id;
+    const poured = apply(apply(s, { type: 'scene/setTransform', id: block, transform: { position: [0, 0, -11] } }), { type: 'liquid/convert', source: block, preset: 'WATER' });
+    // The camera close on the glass, a little above it, the glass filling the frame.
+    const cam = poured.camera.cameras[poured.camera.active];
+    const state = { ...poured, camera: { ...poured.camera, cameras: { ...poured.camera.cameras, [cam.id]: { ...cam, target: [0, 0, 15] as [number, number, number], distance: 260, elevation: 20, focalMm: 50, fstop: 0 } } } };
+    const view = { width: 48, height: 36, maxSamples: 2, maxSeconds: 0, transparent: false };
     const plain = writeRsb(projectScene(state, view).scene);
     const nested = writeRsb(projectScene(state, { ...view, nested: true }).scene);
-    const hash = (rsb: Uint8Array) => fnv1a(resolveRgb(renderWithPasses(rt, rsb, 32, 24, 2, 0).image, 2));
+    const hash = (rsb: Uint8Array) => fnv1a(resolveRgb(renderWithPasses(rt, rsb, 48, 36, 2, 0).image, 2));
     expect(hash(nested)).not.toBe(hash(plain));
     expect(hash(nested)).toBe(hash(nested));
   }, 240_000);

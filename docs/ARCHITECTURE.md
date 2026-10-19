@@ -4068,7 +4068,7 @@ written from the papers). `LiquidWorld::new(&LiquidSpec)` fills each liquid,
   `u32 liquids` and per liquid `u32 mesh; f32 matrix[12]; f32 spacing, density,
   viscosity, cohesion, surface_tension, adhesion`.
 - **LQF1** (`frame_bytes`, `read_frame`, `mesh_from_frame`): `"LQF1"`, `u32
-  count`, `f32 spacing`, `f32 lo[3], hi[3]` (the particles' bounds), `u16 xyz`
+  count`, `f32 spacing`, `f32 lo[3], hi[3]` (the run's box, the domain), `u16 xyz`
   per particle over the bounds, zero padding to a multiple of 12 bytes (whole
   base64 groups, so the page appends records to its track as they come). The
   surface is always rebuilt from the record, so a frame shows the same mesh

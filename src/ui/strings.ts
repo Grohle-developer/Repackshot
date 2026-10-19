@@ -1688,6 +1688,7 @@ const TABLE = {
   'say.PHYSICS': ['falls as simulated', 'cae según la simulación'],
   'say.PHYSICS_GLASS': ['gets the rain and dust of the scene on its front glass, as simulated', 'recibe en su cristal frontal la lluvia y el polvo de la escena, según la simulación'],
   'say.PHYSICS_PARTS': ['get the rain, dust and snow of the scene’s effects, as simulated', 'reciben la lluvia, el polvo y la nieve de los efectos de la escena, según la simulación'],
+  'say.PHYSICS_LIQUID': ['flows as simulated', 'fluye según la simulación'],
   'say.parts': ['The parts', 'Las piezas'],
   'say.inShot': ['in shot {n}', 'en el plano {n}'],
   'say.amount.SIZE': ['{n} × size', '{n} × tamaño'],

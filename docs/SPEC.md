@@ -420,7 +420,7 @@ S2 step (1/240 s, 2 substeps of 3 Jacobi passes each) with an implicit viscosity
 (the walls are still neighbours: no slip), Akinci's cohesion and curvature
 (2013) and adhesion; the walls are swept, so no particle crosses a triangle.
 Liquids do not fall asleep: a run with a liquid stops by *Stop* or its time (20
-s). Each frame's record (`LQF1`: the particles in 16 bits over their bounds) grows
+s). Each frame's record (`LQF1`: the particles in 16 bits over the run's box) grows
 the liquid part's `PHYSICS` clip (`MotionClip.liquid`, the cache, saved with the
 project, keyed by the FNV-1a of the `LIQ1`), and the worker rebuilds the surface
 by **marching cubes** over the particles' smoothed density (2 spacings of reach,
