@@ -37,6 +37,8 @@ import { instanceFromPreset } from '../src/core/materials';
 import { liquidPreset as presetFor } from '../src/data/liquids';
 import { physicsSpec, type PhysicsResult, type PhysicsRunHandle, type PhysicsStarted, type PhysicsUpdate } from '../src/core/physics';
 import { wetPartsSpec } from '../src/core/wet-parts';
+import { planIsEmpty, startPlan } from '../src/core/start-plan';
+import { planLine, pointerLine, roleLine } from '../src/ui/physics-lines';
 import { allParts, type ModelPayload, type NodeId, type SceneNode } from '../src/core/scene';
 import { createStore, type ProjectState } from '../src/core/store';
 import { CONTAINER_PRIORITY, DEFAULT_LIQUID, LIQUID_PRESETS, LIQUID_PRIORITY, LIQUID_SPACING_LIMITS, MAX_LIQUID_SECONDS } from '../src/data/liquids';
@@ -610,6 +612,17 @@ describe('S7: the physics bar pours the liquid', () => {
     expect(s.scene.nodes[liquid].physics).toEqual({ role: 'LIQUID', friction: 0.3 });
     expect(s.scene.nodes[glass].physics).toEqual({ role: 'DYNAMIC', friction: 0.3 });
     expect(apply(state, { type: 'physics/set', ids: [glass], patch: { role: 'LIQUID' } })).toBe(state);
+  });
+
+  it('the drawer says Start pours the liquid, and the Physics section says what the role does (with U16)', () => {
+    const { state, liquid } = poured();
+    expect(planIsEmpty(startPlan(glassState()))).toBe(true);
+    const plan = startPlan(state);
+    expect(plan.liquids).toBe(1);
+    expect(planIsEmpty(plan)).toBe(false);
+    expect(planLine(plan)).toBe('Start simulates: 1 liquid');
+    expect(roleLine(state, [liquid])).toBe(STRINGS.en['phys.roleLine.LIQUID']);
+    expect(pointerLine(state, [liquid])).toBe('Physics: Liquid · no rain, dust or snow stays on it');
   });
 
   it('the rain on the parts leaves the liquid out (its surface is rebuilt every frame)', () => {

@@ -149,7 +149,8 @@ function readSpec(bytes: Uint8Array): { spec: WetPartsSpec; meshes: Map<string, 
 
 describe('S3c: the data', () => {
   it('the wettability table keeps its families and adds wood and fabric; plastic, metal, paper and snow are the engine’s parity values', () => {
-    expect(WETTABILITY.map((w) => w.key)).toEqual(['GLASS', 'PLASTIC', 'METAL', 'PAPER', 'PAINT', 'WOOD', 'FABRIC']);
+    // U16 adds WATER_REPELLENT after them (rule 7: added, never renamed).
+    expect(WETTABILITY.map((w) => w.key)).toEqual(['GLASS', 'PLASTIC', 'METAL', 'PAPER', 'PAINT', 'WOOD', 'FABRIC', 'WATER_REPELLENT']);
     for (const w of WETTABILITY) {
       expect(w.recedingDeg).toBeLessThanOrEqual(w.advancingDeg);
       expect(w.porosity).toBeGreaterThanOrEqual(0);
