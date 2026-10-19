@@ -1282,7 +1282,7 @@ except the two that build things: *Create studio* and *Render*.
    weight: *Silk · 60 g/m²* … *Neoprene · 1,500 g/m²*; changing it puts back the preset's
    weight and thickness), **Weight** in g/m², draggable, with where it comes from (*From the
    fabric (Silk): 60 g/m²* or *Its own weight*, and *Use the fabric’s*), **Stiffness** (×,
-   0.1–10, slider and value: on the fabric's stretch and bending), **Thickness** (mm: the
+   0.1–10, slider and value: on the fabric's stretch, shear and bending alike), **Thickness** (mm: the
    distance at which it collides), **Anchors** segmented (*None · Top edge · Box*; with *Box*,
    two rows *From* and *To* of three % fields, X Y Z of the cloth's extent), **Pressure** (×,
    0–3, enabled only for a closed shell; open, the note says so), **Self-collision** and

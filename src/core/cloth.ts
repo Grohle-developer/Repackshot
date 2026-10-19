@@ -15,11 +15,13 @@
 // and a number of levels every time (the recording names those three).
 //
 // **The fabric** (data/fabrics.ts): a preset by fabric type and weight; Weight (g/m²) and Stiffness (a factor on its
-// stretch and bending) on top, Thickness (the distance at which it collides). Anchors hold vertices where they are: along
+// stretch, shear and bending alike) on top, Thickness (the distance at which it collides); its warp along world X.
+// Anchors hold vertices where they are: along
 // the top edge (the open edge's vertices within a hair of its highest point) or inside a box (a share of the cloth's
 // bounds on each axis).
 //
-// **What it meets.** Itself, the floor, every other visible part that does not move (as triangles), and the dynamic
+// **What it meets.** Itself, the floor, every other visible part that does not move (as triangles, whose sharp edges
+// and corners the engine keeps under the cloth's surface, not only under its vertices), and the dynamic
 // bodies of the same run (S2's world, stepped with it in the engine: they push the cloth, it does not push them). The
 // wind is the ambient effects' (S4a): their wind summed, with gusts from the turbulence of the windiest.
 //

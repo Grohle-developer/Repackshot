@@ -3930,47 +3930,83 @@ the WPT1 bytes (§5.2 vicies). S9: `physics/cloth` (the cloth fields of the sect
 **The simulator** (`engine/crates/rt-phys/src/cloth.rs`, `std`, `rt-core` and, for the
 gusts of the wind, `rt-sim`'s `noise::curl`) is XPBD (Macklin, Müller and Chentanez,
 MIG 2016) stepped as in “Small Steps” (Macklin et al., SCA 2019): the fixed step of
-1/240 s of the rigid world, **6 substeps of 2 iterations** (one iteration, as the paper has
-it, made a 64 × 64 sheet hanging from a row blow up in a bare loop of distance constraints
-too; two are stable), the multipliers accumulated within each substep. Each piece is a
-triangle mesh in world mm welded by exact position (the importers split vertices along
-seams), with mass per area × a third of each vertex's triangles; an anchored vertex has no
-inverse mass. Constraints, all compliant: **stretch** on every edge (`C = |xᵢ − xⱼ| − L`,
-compliance `L² / (K A)` for a membrane stiffness K in N/m and the edge's share A of its
-triangles), **dihedral bending** on every edge between two triangles (`θ = atan2((n̂₁ ×
-n̂₂)·ê, n̂₁·n̂₂)` with `fmath::atan2`, no `acos`; the gradients of Bridson, Marino and
-Fedkiw, SCA 2003, checked by finite differences; compliance `(A₁ + A₂) / (3 B |e|²)`, the
-discrete shells of Grinspun et al.; the rest angle is the one it starts with), optional
-**area** per triangle and **pressure** for a closed shell (one volume constraint,
-`pressure × V₀`, Müller et al. 2006). Bending is solved in the first iteration only.
+1/240 s of the rigid world, **8 substeps of 2 iterations**, every constraint (the bending
+too) solved in each iteration, the multipliers accumulated within each substep (one
+iteration, as the paper has it, made a 64 × 64 sheet of springs hanging from a row blow up;
+with the bending solved once a substep, a stiff fabric on a fine sheet bends visibly more than
+its rigidity says: the leathers on Cusick's tester sag to drape coefficients of 0.75 and 0.57).
+Each piece is a triangle mesh in world mm welded by exact position (the importers split
+vertices along seams), with mass per area × a third of each vertex's triangles; an anchored
+vertex has no inverse mass. Constraints, all compliant:
+
+- the **membrane**, orthotropic, per triangle, after Müller, Chentanez, Kim and Macklin,
+  “Strain Based Dynamics” (SCA 2014): the triangle's rest shape in the 2D coordinates of its
+  warp and weft (the warp is the fabric's direction, world X by default, projected onto the
+  triangle's rest plane; world Y on a face within 20° of square to it, `grain`), the
+  deformation gradient `F = [x₁ − x₀, x₂ − x₀] D⁻¹`, and three constraints: warp `|F_u| − 1`,
+  weft `|F_v| − 1` and the normalised shear `F̂_u · F̂_v`, with compliance `1 / (k A)` for the
+  rest area A and the stretch stiffness (the first two) or the **shear stiffness** (the third),
+  N/m: a woven fabric's threads scissor long before they stretch;
+- **dihedral bending** on every edge between two triangles (`θ = atan2((n̂₁ × n̂₂)·ê,
+  n̂₁·n̂₂)` with `fmath::atan2`, no `acos`; the gradients of Bridson, Marino and Fedkiw,
+  SCA 2003, checked by finite differences; the rest angle is the one it starts with) with the
+  stiffness of the discrete shells of Grinspun et al., `f B |e|² / (A₁ + A₂)`, **calibrated**
+  (`BEND_CALIBRATION`, f = 4/3): on a sheet of squares split along alternating diagonals bent
+  into a cylinder along its warp or weft, f = 1 stores exactly the continuum's `½ B κ²` per
+  area (Grinspun's f = 3 stores three times that; at 45° the sheet is 1.44 times stiffer than
+  along its threads), and once its vertices settle (its squares fold a little along their
+  diagonals) it keeps three quarters of it, so a cantilever of it (Peirce's test) measures B
+  with f = 4/3;
+- optional **area** per triangle and **pressure** for a closed shell (one volume constraint,
+  `pressure × V₀`, Müller et al. 2006).
+
 After the constraints of each substep the **collisions**, in this order: the cloth with
 itself (particle against particle within `max(thickness, ½ mean edge)`, through a hash grid
 of the particles rebuilt every step, the pairs closer than that at rest left out), the
 dynamic **bodies** of the rigid `World` it runs with (`World::collider`: a ball exactly, a
-hull by its farthest face plane; one way, they push it), the floor, and the **static
-triangles** last (what cannot move has the last word): a particle that crossed a face
-inside the substep goes back to the side it came from, then out to its thickness from the
-nearest point of the surface, one contact per particle (the faces around an edge do not
-each push it). Friction is Coulomb's at the level of positions. The **wind** is the scene's
-(`½ ρ C_d A |vₙ| vₙ n̂` per triangle, ρ = 1.2 kg/m³, C_d = 1) plus gusts of the ambient
-effects' divergence-free turbulence at each triangle's centre. **Settled**: no particle
-farther than 6 mm/s would take it from where a 0.5 s window began. API: `Cloth::new(spec)`,
-`step(n, Option<&mut World>)` (the world steps one step ahead of the cloth each time),
-`positions()` (every vertex of every piece, in order), `settled`, `hash`; and
-`mean_curvature`, the measure of the wrinkles. **Determinism**: `f32` with IEEE operations,
-`sqrt` and `fmath`, every list in an order of the input (sorted edges, the grid filled and
-read in particle order), one thread; the tests pin the cloth's and the world's hashes of a
-parity scene at 60, 240 and 480 steps, equal with 1, 3 and 8 narrow-phase chunks and in
-parallel threads, and pass compiled to `wasm32-wasip1` scalar and `+simd128`;
+hull by its farthest face plane; one way, they push it), the floor, the **static triangles**
+(a particle that crossed a face inside the substep goes back to the side it came from, then
+out to its thickness from the nearest point of the surface, one contact per particle), and
+last the **sharp features** against the cloth's surface: the vertices and edges of the static
+parts where the surface folds by more than 10°, or by enough for a triangle of this cloth to
+dip a tenth of its thickness into the fold (`4 × 0.1 × thickness / mean edge` radians: a fine
+faceted curve under a coarse cloth), or ends (an open rim), and every vertex and edge of the
+hulls where they are this step. Each feature vertex against each cloth triangle it is over
+(point–triangle) and each feature edge against each cloth edge it passes (edge–edge, both
+within their ends), kept at the thickness on the side it was at the start of the substep (a
+feature that crossed in the substep goes back; an edge that crossed is put back only if it was
+within both ends at the start too, else it went round an end, which that end's vertex
+answers for), the feature not moving and the cloth's vertices sharing the correction by their
+barycentric weights and inverse masses; friction as for the particles. The candidates of each
+step: the static features are in two trees of boxes (vertices, edges; median splits, ties by
+index) built with the cloth, which each moving cloth triangle and edge asks with the box of its
+particles' reach in the step; a hull's few features are tried against every one; a pair is kept
+when nearer than that reach, and the pairs are sorted. Friction is
+Coulomb's at the level of positions. The **wind** is the scene's (`½ ρ C_d A |vₙ| vₙ n̂` per
+triangle, ρ = 1.2 kg/m³, C_d = 1) plus gusts of the ambient effects' divergence-free
+turbulence at each triangle's centre. **Settled**: no particle farther than 6 mm/s would take
+it from where a 0.5 s window began. API: `Cloth::new(spec)`, `step(n, Option<&mut World>)`
+(the world steps one step ahead of the cloth each time), `positions()` (every vertex of every
+piece, in order), `settled`, `hash`; `bending_energy` and `membrane_energy` (what the
+constraints store at given positions, for the calibration tests); `mean_curvature`, the
+measure of the wrinkles; `sharp_features` and `grain`. **Determinism**: `f32` with IEEE
+operations, `sqrt` and `fmath`, every list in an order of the input (sorted edges, the grids
+filled and read in element order), one thread; the tests pin the cloth's and the world's
+hashes of a parity scene at 60, 240 and 480 steps, equal with 1, 3 and 8 narrow-phase chunks
+and in parallel threads, and pass compiled to `wasm32-wasip1` scalar and `+simd128`;
 `tests/cloth-engine.test.ts` repeats `tests/fixtures/cloth-drape.json` with the real
 `rt.wasm` and `rt-simd.wasm`.
 
 **CLT1** (`rt_phys::cloth::ClothSpec`; written by `src/core/cloth.ts` `cltBytes`):
-`"CLT1"`, version 1; the pieces (vertices, indices, positions in world mm, the anchors as
-a bit per vertex, then mass per area kg/m², stretch N/m, bend N·m, damping 1/s, thickness
-mm, friction, area N/m, pressure, and the flags: bit 0, self-collision); the static meshes
-(world mm); the floor (on, z, friction); the wind (mm/s), the gusts' share, scale (mm),
-speed (mm/s) and seed. *Little-endian*, 4-byte words.
+`"CLT1"`, version 2 (version 1, without the shear and the warp, still reads: its shear is
+`stretch / 2.6`, an isotropic sheet's, what its springs along every edge amounted to, and its
+warp X); the pieces (vertices, indices, positions in world mm, the anchors as a bit per
+vertex, then mass per area kg/m², stretch N/m, shear N/m, bend N·m, damping 1/s, thickness
+mm, friction, area N/m, pressure, the warp's direction (3 floats, world), and the flags:
+bit 0, self-collision); the static meshes (world mm); the floor (on, z, friction); the wind
+(mm/s), the gusts' share, scale (mm), speed (mm/s) and seed. *Little-endian*, 4-byte words.
+The interface writes version 2 with the warp along world X and Stiffness on the stretch, the
+shear and the bending alike.
 
 **What becomes cloth** (`src/core/cloth.ts`): the parts under a node whose role is CLOTH,
 visible and unlocked; the part's mesh, or its face (`physics.cloth.triangles`, picked at the
@@ -4122,7 +4158,7 @@ seen are checked with `tools/box-select-check.mjs` and
 | Browser gestures | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright with the local Chromium over `dist/`, in Fast and in Full, with mouse, pen and finger; captures in `docs/ui/` (those of Full, in `out/`) |
 | Rain and dust on the glass (S3b) | `cargo test -p rt-phys --test wet` (also on `wasm32-wasip1`); `rt-core` `optics::glass::tests` and `render::s3_tests`; `tests/s3b-wet.test.ts`; `tools/s3b-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | A drop on glass at 30° stays up to Furmidge's critical radius (± 0.5 % of the `f64` calculation) and slides above it; two that touch add their volume (± 1 %); the trail cleans the dust; dust on a 60° face is < 10 % of that on a horizontal one; rain arrives at its flux and never on a face looking the other way; the same glass by single steps or together and rebuilt from its frames; the two pinned values on every SIMD path and in wasm; the `WET1` and the `GLAS` drop by drop byte for byte; the track (the cache) equal in two runs; the camera's clip, saved and opened; the bar runs it alone, one undo entry, *Reset* removes it; the approximation of *Fast* |
 | Rain, dust and snow on the parts (S3c) | `cargo test -p rt-phys --test wet_parts` (also on `wasm32-wasip1`); `rt-core` `weather::tests`; `rt-wasm` `parts`; `rt-cli/tests/example.rs`; `tests/s3c-parts.test.ts` and `tests/s3c-warning.test.ts`; `tools/s3c-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | The glass at 30° up to the critical radius and the trail's film; from face to face and the dripping over an open edge; merging ± 1 %; the trail cleans the dust; dust at 60° < 10 %; rain at its flux, never on a face turned away nor under a roof; hanging and dripping onto what is below, splashing without losing water; the film at its pace; the snow where it rests; by steps and by frames; the two pinned values on every SIMD path, with 1, 4 and 16 threads and in wasm; a `WETP` with nothing changes no pixel; the WPT1 byte for byte; the track equal in two runs; the scene's clip, saved and opened; the bar runs it alone; the warnings of bits 7 and 8 |
-| Cloth (S9) | `cargo test -p rt-phys --test cloth` (also on `wasm32-wasip1`, scalar and `+simd128`) and `rt_phys::cloth` unit tests; `rt-wasm` `cloth`; `tests/cloth.test.ts`, `cloth-engine.test.ts`; `tools/cloth-check.mjs`; the sheet `tools/cloth-sheet.mjs` | A 1 m strip of silk hanging from two corners sags within 2 % of the analytic catenary; over a sphere, silk's mean curvature ≥ 3 × thick leather's and no particle closer to the sphere than 0.9 of its thickness, none inside; an anchored corner stays and the cloth hangs below it; the wind blows silk more than leather, gusts the same every time; pressure keeps a closed shell full; self-collision keeps two layers apart; a rigid body pushes the cloth and the cloth stays outside it; the dihedral gradients are the finite differences; the pinned hashes whatever the chunks, in threads, in wasm and on both SIMD paths; the catalogue agrees with the engine's tests; the sheet's splits, a face's rim held, the anchors, the CLT1, the track, the pose, the MESH of the scene, the clip saved and opened, the bar (one undo entry, *Reset*, an engine without cloth), *Drape over the part* |
+| Cloth (S9) | `cargo test -p rt-phys --test cloth` (also on `wasm32-wasip1`, scalar and `+simd128`, but Cusick's, which runs a thread a preset) and `rt_phys::cloth` unit tests; `rt-wasm` `cloth`; `tests/cloth.test.ts`, `cloth-engine.test.ts`; `tools/cloth-check.mjs`; the sheet `tools/cloth-sheet.mjs` | A 1 m strip of silk hanging from two corners sags within 2 % of the analytic catenary; over a sphere, silk's mean curvature ≥ 3 × thick leather's, no particle closer to the sphere than 0.9 of its thickness, none inside, and the sphere's surface behind the cloth's (no edge through a cloth triangle, no vertex on its far side, nothing nearer its surface than 0.9 of the thickness); the same for a box and for a sharp-rimmed cylinder the size of the bottle's cap under silk, and for the hull of a rigid box under the parity scene's cloth; Peirce's cantilever measures the bending length of denim and thick leather within 10 %; Cusick's drape of every preset (the wovens under 0.95 with at least 4 nodes, rising with the bending length, silk with more nodes than denim, the leathers within 0.8–0.95); the bending stores 4/3 of the continuum on a cylinder, the membrane its stiffness along the warp, the weft and in shear; an anchored corner stays and the cloth hangs below it; the wind blows silk more than leather, gusts the same every time; pressure keeps a closed shell full; self-collision keeps two layers apart; a rigid body pushes the cloth and the cloth stays outside it; the dihedral gradients are the finite differences; the pinned hashes whatever the chunks, in threads, in wasm and on both SIMD paths; CLT1 version 2 both ways, version 1 read; the catalogue agrees with the engine's tests; silk over the example bottle through the page's code and the real `rt.wasm` leaves no edge of the cap or the bottle through the cloth; the sheet's splits, a face's rim held, the anchors, the CLT1, the track, the pose, the MESH of the scene, the clip saved and opened, the bar (one undo entry, *Reset*, an engine without cloth), *Drape over the part* |
 | Physics (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | A sphere rests at `r ± 0.1` mm, a stack of three boxes holds for 5 s, a tilted box falls flat, a cube slides off a sphere, a ramp holds at μ 0.6 and lets it slide at 0.1, a thousand spheres settle (< 20 s in *release*), sleeping stops the simulation, pinned *hash* equal with 1 and N threads and in wasm; what is simulated, the poses back to the nodes, a simulation is one undo entry, *Reset* another, *Pause* freezes what is seen, the clip is saved, opened and played; three primitives that fall in the browser |
 | Engine Doctor (D1) | `tests/doctor-engine.test.ts` (a fake engine that simulates each state and the real `installDoctorFacts`), `tests/frame-scan.test.ts` (the reading of the accumulation and the pool's `status().scan` with fake *workers*), `tests/store.test.ts` (a listener's actions during an undo); `tools/doctor-engine-check.mjs` | Each check fires and its fix clears it (project through the *store*, one undo entry; what is not the project's, only the explanation and, if a Settings row limits it, the button that opens it); *Fix all* in one click; without engine facts, everything *unavailable* as before; thresholds at their boundaries; `sameImage` agrees with `touchesImage` of both engines; the phrases in both languages; in the browser, the Doctor with two engine warnings (`docs/ui/doctor-engine.png`) |
 | Viewer | `npm run screenshot` | Capture with the local Chromium (swiftshader); attached to the PR |

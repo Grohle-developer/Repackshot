@@ -2168,7 +2168,7 @@ const TABLE = {
   'cloth.weightOwn': ['Its own weight', 'Peso propio'],
   'cloth.weightReset': ['Use the fabric’s', 'Usar el del tejido'],
   'cloth.stiffness': ['Stiffness', 'Rigidez'],
-  'cloth.stiffnessAux': ['Times the fabric’s resistance to stretching and bending', 'Veces la resistencia del tejido a estirarse y doblarse'],
+  'cloth.stiffnessAux': ['Times the fabric’s resistance to stretching, shearing and bending', 'Veces la resistencia del tejido a estirarse, cizallarse y doblarse'],
   'cloth.thickness': ['Thickness', 'Grosor'],
   'cloth.thicknessAux': ['How far from what it touches it rests: the distance at which it collides', 'A qué distancia de lo que toca descansa: la distancia a la que choca'],
   'cloth.anchor': ['Anchors', 'Anclajes'],

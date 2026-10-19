@@ -303,11 +303,15 @@ texture coordinates, so the cloth renders as its part does. Its fields
 - **Fabric** (`fabric`): a preset of `src/data/fabrics.ts` by fabric type and weight
   per area (stable keys: silk 60 g/m², fine cotton 120, poplin 150, linen 200, wool 300,
   denim 400, canvas 600, felt 800, thin leather 900, thick leather 1,200, neoprene 1,500),
-  with its mass per area, stretch stiffness (N/m), bending rigidity (N·m), damping,
-  thickness and friction. Fine cotton by default.
+  with its mass per area, stretch stiffness along its threads (N/m), shear stiffness between
+  them (N/m: a woven fabric's threads scissor far more easily than they stretch, which is how
+  it drapes over a dome in folds instead of creasing like paper), bending rigidity (N·m),
+  damping, thickness and friction. Its warp runs along world X (along Y on a face that looks
+  along X). Fine cotton by default.
 - **Weight** (`weightGsm`, g/m²) and **Stiffness** (`stiffness`, a factor on the preset's
-  stretch and bending, 0.1–10) on top of the preset; **Thickness** (`thicknessMm`): the
-  distance at which it collides, which is how far from what it touches it rests.
+  stretch, shear and bending alike, 0.1–10) on top of the preset; **Thickness**
+  (`thicknessMm`): the distance at which it collides, which is how far from what it touches
+  it rests.
 - **Anchors** (`anchor`): none, the **top edge** (the vertices of its highest open edge stay
   where they are: a curtain) or a **box** (`box`: the vertices inside it, the box given as
   shares of the cloth's extent on X, Y and Z; by default the top tenth).
@@ -317,6 +321,9 @@ texture coordinates, so the cloth renders as its part does. Its fields
 
 **What it meets**: itself, the floor, every other visible part that does not move (as
 triangles) and the *Dynamic* bodies of the same run, which push it (it does not push them).
+Not only its vertices: a sharp edge or corner of a part or of a body (a cap's rim, a box's
+edge) cannot cut through the cloth between them either; the cloth's surface keeps it at the
+thickness.
 The **wind** is the *Ambient* effects' (S4a): the wind of those switched on, summed, with gusts
 from the turbulence (Chaos) of the windiest. The rigid simulator does not see a cloth part.
 *Start* runs the cloth with the *Dynamic* parts (not *Drop*); a run with cloth stops by itself

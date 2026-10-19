@@ -183,7 +183,8 @@ describe.skipIf(!dir)('the cloth sheet: its scenes', () => {
       writeFileSync(join(dir!, `${file}.rsb`), writeRsb(projectScene(s, { ...view, pose: evaluate(s, end) }).scene));
       if (f.key === 'SILK') {
         // Close up on the cap: the rim the cloth used to show through.
-        const cap = boundsOf(s, ['cap']);
+        const capNode = Object.values(s.scene.nodes).find((n) => n.key === 'cap')!;
+        const cap = boundsOf(s, [capNode.id]);
         const target: [number, number, number] = [0, 1, 2].map((k) => (cap.min[k] + cap.max[k]) / 2) as [number, number, number];
         const cam = activeCamera(s);
         const close = apply(s, { type: 'camera/set', id: cam.id, patch: { target, distance: 170, elevation: 20, focalMm: 85, focusDistance: 170 } });

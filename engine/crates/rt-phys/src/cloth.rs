@@ -57,7 +57,9 @@
 //! barycentric weights and inverse masses. A feature edge is one where the surface folds by more
 //! than [`FEATURE_ANGLE`], or by enough for a triangle of this cloth to dip into it by a tenth of
 //! the thickness ([`FEATURE_DIP`]), or ends (an open rim); a feature vertex, an end of a feature
-//! edge. The candidates of each step come from a hash grid of the cloth's triangles.
+//! edge. The candidates of each step: the static features from trees of their boxes built with the
+//! cloth, which each moving cloth triangle and edge asks with the box of its reach; a hull's few,
+//! against every one; a pair kept when nearer than that reach.
 //! Friction is Coulomb's at the level of positions: the tangential motion of a contact in a
 //! substep is cancelled while it is under `μ` times the depth it was pushed out, and cut by that
 //! much otherwise.
@@ -711,6 +713,36 @@ fn line_closest(p0: Vec3, p1: Vec3, q0: Vec3, q1: Vec3) -> Option<(f32, f32, Vec
     Some((s, t, n * (1.0 / nn.sqrt())))
 }
 
+/// The least distance between the segments `p₀ p₁` and `q₀ q₁`.
+fn segment_distance(p0: Vec3, p1: Vec3, q0: Vec3, q1: Vec3) -> f32 {
+    let (d1, d2, r) = (p1 - p0, q1 - q0, p0 - q0);
+    let (a, e, f) = (d1.dot(d1), d2.dot(d2), d2.dot(r));
+    let (c, b) = (d1.dot(r), d1.dot(d2));
+    let den = a * e - b * b;
+    let mut s = if above(den, 1.0e-12 * a * e) {
+        ((b * f - c * e) / den).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mut t = if above(e, 0.0) { (b * s + f) / e } else { 0.0 };
+    if t < 0.0 {
+        t = 0.0;
+        s = if above(a, 0.0) {
+            (-c / a).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+    } else if t > 1.0 {
+        t = 1.0;
+        s = if above(a, 0.0) {
+            ((b - c) / a).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+    }
+    ((p0 + d1 * s) - (q0 + d2 * t)).length()
+}
+
 fn contains(b: &Aabb, p: Vec3) -> bool {
     b.min.x <= p.x
         && p.x <= b.max.x
@@ -736,6 +768,128 @@ fn key(p: Vec3) -> [u32; 3] {
         (p.y + 0.0).to_bits(),
         (p.z + 0.0).to_bits(),
     ]
+}
+
+/// A tree of boxes over the static features (built once, split at the median of the longest axis
+/// of the centres, ties by index, so the same everywhere), for "which features may touch this box".
+#[derive(Default)]
+struct BoxTree {
+    /// Per node: its box, and either its first child (the second follows) or, for a leaf, the
+    /// range of `items` it holds.
+    nodes: Vec<(Aabb, u32, u32)>,
+    items: Vec<u32>,
+    boxes: Vec<Aabb>,
+}
+
+impl BoxTree {
+    fn new(boxes: Vec<Aabb>) -> BoxTree {
+        let mut t = BoxTree {
+            nodes: Vec::new(),
+            items: (0..boxes.len() as u32).collect(),
+            boxes,
+        };
+        if t.items.is_empty() {
+            return t;
+        }
+        let centre = |b: &Aabb| (b.min + b.max) * 0.5;
+        t.nodes.push((Aabb::EMPTY, 0, 0));
+        let mut stack = vec![(0usize, 0usize, t.items.len())];
+        while let Some((node, start, end)) = stack.pop() {
+            let mut b = Aabb::EMPTY;
+            let mut cb = Aabb::EMPTY;
+            for &i in &t.items[start..end] {
+                b = b.union(t.boxes[i as usize]);
+                cb = cb.extend(centre(&t.boxes[i as usize]));
+            }
+            if end - start <= 4 {
+                t.nodes[node] = (b, start as u32, (end - start) as u32);
+                continue;
+            }
+            let size = cb.max - cb.min;
+            let axis = if size.x >= size.y && size.x >= size.z {
+                0
+            } else if size.y >= size.z {
+                1
+            } else {
+                2
+            };
+            let key = |i: u32| {
+                let c = centre(&t.boxes[i as usize]);
+                match axis {
+                    0 => c.x,
+                    1 => c.y,
+                    _ => c.z,
+                }
+            };
+            t.items[start..end].sort_by(|&p, &q| key(p).total_cmp(&key(q)).then(p.cmp(&q)));
+            let mid = (start + end) / 2;
+            let left = t.nodes.len();
+            t.nodes.push((Aabb::EMPTY, 0, 0));
+            t.nodes.push((Aabb::EMPTY, 0, 0));
+            t.nodes[node] = (b, left as u32, 0);
+            stack.push((left + 1, mid, end));
+            stack.push((left, start, mid));
+        }
+        t
+    }
+
+    /// Appends the features whose boxes overlap `q`, in tree order.
+    fn query(&self, q: &Aabb, stack: &mut Vec<u32>, out: &mut Vec<u32>) {
+        if self.nodes.is_empty() {
+            return;
+        }
+        stack.clear();
+        stack.push(0);
+        while let Some(n) = stack.pop() {
+            let (b, first, count) = self.nodes[n as usize];
+            if !overlap(&b, q) {
+                continue;
+            }
+            if count > 0 {
+                for &i in &self.items[first as usize..(first + count) as usize] {
+                    if overlap(&self.boxes[i as usize], q) {
+                        out.push(i);
+                    }
+                }
+            } else {
+                stack.push(first + 1);
+                stack.push(first);
+            }
+        }
+    }
+}
+
+/// The static features in their trees.
+#[derive(Default)]
+struct FeatureGrid {
+    verts: BoxTree,
+    edges: BoxTree,
+    stack: std::cell::RefCell<Vec<u32>>,
+}
+
+impl FeatureGrid {
+    fn new(verts: &[Vec3], edges: &[[Vec3; 2]]) -> FeatureGrid {
+        FeatureGrid {
+            verts: BoxTree::new(verts.iter().map(|p| Aabb::new(*p, *p)).collect()),
+            edges: BoxTree::new(
+                edges
+                    .iter()
+                    .map(|[a, z]| Aabb::new(a.min(*z), a.max(*z)))
+                    .collect(),
+            ),
+            stack: Default::default(),
+        }
+    }
+
+    /// The vertices in the box, in tree order.
+    fn verts_in(&self, b: &Aabb, out: &mut Vec<u32>) {
+        self.verts.query(b, &mut self.stack.borrow_mut(), out);
+    }
+
+    /// The edges whose boxes meet the box, in tree order.
+    fn edges_in(&self, b: &Aabb, out: &mut Vec<u32>) {
+        self.edges.query(b, &mut self.stack.borrow_mut(), out);
+    }
 }
 
 /// The simulation.
@@ -768,6 +922,7 @@ pub struct Cloth {
     /// The sharp features of the static parts (world mm): vertices and edges.
     static_verts: Vec<Vec3>,
     static_edges: Vec<[Vec3; 2]>,
+    grid: FeatureGrid,
     /// The features of this step: the static ones and those of the hulls, each with the body it
     /// belongs to (`u32::MAX`: static).
     feat_verts: Vec<(Vec3, u32)>,
@@ -821,6 +976,7 @@ impl Cloth {
             statics: StaticMesh::default(),
             static_verts: Vec::new(),
             static_edges: Vec::new(),
+            grid: FeatureGrid::default(),
             feat_verts: Vec::new(),
             feat_edges: Vec::new(),
             vf: Vec::new(),
@@ -852,6 +1008,7 @@ impl Cloth {
                 &mut c.static_edges,
             );
         }
+        c.grid = FeatureGrid::new(&c.static_verts, &c.static_edges);
         c.tri_wind = vec![Vec3::ZERO; c.tris.len()];
         c
     }
@@ -1044,17 +1201,22 @@ impl Cloth {
     /// [`FEATURE_ANGLE`], or less for a thin cloth of long edges ([`FEATURE_DIP`]).
     fn feature_fold(&self) -> f32 {
         let thinnest = self.thickness.iter().fold(f32::INFINITY, |m, t| m.min(*t));
-        let mut sum = 0.0f32;
-        for [a, b] in &self.edges {
-            sum += (self.rest[*a as usize] - self.rest[*b as usize]).length();
-        }
-        let mean = sum / self.edges.len().max(1) as f32;
+        let mean = self.mean_edge();
         let dip = if above(mean, 0.0) && thinnest.is_finite() {
             4.0 * FEATURE_DIP * thinnest / mean
         } else {
             f32::INFINITY
         };
         FEATURE_ANGLE.to_radians().min(dip)
+    }
+
+    /// The mean length of the cloth's edges at rest, mm (0 without any).
+    fn mean_edge(&self) -> f32 {
+        let mut sum = 0.0f32;
+        for [a, b] in &self.edges {
+            sum += (self.rest[*a as usize] - self.rest[*b as usize]).length();
+        }
+        sum / self.edges.len().max(1) as f32
     }
 
     fn volume_of(&self, tris: &[u32]) -> f32 {
@@ -1305,10 +1467,10 @@ impl Cloth {
     }
 
     /// The features of this step (the static ones and the hulls' where they are now) and the
-    /// cloth triangles and edges each may touch: the moving triangles, each in a box that holds its
-    /// particles' reach in the step, in a hash grid of cells as big as the biggest box (by the
-    /// cell of its low corner); a feature vertex looks in the eight cells below it, a feature edge,
-    /// cut in pieces no longer than a cell, in the 27 around the low corner of each.
+    /// cloth triangles and edges each may touch, kept when nearer than the reach of the cloth's
+    /// particles in the step. The static features are in a grid built with the cloth
+    /// ([`FeatureGrid`]), which each moving cloth triangle and edge looks up with the box of its
+    /// reach; a hull's few, against the boxes of the cloth's triangles near it.
     fn gather_features(&mut self, world: Option<&World>) {
         self.feat_verts.clear();
         self.feat_edges.clear();
@@ -1339,121 +1501,85 @@ impl Cloth {
         let reach = |c: &Cloth, i: usize| {
             c.v[i].length() * STEP * 1.5 + GRAVITY * STEP * STEP + c.thickness[i] + 1.0
         };
-        let mut boxes: Vec<(u32, Aabb)> = Vec::new();
-        let mut size = 0.0f32;
-        let mut all = Aabb::EMPTY;
-        for (k, t) in self.tris.iter().enumerate() {
-            if t.iter().all(|&i| self.w[i as usize] == 0.0) {
-                continue;
-            }
+        let reach_of =
+            |c: &Cloth, ids: &[u32]| ids.iter().fold(0.0f32, |m, &i| m.max(reach(c, i as usize)));
+        let boxed = |c: &Cloth, ids: &[u32]| {
+            let r = reach_of(c, ids);
             let mut b = Aabb::EMPTY;
-            for &i in t {
-                let (p, r) = (self.x[i as usize], reach(self, i as usize));
-                b = b.union(Aabb::new(p - Vec3::splat(r), p + Vec3::splat(r)));
+            for &i in ids {
+                b = b.extend(c.x[i as usize]);
             }
-            let e = b.max - b.min;
-            size = size.max(e.x).max(e.y).max(e.z);
-            all = all.union(b);
-            boxes.push((k as u32, b));
-        }
-        if boxes.is_empty() || !(size.is_finite() && above(size, 0.0)) {
-            return;
-        }
-        let table = (2 * boxes.len()).next_power_of_two();
-        let cell = |p: Vec3| {
-            [
-                (p.x / size).floor() as i32,
-                (p.y / size).floor() as i32,
-                (p.z / size).floor() as i32,
-            ]
+            (Aabb::new(b.min - Vec3::splat(r), b.max + Vec3::splat(r)), r)
         };
-        let slot = |c: [i32; 3]| {
-            let h = (c[0] as u32).wrapping_mul(92_837_111)
-                ^ (c[1] as u32).wrapping_mul(689_287_499)
-                ^ (c[2] as u32).wrapping_mul(283_923_481);
-            (h as usize) & (table - 1)
-        };
-        let slots: Vec<usize> = boxes.iter().map(|(_, b)| slot(cell(b.min))).collect();
-        let mut start = vec![0u32; table + 1];
-        for &sl in &slots {
-            start[sl + 1] += 1;
-        }
-        for k in 0..table {
-            start[k + 1] += start[k];
-        }
-        let mut fill = start.clone();
-        let mut cells = vec![0u32; boxes.len()];
-        for (k, &sl) in slots.iter().enumerate() {
-            cells[fill[sl] as usize] = k as u32;
-            fill[sl] += 1;
-        }
-        let around = |c: [i32; 3], lo: i32, near: &mut Vec<u32>| {
-            for dx in lo..=1 {
-                for dy in lo..=1 {
-                    for dz in lo..=1 {
-                        let sl = slot([c[0] + dx, c[1] + dy, c[2] + dz]);
-                        near.extend_from_slice(&cells[start[sl] as usize..start[sl + 1] as usize]);
-                    }
-                }
-            }
-        };
-        let mut near: Vec<u32> = Vec::new();
-        for (fv, &(p, _)) in self.feat_verts.iter().enumerate() {
-            if !contains(&all, p) {
-                continue;
-            }
-            near.clear();
-            let c = cell(p);
-            for dx in -1..=0 {
-                for dy in -1..=0 {
-                    for dz in -1..=0 {
-                        let sl = slot([c[0] + dx, c[1] + dy, c[2] + dz]);
-                        near.extend_from_slice(&cells[start[sl] as usize..start[sl + 1] as usize]);
-                    }
-                }
-            }
-            near.sort_unstable();
-            near.dedup();
-            for &k in &near {
-                let (t, b) = boxes[k as usize];
-                if contains(&b, p) {
-                    self.vf.push((fv as u32, t));
-                }
-            }
-        }
-        for (fe, &([a, z], _)) in self.feat_edges.iter().enumerate() {
-            if !overlap(&all, &Aabb::new(a.min(z), a.max(z))) {
-                continue;
-            }
-            let pieces = (((z - a).length() / size).ceil() as u32).clamp(1, 1 << 16);
-            near.clear();
-            for k in 0..pieces {
-                let p0 = a + (z - a) * (k as f32 / pieces as f32);
-                let p1 = a + (z - a) * ((k + 1) as f32 / pieces as f32);
-                let piece = Aabb::new(p0.min(p1), p0.max(p1));
-                if !overlap(&all, &piece) {
+        let moving = |c: &Cloth, ids: &[u32]| ids.iter().any(|&i| c.w[i as usize] != 0.0);
+        let (nv, ne) = (self.static_verts.len(), self.static_edges.len());
+        let mut found: Vec<u32> = Vec::new();
+        // The static features, through their grid.
+        if nv + ne > 0 {
+            for t in 0..self.tris.len() {
+                let tri = self.tris[t];
+                if !moving(self, &tri) {
                     continue;
                 }
-                let first = near.len();
-                around(cell(piece.min), -1, &mut near);
-                // Only the boxes that meet this piece.
-                let mut keep = first;
-                for q in first..near.len() {
-                    let k = near[q];
-                    if overlap(&boxes[k as usize].1, &piece) {
-                        near[keep] = k;
-                        keep += 1;
+                let (b, r) = boxed(self, &tri);
+                found.clear();
+                self.grid.verts_in(&b, &mut found);
+                let [x0, x1, x2] = tri.map(|i| self.x[i as usize]);
+                for &fv in &found {
+                    let p = self.static_verts[fv as usize];
+                    if contains(&b, p) && (p - closest_on_triangle(p, x0, x1, x2)).length() < r {
+                        self.vf.push((fv, t as u32));
                     }
                 }
-                near.truncate(keep);
             }
-            near.sort_unstable();
-            near.dedup();
-            for &k in &near {
-                let t = boxes[k as usize].0;
-                for &e in &self.tri_edges[t as usize] {
-                    if e != u32::MAX {
-                        self.ee.push((fe as u32, e));
+            for e in 0..self.edges.len() {
+                let pair = self.edges[e];
+                if !moving(self, &pair) {
+                    continue;
+                }
+                let (b, r) = boxed(self, &pair);
+                found.clear();
+                self.grid.edges_in(&b, &mut found);
+                let (pi, pj) = (self.x[pair[0] as usize], self.x[pair[1] as usize]);
+                for &fe in &found {
+                    let [a, z] = self.static_edges[fe as usize];
+                    if overlap(&b, &Aabb::new(a.min(z), a.max(z)))
+                        && segment_distance(pi, pj, a, z) < r
+                    {
+                        self.ee.push((fe, e as u32));
+                    }
+                }
+            }
+        }
+        // The hulls' features, against every cloth triangle and edge near them.
+        if self.feat_verts.len() > nv || self.feat_edges.len() > ne {
+            for t in 0..self.tris.len() {
+                let tri = self.tris[t];
+                if !moving(self, &tri) {
+                    continue;
+                }
+                let (b, r) = boxed(self, &tri);
+                let [x0, x1, x2] = tri.map(|i| self.x[i as usize]);
+                for fv in nv..self.feat_verts.len() {
+                    let p = self.feat_verts[fv].0;
+                    if contains(&b, p) && (p - closest_on_triangle(p, x0, x1, x2)).length() < r {
+                        self.vf.push((fv as u32, t as u32));
+                    }
+                }
+            }
+            for e in 0..self.edges.len() {
+                let pair = self.edges[e];
+                if !moving(self, &pair) {
+                    continue;
+                }
+                let (b, r) = boxed(self, &pair);
+                let (pi, pj) = (self.x[pair[0] as usize], self.x[pair[1] as usize]);
+                for fe in ne..self.feat_edges.len() {
+                    let [a, z] = self.feat_edges[fe].0;
+                    if overlap(&b, &Aabb::new(a.min(z), a.max(z)))
+                        && segment_distance(pi, pj, a, z) < r
+                    {
+                        self.ee.push((fe as u32, e as u32));
                     }
                 }
             }
