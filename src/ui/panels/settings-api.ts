@@ -5,7 +5,7 @@
 // data and the key store; nothing is invented.
 
 import { apiConnection } from '../../core/ai-api-settings';
-import { API_BODIES, API_METHODS, API_RESPONSES, validKey, type ApiEndpoint, type ApiProblem } from '../../core/ai-remote';
+import { API_BODIES, API_METHODS, API_RESPONSES, validKey, type ApiEndpoint, type ApiOptions, type ApiProblem, type ApiProvider } from '../../core/ai-remote';
 import type { Settings } from '../../core/settings';
 import { GENERIC_ENDPOINT } from '../../data/ai-api-presets';
 import { apiErrorText, consentPatch, consentQuestion } from '../ai-api';
@@ -47,19 +47,45 @@ const headersText = (hd: Record<string, string>) =>
     .join('\n');
 const sizesText = (s: [number, number][]) => s.map(([w, h]) => `${w}x${h}`).join(', ');
 
+/** What identifies the configuration a ping result was measured for: provider, endpoint, options, key present. */
+export function pingKey(provider: ApiProvider, endpoint: ApiEndpoint, options: ApiOptions, hasKey: boolean): string {
+  return JSON.stringify([provider, endpoint, options, hasKey]);
+}
+
+/**
+ * What the ping result line shows after a refresh, and whether the stored result survives it. A finished result
+ * stays while the configuration it was measured for still holds; a changed endpoint or options, or a key that
+ * is no longer stored, drops it (a result measured with a key must not stand once the key is gone). While a
+ * test runs the caller leaves the line alone.
+ */
+export function pingLine(
+  state: { result: string | null; resultKey: string },
+  key: string,
+  hasKey: boolean,
+  noKeyText: string,
+): { text: string; result: string | null; resultKey: string } {
+  if (!hasKey) return { text: noKeyText, result: null, resultKey: '' };
+  if (state.result !== null && state.resultKey === key) return { text: state.result, result: state.result, resultKey: state.resultKey };
+  return { text: '', result: null, resultKey: '' };
+}
+
 /** The endpoint: a preset's summary and notes, or the generic endpoint's form, with what is still missing. */
 export function endpointRow(ctx: Ctx, scope: Scope): HTMLElement {
   const parts = rowShell('ai.apiEndpoint', { control: null, stacked: true });
   const body = h('div', { class: 'sw-value-block sw-api', 'data-value': 'ai.apiEndpoint' });
   parts.el.insertBefore(body, parts.ctrlEl);
-  // The ping test: one minimal call against the endpoint (a synthetic 16 × 16 image, never a render). The button
+  // The ping test: one minimal call against the endpoint (a synthetic 512 × 512 image, never a render). The button
   // is disabled while the endpoint has problems, while no key is stored for a host that takes one, or while a
-  // test is running; the result line says what came back, in words.
+  // test is running; the result line says what came back, in words — and keeps saying it until the configuration
+  // changes, so the refresh after a test no longer wipes it.
   const pingBtn = h('button', { type: 'button', class: 'btn', 'data-api-ping': '' }, t('set.ai.api.ping'));
   const pingResult = h('div', { class: 'note', role: 'status', 'aria-live': 'polite', 'data-api-ping-result': '' });
   parts.el.insertBefore(h('div', { class: 'sw-inline sw-api-ping' }, pingBtn, pingResult), parts.ctrlEl);
   let pingTesting = false;
   let pingRun = 0;
+  // The last finished result, and the configuration it was measured for.
+  let pingKeptText: string | null = null;
+  let pingKeptKey = '';
   const refreshPing = async () => {
     const run = ++pingRun;
     const c = apiConnection(ctx.ui.get().settings);
@@ -67,7 +93,11 @@ export function endpointRow(ctx: Ctx, scope: Scope): HTMLElement {
     const hasKey = !c.needsKey || (c.host !== null && store !== null && (await store.has(c.host).catch(() => false)));
     if (run !== pingRun) return;
     pingBtn.disabled = !ctx.services.apiPing || c.problems.length > 0 || !hasKey || pingTesting;
-    if (!pingTesting) pingResult.textContent = hasKey ? '' : t('set.ai.api.pingNoKey', { host: c.host ?? '' });
+    if (pingTesting) return;
+    const line = pingLine({ result: pingKeptText, resultKey: pingKeptKey }, pingKey(c.provider, c.endpoint, c.options, hasKey), hasKey, t('set.ai.api.pingNoKey', { host: c.host ?? '' }));
+    pingKeptText = line.result;
+    pingKeptKey = line.resultKey;
+    pingResult.textContent = line.text;
   };
   pingBtn.addEventListener('click', () => {
     const ping = ctx.services.apiPing;
@@ -79,10 +109,14 @@ export function endpointRow(ctx: Ctx, scope: Scope): HTMLElement {
     pingResult.textContent = t('set.ai.api.pinging');
     void ping(c.endpoint, c.options, new AbortController().signal)
       .then(() => {
-        pingResult.textContent = t('set.ai.api.pingOk');
+        pingKeptText = t('set.ai.api.pingOk');
+        pingKeptKey = pingKey(c.provider, c.endpoint, c.options, true);
+        pingResult.textContent = pingKeptText;
       })
       .catch((e: unknown) => {
-        pingResult.textContent = apiErrorText(e) ?? t('set.ai.api.pingFailed', { reason: e instanceof Error ? e.message : String(e) });
+        pingKeptText = apiErrorText(e) ?? t('set.ai.api.pingFailed', { reason: e instanceof Error ? e.message : String(e) });
+        pingKeptKey = pingKey(c.provider, c.endpoint, c.options, true);
+        pingResult.textContent = pingKeptText;
       })
       .finally(() => {
         pingTesting = false;
