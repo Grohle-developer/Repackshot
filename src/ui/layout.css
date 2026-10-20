@@ -412,7 +412,8 @@ textarea {
   align-items: center;
   min-width: 0;
 }
-/* A newer version was found at startup (UI.md §4.3: a quiet line, never a window). */
+/* A newer version was found at startup: the offer as a quiet line in the status bar (the window that
+   asks about it at startup is below). */
 .update-notice {
   display: flex;
   align-items: center;
@@ -433,4 +434,40 @@ textarea {
   flex: none;
   font: inherit;
   color: var(--ink-0);
+}
+/* The window that asks about a newer version at startup: a dimmed ground over the whole application
+   and the question centred, like the tour's card (tour.css). */
+.up-mount:empty {
+  display: none;
+}
+.update-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.update-window {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(420px, calc((100vw - 40px) / var(--ui-zoom)));
+  padding: 18px 20px 16px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--ink-0);
+  box-shadow: var(--shadow);
+}
+.update-window-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.update-window-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
