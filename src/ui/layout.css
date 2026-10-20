@@ -466,8 +466,36 @@ textarea {
   font-size: 15px;
   font-weight: 600;
 }
+.update-window-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.update-window-line {
+  font-size: 13px;
+  color: var(--ink-1);
+}
+.update-window-line.is-fault {
+  color: var(--ink-0);
+}
+.update-window-changes-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-1);
+  margin-bottom: 4px;
+}
+.update-window-changes-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  color: var(--ink-1);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
 .update-window-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }

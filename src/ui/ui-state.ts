@@ -499,6 +499,8 @@ export interface UiState {
   /** When the update feed last answered (remembered), and the latest release it named. */
   updateCheckedAt: number | null;
   updateLatest: ReleaseInfo | null;
+  /** The version the person skipped in the update window (remembered): not announced again; a newer one is. */
+  updateSkipped: string | null;
   updates: UpdatesUi;
   /** The model manager's view (null: no manager in this build or not started). */
   models: ModelsSnapshot | null;
@@ -567,6 +569,7 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'tourSeen',
   'updateCheckedAt',
   'updateLatest',
+  'updateSkipped',
   'materialEditorRect',
 ];
 
@@ -660,6 +663,7 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
+    updateSkipped: null,
     updates: { checking: false, fault: null, startupDone: false, notice: null, prompt: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
     plugins: null,

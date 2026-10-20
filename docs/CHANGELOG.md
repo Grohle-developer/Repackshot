@@ -5,6 +5,10 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Updates
+
+- **The update window shows what changed, offers what Settings offers, and can skip a version.** The window that asks about a newer version at startup now carries the options of Settings ▸ Updates for that version — the main button (*Install and restart* or *Download*), *Release notes*, and the install followed in the window itself (progress with *Cancel the update*, *Restart now* when it waits, a failure with its reason and *Try again*) — plus a small *What changed*: the first lines of the release's own notes, in plain words. And *Skip this version*: the version is remembered and is not announced again, while a newer one still is. Settings keeps offering a skipped version — skipping silences the announcement, not the update.
+
 ### Accessibility and strings
 
 - **Accessibility and i18n pass for v0.1.26 (H1).** The contrast, static-accessibility and string guards pass, and the strings added since v0.1.16 (sets and lights, the focus modes, the lens editor, the front glass) were reviewed in both languages with no correction needed. The 36 contrast pairs of the auxiliary greys still wait for a design decision on the tokens, and the in-browser audit could not be re-run in the environment at hand (its Chromium refuses the test's own local pages).
