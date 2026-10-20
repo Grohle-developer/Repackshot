@@ -22,11 +22,17 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 25 versions, 21 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 26 versions, 21 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Nothing yet: every screenshot in `docs/ui/` is already in a published version (the latest is v0.1.24).
+Nothing yet: every screenshot in `docs/ui/` is already in a published version (the latest is v0.1.25).
+
+### v0.1.25 · 2026-10-20
+
+The connection test's result stays, a project file opens at startup, *Open project* in the empty state.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
 
 ### v0.1.24 · 2026-10-19
 
@@ -1056,6 +1062,7 @@ Features from `CHANGELOG.md` that have no screenshot in `docs/ui/`, or only a pa
 
 | Version | Phase | What is missing |
 | --- | --- | --- |
+| v0.1.25 | — | The **Open project** button in the empty viewport, and a project file opened at startup (a desktop behaviour: the launcher hands the file to the page, which asks for it on load, so there is nothing new to show on the page itself). |
 | v0.1.24 | — | The **API presets** (Google Gemini, xAI Grok Imagine) in *Settings ▸ AI*, the **Test connection** button and its result line, and the **Partial** marker of a stopped render in the results viewer: the UI exists, but the existing AI screenshots predate them. |
 | v0.1.16 | N1 | The **fade to black or white** in the viewport and in a rendered frame, a part that **fades** (translucent in *Fast*, with its coverage in *Full*), the **pivot** of a spin and the **sun arc**: `tools/video-check.mjs` checks the viewport's fade but does not capture it. There is no frame of the video either, nor MP4, which the tests' Chromium does not encode. |
 | v0.1.15 | K1 | The seven new rows of the **Interior Doctor** with the Interior type (scale and units, opening for the sun and sky, window glass, lens too wide, eye height, near clipping, wall normals). `tools/scene-type-check.mjs` checks them but only leaves `scene-type-interior.png`, which shows the control and the recipes. |

@@ -1,12 +1,27 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 209) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 214) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
 
-Nothing yet: the next points start at 210.
+Nothing yet: the next points start at 215.
+
+## v0.1.25
+
+**The checklists of v0.1.2 to v0.1.24 still apply in full** (points 1 to 209). In addition:
+
+For the connection test's result.
+
+210. [ ] **The result stays.** In *Settings ▸ AI ▸ Model by API*, with a key stored for the endpoint's host, click *Test connection*: when the test finishes, its result line must still be there (before this version it was wiped as the test ended, and the test seemed to say nothing). Then change something in the endpoint (for example the URL): the old result must go away, because it no longer describes what is configured.
+211. [ ] **A failing test stays readable too.** Paste a wrong key and click *Test connection*: the failure must be reported in words and stay on screen long enough to read and copy it.
+
+For opening a project at startup.
+
+212. [ ] **A project file opens the program with the project.** Save a project as `test.repack`. Associate `.repack` with Repackshot (right-click the file, *Open with*, choose `repackshot.exe`), then double-click `test.repack`: the program must start with that project open — its name in the header, its parts in the panel — and must not close silently (that silent close was the bug this version fixes).
+213. [ ] **Open project in the empty state.** Start the program with no project: the empty viewport must offer *Open project* next to *Import model*. Click it, choose `test.repack` in the dialog: the project must open, with its name in the header.
+214. [ ] **What to record when reporting.** A screenshot of the result line in 210 after the test has finished, and of the header and parts panel in 212. If 212 fails, whether the program opened at all, and the `<data>\logs\` folder.
 
 ## v0.1.24
 
