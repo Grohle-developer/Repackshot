@@ -1,12 +1,24 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 219) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 224) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
 
-Nothing yet: the next points start at 220.
+Nothing yet: the next points start at 225.
+
+## v0.1.27
+
+**The checklists of v0.1.2 to v0.1.26 still apply in full** (points 1 to 219). In addition:
+
+For the completed update window (needs a published version newer than the one being tested: test with v0.1.26 once this one is out, with *Settings ▸ Updates ▸ Check at startup* on, its default).
+
+220. [ ] **What changed.** Start the older version: the window that asks about this one must carry a small *What changed* with the first novelties of this version's notes, in plain words (no markdown signs, no links).
+221. [ ] **The window's options are the section's.** The window must offer *Install and restart*, *Release notes*, *Skip this version* and *Later* — the same main button *Settings ▸ Updates* shows for the version.
+222. [ ] **The install is followed in the window.** Click *Install and restart*: the window must stay and show where the install is (downloading with its bar, verifying, installing) with *Cancel the update* until the files start changing; if the restart waits (for example, *Cancel* at the question about unsaved changes), the window must offer *Restart now*.
+223. [ ] **Skip this version.** In the window, click *Skip this version*: the window and the status-bar line must go. Start the program again: this version must not be announced again — but *Settings ▸ Updates* must still offer it. (A later version, when there is one, must be announced again.)
+224. [ ] **What to record when reporting.** A screenshot of the window in 220 and whether 221 to 223 behaved as written. If the window never appeared, the version you started from and the `<data>\logs\` folder.
 
 ## v0.1.26
 

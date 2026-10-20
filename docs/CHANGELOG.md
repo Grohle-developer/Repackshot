@@ -5,6 +5,8 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.27 — 2026-10-20
+
 ### Updates
 
 - **The update window shows what changed, offers what Settings offers, and can skip a version.** The window that asks about a newer version at startup now carries the options of Settings ▸ Updates for that version — the main button (*Install and restart* or *Download*), *Release notes*, and the install followed in the window itself (progress with *Cancel the update*, *Restart now* when it waits, a failure with its reason and *Try again*) — plus a small *What changed*: the first lines of the release's own notes, in plain words. And *Skip this version*: the version is remembered and is not announced again, while a newer one still is. Settings keeps offering a skipped version — skipping silences the announcement, not the update.
