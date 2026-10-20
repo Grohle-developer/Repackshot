@@ -1,6 +1,6 @@
 {
   "name": "repackshot",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "private": true,
   "type": "module",
   "description": "A clean-room, browser-based 3D product renderer, free for noncommercial use.",
