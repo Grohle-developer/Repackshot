@@ -1,8 +1,10 @@
-// Updates, as the interface runs them (Settings ▸ Updates and the quiet notice in the status bar):
-// asking the release feed through `services.updates`, keeping the answer, announcing a newer version
-// once, and opening the download or the release notes. The pure parts (versions, which package is for
-// this computer, the faults) are in core/updates.ts. Nothing here opens a window by itself (UI.md §4.3):
-// a newer version found at startup is a line in the status bar the person can dismiss with Later.
+// Updates, as the interface runs them (Settings ▸ Updates, the notice in the status bar and the window
+// at startup): asking the release feed through `services.updates`, keeping the answer, announcing a
+// newer version once, and opening the download or the release notes. The pure parts (versions, which
+// package is for this computer, the faults) are in core/updates.ts. A newer version found at startup is
+// announced two ways: a window that asks whether to update now (the owner asked for it, 2026-10-20 — it
+// is the one window the update check opens, UI.md §4.3), and a line in the status bar that stays until
+// dismissed with Later, so the offer is still there after the window is answered.
 //
 // On the desktop (phase P5) the main action is Install and restart: the question about unsaved changes (the
 // same as closing, with Save as…), then the launcher downloads the package, checks its sum and installs it
@@ -67,17 +69,23 @@ export function openLink(ctx: Ctx, url: string): void {
 export const downloadUpdate = (ctx: Ctx, release: ReleaseInfo): void => openLink(ctx, downloadChoice(ctx, release).url);
 export const openReleaseNotes = (ctx: Ctx, release: ReleaseInfo): void => openLink(ctx, release.pageUrl);
 
-/** Shows the notice for a newer version, unless this session has announced it already. */
+/** Announces a newer version (notice and startup window), unless this session has announced it already. */
 function announce(ctx: Ctx, release: ReleaseInfo): void {
   const u = ctx.ui.get().updates;
   if (u.announced.includes(release.version)) return;
-  ctx.ui.set({ updates: { ...u, notice: release, announced: [...u.announced, release.version] } });
+  ctx.ui.set({ updates: { ...u, notice: release, prompt: release, announced: [...u.announced, release.version] } });
+}
+
+/** The startup window is answered: it closes. The notice stays in the status bar, and the version is not announced again in this session. */
+export function dismissUpdatePrompt(ctx: Ctx): void {
+  const u = ctx.ui.get().updates;
+  if (u.prompt) ctx.ui.set({ updates: { ...u, prompt: null } });
 }
 
 /** Later: the notice goes until the next start, and this version is not announced again in this session. */
 export function dismissUpdateNotice(ctx: Ctx): void {
   const u = ctx.ui.get().updates;
-  if (u.notice) ctx.ui.set({ updates: { ...u, notice: null } });
+  if (u.notice || u.prompt) ctx.ui.set({ updates: { ...u, notice: null, prompt: null } });
 }
 
 /**

@@ -17,6 +17,7 @@ import { renderBar } from './panels/renderbar';
 import { scenePanel } from './panels/scene';
 import { statusBar } from './panels/status';
 import { tourOverlay } from './panels/tour';
+import { updatePrompt } from './panels/update-prompt';
 import { viewportPanel } from './panels/viewport';
 import type { AppServices } from './ports';
 import { dynamic, Root, Scope, type Ctx } from './reactive';
@@ -165,7 +166,9 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     const lensEditorHost = dynamic(sc, (_s, u) => u.lensEditor?.camera ?? null, (esc, key) => (key ? lensEditor(ctx, esc) : null), undefined, 'div', 'le-mount');
     // The guided tour (phase U10) is over everything, windows included, and owns the keys and the pointer while it is up.
     const tourHost = dynamic(sc, (_s, u) => (u.tour ? 'on' : null), (tsc, key) => (key ? tourOverlay(ctx, tsc) : null), undefined, 'div', 'tour-mount');
-    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), editorHost, lensEditorHost, windowHost, settingsHost, tourHost);
+    // The window that asks about a newer version at startup, over everything but the tour.
+    const updateHost = dynamic(sc, (_s, u) => u.updates.prompt?.version ?? null, (usc, key) => (key ? updatePrompt(ctx, usc) : null), undefined, 'div', 'up-mount');
+    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), editorHost, lensEditorHost, windowHost, settingsHost, tourHost, updateHost);
     sc.watch(
       (_s, u) => [u.leftCollapsed, u.rightCollapsed, u.leftWidth, u.rightWidth, u.narrow, u.drawer] as const,
       ([lc, rc, lw, rw, narrow, drawer]) => {

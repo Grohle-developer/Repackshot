@@ -331,6 +331,8 @@ export interface UpdatesUi {
   startupDone: boolean;
   /** The release the status bar announces; null: no notice (none found, or dismissed with Later). */
   notice: ReleaseInfo | null;
+  /** The release the startup window asks about; null: no window (none found, or answered). Set with the notice when a version is announced at startup; answering the window clears only this. */
+  prompt: ReleaseInfo | null;
   /** Versions announced in this session, dismissed or not: a version is announced once. */
   announced: string[];
   /** Installing a new version from inside the application (desktop only). */
@@ -658,7 +660,7 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
-    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
+    updates: { checking: false, fault: null, startupDone: false, notice: null, prompt: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
     plugins: null,
     hardware: { state: 'IDLE', info: null },

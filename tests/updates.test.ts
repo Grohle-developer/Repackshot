@@ -1,7 +1,7 @@
 // Updates (Settings ▸ Updates and the check at startup): versions and their order, reading the answer of
 // GitHub's `releases/latest`, which package is for which computer, every way the request can fail (with a fake
-// fetch: no network), the check at startup (only with the setting on, once, a version announced once, never a
-// window), what is remembered between sessions, and where the section sits in the Settings window.
+// fetch: no network), the check at startup (only with the setting on, once, a version announced once, asked in
+// a window), what is remembered between sessions, and where the section sits in the Settings window.
 
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -30,7 +30,7 @@ import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { STRINGS, formatDate, formatDateTime, type StringKey } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
-import { availableText, checkForUpdates, dismissUpdateNotice, downloadChoice, downloadUpdate, faultText, openReleaseNotes, startupUpdateCheck, updateSummary } from '../src/ui/updates';
+import { availableText, checkForUpdates, dismissUpdateNotice, dismissUpdatePrompt, downloadChoice, downloadUpdate, faultText, openReleaseNotes, startupUpdateCheck, updateSummary } from '../src/ui/updates';
 
 // ------------------------------------------------------------------ fixtures
 
@@ -398,14 +398,39 @@ describe('the check at startup', () => {
     expect(ctx.calls()).toBe(0);
   });
 
-  it('a newer version becomes a quiet notice: no window, no toast', async () => {
+  it('a newer version is asked in a window at startup, and stays as a notice', async () => {
     const ctx = makeCtx(found(NEWER));
     await startupUpdateCheck(ctx);
+    expect(ctx.ui.get().updates.prompt).toEqual(NEWER);
     expect(ctx.ui.get().updates.notice).toEqual(NEWER);
     expect(ctx.ui.get().settingsWindow).toBeNull();
     expect(ctx.ui.get().renderWindow).toBeNull();
     expect(ctx.ui.get().toasts).toEqual([]);
+    // The header's inline question (unsaved changes and the like) is not used for this.
     expect(ctx.ui.get().prompt).toBeNull();
+  });
+
+  it('a check the person asked for opens no window', async () => {
+    const ctx = makeCtx(found(NEWER));
+    await checkForUpdates(ctx, 'manual');
+    expect(ctx.ui.get().updates.prompt).toBeNull();
+    expect(ctx.ui.get().updates.notice).toBeNull();
+    expect(ctx.ui.get().updateLatest).toEqual(NEWER);
+  });
+
+  it('answering the window closes it and keeps the notice; the version is not asked again', async () => {
+    const ctx = makeCtx(found(NEWER));
+    await startupUpdateCheck(ctx);
+    dismissUpdatePrompt(ctx);
+    expect(ctx.ui.get().updates.prompt).toBeNull();
+    expect(ctx.ui.get().updates.notice).toEqual(NEWER);
+    await checkForUpdates(ctx, 'startup');
+    expect(ctx.ui.get().updates.prompt).toBeNull();
+    expect(ctx.ui.get().updates.announced).toEqual(['9.9.9']);
+    // Later on the notice dismisses the announcement whole.
+    dismissUpdateNotice(ctx);
+    expect(ctx.ui.get().updates.notice).toBeNull();
+    expect(ctx.ui.get().updates.prompt).toBeNull();
   });
 
   it('the same version, or an older one, announces nothing but is remembered', async () => {
