@@ -5,6 +5,10 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Accessibility and strings
+
+- **Accessibility and i18n pass for v0.1.26 (H1).** The contrast, static-accessibility and string guards pass, and the strings added since v0.1.16 (sets and lights, the focus modes, the lens editor, the front glass) were reviewed in both languages with no correction needed. The 36 contrast pairs of the auxiliary greys still wait for a design decision on the tokens, and the in-browser audit could not be re-run in the environment at hand (its Chromium refuses the test's own local pages).
+
 ## v0.1.26 — 2026-10-20
 
 ### Updates

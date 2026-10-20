@@ -10230,6 +10230,18 @@ kept in sync with what was done (README, SPEC) after each milestone.
 - **Strings.** All 2,997 strings reviewed in both languages: no missing accents, no missing opening marks, no detectable typos, and the Spanish uses the informal “tú” throughout. One change: *Center* becomes *Centre*. Two guards in `tests/strings.test.ts`.
 - **Documentation.** SPEC §6 (accessibility), README (one line and the two new tests), CHANGELOG (*Unreleased*).
 
+**Pass v0.1.26** (2026-10-20). **Done:**
+
+- **Contrast** (`tests/ui-contrast.test.ts`): unchanged — the same 36 pairs below 7:1, all of them `ink-2` and `ink-3`; the token change still waits for the lead's decision below, and no new pair fell below.
+- **Names and focus, static** (`tests/a11y-static.test.ts`, `tests/a11y-timeline.test.ts`): pass, as at v0.1.16.
+- **Strings.** The 119 keys added since the v0.1.16 pass reviewed in both languages (sets and lights, the focus modes, the traced lens and tilt/shift, the front glass, the lens editor, *Open project*): no missing accents, no missing opening marks, the Spanish keeps the informal “tú”, and no correction was needed. *Sets* and the glass families (*crown*, *flint*) stay as the catalogue's own terms.
+- **Documentation.** This entry, and CHANGELOG (*Unreleased*).
+
+**Not done in this pass:**
+
+- **The browser audit could not be re-run in the environment at hand**: its only Chromium (152) refuses the test's own loopback pages (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`), and the Playwright Chromium the test looks for (`/opt/pw-browsers`) is not installed there. The v0.1.16 leftovers — button names and focus in the render window, the material editor and the Settings subsections, the import sheet, the results viewer, the *Free up* confirmations, the render window's and the material editor's Escape — remain pending exactly as listed above, for an environment with a working test Chromium.
+- The **N1** role notes above still stand, untouched.
+
 **What did not fit the plan:**
 
 - **Fable decision: auxiliary greys.** For 7:1 on all their surfaces, `ink-2` and `ink-3` would have to be `#434343` or darker in light and `#b5b5b5` or lighter in dark; that equalises the three greys and the hierarchy then depends on weight and size. Alternative: 7:1 only on `bg-0`, `bg-1` and the *hover*, with `ink-2` of `#4e4e4e` or darker in light and `#afafaf` or lighter in dark, and no text on `bg-2`, `bg-3`, *soft* or *overlay*. In high contrast, `ink-3` of `#434343` or darker (light) and `#c1c1c1` or lighter (dark). When a token changes, its pairs are removed from `PENDING` in the test.
