@@ -5,6 +5,17 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.25 — 2026-10-20
+
+### AI post-processing
+
+- **Fixed: Test connection showed nothing.** The result line was written when the test finished and then wiped by the panel's own refresh, which runs as the test ends: with a key stored for the host, the refresh cleared the line, so the test seemed to say neither success nor failure. The result now stays until the endpoint's configuration changes or the key goes away.
+
+### Projects and startup
+
+- **Fixed: opening a `.repack` file closed the program.** The launcher rejected any argument it did not know, and the Windows build has no console, so running `repackshot.exe file.repack` — what a double-click does once the file type is associated with Repackshot — died silently, before the page ever loaded. The launcher now takes one project file (`.repack` or `.repack.json`) on its command line; the page asks the launcher for it at startup (`GET /api/startup-project`) and opens it, like a dropped file. A second file, or an unknown argument, is still refused.
+- **Open project in the empty state**: the empty viewport now offers *Open project* next to *Import model* and *Load example part*, so a project can be opened without the menu or a drag.
+
 ## v0.1.24 — 2026-10-19
 
 ### AI post-processing
