@@ -283,6 +283,7 @@ const TABLE = {
     'glTF/GLB, OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE and USD/USDZ',
     'glTF/GLB, OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE y USD/USDZ',
   ],
+  'empty.open': ['Open project', 'Abrir proyecto'],
   'empty.import': ['Import model', 'Importar modelo'],
   'empty.example': ['Load example part', 'Cargar pieza de ejemplo'],
   'import.busy': ['Importing {name}…', 'Importando {name}…'],

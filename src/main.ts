@@ -92,7 +92,7 @@ import { fadeDisplay, fadeLinear } from './core/fade';
 import { mountApp } from './ui/app';
 import { watchReset as watchPhysicsReset } from './ui/physics';
 import { cameraLabel, lightName } from './ui/names';
-import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, openStartupProject, requestCloseWindow } from './ui/commands';
 import { startupRuntimeCheck } from './ui/ai-runtime-state';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
@@ -1476,10 +1476,32 @@ if (preview) {
 }
 
 applyUrlParams(app.ctx, params);
-// General ▸ On start: the example in Standard mode, an empty project, or the last project file offered in the
-// header (an empty project until it is opened, and where the browser keeps no file handles).
-if (!params.example && startSettings['general.onStart'] === 'EXAMPLE') loadExample(app.ctx);
-if (!params.example && startSettings['general.onStart'] === 'LAST') void offerLastProject(app.ctx);
+// A project file passed on the command line (a double-click in the file manager) opens at startup, before
+// the startup preference: an explicit file wins over the example and the last project. On the web there is no
+// launcher, so nothing is fetched.
+void (async () => {
+  const opened =
+    platform.native &&
+    (await openStartupProject(app.ctx, async () => {
+      const res = await platform.native!.request('/api/startup-project');
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const raw = res.headers.get('x-repackshot-file-name');
+      let name = 'project.repack';
+      if (raw) {
+        try {
+          name = decodeURIComponent(raw);
+        } catch {
+          name = raw;
+        }
+      }
+      return new File([blob], name);
+    }));
+  // General ▸ On start: the example in Standard mode, an empty project, or the last project file offered in the
+  // header (an empty project until it is opened, and where the browser keeps no file handles).
+  if (!opened && !params.example && startSettings['general.onStart'] === 'EXAMPLE') loadExample(app.ctx);
+  if (!opened && !params.example && startSettings['general.onStart'] === 'LAST') void offerLastProject(app.ctx);
+})();
 
 // Ready for screenshots: the interface painted, the viewport drew a frame and
 // the material spheres in view are rendered (bounded wait).

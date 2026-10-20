@@ -28,6 +28,7 @@ function emptyState(ctx: Ctx, scope: Scope): HTMLElement {
       h(
         'div',
         { class: 'row', style: 'justify-content:center;margin-top:8px', 'data-guide': 'empty-actions' },
+        h('button', { type: 'button', class: 'btn', onclick: () => void cmd.openProject(ctx) }, t('empty.open')),
         h('button', { type: 'button', class: 'btn', onclick: () => void cmd.importDialog(ctx) }, icon('upload', 14), t('empty.import')),
         h('button', { type: 'button', class: 'btn btn-primary', onclick: () => cmd.loadExample(ctx) }, t('empty.example')),
       ),

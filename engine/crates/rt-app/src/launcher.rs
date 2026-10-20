@@ -82,9 +82,12 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
         paths.data_dir.join("cache").join("update"),
     );
 
+    if let Some(file) = &opts.open_file {
+        crate::log!("opening {}", file.display());
+    }
     let token = crate::token::generate();
     // The data folder's own port (port.rs): the window's origin stays the same from launch to launch.
-    let mut server = crate::port::start(&paths, opts.port, token.clone(), opts.threads)
+    let mut server = crate::port::start(&paths, opts.port, token.clone(), opts.threads, opts.open_file.clone())
         .map_err(|e| format!("cannot listen on 127.0.0.1:{}: {e}", opts.port))?;
     let port = server.port();
     if opts.after_update {
