@@ -5,6 +5,8 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.26 — 2026-10-20
+
 ### Updates
 
 - **A newer version is asked in a window at startup.** The check at startup already found new versions, but only said so in a line of the status bar, easy to miss. Now a window asks whether to update, as the application opens: *Install and restart* on the desktop (or *Download* where the application cannot install), *Release notes* and *Later*. It is asked once per version and session; answering it leaves the offer as the status bar line, which stays until its own *Later*.

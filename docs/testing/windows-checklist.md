@@ -1,12 +1,24 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 214) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 219) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
 
-Nothing yet: the next points start at 215.
+Nothing yet: the next points start at 220.
+
+## v0.1.26
+
+**The checklists of v0.1.2 to v0.1.25 still apply in full** (points 1 to 214). In addition:
+
+For the update window at startup (needs a published version newer than the one being tested: test with v0.1.25 once this one is out, with *Settings ▸ Updates ▸ Check at startup* on, its default).
+
+215. [ ] **The window asks at startup.** Start the program: as the application opens, a window must ask about the new version, naming it and when it was published, with *Install and restart*, *Release notes* and *Later*. Before this version only a line of the status bar said so.
+216. [ ] **Later leaves the status-bar line.** Answer *Later* (or press `Esc`, or click outside the window): the window closes and the offer stays as the status-bar line, whose own *Later* dismisses it for good. The window does not ask twice about the same version in the same session.
+217. [ ] **Release notes from the window.** When the window asks again (a later start, a newer version), click *Release notes*: the release's page must open in the browser and the window closes; the status-bar line stays.
+218. [ ] **A manual check opens no window.** In *Settings ▸ Updates*, click *Check for updates*: with a newer version available, only the status-bar line appears — the window belongs to the automatic check at startup.
+219. [ ] **What to record when reporting.** A screenshot of the window in 215 and whether 216 to 218 behaved as written. If the window never appeared, the version you started from, that *Check at startup* was on, and the `<data>\logs\` folder.
 
 ## v0.1.25
 
