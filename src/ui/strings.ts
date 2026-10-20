@@ -3043,6 +3043,8 @@ const TABLE = {
   'up.openRelease': ['Open the release page', 'Abrir la página de la versión'],
   'up.notes': ['Release notes', 'Notas de la versión'],
   'up.later': ['Later', 'Más tarde'],
+  'up.skip': ['Skip this version', 'Saltar esta versión'],
+  'up.whatChanged': ['What changed', 'Qué cambia'],
   'up.noticeLabel': ['Update available', 'Actualización disponible'],
   'up.install': ['Install and restart', 'Instalar y reiniciar'],
   'up.of': ['of', 'de'],

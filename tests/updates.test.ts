@@ -13,6 +13,7 @@ import {
   parseRelease,
   parseVersion,
   pickAsset,
+  releaseHighlights,
   summarizeUpdates,
   validRelease,
   type ReleaseInfo,
@@ -30,7 +31,7 @@ import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { STRINGS, formatDate, formatDateTime, type StringKey } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
-import { availableText, checkForUpdates, dismissUpdateNotice, dismissUpdatePrompt, downloadChoice, downloadUpdate, faultText, openReleaseNotes, startupUpdateCheck, updateSummary } from '../src/ui/updates';
+import { availableText, checkForUpdates, dismissUpdateNotice, dismissUpdatePrompt, downloadChoice, downloadUpdate, faultText, openReleaseNotes, skipUpdate, startupUpdateCheck, updateSummary } from '../src/ui/updates';
 
 // ------------------------------------------------------------------ fixtures
 
@@ -158,11 +159,52 @@ describe('the release feed: reading the answer', () => {
         { name: TARGZ, url: `https://github.com/Grohle-developer/Repackshot/releases/download/v0.2.0/${TARGZ}`, size: 39_000_000 },
         { name: 'SHA256SUMS.txt', url: 'https://github.com/Grohle-developer/Repackshot/releases/download/v0.2.0/SHA256SUMS.txt', size: 300 },
       ],
+      highlights: [],
     });
   });
 
+  it('what changed: the first lines of the notes’ own list, plain and short', () => {
+    const body = [
+      '# Repackshot 0.2.0',
+      '',
+      '**This is a preview release.** Its new features:',
+      '',
+      '- a **window asks about a newer version** as the application opens;',
+      '- **Open project** in the empty state, next to *Import model*;',
+      '- fixed: the `{{image_base64}}` placeholder never filled.',
+      '- a fourth thing, which is not taken.',
+      '',
+      "## What's new",
+      '',
+      '- a detail, which is not taken either.',
+      '',
+      '## Downloads',
+      '',
+      '- **Repackshot-0.2.0-windows-x64-portable.zip**: Windows portable.',
+    ].join('\n');
+    expect(releaseHighlights(body)).toEqual([
+      'a window asks about a newer version as the application opens;',
+      'Open project in the empty state, next to Import model;',
+      'fixed: the {{image_base64}} placeholder never filled.',
+    ]);
+    expect(parseRelease({ ...GITHUB_LATEST, body })?.highlights).toEqual(releaseHighlights(body));
+    // The Downloads list is never what changed, even when nothing came before it.
+    expect(releaseHighlights('## Downloads\n\n- **Repackshot-0.2.0-linux-x64-portable.tar.gz**: Linux portable.')).toEqual([]);
+    // No body, no list, no highlights.
+    expect(releaseHighlights(null)).toEqual([]);
+    expect(releaseHighlights('## 0.2.0\n\nUpdates.')).toEqual([]);
+    // A long line is cut to one short line.
+    const cut = releaseHighlights(`- ${'word '.repeat(40)}`);
+    expect(cut).toHaveLength(1);
+    expect(cut[0]).toHaveLength(120);
+    expect(cut[0]?.endsWith('…')).toBe(true);
+    // Read back from a kept answer, only short strings survive.
+    expect(validRelease({ ...NEWER, highlights: ['one', 5, '', 'x'.repeat(121), 'two', 'three', 'four'] })?.highlights).toEqual(['one', 'two', 'three']);
+    expect(validRelease({ ...NEWER, highlights: 'none' })?.highlights).toEqual([]);
+  });
+
   it('a tag without v, no assets and no date are fine', () => {
-    expect(parseRelease({ tag_name: '1.4.0', html_url: 'https://github.com/o/r/releases/tag/1.4.0' })).toEqual({ version: '1.4.0', publishedAt: null, pageUrl: 'https://github.com/o/r/releases/tag/1.4.0', assets: [] });
+    expect(parseRelease({ tag_name: '1.4.0', html_url: 'https://github.com/o/r/releases/tag/1.4.0' })).toEqual({ version: '1.4.0', publishedAt: null, pageUrl: 'https://github.com/o/r/releases/tag/1.4.0', assets: [], highlights: [] });
     expect(parseRelease({ ...GITHUB_LATEST, published_at: 'yesterday' })?.publishedAt).toBeNull();
   });
 
@@ -433,6 +475,35 @@ describe('the check at startup', () => {
     expect(ctx.ui.get().updates.prompt).toBeNull();
   });
 
+  it('Skip this version: remembered, the announcement closes whole, and that version is not announced again — a newer one is', async () => {
+    const ctx = makeCtx(found(NEWER));
+    await startupUpdateCheck(ctx);
+    expect(ctx.ui.get().updates.prompt).toEqual(NEWER);
+    skipUpdate(ctx);
+    expect(ctx.ui.get().updates.prompt).toBeNull();
+    expect(ctx.ui.get().updates.notice).toBeNull();
+    expect(ctx.ui.get().updateSkipped).toBe('9.9.9');
+    // Not announced again, though the section still offers the version.
+    await checkForUpdates(ctx, 'startup');
+    expect(ctx.ui.get().updates.prompt).toBeNull();
+    expect(ctx.ui.get().updates.notice).toBeNull();
+    expect(updateSummary(ctx)).toMatchObject({ state: 'AVAILABLE', available: NEWER });
+    // A newer version than the skipped one is news.
+    (ctx.services.updates as { latest: () => Promise<UpdateOutcome> }).latest = found(releaseOf('9.9.10'));
+    await checkForUpdates(ctx, 'startup');
+    expect(ctx.ui.get().updates.prompt?.version).toBe('9.9.10');
+    expect(ctx.ui.get().updates.notice?.version).toBe('9.9.10');
+  });
+
+  it('a version skipped in an earlier session is not announced', async () => {
+    const ctx = makeCtx(found(NEWER), { ...defaultLayout(), updateSkipped: '9.9.9' });
+    expect(ctx.ui.get().updateSkipped).toBe('9.9.9');
+    await startupUpdateCheck(ctx);
+    expect(ctx.ui.get().updates.prompt).toBeNull();
+    expect(ctx.ui.get().updates.notice).toBeNull();
+    expect(ctx.ui.get().updateLatest).toEqual(NEWER);
+  });
+
   it('the same version, or an older one, announces nothing but is remembered', async () => {
     for (const release of [SAME, releaseOf('0.0.1')]) {
       const ctx = makeCtx(found(release));
@@ -517,6 +588,20 @@ describe('what is remembered between sessions', () => {
     const next = makeCtx(found(SAME), doc.layout);
     expect(next.ui.get().updateLatest).toEqual(NEWER);
     expect(updateSummary(next)).toMatchObject({ state: 'AVAILABLE', available: NEWER });
+  });
+
+  it('the skipped version goes to the settings layout, and comes back; a damaged one is dropped', async () => {
+    const saved: object[] = [];
+    const ui = createUiStore({}, { layout: defaultLayout(), onLayout: (p) => saved.push(p) });
+    const ctx: Ctx = { store: createStore(createInitialState()), ui, services: { updates: { latest: found(NEWER) } } as unknown as AppServices };
+    await startupUpdateCheck(ctx);
+    saved.length = 0;
+    skipUpdate(ctx);
+    expect(saved).toEqual([{ updateSkipped: '9.9.9' }]);
+    const kept = migrateDoc(JSON.parse(JSON.stringify({ schema: 1, settings: {}, layout: { ...defaultLayout(), updateSkipped: '9.9.9' } })));
+    expect(kept.layout.updateSkipped).toBe('9.9.9');
+    expect(migrateDoc({ schema: 1, settings: {}, layout: { updateSkipped: 42 } }).layout.updateSkipped).toBeNull();
+    expect(migrateDoc({ schema: 1, settings: {}, layout: { updateSkipped: 'x'.repeat(65) } }).layout.updateSkipped).toBeNull();
   });
 
   it('a damaged or hostile stored answer is dropped, never opened', () => {

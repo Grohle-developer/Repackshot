@@ -69,11 +69,22 @@ export function openLink(ctx: Ctx, url: string): void {
 export const downloadUpdate = (ctx: Ctx, release: ReleaseInfo): void => openLink(ctx, downloadChoice(ctx, release).url);
 export const openReleaseNotes = (ctx: Ctx, release: ReleaseInfo): void => openLink(ctx, release.pageUrl);
 
-/** Announces a newer version (notice and startup window), unless this session has announced it already. */
+/** Announces a newer version (notice and startup window), unless this session has announced it already, or the person skipped this version. */
 function announce(ctx: Ctx, release: ReleaseInfo): void {
-  const u = ctx.ui.get().updates;
+  const ui = ctx.ui.get();
+  const u = ui.updates;
   if (u.announced.includes(release.version)) return;
+  if (ui.updateSkipped === release.version) return;
   ctx.ui.set({ updates: { ...u, notice: release, prompt: release, announced: [...u.announced, release.version] } });
+}
+
+/** Skip this version (the window's Skip): the version is remembered as skipped, the window and the notice go, and this version is not announced again — a newer one is. Settings still offers it: skipping silences the announcement, not the update. */
+export function skipUpdate(ctx: Ctx): void {
+  const ui = ctx.ui.get();
+  const release = ui.updates.prompt ?? ui.updates.notice;
+  if (!release) return;
+  const u = ui.updates;
+  ctx.ui.set({ updateSkipped: release.version, updates: { ...u, notice: null, prompt: null, announced: u.announced.includes(release.version) ? u.announced : [...u.announced, release.version] } });
 }
 
 /** The startup window is answered: it closes. The notice stays in the status bar, and the version is not announced again in this session. */
