@@ -1,10 +1,16 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 224) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 232) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
+
+Nothing yet: the next points start at 233.
+
+## v0.1.28
+
+**The checklists of v0.1.2 to v0.1.27 still apply in full** (points 1 to 224). In addition:
 
 For water that reads as water (S3g).
 
