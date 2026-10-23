@@ -17,23 +17,34 @@
 //
 // S9: and cloth (a CLT1 spec): it steps the bodies' world with itself (they push it), each frame comes with its
 // vertices, and a run with cloth settles when the cloth does too. An rt.wasm without cloth runs the rest and says so.
+//
+// S7: and the scene's liquids (a LIQ1 scene): they step with the bodies, and each frame comes with every liquid's frame
+// record and its surface rebuilt from that record by marching cubes, here in the worker (rt_phys::liquid). Liquids do
+// not fall asleep: a run with one goes on until Stop or its time. A liquid's step is slow, so a slice ends after a few
+// tens of milliseconds whatever it has done (Pause and Stop take effect at once; the steps are the same).
 
 import { frameStep, STEPS_PER_SECOND, type PhysicsResult, type PhysicsRunOptions } from '../core/physics';
-import { ClothSim, hasClothExports, hasPartsExports, hasPhysExports, hasWetExports, PartsSim, PhysWorld, WetSim, type ClothExports, type PartsExports, type PhysExports, type WetExports } from './phys-wasm';
+import { ClothSim, hasClothExports, hasLiquidExports, hasPartsExports, hasPhysExports, hasWetExports, LiquidSim, PartsSim, PhysWorld, WetSim, type ClothExports, type LiquidExports, type PartsExports, type PhysExports, type WetExports } from './phys-wasm';
 
 export type PhysicsRequest =
   | { type: 'init'; module: WebAssembly.Module }
-  | { type: 'run'; id: number; scene: ArrayBuffer | null; dynamic: number; options: PhysicsRunOptions; wet?: ArrayBuffer | null; parts?: ArrayBuffer | null; cloth?: ArrayBuffer | null }
+  | { type: 'run'; id: number; scene: ArrayBuffer | null; dynamic: number; options: PhysicsRunOptions; wet?: ArrayBuffer | null; parts?: ArrayBuffer | null; cloth?: ArrayBuffer | null; liquid?: ArrayBuffer | null }
   | { type: 'pause' | 'resume' | 'stop'; id: number }
   /** The interface has taken in `frames` more frames of run `id`. */
   | { type: 'ack'; id: number; frames: number };
 
 export type PhysicsReply =
   | { type: 'ready' }
-  | { type: 'started'; id: number; ids: Uint32Array; initial: Float32Array; bodies: number; glass?: Uint8Array; parts?: { layout: Uint8Array; frame: Uint8Array }; cloth?: Float32Array; noCloth?: boolean }
-  | { type: 'progress'; id: number; steps: number; awake: number; bodies: number; settled: boolean; frames: Float32Array[]; glass?: Uint8Array[]; parts?: Uint8Array[]; cloth?: Float32Array[] }
+  | { type: 'started'; id: number; ids: Uint32Array; initial: Float32Array; bodies: number; glass?: Uint8Array; parts?: { layout: Uint8Array; frame: Uint8Array }; cloth?: Float32Array; noCloth?: boolean; liquid?: LiquidFrame }
+  | { type: 'progress'; id: number; steps: number; awake: number; bodies: number; settled: boolean; frames: Float32Array[]; glass?: Uint8Array[]; parts?: Uint8Array[]; cloth?: Float32Array[]; liquid?: LiquidFrame[] }
   | ({ type: 'done'; id: number } & PhysicsResult)
   | { type: 'error'; id: number | null; message: string };
+
+/** S7: every liquid's frame record and surface at a frame. */
+export interface LiquidFrame {
+  records: Uint8Array[];
+  surfaces: Uint8Array[];
+}
 
 interface WorkerScope {
   postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -47,6 +58,8 @@ let wetRt: WetExports | null = null;
 let partsRt: PartsExports | null = null;
 /** S9: and its exports of cloth. */
 let clothRt: ClothExports | null = null;
+/** S7: and its exports of the liquids. */
+let liquidRt: LiquidExports | null = null;
 
 interface Run {
   id: number;
@@ -58,6 +71,8 @@ interface Run {
   parts: PartsSim | null;
   /** S9: the cloth, which steps the bodies with itself. */
   cloth: ClothSim | null;
+  /** S7: the scene's liquids, stepped with the bodies. */
+  liquid: LiquidSim | null;
   /** Steps simulated (the world's and the pane's alike). */
   steps: number;
   options: PhysicsRunOptions;
@@ -73,6 +88,8 @@ interface Run {
   freshParts: Uint8Array[];
   /** S9: the cloth's vertices at the fresh frames. */
   freshCloth: Float32Array[];
+  /** S7: the liquids' records and surfaces of the fresh frames. */
+  freshLiquid: LiquidFrame[];
   last: Float32Array;
   frame: number;
   /** Frames the interface has acknowledged. */
@@ -94,9 +111,23 @@ export function framesAhead(fps: number): number {
 
 const EMPTY = new Float32Array(0);
 
-/** Every body asleep and the cloth still (a run of the glass or the parts alone has none: it never settles by itself). */
+/** Every body asleep and the cloth still (a run of the glass, the parts or a liquid never settles by itself). */
 function settled(r: Run): boolean {
-  return r.pane === null && r.parts === null && (r.world?.settled ?? true) && (r.cloth?.settled ?? true);
+  return r.pane === null && r.parts === null && r.liquid === null && (r.world?.settled ?? true) && (r.cloth?.settled ?? true);
+}
+
+/** S7: a slice of a run with liquids ends after this long, ms (their steps are slow). */
+const SLICE_MS = 40;
+
+/** S7: every liquid's record and surface now. */
+function liquidFrame(sim: LiquidSim): LiquidFrame {
+  const records: Uint8Array[] = [];
+  const surfaces: Uint8Array[] = [];
+  for (let i = 0; i < sim.liquids; i++) {
+    records.push(sim.frame(i));
+    surfaces.push(sim.surface(i));
+  }
+  return { records, surfaces };
 }
 
 function stepBoth(r: Run, n: number): void {
@@ -113,6 +144,7 @@ function stepBoth(r: Run, n: number): void {
     r.parts?.step(n);
   }
   r.pane?.step(n);
+  r.liquid?.step(n);
   r.steps += n;
 }
 
@@ -123,6 +155,7 @@ function record(r: Run): void {
   if (r.pane) r.freshGlass.push(r.pane.frame());
   if (r.parts) r.freshParts.push(r.parts.frame());
   if (r.cloth) r.freshCloth.push(r.cloth.positions());
+  if (r.liquid) r.freshLiquid.push(liquidFrame(r.liquid));
 }
 
 function counts(r: Run): { steps: number; awake: number; bodies: number; settled: boolean } {
@@ -130,15 +163,17 @@ function counts(r: Run): { steps: number; awake: number; bodies: number; settled
 }
 
 function finish(r: Run, reason: PhysicsResult['reason']): void {
-  post({ type: 'done', id: r.id, reason, ...counts(r), frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), ...(r.cloth ? { cloth: r.freshCloth } : {}), poses: r.last });
+  post({ type: 'done', id: r.id, reason, ...counts(r), frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), ...(r.cloth ? { cloth: r.freshCloth } : {}), ...(r.liquid ? { liquid: r.freshLiquid } : {}), poses: r.last });
   r.fresh = [];
   r.freshGlass = [];
   r.freshParts = [];
   r.freshCloth = [];
+  r.freshLiquid = [];
   r.world?.free();
   r.pane?.free();
   r.parts?.free();
   r.cloth?.free();
+  r.liquid?.free();
   if (run === r) run = null;
 }
 
@@ -153,11 +188,13 @@ function slice(r: Run): void {
   const clock = Math.floor(((performance.now() - r.begun) / 1000) * STEPS_PER_SECOND);
   const due = Math.min(max, clock, frameStep(r.acked + framesAhead(r.options.fps), r.options.fps));
   let budget = SLICE_STEPS;
-  // Step to every frame that is due, recording it; then to where the clock is.
+  const sliceStart = performance.now();
+  // Step to every frame that is due, recording it; then to where the clock is. S7: with liquids a step at a time, and
+  // the slice ends when its time is up.
   for (;;) {
     const next = frameStep(r.frame + 1, r.options.fps);
     const target = Math.min(due, next);
-    const n = Math.min(budget, Math.max(0, target - r.steps));
+    const n = Math.min(r.liquid ? 1 : budget, budget, Math.max(0, target - r.steps));
     stepBoth(r, n);
     budget -= n;
     if (r.steps >= next) {
@@ -165,6 +202,7 @@ function slice(r: Run): void {
       record(r);
     }
     if (settled(r) || budget <= 0 || r.steps >= due) break;
+    if (r.liquid && performance.now() - sliceStart > SLICE_MS) break;
   }
   if (settled(r) || r.steps >= max) {
     if (settled(r) && r.steps > frameStep(r.frame, r.options.fps)) {
@@ -177,11 +215,12 @@ function slice(r: Run): void {
     return;
   }
   if (r.fresh.length > 0) {
-    post({ type: 'progress', id: r.id, ...counts(r), settled: false, frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), ...(r.cloth ? { cloth: r.freshCloth } : {}) });
+    post({ type: 'progress', id: r.id, ...counts(r), settled: false, frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), ...(r.cloth ? { cloth: r.freshCloth } : {}), ...(r.liquid ? { liquid: r.freshLiquid } : {}) });
     r.fresh = [];
     r.freshGlass = [];
     r.freshParts = [];
     r.freshCloth = [];
+    r.freshLiquid = [];
   }
   setTimeout(() => slice(r), 4);
 }
@@ -199,6 +238,7 @@ scope.onmessage = (e) => {
         wetRt = hasWetExports(instance.exports) ? instance.exports : null;
         partsRt = hasPartsExports(instance.exports) ? instance.exports : null;
         clothRt = hasClothExports(instance.exports) ? instance.exports : null;
+        liquidRt = hasLiquidExports(instance.exports) ? instance.exports : null;
         post({ type: 'ready' });
       },
       (err: unknown) => post({ type: 'error', id: null, message: err instanceof Error ? err.message : String(err) }),
@@ -237,22 +277,28 @@ scope.onmessage = (e) => {
     post({ type: 'error', id: msg.id, message: 'this rt.wasm does not simulate the parts under rain (npm run engine:build)' });
     return;
   }
+  if (msg.liquid && !liquidRt) {
+    post({ type: 'error', id: msg.id, message: 'this rt.wasm does not simulate liquids (npm run engine:build)' });
+    return;
+  }
   // S9: an rt.wasm before S9 does not simulate cloth: the rest runs without it, and the interface says so.
   const noCloth = !!msg.cloth && !clothRt;
-  if (noCloth && !msg.scene && !msg.wet && !msg.parts) {
+  if (noCloth && !msg.scene && !msg.wet && !msg.parts && !msg.liquid) {
     post({ type: 'error', id: msg.id, message: 'NO_CLOTH' });
     return;
   }
   let world: PhysWorld | null = null;
   let pane: WetSim | null = null;
   let cloth: ClothSim | null = null;
+  let liquid: LiquidSim | null = null;
   try {
     world = msg.scene ? new PhysWorld(rt, new Uint8Array(msg.scene), msg.dynamic) : null;
     pane = msg.wet ? new WetSim(wetRt!, new Uint8Array(msg.wet)) : null;
     const parts = msg.parts ? new PartsSim(partsRt!, new Uint8Array(msg.parts)) : null;
     cloth = msg.cloth && clothRt ? new ClothSim(clothRt, new Uint8Array(msg.cloth)) : null;
+    liquid = msg.liquid ? new LiquidSim(liquidRt!, new Uint8Array(msg.liquid)) : null;
     const initial = world ? world.poses() : EMPTY;
-    const r: Run = { id: msg.id, world, pane, parts, cloth, steps: 0, options: msg.options, begun: performance.now(), pausedAt: null, stop: false, fresh: [], freshGlass: [], freshParts: [], freshCloth: [], last: initial, frame: 0, acked: 0 };
+    const r: Run = { id: msg.id, world, pane, parts, cloth, liquid, steps: 0, options: msg.options, begun: performance.now(), pausedAt: null, stop: false, fresh: [], freshGlass: [], freshParts: [], freshCloth: [], freshLiquid: [], last: initial, frame: 0, acked: 0 };
     run = r;
     post({
       type: 'started',
@@ -264,12 +310,14 @@ scope.onmessage = (e) => {
       ...(parts ? { parts: { layout: parts.layout(), frame: parts.frame() } } : {}),
       ...(cloth ? { cloth: cloth.positions() } : {}),
       ...(noCloth ? { noCloth: true } : {}),
+      ...(liquid ? { liquid: liquidFrame(liquid) } : {}),
     });
     setTimeout(() => slice(r), 0);
   } catch (err) {
     world?.free();
     pane?.free();
     cloth?.free();
+    liquid?.free();
     post({ type: 'error', id: msg.id, message: err instanceof Error ? err.message : String(err) });
   }
 };

@@ -13,6 +13,13 @@ For water that reads as water (S3g).
 227. [ ] **Pearls only where they belong.** On a part whose material is paper (the example's label), a drop that runs fast may leave a few small drops behind it, far apart and of different sizes; on the painted body and the gold cap, none.
 228. [ ] **What to record when reporting.** A render in *Full* of 225 close on the body and one of 226 on the shoulder. If something fails, the message verbatim and the `<data>\logs\` folder.
 
+For liquids (S7).
+
+229. [ ] **Convert to liquid.** On the example bottle, right-click the *Cap* in the scene tree ▸ *Convert to liquid* ▸ *Honey*. The cap must disappear, *Cap (Honey)* appear at the end of the tree, selected, with its *Liquid* section in the inspector (*About … particles at … mm*), and the physics drawer open. *Undo* must bring the cap back in one step, and *Redo* make the honey again.
+230. [ ] **Pour it.** Click *Start*. The bar must count the particles (*Liquid: … particles*) and the honey must flow down over the collar and the bottle's shoulders in *Fast*; it must not go through the bottle. Pause after a second or two, switch to *Full* and render: the honey's surface must be the one *Fast* shows, amber and clear. *Reset* must take the recording away (the cap's shape comes back as the liquid part's).
+231. [ ] **A liquid in a glass.** Make a glass (a *Tube* primitive standing on the floor, with *Clear glass*) and a *Cylinder* inside it a little narrower and shorter, raised a few millimetres; convert the cylinder to *Water* and *Start*. The water must settle at the bottom of the tube without leaking through its wall or the floor; in a *Full* render, where the water touches the glass there must be no bright line of air between them.
+232. [ ] **What to record when reporting.** A screenshot of 230 in *Fast* and the renders of 230 and 231, the version in *Settings ▸ About* (an older desktop launcher shows a note in the *Liquid* section). If something fails, the message verbatim and the `<data>\logs\` folder.
+
 ## v0.1.27
 
 **The checklists of v0.1.2 to v0.1.26 still apply in full** (points 1 to 219). In addition:

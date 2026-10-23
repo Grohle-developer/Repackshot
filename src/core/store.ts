@@ -21,6 +21,7 @@ import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneN
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 import { reducePhysics, type PhysicsAction } from './physics';
+import { reduceLiquid, type LiquidAction } from './liquid';
 import { reduceSceneType, type SceneTypeAction, type TypeMemory } from './scene-type';
 import { reducePrevious } from './previous-lights';
 import { reduceSet } from './sets';
@@ -161,6 +162,7 @@ export type Action =
   | PrimitiveAction
   | SceneTypeAction
   | PhysicsAction
+  | LiquidAction
   | MaterialAction
   | TextureAction
   | GraphAction
@@ -301,6 +303,9 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
     case 'physics':
       // Roles and settings, a simulation's final poses as one step, Reset, Record as animation (S2).
       return reducePhysics(state, action as PhysicsAction);
+    case 'liquid':
+      // S7: Convert to liquid and the Liquid section.
+      return reduceLiquid(state, action as LiquidAction);
     case 'texture':
       // The image maps and labels of a material (M2a).
       return reduceTextures(state, action as TextureAction);

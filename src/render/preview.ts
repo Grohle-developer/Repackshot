@@ -10,6 +10,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, playheadPose, poseActive, type Pose } from '../core/animation';
+import { posedLiquidMesh } from '../core/liquid';
 import { effectFxam, effectRegion, engineParticleCap, fxamPayload, heaviestShape, mixWeights, PREVIEW_PARTICLES, type AmbientEffect } from '../core/effects';
 import type { MotionHint } from '../core/motion-hint';
 import type { FocusPlaneHint } from '../core/focus-plane';
@@ -804,6 +805,8 @@ export class PreviewEngine implements RenderEngine {
     if (weatherChanged) this.assignMaterials(state);
     // S9: the cloth parts the pose shows a recorded frame of draw that frame's sheet.
     if (pose?.cloth || this.clothGeometries.size > 0) this.applyClothPose(state, pose);
+    // S7: a recorded liquid draws the surface of the frame the playhead shows.
+    this.applyLiquidGeometry(state, pose);
     this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
     this.poseActive = posed;
     // Q1: the section plane where the playhead has put it, and the caps of what it cuts (made again when the parts or
@@ -932,6 +935,9 @@ export class PreviewEngine implements RenderEngine {
     }
     this.textures.prune(this.materials.values());
   }
+
+  /** S7: the geometries of the liquids' recorded frames, by mesh id. */
+  private liquidGeometries = new Map<string, THREE.BufferGeometry>();
 
   private geometryFor(node: SceneNode): THREE.BufferGeometry | null {
     if (!node.mesh) return null;
@@ -1110,6 +1116,43 @@ export class PreviewEngine implements RenderEngine {
       if (!base) continue;
       const g = this.weather.geometryOf(id, base);
       if (obj.geometry !== g) obj.geometry = g;
+    }
+  }
+
+  /**
+   * S7: each liquid part draws the surface of the frame the pose shows (core/liquid.ts `posedLiquidMesh`: the worker's
+   * mesh of that frame, or the record's rebuilt by the page's module), its own mesh (the shape it was made from)
+   * otherwise. The geometries of the last few frames are kept.
+   */
+  private applyLiquidGeometry(state: ProjectState, pose: Pose | null): void {
+    const used = new Set<string>();
+    for (const [id, obj] of this.objects) {
+      if (!(obj instanceof THREE.Mesh)) continue;
+      const node = state.scene.nodes[id];
+      if (!node?.liquid) continue;
+      const meshId = posedLiquidMesh(state, pose, id);
+      let g: THREE.BufferGeometry | null = null;
+      if (meshId) {
+        used.add(meshId);
+        g = this.liquidGeometries.get(meshId) ?? null;
+        const data = g ? null : getMesh(meshId);
+        if (data) {
+          g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+          g.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
+          g.setIndex(new THREE.BufferAttribute(data.indices, 1));
+          g.computeBoundingSphere();
+          this.liquidGeometries.set(meshId, g);
+        }
+      }
+      const geometry = g ?? this.geometryFor(node);
+      if (geometry && obj.geometry !== geometry) obj.geometry = geometry;
+    }
+    for (const [k, g] of this.liquidGeometries) {
+      if (this.liquidGeometries.size <= 8) break;
+      if (used.has(k)) continue;
+      g.dispose();
+      this.liquidGeometries.delete(k);
     }
   }
 
@@ -2343,6 +2386,13 @@ export class PreviewEngine implements RenderEngine {
   }
 
   // ------------------------------------------------------------------ ambient effects (S4a)
+
+  /** S7: the liquids' surfacer has come (or gone): the recorded liquids draw their frame's surface. */
+  refreshLiquids(): void {
+    if (!this.state) return;
+    this.applyLiquidGeometry(this.state, playheadPose(this.state));
+    this.needsRender = true;
+  }
 
   /** rt.wasm for the particles (null: there is none; the region boxes are drawn instead). */
   setParticleEngine(rt: RtParticleExports | null): void {

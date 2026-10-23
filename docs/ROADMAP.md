@@ -11869,7 +11869,7 @@ main's `rt-app` unformatted. Neither failure is in a file this phase touched.
    leather 53.81 against 55.39 (−2.8 %). At this solver the shear values of 1 move these little
    (denim at 8,000 N/m: 0.760): they matter more if ◆6 buys more substeps.
 
-### S7 · Liquids — **Opus** (after S2 and the nested dielectric)
+### S7 · Liquids — **Opus** (after S2 and the nested dielectric) — done
 
 **What.** Position-based fluid (PBF) with viscosity (XSPH), cohesion and
 surface tension; presets (`src/data/liquids.ts`: water, oil,
@@ -11885,6 +11885,237 @@ glass; glass material with absorption. Bar, recording and cache from S2.
 **Acceptance.** A litre poured into a closed glass keeps its volume
 ± 3 %; honey takes ≥ 5× longer than water to level (test); nothing
 goes through the glass; determinism; sheet `out/liquid-sheet.html`.
+
+**Done.** Liquids in the simulator, the page and the engine, from the papers
+(no fluid library, `engine/` still only `std`).
+
+**1. The simulator** (`rt_phys::liquid`, ARCHITECTURE §5.6 ter). A liquid part is
+filled by **ray parity** (`fill`: a face-centred cubic lattice, a point kept when
+two of the three axis rays through it cross the mesh an odd number of times,
+exact edge signs with a top-left rule, and the spacing that makes the lattice
+hold the mesh's volume exactly). **Position-based fluids** (Macklin and Müller
+2013) in number-density form, unilateral (`C = max(0, n/n₀ − 1)`), at the S2
+step of 1/240 s in 2 substeps of 3 Jacobi passes; **implicit viscosity**
+(`α = 22 ν Δt / h²` plus XSPH's 0.01, by Jacobi rounds, the walls as still
+neighbours: no slip), Akinci's **cohesion and curvature** (2013) and adhesion.
+The containers are the static triangles (two-sided, swept: a move that would
+cross one stops on its side), the floor and a domain box; the wall's share of
+the density in closed form. Fixed step, deterministic: every pass reads the
+state before it, in chunks a `Runner` may put on threads; the same particles
+with any chunks or threads and in wasm. Each frame, per liquid, an `LQF1`
+record (16-bit positions over the run's box) and the **surface by marching
+cubes** rebuilt from that record (a table the module builds from the cube's
+faces; closed and outward), so the live and the replayed frame are the same mesh.
+
+**2. The presets** (`src/data/liquids.ts`, stable keys `WATER`, `OIL`, `HONEY`,
+`MILK`, `GEL`, `SYRUP`, `JUICE_ORANGE`, `WINE`): density, kinematic viscosity
+(water 1 mm²/s, honey 10,000), cohesion, surface tension and adhesion, and the
+look in the GLASS family's vocabulary (milk and orange juice take the catalogue's
+recipes). `engine/crates/rt-cli/src/liquid_sheet.rs` repeats them; a test
+checks they agree.
+
+**3. Convert to liquid** (context menu ▸ a preset; the Physics section's *Liquid*
+role), through the store, one undo entry: the part hidden, a *Liquid* part born
+at the root (`«part» («preset»)`, role `LIQUID`, the part's shape in world space
+as its own mesh, its own material from the preset), selected, the physics drawer
+open. The inspector's **Liquid** section: the preset, the particle size
+(automatic from the volume, about 4,000 particles, or its own), the estimate
+until a run records it and the engine's count after, the part it came from.
+
+**4. The run.** *Start* hands the worker a `LIQ1` scene (the visible liquids,
+every other visible part the run does not move as a container, the floor);
+the worker steps the liquids after the bodies, one step at a time in slices of
+at most 40 ms, and sends each frame's record and surface. Each liquid's run is
+a `PHYSICS` clip of its part with a liquid track (the cache, saved with the
+project, keyed by the FNV-1a of the `LIQ1`); the playhead's frame is what *Fast*
+and *Full* draw (`posedLiquidMesh`: in hand, or rebuilt from the record by the
+page's own module). A liquid does not settle: *Stop* or 20 s. *Reset* takes the
+clip away. Drop never takes a liquid (it is poured, not dropped), the rain on the
+parts leaves it out, and a body does not collide with it.
+
+**5. Nested dielectrics** (`rt_core::integrator::nested`; Schmidt and Budge,
+JGT 2002). Materials have priorities (`Scene::priorities`, the `NEST` section,
+**bit 14**, `FEATURE_NESTED_DIELECTRICS` = 16384; `/api/info` says 32767): with
+one above 0, the path keeps an interior list, a hit on a clear solid of lower
+priority than the inside is crossed straight, and a true interface refracts at
+the ratio of the two indices. A ray through a flat glass wall into water leaves
+at Snell's angle for 1.5/1.33 (59.77° for 50° in the glass, to a pixel of 0.07°);
+without priorities (none, or all 0) the integrator runs the code of before and
+every earlier pin holds. The page's rule: a GLASS material's own *Nested
+priority* (0–9), else, with a liquid in the scene, 1 for the liquids' materials
+and 2 for every other clear solid of the GLASS family; the simulator lets the
+liquid's surface reach 0.1 spacings into its glass, so the overlap is resolved
+by priority instead of leaving a film of air. `NEST` goes only to an engine
+with bit 14; with an older one the Liquid section says the liquid meets its
+glass as against air.
+
+**Acceptance** (as tests, `engine/crates/rt-phys/tests/liquid.rs` unless said):
+- **A litre keeps its volume**: a litre block falls 80 mm into a closed glass
+  (inner radius 75 mm, a lid at 240 mm), splashes and settles; the volume of the
+  **rendered surface** (the marching-cubes mesh of the frame record) is
+  1.016, 1.011, 1.011 and 1.013 L at 0.75, 1.5, 2 and 2.5 s (± 3 % asked), and the mesh is
+  closed.
+- **Honey takes more than five times water's time to level**: a block of
+  30 × 30 × 60 mm against the left wall of a 120 × 30 × 80 mm tank falls over.
+  *Level*: from some look on (every 6 steps, to 3 s), every sixth of the tank's
+  length holds within 10 % of an even share of the particles (◆). Water levels at
+  1.525 s; honey at five times that (7.6 s) is still 0.111 from even (the bar
+  is 0.1: just), and its
+  front has crossed most of the tank (it flows: it is no solid).
+- **Nothing goes through the glass**: every particle of the litre, at every tenth
+  step of the fall and the splash, keeps the simulator's gap from the bottom and
+  the lid and at least half of it from the 48-gon's wall.
+- **Determinism**: `PINNED_POUR = [(30, 0xc7dea15c), (60, 0xce0b812c)]` (water
+  poured into a glass, 500 particles) with 1, 2, 3, 5, 8 and 13 chunks, with 4
+  threads, worlds stepped in parallel, debug and release, in `wasm32-wasip1`
+  (scalar and simd128, CI) and in the real `rt.wasm` through the page
+  (`tests/fixtures/liquid-pour.json`); `PINNED_S7_LIQUID_4SPP = 0xb61ab0fc` (the
+  poured water rendered in its glass with priorities) on scalar, SSE2 and AVX2,
+  with 1, 4 and 16 threads (`rt-cli`) and in the real `rt.wasm`
+  (`tools/wasm-parity.mjs`, CI).
+- **Nested**: the strip test above (`nested_tests.rs`), the BSDF of a true
+  interface at `1.33/1.5`, and the E9 scene with a priority on every material
+  rendering bit for bit as without (solids that do not overlap).
+- **The sheet**: `rt --liquid-sheet out` writes `out/liquid-sheet.html`: each
+  preset poured into the example glass (a block of 40 × 40 × 55 mm at 2.5 mm,
+  5,400 particles, 2 s), water a quarter of a second into the pour, and water
+  at rest without priorities, with each image's particles, volume kept, times
+  and mean; captured as `docs/ui/liquid-sheet.png`.
+
+**Tests** (each checked with its mutation: the test fails with it and passes
+without):
+- `rt-phys/tests/liquid.rs` (9): the litre (mutation: the rest density at the
+  lattice's own, `REST_PACKING` 1); honey
+  against water (mutation: the viscosity left out of `α`); nothing through the
+  glass (mutation: the moves not swept); the pinned pour and its independence of
+  chunks and threads; a frame record is the particles to the quantum and its
+  surface the world's (`mesh_from_frame`); LIQ1 written and read back; the
+  page's fixture is the checked-in one; the S7 image on every SIMD path.
+  `liquid::fill` (4: a box holds its volume with 12 neighbours at the lattice's
+  distance, a sphere, a box's bottom and top alone fill nothing (mutation: one
+  vote of three keeps a point), cube roots) and `liquid::surface` (4: every case
+  closes its loops, random fields close, a sphere's volume within 0.5 % facing
+  out, a block of particles with the volume they stand for on their lattice
+  within 3 % (mutation: the lattice's sum over a simple cubic lattice, the bug
+  this caught while it was built)).
+- `rt-core`: `integrator::nested` (3: a liquid in its glass meets it at the
+  ratio, solids that do not overlap get the plain indices, of equal priorities
+  the last entered is the inside) and `integrator::nested_tests` (3: the strip
+  at Snell's angle, off by half a degree it moves, and without priorities it is
+  not there (mutations: the relative index as against air; a false hit not
+  crossed straight); the BSDF at the ratio (mutation: the relative index as
+  against air); the E9 scene the same with priorities (mutation: leaving a
+  solid does not take it off the list)); `scene::rsb`
+  (`NEST` read, written only with a priority, more priorities than materials
+  invalid); `rt-wasm` (bit 14); `rt-cli/tests/example.rs` (the S7 scene on 1, 4
+  and 16 threads and `--write-s7-liquid-example`).
+- `tests/s7-liquids.test.ts` (22; mutations run on each): the presets' keys and
+  both languages, and the sheet's numbers equal to them (a preset's number
+  changed on one side); Convert as one undo step, the part hidden and its world
+  shape (mutations: the source left visible; the local mesh; a mirrored part not
+  rewound); a catalogue liquid's recipe; the Liquid section (mutations: the
+  preset's look not brought; the spacing not clamped); the LIQ1 byte by byte
+  (mutations: the hidden source as a container; the preset's viscosity left
+  out); the track (mutations: records not padded to 12; a track of the wrong
+  length accepted); the pose's frame and its surface in the render (mutations:
+  the RSB ignoring the posed mesh; the module's surfacer not used), and the
+  timeline saying the liquid flows; saved and
+  opened (mutations: the liquid clip dropped; a lost source kept; the role
+  dropped); `NEST` only with bit 14 (mutation: written without it), a scene
+  without a liquid byte for byte as before (mutations: the automatic rule
+  without a liquid; an own priority ignored), the glass above the liquid
+  (mutation: equal priorities); the physics bar (mutations: Start not pouring;
+  the liquids' time; Reset keeping the clip); a liquid is no body and no solid
+  (mutations: a static of the liquid; Drop moving it; Drop setting its role),
+  and `physics/set` keeping a liquid's role and giving LIQUID to no solid
+  (mutation: the role taken as given);
+  the rain leaves it out (mutation: the weather on it); with U16's Physics
+  section and drawer, the plan counting the liquid and the pointer saying no
+  weather stays on it (mutations: the plan without liquids; the pointer's
+  liquid case left out); the older engine's
+  note; and with the real `rt.wasm`: the native pour's hashes, particles and
+  triangles and the page's surface of a record equal to the worker's; the
+  page's LIQ1 filled within 10 % of its volume's count, inside the glass
+  (mutation: the glass left out of the LIQ1); the engine reading the page's
+  `NEST` on a liquid modelled into its glass (mutation: `NEST` never written).
+- `tools/s7-check.mjs` (the built app in Chromium, not part of `npm run qa`):
+  `pour`: the example's Cap ▸ Convert to liquid ▸ Honey (one undo entry, the
+  row, the Liquid section and its estimate), *Start*, paused at 1 s: the bar
+  counts the particles, the section says what was recorded and *Fast* draws the
+  liquid where it flowed; `note`: with an engine patched without bit 14 the
+  Liquid section says the liquid meets its glass as against air, in English and
+  Spanish, and with the real `rt.wasm` says nothing; `chrome`: the section is
+  achromatic in both themes; `sheet`: the capture of the sheet.
+
+**Captures**: `docs/ui/liquid-pour.png` (the example's cap converted to honey,
+poured over the bottle, paused, in *Fast*; `tools/s7-check.mjs --only pour`)
+and `docs/ui/liquid-sheet.png` (the sheet; `rt --liquid-sheet out`, then
+`tools/s7-check.mjs --only sheet`).
+
+**What did not fit the plan.**
+- **The containers are the static parts only.** A *Dynamic* part of the same
+  run is not a container (the liquid passes through it) and the liquid does not
+  push the bodies: there is no coupling between `rt_phys::world` and
+  `rt_phys::liquid` (S2's rigid bodies did not fit; noted for a later phase).
+  A cloth part (S9) is no container either: it moves in the run.
+- **Two liquids of a run do not meet**: each flows as if alone, against the same
+  containers.
+- **No weather on a liquid.** The rain, dust and snow on the parts (S3c–S3e)
+  leave a liquid part out: its surface is rebuilt every frame, so nothing could
+  stay on it, and it shelters nothing (rain falls through it onto what holds
+  it). U16's Physics ▸ Weather switches show on a liquid part but change
+  nothing; the Material section's pointer says no weather stays on it.
+- **Slow in the browser.** The worker is single-threaded wasm: on the machine this
+  was built on (shared and loaded), the 3,630 particles of an 18 ml block take
+  about 24 ms a step (1/240 s) and their surface about 34 ms a frame, so a
+  simulated second takes about seven. The run
+  goes slower than real time and the bar says how far it is; the native sheet
+  uses threads.
+- **The surface is a smoothed density** (2 spacings of reach): thin sheets and
+  drops smaller than about two particles are lost or rounded, and the surface
+  of a liquid at rest shows a faint ripple of the particles at the iso-level
+  (◆6). The volume is kept on the rendered surface (the acceptance), not by
+  construction of each frame.
+- **The look** is the GLASS family's (absorption for colour, scattering for milk
+  and juice); no foam, bubbles or wetting films on the glass, and *Fast* draws
+  the liquid with the preview's glass, without the nested indices.
+- **The sheet is an engine scene** (`rt --liquid-sheet`: the example glass of
+  `rt_phys::liquid::example`, a block poured from inside its rim), not the
+  page's bottle; the page's capture is the example's cap poured as honey.
+- **The first frame is the fill as it is.** The lattice keeps its own spacing
+  where it falls against the part's faces, and each particle stands for a little
+  more (the part's volume over their count): the surface of frame 0 holds the
+  lattice's volume, a few per cent under the part's on a box (6 % on a 60 mm cube
+  of 2 mm particles), and the liquid settles at the part's volume as it flows.
+- **A splash that leaves every part** stops at an invisible box around the liquid
+  (its bounds grown by 20 spacings or its size, and to the statics it touches).
+
+**For the verdict** (rule 11, ◆; decided in *Judgement calls*):
+1. ◆ The presets' numbers: densities and viscosities (honey 10,000 mm²/s and gel
+   20,000 at the thick end so they read as thick), the cohesion, surface tension
+   and adhesion coefficients, and the looks (colours, absorption distances,
+   indices; milk and orange juice by the catalogue's recipes; on the sheet red
+   wine's 6 mm absorption reads nearly black in a full glass).
+2. ◆ The particle target of the automatic size (about 4,000; 1–50 mm), which
+   trades detail for the time a run takes in the browser.
+3. ◆ No slip at the walls (the walls in the viscosity as still neighbours: honey
+   creeps down a wall instead of sliding).
+4. ◆ The liquid's surface reaching 0.1 spacings into its glass (`WALL_OVERLAP`)
+   so that the contact is resolved by priority, and the gap of 0.25 spacings the
+   particles keep from a wall.
+5. ◆ The automatic priorities: a liquid 1, every other clear solid of the GLASS
+   family 2 (only with a liquid in the scene); 0 everywhere else.
+6. ◆ The surface's reach (2 spacings), cell (half a spacing) and iso-level (half
+   the lattice's density): smoother or more detailed.
+7. ◆ *Level* for the honey acceptance: every sixth of the tank within 10 % of an
+   even share, from some look on to the end of 3 s. By it, honey at 10,000 mm²/s
+   is only just short of level at five times water's time (0.111 against 0.1): a
+   thicker honey, or a stricter level, would leave more margin.
+8. ◆ The run's limit with a liquid (20 s simulated) and that a liquid never
+   settles by itself.
+9. ◆ `REST_PACKING` = 0.90: the rest density as 0.9 of the lattice's, so that
+   the settled liquid's surface keeps the poured volume (calibrated against the
+   litre).
 
 ### S3 · Rain and dust on the set and on the lens — **Opus** (after S4a and S2) — first part done (the drop, the shape mix and the front glass); the second, S3b (the glass fed by the scene); the rest, S3c
 
@@ -15237,6 +15468,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3e** (the studio floor, moving parts, fine samples, dust motes, the wind on the drops in the air, side edges). Accepted as it stands: ◆1, a drop on a moving part feels gravity minus the part's acceleration, the jolt of a landing included, and meets the rain at the rain's velocity minus the part's: the frame is the part's, as it physically is; ◆2, the floor's rectangle is the union of the feeding effects' regions, at z = 0; ◆3, 2 mm floor cells within 250,000; ◆4, the floor is a film, with no puddles and no splashes off it: **puddles and the splashes off the floor are left for a later phase**, if they are asked for; ◆5, the shadow catcher keeps its layers (cover for dust and snow, a water Fresnel film as a mirror of roughness 0.03); ◆6, the wet catcher darkens as a porous grey of 0.5 by `0.5^(wet×0.5)`, and a visible floor is a matte diffuse under its layers; ◆7, the fine samples of 2 mm where a shadow edge crosses, within 300,000 and up to 4,095 steps a side: the strip shows the coarse sawtooth gone and a 2 mm one left only at macro framing; ◆8, the motes (threshold 0.3, `MOTE_SHARE` 0.02, the octahedron a third of its radius out of the surface, dry dust, 20,000 at most); ◆9, the air of the drops in the air is the rain effects' wind weighted by their densities; ◆10, a drop at a sloping side edge runs along it with its face's hold before it would hang, and the lowest edge and corner keep S3f ◆6. That the studio floor stays dry under a set's own floor is right: the set's floor is a part, and it gets wet as one.
 - **U16** (the physics of each part in one place). Accepted as it stands: ◆1, `WATER_REPELLENT` at 120° advancing and 105° receding, no soak and no darkening, from Ray and Bartell (1953): a wax or coating on a product, whose drops run off at about 1.9 mm on a vertical face; ◆2, two flags (`PART_DRY`, no water; `PART_NO_DUST`, no dust or snow), and a drop in the air that meets a dry part is gone and counted as lost water; ◆3, the size line as it is (twice the critical contact radius on a vertical face, one decimal, a range for several families, *It keeps dry* when all are dry); ◆4, the drawer's counts as they are; ◆5, friction and bounciness for a static part too, since S2 uses both; ◆6, the mixed switch and that a click turns every part on; ◆7, the Spanish names (*Movimiento*, *Intemperie*, *Se moja*, *Coge polvo y nieve*, *Superficie*, *Hidrófugo*); ◆8, the pointer under the material's name. The role goes under its label, so that the four roles fit (the lead's change at review). That the example's metallic paint wets as *Metal* and its paper label as *Paint* (`wettabilityFamilyOf`, S3c) goes to **S3g** with the rest of the wettability table.
 - **S3g** (water that reads as water). Accepted: ◆1, Furmidge's k stays 1 (inside the published spread); ◆2–◆4, pearls only past a rear angle of 10°, 0.25 of the runner's radius, exponential spacing of 12 contact diameters (so rain on glass, metal, paint and plastic leaves a continuous streak); ◆5, the outline keeps the contact area by a uniform stretch, within ±10 % (measured 0.01 %); ◆6, the hanging drop's thinning as it is, `HANG_SAG` unchanged; ◆9, the mapping (clear coat ≥ 0.5 wets as Paint, paper by catalogue key). **Not accepted**: ◆7, glass to 65/35, since it makes drops on vertical glass larger (4.2 → 5.4 mm), against the owner's report that they grow too big; the table stays as S3b decided. ◆8, drops held at the rim of a level face and spilling over, and puddles past the capillary length, go to a later phase if they are asked for.
+- **S7** (liquids). Accepted as it stands: ◆1, the eight presets' numbers and looks (red wine's 6 mm absorption reads nearly black in a full glass, as a full glass of red wine does); ◆2, about 4,000 particles automatically, 1–50 mm by hand; ◆3, no slip at the walls; ◆4, `WALL_OVERLAP` 0.1 spacings and the 0.25-spacing gap; ◆5, the automatic priorities (liquid 1, other clear glass 2, only with a liquid in the scene); ◆6, the surface's reach, cell and iso-level; ◆7, the definition of level, honey's margin noted as thin; ◆8, the 20 s limit with a liquid; ◆9, `REST_PACKING` 0.90. Containers that move, two liquids meeting and foam go to a later phase if they are asked for. Its Windows checklist points are 229–232 (S3g took 225–228).
 
 **1.9** (double bar in aintfilm's LUT carousel) belongs to another
 repository; the triage notes that Repackshot also draws the plugin's recipe

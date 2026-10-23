@@ -34,6 +34,10 @@
 //! constraints (XPBD, many small substeps), colliding with the floor, the static parts, the rigid
 //! bodies of a [`World`] and themselves, blown by the scene's wind.
 //!
+//! **Liquids** (S7, [`liquid`]): position based fluids with viscosity, cohesion, surface tension
+//! and adhesion, filled into a part by ray parity, held by the static parts and the floor, and
+//! their surface rebuilt by marching cubes at every frame.
+//!
 //! **Determinism.** See [`world`]: contacts are sorted by (body, body, feature) before the solver
 //! sees them, so a narrow phase split over threads would give the same result; the pose hash
 //! ([`World::hash`]) is the check, pinned in the tests and compared with the WebAssembly build.
@@ -46,6 +50,7 @@ pub mod cloth;
 pub mod collide;
 pub mod example;
 pub mod hull;
+pub mod liquid;
 pub mod math;
 pub mod scene;
 pub mod shape;

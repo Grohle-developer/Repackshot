@@ -37,9 +37,10 @@ import { isWettabilityFamily, type WettabilityFamily } from '../data/wettability
 import type { GlassTrack } from './wet';
 import type { PartsTrack } from './wet-parts';
 import { clothParts, type ClothProps, type ClothTrack } from './cloth';
+import type { LiquidTrack } from './liquid';
 
-/** What a part does in a simulation. S9: CLOTH (core/cloth.ts). Liquid (S7) comes later. */
-export type PhysicsRole = 'STATIC' | 'DYNAMIC' | 'CLOTH';
+/** What a part does in a simulation. S9: CLOTH (core/cloth.ts). S7: LIQUID, a part Convert to liquid made (core/liquid.ts). */
+export type PhysicsRole = 'STATIC' | 'DYNAMIC' | 'CLOTH' | 'LIQUID';
 
 /** The Physics section of a node (all optional: absent is the default). */
 export interface PhysicsProps {
@@ -132,6 +133,8 @@ export interface PhysicsUpdate {
   parts?: Uint8Array[];
   /** S9: with cloth, every vertex of every piece at each of those frames (world mm, x y z each), in the same order. */
   cloth?: Float32Array[];
+  /** S7: with liquids, per frame, each liquid's record (rt_phys::liquid `frame`) and its surface (`SurfaceMesh` bytes). */
+  liquid?: { records: Uint8Array[]; surfaces: Uint8Array[] }[];
 }
 
 /** When the world is built: where each body of the spec is among the poses, and the poses at step 0 (frame 0). */
@@ -147,6 +150,8 @@ export interface PhysicsStarted {
   cloth?: Float32Array;
   /** S9: the run had cloth and the engine does not simulate it (an rt.wasm before S9): the rest runs without it. */
   noCloth?: boolean;
+  /** S7: each liquid's record and surface at step 0, when the run has liquids. */
+  liquid?: { records: Uint8Array[]; surfaces: Uint8Array[] };
 }
 
 /** How a run ended: the frames not reported yet, and the poses of the last frame (what Stop commits). */
@@ -237,9 +242,10 @@ export function shownBounciness(node: SceneNode | undefined): number {
 /** The movers of a set of nodes: a part, or a group (one body, or each of its parts when it falls as parts). */
 function moversOf(state: ProjectState, ids: readonly NodeId[]): { mover: NodeId; parts: NodeId[] }[] {
   const out: { mover: NodeId; parts: NodeId[] }[] = [];
-  // S9: a cloth part is not a body (it moves inside itself), even under a dynamic group.
+  // S9: a cloth part is not a body (it moves inside itself), even under a dynamic group. S7: a liquid part is poured,
+  // never dropped as a body.
   const cloth = new Set(clothParts(state));
-  const visible = (p: NodeId) => effectiveVisible(state, p) && !!state.scene.nodes[p]?.mesh && !cloth.has(p);
+  const visible = (p: NodeId) => effectiveVisible(state, p) && !!state.scene.nodes[p]?.mesh && !cloth.has(p) && !state.scene.nodes[p]?.liquid;
   for (const id of topMost(state, ids)) {
     const node = state.scene.nodes[id];
     if (!node || isLocked(state, id)) continue;
@@ -299,7 +305,8 @@ export function physicsSpec(state: ProjectState, drop?: readonly NodeId[]): Phys
   // S9: a cloth part is not static either (the bodies do not meet the cloth: it is pushed, it does not push).
   const cloth = new Set(clothParts(state));
   for (const p of partsUnder(state, state.scene.roots)) {
-    if (moving.has(p) || cloth.has(p) || !effectiveVisible(state, p)) continue;
+    // S7: a liquid is not a solid the bodies meet.
+    if (moving.has(p) || cloth.has(p) || !effectiveVisible(state, p) || state.scene.nodes[p]?.liquid) continue;
     const piece = pieceOf(state, p, cache);
     if (!piece) continue;
     const node = state.scene.nodes[p];
@@ -685,8 +692,8 @@ export type PhysicsAction =
   | ({ type: 'physics/cloth'; ids: NodeId[]; patch: { [K in keyof ClothProps]?: ClothProps[K] | null } } & ActionBase)
   /** A simulation starts: its PHYSICS clips (one frame each), and the roles Drop gives. */
   | ({ type: 'physics/begin'; clips: MotionClip[]; roles?: Record<NodeId, PhysicsRole> } & ActionBase)
-  /** It runs: the clips' tracks so far (their durations follow), S3b's glass, S3c's parts and S9's cloth tracks. Same gesture as `begin`. */
-  | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack>; glass?: Record<string, GlassTrack>; parts?: Record<string, PartsTrack>; cloth?: Record<string, ClothTrack> } & ActionBase)
+  /** It runs: the clips' tracks so far (their durations follow), S3b's glass, S3c's parts, S9's cloth and S7's liquid tracks. Same gesture as `begin`. */
+  | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack>; glass?: Record<string, GlassTrack>; parts?: Record<string, PartsTrack>; cloth?: Record<string, ClothTrack>; liquids?: Record<string, LiquidTrack> } & ActionBase)
   /**
    * It stopped (by itself or by Stop): the movers' final transforms, and the run's clips (`clips`) anchored to them.
    * Same gesture: one undo step for all.
@@ -703,9 +710,15 @@ function clears(k: keyof PhysicsProps, v: unknown): boolean {
   return false;
 }
 
-function setProps(nodes: Record<NodeId, SceneNode>, id: NodeId, patch: PhysicsPatch): boolean {
+function setProps(nodes: Record<NodeId, SceneNode>, id: NodeId, given: PhysicsPatch): boolean {
   const node = nodes[id];
   if (!node) return false;
+  // S7: LIQUID is the role of a liquid part (Convert to liquid makes one) and of nothing else, and a liquid part keeps it.
+  let patch = given;
+  if (patch.role !== undefined && (node.liquid ? patch.role !== 'LIQUID' : patch.role === 'LIQUID')) {
+    const { role: _role, ...rest } = patch;
+    patch = rest;
+  }
   const next: PhysicsProps = { ...(node.physics ?? {}) };
   for (const [k, v] of Object.entries(patch) as [keyof PhysicsProps, unknown][]) {
     if (clears(k, v)) delete next[k];
@@ -784,6 +797,12 @@ export function reducePhysics(state: ProjectState, action: PhysicsAction): Proje
         if (cloth && c.move === 'PHYSICS' && c.cloth !== cloth) {
           changed = true;
           return { ...c, cloth, duration: Math.max(0, cloth.frames - 1) / cloth.fps };
+        }
+        // S7: a liquid's track.
+        const liquid = action.liquids?.[c.id];
+        if (liquid && c.move === 'PHYSICS' && c.liquid !== liquid) {
+          changed = true;
+          return { ...c, liquid, duration: Math.max(0, liquid.frames - 1) / liquid.fps };
         }
         const track = action.tracks[c.id];
         if (!track || c.move !== 'PHYSICS' || c.track === track) return c;

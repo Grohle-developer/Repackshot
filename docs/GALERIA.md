@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 185 files: 183 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 187 files: 185 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,11 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: Unreleased and 28 versions, 21 of the versions with new screenshots; the screenshots are spread over 66 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: Unreleased and 28 versions, 21 of the versions with new screenshots; the screenshots are spread over 67 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Cloth's second round (S9): the cap under silk, Cusick's drape tester; water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f) and `physics-inspector.png` (U16).
+Cloth's second round (S9): the cap under silk, Cusick's drape tester; liquids (S7); water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f) and `physics-inspector.png` (U16).
 
 #### S9 · Cloth with real physics
 
@@ -40,6 +40,14 @@ Cloth's second round (S9): the cap under silk, Cusick's drape tester; water that
 
 <a id="c-rain-bottle"></a><img src="ui/rain-bottle.png" width="480" alt="Close on the example bottle's painted body after 10 s of the default rain: round drops of different sizes, scattered, a few small clear ones, the white paper label at the right edge, and a white scale bar of 5 mm at the bottom left."><br>
 `rain-bottle.png` · `432216f` · The example bottle's painted body (wetting as paint) at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
+
+#### S7 · Liquids
+
+<a id="c-liquid-pour"></a><img src="ui/liquid-pour.png" width="480" alt="The example bottle in Fast with its cap converted to honey, paused at one simulated second: a glossy, lace-edged coat of liquid over the bottle's top and shoulders; the tree shows Cap hidden and Cap (Honey) with its clip flows as simulated, the inspector's Liquid section says Honey, viscosity 10,000 mm²/s, particle size 1.54 mm automatic, recorded 25 frames of 3,826 particles; the physics bar says Liquid: 3,826 particles, Paused."><br>
+`liquid-pour.png` · `c0bb8fe` · The example's *Cap* ▸ *Convert to liquid* ▸ *Honey* from the scene tree, then *Start* in the physics bar, paused at one simulated second (`tools/s7-check.mjs --only pour`): the cap is hidden and *Cap (Honey)* flows over the collar and the bottle's shoulders in *Fast*, its surface rebuilt by marching cubes every frame; the Liquid section says the preset, its motion, the automatic particle size and what the run recorded, and the timeline row says the clip *flows as simulated*; under the material's name, U16's pointer says *Physics: Liquid · no rain, dust or snow stays on it*. *Fast* draws the honey with the preview's glass (grey-gold against the dark studio), not the render's colour (S7).
+
+<a id="c-liquid-sheet"></a><img src="ui/liquid-sheet.png" width="480" alt="A contact sheet of ten renders of a clear cylindrical glass on a grey floor, each with a liquid settled in its bottom third: water, oil (yellow), honey (amber), milk (white), gel (pale blue), syrup (dark amber), orange juice (opaque orange), red wine (nearly black at this depth), water a quarter of a second into the pour (splashing), and water without priorities; under each, its particles, simulated time, the surface's volume over the poured volume and the render's samples."><br>
+`liquid-sheet.png` · `8d7c358` · The liquids sheet (`rt --liquid-sheet out`, captured with `tools/s7-check.mjs --only sheet`): each preset poured into the example glass from a 40 × 40 × 55 mm block (5,400 particles at 2.5 mm, 2 s simulated), rendered with the glass at priority 2 over the liquid at 1 (nested dielectrics) and denoised; then water a quarter of a second into the pour, and water at rest without the priorities (its contact with the glass as against air). The captions give the rendered surface's volume over the poured one (0.999 to 1.017 at rest). The looks and motions are ◆ for the verdict: red wine's absorption of 6 mm makes a glass of it nearly black (S7).
 
 ### v0.1.27 · 2026-10-20
 
@@ -1005,6 +1013,8 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`cloth-sheet.png`](#c-cloth-sheet) · v0.1.23 · S9
 - [`cloth-inspector.png`](#c-cloth-inspector) · v0.1.23 · S9
 - [`cloth-bar.png`](#c-cloth-bar) · v0.1.23 · S9
+- [`liquid-pour.png`](#c-liquid-pour) · Unreleased · S7
+- [`liquid-sheet.png`](#c-liquid-sheet) · Unreleased · S7
 - [`rain-bottle.png`](#c-rain-bottle) · Unreleased · S3g
 - [`cloth-cap.png`](#c-cloth-cap) · Unreleased · S9
 - [`cloth-cusick.png`](#c-cloth-cusick) · Unreleased · S9

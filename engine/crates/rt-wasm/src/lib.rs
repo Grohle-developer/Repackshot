@@ -29,6 +29,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod cloth;
 pub mod ffi;
+pub mod liquid;
 pub mod parts;
 pub mod phys;
 pub mod wet;
@@ -1647,6 +1648,8 @@ mod tests {
         assert_eq!(rt_features() & rt_core::FEATURE_WET_FLOOR, 2048);
         assert_eq!(rt_features() & rt_core::FEATURE_WET_FINE, 4096);
         assert_eq!(rt_features() & rt_core::FEATURE_WET_MOTES, 8192);
+        // S7: the nested dielectrics.
+        assert_eq!(rt_features() & rt_core::FEATURE_NESTED_DIELECTRICS, 16384);
         let ptr = rt_alloc(0);
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.

@@ -137,6 +137,9 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'scatterG', kind: 'number', min: -0.9, max: 0.9, step: 0.05, fallback: 0, preview: true, tip: 'param.scatterG.tip' },
     // E9c: chromatic dispersion of solid glass, its Abbe number (0: none; 30–70 typical).
     { key: 'abbe', kind: 'number', min: 0, max: 100, step: 1, fallback: 0, preview: true, tip: 'param.abbe.tip' },
+    // S7: nested dielectrics, where two clear solids overlap the higher priority is the inside (0: automatic, data/
+    // liquids.ts: in a scene with a liquid the glass is above it). The Full engine only (bit 14).
+    { key: 'priority', kind: 'number', min: 0, max: 9, step: 1, fallback: 0, preview: false, engine: true, tip: 'param.priority.tip' },
   ],
   WOOD: [
     { key: 'woodColor1', kind: 'color', fallback: [0.56, 0.38, 0.21, 1], preview: true },

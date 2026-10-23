@@ -998,6 +998,10 @@ pub struct Scene {
     pub motes: Option<Caps>,
     /// S3e: the instance each mote lies on, in the order of their mesh.
     pub mote_owners: Vec<u32>,
+    /// S7: the nested-dielectric priority of each material (`NEST`,
+    /// [`crate::integrator::nested`]), by material index; a material past the end of the list has
+    /// priority 0. A scene where none is above 0 is traced as before, bit for bit.
+    pub priorities: Vec<u32>,
 }
 
 /// S3c: the mesh of the drops' caps, its instance and its material, each the last of its list

@@ -2,7 +2,8 @@
 // · ■ Stop · ↺ Reset, then what the simulator reports (simulated time, bodies awake) and the state, stopped by
 // default: nothing runs until the person starts it or drops something. Every run records itself into the animation.
 // S3b: with a front glass fed by the scene, what its last frame holds (drops, motes of dust). S9: with cloth, how many
-// vertices the simulator moves; with an engine that does not simulate cloth, that it was left out.
+// vertices the simulator moves; with an engine that does not simulate cloth, that it was left out. S7: with liquids,
+// their particles (the engine's fill).
 // U16: while stopped, one line says what Start would simulate, from the scene as it is (core/start-plan.ts): the
 // dynamic parts, the rain, dust and snow on the parts (and the parts that keep dry or clean), the front glass; or that
 // there is nothing to simulate, and how to give it something.
@@ -52,6 +53,8 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
   const parts = h('span', { class: 'aux tabular', 'data-field': 'phys.parts', 'data-tip': t('phys.partsTip') });
   // S9: the cloth the simulator moves, or that this engine left it out.
   const cloth = h('span', { class: 'aux tabular', 'data-field': 'phys.cloth', 'data-tip': t('phys.clothTip') });
+  // S7: the liquids, as the engine filled them.
+  const liquid = h('span', { class: 'aux tabular', 'data-field': 'phys.liquid', 'data-tip': t('phys.liquidTip') });
   const state = h('span', { class: 'phys-state', 'data-field': 'phys.state', role: 'status' });
   const note = h('p', { class: 'note', style: 'margin:0' });
   // U16: what Start would simulate now.
@@ -82,12 +85,13 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       pause.setAttribute('data-tip', t(paused ? 'phys.resumeTip' : 'phys.pauseTip'));
       pause.setAttribute('aria-pressed', String(paused));
       // Only what the simulator said: nothing before it has said it.
-      const reported = p.state === 'RUNNING' || p.state === 'PAUSED' || (p.state === 'STOPPED' && p.ended !== null && (p.bodies > 0 || !!p.glass || !!p.parts || !!p.cloth) && p.ended !== 'NOTHING' && p.ended !== 'NO_ENGINE' && p.ended !== 'FAILED' && p.ended !== 'NO_CLOTH');
+      const reported = p.state === 'RUNNING' || p.state === 'PAUSED' || (p.state === 'STOPPED' && p.ended !== null && (p.bodies > 0 || !!p.glass || !!p.parts || !!p.cloth || !!p.liquid) && p.ended !== 'NOTHING' && p.ended !== 'NO_ENGINE' && p.ended !== 'FAILED' && p.ended !== 'NO_CLOTH');
       time.textContent = reported ? t('phys.time', { t: formatNumber(p.time, getLang(), 2) }) : '';
       awake.textContent = reported && p.bodies > 0 ? t('phys.awake', { n: p.awake, total: p.bodies }) : '';
       glass.textContent = reported && p.glass ? t('phys.glass', { drops: formatNumber(p.glass.drops, getLang(), 0), motes: formatNumber(p.glass.motes, getLang(), 0) }) : '';
       parts.textContent = reported && p.parts ? t('phys.parts', { drops: formatNumber(p.parts.drops, getLang(), 0), drips: formatNumber(p.parts.drips, getLang(), 0), falling: formatNumber(p.parts.falling ?? 0, getLang(), 0) }) : '';
       cloth.textContent = reported && p.cloth ? t('phys.cloth', { vertices: formatNumber(p.cloth.vertices, getLang(), 0) }) : reported && p.noCloth ? t('phys.clothSkipped') : '';
+      liquid.textContent = reported && p.liquid ? t('phys.liquid', { n: formatNumber(p.liquid.particles, getLang(), 0), liquids: p.liquid.liquids }) : '';
       state.textContent = stateText(p);
       note.textContent = running ? t('phys.fastNote') : t('phys.note');
     },
@@ -108,6 +112,7 @@ export function physicsDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       glass,
       parts,
       cloth,
+      liquid,
       state,
       h('span', { style: 'flex:1' }),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('render.drawerClose'), 'data-tip': t('render.drawerClose'), onclick: () => ui.set({ drawer: null }) }, icon('close')),

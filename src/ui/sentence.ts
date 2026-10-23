@@ -92,6 +92,8 @@ function verb(clip: MotionClip, lang: Lang): string {
   if (clip.move === 'PHYSICS' && clip.parts) return tIn(lang, 'say.PHYSICS_PARTS');
   // S9: the recorded shape of a cloth part.
   if (clip.move === 'PHYSICS' && clip.cloth) return tIn(lang, 'say.PHYSICS_CLOTH');
+  // S7: the recorded liquid of a liquid part.
+  if (clip.move === 'PHYSICS' && clip.liquid) return tIn(lang, 'say.PHYSICS_LIQUID');
   switch (clip.move) {
     case 'RISE':
       return tIn(lang, clip.amount < 0 ? 'say.RISE.neg' : 'say.RISE', { amount: amount(clip.amount) });

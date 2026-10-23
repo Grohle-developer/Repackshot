@@ -202,7 +202,7 @@ The full **context menu** of a row (phase U3, with the actions of
 `SPEC.md` §3.1): Frame · Move (activates the gizmo) · **Scale…**
 (phase U9: the inline panel of §2.3, next to the row) · Rest on the
 floor · Centre · Centre and rest · **Drop** (phase S2) ·
-**Drape over the part** (phase S9) · Reset transform ·
+**Drape over the part** (phase S9) · **Convert to liquid ▸** (phase S7: the presets) · Reset transform ·
 Set pivot ▸ (centre, base, origin, picked point) · Set as
 camera target · **Keep in focus** (F1: the camera in view switches to
 *Focus ▸ Object* on the row or the part, at the level of the selection) ·
@@ -235,6 +235,16 @@ footprint plus 1.2 times its height, a little above its top— with the role *Cl
 runs it alone: it falls and drapes over the selection and whatever is under it, and stops
 by itself when it settles. Adding it, its role and the run are **one** undo entry
 (*Undo: Drape cloth over Box*). Disabled with nothing visible selected.
+
+**Convert to liquid ▸** (phase S7; the same menu in the viewport) lists the
+liquids of `src/data/liquids.ts` (*Water · Oil · Honey · Milk · Gel · Syrup ·
+Orange juice · Red wine*, with the auxiliary text *The part becomes a liquid that
+fills its shape and flows when the simulation starts*). Choosing one hides the
+selected parts and makes, for each, a liquid part at the top of the tree named
+after it (*Cap (Honey)*), selected, and opens the **Physics** drawer: **one**
+undo entry (*Undo: Convert Cap to Honey*). It is disabled when nothing selected
+is a visible part with a shape that is not a liquid already; the *Liquid* role
+of the Physics section does the same with water.
 
 **Cameras**: list of saved cameras with the active one marked. Buttons:
 *New from current view*, *Duplicate*, *Delete*. Click activates the
@@ -1283,8 +1293,9 @@ except the two that build things: *Create studio* and *Render*.
    weather of the parts was a switch per effect, buried in the effect's
    inspector, and how water sits on a part could not be seen).
    **Motion.** **Role**, segmented:
-   *Static · Dynamic · Cloth · Liquid*, with *Liquid*
-   disabled and a tooltip saying *coming soon* (*Cloth* since S9); with several nodes of
+   *Static · Dynamic · Cloth · Liquid* (*Cloth* since S9); *Liquid* (S7) converts
+   the part to water (as *Convert to liquid*), and on a liquid part it is the one
+   marked and the others are disabled; with several nodes of
    different roles, none marked. Under it, **one line** that says what the
    role does (U16): *Stays where it is: things fall onto it and the weather
    settles on it* (Static), *Falls and collides with the rest* (Dynamic),
@@ -1354,6 +1365,26 @@ except the two that build things: *Create studio* and *Render*.
    list shows *Mixed*. Only what differs from the default is saved with the
    project (`physics.getsWet`, `getsDust`, `surface`).
    ![the Physics section with both groups, on the example bottle's Body](ui/physics-inspector.png)
+
+**With a liquid part selected** (phase S7; `SPEC.md` §3.1 *Liquids*), after
+*Part*, the **Liquid** section: **Liquid**, the preset (a list: its motion, and
+its look on the liquid's own material), and below it in auxiliary text how it
+moves (*Viscosity: 10,000.0 mm²/s · density 1,420 kg/m³*); **Particle size**
+(mm, draggable, 1–50) with the **Automatic** switch (on: from the part's
+volume, about 4,000 particles; its tooltip says the size it gives); then what
+the simulator will make of it, said as an estimate until a run records it
+(*About 4,012 particles at 1.31 mm (from the volume, 9.0 ml)*) and the engine's
+count after (*Recorded: 48 frames of 4,061 particles*); the part it was made
+from (*Made from Cap (hidden)*); a note on how to pour it (*Start, in the
+physics bar, fills the liquid with particles and pours it into the parts that
+hold it; every run records itself on the timeline, and each frame shows the
+liquid's surface*). With a render engine without nested dielectrics (bit 14:
+an older desktop launcher), a note says that it draws the liquid against air
+where it touches its glass; with a recording and no page engine to rebuild its
+surfaces, a note says the liquid shows its shape until the engine loads. Each
+change is a store action (*Undo: Liquid of Cap (Honey)*), a drag of the size a
+single entry. A GLASS material has the parameter **Nested priority** (0–9, *Full* only;
+0: automatic): where two clear solids overlap, the higher is the inside.
 
 **With a primitive selected** (phase U9), before *Material*, the
 **Primitive** section: *Shape* (the name, as text), and one field per
@@ -1685,6 +1716,18 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   ![a drop that slides and gathers others, six frames](ui/rain-organic.png)
   ![the rain on the parts, paused](ui/physics-rain-set.png)
   ![the drops in the air, paused](ui/physics-rain-air.png)
+- **The liquids** (S7). *Start* pours every visible liquid part the simulation
+  does not move into the visible parts that it does not move and the floor,
+  with the bodies or alone; *Drop* does not. The bar adds what the engine says
+  (*Liquid: 4,061 particles*: the particles it filled the liquids with); a
+  simulation with a liquid does not stop by itself (*Stop* or its 20 s
+  simulated stop it); while stopped, the line of what *Start* simulates (U16)
+  counts them (*Start simulates: 1 liquid*). Each liquid's recording is a
+  **Simulation** clip of its part, which moves nothing (its timeline row says
+  *flows as simulated*): it says which frame the liquid shows, and *Reset*
+  removes it. *Fast* and *Full* draw the liquid's surface at the playhead's
+  frame (the part's own shape before a run).
+  ![honey poured from the bottle's cap, paused](ui/liquid-pour.png)
 
 Captures (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (the bar
 paused, in the middle of a fall), `docs/ui/physics-drop.png` (three

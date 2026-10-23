@@ -241,8 +241,9 @@ crate, in a *worker*). Each node may carry its *Physics* section
 (`physics`, optional; without it the default values apply):
 
 - **Role** (`role`): *Static* (default: it is there, does not move and is
-  collided against), *Dynamic* (falls and collides) or, since S9, *Cloth* (it folds and
-  drapes: below). *Liquid* (S7) appears in the inspector as *coming soon*. A dynamic group or model
+  collided against), *Dynamic* (falls and collides), since S9 *Cloth* (it folds and
+  drapes: below) or, since S7, *Liquid*: the role of a part *Convert to liquid*
+  made (below; choosing it on another part converts it). A dynamic group or model
   falls **as one body** (an envelope of all its parts) unless it
   has **As parts** (`asParts`), and then each part falls on its
   own.
@@ -476,6 +477,56 @@ edge** runs along it while its weight along the edge beats its hold, and stops a
 the lowest corner, where it hangs and lets go from rest; a level edge holds it.
 With bit 8 and without bit 11 the inspector warns that the floor will show dry;
 with a dust effect and without bit 13, that the dust will show without its grains.
+
+**Liquids (S7)** (`src/core/liquid.ts`, presets in `src/data/liquids.ts`; the
+simulator is `engine/crates/rt-phys` `liquid`, in the S2 *worker*). **Convert to
+liquid** (the context menu ▸ a preset; the Physics section's *Liquid* role, with
+the default, water) is one undo entry: the part is hidden and a *Liquid* part is
+born at the top of the tree, `«part» («preset»)`, with the part's shape in world
+space as its own mesh (moving the hidden part afterwards changes nothing), the
+role `LIQUID`, the Liquid section (`liquid`: `preset`, `spacingMm` when it has its
+own, `source`: the hidden part) and a material of its own with the preset's look
+(GLASS family: base colour, roughness, index, absorption; milk and orange juice
+take the catalogue's recipe). The **presets** (stable keys: `WATER`, `OIL`,
+`HONEY`, `MILK`, `GEL`, `SYRUP`, `JUICE_ORANGE`, `WINE`) give density (kg/m³),
+kinematic viscosity (mm²/s: water 1, honey 10,000), cohesion, surface tension and
+adhesion to the walls (the simulator's coefficients, times gravity). The **Liquid
+section** changes the preset (its motion, and its look on the liquid's own
+material) and the particle spacing: automatic, about 4,000 particles from the
+volume (`cbrt(V / 4000)`, within 1–50 mm), or its own; it says the estimate
+(*about N particles at s mm, from the volume*) until a run records it, then the
+engine's count. **Start** pours every visible liquid the run does not move
+(`LIQ1`: the meshes, every other visible part the run does not move as a
+container —static triangles—, the studio floor at `z = 0`, and per liquid its mesh,
+matrix, spacing and motion). The simulator fills the closed shape with particles on
+a face-centred cubic lattice, keeping a point inside by ray parity along the three
+axes (two of three agree), at the spacing that makes the lattice hold exactly the
+mesh's volume; then steps position-based fluids (Macklin and Müller, 2013) at the
+S2 step (1/240 s, 2 substeps of 3 Jacobi passes each) with an implicit viscosity
+(the walls are still neighbours: no slip), Akinci's cohesion and curvature
+(2013) and adhesion; the walls are swept, so no particle crosses a triangle.
+Liquids do not fall asleep: a run with a liquid stops by *Stop* or its time (20
+s). Each frame's record (`LQF1`: the particles in 16 bits over the run's box) grows
+the liquid part's `PHYSICS` clip (`MotionClip.liquid`, the cache, saved with the
+project, keyed by the FNV-1a of the `LIQ1`), and the worker rebuilds the surface
+by **marching cubes** over the particles' smoothed density (2 spacings of reach,
+cells of half a spacing): that frame's mesh is what the part shows in *Fast* and
+in the render (the playhead's frame; a frame not in hand is rebuilt from the
+record by the page's own engine, the same function). *Reset* takes the liquid's
+clip away. The same scene gives the same particles on any machine, with any
+number of threads and in wasm (pinned hashes).
+
+**Nested dielectrics (S7).** A GLASS material has a **priority** (`priority`,
+0–9, engine only; 0: automatic). Where two clear solids overlap, the one of higher
+priority is the inside, and a ray that crosses from one into the other refracts
+at the ratio of their indices (Schmidt and Budge, 2002): a liquid modelled into
+its glass meets the glass at 1.333/1.5, not at two surfaces against air. With a
+liquid in the scene the automatic rule gives the liquids' materials 1 and every
+other clear solid of the GLASS family 2 (the glass holds the liquid); without a
+liquid and without a priority of its own, every material is 0 and the render is
+the render of before, bit for bit. The engine reads the priorities from the
+`NEST` section (bit 14); for an engine without it the page writes none and the
+Liquid section says that the liquid meets its glass as against air.
 
 **Ambient** (phase S4a, `src/core/effects.ts`, catalogue
 `src/data/effects.ts`). **Stateless** air particles: suspended

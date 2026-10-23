@@ -633,7 +633,7 @@ export interface PhysicsPort {
    * CLT1 of the run's cloth (core/cloth.ts); with an rt.wasm that does not simulate it, `started` says `noCloth` and
    * the rest runs (or rejects with `NO_CLOTH` when there is nothing else).
    */
-  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null, cloth?: Uint8Array | null): PhysicsRunHandle;
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null, cloth?: Uint8Array | null, liquid?: Uint8Array | null): PhysicsRunHandle;
 }
 
 /**

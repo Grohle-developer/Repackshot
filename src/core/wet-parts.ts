@@ -265,6 +265,8 @@ export function wetPartsSpec(state: ProjectState, moving: ReadonlyMap<NodeId, nu
   for (const id of allParts(state)) {
     const node = state.scene.nodes[id];
     if (!node?.mesh || !effectiveVisible(state, id) || !getMesh(node.mesh.id)) continue;
+    // S7: a liquid's surface is rebuilt every frame (core/liquid.ts): the weather has no triangles of it to stay on.
+    if (node.liquid) continue;
     const body = moving.get(id);
     // U16: the family it is given in Physics ▸ Weather, or its material's; and whether it keeps dry or bare.
     const family = surfaceFamily(state, id);

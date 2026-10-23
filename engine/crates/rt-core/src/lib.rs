@@ -146,6 +146,12 @@ pub const FEATURE_WET_FINE: u32 = 4096;
 /// `WTP2`, [`weather::motes_on`]: grains over the dust's layer where it is thick). An engine without
 /// it ignores the tail and draws the layer alone, so the page writes none for it.
 pub const FEATURE_WET_MOTES: u32 = 8192;
+/// Bit 14 of [`FEATURES`] (S7): the engine resolves nested dielectrics by priority (`NEST`,
+/// [`integrator::nested`]): a liquid inside its glass meets the glass at the ratio of their
+/// indices. An engine without it skips the section and traces every clear solid against the air,
+/// so the page writes no priorities for it and says that the liquid's contact with its glass is
+/// drawn as against air.
+pub const FEATURE_NESTED_DIELECTRICS: u32 = 16384;
 
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
@@ -163,7 +169,8 @@ pub const FEATURES: u32 = FEATURE_TEXTURES
     | FEATURE_WET_SHAPES
     | FEATURE_WET_FLOOR
     | FEATURE_WET_FINE
-    | FEATURE_WET_MOTES;
+    | FEATURE_WET_MOTES
+    | FEATURE_NESTED_DIELECTRICS;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

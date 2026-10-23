@@ -39,6 +39,7 @@ USAGE:
     rt --write-m3c-cloth-example <scene.rsb>
     rt --write-e9-example <scene.rsb>
     rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --liquid-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --adaptive-noise <dir> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
        [--rounds N]
     rt --write-e11-example <scene.rsb>
@@ -66,6 +67,7 @@ USAGE:
     rt --write-s3e-dust-example <scene.rsb>
     rt --write-s3e-strip <dir>
     rt --water-table <in.txt> -o <table.json>
+    rt --write-s7-liquid-example <scene.rsb>
     rt --write-s3c-parts-spec <parts.wpt1>
     rt --write-lens-catalogue <file.json>
     rt --write-studio-hdri <studio.hdr>
@@ -186,6 +188,11 @@ OPTIONS:
                             juice, with and without the medium, the milk bottle with
                             caustic photons, at N and 4 N samples, default 64) into
                             <dir>: sss-sheet.html and sss/*.png
+        --liquid-sheet <dir>
+                            render the S7 contact sheet of the liquids (each preset poured
+                            into the example glass, simulated and rendered with the glass
+                            above the liquid by priority; water mid-pour and without
+                            priorities) into <dir>: liquid-sheet.html and liquid/*.png
         --write-e11-example <f>
                             write the E11 parity scene (the example with the fine filter and
                             twice the samples on its edges) as an RSB file
@@ -223,6 +230,10 @@ OPTIONS:
                             S3c: write the parity scene of the wet parts (a glass bottle, a
                             plate, a shelf and a paper card after five seconds of wind-driven
                             rain, dust and snow, simulated) as an RSB file
+        --write-s7-liquid-example <f>
+                            S7: write the parity scene of the liquids (water poured into a
+                            glass, simulated, its surface by marching cubes, nested by
+                            priority inside the glass) as an RSB file
         --write-s3c-parts-spec <f>
                             write the spec of that simulation (rt_phys::wet_parts) as a WPT1
                             file
@@ -438,6 +449,8 @@ pub enum S3Example {
     Moving,
     /// `rt_phys::example::dust_scene_at` (S3e): the dust on the set, its fine samples and motes.
     Dust,
+    /// `rt_phys::liquid::example::s7_scene` (S7): water poured into a glass, nested by priority.
+    Liquid,
 }
 
 impl S3Example {
@@ -453,6 +466,7 @@ impl S3Example {
             S3Example::Floor => rt_phys::example::s3e_scene(),
             S3Example::Moving => rt_phys::example::moving_scene_at(rt_phys::example::MOVING_STEPS),
             S3Example::Dust => rt_phys::example::dust_scene_at(120, true),
+            S3Example::Liquid => rt_phys::liquid::example::s7_scene(),
         }
     }
 }
@@ -590,6 +604,13 @@ pub enum Command {
     },
     /// Render the E9 contact sheet of the scattering media into a directory.
     SssSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Samples, threads and size overrides.
+        options: Options,
+    },
+    /// Render the S7 contact sheet of the liquids into a directory.
+    LiquidSheet {
         /// Output directory.
         dir: PathBuf,
         /// Samples, threads and size overrides.
@@ -781,6 +802,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_m3c_cloth = None;
     let mut write_e9 = None;
     let mut sss_dir = None;
+    let mut liquid_dir = None;
     let mut write_e11 = None;
     let mut write_q1 = None;
     let mut write_l5 = None;
@@ -967,6 +989,10 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--write-s3e-strip" => write_s3e_strip = Some(PathBuf::from(value(&mut it, arg)?)),
             "--water-table" => water_table = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-s7-liquid-example" => {
+                write_s3 = Some((S3Example::Liquid, PathBuf::from(value(&mut it, arg)?)))
+            }
+            "--liquid-sheet" => liquid_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-s3c-parts-spec" => write_parts = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e10-example" => write_e10 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--adaptive-noise" => adaptive_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -1115,6 +1141,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--sss-sheet renders its own scenes".into());
         }
         return Ok(Command::SssSheet { dir, options });
+    }
+    if let Some(dir) = liquid_dir {
+        if input.is_some() || output.is_some() {
+            return Err("--liquid-sheet renders its own scenes".into());
+        }
+        return Ok(Command::LiquidSheet { dir, options });
     }
     if let Some(path) = write_e11 {
         if args.len() != 2 {
@@ -1568,6 +1600,22 @@ pub fn run(command: Command) -> Result<(), String> {
                 );
             }
             println!("wrote {}", dir.join("sss-sheet.html").display());
+            Ok(())
+        }
+        Command::LiquidSheet { dir, options } => {
+            let size = options.size.unwrap_or(crate::liquid_sheet::SIZE);
+            let samples = options.samples.unwrap_or(crate::liquid_sheet::SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            let entries = crate::liquid_sheet::run(&dir, size, samples, threads)?;
+            for e in &entries {
+                println!(
+                    "{:<16} {:>6} particles {:>6.1} s sim  surface {:.3}  {:>4} spp {:>6.1} s  mean {:.3}",
+                    e.key, e.particles, e.simulation_seconds, e.volume, e.samples, e.seconds, e.mean
+                );
+            }
+            println!("wrote {}", dir.join("liquid-sheet.html").display());
             Ok(())
         }
         Command::WriteO1Example { path } => {

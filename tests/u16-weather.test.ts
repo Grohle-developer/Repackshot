@@ -272,13 +272,13 @@ describe('U16: what Start simulates', () => {
     const { s } = rainyBottle();
     expect(planLine(startPlan(s))).toBe('Start simulates: rain on 5 parts');
     const dry = apply(s, { type: 'physics/set', ids: [ids.cap], patch: { getsWet: false } }, { type: 'physics/set', ids: [ids.closure], patch: { role: 'DYNAMIC' } });
-    expect(startPlan(dry)).toEqual({ dynamicParts: 2, rain: { parts: 4, dry: 1 }, settle: null, glass: false });
+    expect(startPlan(dry)).toEqual({ dynamicParts: 2, rain: { parts: 4, dry: 1 }, settle: null, glass: false, liquids: 0 });
     expect(planLine(startPlan(dry))).toBe('Start simulates: 2 dynamic parts · rain on 4 parts (1 stays dry)');
     const snow = rainyBottle('SNOW');
     const bareSnow = apply(snow.s, { type: 'physics/set', ids: [ids.label], patch: { getsDust: false } }, { type: 'physics/set', ids: [ids.cap], patch: { role: 'DYNAMIC' } });
     expect(startPlan(bareSnow).settle).toEqual({ dust: false, snow: true, parts: 3, bare: 1 });
     expect(planLine(startPlan(bareSnow))).toBe('Start simulates: 1 dynamic part · snow on 3 parts (1 stays clean)');
-    expect(planLine({ dynamicParts: 0, rain: { parts: 0, dry: 5 }, settle: { dust: true, snow: true, parts: 1, bare: 0 }, glass: true })).toBe('Start simulates: rain on no part (5 stay dry) · dust and snow on 1 part · the front glass');
+    expect(planLine({ dynamicParts: 0, rain: { parts: 0, dry: 5 }, settle: { dust: true, snow: true, parts: 1, bare: 0 }, glass: true, liquids: 0 })).toBe('Start simulates: rain on no part (5 stay dry) · dust and snow on 1 part · the front glass');
     // The front glass of the active camera, fed by the scene.
     const cam = activeCamera(s);
     const glassy = reduce(s, { type: 'camera/set', id: cam.id, patch: { optics: { ...opticsOf(cam), frontGlass: { ...newFrontGlass(), source: 'SCENE' } } } });

@@ -57,6 +57,8 @@ export interface PhysicsUi {
   cloth?: { pieces: number; vertices: number } | null;
   /** S9: the run had cloth and this engine does not simulate it (an rt.wasm before S9). */
   noCloth?: boolean;
+  /** S7: the liquids of the run in progress or the last one: their particles (the engine's fill) and how many. */
+  liquid?: { particles: number; liquids: number } | null;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
@@ -270,6 +272,11 @@ export interface EngineInfo {
    * and the ambient section says so. Absent: not known.
    */
   wetMotes?: boolean;
+  /**
+   * S7: the engine resolves nested dielectrics (bit 14, render/engine.ts `readsNested`): without it the render draws a
+   * liquid against air where it touches its glass, and the Liquid section says so. Absent: not known.
+   */
+  nested?: boolean;
   /** Desktop: the launcher's /api/info. */
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }

@@ -235,6 +235,13 @@ jobs:
             node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3e-$name.rsb" --expect "$expected"
             node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s3e-$name.rsb" --expect "$expected" --passes
           done
+          # S7: water poured into a glass (rt_phys::liquid), its surface by marching cubes and the glass and the water
+          # nested by priority (NEST, bit 14), alone and with the passes interleaved.
+          cargo run --release -p rt-cli -- --write-s7-liquid-example "$RUNNER_TEMP/s7-liquid.rsb"
+          expected=$(sed -n 's/.*PINNED_S7_LIQUID_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-phys/tests/liquid.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s7-liquid.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/s7-liquid.rsb" --expect "$expected" --passes
           # E11: the example with the fine filter and twice the samples on its edges (the module finds
           # each tile's edges from its centre rays).
           cargo run --release -p rt-cli -- --write-e11-example "$RUNNER_TEMP/e11.rsb"
@@ -374,7 +381,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts tests/s3e-floor.test.ts tests/s3g-water.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts tests/s3e-floor.test.ts tests/s3g-water.test.ts tests/s7-liquids.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
@@ -403,6 +410,10 @@ jobs:
           # and the pinned run of the pearls.
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3g
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3g
+          # S7: the liquids (the litre that keeps its volume, honey against water, the glass that holds, the pinned pour
+          # and the image of the water in its glass, nested by priority).
+          cargo test -p rt-phys --release --target wasm32-wasip1 --test liquid
+          RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test liquid
 
       - name: Ray throughput (smoke run of rt-bench)
         run: cargo run --release -p rt-cli --bin rt-bench -- --rays 200000 --triangles 200000

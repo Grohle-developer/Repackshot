@@ -219,6 +219,7 @@ pub fn scene() -> Scene {
         wet_floor: None,
         motes: None,
         mote_owners: Vec::new(),
+        priorities: Vec::new(),
     }
 }
 

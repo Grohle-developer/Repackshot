@@ -71,7 +71,9 @@ export function pointerLine(s: ProjectState, ids: readonly NodeId[]): string {
   const role = r ? t(dyn(`phys.role.${r}`)) : t('phys.pointerRoleMixed');
   const v = weatherView(s, ids);
   let weather: string;
-  if (v.getsWet === false) weather = t('phys.pointerDry');
+  // S7: a liquid's surface is rebuilt every frame: no weather stays on it (core/wet-parts.ts leaves it out).
+  if (v.parts.length > 0 && v.parts.every((p) => s.scene.nodes[p]?.liquid)) weather = t('phys.pointerLiquid');
+  else if (v.getsWet === false) weather = t('phys.pointerDry');
   else if (v.getsWet === null) weather = t('phys.pointerSomeDry');
   else {
     const families = [...new Set(v.parts.map((p) => surfaceFamily(s, p)))];
@@ -95,5 +97,7 @@ export function planLine(p: StartPlan): string {
     items.push(counted(what.replace(/\.many$/, ''), p.settle.parts, true) + (p.settle.bare > 0 ? ` (${counted('phys.plan.bare', p.settle.bare)})` : ''));
   }
   if (p.glass) items.push(t('phys.plan.glass'));
+  // S7: the liquids it pours.
+  if (p.liquids > 0) items.push(counted('phys.plan.liquid', p.liquids));
   return items.length === 0 ? t('phys.plan.nothing') : t('phys.plan', { items: items.join(' · ') });
 }
