@@ -334,11 +334,16 @@ impl App {
         let Ok(bytes) = std::fs::read(path) else {
             return Response::error(404, "not-found", "the project file cannot be read");
         };
-        let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
         let mut encoded = String::with_capacity(name.len());
         for b in name.as_bytes() {
             match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => encoded.push(*b as char),
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => {
+                    encoded.push(*b as char)
+                }
                 _ => encoded.push_str(&format!("%{b:02X}")),
             }
         }

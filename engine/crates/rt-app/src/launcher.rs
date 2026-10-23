@@ -87,8 +87,14 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     }
     let token = crate::token::generate();
     // The data folder's own port (port.rs): the window's origin stays the same from launch to launch.
-    let mut server = crate::port::start(&paths, opts.port, token.clone(), opts.threads, opts.open_file.clone())
-        .map_err(|e| format!("cannot listen on 127.0.0.1:{}: {e}", opts.port))?;
+    let mut server = crate::port::start(
+        &paths,
+        opts.port,
+        token.clone(),
+        opts.threads,
+        opts.open_file.clone(),
+    )
+    .map_err(|e| format!("cannot listen on 127.0.0.1:{}: {e}", opts.port))?;
     let port = server.port();
     if opts.after_update {
         server.app.update.mark_after_update();
