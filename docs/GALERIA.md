@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 183 files: 181 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 185 files: 183 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,19 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 28 versions, 21 with new screenshots; the screenshots are spread over 66 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: Unreleased and 28 versions, 21 of the versions with new screenshots; the screenshots are spread over 66 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f) and `physics-inspector.png` (U16).
+Cloth's second round (S9): the cap under silk, Cusick's drape tester; water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f) and `physics-inspector.png` (U16).
+
+#### S9 · Cloth with real physics
+
+<a id="c-cloth-cap"></a><img src="ui/cloth-cap.png" width="720" alt="A close up render of the top of the example bottle's cap under a sheet of silk: the cloth rounds over the cap's rim without the rim showing through it."><br>
+`cloth-cap.png` · `1fa3b98` · The cap of the example bottle under silk, close up, rendered by the engine (*Full*): the cloth's surface keeps the cap's rim under it at its thickness (the first round's sheet, before v0.1.23, showed the rim through the silk between its vertices). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
+
+<a id="c-cloth-cusick"></a><img src="ui/cloth-cusick.png" width="960" alt="Four discs of fabric seen from straight above, each held on a smaller support and hanging over its edge: silk in thirteen narrow waves, linen and denim in six broad ones, thick leather almost flat with six shallow ones; each captioned with its drape coefficient and nodes."><br>
+`cloth-cusick.png` · `1fa3b98` · Silk, linen, denim and thick leather on Cusick's drape tester (a 300 mm disc held on a 180 mm one, BS 5058), from straight above, as the engine's test drapes them, with their drape coefficients (0.19, 0.67, 0.76, 0.88) and nodes (13, 6, 6, 6). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
 
 #### S3g · Water that reads as water
 
@@ -86,16 +94,16 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the
 #### S9 · Cloth with real physics
 
 <a id="c-cloth-drape"></a><img src="ui/cloth-drape.png" width="960" alt="Two viewports in Fast side by side: a white box on the floor, and the same box after Drape over the part, a sheet of cloth at rest over it, flat on its top and hanging in soft folds down its sides."><br>
-`cloth-drape.png` · `87fe497` · *Drape over the part* on a box, before and after: a sheet of fine cotton laid over it falls, folds over its edges and settles by itself, drawn in *Fast* from the recorded frame. `tools/cloth-check.mjs`.
+`cloth-drape.png` · `87fe497` · *Drape over the part* on a box, before and after: a sheet of fine cotton laid over it falls, folds over its edges and settles by itself, drawn in *Fast* from the recorded frame. `tools/cloth-check.mjs`. *(re-recorded in Unreleased: S9's second round)*
 
-<a id="c-cloth-bar"></a><img src="ui/cloth-bar.png" width="960" alt="The physics bar while the cloth runs: Simulated 1.88 s, Cloth: 1,089 vertices, Running."><br>
-`cloth-bar.png` · `87fe497` · The physics bar while the cloth runs: the simulated time and *Cloth: 1,089 vertices*, the vertices the simulator moves. `tools/cloth-check.mjs`.
+<a id="c-cloth-bar"></a><img src="ui/cloth-bar.png" width="960" alt="The physics bar while the cloth runs: Simulated 1.29 s, Cloth: 1,089 vertices, Running."><br>
+`cloth-bar.png` · `87fe497` · The physics bar while the cloth runs: the simulated time and *Cloth: 1,089 vertices*, the vertices the simulator moves. `tools/cloth-check.mjs`. *(re-recorded in Unreleased: S9's second round, its slower step)*
 
 <a id="c-cloth-inspector"></a><img src="ui/cloth-inspector.png" width="320" alt="The inspector's Physics section with the role Cloth: Fabric Fine cotton · 120 g/m², Weight, Stiffness, Thickness, Anchors None, Top edge or Box, Pressure disabled for an open cloth, Self-collision, Keep area, Resolution with what it makes now, Face, and the Start and Drape over the part buttons."><br>
-`cloth-inspector.png` · `87fe497` · The *Physics* section of a cloth: the fabric preset, *Weight* (from the fabric), *Stiffness*, *Thickness*, the anchors, *Pressure* (disabled: the sheet is open), *Self-collision*, *Keep area*, *Resolution* (*Now: 2,048 triangles, 10.6 mm*), which of the part is cloth, *Start* and *Drape over the part*. `tools/cloth-check.mjs`.
+`cloth-inspector.png` · `87fe497` · The *Physics* section of a cloth: the fabric preset, *Weight* (from the fabric), *Stiffness*, *Thickness*, the anchors, *Pressure* (disabled: the sheet is open), *Self-collision*, *Keep area*, *Resolution* (*Now: 2,048 triangles, 10.6 mm*), which of the part is cloth, *Start* and *Drape over the part*. `tools/cloth-check.mjs`. *(re-recorded in Unreleased: S9's second round, *Stiffness* on the stretch, shear and bending)*
 
-<a id="c-cloth-sheet"></a><img src="ui/cloth-sheet.png" width="960" alt="Four renders by the engine of the example bottle draped by a sheet: silk falls close around it in many small folds, linen and denim hang stiffer in broad panels, thick leather stands out as a bell with a few wide folds."><br>
-`cloth-sheet.png` · `87fe497` · Four fabrics of the contact sheet `out/cloth-sheet.html` over the example bottle, rendered by the engine (*Full*): silk, linen, denim and thick leather, each as its simulation left it (S9 ◆1). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
+<a id="c-cloth-sheet"></a><img src="ui/cloth-sheet.png" width="960" alt="Four renders by the engine of the example bottle draped by a sheet: silk falls close around it in many small folds, linen falls over it in soft folds to the floor, denim hangs in fewer, broader folds, thick leather stands out as a bell over the bottle."><br>
+`cloth-sheet.png` · `87fe497` · Four fabrics of the contact sheet `out/cloth-sheet.html` over the example bottle, rendered by the engine (*Full*): silk, linen, denim and thick leather, each as its simulation left it (S9 ◆1). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`. *(re-recorded in Unreleased: S9's second round, the membrane with its shear, the calibrated bending and the sharp features under the cloth)*
 
 ### v0.1.22 · 2026-10-18
 
@@ -998,6 +1006,8 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`cloth-inspector.png`](#c-cloth-inspector) · v0.1.23 · S9
 - [`cloth-bar.png`](#c-cloth-bar) · v0.1.23 · S9
 - [`rain-bottle.png`](#c-rain-bottle) · Unreleased · S3g
+- [`cloth-cap.png`](#c-cloth-cap) · Unreleased · S9
+- [`cloth-cusick.png`](#c-cloth-cusick) · Unreleased · S9
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
 
