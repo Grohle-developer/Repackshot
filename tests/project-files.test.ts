@@ -382,6 +382,24 @@ describe('Open', () => {
     expect(ctx.store.get()).toBe(s);
   });
 
+  it('opens the file the launcher hands over at startup (a double-click in the file manager)', async () => {
+    const { text, state } = await exampleFile();
+    const { ctx } = makeCtx();
+    const opened = await cmd.openStartupProject(ctx, async () => fileOf(text, 'bottle.repack'));
+    expect(opened).toBe(true);
+    expect(ctx.store.get()).toEqual({ ...state, meta: { ...state.meta, dirty: false } });
+    expect(toasts(ctx)).toEqual(['Opened bottle.repack']);
+  });
+
+  it('no file handed over, or the fetch failing, leaves the empty project alone', async () => {
+    const { ctx } = makeCtx();
+    const before = ctx.store.get();
+    expect(await cmd.openStartupProject(ctx, async () => null)).toBe(false);
+    expect(await cmd.openStartupProject(ctx, async () => Promise.reject(new Error('no launcher')))).toBe(false);
+    expect(ctx.store.get()).toBe(before);
+    expect(toasts(ctx)).toEqual([]);
+  });
+
   it('keeps the language and theme of the person, not of the file', async () => {
     const { text } = await exampleFile();
     const { ctx } = makeCtx({ ...createInitialState(), meta: { ...createInitialState().meta, lang: 'es', theme: 'dark' } });

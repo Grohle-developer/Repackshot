@@ -335,6 +335,50 @@ describe('NativeEngine render', () => {
     expect(calls).toContain('DELETE /api/render/9');
   });
 
+  it('stopped with partialOnAbort: the launcher’s accumulation so far comes back as a partial image', async () => {
+    const width = 2;
+    const height = 2;
+    const sums = new Float32Array(width * height * 4).fill(3);
+    const calls: string[] = [];
+    const abort = new AbortController();
+    let polls = 0;
+    const transport = {
+      async request(path: string, init: RequestInit = {}) {
+        calls.push(`${init.method ?? 'GET'} ${path}`);
+        if (init.method === 'POST') return new Response(JSON.stringify({ id: 9 }));
+        if (init.method === 'DELETE') return new Response(null, { status: 204 });
+        if (path.includes('data=0')) {
+          polls++;
+          if (polls === 1) return new Response(frame({ pass: 1, samples: 1, width, height, flags: 0 }));
+          // The next poll is the one the stop aborts: it answers late, the engine throws the abort itself.
+          await new Promise((r) => setTimeout(r, 20));
+          return new Response(frame({ pass: 1, samples: 1, width, height, flags: 0 }));
+        }
+        // The plain GET after the stop: the accumulation as it is now.
+        return new Response(frame({ pass: 1, samples: 1, width, height, flags: FLAG_DATA, sums }));
+      },
+    };
+    const source = { build: () => ({ meshKey: 'm', bytes: () => new Uint8Array([1]) }), tone: () => ({ exposureEv: 0.5, tonemap: 2 }) };
+    const engine = new NativeEngine(transport, source, { threads: 4, isa: 'sse2' });
+    engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+    const px = await engine.renderPixels({
+      width,
+      height,
+      maxSamples: 8,
+      maxSeconds: 0,
+      transparent: false,
+      signal: abort.signal,
+      partialOnAbort: true,
+      onProgress: (p) => {
+        if (p.samples >= 1) abort.abort();
+      },
+    });
+    expect(px).toMatchObject({ partial: true, samples: 1 });
+    expect(Array.from(px.data)).toEqual(Array.from(exactBytes(sums, 1, 0.5, 2)));
+    // The accumulation was read before the job was deleted.
+    expect(calls.indexOf('GET /api/render/9')).toBeLessThan(calls.indexOf('DELETE /api/render/9'));
+  });
+
   it('follows the Settings: the viewport limit by samples or by time, and a render of another project', async () => {
     const g = globalThis as { document?: unknown };
     const hadDocument = 'document' in g;

@@ -55,6 +55,7 @@ async function decode(ctx: Ctx, id: string, variant = 1): Promise<{ render: Spli
 export function resultData(r: ResultMeta): string {
   const lang = getLang();
   const parts = [`${r.width} × ${r.height}`, `${r.dpi} ${t('rw.dpiUnit')}`, t('rw.summarySamples', { n: formatNumber(r.samples, lang, 0) }), formatClock(r.seconds), r.camera];
+  if (r.partial) parts.push(t('rv.partial'));
   if (r.frames) parts.push(t('rv.frameOf', { i: r.frame ?? 1, n: r.frames }));
   return parts.join(' · ');
 }

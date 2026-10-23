@@ -450,7 +450,7 @@ with its blocks *Active model*, *Models* and *Hardware*:
 | **X4** | Sonnet | **Done.** The interface of §4 against `AiPostService` (`src/core/ai.ts`), with a synthetic service until X3c: render-window section, configurator, chips, Fast-mode preview with the passes drawn by three.js and divider, guard report and divider in the results viewer, two thumbnails in the queue, settings in the *store* (`ROADMAP.md` X4) |
 | **X4b** | Opus | **Done.** The job's own prompt (if the model accepts it: `textPrompt`), variants (1 to 8, one render and N passes with consecutive seeds, thumbnail strip in the viewer) and system prompt in Settings, with the short version and the trimming for 77-*token* models (§4, §7.5b) |
 | **X6** | Opus | **Done.** Every control acts on what reaches the model or the guard, step by step (§4 table): the band gains, the style's own grade, `MAX_STRENGTH` 0.6, the caps and the kept colour in the report and in plain words; the deterministic **test model** (§7.2); the preview's **stored example** made by the Full engine and the test model, and *Preview my scene* with the Full engine (§4) |
-| **X7** | Opus | **Done.** The model through an API (§8): one `AiModelBackend` under the pipeline's model call, the local runtime as one implementation and remote APIs as another (a generic HTTP endpoint and two presets), the key on this computer only, consent per host, bounded tries, and the same guard on every result |
+| **X7** | Opus | **Done.** The model through an API (§8): one `AiModelBackend` under the pipeline's model call, the local runtime as one implementation and remote APIs as another (a generic HTTP endpoint and four presets), the key on this computer only, consent per host, bounded tries, and the same guard on every result |
 | ~~X5~~ | — | **Absorbed into U6** (Settings window, `ROADMAP.md`): the model manager of §5 and the selector of §2.2–§2.4 do not need the pipeline, so they arrive earlier. What is left for after X3 (checking live that the active model fits, and a one-image test) goes into X4 |
 
 ---
@@ -824,6 +824,25 @@ remote service.
     (github.com/openai/openai-openapi). It takes no strength or seed: the guard
     still caps every change by the attempt's strength, so its retries still
     lower the intervention.
+  - `GOOGLE_GEMINI`: Google Gemini, `POST
+    /v1beta/models/gemini-2.5-flash-image:generateContent`, JSON, the key in
+    `x-goog-api-key` with nothing before it (not `Authorization: Bearer`);
+    `contents[0].parts` holds the text `{{prompt}} Avoid: {{negative}}` and the
+    image as `{inlineData: {mimeType: "image/png", data: "{{image_base64}}"}}`,
+    `generationConfig` holds `responseModalities: ["TEXT", "IMAGE"]` and
+    `seed: {{seed}}`; the image at
+    `candidates.0.content.parts.1.inlineData.data`. It takes a seed, no
+    strength or separate negative (folded into the prompt). The fixed response
+    path is its weak point: `parts.1` when the service answers text + image,
+    `parts.0` when image only. Read from Google's image-generation docs
+    (`https://ai.google.dev/gemini-api/docs/image-generation`).
+  - `XAI_IMAGINE`: xAI, `POST /v1/images/edits`, JSON, `Authorization: Bearer`;
+    `{model: "grok-imagine-image-2.0", prompt, image: {url:
+    "{{image_data_uri}}", type: "image_url"}, response_format: "b64_json"}`; the
+    image at `data.0.b64_json`. It takes no strength, seed or negative. Caveat:
+    the API may answer 202 with a `request_id` for polling, which the
+    single-call generic endpoint cannot do. Read from xAI's API reference
+    (`https://docs.x.ai/developers/rest-api-reference/inference/images`).
 - The rules every implementation follows (hosts, template filling, the answer
   path, base64, statuses, waits, sizes, masks, problems) are pure functions in
   `src/core/ai-remote.ts` and `rt-app/src/ai/remote.rs`, checked against the

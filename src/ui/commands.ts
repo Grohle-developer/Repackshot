@@ -711,6 +711,23 @@ export async function openProject(ctx: Ctx): Promise<void> {
 }
 
 /**
+ * Opens the project file passed on the command line (a double-click in the file manager): `fetchFile`
+ * reads it from the launcher (`GET /api/startup-project`, null when none was passed). True when a file
+ * was opened, so the startup preference (the example, the last project) is skipped: an explicit file wins.
+ */
+export async function openStartupProject(ctx: Ctx, fetchFile: () => Promise<File | null>): Promise<boolean> {
+  let file: File | null = null;
+  try {
+    file = await fetchFile();
+  } catch {
+    return false;
+  }
+  if (!file) return false;
+  await openProjectFile(ctx, file);
+  return true;
+}
+
+/**
  * The files of a drop and, for each, the promise of its file handle when the browser gives one (Chromium: Save
  * then writes back to the dropped project). Call it inside the drop event: the handles are only there then.
  */

@@ -46,13 +46,17 @@ export interface PhysicsUi {
   awake: number;
   bodies: number;
   /** How the last run ended (null: none yet), or why it could not start. */
-  ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | null;
+  ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | 'NO_CLOTH' | null;
   /** Reset has something to undo: a run in progress, or the last one's clips and poses. */
   canReset: boolean;
   /** S3b: the front glass of the run in progress or the last one, as its last frame left it (absent: none). */
   glass?: { drops: number; motes: number } | null;
   /** S3c: the parts of the run in progress or the last one: the drops on them at the last frame, the drips so far. */
   parts?: { drops: number; drips: number; falling?: number } | null;
+  /** S9: the cloth of the run in progress or the last one: its pieces and the vertices the simulator moves. */
+  cloth?: { pieces: number; vertices: number } | null;
+  /** S9: the run had cloth and this engine does not simulate it (an rt.wasm before S9). */
+  noCloth?: boolean;
 }
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
@@ -327,6 +331,8 @@ export interface UpdatesUi {
   startupDone: boolean;
   /** The release the status bar announces; null: no notice (none found, or dismissed with Later). */
   notice: ReleaseInfo | null;
+  /** The release the startup window asks about; null: no window (none found, or answered). Set with the notice when a version is announced at startup; answering the window clears only this. */
+  prompt: ReleaseInfo | null;
   /** Versions announced in this session, dismissed or not: a version is announced once. */
   announced: string[];
   /** Installing a new version from inside the application (desktop only). */
@@ -493,6 +499,8 @@ export interface UiState {
   /** When the update feed last answered (remembered), and the latest release it named. */
   updateCheckedAt: number | null;
   updateLatest: ReleaseInfo | null;
+  /** The version the person skipped in the update window (remembered): not announced again; a newer one is. */
+  updateSkipped: string | null;
   updates: UpdatesUi;
   /** The model manager's view (null: no manager in this build or not started). */
   models: ModelsSnapshot | null;
@@ -561,6 +569,7 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'tourSeen',
   'updateCheckedAt',
   'updateLatest',
+  'updateSkipped',
   'materialEditorRect',
 ];
 
@@ -654,7 +663,8 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
-    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
+    updateSkipped: null,
+    updates: { checking: false, fault: null, startupDone: false, notice: null, prompt: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
     plugins: null,
     hardware: { state: 'IDLE', info: null },

@@ -14,21 +14,24 @@
 // with the engine's layout of their samples and their record at step 0, each frame comes with their record, and a run
 // that wets them does not stop when its bodies sleep either. S3e: when some of them move with a body, the engine steps
 // the parts and the bodies together, a step at a time (`wpt_step_with`), so they get wet where the bodies take them.
+//
+// S9: and cloth (a CLT1 spec): it steps the bodies' world with itself (they push it), each frame comes with its
+// vertices, and a run with cloth settles when the cloth does too. An rt.wasm without cloth runs the rest and says so.
 
 import { frameStep, STEPS_PER_SECOND, type PhysicsResult, type PhysicsRunOptions } from '../core/physics';
-import { hasPartsExports, hasPhysExports, hasWetExports, PartsSim, PhysWorld, WetSim, type PartsExports, type PhysExports, type WetExports } from './phys-wasm';
+import { ClothSim, hasClothExports, hasPartsExports, hasPhysExports, hasWetExports, PartsSim, PhysWorld, WetSim, type ClothExports, type PartsExports, type PhysExports, type WetExports } from './phys-wasm';
 
 export type PhysicsRequest =
   | { type: 'init'; module: WebAssembly.Module }
-  | { type: 'run'; id: number; scene: ArrayBuffer | null; dynamic: number; options: PhysicsRunOptions; wet?: ArrayBuffer | null; parts?: ArrayBuffer | null }
+  | { type: 'run'; id: number; scene: ArrayBuffer | null; dynamic: number; options: PhysicsRunOptions; wet?: ArrayBuffer | null; parts?: ArrayBuffer | null; cloth?: ArrayBuffer | null }
   | { type: 'pause' | 'resume' | 'stop'; id: number }
   /** The interface has taken in `frames` more frames of run `id`. */
   | { type: 'ack'; id: number; frames: number };
 
 export type PhysicsReply =
   | { type: 'ready' }
-  | { type: 'started'; id: number; ids: Uint32Array; initial: Float32Array; bodies: number; glass?: Uint8Array; parts?: { layout: Uint8Array; frame: Uint8Array } }
-  | { type: 'progress'; id: number; steps: number; awake: number; bodies: number; settled: boolean; frames: Float32Array[]; glass?: Uint8Array[]; parts?: Uint8Array[] }
+  | { type: 'started'; id: number; ids: Uint32Array; initial: Float32Array; bodies: number; glass?: Uint8Array; parts?: { layout: Uint8Array; frame: Uint8Array }; cloth?: Float32Array; noCloth?: boolean }
+  | { type: 'progress'; id: number; steps: number; awake: number; bodies: number; settled: boolean; frames: Float32Array[]; glass?: Uint8Array[]; parts?: Uint8Array[]; cloth?: Float32Array[] }
   | ({ type: 'done'; id: number } & PhysicsResult)
   | { type: 'error'; id: number | null; message: string };
 
@@ -42,6 +45,8 @@ let rt: PhysExports | null = null;
 let wetRt: WetExports | null = null;
 /** S3c: and its exports of the wet parts. */
 let partsRt: PartsExports | null = null;
+/** S9: and its exports of cloth. */
+let clothRt: ClothExports | null = null;
 
 interface Run {
   id: number;
@@ -51,6 +56,8 @@ interface Run {
   pane: WetSim | null;
   /** S3c: the parts under the scene's rain, dust and snow, stepped with the bodies. */
   parts: PartsSim | null;
+  /** S9: the cloth, which steps the bodies with itself. */
+  cloth: ClothSim | null;
   /** Steps simulated (the world's and the pane's alike). */
   steps: number;
   options: PhysicsRunOptions;
@@ -64,6 +71,8 @@ interface Run {
   freshGlass: Uint8Array[];
   /** S3c: the parts' records of the fresh frames. */
   freshParts: Uint8Array[];
+  /** S9: the cloth's vertices at the fresh frames. */
+  freshCloth: Float32Array[];
   last: Float32Array;
   frame: number;
   /** Frames the interface has acknowledged. */
@@ -85,15 +94,20 @@ export function framesAhead(fps: number): number {
 
 const EMPTY = new Float32Array(0);
 
-/** Every body asleep (a run of the glass or the parts alone has none: it never settles by itself). */
+/** Every body asleep and the cloth still (a run of the glass or the parts alone has none: it never settles by itself). */
 function settled(r: Run): boolean {
-  return r.pane === null && r.parts === null && (r.world?.settled ?? true);
+  return r.pane === null && r.parts === null && (r.world?.settled ?? true) && (r.cloth?.settled ?? true);
 }
 
 function stepBoth(r: Run, n: number): void {
   if (n <= 0) return;
-  // S3e: parts that move step with the bodies, one step after the other (the engine does both).
-  if (r.world && r.parts && r.parts.moving > 0) r.parts.stepWith(r.world, n);
+  // S9: the cloth steps the bodies with itself, a step ahead of it each time; the parts then step on their own (with
+  // cloth in the run, the parts a body moves do not follow it). S3e: without cloth, parts that move step with the
+  // bodies, one step after the other (the engine does both).
+  if (r.cloth) {
+    r.cloth.step(n, r.world);
+    r.parts?.step(n);
+  } else if (r.world && r.parts && r.parts.moving > 0) r.parts.stepWith(r.world, n);
   else {
     r.world?.step(n);
     r.parts?.step(n);
@@ -108,6 +122,7 @@ function record(r: Run): void {
   r.fresh.push(r.last);
   if (r.pane) r.freshGlass.push(r.pane.frame());
   if (r.parts) r.freshParts.push(r.parts.frame());
+  if (r.cloth) r.freshCloth.push(r.cloth.positions());
 }
 
 function counts(r: Run): { steps: number; awake: number; bodies: number; settled: boolean } {
@@ -115,13 +130,15 @@ function counts(r: Run): { steps: number; awake: number; bodies: number; settled
 }
 
 function finish(r: Run, reason: PhysicsResult['reason']): void {
-  post({ type: 'done', id: r.id, reason, ...counts(r), frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), poses: r.last });
+  post({ type: 'done', id: r.id, reason, ...counts(r), frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), ...(r.cloth ? { cloth: r.freshCloth } : {}), poses: r.last });
   r.fresh = [];
   r.freshGlass = [];
   r.freshParts = [];
+  r.freshCloth = [];
   r.world?.free();
   r.pane?.free();
   r.parts?.free();
+  r.cloth?.free();
   if (run === r) run = null;
 }
 
@@ -160,10 +177,11 @@ function slice(r: Run): void {
     return;
   }
   if (r.fresh.length > 0) {
-    post({ type: 'progress', id: r.id, ...counts(r), settled: false, frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}) });
+    post({ type: 'progress', id: r.id, ...counts(r), settled: false, frames: r.fresh, ...(r.pane ? { glass: r.freshGlass } : {}), ...(r.parts ? { parts: r.freshParts } : {}), ...(r.cloth ? { cloth: r.freshCloth } : {}) });
     r.fresh = [];
     r.freshGlass = [];
     r.freshParts = [];
+    r.freshCloth = [];
   }
   setTimeout(() => slice(r), 4);
 }
@@ -180,6 +198,7 @@ scope.onmessage = (e) => {
         rt = instance.exports;
         wetRt = hasWetExports(instance.exports) ? instance.exports : null;
         partsRt = hasPartsExports(instance.exports) ? instance.exports : null;
+        clothRt = hasClothExports(instance.exports) ? instance.exports : null;
         post({ type: 'ready' });
       },
       (err: unknown) => post({ type: 'error', id: null, message: err instanceof Error ? err.message : String(err) }),
@@ -218,14 +237,22 @@ scope.onmessage = (e) => {
     post({ type: 'error', id: msg.id, message: 'this rt.wasm does not simulate the parts under rain (npm run engine:build)' });
     return;
   }
+  // S9: an rt.wasm before S9 does not simulate cloth: the rest runs without it, and the interface says so.
+  const noCloth = !!msg.cloth && !clothRt;
+  if (noCloth && !msg.scene && !msg.wet && !msg.parts) {
+    post({ type: 'error', id: msg.id, message: 'NO_CLOTH' });
+    return;
+  }
   let world: PhysWorld | null = null;
   let pane: WetSim | null = null;
+  let cloth: ClothSim | null = null;
   try {
     world = msg.scene ? new PhysWorld(rt, new Uint8Array(msg.scene), msg.dynamic) : null;
     pane = msg.wet ? new WetSim(wetRt!, new Uint8Array(msg.wet)) : null;
     const parts = msg.parts ? new PartsSim(partsRt!, new Uint8Array(msg.parts)) : null;
+    cloth = msg.cloth && clothRt ? new ClothSim(clothRt, new Uint8Array(msg.cloth)) : null;
     const initial = world ? world.poses() : EMPTY;
-    const r: Run = { id: msg.id, world, pane, parts, steps: 0, options: msg.options, begun: performance.now(), pausedAt: null, stop: false, fresh: [], freshGlass: [], freshParts: [], last: initial, frame: 0, acked: 0 };
+    const r: Run = { id: msg.id, world, pane, parts, cloth, steps: 0, options: msg.options, begun: performance.now(), pausedAt: null, stop: false, fresh: [], freshGlass: [], freshParts: [], freshCloth: [], last: initial, frame: 0, acked: 0 };
     run = r;
     post({
       type: 'started',
@@ -235,11 +262,14 @@ scope.onmessage = (e) => {
       bodies: world?.bodies ?? 0,
       ...(pane ? { glass: pane.frame() } : {}),
       ...(parts ? { parts: { layout: parts.layout(), frame: parts.frame() } } : {}),
+      ...(cloth ? { cloth: cloth.positions() } : {}),
+      ...(noCloth ? { noCloth: true } : {}),
     });
     setTimeout(() => slice(r), 0);
   } catch (err) {
     world?.free();
     pane?.free();
+    cloth?.free();
     post({ type: 'error', id: msg.id, message: err instanceof Error ? err.message : String(err) });
   }
 };

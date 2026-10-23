@@ -31,6 +31,7 @@ pub mod zip;
 
 use crate::http::{Body, Request, Response};
 use crate::json::{self, Value};
+use backend::ModelBackend;
 use crate::models::Store;
 use crate::recommend::{valid_name, ModelFile};
 use crate::server::App;
@@ -1294,6 +1295,71 @@ pub fn route(app: &App, req: &Request, parts: &[&str], body: &mut dyn Read) -> O
                 Err(message) => Response::error(400, "bad-key", &message),
             }
         }
+        // The connection test of Settings ▸ AI: one minimal call against the endpoint as configured, with
+        // the stored key, through the same backend a post uses. The body is the remote object itself
+        // (`{endpoint, options, consentedHost}`); the answer is thrown away — an image back means the
+        // endpoint, the key and the response path work.
+        ("POST", ["ping"]) => {
+            let v = match read_json(req, body, crate::server::MAX_JSON) {
+                Ok(v) => v,
+                Err(r) => return Some(r),
+            };
+            let spec = match remote::RemoteSpec::from_json(&v) {
+                Ok(spec) => spec,
+                Err(message) => return Some(Response::error(400, "api-config", &message)),
+            };
+            let key = ai.api_keys.get(&spec.host);
+            if !spec.endpoint.auth_header.is_empty() && key.is_none() {
+                return Some(Response::error(
+                    409,
+                    "api-no-key",
+                    &format!("no API key is stored for {}", spec.host),
+                ));
+            }
+            let api = remote::RemoteApi::new(
+                spec,
+                key,
+                Arc::clone(&ai.transport) as Arc<dyn remote::Transport>,
+            );
+            // The probe: a 512 × 512 solid mid grey, the same size the page's ping sends (the answer-size
+            // guard takes a 1024 × 1024 answer for it).
+            let side = 512u32;
+            let input = rt_post::Rgb8Image {
+                width: side,
+                height: side,
+                rgb: vec![128; (side * side * 3) as usize],
+            };
+            let tile = rt_post::Tile {
+                x: 0,
+                y: 0,
+                width: side,
+                height: side,
+                padded_width: side,
+                padded_height: side,
+            };
+            let pass = backend::TilePass {
+                tile: 1,
+                tiles: 1,
+                rect: &tile,
+                input: &input,
+                input_b64: "",
+                control_b64: None,
+                passes: None,
+                prompt: "Return this image unchanged.",
+                negative: "",
+                strength: 0.5,
+                seed: 1,
+            };
+            let cancel = AtomicBool::new(false);
+            match api.run(&pass, &cancel, &mut |_| {}) {
+                Ok(_) => Response::json(200, "{\"ok\":true}".to_string()),
+                Err(backend::BackendError::Remote(e)) => {
+                    // The API's own status when there was an answer (else 502: the call never reached it).
+                    Response::error(e.status.unwrap_or(502), e.code, &e.message)
+                }
+                Err(e) => Response::error(502, e.code(), &e.message()),
+            }
+        }
         ("DELETE", ["sidecar"]) => {
             if ai.sidecar.release() {
                 Response::empty(204)
@@ -1301,7 +1367,7 @@ pub fn route(app: &App, req: &Request, parts: &[&str], body: &mut dyn Read) -> O
                 Response::error(409, "busy", "a run is using the runtime")
             }
         }
-        (_, ["runtime" | "runtimes" | "run" | "post" | "sidecar" | "apikeys", ..]) => {
+        (_, ["runtime" | "runtimes" | "run" | "post" | "sidecar" | "apikeys" | "ping", ..]) => {
             Response::error(405, "method", "method not allowed")
         }
         _ => Response::error(404, "not-found", "no such endpoint"),

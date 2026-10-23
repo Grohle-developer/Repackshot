@@ -63,7 +63,7 @@ fn with<R>(handle: u32, f: impl FnOnce(&mut Loaded) -> R) -> Option<R> {
 }
 
 /// S3e: runs `f` on the world of `handle` and the pose of each dynamic body of its scene (`None`:
-/// no mass), or `None` for a bad handle.
+/// no mass), or `None` for a bad handle (S9: the cloth steps the world with itself through it).
 pub(crate) fn with_world<R>(
     handle: u32,
     f: impl FnOnce(&mut World, &[Option<u32>]) -> R,

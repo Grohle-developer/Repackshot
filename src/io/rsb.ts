@@ -41,6 +41,7 @@ import { filtersOf, frontGlassOf, glassFromScene, isNeutralOptics, type CameraOp
 import { paneAxes, recordedGlass, type GlassFrame, type PaneAxes } from '../core/wet';
 import { coarseWeather, partWeather, recordedParts, ROUND_SHAPE } from '../core/wet-parts';
 import { FLOOR_POROSITY } from '../data/wet-parts';
+import { posedCloth } from '../core/cloth';
 import { FRONT_GLASS_FIXED } from '../data/front-glass';
 import { resolvedFocusDistance } from '../core/focus';
 import type { PupilProfile } from '../data/bokeh';
@@ -2335,12 +2336,16 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   let casterBounds: Bounds | null = null;
   let litEmitter = false;
   for (const id of allParts(state)) {
-    const node = nodes[id];
-    if (!node.mesh || !visible(id)) continue;
+    const own = nodes[id];
+    if (!own.mesh || !visible(id)) continue;
     // N1: a part faded out all the way is not there (nor its shadow), like a hidden one.
     const partOpacity = opacityOf(id);
     if (!(partOpacity > 0)) continue;
-    const data = getMesh(node.mesh.id);
+    // S9: a cloth part with a recorded frame at the pose is drawn with that frame's sheet (the MESH carries it: an engine
+    // of any version draws it).
+    const cloth = posedCloth(state, id, pose);
+    const node = cloth?.node ?? own;
+    const data = cloth?.data ?? getMesh(own.mesh.id);
     if (!data || data.indices.length === 0) continue;
     const rows = matrixRows(worldOf(id));
     for (const part of partMeshes(node, data)) {

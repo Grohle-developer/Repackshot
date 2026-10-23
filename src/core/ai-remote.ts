@@ -76,7 +76,8 @@ export type ApiFile = (typeof FILE_PLACEHOLDERS)[number];
 /** Headers the person may not set: the transport owns them, or they would carry the key outside its field. */
 const RESERVED_HEADERS = ['host', 'content-length', 'content-type', 'transfer-encoding', 'connection', 'cookie', 'authorization', 'proxy-authorization', 'x-api-key', 'api-key'];
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
-const PLACEHOLDER = /\{\{([a-z_]+)\}\}/g;
+/** A placeholder's name: lowercase letters, digits and underscores (the `*_base64` ones need the digits). */
+const PLACEHOLDER = /\{\{([a-z0-9_]+)\}\}/g;
 
 /** Why an endpoint cannot be used yet. The interface words each code (`set.ai.api.problem.<code>`). */
 export type ApiProblemCode =
@@ -287,7 +288,7 @@ function numberOf(name: string, v: ApiValues): number {
 
 /** One string of the template, filled. */
 function fillString(s: string, v: ApiValues, json: boolean): unknown {
-  const whole = /^\{\{([a-z_]+)\}\}$/.exec(s);
+  const whole = /^\{\{([a-z0-9_]+)\}\}$/.exec(s);
   if (json && whole && NUMERIC_PLACEHOLDERS.includes(whole[1] as ApiPlaceholder)) return numberOf(whole[1], v);
   return s.replace(PLACEHOLDER, (_m, name: string) => textOf(name, v));
 }
@@ -309,7 +310,7 @@ export type MultipartPart = { name: string; kind: 'text'; value: string } | { na
 /** A multipart body's parts, in the template's order: files where a value is exactly `{{image}}` (or a pass), text otherwise. */
 export function fillMultipart(template: Record<string, unknown>, v: ApiValues): MultipartPart[] {
   return Object.entries(template).map(([name, x]): MultipartPart => {
-    const whole = typeof x === 'string' ? /^\{\{([a-z_]+)\}\}$/.exec(x) : null;
+    const whole = typeof x === 'string' ? /^\{\{([a-z0-9_]+)\}\}$/.exec(x) : null;
     if (whole && (FILE_PLACEHOLDERS as readonly string[]).includes(whole[1])) return { name, kind: 'file', what: whole[1] as ApiFile };
     const text = typeof x === 'string' ? (fillString(x, v, false) as string) : String(x);
     return { name, kind: 'text', value: text };

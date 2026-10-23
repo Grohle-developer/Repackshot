@@ -241,8 +241,8 @@ crate, in a *worker*). Each node may carry its *Physics* section
 (`physics`, optional; without it the default values apply):
 
 - **Role** (`role`): *Static* (default: it is there, does not move and is
-  collided against) or *Dynamic* (falls and collides). *Fabric* (S9) and *Liquid*
-  (S7) appear in the inspector as *coming soon*. A dynamic group or model
+  collided against), *Dynamic* (falls and collides) or, since S9, *Cloth* (it folds and
+  drapes: below). *Liquid* (S7) appears in the inspector as *coming soon*. A dynamic group or model
   falls **as one body** (an envelope of all its parts) unless it
   has **As parts** (`asParts`), and then each part falls on its
   own.
@@ -308,6 +308,58 @@ that *Drop* gives and the final poses are **one** undo entry;
 *Reset* removes the clips of the last simulation and returns the nodes to
 where they were before, as another entry; undoing while it runs
 abandons it without confirming anything.
+
+**Cloth (S9, `src/core/cloth.ts`; the simulator is `rt-phys`'s `cloth`, in the S2
+*worker*).** A node whose role is *Cloth* is cloth: a part, or each part of a group or
+model. The cloth is the part's mesh (a solid's shell: closed, it can keep its volume), or
+the **face** picked at the *Faces* level (*Use the selected faces*; `physics.cloth.triangles`):
+then the rest of the part stays where it is and holds the face along the rim they share.
+It is simulated as a finer sheet: its triangles are split in four at their edges' midpoints
+until the longest edge is at most the **Resolution** (automatic: the cloth's longest side
+over 32), without passing 4,096 triangles; the split keeps the face materials and the
+texture coordinates, so the cloth renders as its part does. Its fields
+(`physics.cloth`, all optional):
+
+- **Fabric** (`fabric`): a preset of `src/data/fabrics.ts` by fabric type and weight
+  per area (stable keys: silk 60 g/m², fine cotton 120, poplin 150, linen 200, wool 300,
+  denim 400, canvas 600, felt 800, thin leather 900, thick leather 1,200, neoprene 1,500),
+  with its mass per area, stretch stiffness along its threads (N/m), shear stiffness between
+  them (N/m: a woven fabric's threads scissor far more easily than they stretch, which is how
+  it drapes over a dome in folds instead of creasing like paper), bending rigidity (N·m),
+  damping, thickness and friction. Its warp runs along world X (along Y on a face that looks
+  along X). Fine cotton by default.
+- **Weight** (`weightGsm`, g/m²) and **Stiffness** (`stiffness`, a factor on the preset's
+  stretch, shear and bending alike, 0.1–10) on top of the preset; **Thickness**
+  (`thicknessMm`): the distance at which it collides, which is how far from what it touches
+  it rests.
+- **Anchors** (`anchor`): none, the **top edge** (the vertices of its highest open edge stay
+  where they are: a curtain) or a **box** (`box`: the vertices inside it, the box given as
+  shares of the cloth's extent on X, Y and Z; by default the top tenth).
+- **Pressure** (`pressure`, 0–3, 1 by default; only for a closed shell): it holds that many
+  times its volume (a cushion, a soft container); **Self-collision** (`selfCollision`, on by
+  default: its folds do not pass through each other); **Keep area** (`keepArea`).
+
+**What it meets**: itself, the floor, every other visible part that does not move (as
+triangles) and the *Dynamic* bodies of the same run, which push it (it does not push them).
+Not only its vertices: a sharp edge or corner of a part or of a body (a cap's rim, a box's
+edge) cannot cut through the cloth between them either; the cloth's surface keeps it at the
+thickness.
+The **wind** is the *Ambient* effects' (S4a): the wind of those switched on, summed, with gusts
+from the turbulence (Chaos) of the windiest. The rigid simulator does not see a cloth part.
+*Start* runs the cloth with the *Dynamic* parts (not *Drop*); a run with cloth stops by itself
+when the bodies sleep and the cloth has settled (no vertex moving on for half a second), or
+at 30 simulated seconds. **Drape over the part** (the context menu, the inspector, the
+palette) lays a sheet of cloth over the selection —a square plane of fine cotton whose side is
+1.2 times the longer side of its footprint plus 1.2 times its height, a little above its top—
+and runs it alone: adding it, its
+role and the run are one undo entry. **The recording** (the cache): each cloth part gets a
+`PHYSICS` clip that holds the vertices of its sheet per frame, in the part's own space (the
+node does not move); the viewport in *Fast* and the render in *Full* draw the part with the
+frame the playhead shows (S2's rules: at 0 too, a clip holds its first and last frames);
+confirming changes no transform; *Reset* removes the clip. A part whose mesh changed after
+the recording is drawn as it is. An engine that does not simulate cloth (one before S9) runs
+the rest of the simulation and the bar says the cloth was left out. How the fabric looks is
+its material (M5).
 
 **Rain, dust and snow on the parts (S3c).** An *Ambient* effect with
 `wetParts` falls on the parts when *Start* runs (not *Drop*): what
@@ -1763,6 +1815,14 @@ of each drop, in base64; version 3 of the format, and a track of before, without
 them, is still read, its drops round; S3e: the studio floor's cells as they got wet,
 and the dust's motes, version 4): the cache. A part whose mesh is no longer the recorded one
 stays dry. A track that cannot be read is removed on opening.
+**Cloth (S9).** A simulation with cloth gives a `PHYSICS` clip to each **cloth part**
+(`target` its node), in the same undo entry: it does not move the node, it says which frame
+of its cloth the part shows (the nearest; vertices are not interpolated), also at 0 without
+playing. It carries the **cloth track** (`cloth`: the fps and the frames, the mesh, the face
+and the number of splits it was recorded on, the number of vertices and the vertices of
+every frame in the part's own space, `f32` *little endian* in base64): the cache. A part
+whose mesh is no longer the recorded one is drawn as it is. A track that cannot be read is
+removed on opening.
 
 **An animation** (`MotionClip`): name, target (part, group, model,
 camera, light, environment, material), type, type parameters (amount,

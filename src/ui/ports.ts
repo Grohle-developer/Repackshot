@@ -6,6 +6,7 @@ import type { FadeToColor } from '../core/animation';
 import type { FastAa, PixelFilterFields, PixelFilterSetting } from '../core/antialias';
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
 import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
+import type { ApiEndpoint, ApiOptions } from '../core/ai-remote';
 import type { Projection, Rect } from '../core/box-select';
 import type { FrameScan } from '../core/doctor-engine';
 import type { CameraId, CameraState } from '../core/camera';
@@ -346,6 +347,11 @@ export interface FrameRequest {
   frameBox?: (image?: number) => FrameBox | null;
   /** U14: the picture `frameBox` asked for, scaled to its box, with the engine's samples and seconds. */
   onFrame?: (frame: LiveFrame) => void;
+  /**
+   * Stopped (Pause, Stop this job): the engine hands back the accumulation so far as a partial image (`partial` on
+   * the result) instead of throwing the abort, when at least one pass finished. Only the queue sets it.
+   */
+  partialOnAbort?: boolean;
 }
 
 /** The exposure and tone curve a render's file was written with (RSB codes): the AI image is written the same way. */
@@ -388,6 +394,11 @@ export interface FrameResult {
   seconds: number;
   /** The desktop launcher's id of the render, by which it keeps the linear image and the passes (`aiPasses`). */
   renderId?: string;
+  /**
+   * Stopped before its budget (Pause, Stop this job): the file is the accumulation so far, at `samples` samples,
+   * not the finished render. The queue saves it apart (`<name>-partial`) and still treats the job as stopped.
+   */
+  partial?: boolean;
   /** E5b-1: the file is the engine's denoised image. */
   denoised?: boolean;
   /** E5b-1, Advanced ▸ Also save without denoise: the same render before denoise, in the same format. */
@@ -618,9 +629,11 @@ export interface ImagesPort {
 export interface PhysicsPort {
   /**
    * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
-   * is not there (npm run engine:build), or with the engine's message when the scene does not load.
+   * is not there (npm run engine:build), or with the engine's message when the scene does not load. S9: `cloth`, the
+   * CLT1 of the run's cloth (core/cloth.ts); with an rt.wasm that does not simulate it, `started` says `noCloth` and
+   * the rest runs (or rejects with `NO_CLOTH` when there is nothing else).
    */
-  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null): PhysicsRunHandle;
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void, wet?: WetPaneSpec | null, parts?: Uint8Array | null, cloth?: Uint8Array | null): PhysicsRunHandle;
 }
 
 /**
@@ -753,6 +766,12 @@ export interface AppServices {
    * forgotten here, listed masked, never read back by the interface. Null where the model cannot run through an API.
    */
   apiKeys?: ApiKeysPort | null;
+  /**
+   * One ping against an API endpoint (Settings ▸ AI ▸ Model by API ▸ Test connection): a synthetic 16 × 16 image,
+   * never a render. Resolves when an image comes back, throws the call's `ApiCallError` otherwise. Null where the
+   * model cannot run through an API.
+   */
+  apiPing?: ((endpoint: ApiEndpoint, options: ApiOptions, signal: AbortSignal) => Promise<void>) | null;
   /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
   hardware(again?: boolean): Promise<HardwareInfo>;
   storage: StoragePort;

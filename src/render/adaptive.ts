@@ -343,6 +343,24 @@ export function rescaledSums(sum: Float32Array, width: number, height: number, b
   return out;
 }
 
+/**
+ * The RGBA sums of an accumulation whose tiles have their own counts, each rescaled to `s` samples: a render
+ * stopped mid-pass (some tiles have the interrupted pass's samples, the rest do not) reads as sums of `s`, the
+ * last completed pass's count — the same reading the launcher's frames give, which only publish whole passes.
+ */
+export function rescaledSumsTiles(sum: Float32Array, width: number, tiles: readonly { x: number; y: number; w: number; h: number; index: number }[], tileSamples: Int32Array, s: number, out = new Float32Array(sum.length)): Float32Array {
+  for (const t of tiles) {
+    const n = tileSamples[t.index];
+    for (let y = 0; y < t.h; y++) {
+      for (let x = 0; x < t.w; x++) {
+        const p = (t.y + y) * width + (t.x + x);
+        for (let c = 0; c < 4; c++) out[p * 4 + c] = rescale(sum[p * 4 + c], n, s);
+      }
+    }
+  }
+  return out;
+}
+
 /** The same for one value per pixel (the squared luminance). */
 export function rescaledPlane(plane: Float32Array, width: number, height: number, blockSamples: Int32Array, s: number): Float32Array {
   const out = new Float32Array(plane.length);

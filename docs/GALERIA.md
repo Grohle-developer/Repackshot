@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 179 files: 177 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 183 files: 181 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,44 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 28 versions, 21 with new screenshots; the screenshots are spread over 66 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the physics of each part in one place (U16); water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f).
+Water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f) and `physics-inspector.png` (U16).
+
+#### S3g · Water that reads as water
+
+<a id="c-rain-bottle"></a><img src="ui/rain-bottle.png" width="480" alt="Close on the example bottle's painted body after 10 s of the default rain: round drops of different sizes, scattered, a few small clear ones, the white paper label at the right edge, and a white scale bar of 5 mm at the bottom left."><br>
+`rain-bottle.png` · `432216f` · The example bottle's painted body (wetting as paint) at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
+
+### v0.1.27 · 2026-10-20
+
+The update window completed: what changed, the section's own options, Skip this version.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.26 · 2026-10-20
+
+A window asks about a newer version at startup.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.25 · 2026-10-20
+
+The connection test's result stays, a project file opens at startup, *Open project* in the empty state.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.24 · 2026-10-19
+
+API presets, the connection test, the partial image on stop, the render shortcuts.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.23 · 2026-10-19
+
+Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the physics of each part in one place (U16). Cloth (S9).
 
 #### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation)
 
@@ -50,10 +83,19 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the
 <a id="c-physics-drawer-summary"></a><img src="ui/physics-drawer-summary.png" width="960" alt="The physics drawer above the bottom bar, stopped: Start, Pause, Stop and Reset, the state Stopped, and the line Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry), above the note on how to start."><br>
 `physics-drawer-summary.png` · `1de5766` · The physics drawer, stopped, with the rain *On the parts*, the *Body* Dynamic and the *Cap* kept dry: the line *Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry)*, from the scene as it is (the five parts of the bottle and the set's pieces; ◆4). `tools/u16-check.mjs`.
 
-#### S3g · Water that reads as water
+#### S9 · Cloth with real physics
 
-<a id="c-rain-bottle"></a><img src="ui/rain-bottle.png" width="480" alt="Close on the example bottle's painted body after 10 s of the default rain: round drops of different sizes, scattered, a few small clear ones, the white paper label at the right edge, and a white scale bar of 5 mm at the bottom left."><br>
-`rain-bottle.png` · `432216f` · The example bottle's painted body (wetting as paint) at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
+<a id="c-cloth-drape"></a><img src="ui/cloth-drape.png" width="960" alt="Two viewports in Fast side by side: a white box on the floor, and the same box after Drape over the part, a sheet of cloth at rest over it, flat on its top and hanging in soft folds down its sides."><br>
+`cloth-drape.png` · `87fe497` · *Drape over the part* on a box, before and after: a sheet of fine cotton laid over it falls, folds over its edges and settles by itself, drawn in *Fast* from the recorded frame. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-bar"></a><img src="ui/cloth-bar.png" width="960" alt="The physics bar while the cloth runs: Simulated 1.88 s, Cloth: 1,089 vertices, Running."><br>
+`cloth-bar.png` · `87fe497` · The physics bar while the cloth runs: the simulated time and *Cloth: 1,089 vertices*, the vertices the simulator moves. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-inspector"></a><img src="ui/cloth-inspector.png" width="320" alt="The inspector's Physics section with the role Cloth: Fabric Fine cotton · 120 g/m², Weight, Stiffness, Thickness, Anchors None, Top edge or Box, Pressure disabled for an open cloth, Self-collision, Keep area, Resolution with what it makes now, Face, and the Start and Drape over the part buttons."><br>
+`cloth-inspector.png` · `87fe497` · The *Physics* section of a cloth: the fabric preset, *Weight* (from the fabric), *Stiffness*, *Thickness*, the anchors, *Pressure* (disabled: the sheet is open), *Self-collision*, *Keep area*, *Resolution* (*Now: 2,048 triangles, 10.6 mm*), which of the part is cloth, *Start* and *Drape over the part*. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-sheet"></a><img src="ui/cloth-sheet.png" width="960" alt="Four renders by the engine of the example bottle draped by a sheet: silk falls close around it in many small folds, linen and denim hang stiffer in broad panels, thick leather stands out as a bell with a few wide folds."><br>
+`cloth-sheet.png` · `87fe497` · Four fabrics of the contact sheet `out/cloth-sheet.html` over the example bottle, rendered by the engine (*Full*): silk, linen, denim and thick leather, each as its simulation left it (S9 ◆1). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
 
 ### v0.1.22 · 2026-10-18
 
@@ -945,12 +987,16 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
 - [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f (re-recorded in Unreleased, S3g)
-- [`physics-rain-floor.png`](#c-physics-rain-floor) · Unreleased · S3e
-- [`rain-moving.png`](#c-rain-moving) · Unreleased · S3e
-- [`rain-floor.png`](#c-rain-floor) · Unreleased · S3e
-- [`dust-motes.png`](#c-dust-motes) · Unreleased · S3e
-- [`physics-inspector.png`](#c-physics-inspector) · Unreleased · U16
-- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · Unreleased · U16
+- [`physics-rain-floor.png`](#c-physics-rain-floor) · v0.1.23 · S3e
+- [`rain-moving.png`](#c-rain-moving) · v0.1.23 · S3e
+- [`rain-floor.png`](#c-rain-floor) · v0.1.23 · S3e
+- [`dust-motes.png`](#c-dust-motes) · v0.1.23 · S3e
+- [`physics-inspector.png`](#c-physics-inspector) · v0.1.23 · U16 (re-recorded in Unreleased, S3g)
+- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · v0.1.23 · U16
+- [`cloth-drape.png`](#c-cloth-drape) · v0.1.23 · S9
+- [`cloth-sheet.png`](#c-cloth-sheet) · v0.1.23 · S9
+- [`cloth-inspector.png`](#c-cloth-inspector) · v0.1.23 · S9
+- [`cloth-bar.png`](#c-cloth-bar) · v0.1.23 · S9
 - [`rain-bottle.png`](#c-rain-bottle) · Unreleased · S3g
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
 - [`ambient-gallery.png`](#c-ambient-gallery) · v0.1.6 · S4a
@@ -1034,6 +1080,10 @@ Features from `CHANGELOG.md` that have no screenshot in `docs/ui/`, or only a pa
 
 | Version | Phase | What is missing |
 | --- | --- | --- |
+| v0.1.27 | — | The update window's **What changed**, **Skip this version** and the **install followed in the window** (progress, *Cancel the update*, *Restart now*, a failure with *Try again*): as with the window itself (v0.1.26), it shows only when the releases feed reports a newer version, which the screenshot tools cannot arrange on demand. |
+| v0.1.26 | — | The **update window at startup** (*Install and restart*, *Release notes*, *Later*): it shows only when the releases feed reports a newer version than the one running, which the screenshot tools cannot arrange on demand. |
+| v0.1.25 | — | The **Open project** button in the empty viewport, and a project file opened at startup (a desktop behaviour: the launcher hands the file to the page, which asks for it on load, so there is nothing new to show on the page itself). |
+| v0.1.24 | — | The **API presets** (Google Gemini, xAI Grok Imagine) in *Settings ▸ AI*, the **Test connection** button and its result line, and the **Partial** marker of a stopped render in the results viewer: the UI exists, but the existing AI screenshots predate them. |
 | v0.1.16 | N1 | The **fade to black or white** in the viewport and in a rendered frame, a part that **fades** (translucent in *Fast*, with its coverage in *Full*), the **pivot** of a spin and the **sun arc**: `tools/video-check.mjs` checks the viewport's fade but does not capture it. There is no frame of the video either, nor MP4, which the tests' Chromium does not encode. |
 | v0.1.15 | K1 | The seven new rows of the **Interior Doctor** with the Interior type (scale and units, opening for the sun and sky, window glass, lens too wide, eye height, near clipping, wall normals). `tools/scene-type-check.mjs` checks them but only leaves `scene-type-interior.png`, which shows the control and the recipes. |
 | v0.1.14 | Q1 | The timeline's **Section** move (shifts the plane along its normal) and the two palette actions. The two screenshots are of the inspector and the viewport. |

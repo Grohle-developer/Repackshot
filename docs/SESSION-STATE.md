@@ -189,6 +189,31 @@ after each *commit* (or the lead does).
    - Public notes in `docs/release-notes/v0.1.22.md`; the Windows checklist is points 152 to 161 in `docs/testing/windows-checklist.md` (**the next one starts at 162**).
    - **Next phase:** S3e (moving parts getting wet, the studio floor, the set's fine samples, dust motes, wind on the drops in the air, drops running along a side edge).
 
+4q. **Release v0.1.23 published** (2026-10-19; four *assets*; the images in the notes resolve). Included, each through its PR, with their ◆ decided in *Judgement calls*:
+   - **F1** (focus on what the engine shows; *Focus ▸ Object* on the surface the camera sees): PR #70, `50ab2a6`, and PR #71, `90d2a98`.
+   - **S3e** (moving parts getting wet, the studio floor, the set's fine samples, dust motes, wind on the drops in the air, drops running along a side edge): PR #73, `a07de84`.
+   - **U16** (the physics of each part in one place): PR #74, `41d4b95`.
+   - **S9** (cloth with real physics, XPBD): PR #72, `daf91c1`.
+   - Public notes in `docs/release-notes/v0.1.23.md`; the Windows checklist is points 162 to 194 in `docs/testing/windows-checklist.md` (**the next one starts at 195**).
+
+4r. **Release v0.1.24 published** (2026-10-19; four *assets*). Included, each through its PR, with their ◆ decided in *Judgement calls*:
+   - **AI API presets, the connection test, the partial save and the shortcut fix** (Google Gemini and xAI Grok Imagine presets; the `{{image_base64}}` placeholder fix; *Test connection*; the partial image on stop; the render shortcuts no longer global): PR #76, `e9c5439`.
+   - Public notes in `docs/release-notes/v0.1.24.md`; the Windows checklist is points 195 to 209 in `docs/testing/windows-checklist.md` (**the next one starts at 210**).
+
+4s. **Release v0.1.25 published** (2026-10-20; four *assets*). Included, each through its PR:
+   - **The connection test keeps its result** (the panel's own refresh wiped the result line as the test finished, so the test seemed to say nothing): PR #78, `681efc9`.
+   - **A project file opens at startup** (the launcher takes one `.repack`/`.repack.json` argument — before, any unknown argument ended the Windows build silently, which is what opening a project from the file manager did — and the page opens it on load; *Open project* in the empty state; a round-trip test that a saved `.repack` keeps a model's mesh geometry): PR #79, `03c6dfa`.
+   - Public notes in `docs/release-notes/v0.1.25.md`; the Windows checklist is points 210 to 214 in `docs/testing/windows-checklist.md` (**the next one starts at 215**).
+
+4t. **Release v0.1.26 published** (2026-10-20; four *assets*). Included, each through its PR:
+   - **A window asks about a newer version at startup** (the startup check already found new versions but only set a status-bar line, easy to miss; now a window asks as the application opens — *Install and restart* on the desktop, or *Download* where the application cannot install, *Release notes* and *Later* — once per version and session; answering leaves the status-bar offer in place, and a manual check opens no window): PR #81, `9771ad5`.
+   - Public notes in `docs/release-notes/v0.1.26.md`; the Windows checklist is points 215 to 219 in `docs/testing/windows-checklist.md` (**the next one starts at 220**).
+
+4u. **Release v0.1.27 published** (2026-10-20; four *assets*). Included, each through its PR:
+   - **The H1 pass for v0.1.26** (accessibility and i18n at the close of the version; guards green, the strings added since v0.1.16 reviewed, the browser audit not re-run in the environment at hand): PR #83, `b30623f`.
+   - **The update window completed** (the same options as Settings ▸ Updates, with the install followed in the window — progress, *Cancel the update*, *Restart now*, a failure with *Try again*; a small *What changed* from the release's own notes, `releaseHighlights`; *Skip this version*, remembered in the settings layout as `updateSkipped`, so that version is not announced again while a newer one is, and Settings still offers it): PR #84, `b9fda4a`.
+   - Public notes in `docs/release-notes/v0.1.27.md`; the Windows checklist is points 220 to 224 in `docs/testing/windows-checklist.md` (**the next one starts at 225**).
+
 **PR and release rule (owner's request, 2026-10-17):** **one PR per change** (each phase, or each loose fix, in its PR to `main`: from its branch `wip/ccr-8df3f848/<phase>` after merging `main` into it and passing the gates; the lead's documents, from the session branch), and **releases that group several changes** (one every two or three merged phases, or sooner if a fix the owner is waiting for goes in), with their own version PR from the session branch (version, CHANGELOG, notes) and `release.yml` on `main`. Up to 2026-10-17 one release per change was made (v0.1.7 to v0.1.13).
 5. **Release v0.1.6 published** (2026-10-14, run 38600597560 on `c413669`, tag `v0.1.6`, release 412955577): the four *assets* uploaded by the workflow (Windows 11 portable 329 872 B, Linux portable 11 158 342 B, installer 9 426 684 B, `SHA256SUMS.txt`). The first attempt (run 38599628176) failed in the *smoke test* because it read the launcher's frame with a 48 B header (U11 raised it to 52): fix in `packaging/smoke.mjs` (PR #8). **`film-0.1.0.rpk` is missing as an asset**: the session's GitHub proxy rejects binary bodies (only JSON), so the owner uploads it by hand (the file was delivered in the chat; sha `a60dd9ed…3d8a`, 1 956 072 B); until then *Settings ▸ Plugins ▸ Install* from the registry fails the download (installing from a file does work).
    (procedure in `ROADMAP.md` P1 and `release-notes/`): also upload

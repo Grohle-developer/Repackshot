@@ -311,7 +311,8 @@ describe('the PHYSICS clip', () => {
     expect([...trackFloats(c.track!)!]).toEqual([...trackFloats(state.animation.clips[0].track!)!]);
     const body = JSON.parse(text);
     body.state.animation.clips[0].track.data = 'not base64!';
-    body.state.scene.nodes[Object.keys(body.state.scene.nodes)[0]].physics = { role: 'CLOTH', density: -3, friction: 0.4 };
+    // A role this version does not know (S7's liquid; S9 made CLOTH one it knows) is dropped, and so is a bad density.
+    body.state.scene.nodes[Object.keys(body.state.scene.nodes)[0]].physics = { role: 'LIQUID', density: -3, friction: 0.4 };
     const opened = migrateProject(body);
     expect(opened.animation.clips).toHaveLength(0);
     expect(opened.scene.nodes[Object.keys(body.state.scene.nodes)[0]].physics).toEqual({ friction: 0.4 });

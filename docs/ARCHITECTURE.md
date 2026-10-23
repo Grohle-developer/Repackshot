@@ -134,6 +134,7 @@ src/
     scene-type.ts           the scene type (K1): `scene.type`, the `scene/setType` action, and the `scene.typeBase` memory of what each type replaced so that going back leaves the project as it was except for what was touched; the values are `data/scene-types.ts`
     physics.ts              physics (S2): a node's Physics section, what is simulated (`physicsSpec`), the simulator's poses back to the nodes, the PHYSICS clip's track and its anchor, the `physics/*` actions (§5.6)
     wet.ts                  S3b: the front glass fed by the scene: what is simulated (`wetSpec`, `wetBytes`, the `wetKey` key), the glass track of the camera's PHYSICS clip (`GlassTrackWriter`, `glassFrame`, `recordedGlass`) and the glass as the engine reports it (`parseEnginePane`) (§5.2 novendecies); S3c: `glassRendersClean`, the warning for an engine without bit 7
+    cloth.ts                S9: cloth: what becomes cloth (`clothParts`, `clothPropsOf`), the simulated sheet (`clothMesh`, `clothLevels`), the anchors, the wind, the CLT1 (`clothSpec`, `cltBytes`), the cloth track of a part's PHYSICS clip (`ClothTrackWriter`, `clothFrame`) and the part as the pose shows it (`posedCloth`), *Drape over the part* (`drapePlacement`) (§5.6 bis)
     wet-parts.ts            S3c: rain, dust and snow on the parts: what is simulated (`wetPartsSpec`, `wptBytes`, the `wetPartsKey` key), the parts track of the scene's PHYSICS clip (`PartsTrackWriter`, `partsFrame`, `recordedParts`, `partWeather`) and the warning for an engine without bit 8 (`partsRenderDry`) (§5.2 vicies; S3e: moving parts, the studio floor, fine samples and the motes' twin, §5.2 tervicies)
     part-weather.ts         U16: how the weather treats each part (Physics ▸ Weather): `partWeatherOf` (gets wet, gets dust and snow, the surface given), `surfaceFamily`, the selection's mixed `weatherView`, and the engine's `critical_radius` ported bit for bit (`criticalRadiusMm`, `runSizeMm`, with `f32math`) (§5.2 quattuorvicies)
     start-plan.ts           U16: what ▶ Start would simulate (`startPlan`): the parts the bodies move, the rain, dust and snow on the parts and the parts that keep dry or bare, the front glass
@@ -164,7 +165,7 @@ src/
     sets.ts                 the sets (L6): apply, replace and remove their decoration (cards, sweep, floor, puddle), their look, Use the set’s camera
     wear.ts                 default wear values
     version.ts
-  data/                     CATALOGUES. Only data and types (§3); primitives.json + primitives.ts: the twelve shapes of Add ▸ Primitive (U9); physics.ts: densities per material family and the physics defaults (S2); effects.ts: the Ambient presets (S4a; S3 adds the drop, the mix and *Water drops*); front-glass.ts: the front glass values that the interface does not show, the ranges and the start of its controls (S3), and what each effect leaves on the scene-fed glass (`GLASS_FEED`, S3b); wettability.ts: the advancing and receding angles of water per material family and the angle of repose of dust (S3b), and since S3c wood and fabric, how much each family soaks up and how much wetting darkens it, the angle of repose of snow and the material family of a part (`wettabilityFamilyOf`); wet-parts.ts: what each effect leaves on the parts (`PARTS_FEED`), the cell and the sample budget and the cap of a simulation (S3c)
+  data/                     CATALOGUES. Only data and types (§3); primitives.json + primitives.ts: the twelve shapes of Add ▸ Primitive (U9); physics.ts: densities per material family and the physics defaults (S2); fabrics.ts: the fabric presets by type and weight, the cloth's limits and defaults, the cap of the simulated sheet (S9); effects.ts: the Ambient presets (S4a; S3 adds the drop, the mix and *Water drops*); front-glass.ts: the front glass values that the interface does not show, the ranges and the start of its controls (S3), and what each effect leaves on the scene-fed glass (`GLASS_FEED`, S3b); wettability.ts: the advancing and receding angles of water per material family and the angle of repose of dust (S3b), and since S3c wood and fabric, how much each family soaks up and how much wetting darkens it, the angle of repose of snow and the material family of a part (`wettabilityFamilyOf`); wet-parts.ts: what each effect leaves on the parts (`PARTS_FEED`), the cell and the sample budget and the cap of a simulation (S3c)
   render/                   WEB-SIDE ENGINES. They depend on core, never on ui
     engine.ts               the RenderEngine interface (§5)
     preview.ts              three.js: rasterised preview while the camera moves; `aiFrame` (X4): the Fast-mode frame and its passes
@@ -188,7 +189,7 @@ src/
     worker.ts               the worker: instantiates rt.wasm, receives the RSB scene, renders tiles
     pass-planes.ts          the engine's exact passes on the page (X2): gathers those of rt.wasm per tile and reads the launcher's RPP1
     physics-worker.ts       the simulator worker (S2): its rt.wasm, one simulation at a time, at the clock's pace and with acknowledgement (§5.6)
-    physics.ts  phys-wasm.ts  the client of that worker (`PhysicsClient`) and the typed wrapper of the `phys_*` exports (`PhysWorld`) and, S3b, `wet_*` (`WetSim`); S3c, `wpt_*` (`PartsSim`)
+    physics.ts  phys-wasm.ts  the client of that worker (`PhysicsClient`) and the typed wrapper of the `phys_*` exports (`PhysWorld`) and, S3b, `wet_*` (`WetSim`); S3c, `wpt_*` (`PartsSim`); S9, `cloth_*` (`ClothSim`)
     glass-overlay.ts  glass-pane.ts  S3b: the approximation of the front glass in Fast (the maps over the glass, blurred by a pixel's footprint) and the glass as the engine places it (`rt_scene_glass`) (§5.2 novendecies)
     weather-preview.ts      S3c: the parts' rain, dust and snow in Fast: the recorded frame's samples in data textures read by a patch of the materials, and the drops as instanced caps (§5.2 vicies)
   ai/                       OPTIONAL AI POST-PROCESSING (X3). Depends on core (and data), never the other way round; the guard is NOT TypeScript: it is rt-post
@@ -248,9 +249,9 @@ src/
       viewport-labels.ts    the viewer's label tool: place with press and drag, Move label (M2a)
       animation.ts          the animation drawer (N6): transport and the three zones; anim-tree.ts (what is animated), anim-timeline.ts (ruler, bars, magnet, camera track with its fades), anim-props.ts (properties, the three-step wizard, a shot's, presets); components/curve-editor.ts, the two-handle curve (N1)
     texture-commands.ts     what the inspector's slots and labels do (M2a)
-    physics.ts              the running simulation (S2): Drop, Start, Pause, Stop, Reset, the clips that grow; S3b: and the camera's scene-fed front glass; S3c: and the parts (`partsRun`, without those the simulation moves)
+    physics.ts              the running simulation (S2): Drop, Start, Pause, Stop, Reset, the clips that grow; S3b: and the camera's scene-fed front glass; S3c: and the parts (`partsRun`, without those the simulation moves); S9: and the cloth (`clothRun`), and *Drape over the part* (`drape`)
     physics-lines.ts        U16: the sentences of Physics ▸ Motion and Weather, the Material section's pointer and the drawer's line of what Start simulates, without the DOM (tested in Node)
-    panels/physics.ts  panels/insp-physics.ts  the physics bar (drawer of the bottom bar) and the inspector's Physics section (S2); U16: the section in two groups, Motion and Weather, the Material section's pointer to it and the drawer's line of what Start simulates
+    panels/physics.ts  panels/insp-physics.ts  the physics bar (drawer of the bottom bar) and the inspector's Physics section (S2; S9: the cloth's fields; U16: the section in two groups, Motion and Weather, the Material section's pointer to it and the drawer's line of what Start simulates)
     anim-commands.ts        what the timeline does (N6): animation selection in step with the scene and the viewer, Animate…, duplicate, delete, reverse, split, pin in the exploded view, transport and keys
     graph-commands.ts       what the material editor and the inspector do with a graph: open, Simple ↔ Nodes, examples, edits (M3a)
 public/
@@ -291,7 +292,7 @@ engine/                     THE ENGINE. Cargo workspace, Rust, no external depen
   crates/rt-app/            desktop launcher `repackshot`: local server, window, native engine (§5.5)
   crates/rt-post/           the AI post-processing guard and all its work with pixels (AI-POST.md §7.2); rt-core does not know it
   crates/rt-post-wasm/      extern "C" exports of rt-post → public/engine/post.wasm
-  crates/rt-phys/           the rigid-body simulator (S2): XPBD, convex hulls, contacts, sleeping; PHY1 (§5.6); S3b: `wet`, rain and dust on the front glass, WET1 (§5.2 novendecies); S3c: `wet_parts`, rain, dust and snow on the parts, WPT1 (§5.2 vicies)
+  crates/rt-phys/           the rigid-body simulator (S2): XPBD, convex hulls, contacts, sleeping; PHY1 (§5.6); S3b: `wet`, rain and dust on the front glass, WET1 (§5.2 novendecies); S3c: `wet_parts`, rain, dust and snow on the parts, WPT1 (§5.2 vicies); S9: `cloth`, XPBD cloth, CLT1 (§5.6 bis)
   crates/rt-sky/            offline tool `rt-sky` (E5c): spectral atmosphere simulator, Levenberg–Marquardt
                             fit of the physical sky and its table; writes rt-core/src/sky_table.rs,
                             src/core/sky-table.ts and tests/fixtures/sky-physical.json
@@ -552,11 +553,11 @@ It lives in `engine/`, a Cargo workspace with eight *crates*:
 | `rt-core` | **The tracer.** Library: maths, SIMD, BVH, intersection, live edges and shading bevel, image textures and labels (M2b, `texture`), material programs (M3b, `program`), BSDF, lights, environment, sampling, integrator, RSB reader and writer, PNG encoder, film and tonemapping | Only `core`/`alloc`/`std` with no system APIs (no `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` except the `simd` module; `#![deny(missing_docs)]`; `f32` throughout; no `unwrap` on paths that depend on input; compiles for `wasm32-unknown-unknown` |
 | `rt-sim` | **The stateless particle simulator** (S0 §1–2, S4a): `AmbientParams` (reads and writes the `FXAM` payload), `evaluate(&params, max)` and `Evaluator::particle(id)`: each particle is a pure function of (seed, id, instant), in closed form; own phase (steady state: the region is full from the first instant), integrated velocity `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}`, *curl noise* drift as a divergence-free displacement (Bridson, Houriham and Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), death at the floor and rebirth at the top (those that fall or rise are born on their face and live as long as they take to cross the box; those that float live forever and the box wraps around), cloud envelope by rejection. The exponential and the sine, tabulated with `fmath` once per effect: no `exp`/`sin` per particle | The `rt-core` rules: only `std` with no system APIs, `#![forbid(unsafe_code)]`, `f32`, counter hash `mix64((seed << 32) ^ id)`. Shares `fmath.rs` and `rng.rs` from `rt-core`, compiling them by `#[path]` (a test in `rt-core` checks that they give the same): `rt-core` depends on `rt-sim`, not the other way round |
 | `rt-cli` | Native binary `rt`: reads an `.rsb`, renders with threads (`std::thread::scope`, atomic tile queue), writes PNG, measures rays/s; contact sheets and thumbnails in CI | May use all of `std` |
-| `rt-wasm` | `cdylib` with hand-written `extern "C"` exports (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: the particles of an `FXAM`, 8 `f32` each, for Fast), `rt_particles_shapes` (S3: the shape of each one, a `u32`, for the shape mix in Fast), `rt_scene_pick` and `rt_scene_focus_at` (F1: the primary ray of an image point, what it hits and the distance that brings it into focus; the page detects them by name, with no `rt_features` bit), `rt_version`, `rt_features` (M2b: what it reads besides the usual RSB; bit 0, the textures; bit 1, the material programs, M3b; bit 2, the section view, Q1; bit 3, the IES lights, L5; bit 4, the interiors cameras, K3; bit 5, the pattern nodes, M3c; bit 6, the drops and the front glass, S3; bit 7, the drop-by-drop glass, S3b; bit 8, the rain, dust and snow of the parts, S3c)…), `rt_scene_glass_len` and `rt_scene_glass_copy` (S3b: a scene's front glass as the engine places it) and those of the simulator (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2; `wet_new`, `wet_step`, `wet_frame`, `wet_frame_copy`, `wet_hash`…, S3b; `wpt_new`, `wpt_step`, `wpt_layout`, `wpt_frame`, `wpt_copy`, `wpt_hash`…, S3c). No `wasm-bindgen`; it links `rt-post` only for its *denoise* (E5b-1), `rt-sim` (S4a) and `rt-phys` (S2) | The only `unsafe` outside `simd`: the linear memory allocation, commented block by block |
+| `rt-wasm` | `cdylib` with hand-written `extern "C"` exports (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_render_tile_alpha` (N2), `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: the particles of an `FXAM`, 8 `f32` each, for Fast), `rt_particles_shapes` (S3: the shape of each one, a `u32`, for the shape mix in Fast), `rt_scene_pick` and `rt_scene_focus_at` (F1: the primary ray of an image point, what it hits and the distance that brings it into focus; the page detects them by name, with no `rt_features` bit), `rt_version`, `rt_features` (M2b: what it reads besides the usual RSB; bit 0, the textures; bit 1, the material programs, M3b; bit 2, the section view, Q1; bit 3, the IES lights, L5; bit 4, the interiors cameras, K3; bit 5, the pattern nodes, M3c; bit 6, the drops and the front glass, S3; bit 7, the drop-by-drop glass, S3b; bit 8, the rain, dust and snow of the parts, S3c)…), `rt_scene_glass_len` and `rt_scene_glass_copy` (S3b: a scene's front glass as the engine places it) and those of the simulator (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2; `wet_new`, `wet_step`, `wet_frame`, `wet_frame_copy`, `wet_hash`…, S3b; `wpt_new`, `wpt_step`, `wpt_layout`, `wpt_frame`, `wpt_copy`, `wpt_hash`…, S3c; `cloth_new`, `cloth_step`, `cloth_vertices`, `cloth_positions`, `cloth_settled`, `cloth_hash`…, S9). No `wasm-bindgen`; it links `rt-post` only for its *denoise* (E5b-1), `rt-sim` (S4a) and `rt-phys` (S2) | The only `unsafe` outside `simd`: the linear memory allocation, commented block by block |
 | `rt-app` | Binary `repackshot`, the desktop launcher (§5.5): local server, window, native engine, data, machine | All of `std`, **no `unsafe`**; what it needs from the system it asks of system processes (`reg`, `nvidia-smi`) |
 | `rt-post` | **The own *denoise*** (E5b-1, `rt_post::denoise`, §5.2 bis) and **the AI post-processing guard** (X3a, `AI-POST.md` §3.2 and §7.2): conditioning (edges of id and normal changes, normalised depth), ~1024² tiles with ≥ 128 px overlap and raised-cosine blending, padding to a multiple of 16 and cropping, the guard (shading transfer, frequency separation, regions by id with ΔE₀₀), the checks and the step machine `plan` → `conditioning`/`tile_input` → `accept` with retries; a report shaped like `GuardReport` in hand-written JSON | The `rt-core` rules: no system APIs, `#![forbid(unsafe_code)]`, `f32`, deterministic (only the functions of `rt_core::fmath` and the tone curves of `rt_core::color`, no `f32::ln`/`exp`/`powf` from `std`). Depends on `rt-core`; `rt-core` does not know it exists. On the desktop `rt-app` links it (X3c: `src/ai/post.rs`, the native driver) |
 | `rt-sky` | **The physical sky, offline** (E5c): spectral atmosphere simulator (spherical shells, Rayleigh, aerosols by turbidity, ozone, Lambertian ground; single scattering by quadrature and multiple by deterministic Monte Carlo), fit of the Hošek–Wilkie form with an own Levenberg–Marquardt and the table with its recipe and its *hash* (`rt-sky table`); validation against low-noise skies, the CIE clear sky and Preetham (`rt-sky validate`) | All of `std` (threads, files) and `f64`, but reproducible: own elementary functions (`dmath`), one random stream per work item, same result with any number of threads. Depends on `rt-core` (reads and tests the table); `rt-core` does not know it |
-| `rt-phys` | **The rigid-body simulator** (S2, §5.6): extended position-based dynamics (XPBD), own convex hulls, contacts by separating axes, Coulomb friction, restitution, sleeping; the PHY1 format. S3b: `wet`, rain and dust on the front glass (drops anchored by Furmidge that slide and clean, dust with an angle of repose) and the WET1 format. S3c: `wet_parts`, rain, dust and snow on the parts' meshes (arrivals by the flow with what is in between, splashing, sliding from triangle to triangle, hanging and dripping, parts as film, dust and snow per sample) and the WPT1 format | The `rt-core` rules: no system APIs, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` and `rt_core::fmath`, deterministic with any number of threads (`std::thread::scope` only natively; in wasm, one). Depends on `rt-core`; `rt-core` does not know it |
+| `rt-phys` | **The rigid-body simulator** (S2, §5.6): extended position-based dynamics (XPBD), own convex hulls, contacts by separating axes, Coulomb friction, restitution, sleeping; the PHY1 format. S3b: `wet`, rain and dust on the front glass (drops anchored by Furmidge that slide and clean, dust with an angle of repose) and the WET1 format. S3c: `wet_parts`, rain, dust and snow on the parts' meshes (arrivals by the flow with what is in between, splashing, sliding from triangle to triangle, hanging and dripping, parts as film, dust and snow per sample) and the WPT1 format. S9: `cloth`, XPBD cloth (stretch, dihedral bending, area, pressure; collisions with itself, the rigid bodies, the floor and the static triangles; the wind) and the CLT1 format | The `rt-core` rules: no system APIs, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` and `rt_core::fmath`, deterministic with any number of threads (`std::thread::scope` only natively; in wasm, one). Depends on `rt-core` and (S9, the wind's gusts) `rt-sim`; neither knows it |
 | `rt-post-wasm` | `cdylib` with hand-written `extern "C"` exports (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, a separate module so that `rt.wasm` does not grow | Its `unsafe` lives only in `src/ffi.rs`, commented block by block; everything crosses as *little-endian* bytes, with no alignment required |
 
 **No external dependencies** means exactly that: no
@@ -4105,7 +4106,120 @@ the camera's glass clip, and `physics/grow` its track (`glass`);
 `AppServices.glass` (`GlassPort`) gives the glass as the engine places it
 (§5.2 novendecies). S3c: `physics/begin` also carries the parts' clip
 (of the scene), and `physics/grow` its track (`parts`); `PhysicsPort.run` receives
-the WPT1 bytes (§5.2 vicies).
+the WPT1 bytes (§5.2 vicies). S9: `physics/cloth` (the cloth fields of the section),
+`physics/begin` also carries a clip per cloth part, `physics/grow` their tracks (`cloth`), and
+`PhysicsPort.run` receives the CLT1 bytes (§5.6 bis).
+
+### 5.6 bis · Cloth: `rt_phys::cloth`, CLT1 and the cache (S9)
+
+**The simulator** (`engine/crates/rt-phys/src/cloth.rs`, `std`, `rt-core` and, for the
+gusts of the wind, `rt-sim`'s `noise::curl`) is XPBD (Macklin, Müller and Chentanez,
+MIG 2016) stepped as in “Small Steps” (Macklin et al., SCA 2019): the fixed step of
+1/240 s of the rigid world, **8 substeps of 2 iterations**, every constraint (the bending
+too) solved in each iteration, the multipliers accumulated within each substep (one
+iteration, as the paper has it, made a 64 × 64 sheet of springs hanging from a row blow up;
+with the bending solved once a substep, a stiff fabric on a fine sheet bends visibly more than
+its rigidity says: the leathers on Cusick's tester sag to drape coefficients of 0.75 and 0.57).
+Each piece is a triangle mesh in world mm welded by exact position (the importers split
+vertices along seams), with mass per area × a third of each vertex's triangles; an anchored
+vertex has no inverse mass. Constraints, all compliant:
+
+- the **membrane**, orthotropic, per triangle, after Müller, Chentanez, Kim and Macklin,
+  “Strain Based Dynamics” (SCA 2014): the triangle's rest shape in the 2D coordinates of its
+  warp and weft (the warp is the fabric's direction, world X by default, projected onto the
+  triangle's rest plane; world Y on a face within 20° of square to it, `grain`), the
+  deformation gradient `F = [x₁ − x₀, x₂ − x₀] D⁻¹`, and three constraints: warp `|F_u| − 1`,
+  weft `|F_v| − 1` and the normalised shear `F̂_u · F̂_v`, with compliance `1 / (k A)` for the
+  rest area A and the stretch stiffness (the first two) or the **shear stiffness** (the third),
+  N/m: a woven fabric's threads scissor long before they stretch;
+- **dihedral bending** on every edge between two triangles (`θ = atan2((n̂₁ × n̂₂)·ê,
+  n̂₁·n̂₂)` with `fmath::atan2`, no `acos`; the gradients of Bridson, Marino and Fedkiw,
+  SCA 2003, checked by finite differences; the rest angle is the one it starts with) with the
+  stiffness of the discrete shells of Grinspun et al., `f B |e|² / (A₁ + A₂)`, **calibrated**
+  (`BEND_CALIBRATION`, f = 4/3): on a sheet of squares split along alternating diagonals bent
+  into a cylinder along its warp or weft, f = 1 stores exactly the continuum's `½ B κ²` per
+  area (Grinspun's f = 3 stores three times that; at 45° the sheet is 1.44 times stiffer than
+  along its threads), and once its vertices settle (its squares fold a little along their
+  diagonals) it keeps three quarters of it, so a cantilever of it (Peirce's test) measures B
+  with f = 4/3;
+- optional **area** per triangle and **pressure** for a closed shell (one volume constraint,
+  `pressure × V₀`, Müller et al. 2006).
+
+After the constraints of each substep the **collisions**, in this order: the cloth with
+itself (particle against particle within `max(thickness, ½ mean edge)`, through a hash grid
+of the particles rebuilt every step, the pairs closer than that at rest left out), the
+dynamic **bodies** of the rigid `World` it runs with (`World::collider`: a ball exactly, a
+hull by its farthest face plane; one way, they push it), the floor, the **static triangles**
+(a particle that crossed a face inside the substep goes back to the side it came from, then
+out to its thickness from the nearest point of the surface, one contact per particle), and
+last the **sharp features** against the cloth's surface: the vertices and edges of the static
+parts where the surface folds by more than 10°, or by enough for a triangle of this cloth to
+dip a tenth of its thickness into the fold (`4 × 0.1 × thickness / mean edge` radians: a fine
+faceted curve under a coarse cloth), or ends (an open rim), and every vertex and edge of the
+hulls where they are this step. Each feature vertex against each cloth triangle it is over
+(point–triangle) and each feature edge against each cloth edge it passes (edge–edge, both
+within their ends), kept at the thickness on the side it was at the start of the substep (a
+feature that crossed in the substep goes back; an edge that crossed is put back only if it was
+within both ends at the start too, else it went round an end, which that end's vertex
+answers for), the feature not moving and the cloth's vertices sharing the correction by their
+barycentric weights and inverse masses; friction as for the particles. The candidates of each
+step: the static features are in two trees of boxes (vertices, edges; median splits, ties by
+index) built with the cloth, which each moving cloth triangle and edge asks with the box of its
+particles' reach in the step; a hull's few features are tried against every one; a pair is kept
+when nearer than that reach, and the pairs are sorted. Friction is
+Coulomb's at the level of positions. The **wind** is the scene's (`½ ρ C_d A |vₙ| vₙ n̂` per
+triangle, ρ = 1.2 kg/m³, C_d = 1) plus gusts of the ambient effects' divergence-free
+turbulence at each triangle's centre. **Settled**: no particle farther than 6 mm/s would take
+it from where a 0.5 s window began. API: `Cloth::new(spec)`, `step(n, Option<&mut World>)`
+(the world steps one step ahead of the cloth each time), `positions()` (every vertex of every
+piece, in order), `settled`, `hash`; `bending_energy` and `membrane_energy` (what the
+constraints store at given positions, for the calibration tests); `mean_curvature`, the
+measure of the wrinkles; `sharp_features` and `grain`. **Determinism**: `f32` with IEEE
+operations, `sqrt` and `fmath`, every list in an order of the input (sorted edges, the grids
+filled and read in element order), one thread; the tests pin the cloth's and the world's
+hashes of a parity scene at 60, 240 and 480 steps, equal with 1, 3 and 8 narrow-phase chunks
+and in parallel threads, and pass compiled to `wasm32-wasip1` scalar and `+simd128`;
+`tests/cloth-engine.test.ts` repeats `tests/fixtures/cloth-drape.json` with the real
+`rt.wasm` and `rt-simd.wasm`.
+
+**CLT1** (`rt_phys::cloth::ClothSpec`; written by `src/core/cloth.ts` `cltBytes`):
+`"CLT1"`, version 2 (version 1, without the shear and the warp, still reads: its shear is
+`stretch / 2.6`, an isotropic sheet's, what its springs along every edge amounted to, and its
+warp X); the pieces (vertices, indices, positions in world mm, the anchors as a bit per
+vertex, then mass per area kg/m², stretch N/m, shear N/m, bend N·m, damping 1/s, thickness
+mm, friction, area N/m, pressure, the warp's direction (3 floats, world), and the flags:
+bit 0, self-collision); the static meshes (world mm); the floor (on, z, friction); the wind
+(mm/s), the gusts' share, scale (mm), speed (mm/s) and seed. *Little-endian*, 4-byte words.
+The interface writes version 2 with the warp along world X and Stiffness on the stretch, the
+shear and the bending alike.
+
+**What becomes cloth** (`src/core/cloth.ts`): the parts under a node whose role is CLOTH,
+visible and unlocked; the part's mesh, or its face (`physics.cloth.triangles`, picked at the
+*Faces* level), whose rim shared with the rest of the part holds it. Its triangles are split
+in four at the edges' midpoints, `levels` times (`clothLevels`: until the longest edge, in
+the world, is under the resolution, automatically the longest side over 32, without
+passing 4,096 triangles), each triangle's children together where it was and the texture
+coordinates halfway (`clothMesh`, the same for a mesh, a face and a number of levels: the
+recording names those three). Everything else visible that does not move is static, and so
+is the rest of a part whose face is the cloth; the rigid simulator no longer sees a cloth
+part (neither a body nor static: `physicsSpec`).
+
+**In the worker**: `run` also carries the CLT1; the cloth steps the rigid world with itself
+(`cloth_step(handle, world, n)`), each frame comes with its vertices, and the run settles when
+the bodies sleep and the cloth has settled. An `rt.wasm` without the `cloth_*` exports (one
+before S9) runs the rest and says `noCloth` (the bar: *Cloth left out*), or refuses a run of
+cloth alone with `NO_CLOTH`.
+
+**The cache**: each cloth part's `PHYSICS` clip carries a `ClothTrack` (`fps`, `frames`, the
+mesh, face and levels it was recorded on, `vertices`, and the vertices per frame in the part's
+own space as base64 f32, which `ClothTrackWriter` grows encoding only what is new); the node
+does not move. `Pose.cloth` says which frame each cloth part shows; `posedCloth` makes the
+part's mesh with its cloth replaced by that frame's sheet (normals from the frame, smooth
+across the welded seams; face materials moved onto the triangles they became), which Fast
+draws (`render/preview.ts`, positions updated in place while the layout stays) and
+`projectScene` writes as the part's **MESH** (`io/rsb.ts`): no new RSB section and no
+`rt_features` bit, so an engine of any version renders it. A part whose mesh is no longer
+the one recorded is drawn as it is.
 
 ## 6 · Interface (`src/ui/`)
 
@@ -4191,7 +4305,8 @@ The simulator (S2) is another port, `AppServices.physics` (`PhysicsPort`):
 (`started`, `done`, `pause`, `resume`, `stop`); `main.ts` builds it with
 `writePhysicsScene` (`io/phys.ts`) and `PhysicsClient` (`render/physics.ts`).
 Without it (`null`), the physics bar says the engine is needed. The
-tests use a double that answers like the *worker*.
+tests use a double that answers like the *worker*. S9: `run` takes the run's CLT1 as its
+last argument (`cloth`), and `started` says `noCloth` when the engine does not simulate it.
 
 The three new methods from U7 and M1 (`projection`, `visibleTriangles`,
 `setHoverFaces`) are, in `main.ts`, one line each towards the
@@ -4229,6 +4344,7 @@ seen are checked with `tools/box-select-check.mjs` and
 | Rain and dust on the glass (S3b) | `cargo test -p rt-phys --test wet` (also on `wasm32-wasip1`); `rt-core` `optics::glass::tests` and `render::s3_tests`; `tests/s3b-wet.test.ts`; `tools/s3b-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | A drop on glass at 30° stays up to Furmidge's critical radius (± 0.5 % of the `f64` calculation) and slides above it; two that touch add their volume (± 1 %); the trail cleans the dust; dust on a 60° face is < 10 % of that on a horizontal one; rain arrives at its flux and never on a face looking the other way; the same glass by single steps or together and rebuilt from its frames; the two pinned values on every SIMD path and in wasm; the `WET1` and the `GLAS` drop by drop byte for byte; the track (the cache) equal in two runs; the camera's clip, saved and opened; the bar runs it alone, one undo entry, *Reset* removes it; the approximation of *Fast* |
 | The physics of each part in one place (U16) | `cargo test -p rt-phys --test wet_parts_u16` (also on `wasm32-wasip1`); `tests/u16-weather.test.ts`, `tests/u16-physics-browser.test.ts`; `tools/u16-check.mjs` | A dry roof keeps the part below dry and stays dry, and so do a dry film part and a dry moving part; a drip on a dry part is gone with its water accounted for; no dust or snow on a part without them, which still shelters; the flags independent and in the bytes; the page's critical radius the engine's bits for every family at seven tilts; the store (one undo step for every part, defaults stored as nothing), the project and an older one; the writer's flags and family; the sentences and the plan; the inspector's groups, mixed values, note and pointer, the effect's row after Shape and the drawer's line in Chromium |
 | Rain, dust and snow on the parts (S3c) | `cargo test -p rt-phys --test wet_parts` (also on `wasm32-wasip1`); `rt-core` `weather::tests`; `rt-wasm` `parts`; `rt-cli/tests/example.rs`; `tests/s3c-parts.test.ts` and `tests/s3c-warning.test.ts`; `tools/s3c-check.mjs`; the sheet `tools/rain-dust-sheet.mjs` | The glass at 30° up to the critical radius and the trail's film; from face to face and the dripping over an open edge; merging ± 1 %; the trail cleans the dust; dust at 60° < 10 %; rain at its flux, never on a face turned away nor under a roof; hanging and dripping onto what is below, splashing without losing water; the film at its pace; the snow where it rests; by steps and by frames; the two pinned values on every SIMD path, with 1, 4 and 16 threads and in wasm; a `WETP` with nothing changes no pixel; the WPT1 byte for byte; the track equal in two runs; the scene's clip, saved and opened; the bar runs it alone; the warnings of bits 7 and 8 |
+| Cloth (S9) | `cargo test -p rt-phys --test cloth` (also on `wasm32-wasip1`, scalar and `+simd128`, but Cusick's, which runs a thread a preset) and `rt_phys::cloth` unit tests; `rt-wasm` `cloth`; `tests/cloth.test.ts`, `cloth-engine.test.ts`; `tools/cloth-check.mjs`; the sheet `tools/cloth-sheet.mjs` | A 1 m strip of silk hanging from two corners sags within 2 % of the analytic catenary; over a sphere, silk's mean curvature ≥ 3 × thick leather's, no particle closer to the sphere than 0.9 of its thickness, none inside, and the sphere's surface behind the cloth's (no edge through a cloth triangle, no vertex on its far side, nothing nearer its surface than 0.9 of the thickness); the same for a box and for a sharp-rimmed cylinder the size of the bottle's cap under silk, and for the hull of a rigid box under the parity scene's cloth; Peirce's cantilever measures the bending length of denim and thick leather within 10 %; Cusick's drape of every preset (the wovens under 0.95 with at least 4 nodes, rising with the bending length, silk with more nodes than denim, the leathers within 0.8–0.95); the bending stores 4/3 of the continuum on a cylinder, the membrane its stiffness along the warp, the weft and in shear; an anchored corner stays and the cloth hangs below it; the wind blows silk more than leather, gusts the same every time; pressure keeps a closed shell full; self-collision keeps two layers apart; a rigid body pushes the cloth and the cloth stays outside it; the dihedral gradients are the finite differences; the pinned hashes whatever the chunks, in threads, in wasm and on both SIMD paths; CLT1 version 2 both ways, version 1 read; the catalogue agrees with the engine's tests; silk over the example bottle through the page's code and the real `rt.wasm` leaves no edge of the cap or the bottle through the cloth; the sheet's splits, a face's rim held, the anchors, the CLT1, the track, the pose, the MESH of the scene, the clip saved and opened, the bar (one undo entry, *Reset*, an engine without cloth), *Drape over the part* |
 | Physics (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | A sphere rests at `r ± 0.1` mm, a stack of three boxes holds for 5 s, a tilted box falls flat, a cube slides off a sphere, a ramp holds at μ 0.6 and lets it slide at 0.1, a thousand spheres settle (< 20 s in *release*), sleeping stops the simulation, pinned *hash* equal with 1 and N threads and in wasm; what is simulated, the poses back to the nodes, a simulation is one undo entry, *Reset* another, *Pause* freezes what is seen, the clip is saved, opened and played; three primitives that fall in the browser |
 | Engine Doctor (D1) | `tests/doctor-engine.test.ts` (a fake engine that simulates each state and the real `installDoctorFacts`), `tests/frame-scan.test.ts` (the reading of the accumulation and the pool's `status().scan` with fake *workers*), `tests/store.test.ts` (a listener's actions during an undo); `tools/doctor-engine-check.mjs` | Each check fires and its fix clears it (project through the *store*, one undo entry; what is not the project's, only the explanation and, if a Settings row limits it, the button that opens it); *Fix all* in one click; without engine facts, everything *unavailable* as before; thresholds at their boundaries; `sameImage` agrees with `touchesImage` of both engines; the phrases in both languages; in the browser, the Doctor with two engine warnings (`docs/ui/doctor-engine.png`) |
 | Viewer | `npm run screenshot` | Capture with the local Chromium (swiftshader); attached to the PR |
@@ -4342,6 +4458,16 @@ clip whose track does not decode is removed, and a damaged anchor too
 S2 opens the same (`tests/fixtures/project-v2.json`). The schema stays at 2.
 On opening, the Doctor is run again over the state read (also in
 `migrateProject`), not only in `loadProject`.
+
+**Cloth** (S9). The role may be `"CLOTH"`, and the section carries the cloth's fields in
+`physics.cloth` (`{ "fabric": "LINEN", "weightGsm", "stiffness", "thicknessMm", "anchor":
+"BOX", "box": { "min", "max" }, "pressure", "selfCollision", "keepArea", "resolutionMm",
+"triangles" }`, each key optional); a cloth part's `PHYSICS` clip carries `cloth` instead of
+`track` (`{ "fps", "frames", "mesh", "triangles"?, "levels", "vertices", "data" }`, `data` the
+vertices per frame as little-endian f32 base64, in the part's space). On opening, the cloth
+fields keep what this version knows (`sanitizeClothProps`: a fabric of a later version or a
+value out of range is removed) and a cloth clip that does not decode is removed. A project
+from before S9 opens the same. The schema stays at 2.
 
 **Material graphs** (M3a). A material in *Nodes* mode carries `graph`
 (`{ "version": 1, "nodes": [...], "links": [...] }`, §5.2 quater); one in

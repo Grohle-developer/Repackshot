@@ -769,6 +769,7 @@ header included) through standard input after `-q`, the body through a temporary
 | `GET /api/ai/apikeys` | `{keys: [{host, masked}]}`: the hosts with a key and its mask (`••••` and the last four characters); never a key |
 | `PUT /api/ai/apikeys` | `{host, key}`: stores it in `<data>/ai/api-keys.json` (0600 on Unix). 204; 400 `bad-key` |
 | `POST /api/ai/apikeys/forget` | `{host}`: forgets it. 204 |
+| `POST /api/ai/ping` | The connection test of Settings ▸ AI: the remote object itself (`{endpoint, options, consentedHost}`), one minimal call through the same backend a post uses (a 512 × 512 solid grey tile, *Return this image unchanged.*) with the stored key. 200 `{ok: true}` when an image comes back; else the call's error (`api-config`, `api-no-key`, or the API's own `api-*` code with its HTTP status) |
 
 ## `.exe` icon and version
 
