@@ -31,10 +31,10 @@ pub mod zip;
 
 use crate::http::{Body, Request, Response};
 use crate::json::{self, Value};
-use backend::ModelBackend;
 use crate::models::Store;
 use crate::recommend::{valid_name, ModelFile};
 use crate::server::App;
+use backend::ModelBackend;
 use catalogue::{choose, resolve_args, Choice, ChoiceInput, ImageMode, RuntimeCatalogue};
 use download::Downloader;
 use runtimes::{Runtimes, Source, State};

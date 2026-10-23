@@ -271,11 +271,11 @@ mod tests {
         for (args, want) in [
             (&["bottle.repack"][..], "bottle.repack"),
             (&["old.repack.json"][..], "old.repack.json"),
-            (&[r"C:\Users\a\Bottle.REPACK"][..], r"C:\Users\a\Bottle.REPACK"),
             (
-                &["--port", "8123", "bottle.repack"][..],
-                "bottle.repack",
+                &[r"C:\Users\a\Bottle.REPACK"][..],
+                r"C:\Users\a\Bottle.REPACK",
             ),
+            (&["--port", "8123", "bottle.repack"][..], "bottle.repack"),
         ] {
             assert_eq!(
                 p(args),
