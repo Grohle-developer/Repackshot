@@ -5,6 +5,8 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+## v0.1.28 — 2026-10-23
+
 ### Scene and ambient
 
 - **Water that reads as water**: a drop running down a part leaves a continuous wet streak behind it instead of a dotted line of equal beads; only a drop running fast over a surface water wets well (paper, for example) sheds a few small pearls, at irregular distances (S3g).
@@ -15,6 +17,10 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 - **Liquids**: right-click a part ▸ **Convert to liquid** ▸ *Water*, *Oil*, *Honey*, *Milk*, *Gel*, *Syrup*, *Orange juice* or *Red wine*: the part is hidden and a liquid part takes its shape, with the preset's look; *Start* in the physics bar fills it with particles and pours it into the parts that hold it and onto the floor, each liquid flowing as it should (honey slow and clinging, water quick to level). The run is recorded on the timeline like a fall, and each frame shows the liquid's surface in *Fast*, in *Full* and in the render. One undo step converts, another the run; *Reset* takes it away (S7).
 - **The Liquid section** of the inspector changes the liquid and the particle size (automatic from the part's volume, or your own), and says how many particles to expect and, after a run, how many there are (S7).
 - **A liquid inside its glass**: where a liquid touches the glass that holds it, the render bends the light at the ratio of the two (water in glass), not as two surfaces against air, so there is no bright line of air at the contact. A glass material has a *Nested priority* for overlapping clear solids (0, automatic: the glass holds the liquid). With an older render engine, the Liquid section says the contact is drawn as against air (S7).
+
+### Updates
+
+- **The update window's text follows the interface's text size.** The window that asks about a newer version at startup used fixed pixel sizes for its text, so it ignored the *Text size* setting; it now follows it like the rest of the interface.
 
 ## v0.1.27 — 2026-10-20
 
