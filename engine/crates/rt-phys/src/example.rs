@@ -1357,6 +1357,8 @@ pub fn water_row(family: &WaterFamily, tilt_deg: f32, rain: WaterRain, seconds: 
         outline: outline.map(|mut v| Quantiles::of(&mut v)),
         pearls: parts.pearls(),
         landed: parts.counts().0,
+    }
+}
 
 // --- S9: cloth -----------------------------------------------------------------------------------
 
