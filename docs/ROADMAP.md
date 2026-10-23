@@ -11577,175 +11577,297 @@ different scale (metric: mean curvature; silk ≥ 3× the leather's);
 nothing goes through the sphere (minimum distance test); determinism;
 sheet `out/cloth-sheet.html` with the presets over the sample bottle.
 
+**Second round** (asked for after the first): on the contact sheet the cap of the bottle
+poked through silk and linen, and linen, denim and thick leather draped like paper. The
+cloth's surface now collides with the sharp features of what it meets; the springs along its
+edges give way to an orthotropic membrane with a shear stiffness of its own; the bending is
+calibrated against Peirce's cantilever and checked on Cusick's drape tester. The engine and the
+interface of both rounds shipped in v0.1.23 (PR #72); the second round's captures and this
+record came after it.
+
 **Done.**
 
-- **Engine, `rt_phys::cloth`** (`std`, `rt-core` and, for the gusts, `rt-sim`'s
-  `noise::curl`; `#![forbid(unsafe_code)]`): XPBD (Macklin, Müller and Chentanez, MIG 2016)
-  at the rigid world's fixed step of 1/240 s with **6 substeps of 2 iterations**, the
-  multipliers accumulated within a substep. Pieces welded by exact position; mass per area
-  × a third of each vertex's triangles; anchored vertices without inverse mass.
-  Constraints: stretch on every edge (compliance `L²/(K A)`), **dihedral bending** with
-  `atan2` (`fmath`, no `acos`) and the gradients of Bridson, Marino and Fedkiw (checked
-  against finite differences), compliance of Grinspun's discrete shells, the rest angle the
-  starting one; optional area per triangle; pressure for a closed shell. Collisions after
-  each substep's constraints: itself (particles within `max(thickness, ½ mean edge)` through
-  a hash grid rebuilt every step, pairs that close at rest left out), the dynamic bodies of
-  the `World` it runs with (`World::collider`, new and the only change to `world.rs`; one way),
-  the floor and the static triangles **last** (a particle that crossed a face in the substep
-  goes back to the side it came from, then out from the nearest point of the surface: one
-  contact per particle), Coulomb friction at the level of positions. Wind: quadratic drag
-  per triangle (ρ 1.2 kg/m³, C_d 1) with gusts of the effects' turbulence. Settled: no
-  particle farther than 6 mm/s × 0.5 s from where a 0.5 s window began. **CLT1** (pieces,
-  anchors as bits, the fabric's numbers and flags; static meshes; floor; wind), `Cloth::step(n,
-  Option<&mut World>)` (the world a step ahead each time), `positions`, `settled`, `hash`,
-  `mean_curvature`. Examples: `SILK`, `LEATHER_THICK`, `cloth_sheet`, `drape_spec`,
-  `cloth_parity_spec` and `cloth_world`.
-- **`rt-wasm`**: `cloth_new`, `cloth_free`, `cloth_step(handle, world, n)` (with a `phys_*`
-  handle the bodies step with it), `cloth_vertices`, `cloth_positions`, `cloth_settled`,
-  `cloth_steps`, `cloth_hash`, over a registry like S2's.
-- **Interface**: `src/data/fabrics.ts` (11 presets with stable keys, limits, defaults, the
-  cap of 4,096 triangles, *Drape*'s sheet); `src/core/cloth.ts` (the cloth parts and their
-  fields over S2's roles, the sheet split at midpoints to its resolution with a face's rim
-  held, the closed test, the anchors, the wind, `clothSpec`/`cltBytes`, the cloth track with
-  `ClothTrackWriter`, `posedCloth`, `drapePlacement`, `sanitizeClothProps`); `core/physics.ts`
-  (the role CLOTH, `physics/cloth`, the cloth tracks in `physics/grow`, `clothClip`, and a cloth
-  part is neither a body nor static); `core/animation.ts` (`MotionClip.cloth`, `Pose.cloth`,
-  also at 0); the worker, its client, the port and `main.ts` (the CLT1 with the run, the
-  vertices with every frame, `noCloth`); `ui/physics.ts` (Start runs the cloth, a clip per
-  piece, *Drape over the part* in the run's gesture, the wet parts leave the cloth out);
-  `render/preview.ts` and `io/rsb.ts` (the recorded frame drawn in *Fast* and written as the
-  part's MESH for *Full*); the inspector's cloth fields; *Drape over the part* in the context
-  menu, the *Part* section and the palette; the physics bar's *Cloth: N vertices* and *Cloth
-  left out*; the timeline's sentence; the project format; strings in English and Spanish.
-- **No capability bit.** The deforming mesh needs no new RSB section: the frame's sheet goes
-  in the part's own MESH, so every engine draws it and bit 12 is not taken. An older engine
-  degrades in the simulator instead: an `rt.wasm` without `cloth_*` runs the rest of the
-  simulation and the bar and a toast say the cloth was left out (or, with cloth alone, that
-  the engine does not simulate it).
+- **Engine, `rt_phys::cloth`** (`std`, `rt-core` and, for the gusts, `rt-sim`'s `noise::curl`;
+  `#![forbid(unsafe_code)]`): XPBD (Macklin, Müller and Chentanez, MIG 2016) at the rigid
+  world's fixed step of 1/240 s with **8 substeps of 2 iterations, every constraint in each**
+  (the first round had 6 substeps and the bending in the first iteration only), the
+  multipliers accumulated within a substep. Pieces welded by exact position; mass per area × a
+  third of each vertex's triangles; anchored vertices without inverse mass. Constraints:
+  - the **orthotropic membrane** of each triangle, after Müller, Chentanez, Kim and Macklin,
+    “Strain Based Dynamics” (SCA 2014), in place of the first round's springs along the edges:
+    the rest shape in 2D warp/weft coordinates, `F = [x₁ − x₀, x₂ − x₀] D⁻¹`, warp `|F_u| − 1`,
+    weft `|F_v| − 1` and the normalised shear `F̂_u · F̂_v`, compliance `1 / (k A)` with the
+    stretch stiffness for the first two and the new **shear** stiffness (N/m) for the third.
+    The warp is a parameter of each piece (`ClothParams::warp`, world X by default and what the
+    interface sends), projected onto each triangle's rest plane; a face within 20° of square to
+    it takes `Z × warp` instead (world Y) (`grain`);
+  - **dihedral bending** with `atan2` (`fmath`, no `acos`), the gradients of Bridson, Marino and
+    Fedkiw (checked against finite differences), the rest angle the starting one, with the
+    discrete-shell stiffness `f B |e|² / (A₁ + A₂)` **calibrated** on the alternating-diagonal
+    sheet: bent into a cylinder along the warp or the weft, `f = 1` stores exactly the
+    continuum's `½ B κ²` per area (Grinspun's `f = 3` stored three times it: the first round's
+    bending was more than twice too stiff), but once its vertices settle the sheet keeps three
+    quarters of that (its squares fold a little along their diagonals), so `f = 4/3`
+    (`BEND_CALIBRATION`): Peirce's cantilever then measures B;
+  - optional area per triangle (kept: on top of the membrane it holds a triangle's area under
+    shear, *Keep area*); pressure for a closed shell.
+- **Collisions** after each substep's constraints: itself (particles within
+  `max(thickness, ½ mean edge)` through a hash grid), the dynamic bodies of the `World`
+  (`World::collider`; one way), the floor, the static triangles (a particle that crossed a face
+  goes back to the side it came from, then out from the nearest point: one contact per particle)
+  and, new, **the sharp features against the cloth's surface**: the static parts' vertices and
+  edges where the surface folds by more than 10°, or enough for a triangle of this cloth to dip a
+  tenth of its thickness into the fold (`4 × 0.1 × thickness / mean edge`: a finely faceted curve
+  under a coarse cloth), or ends; and every vertex and edge of the **hulls** of the dynamic bodies
+  where they are in the step (balls have none). Point–triangle (a feature vertex over a cloth
+  triangle, within it) and edge–edge (a feature edge across a cloth edge, within both), each kept
+  at the thickness on the side it was on at the start of the substep (continuous: one that crossed
+  in the substep goes back; an edge goes back only if it was within both ends at the start too,
+  else it went round an end, which that end's vertex answers for), the feature with infinite mass,
+  the correction shared by barycentric weights and inverse masses (XPBD), friction as for the
+  particles. Candidates per step: the static features in two trees of boxes built with the cloth,
+  asked by each moving cloth triangle and edge with the box of its reach in the step (a hull's
+  features tried against every one), a pair kept when nearer than that reach, sorted, so
+  deterministic. Wind and settling as in the first round.
+- **CLT1 version 2**: each piece's shear (after the stretch) and warp (3 floats, before the
+  flags); version 1 still reads, with the shear of an isotropic sheet, `stretch / 2.6` (Poisson's
+  0.3; what its springs along every edge amounted to) and the warp X. `Cloth::bending_energy` and
+  `membrane_energy` (what the constraints store at given positions), `sharp_features` and
+  `grain` are public for the tests. Examples: `FABRICS` (all 11 presets, the fixture
+  `tests/fixtures/cloth-fabrics.json` now carries every value of every one), `fabric`, `SILK`,
+  `DENIM`, `LEATHER_THICK`, `cloth_disc` (the ring disc of Cusick's tester), and those of the
+  first round.
+- **`rt-wasm`**: unchanged (`cloth_*` over a registry like S2's); `rt.wasm` rebuilt.
+- **Interface**: `src/data/fabrics.ts` gains `shear` per preset (keys unchanged) and moves
+  denim's bending to 6·10⁻⁵ N·m and canvas's to 2·10⁻⁴ (◆, below); `clothParams` scales the
+  stretch, the shear and the bending alike by *Stiffness* (decided: a stiffer fabric of the same
+  kind is stiffer in every way) and sends the warp along world X; `cltBytes` writes version 2.
+  The rest of the interface is the first round's (below).
+- **First round, still as it was**: `rt-wasm`'s `cloth_new`, `cloth_free`, `cloth_step(handle,
+  world, n)`, `cloth_vertices`, `cloth_positions`, `cloth_settled`, `cloth_steps`,
+  `cloth_hash`; `src/core/cloth.ts` (the cloth parts and their fields over S2's roles, the sheet
+  split at midpoints to its resolution with a face's rim held, the closed test, the anchors, the
+  wind, `clothSpec`/`cltBytes`, the cloth track with `ClothTrackWriter`, `posedCloth`,
+  `drapePlacement`, `sanitizeClothProps`); `core/physics.ts` (the role CLOTH, `physics/cloth`,
+  the cloth tracks in `physics/grow`, `clothClip`, a cloth part neither a body nor static);
+  `core/animation.ts` (`MotionClip.cloth`, `Pose.cloth`); the worker, its client, the port and
+  `main.ts`; `ui/physics.ts`; `render/preview.ts` and `io/rsb.ts` (the recorded frame drawn in
+  *Fast* and written as the part's MESH for *Full*); the inspector's cloth fields; *Drape over
+  the part* in the context menu, the *Part* section and the palette; the physics bar's *Cloth: N
+  vertices* and *Cloth left out*; the timeline's sentence; the project format; strings in
+  English and Spanish.
+- **No capability bit.** The deforming mesh needs no new RSB section: the frame's sheet goes in
+  the part's own MESH, so every engine draws it. The second round needs none either (the cloth
+  runs in the physics worker). An older engine degrades in the simulator: an `rt.wasm` without
+  `cloth_*` runs the rest of the simulation and says the cloth was left out.
 
-**Measured** (release, the shared 4-core machine): the catenary strip sags **268.26 mm against
-the analytic 265.44 mm (+1.06 %)**, settled in 1,190 steps; over the sphere, silk's mean
-curvature is **0.0278 /mm** and thick leather's **0.0081 /mm, a ratio of 3.44**, the nearest
-particle exactly at its thickness (1.000 and 3.000 mm), none inside; a 64 × 64 sheet (4,225
-particles) costs about 19 ms a step natively over the 9,216-triangle sphere; the default
-sheet over the example bottle (1,089 vertices) runs in the real `rt.wasm` at 1.0 to 1.7 s of wall
-clock per simulated second, about real time (silk settled after 3.42 s simulated in 4.3 s, thick
-leather after 2.29 s in 2.3 s, linen, the slowest, after 5.33 s in 9.1 s), and every preset
-settles by itself within 2 to 5.3 s; the mean curvature of its folds goes from 0.0376 /mm (silk)
-to 0.0108 /mm (denim). In the browser (swiftshader), *Drape over the part* on a 100 mm box
-settled after 7.33 s simulated.
+**Measured** (release, the shared 4-core machine, heavily loaded during this round):
+
+- **Peirce's cantilever** (ASTM D1388; a strip 25 mm wide clamped flat, an overhang of twice the
+  bending length in nine squares, settled; `c = l (cos(θ/2) / (8 tan θ))^⅓` against
+  `(B / (m g))^⅓`; the formula itself reads 1.9 % high at θ = 41.5° on the exact heavy elastica):
+  **denim 24.25 mm against 24.82 (−2.3 %, θ 44.8°), thick leather 53.81 against 55.39 (−2.8 %,
+  θ 45.2°)**. With the bending once a substep, −8.0 % and −4.8 %; with `f = 1`, denim −10.7 %;
+  with Grinspun's `f = 3`, +25.4 %. Finer strips bend more: XPBD's few iterations leave a stiff
+  hinge softer than its compliance (thick leather in eighteen squares: −9.5 %).
+- **Cusick's drape** (BS 5058 / ISO 9073-9; a 300 mm ring disc of 24 rings, 6.25 mm, held within
+  the 90 mm radius of the support as the tester's clamping discs hold it, its top at 300 mm,
+  draped for at most 4 s; the shadow rasterised at a millimetre; the nodes, the waves of the
+  outline's radius above its mean by a sixth of its range): drape coefficient and nodes,
+
+  | Preset | Bending length | DC | Nodes |
+  |---|---|---|---|
+  | Silk | 8.0 mm | 0.189 | 13 |
+  | Fine cotton | 16.2 mm | 0.511 | 7 |
+  | Poplin | 17.6 mm | 0.543 | 6 |
+  | Linen | 21.7 mm | 0.671 | 6 |
+  | Wool | 21.7 mm | 0.674 | 6 |
+  | Denim | 24.8 mm | 0.757 | 6 |
+  | Canvas | 32.4 mm | 0.879 | 6 |
+  | Felt | 39.9 mm | 0.921 | 1 |
+  | Thin leather | 38.4 mm | 0.932 | 2 |
+  | Thick leather | 55.4 mm | 0.884 | 6 |
+  | Neoprene | 46.7 mm | 0.935 | 0 |
+
+  Published: about 0.2–0.45 for silks and fine cottons, 0.5–0.7 for linen and denim, 0.8–0.95
+  for leathers. Silk is just under its range and fine cotton just over; linen is in it, denim
+  above it (0.83 with the first proposal's 10⁻⁴ N·m), the leathers in theirs. The same values
+  are in `tests/fixtures/cloth-cusick.json` and on the contact sheet (its own run of the same
+  CLT1 in `rt.wasm`, checked against the fixture to the step).
+- **The surface**: silk over a 200 × 200 × 150 mm box (10.4 mm squares), over a cylinder of the
+  bottle cap's size (28 mm across, its rim a right angle, 10 mm squares) and over the drape tests'
+  sphere: no edge of the mesh through a cloth triangle, no vertex on the cloth's far side, the
+  nearest of them to the cloth's surface 1.000, 0.993 and 0.968 mm (thickness 1); thick leather
+  over the sphere 2.760 mm (thickness 3); the parity scene's cloth over the rigid box's hull
+  1.499 mm (thickness 1.5). Without the feature collisions: 9 of the box's edges through the
+  cloth and 4 corners on its far side, 241 of the cylinder's edges and 78 vertices, 11 of the
+  hull's edges, and over the example bottle, through the page's code and `rt.wasm`, **326 edges
+  of the cap through the silk** (0 with them).
+- **The first round's acceptance**, again: the catenary strip sags **267.88 mm against the
+  analytic 265.44 mm (+0.92 %)**, settled in 1,396 steps; over the sphere silk's mean curvature
+  is 0.0335 /mm and thick leather's 0.0070 /mm, **a ratio of 4.77** (3.44 before), the nearest
+  particle exactly at its thickness. Wind (2.5 m/s, mean drift): silk 92.9 mm, leather 29.0 mm;
+  pressure keeps 1.000 of the volume, 0.187 without; self-collision keeps the layers 5.66 mm
+  apart.
+- **Cost**: natively, silk over the faceted sphere at the bottle sheet's size (1,089 particles)
+  takes about 19 ms a step against the first round's 4.5 ms on the same machine: the membrane
+  and the bending, now in each of a step's 16 iterations, about half of it, and the sphere's
+  facets, every one of them a feature for a cloth this thin, about a third. In the real `rt.wasm`
+  the bottle's sheet took 7 to 11 s of wall clock per simulated second on the shared machine
+  under load (the first round measured 1.0 to 1.7 s with a lighter load); every preset but denim
+  settled by itself within 2 to 4.3 s simulated (denim ran to the sheet's 5 s).
 
 **Tests** (each checked with its mutation: it fails with it and passes without):
-- `rt-phys/tests/cloth.rs` (12, release ~30 s; also on `wasm32-wasip1`, scalar and
-  `+simd128`): the catenary (mutation: the stretch's compliance × 100); silk against thick
-  leather over the sphere, nothing inside it and nothing nearer than 0.9 of the thickness
-  (mutations: no bending at all; no crossing test; the self-collision after the static
-  triangles, which left a particle 1 mm inside the sphere before the order was fixed); an
-  anchored corner holds and the sheet hangs its diagonal below it (mutation: an anchored vertex
-  keeping its mass); the wind blows silk more than leather, gusts the same twice and not the
-  same as no gusts (mutation: the drag ignored); pressure keeps a closed shell full, a membrane
-  without it slumps (mutation: the volume not solved); self-collision keeps two layers 5 mm apart
-  (mutation: none); a rigid body pushes the cloth and no particle is inside it (mutation: the
-  bodies not met); the pinned hashes with 1, 1, 3 and 8 chunks and in threads (mutation: four
-  substeps); the fixtures of the WebAssembly check and of the fabrics (stale fixture); the spec
-  through its format; a cloth and a world each without the other. Unit tests in `cloth.rs`: the
-  dihedral gradients are the finite differences and add to zero (mutation: the second wing's
-  gradient reversed), CLT1 both ways and refused when cut, long or not CLT1, seams welded and
-  anchors held (mutation: no welding). `rt-wasm` `cloth`: the registry gives the native hashes
-  and positions, a bad world handle steps nothing.
-- `tests/cloth.test.ts` (25): the catalogue's keys, values and agreement with the engine's
-  fixture (mutation: silk's bending changed); Weight, Stiffness and Thickness on top; the splits
-  keep winding, order and UVs (mutation: a child wound the other way); a face's rim held,
-  midpoints too (mutation: the midpoints not held); a closed shell; the levels and the cap; *Top
-  edge* not a peak inside (mutation: without the open edge); the box with a flat axis; a cloth
-  part neither a body nor static, the others static for it (mutation: the cloth part static
-  for the rigid world); the wind summed with the windiest's gusts (mutation: only the windiest);
-  CLT1's layout to the last byte; *Drape*'s placement; the track back in the part's space,
-  incremental base64, damaged ones (mutation: the frames left in the world); the pose names the
-  frame, at 0 too (mutation: `cloth` dropped from the pose at 0); the posed mesh, its normals from
-  the frame on a tilted frame (mutation: one component of the normals left out; the flat frame
-  did not catch it, the tilted one was added), the engine's MESH (mutation: the part as it is);
-  a changed mesh drawn as it is; `physics/cloth` merging and clearing, one undo each; a grown
-  track and *Reset* (mutation: the cloth tracks ignored by `physics/grow`); the project saved and
-  opened with its clip and fields, damaged ones left out (mutations: the clip read as a pose
-  track; the cloth fields dropped on open); the bar: *Start* records the cloth into the part's
-  clip, one undo step, *Reset*; an engine before S9 (mutation: `noCloth` not said); *Drape* one
-  undo step (mutation: the run in a gesture of its own); the worker's client posts the CLT1 and
-  passes the cloth and `noCloth` on (mutation: the started cloth dropped).
-- `tests/cloth-engine.test.ts` (4, the real `rt.wasm`): the parity scene's pinned hashes with
-  the scalar and the SIMD builds; the interface's CLT1 draping over a box; the physics worker
-  running a cloth alone to rest with its vertices at every frame.
-- `tests/physics.test.ts`: a project's unknown role is now *Liquid* (*Cloth* is known).
 
-**Captures** (`tools/cloth-check.mjs`, which also checks *Drape over the part* in the built
-app: the bar's *Cloth: 1,089 vertices* while it runs, the run settling by itself, *Undo: Drape
-cloth over Box*, one clip that *drapes as simulated*, the section's fields): `docs/ui/cloth-drape.png`
-(a box before and after, in *Fast*), `docs/ui/cloth-bar.png`, `docs/ui/cloth-inspector.png` and
-`docs/ui/cloth-sheet.png` (four fabrics of the contact sheet by the engine). **The sheet**
-`out/cloth-sheet.html` (`tools/cloth-sheet.mjs`, through `tests/cloth-dump.test.ts`): the example
-bottle with a sheet of each of the 11 presets dropped over it by *Drape over the part*, at the last
-frame of its simulation (at most 6 s), rendered by the native `rt`, with what was measured.
+- `rt-phys/tests/cloth.rs` (16, release, about 5½ minutes on the shared machine, most of it Cusick's eleven drapes and the sphere; all but the two fixture tests and Cusick's
+  also on `wasm32-wasip1`, scalar and `+simd128`):
+  - **Peirce**: denim and thick leather within 10 % (mutations: `f = 1`, −10.7 %; `f = 3`,
+    +25.4 %);
+  - **Cusick**, every preset, a thread each: every woven one (silk, fine cotton, poplin, linen,
+    wool, denim, canvas) under 0.95 with at least 4 nodes; the drape coefficient rising with the
+    bending length among them (linen and wool, of the same length, in either order); silk with
+    more nodes than denim; the two leathers within 0.8–0.95 (mutation: the bending once a
+    substep, thin leather 0.75 and thick 0.57); the fixture `cloth-cusick.json` (the brief's
+    mutation, denim's shear at its stretch, is caught only by it: 0.760 against 0.757, the same
+    6 nodes; below);
+  - **a box** and **a sharp-rimmed cylinder the size of the bottle's cap** under silk: no edge
+    through the cloth, no vertex on its far side, nothing nearer its surface than 0.9 of the
+    thickness, and draped to the floor (mutations: no feature collisions, both fail; edge–edge
+    off, the box fails with 9 edges through; point–triangle off, both fail, 0.19 and 0.70 mm);
+  - the **sphere** test gains the same three checks (mutation: features only above 10°, without
+    the dip rule: the sphere 0.73 mm from silk's surface);
+  - the **rigid body** test gains them over the box's hull (mutation: no hull features, 11 edges
+    through); it now counts the particles within the thickness plus half a square of the box (the
+    surface held off the box's edges lifts the particles next to them);
+  - the **anchored corner**: the far corner the diagonal's length from the anchor (within 3 %) and
+    below it by 0.9 of it (the first round's test wanted the lowest particle at the diagonal: silk,
+    now as soft as its rigidity says, folds as it hangs and leans); mutation: the anchored vertex
+    keeping its mass;
+  - the first round's catenary, wrinkles, wind, pressure, self-collision, rigid-body, hash,
+    fixture, format and empty tests, all green; the hashes re-pinned (below).
+  - Unit tests in `cloth.rs` (7): the bending stores `4/3 × ½ B κ²` per area on a cylinder along
+    the warp and along the weft (mutation: `f = 3`); the membrane stores `½ k ε² A` along the warp
+    and the weft and `½ G γ² A` in shear (mutation: the shear's compliance from the stretch); the
+    warp runs along X and falls back to Y on a face square to it; a version 1 spec reads with the
+    isotropic sheet's shear (mutation: the shear of version 1 read as the stretch); the dihedral
+    gradients, CLT1 both ways, seams welded (the first round's).
+- `tests/cloth.test.ts` (24): every preset's every value agrees with the engine's fixture
+  (mutation: denim's shear changed), the shear under the stretch; Stiffness on the stretch, the
+  shear and the bending (mutation: the shear left unscaled); CLT1 version 2 to the last byte, the
+  shear and the warp in their places (mutation: the shear not written); the rest as in the first
+  round.
+- `tests/cloth-engine.test.ts` (5, the real `rt.wasm`): the parity scene's pinned hashes with the
+  scalar and the SIMD builds; the interface's CLT1 over a box; **silk laid by *Drape over the
+  part* over the example bottle: no edge of any of its five parts through the cloth** (mutation:
+  `rt.wasm` without the feature collisions, 326 of the cap's); the worker running a cloth alone.
+- **Pins moved**: `PINNED_CLOTH` (and `tests/fixtures/cloth-drape.json`) at 240 and 480 steps
+  move to `0xc5925573` and `0x7aae7d0f` (60 steps: `0x8a4438ab`; the world's hashes do not move:
+  the bodies do not feel the cloth), because of the membrane, the substeps, the calibrated
+  bending, the hull's features against the falling cloth and CLT1 version 2 (the fixture's spec
+  bytes).
 
-**Gates.** `npm run engine:build`; `npm run qa` green (3,375 tests: 3,344 pass and 31 are
-skipped; `section-rsb`'s real-`rt.wasm` test timed out once under the shared machine's load and
-passes on its own with `--maxWorkers=2`); from `engine/`, `cargo fmt --all -- --check`, `cargo
-clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release` (1,292 pass,
-5 ignored) and `cargo build -p rt-wasm --target wasm32-unknown-unknown --release`; the cloth
-tests on `wasm32-wasip1` scalar and `+simd128` (10 each; the two fixture tests are native only).
+**Captures** (`tools/cloth-check.mjs`; after v0.1.23, whose release notes carry the first
+round's): `docs/ui/cloth-drape.png`, `cloth-bar.png` and `cloth-inspector.png` re-recorded;
+`cloth-sheet.png` re-recorded (four fabrics of the sheet);
+new, `cloth-cap.png` (the cap under silk, close up) and `cloth-cusick.png` (silk, linen, denim
+and thick leather on Cusick's tester from above, with their drape coefficients and nodes).
+**The sheet** `out/cloth-sheet.html` (`tools/cloth-sheet.mjs`, through
+`tests/cloth-dump.test.ts`): the example bottle under each of the 11 presets by *Drape over the
+part*; the cap close up under silk; and a row of the 11 on Cusick's tester from above, the
+engine test's very CLT1 (`tests/cusick.ts` builds it in f32 as the engine does) run in `rt.wasm`,
+its drape coefficient and nodes checked against `cloth-cusick.json`. Measured on it: the mean curvature of the folds over the bottle goes from 0.0575 /mm (silk;
+0.0376 in the first round) to 0.0078 /mm (thick leather); each drape took 18 to 50 s of wall
+clock in `rt.wasm`.
+
+**Gates.** On the second round's branch before it merged (v0.1.23): `npm run engine:build`;
+the cloth tests natively (16 pass, about 5½ minutes), `rt-wasm`'s, and the interface's cloth,
+physics and wet-parts tests with the real `rt.wasm` (97 pass); `npm run qa` (3,407 tests; two
+timed out under the shared machine's load and pass alone); `cargo fmt`, `cargo clippy
+--workspace --all-targets -- -D warnings` and the `wasm32-unknown-unknown` build clean. On the
+follow-up that carries this record and the captures (main at v0.1.27): `npm run qa`, 3,450
+tests, 3,417 pass, 32 skipped and one fails as it does on main (`ui-achromatic`: the update
+window's styles in `src/ui/layout.css` set four font sizes in pixels); from `engine/`, the
+`wasm32-unknown-unknown` build, `cargo clippy` clean and `cargo test --release` (1,235 pass,
+1 ignored) over the workspace but `rt-app`'s integration test `tests/port.rs`, which does not
+compile on main (`port::start` takes five arguments, it passes four); `cargo fmt --check` finds
+main's `rt-app` unformatted. Neither failure is in a file this phase touched.
 
 **What did not fit the plan** (rule 12):
-- **One iteration per substep diverged.** "Small Steps" has many substeps of one iteration;
-  a 64 × 64 sheet hanging from a row blew up with one, whatever the number of substeps, in a
-  bare loop of distance constraints too (written to check it was not the cloth's code). Two
-  iterations are stable; bending, the dearest constraint, goes in the first only.
-- **No capability bit** (above): the brief's bit 12 is left free.
-- **The bodies push the cloth; the cloth does not push them** (one-way coupling): a body
-  that falls on a cloth goes through it and drags it along. The rigid world does not see the
-  cloth at all (it is neither a body nor static there).
-- **Collision is by vertex**: a cloth triangle can cut a sharp convex edge between its
-  vertices (the rim of the bottle's cap shows through on the sheet at the default
-  resolution); finer resolution hides it. Self-collision is particle against particle at
-  half the mean edge, so folded layers rest that far apart.
-- **The anchor box is typed, not drawn**: *by vertex selection in a box* is the box as
-  shares of the cloth's extent on X, Y and Z in the inspector; there is no vertex selection
-  in the viewport. *Top edge* holds the highest open edge (a horizontal sheet's whole rim).
-- **The simulated sheet is the part's triangles split at their midpoints**, capped at 4,096
-  triangles (so that it runs near real time in `rt.wasm`); an imported mesh finer than that is
-  simulated as it is. The bending rest angle is the shape it starts with, so a curved face
-  keeps its curvature.
-- **The catenary's cloth** is a 1 m × 20 mm strip of silk held by its two top corners 800 mm
-  apart, laid as a circular arc of its length (its rest shape: from a V, the kink's rest angle
-  added 0.6 % of sag); the lowest point is that of the whole strip.
-- **The wrinkles' silk** needed a lower bending rigidity than first proposed (3·10⁻⁷ N·m,
-  0.003 gf·cm²/cm, a light silk; 2·10⁻⁶ gave a ratio of 2.06) at the test's 64 × 64 sheet:
-  coarser sheets cannot show silk's finer folds.
-- **The wind** is that of the *Ambient* effects switched on (summed); a scene that wants wind
-  on a cloth and no particles needs an effect with no amount.
-- **Drape over the part** runs its sheet alone (not the *Dynamic* parts), like *Drop* runs
-  what it drops; its sheet is a plane primitive whose side also counts the selection's height,
-  so that it hangs down its sides.
-- **The sheet's name** `out/cloth-sheet.html` is the one E6's `rt --pattern-sheet --only
-  cloth` writes into its folder too; running one overwrites the other's page.
-- An existing S2 test used *Cloth* as the role a project of a later version might carry; it
-  now uses *Liquid* (S7), still unbuilt, and the project format keeps *Cloth* and its fields.
-- **Determinism across thread counts** is that of the rigid world the cloth runs with (the
-  cloth itself is one thread); the tests split the narrow phase in 1, 3 and 8 chunks and run
-  worlds in parallel threads.
+- **Shear = stretch does not make denim fail on Cusick's tester.** At this solver's step (8
+  substeps of 1/240 s, 2 iterations) the membrane's constraints are all stiff for it: the shear
+  of a woven fabric (20–140 N/m) already sits near the stiffness that few iterations of XPBD can
+  hold over a 6 mm triangle (about `ρ e² / h²`), so raising it changes little: denim with its
+  shear at 8,000 N/m drapes to 0.760 with 6 nodes against 0.757 with 6, and over the sphere 754
+  of its particles touch it against 792. Holding a sheet's shear at its real value
+  would take several times the substeps. The membrane does take its shear where it is lower than
+  that (the unit test measures it exactly), and the drapes' change from paper to cloth comes mostly
+  from the calibrated bending (the first round's was more than twice too stiff). The test that
+  catches the solver's shortcuts is the leathers' range (the bending once a substep).
+- **The bending's calibration** is the alternating-diagonal sheet's, along its threads. On it a
+  bend at 45° stores 1.44 times as much (the dihedral model is anisotropic on squares split in
+  two), and how much of the imposed cylinder a sheet keeps once its vertices settle depends on the
+  triangulation (three quarters on squares, more on near-equilateral triangles such as Cusick's
+  disc). Finer than about a fifth of the bending length, a stiff fabric bends more than its
+  rigidity says (thick leather −9.5 % in squares of 6 mm): XPBD's few iterations leave its hinges
+  softer than their compliance.
+- **The bending is solved in both iterations and there are 8 substeps** (the brief's plan kept the
+  first round's 6 and the bending once): with the bending once a substep, the leathers' Cusick
+  samples sag to 0.75 and 0.57, and 6 substeps of 2 iterations gave −24 % on Peirce in fine
+  strips.
+- **Cusick's sample is held** between the support and a clamping disc of the same size, as the
+  tester holds it (the vertices within its radius are anchored): laid free on the support, a stiff
+  sample lifted at its middle like a lever over the rim and walked off it.
+- **Most drapes do not settle within Cusick's four seconds** (their nodes creep slowly round, and
+  the heavy leather keeps sinking a little): the coefficient is read at the end. A sheet hanging
+  from one corner keeps a slow motion too (silk, about 16 mm/s in the mean after 20 s, as in the
+  first round); the first round's test of it wanted the diagonal straight down, which soft silk no
+  longer keeps.
+- **The far side of the cloth** is read straight up from each vertex of the mesh (the first cloth
+  triangle above must show its back, the face that looked down when it was laid): the nearest
+  triangle's side reads wrong under a fold.
+- **Cloth and moving wet parts** (merging S3e, which reached main first): the cloth steps the
+  rigid world with itself, so a run with cloth steps the wet parts on their own, and the parts
+  the bodies move (and the cloth's) are left out of the rain and the dust, as before S3e; a run
+  without cloth is S3e's.
+- **The particles next to a sharp edge stand higher** than the thickness: the cloth's surface,
+  not only its particles, is held off the edge, so the parity scene's cloth lies 1.5–9 mm over the
+  rigid box's top.
+- **The cost** (above) is about four times the first round's: the 8 substeps with the bending in
+  both iterations, and the features of finely faceted parts under a thin cloth (the dip rule
+  makes every facet of the sphere and of the bottle's 96-sided lathes a feature for silk). ◆6 is
+  the choice between this and a cheaper solver (6 substeps with the bending in both measured
+  −4.7 % for denim on Peirce's strip and +1.3 % for thick leather).
+- From the first round, still: the bodies push the cloth and the cloth does not push them; the
+  anchor box is typed, not drawn; the simulated sheet is the part's triangles split at their
+  midpoints, capped at 4,096 triangles; the catenary's cloth is a strip laid as an arc; the wind
+  is the *Ambient* effects'; *Drape over the part* runs its sheet alone; `out/cloth-sheet.html`
+  is also E6's sheet's name; determinism across threads is the rigid world's (the cloth is one
+  thread). Collision is no longer by vertex only (the first round's limit, recorded in its
+  judgement call).
 
 **For the verdict** (rule 11, ◆; to be decided in *Judgement calls*):
-1. ◆ The fabric presets (`src/data/fabrics.ts`): weights, stretch (1,500–20,000 N/m), bending
-   (3·10⁻⁷ N·m for silk to 2·10⁻³ for thick leather), damping (0.6–2.5 /s), thickness (1–3 mm)
-   and friction, judged on the contact sheet.
-2. ◆ The default fabric of a new cloth and of *Drape over the part*: fine cotton.
-3. ◆ *Drape over the part*'s sheet: side 1.2 × footprint + 1.2 × height, 8 % of the size above
-   the top, the catalogue's *Cotton* material.
-4. ◆ The resolution: automatic at the longest side over 32, capped at 4,096 triangles.
-5. ◆ The wind on cloth: the effects' wind summed, gusts of 0.5 × Chaos × its speed; drag
-   coefficient 1.
-6. ◆ Self-collision at `max(thickness, ½ mean edge)`; settling at 6 mm/s for 0.5 s.
-7. ◆ Pressure 1 by default for a closed shell (keeps its volume).
-8. ◆ The anchors: *Top edge* within 1 % of the cloth's size (at least 0.5 mm) of its highest
-   point; the default box, the top tenth.
+1. ◆ **The shear of each preset** (N/m per radian; KES-F's shear rigidity G of wovens, about
+   0.5–2 gf/cm/°, 1 gf/cm/° = 56 N/m): silk 20 (0.35 gf/cm/°), fine cotton 35, poplin 45, linen
+   55 (1.0), wool 40, denim 100 (1.8), canvas 140 (2.5); the non-wovens a large share of their
+   stretch: felt 750 (¼), thin leather 1,000 and thick leather 2,000 (a tenth), neoprene 500 (⅓).
+2. ◆ **Denim's bending** 6·10⁻⁵ N·m (was 10⁻⁴: Cusick 0.76 against 0.83; published denim
+   0.5–0.7) and **canvas's** 2·10⁻⁴ (was 3·10⁻⁴: with it, canvas stayed flat with no nodes,
+   0.93–0.95, against the brief's “every woven preset at least 4 nodes”). Silk's 3·10⁻⁷ stays (its
+   0.19 is just under silks' range; 6·10⁻⁷ gives 0.24 and 12 nodes).
+3. ◆ Stiffness scales the stretch, the shear and the bending alike.
+4. ◆ The warp along world X (Y on a face within 20° of square to it), the same for every cloth;
+   the engine takes any direction, the interface has no control for it.
+5. ◆ The features: edges folding by more than 10°, or by `4 × 0.1 × thickness / mean edge`.
+6. ◆ The solver: 8 substeps of 2 iterations with the bending in both (the cost above).
+7. ◆ Version 1 specs read with `shear = stretch / 2.6`.
+8. The first round's ◆1–◆8 as decided (*Judgement calls*), with ◆1's values amended by 1 and 2.
+9. ◆ What the presets give, to judge them by: on Cusick's tester (DC, nodes) silk 0.189 and 13,
+   fine cotton 0.511 and 7, poplin 0.543 and 6, linen 0.671 and 6, wool 0.674 and 6, denim 0.757
+   and 6, canvas 0.879 and 6, felt 0.921 and 1, thin leather 0.932 and 2, thick leather 0.884 and
+   6, neoprene 0.935 and 0 (published: silks and fine cottons 0.2–0.45, linen and denim 0.5–0.7,
+   leathers 0.8–0.95); Peirce's bending length, denim 24.25 mm against 24.82 (−2.3 %) and thick
+   leather 53.81 against 55.39 (−2.8 %). At this solver the shear values of 1 move these little
+   (denim at 8,000 N/m: 0.760): they matter more if ◆6 buys more substeps.
 
 ### S7 · Liquids — **Opus** (after S2 and the nested dielectric) — done
 
@@ -13645,6 +13767,319 @@ clean), grows, stretches as it speeds up, and leaves the beads of a rivulet.
 6. ◆ That an open edge holds every drop that reaches it, and lets go from rest
    (S3d ◆4 replaced).
 
+### S3g · Water that reads as water — **Opus** (after S3e) — done
+
+The owner's report (2026-10-18): *"the water does not feel fully realistic: it
+leaves trails like little beads, or a drop gets very big before it slides or
+breaks the surface tension."* On top of `rt_phys::wet_parts` (S3c to S3f),
+`rt_core::weather` and *Fast*.
+
+**What.**
+1. **Measure first, then change.** `out/water-sheet.html`: the example bottle
+   under the default *Rain* with *On the parts*, at 2, 5, 10 and 20 s, rendered
+   by the native engine, close on four places (the vertical body, the shoulder,
+   the paper label, the top of the cap) with a millimetre scale bar; a table per
+   wettability family and tilt (90°, 60°, 45°, 30°, 15°) of the model's critical
+   contact radius, the contact diameter of the drops when they depin in the run
+   (median and 90th percentile) and their equivalent sphere, the size of a
+   typical runner, and the rendered outline's area-equivalent diameter against
+   the physical contact area; compared with published measurements of when
+   water drops start to slide (Furmidge 1962; Extrand and Kumagai 1995;
+   ElSherbini and Jacobi 2004 and 2006 as candidates), cited, checked, no number
+   invented.
+2. **The beads.** The rivulet regime of S3f (`RUN_REAR_SHARE`, `RUN_BEAD`,
+   `RUN_WIDTH`, `RUN_RELAX_TIMES`) leaves a vertical dotted line of equal round
+   beads (the 1.25 s frame of `docs/ui/rain-organic.png`). (a) The threshold
+   from the published pearling transition (the dynamic receding angle and the
+   corner, in terms of Ca), so ordinary rain runners on the example's surfaces
+   leave no pearls; (b) past it, sparse pearls much smaller than the runner,
+   irregularly spaced from a seeded hash; (c) the streak stays a continuous film.
+3. **Too big before it slides.** Which of these makes drops look too big, and
+   fix what is wrong: (i) the hold's width `w = 2a` and Furmidge's prefactor
+   against the literature; (ii) the rendered outline against the physics
+   (`SLIDE_STRETCH`, the downhill bulge, `HANG_SAG`, `MAX_ASPECT`, the merge neck
+   that spans both drops for `MERGE_TIMES` capillary times), the outline keeping
+   the physical contact area within ±10 % in every state; (iii) dynamic
+   depinning, only from a published model; (iv) the wettability table against
+   published values for real outdoor surfaces, corrections as ◆.
+4. **Coordination.** U16 adds the `WPT1` part flag `PART_DRY = 2`: left to it;
+   S3g keeps `WPT1` as it is.
+5. **The surfaces of the example** (added to (iv)): `wettabilityFamilyOf` (S3c ◆)
+   gives the example bottle the wrong ones: its metallic paint (category
+   *Other*, metallic 0.65, clear coat 1) wets as *Metal*, and no material maps
+   to *Paper* (the label wets as *Paint*). Clear-coated paints to `PAINT`, the
+   paper and board materials to `PAPER`, bare metals staying `METAL`; tests on
+   the catalogue's materials, each with its mutation.
+
+**Acceptance.** A typical runner on a vertical pane leaves 0 beads; past the
+threshold, the coefficient of variation of the pearls' spacing is above 0.3 and
+every pearl is under 0.3 of the runner's radius (◆ the limits); the outline
+keeps the physical contact area within ±10 % in every state; each with its
+mutation. `docs/ui/rain-organic.png` re-recorded; `docs/ui/rain-bottle.png`, the
+bottle's body at 10 s with the scale bar.
+
+**Done.** All of it, but (iii), for which no published model was found, and
+(iv), whose corrections are proposals.
+
+**1. The measurements** (`tools/water-sheet.mjs`; the table is
+`rt --water-table`, `rt_phys::example::water_row`: one plate 100 mm square of
+each family at each tilt, 10 s of the default rain falling onto it square-on, so
+every tilt takes the same water: 2.0 × 10⁻⁵ drops per mm³ of 1.2 mm ± 40 % at
+6.58 m/s, as the page gives it to the engine). Before (S3f and S3e) → after:
+
+| Family θ_A/θ_R | Tilt | Critical contact ⌀ (model) | Contact ⌀ at depinning, median / p90 | Sphere ⌀ | Runner contact ⌀ (median) | Pearls (S3f's beads) in 10 s | Outline over contact ⌀, merging / hanging |
+|---|---|---|---|---|---|---|---|
+| Glass 70/50 | 90° | 4.19 mm | 4.32 / 4.85 mm | 2.69 mm | 5.43 mm | 1077 → 0 | 0.71–1.34 / 0.87–1.67 → 1.00 / 1.00 |
+| Glass 70/50 | 30° | 5.92 | 6.04 / 7.32 | 3.75 | 9.39 | 291 → 0 | 0.69–1.33 / 0.66–1.07 → 1.00 / 1.00 |
+| Glass 70/50 | 15° | 8.23 | 8.58 / 10.07 | 5.34 | 12.30 | 71 → 0 | 0.70–1.33 / 0.61–0.97 → 1.00 / 1.00 |
+| Plastic 90/65 | 90° | 4.03 | 4.10 / 4.75 | 2.93 | 5.72 | 0 → 0 | 0.67–1.32 / 0.84–1.85 → 1.00 / 1.00 |
+| Metal 80/50 | 90° | 4.92 | 5.01 / 5.40 | 3.24 | 7.33 | 682 → 0 | 0.71–1.36 / 0.83–1.95 → 1.00 / 1.00 |
+| Paint 85/60 | 90° | 4.22 | 4.33 / 4.86 | 2.97 | 5.95 | 0 → 0 | 0.69–1.29 / 0.85–1.92 → 1.00 / 1.00 |
+| Paper 100/20 | 90° | 8.05 | 8.10 / 9.95 | 5.04 | 15.41 | 233 → 7 | 0.71–1.34 / 0.86–1.77 → 1.00 / 1.00 |
+| Wood 85/40 | 90° | 6.10 | 6.22 / 7.24 | 3.95 | 10.11 | 568 → 16 | 0.68–1.35 / 0.86–1.85 → 1.00 / 1.00 |
+| Fabric 110/40 | 90° | 6.72 | 7.01 / 7.96 | 4.92 | 16.06 | 358 → 6 | 0.69–1.37 / 0.85–2.04 → 1.00 / 1.00 |
+
+(All 35 rows are in the sheet; the outline columns are least–most over every
+drop at every frame, as area-equivalent diameters over the contact diameter; a
+pinned and a sliding drop's outline was already 1.00.) The drops depin at their
+critical size (the median within 6 % of it, the 90th percentile 4 to 34 % past
+it: a merge overshoots), and the critical size goes as `1/√sin α`. On the
+bottle (`tests/water-dump.test.ts`, with its surfaces corrected: What, 5): at
+20 s 830 drops (S3f: 1003), the painted body's 478 (S3f, wetting as metal: 700,
+its beads among them), the paper label's 160 (S3f, as paint: 108); the largest
+on a level face, the top of the cap, 20.2 mm across in both (below).
+
+**Against the literature** (each checked against the text read; where a claim
+is quoted from another paper, that paper is named):
+- **The hold.** Furmidge's balance `ρ g V sin α = k γ w (cos θ_R − cos θ_A)`
+  (J. Colloid Sci. 17, 1962) with `k = 1` is the balance of a drop whose front
+  half is at `θ_A` and rear half at `θ_R` (de la Madrid et al., arXiv:1505.04104,
+  2015); assumed distributions of the angle around the contact line give
+  `k = 2/π` (Extrand and Gent 1990), `24/π³ = 0.774` (ElSherbini and Jacobi 2006)
+  and `π/4` (Carré and Shanahan), as de la Madrid et al. list them
+  (arXiv:1902.06721, 2019). Measured: `k_s` from 0.5 to 1.5, 0.88 ± 0.2 on
+  average over 23 liquid and surface pairs, 0.63 for water on a silicon wafer
+  (Li, Bodziony, Yin, Marschall, Berger and Butt, "Kinetic drop friction", Nat.
+  Commun. 14, 4571, 2023, Table 1), and 0.97 ± 0.04 for water on PMMA (de la
+  Madrid et al., arXiv:2306.08689, 2023, Table 1: 183 ± 4 µN at θ_A 69.9°,
+  θ_R 47.2°, a width of 7.79 mm; `γ w (cos θ_R − cos θ_A)` gives 188 µN, 3 %
+  more). (i): **`k = 1` with `w = 2a` is within the measurements**, at their top
+  (◆1); it does not make drops too big by itself (with 0.88 the critical contact
+  diameters would be 6 % smaller).
+- **The tilt.** ElSherbini and Jacobi (J. Colloid Interface Sci. 299, 2006,
+  abstract): "the Bond number of a critical drop is found to be constant for a
+  given surface and liquid": the model's critical radius goes as `1/√sin α`, so
+  `V^(2/3) sin α` is the same at every tilt of the table. Extrand and Kumagai
+  (1995) and ElSherbini and Jacobi (2004) could not be read; nothing of theirs
+  is used.
+- **The speed.** Li et al. (2023) fit the friction of sliding drops as
+  `F_0 + β w η U` up to 0.7 m/s, β from 20 to 200 (water: 56 on a thiol
+  monolayer to 216 on a silicon wafer); the model's drag `C μ a U` with
+  `C = 300` (`rt_phys::wet::SLIDE_DRAG`) is β = 150.
+- **The beads.** Running drops are round, then cornered, then cusped, and the
+  cusp "emits smaller drops (“pearls”)" as Ca grows (Podgorski, Flesselles and
+  Limat, Phys. Rev. Lett. 87, 036102, 2001, abstract); the corner appears at a
+  receding angle of about 23° (Le Grand, Daerr and Limat, J. Fluid Mech. 541,
+  2005, as Kumar and Puthenveettil report it, arXiv:1006.1506, 2010); "on rigid
+  substrates, the trailing edge contact angle decreases almost to zero at the
+  pearling transition threshold", about 10° just before it (Oléron, Limat,
+  Dervaux and Roché, arXiv:2304.04925, 2023, citing Le Grand et al.); without
+  excitation pearling sets in near Ca ≈ 0.007 (Peters, Snoeijer, Daerr and
+  Limat, Phys. Rev. Lett. 103, 2009, as Liang and Tietze report it, Sci. Rep. 7,
+  14164, 2017); the satellites are "of considerably smaller volume" than the
+  drop (Engelnkemper, Wilczek, Gurevich and Thiele, Phys. Rev. Fluids 1, 2016,
+  arXiv:1607.05482), "tiny satellite droplets" past ≈ 0.7 m/s for water (Li et
+  al. 2023); Liang and Tietze saw at most two (once three) leave a 10 to 30 µL
+  water drop over a 200 mm coated glass plate that Lamb waves helped it down.
+  S3f's rivulet started at 0.8 of
+  the receding angle (40° on glass, Ca ≈ 3 × 10⁻³, 210 mm/s): every fast runner
+  left a line of beads a third of its width wide.
+- **Puddles.** A drop wider than the capillary length (`√(γ/ρg)` = 2.71 mm for
+  water) flattens into a puddle `2 √(γ/ρg) sin(θ/2)` tall (de Gennes,
+  Brochard-Wyart and Quéré, *Capillarity and Wetting Phenomena*, 2004, as Tavares
+  et al. give it, arXiv:2402.10185, 2024, eq. 59; the energy of a puddle of
+  depth `h`, `γ(1 − cos θ) V/h + ρ g h V/2`, is least there). The model draws
+  every drop as a spherical cap: the 20 mm drop on the cap's top (gold, 80/50)
+  is drawn 6.4 mm tall, a puddle of it would be 2.9 mm.
+
+**2. The beads.** (a) `PEARL_REAR_DEG = 10°`: a runner pearls once its
+Cox–Voinov receding angle is down to it, at `Ca = (θ_R³ − θ_p³) / 9Λ`: 6.1 × 10⁻³
+on glass and metal (0.44 m/s), 1.1 × 10⁻² on paint, 1.3 × 10⁻² on plastic, 3.0 ×
+10⁻³ on wood and fabric (0.22 m/s), 3.4 × 10⁻⁴ on paper (25 mm/s). The fastest a
+drop slides is 250 mm/s (Ca 3.5 × 10⁻³), so on glass, metal, paint and plastic
+no runner pearls; on paper, wood and fabric, a few. (b) A pearl is round,
+pinned, of a contact radius between half of and all of `PEARL_RADIUS = 0.25` of
+its runner's, behind the start of its step, every distance drawn from an
+exponential law of mean `PEARL_SPACING = 12` contact diameters (`pearl_gap`,
+`pearl_hash`): six runners of twice their critical size down a vertical pane of
+40°/12° leave 31 pearls in 3 s, 119 ± 106 mm apart (CV 0.89), the largest 0.27
+of its runner's radius at the end. (c) The trail was already a continuous film
+(2 µm, as wide as the drop, wetting and wiping the samples): it is all that
+remains behind a runner; no source was found for residual droplets where a film
+breaks up, so there are none.
+
+**3. Too big before it slides.** (i) Within the literature (above): unchanged,
+◆1. (ii) **Wrong, fixed.** The outline of a merge spanned both drops, with its
+neck, for its `MERGE_TIMES`: from 0.67 to 1.56 of the contact diameter (an area
+from 0.45 to 2.4 of the contact area); a hanging drop's stretch moved its
+contact line too: from 0.61 to 2.04 (an area from 0.37 to 4.2). Now `shape_of`
+measures the outline the renderer draws (`rt_core::weather::outline_area`) and
+stretches the merge's along and across alike to bring it back to `π a²`, and
+`shape_point`'s hanging step keeps the contact line where it is (thinner above
+it, linearly to `1/√(1 + sag)` at the top, pinched by `4c t(1 − t)`, stretched
+along gravity by what keeps the volume: `hang_stretch`). A pinned drop's bulge
+and a sliding drop's stretch (`SLIDE_STRETCH`, `MAX_ASPECT`, the taper) already
+kept it. Every drop at every frame of the organic scene, two water plates, a
+tilted ceiling and three runners: within 0.01 % of its contact area (the 35
+plates of the table: within 0.03 % of its contact diameter). (iii) **No
+published model found** of how much earlier a drop near its critical size runs
+after a raindrop strikes it or a merge moves its contact line. Gao et al.
+("How drops start sliding over solid surfaces", Nat. Phys. 14, 2018) find that
+static lateral adhesion exceeds kinetic, and the Max Planck Institute's
+release of it says the difference is minimal on flat surfaces chemically
+similar to the liquid, but gives no model of an impact or a merge; Berejnov
+and Thorne (arXiv:physics/0609208) describe the stages of a pinned drop's
+depinning on an incline. Not implemented. (A merge that takes a drop past its critical
+size already makes it run in that step.) (iv) The published values that could
+be read are of clean laboratory surfaces, none of weathered outdoor ones: water
+on a silicon wafer's native oxide 65°/35° (Li et al. 2023), on a coated glass
+64–86°/20–38° (Liang and Tietze 2017, at the onset on a tilted plate), on PMMA
+69.9°/47.2° and 67.5°/43.8° (de la Madrid et al. 2023), on polystyrene 95°/78°
+(Li et al. 2023). Proposals in ◆7. **The mapping, fixed** (5): a material made
+from the catalogue's paper or board (`PAPER_PRESETS`, by its `preset` or, once
+edited, its `origin`) wets as paper; among the materials of no category of
+their own, a clear-coated one (`coat` ≥ 0.5) wets as paint before its metallic
+flakes or its weave are looked at; the categories keep their families (a bare
+metal stays metal, a glossy plastic plastic). In the catalogue this moves the
+metallic paint (*Metal* → *Paint*), the coated carbon fibre (*Fabric*, which
+soaks water like cloth, → *Paint*) and the paper and the cardboard (*Paint* →
+*Paper*); the car paint, the ceramic, the rubber and the leather stay paint.
+The example bottle: base plastic, body paint (85°/60°), label paper (100°/20°,
+it soaks), collar and cap metal. No pin or fixture moves with it: the engine's
+parity scenes give their angles themselves, and the page's fixtures are the
+engine's; no angle of the table moves, so U16's `tests/fixtures/u16-critical.json`
+stays as it is. U16's capture `docs/ui/physics-inspector.png` is re-recorded
+(`tools/u16-check.mjs`): the *Body* now says *gets wet as Paint* and its drops
+run at about 4.2 mm on a vertical face (it said *Metal* and 4.9 mm).
+
+**What made drops look too big**, then: the outlines of merges and hanging
+drops (fixed), S3f's beads (gone), and two things that remain (below): a drop on
+a level face never slides (the cap's top: one drop grows to cover it, 20 mm
+across at 20 s) and every drop is drawn as a spherical cap, so a large one is
+drawn twice as tall as a puddle of its volume. The quasi-static size at which
+drops start to slide agrees with the published balance.
+
+**Pins.** New: `PINNED_S3G_PEARLS = 0x533b5c9d`
+(`rt-phys/tests/wet_parts_s3g.rs`, the pearling run), natively and in
+`wasm32-wasip1` scalar and simd128. Moved, on purpose: the parity scenes had
+runners fast enough for S3f's rivulet (the S3c scene from its first step, the
+organic one at step 242, the S3e scene at step 554; checked by replaying them
+with S3f's threshold) and shaped drops whose outline is now their contact area:
+`PINNED_WET_PARTS` 0xdc58fa46 → 0xb671a2b3, `PINNED_S3F_PARTS` 0x1c5a82bb →
+0xec4c7e6b, `PINNED_S3E_PARTS` 0x8cbf1fd2 → 0xf45d1240, the images
+`PINNED_S3C_WET_4SPP` 0xfc96fb05 → 0xaf75aead, `PINNED_S3D_FLIGHT_4SPP`
+0x3ba00640 → 0x77d7f09c and its six passes (albedo 0x95e59402 → 0x0384f4a7,
+normal 0x63734817 → 0x6cbca8cd, depth 0x04dee46d → 0xd0485554, part and material
+id 0x787b3f07 → 0x2dd869f3, CoC 0x79183f06 → 0x709d4ae9),
+`PINNED_S3F_ORGANIC_4SPP` 0xbfb0b45a → 0x1008858c, `PINNED_S3E_FLOOR_4SPP`
+0xa5311343 → 0x0cee573e and `PINNED_S3E_MOVING_4SPP` 0xe7e964e9 → 0x2608cbab
+(its parts hash `PINNED_S3E_MOVING` holds: no runner there, only merges whose
+outline changed). `PINNED_S3E_MOVING`, `PINNED_S3E_DUST_4SPP` and every pin of
+S3b and before hold. All of them hold natively, in `wasm32-wasip1` scalar and
+simd128, and (S3c, S3d with its passes, S3f) in the real `rt.wasm` with the
+fixtures `s3c-wet.rsb`, `s3d-flight.rsb` and `s3f-organic.rsb`, written again.
+The record's format goes to 5 (`wpt5:`): the same bytes of another simulation.
+
+**Tests** (each checked with its mutation: it fails with it, passes without):
+- `rt-phys/tests/wet_parts_s3g.rs` (4): drops of 1.5, 2 and 3 times their
+  critical size down a vertical glass pane leave no beads, below the pearling
+  Ca, and every sample on their path is wet (mutation: S3f's threshold, 0.8 of
+  the receding angle); six runners on a 40°/12° pane leave 12 to 60 pearls whose
+  spacings have a CV past 0.3, each under 0.3 of its runner's radius, and the
+  same runners on glass none, with the pinned hash (mutations: pearls at a fixed
+  spacing; pearls up to half the runner); every drop's outline within ±10 % of
+  its contact area in every state (mutation: the outline not brought back); the
+  water table's drops depin at their critical size (mutation: no depinning
+  logged).
+- `rt-core` (`weather_s3g_tests.rs`, 2): a round, a sliding and a merging
+  outline; a hanging drop keeps its contact line, its volume (the integral) and
+  is longer along gravity (mutations: the contact line thinned as in S3f; the
+  stretch not keeping the volume). The S3f cap test now checks the contact line
+  instead of a thinner one.
+- `wet_parts.rs`: S3f's rivulet test becomes "no beads, fast or slow"; the merge
+  test checks the outline's proportions and its area; the organic pin test no
+  pearls. `rt-cli`: `--water-table` and its input.
+- `tests/s3g-water.test.ts` (6): *Fast*'s hanging drop keeps its contact line
+  and volume and `hangStretch` keeps the paraboloid's volume (mutation: *Fast*'s
+  stretch of S3f, also caught by `tests/s3f-organic.test.ts`); format 5; the
+  tip in English and Spanish; every catalogue material wets as its surface
+  (clear-coated paints paint, paper and board paper, each category its own, an
+  edited paper still paper) and the example bottle's parts as theirs
+  (mutations: the coat not looked at, as in S3c; no material as paper, as in
+  S3c; the coat looked at before the category, which made a glossy plastic
+  paint). `tests/water-dump.test.ts` (skipped by `npm test`)
+  writes the sheet's scenes.
+
+**Captures.** `docs/ui/rain-organic.png` re-recorded (`tools/s3f-strip.mjs`):
+the runner slides down through the pinned drops and gathers them with no line
+of beads behind it. `docs/ui/rain-bottle.png` (`tools/water-sheet.mjs
+--bottle-shot`): the example bottle's painted body (wetting as paint) at 10 s of
+the default rain, 30 mm across, square-on, with a 5 mm bar.
+
+**What did not fit the plan.**
+- **(iii) is not done**: no published model found (above).
+- **(iv) has no outdoor data**: only laboratory surfaces could be read.
+- **A drop on a level face has no critical size** (Furmidge: `sin α = 0`): on
+  the cap's top one drop grows by merging until it covers it. A real one would
+  spread to the rim and hold there while its angle stays within Gibbs's limits
+  ("equilibrium is possible as long as the pinning angle at the edge falls
+  between the equilibrium contact angles corresponding to the flanks of the
+  edge", as Graña Otero and Parra Fabián put it, arXiv:1908.07971; Oliver, Huh
+  and Mason, J. Colloid Interface Sci. 59, 1977), then spill over (◆8).
+- **Every drop is drawn as a spherical cap**: past the capillary length it
+  should flatten into a puddle (above; ◆8).
+- **The pearls' spacing and size have no published coefficients**: the
+  literature says only that they are smaller and, on these surfaces, few
+  (◆2, ◆3). On a uniform lab surface they leave at regular intervals
+  (Engelnkemper et al. 2016: "identical size or … periodic patterns"); the
+  irregular spacing stands for the heterogeneity of a real surface.
+- **A hanging drop sags less**: keeping its contact line and its volume, the
+  same `HANG_SAG = 0.6` at its hold now stretches it 1.15 times along gravity
+  (S3f: 1.6) (◆6).
+- **The sheet's renders use the page's default rain**, which is very heavy
+  (about 400 mm of water an hour): the drops merge fast and the plates of the
+  table are crowded.
+
+**For the verdict** (rule 11, ◆; to be decided in *Judgement calls*):
+1. ◆ The hold: keep Furmidge's `k = 1` with `w = 2a` (within the measurements,
+   at their top), or take Li et al.'s mean 0.88 (critical contact diameters 6 %
+   smaller, volumes 17 %).
+2. ◆ The pearls' size: `PEARL_RADIUS = 0.25` (each between 0.125 and 0.25 of its
+   runner's contact radius), and the test's limit of 0.3.
+3. ◆ The pearls' spacing: `PEARL_SPACING = 12` contact diameters on average,
+   exponential, and the test's CV limit of 0.3.
+4. ◆ The pearling angle: `PEARL_REAR_DEG = 10°` (Le Grand et al. 2005), with
+   `COX_VOINOV_LOG = 12` (S3f).
+5. ◆ The outline keeps the contact area by a uniform stretch in the plane (a
+   merge stays as long over as wide as it was, a hanging drop on a sloping face
+   is narrower across gravity); the ±10 % limit (it holds to 0.01 %).
+6. ◆ The hanging drop's thinning: from none at its contact line to
+   `1/√(1 + sag)` at its top, linearly; and whether `HANG_SAG` should grow to
+   keep S3f's visible stretch.
+7. ◆ The wettability table: GLASS's receding angle of 50° is above what was
+   measured on clean silica (35°, Li et al.) and on a coated glass (20 to 38°,
+   Liang and Tietze): proposal 65°/35° (on vertical glass the critical contact
+   diameter would go from 4.2 to 5.4 mm: drops would hold *larger*);
+   PLASTIC's 90°/65° lies between PMMA (70°/47°) and polystyrene (95°/78°): keep;
+   METAL, PAINT, PAPER, WOOD and FABRIC: no value found to check them against.
+8. ◆ A follow-up for level faces and large drops: a drop that spreads to the
+   rim of a level face holds there within Gibbs's limits and spills over; a drop
+   past the capillary length drawn (and weighed) as a puddle
+   `2 √(γ/ρg) sin(θ/2)` tall.
+9. ◆ The mapping's thresholds: a clear coat of 0.5 or more makes a material of
+   no category of its own wet as paint; paper and board are known by their
+   catalogue keys only (an imported paper-like material wets as paint).
+
 ## M5 · Thread-by-thread weave and real fuzz — **Opus**, verdict **Fable** (after E6 and E9; the fuzz after S8)
 
 Request: fabric type (*plain weave*, twill…) simulated
@@ -14929,6 +15364,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3d** · What remains of drops and dust on the parts: dripping and splashes that fall through the air, dust motes, dynamic parts getting wet, the studio floor, finer samples on the set, the drops' part id and the meter text (S3c, “S3d”). **Done in part**: the meter text, the drops' part id in the passes and the dripping and splashes that fall through the air (in the simulation, the engine and *Fast*); the dust motes, moving parts, the studio floor and the set's fine samples, **S3e** (see S3d and S3e, after S3c).
 - **S3e** · The dust motes, dynamic parts that get wet as they move, the studio floor that gets wet and dusty, and the set's fine samples (S3d, “S3e”); and the wind pushing the drops in the air (S3d ◆2). **Done**: see S3e, after S3d; its ◆ decided in *Judgement calls*.
 - **S3f** · Organic drops (the owner's request of 2026-10-18): drops that grow to their critical size and let go, gather the drops on their path, merge with a neck and no jump, leave a rivulet on a steep face, take shapes from their physics (in the engine, `WETP`'s shape tail with bit 10, and in *Fast*), and hang, neck and drip one drop at a time. **Done**: see S3f, after S3e; its ◆ decided in *Judgement calls*.
+- **S3g** · Water that reads as water (the owner's report of 2026-10-18: drops that leave trails like little beads, and get very big before they slide): the measurements against the literature, runners that leave their trail and no beads (pearls only past the published transition, sparse, small and irregular), outlines that keep the contact area. **Done**: see S3g, after S3f; its ◆ decided in *Judgement calls*.
 
 - **O2** (the traced-lens sheet). Accepted as it stands:
   - which lenses give cat's eye, bubble, creamy and swirl;
@@ -15027,10 +15463,11 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3d** (drips and splashes through the air; the meter; the drops' part id). Accepted as it stands: ◆1, the drop in the air as a water sphere of its volume, without a streak (the engine has no shutter); ◆2, Atlas, Srivastava and Sekhon's terminal velocity with the linear rule below 0.6 mm and the quadratic drag, **but the wind must push the drops in the air: it goes to S3e**; ◆3, the splash at 30° with the reach decided in S3c; ◆4, the drip from an edge leaves at its sliding speed and the hanging one, from rest (**replaced in S3f**: a drop that reaches an open edge stops, hangs and lets go from rest); ◆5, the drop that reaches the studio floor is removed (the floor that gets wet is S3e) and the one that hits the back of a face goes through it; ◆6, `MAX_FALLING_DROPS` = 1024 and `MAX_FLIGHT_STEPS` = 2400 (10 s); ◆7, the meter's words, which counts only the parts that have something; ◆8, in the passes, a drop in the air carries the id of the part it came from. **Done in part in S3d**; the rest, S3e.
 - **X6** (the AI that shows and its stored preview). Accepted as it stands: ◆1, `MAX_STRENGTH` = 0.6 (an img2img strength of 0.3 at the default Intervention of 50, still well inside what keeps the geometry); ◆2, `BAND_GAIN_AT_100` = 2 for Light, Bounces, Wear and Style strength (none at 0, as made at 50, twice at 100, linear in between); ◆3, the caps stay (light 0.3, bounce 0.15, style 0.2, wear 0.15): the gains now make the controls visible and the caps keep them honest; ◆4, the six style grades and their amount of 2 × Style strength × Intervention, applied by the guard itself so they are the same with any model, and a quarter of it in the synthetic service; ◆5, the reference scene (the example bottle, closer and lower), the stored steps and the lookup rule (nearest step; the control moved last wins), with the example labelled as such; ◆6, the focus check skips in-focus pixels of wear materials: Wear's detail there is what Wear is allowed to do, and out-of-focus areas are still checked; ◆7, the test model's numbers, which only drive the stored example and the tests.
 - **S3f** (organic drops). Accepted as it stands: ◆1, the shape exaggeration (`PIN_STRETCH` 1, `SLIDE_STRETCH` 2, `SLIDE_TAPER` 0.45, `MAX_ASPECT` 4, `HANG_SAG` 0.6, the bulge without a gain): the running drop reads as a drop that runs, not as an ellipse, and the volume is kept; ◆2, the neck (`NECK_DEPTH` 0.5, profile (1−u²)²); ◆3, the hanging drop (`PINCH_TIMES` 3, `HANG_PINCH` 0.6, and Harkins–Brown's 60 % that falls); ◆4, `MERGE_TIMES` = 4 capillary times, so two drops visibly flow into one instead of jumping; ◆5, the rivulet (`RUN_REAR_SHARE` 0.8, `RUN_WIDTH` 0.2, `RUN_BEAD` 3, `RUN_RELAX_TIMES` 60, `COX_VOINOV_LOG` 12): a run on a steep face and none at 25°, as the strip shows; ◆6, every open edge holds the drop that reaches it, which hangs and lets go from rest, replacing S3d ◆4. **A drop that runs along a side edge** of a tilted plate, instead of stopping there, goes to **S3e** with the rest of the edges' behaviour.
-- **S9** (cloth with real physics). Accepted as it stands: ◆1, the eleven presets' values (silk's bending lowered to 3e-7 N·m so its wrinkles are at least three times leather's); ◆2, fine cotton as the default fabric; ◆3, *Drape over the part*'s sheet (side 1.2 × footprint + 1.2 × height, 8 % above the top, the *Cotton* material); ◆4, the automatic resolution (longest side / 32, at most 4,096 triangles); ◆5, the wind (the effects' winds summed, gusts 0.5 × *Chaos*, drag coefficient 1); ◆6, the self-collision distance `max(thickness, ½ mean edge)` and settling at 6 mm/s for 0.5 s; ◆7, pressure 1 by default for a closed shell; ◆8, the top-edge tolerance (1 % of the size, at least 0.5 mm) and the default anchor box (the top tenth). The one-way coupling (a body falling on a cloth goes through it) and the per-vertex collision (a sharp convex edge can show through) are noted as the phase's limits, for a later phase if they matter in practice.
+- **S9** (cloth with real physics). Accepted as it stands: ◆1, the eleven presets' values (silk's bending lowered to 3e-7 N·m so its wrinkles are at least three times leather's); ◆2, fine cotton as the default fabric; ◆3, *Drape over the part*'s sheet (side 1.2 × footprint + 1.2 × height, 8 % above the top, the *Cotton* material); ◆4, the automatic resolution (longest side / 32, at most 4,096 triangles); ◆5, the wind (the effects' winds summed, gusts 0.5 × *Chaos*, drag coefficient 1); ◆6, the self-collision distance `max(thickness, ½ mean edge)` and settling at 6 mm/s for 0.5 s; ◆7, pressure 1 by default for a closed shell; ◆8, the top-edge tolerance (1 % of the size, at least 0.5 mm) and the default anchor box (the top tenth). The one-way coupling (a body falling on a cloth goes through it) is noted as the phase's limit, for a later phase if it matters in practice. **Second round** (the owner's report of 2026-10-18: the cap showed through silk, linen and denim draped like paper): accepted as it stands. ◆1, the shear per preset (wovens 20–140 N/m from KES-F; non-wovens a fraction of their stretch); ◆2, denim's bending at 6·10⁻⁵ N·m and canvas's at 2·10⁻⁴; ◆3, *Stiffness* scales stretch, shear and bending alike; ◆4, the warp along world X; ◆5, the sharp-feature threshold; ◆6, 8 substeps × 2 iterations, about 4× the first round's cost, for Peirce within 3 %; ◆7, CLT1 version 1 read with shear = stretch / 2.6. The Cusick coefficients (silk 0.19, linen 0.67, denim 0.76, thick leather 0.88) sit at or near the published ranges, and the surface collision removes the first round's per-vertex limit.
 - **X7** (the AI through an API). Accepted as it stands: ◆1, both presets ship (Stability SD 3.5 image-to-image and OpenAI image edits), each written from the service's published OpenAPI document and marked *not verified* in the interface until a run against the live service confirms it; ◆2, the depth and edge passes stay off by default, so only the image leaves the computer unless the user asks; ◆3, 120 s per call, 2 tries and a 30 s cap on `Retry-After`: the cost of a render (tiles × attempts × tries) is bounded and the setting says each try may be charged; ◆4, the consent wording, asked in place under the switch, per host and revocable; ◆5, in the browser the key lives in local storage with the warning shown under it; ◆6, plain `http` only to this computer: a service on the local network needs `https`. Plain `http` to a private address, with its own warning, is left for a later phase if it is asked for.
 - **S3e** (the studio floor, moving parts, fine samples, dust motes, the wind on the drops in the air, side edges). Accepted as it stands: ◆1, a drop on a moving part feels gravity minus the part's acceleration, the jolt of a landing included, and meets the rain at the rain's velocity minus the part's: the frame is the part's, as it physically is; ◆2, the floor's rectangle is the union of the feeding effects' regions, at z = 0; ◆3, 2 mm floor cells within 250,000; ◆4, the floor is a film, with no puddles and no splashes off it: **puddles and the splashes off the floor are left for a later phase**, if they are asked for; ◆5, the shadow catcher keeps its layers (cover for dust and snow, a water Fresnel film as a mirror of roughness 0.03); ◆6, the wet catcher darkens as a porous grey of 0.5 by `0.5^(wet×0.5)`, and a visible floor is a matte diffuse under its layers; ◆7, the fine samples of 2 mm where a shadow edge crosses, within 300,000 and up to 4,095 steps a side: the strip shows the coarse sawtooth gone and a 2 mm one left only at macro framing; ◆8, the motes (threshold 0.3, `MOTE_SHARE` 0.02, the octahedron a third of its radius out of the surface, dry dust, 20,000 at most); ◆9, the air of the drops in the air is the rain effects' wind weighted by their densities; ◆10, a drop at a sloping side edge runs along it with its face's hold before it would hang, and the lowest edge and corner keep S3f ◆6. That the studio floor stays dry under a set's own floor is right: the set's floor is a part, and it gets wet as one.
 - **U16** (the physics of each part in one place). Accepted as it stands: ◆1, `WATER_REPELLENT` at 120° advancing and 105° receding, no soak and no darkening, from Ray and Bartell (1953): a wax or coating on a product, whose drops run off at about 1.9 mm on a vertical face; ◆2, two flags (`PART_DRY`, no water; `PART_NO_DUST`, no dust or snow), and a drop in the air that meets a dry part is gone and counted as lost water; ◆3, the size line as it is (twice the critical contact radius on a vertical face, one decimal, a range for several families, *It keeps dry* when all are dry); ◆4, the drawer's counts as they are; ◆5, friction and bounciness for a static part too, since S2 uses both; ◆6, the mixed switch and that a click turns every part on; ◆7, the Spanish names (*Movimiento*, *Intemperie*, *Se moja*, *Coge polvo y nieve*, *Superficie*, *Hidrófugo*); ◆8, the pointer under the material's name. The role goes under its label, so that the four roles fit (the lead's change at review). That the example's metallic paint wets as *Metal* and its paper label as *Paint* (`wettabilityFamilyOf`, S3c) goes to **S3g** with the rest of the wettability table.
+- **S3g** (water that reads as water). Accepted: ◆1, Furmidge's k stays 1 (inside the published spread); ◆2–◆4, pearls only past a rear angle of 10°, 0.25 of the runner's radius, exponential spacing of 12 contact diameters (so rain on glass, metal, paint and plastic leaves a continuous streak); ◆5, the outline keeps the contact area by a uniform stretch, within ±10 % (measured 0.01 %); ◆6, the hanging drop's thinning as it is, `HANG_SAG` unchanged; ◆9, the mapping (clear coat ≥ 0.5 wets as Paint, paper by catalogue key). **Not accepted**: ◆7, glass to 65/35, since it makes drops on vertical glass larger (4.2 → 5.4 mm), against the owner's report that they grow too big; the table stays as S3b decided. ◆8, drops held at the rim of a level face and spilling over, and puddles past the capillary length, go to a later phase if they are asked for.
 - **S7** (liquids). Accepted as it stands: ◆1, the eight presets' numbers and looks (red wine's 6 mm absorption reads nearly black in a full glass, as a full glass of red wine does); ◆2, about 4,000 particles automatically, 1–50 mm by hand; ◆3, no slip at the walls; ◆4, `WALL_OVERLAP` 0.1 spacings and the 0.25-spacing gap; ◆5, the automatic priorities (liquid 1, other clear glass 2, only with a liquid in the scene); ◆6, the surface's reach, cell and iso-level; ◆7, the definition of level, honey's margin noted as thin; ◆8, the 20 s limit with a liquid; ◆9, `REST_PACKING` 0.90. Containers that move, two liquids meeting and foam go to a later phase if they are asked for. Its Windows checklist points are 229–232 (S3g took 225–228).
 
 **1.9** (double bar in aintfilm's LUT carousel) belongs to another

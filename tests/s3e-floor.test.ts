@@ -137,7 +137,7 @@ describe('S3e: what the simulation is given', () => {
     expect(new DataView(ob.buffer).getUint32(4, true)).toBe(1);
     expect(ob.length).toBe(bytes.length - 4 * np - 4 * (3 + 1 + 7 + 2));
     // The key is the format of now.
-    expect(wetPartsKey(bytes).startsWith('wpt4:')).toBe(true);
+    expect(wetPartsKey(bytes).startsWith('wpt5:')).toBe(true);
   });
 });
 

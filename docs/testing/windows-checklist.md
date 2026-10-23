@@ -6,6 +6,13 @@ Tick the points as you go. When reporting an issue, state the version and the nu
 
 ## Unreleased
 
+For water that reads as water (S3g).
+
+225. [ ] **A streak, not beads.** On the example bottle add *Rain* with *On the parts* and click *Start*; pause after 10 s. In *Fast* and in a render in *Full*, a drop that ran down the body must leave a continuous wet streak behind it, with no line of equal round beads.
+226. [ ] **Drops their size.** Close on the shoulder while it rains: just after two drops merge, the merged drop must not look larger than the two were; a drop hanging under an edge must stay where it is held and stretch below it, not shrink.
+227. [ ] **Pearls only where they belong.** On a part whose material is paper (the example's label), a drop that runs fast may leave a few small drops behind it, far apart and of different sizes; on the painted body and the gold cap, none.
+228. [ ] **What to record when reporting.** A render in *Full* of 225 close on the body and one of 226 on the shoulder. If something fails, the message verbatim and the `<data>\logs\` folder.
+
 For liquids (S7).
 
 229. [ ] **Convert to liquid.** On the example bottle, right-click the *Cap* in the scene tree ▸ *Convert to liquid* ▸ *Honey*. The cap must disappear, *Cap (Honey)* appear at the end of the tree, selected, with its *Liquid* section in the inspector (*About … particles at … mm*), and the physics drawer open. *Undo* must bring the cap back in one step, and *Redo* make the honey again.

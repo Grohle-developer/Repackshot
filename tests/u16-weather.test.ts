@@ -198,8 +198,8 @@ describe('U16: the spec writer', () => {
     const label = spec.parts.find((p) => p.node === ids.label)!;
     const w = wettability('WATER_REPELLENT');
     expect([label.family, label.advancingDeg, label.recedingDeg, label.soakMmPerS, label.porosity]).toEqual(['WATER_REPELLENT', w.advancingDeg, w.recedingDeg, w.soakMmPerS, w.porosity]);
-    // Without it, the family of its material (the example's label, Paper, wets as Paint: S3c's ◆ mapping); given
-    // Paper, it soaks and darkens.
+    // Without it, the family of its material (the example's label, Paper, wets as Paper since S3g; S3c gave it
+    // Paint); given Paper, it soaks and darkens.
     const own = wetPartsSpec(s)!.parts.find((p) => p.node === ids.label)!;
     expect(own.family).toBe(materialFamily(s, ids.label));
     const paper = wetPartsSpec(apply(s, { type: 'physics/set', ids: [ids.label], patch: { surface: 'PAPER' } }))!.parts.find((p) => p.node === ids.label)!;

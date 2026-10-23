@@ -4,7 +4,7 @@
 // the pane, rendered by the native engine and laid side by side with the time of each frame, for the eye that decides
 // the values marked ◆ in the ROADMAP's S3f: a drop past its size slides down a pane through smaller pinned drops, gathers
 // them (its path behind it is clean), grows and runs faster, stretched along its motion with a rounder head, its merges
-// showing a neck for a moment, and leaves the beads of a rivulet once it is fast enough.
+// showing a neck for a moment, and (S3g) leaves its continuous wet trail and no beads behind it.
 //
 //   node tools/s3f-strip.mjs [--out docs/ui/rain-organic.png] [--size 320x240] [--samples 96] [--threads 2]
 //

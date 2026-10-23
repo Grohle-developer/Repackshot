@@ -3263,18 +3263,23 @@ What §5.2 vicies and unvicies do, with drops that behave as drops.
   step (`from`: the segment it swept), its velocity, its Furmidge load (pinned)
   or capillary number (sliding), the merge it relaxes from (`Merging`: the axis
   between the two, the outline's stretch along and across it, its neck and shift,
-  the share left and the way left to the centre of volume), a bead of a rivulet
-  relaxing (`Bead`), its hanging load and how far it has pinched off, whether an
-  open edge holds it, and how far it ran since its last bead. `WetParts::hash`
-  eats it all.
+  the share left and the way left to the centre of volume), its hanging load and
+  how far it has pinched off, whether an open edge holds it, and (S3g) how far it
+  has to run until its next pearl (`run`; S3f's `Bead` of a rivulet is gone, its
+  five words stay in `WetParts::hash` as constants so a run without one keeps its
+  hash). `WetParts::hash` eats it all.
 - **The step** (`slide`, in index order): a merge relaxes first (the centre
   walks `1 − e^(−Δt/τ)` of the way left, `τ = MERGE_TIMES √(ρ a³ / γ)`); a
   hanging drop (a face with `ĝ·n > 10⁻⁴`, or held at an edge with the whole
   weight) past `2π a γ sin θ̄` pinches for `PINCH_TIMES` capillary times and
   lets go of `PINCH_OFF_SHARE` into the air (S3d's `launch`, from rest); a
   sliding drop gets Cox–Voinov's dynamic angles (`dynamic_angles`), stops and
-  hangs at an open edge (S3c ran it off), and past `RUN_REAR_SHARE` of its
-  receding angle leaves a bead behind the start of its step (its water taken).
+  hangs at an open edge (S3c ran it off), and (S3g) once its dynamic receding
+  angle is down to `PEARL_REAR_DEG` (10°) sheds a pearl behind the start of its
+  step each time it has run the distance drawn for it (an exponential law of
+  mean `PEARL_SPACING` = 12 contact diameters, `pearl_gap`, from `pearl_hash`),
+  of a contact radius between half of and all of `PEARL_RADIUS` = 0.25 of its
+  own (its water taken).
   `put` marks a drop changed when what makes its shape changes.
 - **The merge** (`merge`, `merged`): a fresh drop takes the first drop whose
   centre is within the two radii of the segment it swept; the survivor (the
@@ -3283,7 +3288,11 @@ What §5.2 vicies and unvicies do, with drops that behave as drops.
 - **Shapes** (`base_shape`, `shape_of`, `shapes`): `rt_core::weather::DropShape`,
   15 floats: the axis (motion or downhill), aspect, bulge (the shear the front
   and rear contact angles give), taper; the merge's axis, along, across, neck,
-  shift; sag and pinch. In world space for the tests, in the part's object
+  shift; sag and pinch. S3g: `shape_of` ends by measuring the outline the
+  renderer will draw (`rt_core::weather::outline_area`, 32 points) when a merge
+  or a hanging step is in the shape, and scales the merge's along and across
+  alike (a merge axis in the tangent plane when there is none) so that it is the
+  drop's contact area `π a²`. In world space for the tests, in the part's object
   space in the frames (the record ends with `u32 shaped; f32 shape[15][changed]`)
   and in `Weather::shapes` (`part_weather_shaped` writes them).
 - **The engine** (`rt_core::weather`). `PartWeather::shapes` and the shape tail
@@ -3294,7 +3303,13 @@ What §5.2 vicies and unvicies do, with drops that behave as drops.
   `Caps::cap_triangles` for `pass_instance`), deforms each shaped one with
   `shape_point` in its tangent frame (`ShapeFrame`) and gives it the normals of
   its faces (turned like the sphere's). Every step of `shape_point` keeps the
-  volume of a paraboloid cap. Bit 10, `FEATURE_WET_SHAPES` (1024; `/api/info`
+  volume of a paraboloid cap. S3g: the hanging step keeps the contact line
+  (`hang_stretch`: thinner across gravity by `1 + b t`, `b = 1/√(1 + sag) − 1`,
+  from none at the contact line to the top, pinched by `4c t(1 − t)`, stretched
+  along gravity by `1 / ∫₀¹ 2(1 − t) w(t)² dt`); `outline_area` measures an
+  outline (the polygon of the contact circle's points moved and projected, over
+  the round circle's polygon, times `π a²`). *Fast*'s twins: `hangStretch`,
+  `shapePointLocal` and the vertex shader. Bit 10, `FEATURE_WET_SHAPES` (1024; `/api/info`
   says 2047).
 - **The page.** `core/wet-parts.ts`: `DropShape`, `PartsTrack.shapes` (one per
   version), `PartsFrameDrop.shape`, `PARTS_FORMAT_VERSION` 3, `partsRenderRound`
@@ -3389,7 +3404,58 @@ on the set, with the dust's grains and the wind.
   `rt --write-s3e-example`, `--write-s3e-moving-example`,
   `--write-s3e-dust-example`; `--write-s3e-strip <dir>` writes the frames of
   `tools/s3e-strip.mjs`), in scalar, SSE2 and AVX2, with 1, 4 and 16 threads, in
-  `wasm32-wasip1` and in the real `rt.wasm`. No earlier pin moves.
+  `wasm32-wasip1` and in the real `rt.wasm`. No earlier pin moves. (S3g moved
+  some, on purpose: §5.2 quatervicies.)
+
+### 5.2 quatervicies · Water that reads as water (S3g, `rt_phys::wet_parts`, `rt_core::weather`)
+
+What §5.2 duovicies does, measured against the literature and corrected where it
+was wrong (the sources are in `docs/ROADMAP.md`, S3g).
+
+- **Pearls instead of beads.** `slide`: a runner whose Cox–Voinov receding
+  angle is down to `PEARL_REAR_DEG` (10°) counts down `Drop::run` (the distance
+  `pearl_gap` drew: an exponential law of mean `PEARL_SPACING` contact diameters,
+  at least its radius, from `pearl_hash` of the seed, the drop and the step) and,
+  at zero, sheds a round pinned pearl of a contact radius between half of and all
+  of `PEARL_RADIUS` of its own behind the start of its step. `WetParts::pearls`
+  counts them. S3f's rivulet (`RUN_REAR_SHARE`, `RUN_WIDTH`, `RUN_BEAD`,
+  `RUN_RELAX_TIMES`, `Bead`) is gone.
+- **Outlines of the contact area.** `shape_of` measures the outline with
+  `rt_core::weather::outline_area` when the shape has a merge or a hanging step
+  and scales the merge's along and across alike to bring it back to `π a²`;
+  `WetParts::outline_ratios(points)` gives every drop's ratio (the tests and the
+  water table). `rt_core::weather::shape_point`'s hanging step keeps the contact
+  line (`hang_stretch`); *Fast*'s twins follow (`render/weather-preview.ts`
+  `hangStretch`, `shapePointLocal`, the vertex shader).
+- **Measuring.** `WetParts::depins` (at most `MAX_DEPINS`): every drop that
+  started to slide from rest, its contact radius, volume and slope then;
+  `DropState::hang`. `rt_phys::example::water_row` runs one plate of the water
+  table (100 mm square at a tilt, under a rain falling onto it square-on) and
+  measures it (`Quantiles` of the depinning sizes, the runners, the outline by
+  state, the pearls); `rt --water-table <in.txt> -o <table.json>` runs every
+  family at 90°, 60°, 45°, 30° and 15° (`WATER_TILTS_DEG`). `tools/water-sheet.mjs`
+  writes `out/water-sheet.html` from `tests/water-dump.test.ts` (the example
+  bottle under the default *Rain*, simulated by the real `rt.wasm`, whole and
+  close on four places with their millimetres per pixel) and the table, and
+  with `--bottle-shot` the capture `docs/ui/rain-bottle.png`.
+- **The page.** The record's format (`PARTS_FORMAT_VERSION`) is 5: the same
+  bytes of another simulation, so a recording of before is simulated again. The
+  `WPT1` spec does not change (U16's `PART_DRY` flag is its own).
+- **Pinned.** New: `PINNED_S3G_PEARLS = 0x533b5c9d`
+  (`rt-phys/tests/wet_parts_s3g.rs`, the pearling run; native, `wasm32-wasip1`
+  scalar and simd128). Moved, because the parity scenes had runners fast enough
+  for S3f's rivulet (the S3c scene from its first step, the organic one at step
+  242, the S3e scene at 554) or shaped drops whose outline is now the contact
+  area: `PINNED_WET_PARTS` 0xdc58fa46 → 0xb671a2b3, `PINNED_S3F_PARTS`
+  0x1c5a82bb → 0xec4c7e6b, `PINNED_S3E_PARTS` 0x8cbf1fd2 → 0xf45d1240, and the
+  images `PINNED_S3C_WET_4SPP` 0xfc96fb05 → 0xaf75aead, `PINNED_S3D_FLIGHT_4SPP`
+  0x3ba00640 → 0x77d7f09c and its six passes, `PINNED_S3F_ORGANIC_4SPP`
+  0xbfb0b45a → 0x1008858c, `PINNED_S3E_FLOOR_4SPP` 0xa5311343 → 0x0cee573e,
+  `PINNED_S3E_MOVING_4SPP` 0xe7e964e9 → 0x2608cbab (its parts hash
+  `PINNED_S3E_MOVING` holds: no runner there; its merges' outlines changed).
+  `PINNED_S3E_MOVING`, `PINNED_S3E_DUST_4SPP` and every pin of S3b and before
+  hold. The fixtures `s3c-wet.rsb`, `s3d-flight.rsb` and `s3f-organic.rsb` are
+  written again (`s3c-parts.wpt1`, a spec, does not change).
 
 ### 5.2 quattuorvicies · Parts that keep dry (U16, `rt_phys::wet_parts` part flags)
 
