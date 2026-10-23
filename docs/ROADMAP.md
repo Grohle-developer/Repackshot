@@ -11779,7 +11779,18 @@ its drape coefficient and nodes checked against `cloth-cusick.json`. Measured on
 0.0376 in the first round) to 0.0078 /mm (thick leather); each drape took 18 to 50 s of wall
 clock in `rt.wasm`.
 
-**Gates.** ⟨GATES⟩
+**Gates.** On the second round's branch before it merged (v0.1.23): `npm run engine:build`;
+the cloth tests natively (16 pass, about 5½ minutes), `rt-wasm`'s, and the interface's cloth,
+physics and wet-parts tests with the real `rt.wasm` (97 pass); `npm run qa` (3,396 tests; two
+timed out under the shared machine's load and pass alone); `cargo fmt`, `cargo clippy
+--workspace --all-targets -- -D warnings` and the `wasm32-unknown-unknown` build clean. On the
+follow-up that carries this record and the captures (main at v0.1.27): `npm run qa`, 3,450
+tests, 3,417 pass, 32 skipped and one fails as it does on main (`ui-achromatic`: the update
+window's styles in `src/ui/layout.css` set four font sizes in pixels); from `engine/`, the
+`wasm32-unknown-unknown` build, `cargo clippy` clean and `cargo test --release` (1,235 pass,
+1 ignored) over the workspace but `rt-app`'s integration test `tests/port.rs`, which does not
+compile on main (`port::start` takes five arguments, it passes four); `cargo fmt --check` finds
+main's `rt-app` unformatted. Neither failure is in a file this phase touched.
 
 **What did not fit the plan** (rule 12):
 - **Shear = stretch does not make denim fail on Cusick's tester.** At this solver's step (8
