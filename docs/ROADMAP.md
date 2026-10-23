@@ -11781,7 +11781,7 @@ clock in `rt.wasm`.
 
 **Gates.** On the second round's branch before it merged (v0.1.23): `npm run engine:build`;
 the cloth tests natively (16 pass, about 5½ minutes), `rt-wasm`'s, and the interface's cloth,
-physics and wet-parts tests with the real `rt.wasm` (97 pass); `npm run qa` (3,396 tests; two
+physics and wet-parts tests with the real `rt.wasm` (97 pass); `npm run qa` (3,407 tests; two
 timed out under the shared machine's load and pass alone); `cargo fmt`, `cargo clippy
 --workspace --all-targets -- -D warnings` and the `wasm32-unknown-unknown` build clean. On the
 follow-up that carries this record and the captures (main at v0.1.27): `npm run qa`, 3,450
