@@ -202,7 +202,7 @@ The full **context menu** of a row (phase U3, with the actions of
 `SPEC.md` §3.1): Frame · Move (activates the gizmo) · **Scale…**
 (phase U9: the inline panel of §2.3, next to the row) · Rest on the
 floor · Centre · Centre and rest · **Drop** (phase S2) ·
-**Convert to liquid ▸** (phase S7: the presets) · Reset transform ·
+**Drape over the part** (phase S9) · **Convert to liquid ▸** (phase S7: the presets) · Reset transform ·
 Set pivot ▸ (centre, base, origin, picked point) · Set as
 camera target · **Keep in focus** (F1: the camera in view switches to
 *Focus ▸ Object* on the row or the part, at the level of the selection) ·
@@ -226,6 +226,15 @@ as one body unless it has *As parts*. It is disabled with the
 selection locked. The whole fall is **one** undo entry
 (*Undo: Drop 3 parts*). There is no *Part* menu in the header
 in this version: its place is this context menu.
+
+**Drape over the part** (phase S9; the same menu in the viewport, the buttons of the *Part*
+section and of the cloth's *Physics* section, and the palette, *Drape cloth over the
+selection*) lays a sheet of cloth over the selection —a plane named *Cloth*, of fine cotton
+and the catalogue's *Cotton*, square, its side 1.2 times the longer side of the selection's
+footprint plus 1.2 times its height, a little above its top— with the role *Cloth*, opens the **Physics** drawer and
+runs it alone: it falls and drapes over the selection and whatever is under it, and stops
+by itself when it settles. Adding it, its role and the run are **one** undo entry
+(*Undo: Drape cloth over Box*). Disabled with nothing visible selected.
 
 **Convert to liquid ▸** (phase S7; the same menu in the viewport) lists the
 liquids of `src/data/liquids.ts` (*Water · Oil · Honey · Milk · Gel · Syrup ·
@@ -1279,18 +1288,18 @@ except the two that build things: *Create studio* and *Render*.
    radius; the Fast preview shows them sharp*): the engine draws it since E6
    (`ARCHITECTURE.md` §5.2 septies); three.js cannot do it
    cheaply and the *Fast* view does not try.
-5. **Physics** (phases S2 and U16; `SPEC.md` §3.1) — everything about how
+5. **Physics** (phases S2, S9 and U16; `SPEC.md` §3.1) — everything about how
    the selection takes part in a simulation, in two groups (U16: before, the
    weather of the parts was a switch per effect, buried in the effect's
    inspector, and how water sits on a part could not be seen).
    **Motion.** **Role**, segmented:
-   *Static · Dynamic · Cloth · Liquid*, with *Cloth* disabled and a
-   tooltip saying *coming soon*; *Liquid* (S7) converts the part to water
-   (as *Convert to liquid*), and on a liquid part it is the one marked and the
-   others are disabled; with several nodes of
+   *Static · Dynamic · Cloth · Liquid* (*Cloth* since S9); *Liquid* (S7) converts
+   the part to water (as *Convert to liquid*), and on a liquid part it is the one
+   marked and the others are disabled; with several nodes of
    different roles, none marked. Under it, **one line** that says what the
    role does (U16): *Stays where it is: things fall onto it and the weather
    settles on it* (Static), *Falls and collides with the rest* (Dynamic),
+   *Hangs, drapes and folds over what is under it* (Cloth),
    *The selection has more than one role: choose one to give it to all*
    (mixed). If the part falls with a dynamic
    group that does not fall *as parts*, a note says so (*Falls with Cap,
@@ -1310,6 +1319,21 @@ except the two that build things: *Create studio* and *Render*.
    store action and a drag a single undo entry
    (*Undo: Physics of Body*). At the *Faces* level, the section edits the part
    of the faces.
+   **With the role *Cloth*** (phase S9), the cloth's fields in place of density,
+   friction, bounciness and *As parts*: **Fabric** (a list of the presets with their
+   weight: *Silk · 60 g/m²* … *Neoprene · 1,500 g/m²*; changing it puts back the preset's
+   weight and thickness), **Weight** in g/m², draggable, with where it comes from (*From the
+   fabric (Silk): 60 g/m²* or *Its own weight*, and *Use the fabric’s*), **Stiffness** (×,
+   0.1–10, slider and value: on the fabric's stretch, shear and bending alike), **Thickness** (mm: the
+   distance at which it collides), **Anchors** segmented (*None · Top edge · Box*; with *Box*,
+   two rows *From* and *To* of three % fields, X Y Z of the cloth's extent), **Pressure** (×,
+   0–3, enabled only for a closed shell; open, the note says so), **Self-collision** and
+   **Keep area** switches, **Resolution** (mm, 0 automatic, with what it makes now: *Now:
+   2,048 triangles, 13.3 mm*), **Face** (*The whole part is cloth* or *48 triangles of the part
+   are cloth; the rest holds them*, with *Use the selected faces* at the *Faces* level and
+   *The whole part*), a note and the **Start** and **Drape over the part** buttons. Each change
+   is a store action (`physics/cloth`), a drag a single undo entry.
+   ![the Physics section of a cloth](ui/cloth-inspector.png)
    **Weather** (U16). How the rain, dust and snow of the effects that fall on
    the parts (*On the parts*, Scene ▸ Ambient) treat **each part**:
    **Gets wet** (switch, on by default: off, no drop and no film of water
@@ -1651,6 +1675,18 @@ note: how to start, and while it runs, that the viewport shows it in *Fast*
   simulated · 4 s*), in the same undo
   entry; *Reset* removes it too.
   ![the rain on the glass, paused](ui/physics-rain.png)
+- **Cloth** (S9). *Start* runs the parts whose role is *Cloth* with the *Dynamic* ones (which
+  push them) or alone; *Drop* does not, *Drape over the part* runs its sheet alone. The bar
+  adds what the engine moves (*Cloth: 1,089 vertices*: the vertices of its sheets, split to
+  their resolution); a run with cloth stops by itself when the bodies sleep and the cloth has
+  settled. Its recording is a **Simulation** clip of each cloth part (*Cloth drapes as
+  simulated · 2.4 s*), which does not move the part: it says which frame of its cloth the part
+  shows, in *Fast* and in *Full*; *Reset* removes it. With an engine that does not simulate
+  cloth (one built before S9) the rest runs and the bar says *Cloth left out: this engine
+  does not simulate it* (a toast says to rebuild it); a run of cloth alone says *This engine
+  does not simulate cloth: rebuild it (npm run engine:build)*.
+  ![the cloth while it runs](ui/cloth-bar.png)
+  ![a box before and after Drape over the part](ui/cloth-drape.png)
 - **The parts** (S3c). With some effect *On the parts*, *Start* wets,
   dusts and snows the visible parts that the simulation does not move (the
   *Dynamic* ones not: they would be wet where they were), with the bodies or alone;
@@ -1699,7 +1735,10 @@ primitives before and after *Drop*) and
 `docs/ui/physics-drop-strip.png` (six instants of the recorded clip). U16
 (`tools/u16-check.mjs`): `docs/ui/physics-inspector.png` (the Physics section
 with both groups, on the example bottle's Body) and
-`docs/ui/physics-drawer-summary.png` (the drawer with its line).
+`docs/ui/physics-drawer-summary.png` (the drawer with its line). S9
+(`tools/cloth-check.mjs`): `docs/ui/cloth-bar.png`, `docs/ui/cloth-drape.png`,
+`docs/ui/cloth-inspector.png` and `docs/ui/cloth-sheet.png` (four fabrics of the contact sheet
+`out/cloth-sheet.html`, `tools/cloth-sheet.mjs`, rendered by the engine).
 
 **Queue drawer**: list of jobs in order (thumbnail, name, camera,
 size, *Finish by*, AI yes or no, state and progress), draggable to
@@ -1711,7 +1750,9 @@ queue goes on with the next); at the top *Clear finished* and a button
 that follows the state of the queue: **Pause** while it runs (stops the job
 in progress and frees the engine at once; the job goes back to *Waiting*),
 **Resume** after a pause (goes on with what was paused, and the paused job
-starts over: a render is not resumed halfway) and **Start queue** if
+starts over: a render is not resumed halfway; the image it had rendered so far
+is saved apart as `<name>-partial` and kept in the results history, marked
+*Partial*, so the work is not lost) and **Start queue** if
 not, disabled when nothing is waiting. A *Resume* pressed
 while the paused job is still stopping is not lost. The
 finished ones stay in the list with their thumbnail; a click opens the results
@@ -2359,7 +2400,7 @@ group title in auxiliary small caps:
 | **System** | **Plugins** | The plugins of the registry (`src/data/plugins.json`) and those installed from a file, each with its logo, name, publisher, version, size, summary, the **Closed licence** chip and **Project page**; *Install*, *Update to X*, *Remove*; the activation key asked for in its row; **Install from file…** (detail below) |
 | | **Storage** | Space used by category (models, results history, library, cache) with a bar and *Free up* per row; history limit (number and size); ask the browser for persistent storage; on desktop, the data folder with *Open folder* |
 | | **Desktop** | Only in the desktop application: portable mode (yes or no and where the data is), browser that draws the window, logs folder |
-| | **Updates** | Above *About*, on web and desktop: installed version; **Check for updates** with the result in its row (*You have the latest version* · *Repackshot X is available* with the main button and **Release notes** · *Couldn’t check* with the real reason); **Check at startup** (on by default): at startup it checks once in the background and, if there is a new version, says so in a line of the status bar with the same main button, *Release notes* and *Later*, never in a window; *Last checked*. The source is GitHub's releases (`src/data/update-feed.ts`). **The main button** is **Install and restart** on desktop (P5): it asks about unsaved changes (§4.3), the launcher downloads this copy's package and its `SHA256SUMS.txt`, checks the sum, installs it and the application restarts itself with the new version (detail in `ARCHITECTURE.md` §5.5). On the web it is still **Download** (opens the release page) and the row says so: *Download opens the release page. To update from inside the application, use the desktop version.* It is also *Download* where the launcher does not know how to update itself (an earlier one) or the release carries no package or sums. **While installing**, the row (and the status bar line, with *Settings* closed) says where it is: *Downloading… 45 % · 3.2 of 7.1 MB* with a thin bar (grey, no colour), *Verifying…*, *Installing… the application will restart*, with **Cancel the update** until it starts changing files; closing *Settings* does not stop it (the state belongs to the launcher and is followed on page reload). **Failures** appear in the row with their reason and **Try again**: the download, a sum that does not match (*it was not installed*), no space on the disk, the package that could not be unpacked or put in place (*nothing was changed*) and *this copy is neither installed nor portable* (then the button is *Download*). On starting again, a notice says *Repackshot was updated to version X* |
+| | **Updates** | Above *About*, on web and desktop: installed version; **Check for updates** with the result in its row (*You have the latest version* · *Repackshot X is available* with the main button and **Release notes** · *Couldn’t check* with the real reason); **Check at startup** (on by default): at startup it checks once in the background and, if there is a new version, asks in a window (the same options as this row — the main button, *Release notes*, and the install followed in the window — plus a small *What changed* from the release's own notes, *Skip this version*, remembered so that version is not announced again, and *Later*; the owner asked for the window, 2026-10-20) and also says so in a line of the status bar with the same buttons, which stays after the window is answered until *Later*; *Last checked*. The source is GitHub's releases (`src/data/update-feed.ts`). **The main button** is **Install and restart** on desktop (P5): it asks about unsaved changes (§4.3), the launcher downloads this copy's package and its `SHA256SUMS.txt`, checks the sum, installs it and the application restarts itself with the new version (detail in `ARCHITECTURE.md` §5.5). On the web it is still **Download** (opens the release page) and the row says so: *Download opens the release page. To update from inside the application, use the desktop version.* It is also *Download* where the launcher does not know how to update itself (an earlier one) or the release carries no package or sums. **While installing**, the row (and the status bar line, with *Settings* closed) says where it is: *Downloading… 45 % · 3.2 of 7.1 MB* with a thin bar (grey, no colour), *Verifying…*, *Installing… the application will restart*, with **Cancel the update** until it starts changing files; closing *Settings* does not stop it (the state belongs to the launcher and is followed on page reload). **Failures** appear in the row with their reason and **Try again**: the download, a sum that does not match (*it was not installed*), no space on the disk, the package that could not be unpacked or put in place (*nothing was changed*) and *this copy is neither installed nor portable* (then the button is *Download*). On starting again, a notice says *Repackshot was updated to version X* |
 | | **About** | Version, licence (PolyForm Noncommercial 1.0.0, summary and full text), **third-party licences** with their text (three.js, rhino3dm, occt-import-js with the link to its source code, stable-diffusion.cpp and ggml —MIT, the desktop AI inference runtime, X3c—, and the downloaded AI models with theirs), credits (the public literature the engine follows) |
 
 **Right column**: section title, a sentence on what is adjusted
@@ -2445,13 +2486,18 @@ all the settings (P3e). Capture: `docs/ui/settings-ai-prompt.png`.
   an API chosen below. The guard checks every image either way, with the same
   protections.*
 - **API**: a list, *Generic HTTP image-to-image*, *Stability AI · Stable
-  Diffusion 3.5*, *OpenAI · image edits*.
+  Diffusion 3.5*, *OpenAI · image edits*, *Google · Gemini image*, *xAI ·
+  Grok Imagine*.
 - **Endpoint**: for a preset, its summary in the monospace style (*POST
   https://api.stability.ai/v2beta/stable-image/generate/sd3 · Multipart form ·
   image*), the note *Written from the service’s public API documentation and
   not tried against the live service yet…* with a link to the documentation,
   and for a service without strength or seed, the note that the guard limits
-  how much changes. For the generic endpoint, a form in two columns: *URL*,
+  how much changes. **Test connection** sends one minimal call through the
+  endpoint as configured — a 512 × 512 solid grey tile, *Return this image
+  unchanged.* — and reports *Connection works: the service answered with an
+  image.* or the call's error in words; the image sent is synthetic, never a
+  render. For the generic endpoint, a form in two columns: *URL*,
   *Method*, *Key header*, *Before the key*, *More headers* (one a line, *Name:
   value*), *Body* (*JSON* · *Multipart form*), *Answer* (*JSON with the image* ·
   *The image itself*), *Template* (monospace, with the list of placeholders
@@ -2805,6 +2851,11 @@ shortcuts* in the menu):
 | `Esc` | Return from *Look through*; leave *Move* or *Scale*; deselect; close palette or menu |
 | `Del` | Delete the selection |
 
+Shortcuts with `Ctrl/⌘` work while typing in a field — except `Ctrl/⌘ ⏎`
+and `Ctrl/⌘ ⇧ ⏎`: typing a prompt and pressing them does not start a
+render (a render is long and starts the queue; the render window's own ⏎
+skips typing the same way).
+
 ---
 
 ## 4 · Behaviours that make the difference
@@ -2863,7 +2914,13 @@ decision with many parameters made all at once, as in KeyShot,
 the **Settings** window (§2.9: sections grouped in a column on
 the left, changes instantly) and the **material editor** (§2.10,
 phase M3a: a graph needs a canvas, and the viewport stays live behind).
-No other window; nothing opens by itself.
+No other window; nothing opens by itself — with one exception the owner
+asked for (2026-10-20): when the check at startup finds a newer version,
+a small window asks whether to update now (§2.9, *Updates*), once per
+version and session; the offer also stays as a line in the status bar.
+The window carries the section's own options for the version, a small
+*What changed* from the release's notes, and *Skip this version*, which
+is remembered: that version is not announced again, a newer one is.
 
 **The question about unsaved changes** (only if the project has them)
 is the same for everything that would discard them —closing the window,

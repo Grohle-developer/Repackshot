@@ -530,7 +530,7 @@ describe('S7: the physics bar pours the liquid', () => {
     const runs: { bodies: number; liquid: Uint8Array | null; maxSeconds: number }[] = [];
     const surface = surfaceBytes(boxMesh([-1, -1, 0], [1, 1, 1]));
     const physics: PhysicsPort = {
-      run(spec, options, update, _wet, _parts, liq): PhysicsRunHandle {
+      run(spec, options, update, _wet, _parts, _cloth, liq): PhysicsRunHandle {
         runs.push({ bodies: spec.bodies.length, liquid: liq ?? null, maxSeconds: options.maxSeconds });
         onUpdate = update;
         const started: PhysicsStarted = { ids: new Uint32Array(0), initial: new Float32Array(0), bodies: 0, liquid: { records: [frameRecord(12, 2, 0)], surfaces: [surface] } };

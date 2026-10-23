@@ -744,3 +744,42 @@ fn a_final_s_frame_comes_scaled_to_the_live_view_s_box() {
         204
     );
 }
+
+#[test]
+fn startup_project_serves_the_file_passed_on_the_command_line() {
+    // No file passed: nothing to open.
+    let bare = TestServer::start("startup-project-none", 1);
+    assert_eq!(bare.api("GET", "/api/startup-project", b"").status, 404);
+
+    // The file passed: its bytes, with its name in the header (percent-encoded).
+    let dir = std::env::temp_dir().join(format!("rt-app-it-startup-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("mi botella.repack");
+    std::fs::write(&file, b"{\"format\":\"repackshot\"}").unwrap();
+    let options = rt_app::server::Options {
+        open_file: Some(file.clone()),
+        ..rt_app::server::Options::default()
+    };
+    let t = TestServer::start_with_options("startup-project", 1, options, |_| {});
+    let r = t.api("GET", "/api/startup-project", b"");
+    assert_eq!(r.status, 200);
+    assert_eq!(r.text(), "{\"format\":\"repackshot\"}");
+    assert_eq!(
+        r.header("x-repackshot-file-name"),
+        Some("mi%20botella.repack")
+    );
+    std::fs::remove_file(&file).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
+
+    // The file passed but gone: nothing to open, not a crash.
+    let gone = TestServer::start_with_options(
+        "startup-project-gone",
+        1,
+        rt_app::server::Options {
+            open_file: Some(file),
+            ..rt_app::server::Options::default()
+        },
+        |_| {},
+    );
+    assert_eq!(gone.api("GET", "/api/startup-project", b"").status, 404);
+}

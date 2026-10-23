@@ -1062,7 +1062,11 @@ export class NativeEngine {
       cancelled = true;
       this.deleteJob(id);
     };
-    signal?.addEventListener('abort', cancel);
+    // Stopped with `partialOnAbort` (the queue): the abort does not delete the job at once — the catch below reads
+    // its accumulation first, then deletes it. Without it (the preview) the job is deleted at once, as before.
+    signal?.addEventListener('abort', () => {
+      if (!opts.partialOnAbort) cancel();
+    });
     // Every request carries the signal: Pause or Stop rejects at once, whatever the launcher does.
     const init = signal ? { signal } : {};
     try {
@@ -1169,6 +1173,15 @@ export class NativeEngine {
         ...(noisy ? { noisy } : {}),
       };
     } catch (err) {
+      // Aborted (Pause, Stop) with `partialOnAbort` (the queue): the job's accumulation so far is read first (one
+      // plain GET: the job still runs until it is deleted) and handed back as a partial image — the caller saves it
+      // and still treats the render as stopped. A job that finished meanwhile comes back whole, not partial.
+      if ((signal?.aborted || isAbort(err)) && opts.partialOnAbort && id !== null) {
+        const partial = await this.partialOf(id, state, opts).catch(() => null);
+        cancel();
+        if (partial) return partial;
+        throw abortError();
+      }
       // Aborted (Pause, Stop): the launcher stops the job, and the caller hears it as an abort.
       if (signal?.aborted || isAbort(err)) {
         cancel();
@@ -1180,6 +1193,38 @@ export class NativeEngine {
       signal?.removeEventListener('abort', cancel);
       this.rendering--;
     }
+  }
+
+  /**
+   * The accumulation of final render `id` as it is now (one plain GET: the job still runs until it is deleted),
+   * tonemapped as the finished image would be. Null when it has no image yet (no pass finished) or the job is
+   * gone. A finished job (`FLAG_DONE`) comes back whole, not partial. No `renderId`: the job is deleted right
+   * after, and nothing was asked to be kept for the AI.
+   */
+  private async partialOf(id: number, state: ProjectState, opts: RenderOptions): Promise<RenderedPixels | null> {
+    const res = await this.api.request(`/api/render/${id}`);
+    if (!res.ok) return null;
+    const f = parseFrame(await res.arrayBuffer());
+    if (!f.sums || f.samples <= 0) return null;
+    const tone0 = this.source.tone(state);
+    const metered = tone0.auto && f.samples > 0 ? meterExposure({ width: f.width, height: f.height, sum: f.sums, samplesAt: () => f.samples }) : null;
+    const tone = { exposureEv: tone0.exposureEv + (metered ?? 0), tonemap: tone0.tonemap };
+    const data = await exactBytesSliced(f.sums, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap);
+    const denoised = (f.flags & FLAG_DENOISED) !== 0;
+    const noisy = denoised && f.noisy ? { data: await exactBytesSliced(f.noisy, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap), ...(opts.keepLinear ? { sum: f.noisy } : {}) } : undefined;
+    return {
+      width: f.width,
+      height: f.height,
+      data,
+      samples: f.samples,
+      seconds: f.seconds,
+      exposureEv: tone.exposureEv,
+      tonemap: tone.tonemap,
+      ...(opts.keepLinear ? { sum: f.sums } : {}),
+      ...(denoised ? { denoised: true } : {}),
+      ...(noisy ? { noisy } : {}),
+      ...((f.flags & FLAG_DONE) === 0 ? { partial: true } : {}),
+    };
   }
 
   /**

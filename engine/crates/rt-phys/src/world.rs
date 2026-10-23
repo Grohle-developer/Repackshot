@@ -150,6 +150,25 @@ pub enum ShapeSource<'a> {
     Cuboid(Vec3),
 }
 
+/// S9: a dynamic body as [`World::collider`] gives it: its shape about its centre of mass (in the
+/// world's axes when it was added), where that centre is now and how the body has turned since,
+/// and how fast it goes (zero while it sleeps).
+#[derive(Clone, Copy, Debug)]
+pub struct Collider<'a> {
+    /// The shape, about the centre of mass.
+    pub shape: &'a Shape,
+    /// Centre of mass, mm.
+    pub center: Vec3,
+    /// Rotation since the body was added.
+    pub rotation: Quat,
+    /// mm/s.
+    pub velocity: Vec3,
+    /// rad/s.
+    pub spin: Vec3,
+    /// The farthest point of the shape from its centre, mm.
+    pub radius: f32,
+}
+
 /// Surface and mass parameters of a body.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyParams {
@@ -549,6 +568,19 @@ impl World {
         self.bodies.get(i as usize).map(|b| Pose {
             translation: b.x,
             rotation: b.q,
+        })
+    }
+
+    /// S9: body `i` as something that is not a body collides with it (the cloth, which the bodies
+    /// push but which does not push them back).
+    pub fn collider(&self, i: u32) -> Option<Collider<'_>> {
+        self.bodies.get(i as usize).map(|b| Collider {
+            shape: &b.shape,
+            center: b.x,
+            rotation: b.q,
+            velocity: if b.asleep { Vec3::ZERO } else { b.v },
+            spin: if b.asleep { Vec3::ZERO } else { b.w },
+            radius: b.radius,
         })
     }
 

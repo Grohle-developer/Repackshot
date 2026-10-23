@@ -5,6 +5,54 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Physics
+
+- **Liquids**: right-click a part ▸ **Convert to liquid** ▸ *Water*, *Oil*, *Honey*, *Milk*, *Gel*, *Syrup*, *Orange juice* or *Red wine*: the part is hidden and a liquid part takes its shape, with the preset's look; *Start* in the physics bar fills it with particles and pours it into the parts that hold it and onto the floor, each liquid flowing as it should (honey slow and clinging, water quick to level). The run is recorded on the timeline like a fall, and each frame shows the liquid's surface in *Fast*, in *Full* and in the render. One undo step converts, another the run; *Reset* takes it away (S7).
+- **The Liquid section** of the inspector changes the liquid and the particle size (automatic from the part's volume, or your own), and says how many particles to expect and, after a run, how many there are (S7).
+- **A liquid inside its glass**: where a liquid touches the glass that holds it, the render bends the light at the ratio of the two (water in glass), not as two surfaces against air, so there is no bright line of air at the contact. A glass material has a *Nested priority* for overlapping clear solids (0, automatic: the glass holds the liquid). With an older render engine, the Liquid section says the contact is drawn as against air (S7).
+
+## v0.1.27 — 2026-10-20
+
+### Updates
+
+- **The update window shows what changed, offers what Settings offers, and can skip a version.** The window that asks about a newer version at startup now carries the options of Settings ▸ Updates for that version — the main button (*Install and restart* or *Download*), *Release notes*, and the install followed in the window itself (progress with *Cancel the update*, *Restart now* when it waits, a failure with its reason and *Try again*) — plus a small *What changed*: the first lines of the release's own notes, in plain words. And *Skip this version*: the version is remembered and is not announced again, while a newer one still is. Settings keeps offering a skipped version — skipping silences the announcement, not the update.
+
+### Accessibility and strings
+
+- **Accessibility and i18n pass for v0.1.26 (H1).** The contrast, static-accessibility and string guards pass, and the strings added since v0.1.16 (sets and lights, the focus modes, the lens editor, the front glass) were reviewed in both languages with no correction needed. The 36 contrast pairs of the auxiliary greys still wait for a design decision on the tokens, and the in-browser audit could not be re-run in the environment at hand (its Chromium refuses the test's own local pages).
+
+## v0.1.26 — 2026-10-20
+
+### Updates
+
+- **A newer version is asked in a window at startup.** The check at startup already found new versions, but only said so in a line of the status bar, easy to miss. Now a window asks whether to update, as the application opens: *Install and restart* on the desktop (or *Download* where the application cannot install), *Release notes* and *Later*. It is asked once per version and session; answering it leaves the offer as the status bar line, which stays until its own *Later*.
+
+## v0.1.25 — 2026-10-20
+
+### AI post-processing
+
+- **Fixed: Test connection showed nothing.** The result line was written when the test finished and then wiped by the panel's own refresh, which runs as the test ends: with a key stored for the host, the refresh cleared the line, so the test seemed to say neither success nor failure. The result now stays until the endpoint's configuration changes or the key goes away.
+
+### Projects and startup
+
+- **Fixed: opening a `.repack` file closed the program.** The launcher rejected any argument it did not know, and the Windows build has no console, so running `repackshot.exe file.repack` — what a double-click does once the file type is associated with Repackshot — died silently, before the page ever loaded. The launcher now takes one project file (`.repack` or `.repack.json`) on its command line; the page asks the launcher for it at startup (`GET /api/startup-project`) and opens it, like a dropped file. A second file, or an unknown argument, is still refused.
+- **Open project in the empty state**: the empty viewport now offers *Open project* next to *Import model* and *Load example part*, so a project can be opened without the menu or a drag.
+
+## v0.1.24 — 2026-10-19
+
+### AI post-processing
+
+- **New API presets**: Google Gemini (`gemini-2.5-flash-image`, key in `x-goog-api-key`, image at `candidates.0.content.parts.1.inlineData.data`) and xAI Grok Imagine (`grok-imagine-image-2.0`, image at `data.0.b64_json`), written from the services' public API documentation and not yet tried against the live services.
+- **Fixed: `{{image_base64}}` (and `{{depth_base64}}`, `{{edges_base64}}`) never filled.** The placeholder pattern allowed only letters and underscores, no digits, so a template using `{{image_base64}}` validated as *no image* and the render window's AI switch only ever opened Settings, never turned on. The pattern now takes digits too, on the page and in the launcher, and the shared cases cover it.
+- **Test connection** (Settings ▸ AI ▸ Model by API): one minimal call through the endpoint as configured — a 512 × 512 solid grey tile, *Return this image unchanged.* — reporting whether the service answered with an image, or the call's error in words. On desktop it runs through the launcher (`POST /api/ai/ping`) with the stored key; on the web through the same code path as a render's call.
+
+### Queue and render
+
+- **Stopping a render saves the image so far**: pausing the queue, or *Stop* on the job being rendered, keeps the accumulation up to where the render had reached — saved apart as `<name>-partial` (a video's stopped frame as a PNG) and kept in the results history, marked *Partial*, with the samples it reached. The stopped job still starts over on *Resume*: a render is not resumed halfway, but the work it had done is no longer thrown away.
+- **Fixed: the queue no longer starts from a `Ctrl/⌘ ⏎` pressed while typing.** The Render shortcuts were global, so they fired even inside a text field — typing a prompt and pressing the usual confirm gesture started a render without the Render button ever being pressed (only Pause was then available, as while a queue runs). Render and Render now are no longer global: they still work with the focus outside a field.
+
+## v0.1.23 — 2026-10-19
+
 ### Camera and lens
 
 - **Focus with a click takes what the image shows**: the point is the engine's own first hit in the whole scene along the clicked pixel's ray, the face the camera sees there, not the viewport's geometry along that ray; the engine's pick also steps over parts hidden to the camera, as the camera does (F1).
@@ -23,9 +71,15 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ### Physics
 
-- **Liquids**: right-click a part ▸ **Convert to liquid** ▸ *Water*, *Oil*, *Honey*, *Milk*, *Gel*, *Syrup*, *Orange juice* or *Red wine*: the part is hidden and a liquid part takes its shape, with the preset's look; *Start* in the physics bar fills it with particles and pours it into the parts that hold it and onto the floor, each liquid flowing as it should (honey slow and clinging, water quick to level). The run is recorded on the timeline like a fall, and each frame shows the liquid's surface in *Fast*, in *Full* and in the render. One undo step converts, another the run; *Reset* takes it away (S7).
-- **The Liquid section** of the inspector changes the liquid and the particle size (automatic from the part's volume, or your own), and says how many particles to expect and, after a run, how many there are (S7).
-- **A liquid inside its glass**: where a liquid touches the glass that holds it, the render bends the light at the ratio of the two (water in glass), not as two surfaces against air, so there is no bright line of air at the contact. A glass material has a *Nested priority* for overlapping clear solids (0, automatic: the glass holds the liquid). With an older render engine, the Liquid section says the contact is drawn as against air (S7).
+- **Cloth**: a new role in *Physics*, *Cloth*: a part (its face picked at the *Faces* level, or the whole part; a closed solid keeps its volume with *Pressure*) folds and drapes over what is under it when the physics bar's *Start* runs, colliding with itself, the other parts, the falling bodies and the floor, and blown by the wind of the *Ambient* effects. Sharp edges and corners (the rim of a cap, the edges of a box) stay under the cloth instead of showing through it between its vertices (S9).
+- **Fabrics by type and weight**: silk 60 g/m², fine cotton 120, poplin 150, linen 200, wool 300, denim 400, canvas 600, felt 800, thin leather 900, thick leather 1,200 and neoprene 1,500, each with its stretch, its shear (a woven fabric's threads scissor far more easily than they stretch, so it drapes over a dome in soft folds instead of creasing like paper) and its bending rigidity, measured on the simulated versions of the textile laboratory's cantilever and drape tests; *Weight*, *Stiffness* (on the stretch, the shear and the bending alike) and *Thickness* on top; anchors along the top edge or inside a box; self-collision and *Keep area* (S9).
+- **Drape over the part**: in the context menu, the inspector and the palette, a sheet of cloth falls over the selection and drapes it, in one undo step (S9).
+- **Cloth is recorded** into the animation like every simulation, and the viewport in *Fast* and the render in *Full* draw the frame the playhead shows; the physics bar says how many vertices the simulator moves. With an engine built before this version the rest of the simulation runs without the cloth, and the bar says so (S9).
+
+### Engine
+
+- **Cloth in `rt_phys::cloth`**: extended position based dynamics with an orthotropic membrane per triangle (stretch along the warp and the weft and shear between them, after Strain Based Dynamics), dihedral bending calibrated so that a cantilever measures the fabric's rigidity, area and pressure constraints; collisions with the cloth itself (a spatial hash grid), the rigid bodies, the floor and the static triangles, and of the cloth's surface with the sharp vertices and edges of the parts and of the bodies' hulls (point against triangle and edge against edge); the wind with gusts; the `CLT1` format (version 2) and the `cloth_*` exports of `rt.wasm`. Deterministic: the same bits natively and in WebAssembly, on both SIMD paths and with any number of threads (S9).
+- The cloth's frames reach the render as the part's own mesh, so no new scene section or capability bit is needed (S9).
 
 ## v0.1.22 — 2026-10-18
 

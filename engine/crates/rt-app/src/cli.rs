@@ -10,7 +10,7 @@ repackshot: the Repackshot desktop application
 
 USAGE:
     repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window KIND]
-               [--after-update]
+               [--after-update] [PROJECT.repack]
     repackshot --serve-only [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N]
     repackshot --hardware <file.ini> [--device gpu|cpu]
     repackshot --shortcut-id <file.lnk>
@@ -33,6 +33,8 @@ OPTIONS:
                             else the second. Also --window=KIND
         --after-update      the previous version started this one to finish an update
                             (the application passes it by itself; it only says so in the log)
+        PROJECT.repack      a project file to open at startup (a double-click in the file
+                            manager passes it here; anything else is an unknown argument)
         --serve-only        no window: print the URL (with its token) and serve until stopped
         --hardware <file>   detect the computer, apply the AI model recommendation and write
                             an INI file (UTF-16) for the installer, then exit
@@ -61,6 +63,8 @@ pub struct RunOptions {
     pub window: WindowChoice,
     /// `--after-update`: the previous version started this one to finish an update.
     pub after_update: bool,
+    /// A project file passed on the command line (`.repack` or `.repack.json`), to open at startup.
+    pub open_file: Option<PathBuf>,
 }
 
 /// A parsed command line.
@@ -134,7 +138,21 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
                         .ok_or_else(|| format!("--device expects gpu or cpu, got '{v}'"))?,
                 );
             }
-            other => return Err(format!("unknown argument '{other}'")),
+            other => {
+                // A lone project file (a double-click in the file manager): opened at startup.
+                // Anything else that is not a flag is still an unknown argument.
+                if other.starts_with('-') {
+                    return Err(format!("unknown argument '{other}'"));
+                }
+                let lower = other.to_lowercase();
+                if !lower.ends_with(".repack") && !lower.ends_with(".repack.json") {
+                    return Err(format!("unknown argument '{other}'"));
+                }
+                if opts.open_file.is_some() {
+                    return Err("only one project file can be opened".into());
+                }
+                opts.open_file = Some(PathBuf::from(other));
+            }
         }
     }
     if let Some(lnk) = shortcut {
@@ -184,6 +202,7 @@ mod tests {
                 serve_only: true,
                 window: WindowChoice::Auto,
                 after_update: false,
+                open_file: None,
             }))
         );
         assert_eq!(
@@ -231,6 +250,8 @@ mod tests {
             &["--hardware", "x", "--serve-only"],
             &["--bogus"],
             &["file"],
+            &["file.txt"],
+            &["a.repack", "b.repack"],
             &["--window=edge"],
             &["--window"],
             &["--window", "x"],
@@ -242,6 +263,29 @@ mod tests {
             &["--after-update=1"],
         ] {
             assert!(p(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_project_file_on_the_command_line_opens_at_startup() {
+        for (args, want) in [
+            (&["bottle.repack"][..], "bottle.repack"),
+            (&["old.repack.json"][..], "old.repack.json"),
+            (&[r"C:\Users\a\Bottle.REPACK"][..], r"C:\Users\a\Bottle.REPACK"),
+            (
+                &["--port", "8123", "bottle.repack"][..],
+                "bottle.repack",
+            ),
+        ] {
+            assert_eq!(
+                p(args),
+                Ok(Command::Run(RunOptions {
+                    port: if args.contains(&"--port") { 8123 } else { 0 },
+                    open_file: Some(want.into()),
+                    ..RunOptions::default()
+                })),
+                "{args:?}"
+            );
         }
     }
 }

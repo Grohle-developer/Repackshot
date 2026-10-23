@@ -89,6 +89,8 @@ pub struct App {
     pub ai: Arc<crate::ai::Ai>,
     /// Updating the application from inside it (`/api/update/*`, `src/update/`).
     pub update: Arc<crate::update::Updater>,
+    /// A project file passed on the command line, for `/api/startup-project` (None: no file was passed).
+    pub open_file: Option<std::path::PathBuf>,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
@@ -193,6 +195,7 @@ impl App {
         let m = req.method.as_str();
         api(match (m, parts.as_slice()) {
             ("GET", ["info"]) => self.info(),
+            ("GET", ["startup-project"]) => self.get_startup_project(),
             ("POST", ["alive"]) => {
                 self.alive();
                 Response::empty(204)
@@ -318,6 +321,28 @@ impl App {
             ) => Response::error(405, "method", "method not allowed"),
             _ => Response::error(404, "not-found", "no such endpoint"),
         })
+    }
+
+    /// `GET /api/startup-project`: the project file passed on the command line, for the page to open at
+    /// startup (a double-click in the file manager). Only ever that one file: the path comes from the
+    /// command line, never from the request. 404 when no file was passed, or it cannot be read. The
+    /// file name rides in `X-Repackshot-File-Name`, percent-encoded (a header cannot carry UTF-8).
+    fn get_startup_project(&self) -> Response {
+        let Some(path) = &self.open_file else {
+            return Response::error(404, "not-found", "no project file was passed");
+        };
+        let Ok(bytes) = std::fs::read(path) else {
+            return Response::error(404, "not-found", "the project file cannot be read");
+        };
+        let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let mut encoded = String::with_capacity(name.len());
+        for b in name.as_bytes() {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => encoded.push(*b as char),
+                _ => encoded.push_str(&format!("%{b:02X}")),
+            }
+        }
+        Response::bytes(200, "application/json", bytes).with("X-Repackshot-File-Name", &encoded)
     }
 
     fn info(&self) -> Response {
@@ -843,6 +868,9 @@ pub struct Options {
     /// The updater's feed, downloader and mode in place of the real ones (the tests: a local server
     /// in place of GitHub, a kind of copy a Linux computer cannot be).
     pub update: Option<crate::update::Config>,
+    /// A project file passed on the command line (`.repack` or `.repack.json`): the page reads it
+    /// once at startup from `/api/startup-project` and opens it (a double-click in the file manager).
+    pub open_file: Option<std::path::PathBuf>,
 }
 
 /// A running server.
@@ -896,6 +924,7 @@ impl Server {
                 None => crate::ai::Ai::new(&paths_data),
             },
             update,
+            open_file: options.open_file,
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),

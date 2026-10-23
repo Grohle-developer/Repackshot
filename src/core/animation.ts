@@ -16,6 +16,7 @@ import { decomposeMatrix } from './transform';
 import { trackPose, type PhysicsTrack } from './physics';
 import { glassFrameIndex, type GlassTrack } from './wet';
 import { partsFrameIndex, type PartsTrack } from './wet-parts';
+import { clothFrameIndex, type ClothTrack } from './cloth';
 import { liquidFrameIndex, type LiquidTrack } from './liquid';
 
 /**
@@ -124,6 +125,11 @@ export interface MotionClip {
    * and the samples of every frame. The clip moves nothing; it says which frame the parts show.
    */
   parts?: PartsTrack;
+  /**
+   * PHYSICS of a cloth part (S9): the recorded shape of its cloth (core/cloth.ts), its sheet's vertices per frame. The
+   * clip moves nothing; it says which frame the part shows.
+   */
+  cloth?: ClothTrack;
 }
 
 /** A node's position (mm) and rotation (degrees, XYZ) without its scale. */
@@ -358,6 +364,8 @@ export interface Pose {
   glass?: Record<CameraId, GlassPose>;
   /** S3c: the frame of the recorded rain, dust and snow on the parts at this instant (the last such clip wins). */
   parts?: GlassPose;
+  /** S9: the frame of each cloth part's recorded shape at this instant, by part (the last clip of a part wins). */
+  cloth?: Record<NodeId, GlassPose>;
   /** S7: the frame each recorded liquid part shows at this instant, by part (the last clip of a part wins). */
   liquids?: Record<NodeId, GlassPose>;
 }
@@ -387,6 +395,7 @@ export function playheadPose(state: ProjectState): Pose | null {
   // recorded rain, dust and snow on the parts.
   const glass = anim.clips.some((c) => c.move === 'PHYSICS' && c.glass);
   const parts = anim.clips.some((c) => c.move === 'PHYSICS' && c.parts);
+  // S9: and the recorded shape of a cloth part (its clip is a node's: `held` has it, without a pose of the node).
   // S7: and the recorded liquids.
   const liquids = anim.clips.some((c) => c.move === 'PHYSICS' && c.liquid);
   if (held.size === 0 && !glass && !parts && !liquids) return null;
@@ -394,6 +403,7 @@ export function playheadPose(state: ProjectState): Pose | null {
   const out: Pose = { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, sectionOffsetMm: 0, materials: {}, fade: null, skySun: null, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
   if (!glass) delete out.glass;
   if (!parts) delete out.parts;
+  if (!out.cloth) delete out.cloth;
   if (!liquids) delete out.liquids;
   return out;
 }
@@ -586,6 +596,11 @@ export function evaluate(state: ProjectState, t: number): Pose {
   for (const c of anim.clips) {
     if (c.move !== 'PHYSICS' || c.target.kind !== 'SCENE' || !c.parts) continue;
     pose.parts = { clip: c.id, frame: partsFrameIndex(c.parts, clipPhase(c, t)) };
+  }
+  // S9: the recorded shape of each cloth part, the frame at this instant.
+  for (const c of anim.clips) {
+    if (c.move !== 'PHYSICS' || c.target.kind !== 'NODE' || !c.cloth) continue;
+    (pose.cloth ??= {})[c.target.id] = { clip: c.id, frame: clothFrameIndex(c.cloth, clipPhase(c, t)) };
   }
   // S7: the recorded liquids, the frame each part shows at this instant.
   for (const c of anim.clips) {

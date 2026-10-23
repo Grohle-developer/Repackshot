@@ -1,10 +1,88 @@
 # Windows test checklist
 
-A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 161) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
+A manual test plan for Repackshot on a real Windows machine (Windows 10 or 11, x64), for anyone who wants to try a release and report what they find. It is grouped by version, newest first, and the points are numbered globally (1 to 224) so a report can cite them. The checklist of each version covers what is new in it; earlier checklists still apply in full.
 
 Tick the points as you go. When reporting an issue, state the version and the number of the point that failed, and attach what the point says to record: the exact message, the `<data>\logs\` folder, screenshots, timings or the files involved. The logs are in `<data>\logs\` (in the portable build, `data\logs\` next to the program; installed, `%LOCALAPPDATA%\Repackshot\logs\`), and *Settings ▸ Desktop ▸ Logs* opens the folder.
 
 ## Unreleased
+
+For liquids (S7).
+
+225. [ ] **Convert to liquid.** On the example bottle, right-click the *Cap* in the scene tree ▸ *Convert to liquid* ▸ *Honey*. The cap must disappear, *Cap (Honey)* appear at the end of the tree, selected, with its *Liquid* section in the inspector (*About … particles at … mm*), and the physics drawer open. *Undo* must bring the cap back in one step, and *Redo* make the honey again.
+226. [ ] **Pour it.** Click *Start*. The bar must count the particles (*Liquid: … particles*) and the honey must flow down over the collar and the bottle's shoulders in *Fast*; it must not go through the bottle. Pause after a second or two, switch to *Full* and render: the honey's surface must be the one *Fast* shows, amber and clear. *Reset* must take the recording away (the cap's shape comes back as the liquid part's).
+227. [ ] **A liquid in a glass.** Make a glass (a *Tube* primitive standing on the floor, with *Clear glass*) and a *Cylinder* inside it a little narrower and shorter, raised a few millimetres; convert the cylinder to *Water* and *Start*. The water must settle at the bottom of the tube without leaking through its wall or the floor; in a *Full* render, where the water touches the glass there must be no bright line of air between them.
+228. [ ] **What to record when reporting.** A screenshot of 226 in *Fast* and the renders of 226 and 227, the version in *Settings ▸ About* (an older desktop launcher shows a note in the *Liquid* section). If something fails, the message verbatim and the `<data>\logs\` folder.
+
+## v0.1.27
+
+**The checklists of v0.1.2 to v0.1.26 still apply in full** (points 1 to 219). In addition:
+
+For the completed update window (needs a published version newer than the one being tested: test with v0.1.26 once this one is out, with *Settings ▸ Updates ▸ Check at startup* on, its default).
+
+220. [ ] **What changed.** Start the older version: the window that asks about this one must carry a small *What changed* with the first novelties of this version's notes, in plain words (no markdown signs, no links).
+221. [ ] **The window's options are the section's.** The window must offer *Install and restart*, *Release notes*, *Skip this version* and *Later* — the same main button *Settings ▸ Updates* shows for the version.
+222. [ ] **The install is followed in the window.** Click *Install and restart*: the window must stay and show where the install is (downloading with its bar, verifying, installing) with *Cancel the update* until the files start changing; if the restart waits (for example, *Cancel* at the question about unsaved changes), the window must offer *Restart now*.
+223. [ ] **Skip this version.** In the window, click *Skip this version*: the window and the status-bar line must go. Start the program again: this version must not be announced again — but *Settings ▸ Updates* must still offer it. (A later version, when there is one, must be announced again.)
+224. [ ] **What to record when reporting.** A screenshot of the window in 220 and whether 221 to 223 behaved as written. If the window never appeared, the version you started from and the `<data>\logs\` folder.
+
+## v0.1.26
+
+**The checklists of v0.1.2 to v0.1.25 still apply in full** (points 1 to 214). In addition:
+
+For the update window at startup (needs a published version newer than the one being tested: test with v0.1.25 once this one is out, with *Settings ▸ Updates ▸ Check at startup* on, its default).
+
+215. [ ] **The window asks at startup.** Start the program: as the application opens, a window must ask about the new version, naming it and when it was published, with *Install and restart*, *Release notes* and *Later*. Before this version only a line of the status bar said so.
+216. [ ] **Later leaves the status-bar line.** Answer *Later* (or press `Esc`, or click outside the window): the window closes and the offer stays as the status-bar line, whose own *Later* dismisses it for good. The window does not ask twice about the same version in the same session.
+217. [ ] **Release notes from the window.** When the window asks again (a later start, a newer version), click *Release notes*: the release's page must open in the browser and the window closes; the status-bar line stays.
+218. [ ] **A manual check opens no window.** In *Settings ▸ Updates*, click *Check for updates*: with a newer version available, only the status-bar line appears — the window belongs to the automatic check at startup.
+219. [ ] **What to record when reporting.** A screenshot of the window in 215 and whether 216 to 218 behaved as written. If the window never appeared, the version you started from, that *Check at startup* was on, and the `<data>\logs\` folder.
+
+## v0.1.25
+
+**The checklists of v0.1.2 to v0.1.24 still apply in full** (points 1 to 209). In addition:
+
+For the connection test's result.
+
+210. [ ] **The result stays.** In *Settings ▸ AI ▸ Model by API*, with a key stored for the endpoint's host, click *Test connection*: when the test finishes, its result line must still be there (before this version it was wiped as the test ended, and the test seemed to say nothing). Then change something in the endpoint (for example the URL): the old result must go away, because it no longer describes what is configured.
+211. [ ] **A failing test stays readable too.** Paste a wrong key and click *Test connection*: the failure must be reported in words and stay on screen long enough to read and copy it.
+
+For opening a project at startup.
+
+212. [ ] **A project file opens the program with the project.** Save a project as `test.repack`. Associate `.repack` with Repackshot (right-click the file, *Open with*, choose `repackshot.exe`), then double-click `test.repack`: the program must start with that project open — its name in the header, its parts in the panel — and must not close silently (that silent close was the bug this version fixes).
+213. [ ] **Open project in the empty state.** Start the program with no project: the empty viewport must offer *Open project* next to *Import model*. Click it, choose `test.repack` in the dialog: the project must open, with its name in the header.
+214. [ ] **What to record when reporting.** A screenshot of the result line in 210 after the test has finished, and of the header and parts panel in 212. If 212 fails, whether the program opened at all, and the `<data>\logs\` folder.
+
+## v0.1.24
+
+**The checklists of v0.1.2 to v0.1.23 still apply in full** (points 1 to 194). In addition:
+
+For the API presets and the connection test.
+
+195. [ ] **Google Gemini preset.** In *Settings ▸ AI ▸ Model by API*, choose *Google · Gemini image*: the endpoint must read `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`, the key header must read `x-goog-api-key` with nothing before it, and the note must say the preset is written from the service's public documentation and not tried against the live service. Paste a key for that host and save it: the row must say `Stored for generativelanguage.googleapis.com: ••••<last 4>`.
+196. [ ] **xAI Grok Imagine preset.** Choose *xAI · Grok Imagine*: the endpoint must read `POST https://api.x.ai/v1/images/edits`, `Authorization: Bearer`, the model `grok-imagine-image-2.0`, and the answer path `data.0.b64_json`.
+197. [ ] **Test connection, working.** With a valid key stored for the endpoint's host, click *Test connection*: it must report that the service answered with an image. This makes one real call — a 512 × 512 grey tile with the prompt *Return this image unchanged.* — which the service may charge.
+198. [ ] **Test connection, failing.** Remove the stored key (or paste a wrong one) and click *Test connection*: it must report the failure in words — the service's own error, e.g. its auth error — and must not hang or crash.
+199. [ ] **The AI switch turns on.** With a valid endpoint and key configured, turn AI processing on in the render window: the switch must stay on, and it must not jump to Settings. With no endpoint configured at all, turning it on must open Settings (that is the intended behaviour for a missing endpoint).
+200. [ ] **What to record when reporting.** Screenshots of 195 and 196, the exact result lines of 197 and 198, and the state of the switch in 199. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+For the partial image on stop.
+
+201. [ ] **Pause saves the image so far.** Start a render with a long budget (e.g. 256 samples), let a few passes run and Pause the queue: a file `<name>-partial` must appear next to the job's output, and the results history must gain an entry named `<name>-partial`, marked *Partial*, with the samples it reached. The job goes back to *Waiting*.
+202. [ ] **Resume restarts, the partial stays.** Resume the paused job: it must start over from 0 samples, and the `-partial` file and its history entry must still be there when it finishes.
+203. [ ] **Stop saves the image so far.** Start a render and *Stop* the job being rendered: the job ends *Cancelled* and the `-partial` file and its history entry must be there.
+204. [ ] **A partial stopped mid-pass is not too bright.** Start a render and Pause it just after a pass has begun (before it finishes): the `-partial` image must show the scene at the samples reported, with no tile or region visibly brighter than the rest.
+205. [ ] **A video's stopped frame.** Start an animation/video job and Pause it mid-way: the stopped frame must be saved as a `<name>-partial.png` image — not fed to the encoder — and the job goes back to *Waiting*.
+206. [ ] **What to record when reporting.** The `-partial` files of 201 and 203, screenshots of the history entries with their samples, and the stopped frame of 205. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+For the render shortcuts.
+
+207. [ ] **Ctrl/⌘ ⏎ while typing does not render.** With the render window open, click into a text field (e.g. the AI prompt), type something and press Ctrl/⌘ ⏎: no job must start and the queue must stay as it was.
+208. [ ] **Ctrl/⌘ ⏎ outside a field still renders.** With the focus outside any field (e.g. after clicking the window's background), press Ctrl/⌘ ⏎: the render must run — or the render window must open if it was closed.
+209. [ ] **What to record when reporting.** The queue state before and after 207, and the render that 208 started. If something fails, the message verbatim and the `<data>\logs\` folder.
+
+## v0.1.23
+
+**The checklists of v0.1.2 to v0.1.22 still apply in full** (points 1 to 161). In addition:
 
 For moving parts, the studio floor, the set's fine samples and the dust's grains (S3e).
 
@@ -13,12 +91,14 @@ For moving parts, the studio floor, the set's fine samples and the dust's grains
 164. [ ] **Dust on the set and its grains.** Put the product on a set with a large floor card (for example *Fragrance*), add *Dust cloud* with *On the parts* and run for a minute: in a render in *Full*, the edge of the dust shadow on the card must be smooth, not in steps, and close up the dust must show small grains over its layer.
 165. [ ] **What to record when reporting.** A screenshot of 162 in *Fast*, and the renders of 163 and 164. If something fails, the message verbatim and the `<data>\logs\` folder.
 
-For liquids (S7).
+For cloth (S9).
 
-172. [ ] **Convert to liquid.** On the example bottle, right-click the *Cap* in the scene tree ▸ *Convert to liquid* ▸ *Honey*. The cap must disappear, *Cap (Honey)* appear at the end of the tree, selected, with its *Liquid* section in the inspector (*About … particles at … mm*), and the physics drawer open. *Undo* must bring the cap back in one step, and *Redo* make the honey again.
-173. [ ] **Pour it.** Click *Start*. The bar must count the particles (*Liquid: … particles*) and the honey must flow down over the collar and the bottle's shoulders in *Fast*; it must not go through the bottle. Pause after a second or two, switch to *Full* and render: the honey's surface must be the one *Fast* shows, amber and clear. *Reset* must take the recording away (the cap's shape comes back as the liquid part's).
-174. [ ] **A liquid in a glass.** Make a glass (a *Tube* primitive standing on the floor, with *Clear glass*) and a *Cylinder* inside it a little narrower and shorter, raised a few millimetres; convert the cylinder to *Water* and *Start*. The water must settle at the bottom of the tube without leaking through its wall or the floor; in a *Full* render, where the water touches the glass there must be no bright line of air between them.
-175. [ ] **What to record when reporting.** A screenshot of 173 in *Fast* and the renders of 173 and 174, the version in *Settings ▸ About* (an older desktop launcher shows a note in the *Liquid* section). If something fails, the message verbatim and the `<data>\logs\` folder.
+166. [ ] **Drape over the part.** Open the example (or put a box on the floor), right click the product in the tree and choose *Drape over the part*. A sheet named *Cloth* must appear above it, the physics bar must open and say *Cloth: … vertices* while it runs, and the sheet must fall, fold over the product and stop by itself. Note how long it took to settle (the bar's simulated time and the wall clock). *Undo* once must remove the sheet and its recording together.
+167. [ ] **Fabrics.** Select the sheet and, in *Physics*, change *Fabric* to *Silk*, then *Denim* and then *Thick leather*, pressing *Start* after each (and *Reset* in between): silk must fold into many small wrinkles, denim must hang in soft rounded folds (not in flat panels with sharp creases, like paper), thick leather into a few broad folds. Change *Weight*, *Stiffness* and *Thickness* and check that each is one undo step.
+168. [ ] **Sharp edges stay under the cloth.** With *Silk* over the example, render in *Full* close up on the cap: its rim must not show through the cloth anywhere; do the same with a box under the sheet, looking at its edges and corners.
+169. [ ] **In *Fast* and in *Full*.** After a drape, the cloth must look the same in *Fast* and in a render in *Full* (the same folds), and scrubbing the timeline back must show the sheet falling.
+170. [ ] **Anchors and wind.** On a vertical plane with the role *Cloth* and *Anchors ▸ Top edge*, add an *Ambient* effect with wind and *Start*: the top edge must stay put and the cloth must flutter downwind.
+171. [ ] **What to record when reporting.** The renders of 167 (the three fabrics), 168 and 169, the times of 166, and if something fails, the message verbatim and the `<data>\logs\` folder.
 
 For the physics of each part in one place (U16).
 

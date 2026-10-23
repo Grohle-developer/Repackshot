@@ -30,6 +30,10 @@
 //! their trails, hang under faces that look down and drip off them and off open edges; dust and
 //! snow as fields that pile where the faces let them rest, in the open.
 //!
+//! **Cloth** (S9, [`cloth`]): sheets of particles held by stretch, bending, area and pressure
+//! constraints (XPBD, many small substeps), colliding with the floor, the static parts, the rigid
+//! bodies of a [`World`] and themselves, blown by the scene's wind.
+//!
 //! **Liquids** (S7, [`liquid`]): position based fluids with viscosity, cohesion, surface tension
 //! and adhesion, filled into a part by ray parity, held by the static parts and the floor, and
 //! their surface rebuilt by marching cubes at every frame.
@@ -42,6 +46,7 @@
 #![deny(missing_docs)]
 
 pub mod bvh;
+pub mod cloth;
 pub mod collide;
 pub mod example;
 pub mod hull;
@@ -53,9 +58,10 @@ pub mod wet;
 pub mod wet_parts;
 pub mod world;
 
+pub use cloth::{Cloth, ClothParams, ClothPiece, ClothSpec, ClothStatic, ClothWind};
 pub use math::Quat;
 pub use scene::Scene;
 pub use shape::ShapeKind;
 pub use wet::{WetPane, WetSource, WetSpec};
 pub use wet_parts::{PartsSpec, WetParts};
-pub use world::{BodyError, BodyParams, Pose, ShapeSource, Transform, World};
+pub use world::{BodyError, BodyParams, Collider, Pose, ShapeSource, Transform, World};

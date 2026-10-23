@@ -168,10 +168,11 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
 }
 
 /**
- * A newer version was found at startup: one quiet line, never a window (UI.md §4.3). On the desktop *Install and
- * restart* does it from inside the application and the line then follows the install (Downloading… 45 %,
- * Verifying…, Installing…, or why it failed with Try again); elsewhere *Download* opens the package for this
- * computer (or the release page). *Release notes* opens the page, *Later* hides the line until the next start.
+ * A newer version was found at startup: one quiet line (the asking itself happens in the startup window,
+ * panels/update-prompt.ts). On the desktop *Install and restart* does it from inside the application and
+ * the line then follows the install (Downloading… 45 %, Verifying…, Installing…, or why it failed with
+ * Try again); elsewhere *Download* opens the package for this computer (or the release page). *Release
+ * notes* opens the page, *Later* hides the line until the next start.
  */
 function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
   const el = h('span', { class: 'update-notice', role: 'status', 'aria-live': 'polite' });

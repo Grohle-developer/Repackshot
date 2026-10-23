@@ -33,6 +33,7 @@ import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, typ
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { lensOf } from '../core/lens-coc';
 import { getMesh } from '../core/meshes';
+import { posedCloth, type PosedCloth } from '../core/cloth';
 import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
@@ -331,6 +332,8 @@ export class PreviewEngine implements RenderEngine {
   /** S3c: the recorded rain, dust and snow on the parts at the playhead's frame. */
   private readonly weather = new WeatherPreview(this.modelRoot);
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
+  /** S9: the geometry each cloth part draws while the pose shows a recorded frame of it (its layout key, the geometry). */
+  private readonly clothGeometries = new Map<NodeId, { layout: string; geometry: THREE.BufferGeometry }>();
   private readonly materials = new Map<string, THREE.MeshPhysicalMaterial>();
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
   /** Q1: the section view: the cutting plane every material of the model carries, and the caps of the cut solids. */
@@ -800,6 +803,8 @@ export class PreviewEngine implements RenderEngine {
     });
     if (weatherChanged || nodesChanged) this.applyWeatherGeometry(state);
     if (weatherChanged) this.assignMaterials(state);
+    // S9: the cloth parts the pose shows a recorded frame of draw that frame's sheet.
+    if (pose?.cloth || this.clothGeometries.size > 0) this.applyClothPose(state, pose);
     // S7: a recorded liquid draws the surface of the frame the playhead shows.
     this.applyLiquidGeometry(state, pose);
     this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
@@ -1026,6 +1031,80 @@ export class PreviewEngine implements RenderEngine {
         this.geometries.delete(k);
       }
     }
+  }
+
+  /**
+   * S9: each cloth part draws the frame of its recorded shape the pose shows (core/cloth.ts `posedCloth`), its own
+   * geometry otherwise. A part keeps one geometry while its layout (vertices, triangles, face materials) stays: a new
+   * frame only moves its positions and normals.
+   */
+  private applyClothPose(state: ProjectState, pose: Pose | null): void {
+    for (const [id, obj] of this.objects) {
+      if (!(obj instanceof THREE.Mesh)) continue;
+      const posed = pose?.cloth?.[id] ? posedCloth(state, id, pose) : null;
+      const had = this.clothGeometries.get(id);
+      if (!posed) {
+        if (had) {
+          had.geometry.dispose();
+          this.clothGeometries.delete(id);
+          const node = state.scene.nodes[id];
+          const base = node ? this.geometryFor(node) : null;
+          if (base) obj.geometry = this.weather.geometryOf(id, base);
+        }
+        continue;
+      }
+      const layout = `${posed.data.positions.length}|${posed.data.indices.length}|${JSON.stringify(posed.node.faceMaterials ?? [])}|${posed.node.smooth === false ? 'f' : 's'}`;
+      if (had && had.layout === layout) {
+        const position = had.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const normal = had.geometry.getAttribute('normal') as THREE.BufferAttribute;
+        (position.array as Float32Array).set(posed.data.positions);
+        (normal.array as Float32Array).set(posed.data.normals);
+        position.needsUpdate = true;
+        normal.needsUpdate = true;
+        had.geometry.computeBoundingSphere();
+        if (obj.geometry !== had.geometry) obj.geometry = had.geometry;
+        continue;
+      }
+      had?.geometry.dispose();
+      const geometry = this.clothGeometry(posed);
+      this.clothGeometries.set(id, { layout, geometry });
+      obj.geometry = geometry;
+    }
+    for (const id of [...this.clothGeometries.keys()]) {
+      if (!this.objects.has(id)) {
+        this.clothGeometries.get(id)!.geometry.dispose();
+        this.clothGeometries.delete(id);
+      }
+    }
+  }
+
+  /** S9: the geometry of a posed cloth part, as `geometryFor` makes a part's (its face materials as groups). */
+  private clothGeometry(posed: PosedCloth): THREE.BufferGeometry {
+    const { node, data } = posed;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(data.positions.slice(), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(data.normals.slice(), 3));
+    if (data.uvs) g.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
+    g.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    if (node.faceMaterials?.length) {
+      const ids: (string | null)[] = [node.material ?? null];
+      const per = new Array<number>(data.indices.length / 3).fill(0);
+      for (const f of node.faceMaterials) {
+        let i = ids.indexOf(f.material);
+        if (i < 0) i = ids.push(f.material) - 1;
+        for (let t = f.start; t < f.start + f.count && t < per.length; t++) per[t] = i;
+      }
+      let start = 0;
+      for (let t = 1; t <= per.length; t++) {
+        if (t === per.length || per[t] !== per[start]) {
+          g.addGroup(start * 3, (t - start) * 3, per[start]);
+          start = t;
+        }
+      }
+      g.userData.materialIds = ids;
+    }
+    g.computeBoundingSphere();
+    return g;
   }
 
   /** S3c: each part draws its weathered copy of its geometry while it carries the weather, its own otherwise. */

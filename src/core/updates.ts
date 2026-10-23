@@ -78,6 +78,8 @@ export interface ReleaseInfo {
   /** https page of the release (its notes). */
   pageUrl: string;
   assets: ReleaseAsset[];
+  /** What the version brings, in its notes' own words: up to three short plain lines (see `releaseHighlights`). */
+  highlights: string[];
 }
 
 const MAX_ASSETS = 50;
@@ -105,6 +107,44 @@ function validDate(v: unknown): string | null {
   return typeof v === 'string' && v.length <= 40 && Number.isFinite(Date.parse(v)) ? v : null;
 }
 
+const MAX_HIGHLIGHTS = 3;
+const MAX_HIGHLIGHT = 120;
+
+/** The plain words of one line of the notes: no list sign, no marks, no link targets. `_` stays: the notes name things with it (`{{image_base64}}`). */
+function highlightText(line: string): string {
+  return line
+    .replace(/^\s*[-*+]\s+/, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*`#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * What a release brings, from the body of its notes: the first lines of its list of new things (the notes
+ * open with one), each as one short plain line, stopping before any Downloads or Known limitations part.
+ * Empty when the body has no such list (an answer without a body, or notes written some other way).
+ */
+export function releaseHighlights(body: unknown): string[] {
+  if (typeof body !== 'string' || body.length === 0) return [];
+  const out: string[] = [];
+  for (const raw of body.split(/\r?\n/)) {
+    if (/^#{1,6}\s/.test(raw) && /download|known limitation/i.test(raw)) break;
+    if (!/^\s*[-*+]\s+/.test(raw)) continue;
+    const text = highlightText(raw);
+    if (!text) continue;
+    out.push(text.length > MAX_HIGHLIGHT ? `${text.slice(0, MAX_HIGHLIGHT - 1).trimEnd()}…` : text);
+    if (out.length >= MAX_HIGHLIGHTS) break;
+  }
+  return out;
+}
+
+/** Highlights read back from a kept answer: at most three short strings, anything else dropped. */
+function validHighlights(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((s): s is string => typeof s === 'string' && s.length > 0 && s.length <= MAX_HIGHLIGHT).slice(0, MAX_HIGHLIGHTS);
+}
+
 /**
  * The answer of `GET /repos/<owner>/<repo>/releases/latest` as a release: `tag_name` (a version, with or
  * without `v`), `published_at`, `html_url` and `assets[].name / browser_download_url / size`. Null when it
@@ -124,7 +164,7 @@ export function parseRelease(json: unknown): ReleaseInfo | null {
       if (asset) assets.push(asset);
     }
   }
-  return { version: tag.replace(/^v/i, ''), publishedAt: validDate(json.published_at), pageUrl, assets };
+  return { version: tag.replace(/^v/i, ''), publishedAt: validDate(json.published_at), pageUrl, assets, highlights: releaseHighlights(json.body) };
 }
 
 /** A release read back from the settings document (the shape of ReleaseInfo, not the feed's); null when it is not one. */
@@ -140,7 +180,7 @@ export function validRelease(raw: unknown): ReleaseInfo | null {
       if (asset) assets.push(asset);
     }
   }
-  return { version: raw.version, publishedAt: validDate(raw.publishedAt), pageUrl, assets };
+  return { version: raw.version, publishedAt: validDate(raw.publishedAt), pageUrl, assets, highlights: validHighlights(raw.highlights) };
 }
 
 // ------------------------------------------------------------------ which package is for this computer

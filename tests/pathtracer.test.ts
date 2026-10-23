@@ -18,7 +18,7 @@ import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generatio
 import { exactPixel, exposureGain } from '../src/render/tonemap';
 import { ALBEDO_BIT, EXACT_BITS, PassAccumulator, wordsPerPixel } from '../src/render/pass-planes';
 import { passMask } from '../src/core/passes';
-import { AdaptiveState, rescaledSums } from '../src/render/adaptive';
+import { AdaptiveState, rescaledSums, rescaledSumsTiles } from '../src/render/adaptive';
 import type { RenderProgress } from '../src/core/render';
 import type { LiveFrame } from '../src/core/live-frame';
 
@@ -509,6 +509,82 @@ describe('Render with the path tracer', () => {
     workers.forEach((w) => w.release());
     await expect(aborted).rejects.toMatchObject({ name: 'AbortError' });
     expect(engine.status().rendering).toBe(false);
+  });
+
+  it('stopped with partialOnAbort: the accumulation so far comes back as a partial image', async () => {
+    const { pool } = await fakePool(3, 64);
+    const engine = new PathTracerEngine(pool, source([]), true);
+    engine.sync(exampleState(), null);
+    const stop = new AbortController();
+    const px = await engine.renderPixels({
+      width: 64,
+      height: 32,
+      maxSamples: 7,
+      maxSeconds: 0,
+      transparent: false,
+      signal: stop.signal,
+      partialOnAbort: true,
+      onProgress: (p) => {
+        // After the first pass (1 sample): stop. The second pass never runs.
+        if (p.samples >= 1) stop.abort();
+      },
+    });
+    expect(px).toMatchObject({ partial: true, samples: 1 });
+    const ref = new Accumulator(64, 32);
+    for (const t of ref.tiles) ref.add(t.index, 0, 1, sampleData(t, 0, 1, 64));
+    // The exposure is metered from the partial image itself (as a full render's is from its own), so the
+    // reference uses the exposure the engine applied; the curve is the project's.
+    expect(px.tonemap).toBe(2);
+    expect([...px.data]).toEqual([...exactBytes(ref.sum, 1, px.exposureEv, px.tonemap)]);
+    expect(engine.status().rendering).toBe(false);
+    // The engine is not wedged: a render after it runs whole.
+    const whole = await engine.renderPixels({ width: 64, height: 32, maxSamples: 1, maxSeconds: 0, transparent: false });
+    expect(whole.samples).toBe(1);
+    expect(whole.partial).toBeUndefined();
+  });
+
+  it('stopped mid-pass: the tile that got the interrupted pass is rescaled back, never brighter', async () => {
+    const { pool, workers } = await fakePool(3, 64);
+    const engine = new PathTracerEngine(pool, source([]), true);
+    engine.sync(exampleState(), null);
+    // Hold the tile replies (and the jobs' done) so the stop lands mid-pass, with tile 0 already in.
+    workers.forEach((w) => ((w.held = []), (w.holdOnly = new Set(['tile', 'done']))));
+    const stop = new AbortController();
+    const rendering = engine.renderPixels({
+      width: 64,
+      height: 32,
+      maxSamples: 7,
+      maxSeconds: 0,
+      transparent: false,
+      signal: stop.signal,
+      partialOnAbort: true,
+    });
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    // Pass 1 (1 sample) out and back, all tiles.
+    await tick();
+    for (const w of workers) {
+      const held = w.held ?? [];
+      w.held = [];
+      for (const m of held) w.onmessage?.({ data: m });
+    }
+    // Pass 2 (2 samples) out; only tile 0 — worker 0's, index 0 — comes back before the stop.
+    await tick();
+    const tile0 = workers[0].held?.find((m) => m.type === 'tile');
+    expect(tile0?.type).toBe('tile');
+    workers[0].held = (workers[0].held ?? []).filter((m) => m !== tile0);
+    workers[0].onmessage?.({ data: tile0! });
+    await tick();
+    stop.abort();
+    const px = await rendering;
+    expect(px).toMatchObject({ partial: true, samples: 1 });
+    // The accumulation: pass 1 on every tile, pass 2 on tile 0 only; the partial reads it as sums of 1.
+    const ref = new Accumulator(64, 32);
+    for (const t of ref.tiles) ref.add(t.index, 0, 1, sampleData(t, 0, 1, 64));
+    ref.add(0, 1, 2, sampleData(ref.tiles[0], 1, 2, 64));
+    const rescaled = rescaledSumsTiles(ref.sum, 64, ref.tiles, ref.samples, 1);
+    // Without the rescale tile 0 would come out 3× too bright (its 3-sample sums divided by 1); with it, its
+    // pixels are the 3-sample means read as sums of 1.
+    expect([...px.data]).toEqual([...exactBytes(rescaled, 1, px.exposureEv, px.tonemap)]);
   });
 
   it('U14: pictures of the accumulation for the live view only when it asks, each tile with its own samples', async () => {

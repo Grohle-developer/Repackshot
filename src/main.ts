@@ -55,7 +55,8 @@ import { BrowserKeyStore, LauncherKeyStore, type ApiKeyStore } from './io/api-ke
 import { ApiPipeline, apiService, routeAiService } from './ai/api-service';
 import { PostGuard } from './ai/post-wasm';
 import { apiActive } from './core/ai-api-settings';
-import { ApiCallError } from './core/ai-remote';
+import { ApiCallError, hostOf, type ApiErrorCode } from './core/ai-remote';
+import { pingBackend } from './ai/api-ping';
 import { withApiConsent, withApiWords } from './ui/ai-api';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
@@ -93,7 +94,7 @@ import { fadeDisplay, fadeLinear } from './core/fade';
 import { mountApp } from './ui/app';
 import { watchReset as watchPhysicsReset } from './ui/physics';
 import { cameraLabel, lightName } from './ui/names';
-import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, openStartupProject, requestCloseWindow } from './ui/commands';
 import { startupRuntimeCheck } from './ui/ai-runtime-state';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
@@ -762,6 +763,7 @@ void apiKeysReady.then((keys) => {
   // What asked before the store was known (Settings, the AI section's status) asks again.
   ui.set({ aiApiKeys: ui.get().aiApiKeys + 1 });
 });
+
 // C1: every request carries the guard's tolerances of Settings (the queue's and the preview's alike). X7: an API post
 // only to a host the person allowed, and its failures in the interface's words.
 const aiService: AiPostService = withGuardTolerances(
@@ -1032,6 +1034,8 @@ const services: AppServices = {
       ...(kept && !wanted ? { passesInLauncher: true } : {}),
       // U14: the queue's live view of the job (its box and cadence are the queue's).
       ...(req.frameBox && req.onFrame ? { frameBox: req.frameBox, onFrame: req.onFrame } : {}),
+      // Stopped (Pause, Stop this job): the queue keeps the accumulation so far as a partial image.
+      ...(req.partialOnAbort ? { partialOnAbort: true } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds, p.adaptive),
     });
     // The file in the job's format from the 8-bit pixels and, for 16 bits, EXR, the 32-bit TIFF and DNG, the linear sums.
@@ -1072,10 +1076,11 @@ const services: AppServices = {
     };
     const { file, display } = await encode(px.data, px.sum);
     // E5b-1, Also save without denoise: the same render before the engine's denoiser, in the same format.
-    const noisyFile = px.noisy ? (await encode(px.noisy.data, px.noisy.sum)).file : undefined;
+    // A partial image carries only its main image: no noisy companion, no pass files (the queue saves neither).
+    const noisyFile = px.noisy && !px.partial ? (await encode(px.noisy.data, px.noisy.sum)).file : undefined;
     // N2: the pass files, from the planes the engine rendered with the image.
     let extras: { name: string; blob: Blob }[] | undefined;
-    if (wanted) {
+    if (wanted && !px.partial) {
       if (!px.passes) throw new Error(t('render.noPasses'));
       const legend = wanted.keys.includes('partId') ? partLegendOf(project, req.camera) : undefined;
       extras = (await encodePassFiles(px.passes, wanted, { imageName: req.imageName ?? 'render.png', dpi: req.dpi, ...(legend ? { legend } : {}) })).map((f) => ({ name: f.name, blob: f.blob }));
@@ -1089,6 +1094,7 @@ const services: AppServices = {
       seconds: px.seconds,
       tone: { exposureEv: px.exposureEv, tonemap: px.tonemap },
       ...(kept && px.renderId !== undefined ? { renderId: String(px.renderId) } : {}),
+      ...(px.partial ? { partial: true } : {}),
       ...(px.denoised ? { denoised: true } : {}),
       ...(noisyFile ? { noisyFile } : {}),
       ...(extras ? { extras } : {}),
@@ -1182,6 +1188,7 @@ const services: AppServices = {
   },
   models: modelsService.manager,
   apiKeys: null,
+  apiPing: null,
   // The launcher keeps what it detected on the desktop ("Detect again" asks it to look again); WebGPU on the web.
   hardware: (again) => platform.hardware(again),
   storage: platform.storage,
@@ -1233,10 +1240,11 @@ const services: AppServices = {
   // The rigid body simulator (S2): rt-phys in a worker of its own, with the scalar rt.wasm (started on the first
   // simulation). In the desktop window too: the page serves the same module.
   physics: typeof Worker === 'undefined' ? null : {
-    run(spec, options, onUpdate, wet, parts, liquid) {
+    run(spec, options, onUpdate, wet, parts, cloth, liquid) {
       // S3b: the front glass fed by the scene steps with the bodies (or alone, without any). S3c: and the wet parts (their
-      // WPT1, written by ui/physics.ts: it needs the parts it wrote). S7: and the liquids (their LIQ1, likewise).
-      return physicsClient.run(spec.bodies.length > 0 ? writePhysicsScene(spec) : null, spec.bodies.length, options, onUpdate, wet ? wetBytes(wet) : null, parts ?? null, liquid ?? null);
+      // WPT1, written by ui/physics.ts: it needs the parts it wrote). S9: and the cloth (its CLT1, likewise). S7: and the
+      // liquids (their LIQ1, likewise).
+      return physicsClient.run(spec.bodies.length > 0 ? writePhysicsScene(spec) : null, spec.bodies.length, options, onUpdate, wet ? wetBytes(wet) : null, parts ?? null, cloth ?? null, liquid ?? null);
     },
   },
   // S3b: the engine's front glass of a camera (the page's rt.wasm, once loaded).
@@ -1251,6 +1259,37 @@ const services: AppServices = {
   },
   graphPreview: graphWorkers ? { previews: (program, channel) => graphWorkers.previews(program, channel) } : null,
   lens: { info: engineLensInfo, check: engineLensCheck },
+};
+
+// The ping test (Settings ▸ AI ▸ Model by API ▸ Test connection): the web version calls the endpoint itself
+// (the page holds the key); the desktop version asks the launcher through /api/ai/ping (it holds the key).
+// A 404 from the launcher means a launcher that predates the ping route.
+services.apiPing = async (endpoint, options, signal) => {
+  const host = hostOf(endpoint.url);
+  if (!host) throw new ApiCallError('api-config', 'the URL has no host');
+  const native = await nativeReady;
+  if (native) {
+    const res = await native.request('/api/ai/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, options, consentedHost: host }),
+      signal,
+    });
+    if (res.ok) return;
+    let code: ApiErrorCode = 'api-config';
+    let message = 'this version of the application cannot test the connection';
+    try {
+      const body = (await res.json()) as { error?: string; message?: string };
+      if (res.status !== 404 && body.error) {
+        code = body.error as ApiErrorCode;
+        message = body.message ?? body.error;
+      }
+    } catch {
+      // Keep the fallback: the launcher did not answer with an error object.
+    }
+    throw new ApiCallError(code, message, 1, res.status);
+  }
+  await pingBackend(new ApiBackend(endpoint, options, browserKeys.key(host), { fetch: (input, init) => fetch(input, init) }), signal);
 };
 
 const app = mountApp(appEl, store, ui, services);
@@ -1454,10 +1493,32 @@ if (preview) {
 }
 
 applyUrlParams(app.ctx, params);
-// General ▸ On start: the example in Standard mode, an empty project, or the last project file offered in the
-// header (an empty project until it is opened, and where the browser keeps no file handles).
-if (!params.example && startSettings['general.onStart'] === 'EXAMPLE') loadExample(app.ctx);
-if (!params.example && startSettings['general.onStart'] === 'LAST') void offerLastProject(app.ctx);
+// A project file passed on the command line (a double-click in the file manager) opens at startup, before
+// the startup preference: an explicit file wins over the example and the last project. On the web there is no
+// launcher, so nothing is fetched.
+void (async () => {
+  const opened =
+    platform.native &&
+    (await openStartupProject(app.ctx, async () => {
+      const res = await platform.native!.request('/api/startup-project');
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const raw = res.headers.get('x-repackshot-file-name');
+      let name = 'project.repack';
+      if (raw) {
+        try {
+          name = decodeURIComponent(raw);
+        } catch {
+          name = raw;
+        }
+      }
+      return new File([blob], name);
+    }));
+  // General ▸ On start: the example in Standard mode, an empty project, or the last project file offered in the
+  // header (an empty project until it is opened, and where the browser keeps no file handles).
+  if (!opened && !params.example && startSettings['general.onStart'] === 'EXAMPLE') loadExample(app.ctx);
+  if (!opened && !params.example && startSettings['general.onStart'] === 'LAST') void offerLastProject(app.ctx);
+})();
 
 // Ready for screenshots: the interface painted, the viewport drew a frame and
 // the material spheres in view are rendered (bounded wait).

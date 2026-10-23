@@ -220,6 +220,8 @@ export interface Layout {
   updateCheckedAt: number | null;
   /** The latest release that answer named, so an offline start can still show it. */
   updateLatest: ReleaseInfo | null;
+  /** The version the person skipped in the update window: it is not announced again; a newer one is. */
+  updateSkipped: string | null;
   /** Where the material editor (M3a) was moved to and how large it was made (CSS pixels); null: centred, its own size. */
   materialEditorRect: EditorRect | null;
 }
@@ -351,6 +353,7 @@ export function defaultLayout(): Layout {
     tourSeen: false,
     updateCheckedAt: null,
     updateLatest: null,
+    updateSkipped: null,
     materialEditorRect: null,
   };
 }
@@ -709,6 +712,7 @@ export function validateLayout(raw: unknown): Layout {
   if (isSection(raw.settingsSection)) out.settingsSection = raw.settingsSection;
   if (typeof raw.updateCheckedAt === 'number' && Number.isFinite(raw.updateCheckedAt) && raw.updateCheckedAt > 0 && raw.updateCheckedAt < 8.64e15) out.updateCheckedAt = Math.round(raw.updateCheckedAt);
   out.updateLatest = validRelease(raw.updateLatest);
+  if (typeof raw.updateSkipped === 'string' && raw.updateSkipped.length > 0 && raw.updateSkipped.length <= 64) out.updateSkipped = raw.updateSkipped;
   const r = raw.materialEditorRect;
   if (isRecord(r) && [r.x, r.y, r.w, r.h].every((v) => typeof v === 'number' && Number.isFinite(v))) {
     const n = (v: unknown, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v as number)));

@@ -38,12 +38,12 @@ export const PHYSICS_LIMITS = {
   bounciness: { min: 0, max: 1 },
 } as const;
 
-/** The roles of the inspector, in order; CLOTH (S9) is coming soon. LIQUID (S7): choosing it converts the part. */
+/** The roles of the inspector, in order. CLOTH (S9). LIQUID (S7): choosing it converts the part. */
 export const PHYSICS_ROLES = ['STATIC', 'DYNAMIC', 'CLOTH', 'LIQUID'] as const;
 export type PhysicsRoleKey = (typeof PHYSICS_ROLES)[number];
 
 /** Roles that exist in this version. */
-export const BUILT_ROLES: ReadonlySet<PhysicsRoleKey> = new Set<PhysicsRoleKey>(['STATIC', 'DYNAMIC', 'LIQUID']);
+export const BUILT_ROLES: ReadonlySet<PhysicsRoleKey> = new Set<PhysicsRoleKey>(['STATIC', 'DYNAMIC', 'CLOTH', 'LIQUID']);
 
 /** Longest a simulation runs before it stops by itself, settled or not: simulated seconds. */
 export const MAX_SIMULATED_SECONDS = 30;

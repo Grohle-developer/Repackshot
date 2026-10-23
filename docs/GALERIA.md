@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 180 files: 178 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 184 files: 182 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,47 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: 23 versions, 20 with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: 28 versions, 21 with new screenshots; the screenshots are spread over 66 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the physics of each part in one place (U16); liquids (S7).
+Liquids (S7).
+
+#### S7 · Liquids
+
+<a id="c-liquid-pour"></a><img src="ui/liquid-pour.png" width="480" alt="The example bottle in Fast with its cap converted to honey, paused at one simulated second: a glossy, lace-edged coat of liquid over the bottle's top and shoulders; the tree shows Cap hidden and Cap (Honey) with its clip flows as simulated, the inspector's Liquid section says Honey, viscosity 10,000 mm²/s, particle size 1.54 mm automatic, recorded 25 frames of 3,826 particles; the physics bar says Liquid: 3,826 particles, Paused."><br>
+`liquid-pour.png` · `c0bb8fe` · The example's *Cap* ▸ *Convert to liquid* ▸ *Honey* from the scene tree, then *Start* in the physics bar, paused at one simulated second (`tools/s7-check.mjs --only pour`): the cap is hidden and *Cap (Honey)* flows over the collar and the bottle's shoulders in *Fast*, its surface rebuilt by marching cubes every frame; the Liquid section says the preset, its motion, the automatic particle size and what the run recorded, and the timeline row says the clip *flows as simulated*. *Fast* draws the honey with the preview's glass (grey-gold against the dark studio), not the render's colour (S7).
+
+<a id="c-liquid-sheet"></a><img src="ui/liquid-sheet.png" width="480" alt="A contact sheet of ten renders of a clear cylindrical glass on a grey floor, each with a liquid settled in its bottom third: water, oil (yellow), honey (amber), milk (white), gel (pale blue), syrup (dark amber), orange juice (opaque orange), red wine (nearly black at this depth), water a quarter of a second into the pour (splashing), and water without priorities; under each, its particles, simulated time, the surface's volume over the poured volume and the render's samples."><br>
+`liquid-sheet.png` · `8d7c358` · The liquids sheet (`rt --liquid-sheet out`, captured with `tools/s7-check.mjs --only sheet`): each preset poured into the example glass from a 40 × 40 × 55 mm block (5,400 particles at 2.5 mm, 2 s simulated), rendered with the glass at priority 2 over the liquid at 1 (nested dielectrics) and denoised; then water a quarter of a second into the pour, and water at rest without the priorities (its contact with the glass as against air). The captions give the rendered surface's volume over the poured one (0.999 to 1.017 at rest). The looks and motions are ◆ for the verdict: red wine's absorption of 6 mm makes a glass of it nearly black (S7).
+
+### v0.1.27 · 2026-10-20
+
+The update window completed: what changed, the section's own options, Skip this version.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.26 · 2026-10-20
+
+A window asks about a newer version at startup.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.25 · 2026-10-20
+
+The connection test's result stays, a project file opens at startup, *Open project* in the empty state.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.24 · 2026-10-19
+
+API presets, the connection test, the partial image on stop, the render shortcuts.
+
+No new screenshots in this version; what it brought and has no screenshot is in “No screenshot”.
+
+### v0.1.23 · 2026-10-19
+
+Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the physics of each part in one place (U16). Cloth (S9).
 
 #### S3e · Dust motes, moving parts, the studio floor and the set's fine samples (simulation)
 
@@ -50,13 +86,19 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the
 <a id="c-physics-drawer-summary"></a><img src="ui/physics-drawer-summary.png" width="960" alt="The physics drawer above the bottom bar, stopped: Start, Pause, Stop and Reset, the state Stopped, and the line Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry), above the note on how to start."><br>
 `physics-drawer-summary.png` · `1de5766` · The physics drawer, stopped, with the rain *On the parts*, the *Body* Dynamic and the *Cap* kept dry: the line *Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry)*, from the scene as it is (the five parts of the bottle and the set's pieces; ◆4). `tools/u16-check.mjs`.
 
-#### S7 · Liquids
+#### S9 · Cloth with real physics
 
-<a id="c-liquid-pour"></a><img src="ui/liquid-pour.png" width="480" alt="The example bottle in Fast with its cap converted to honey, paused at one simulated second: a glossy, lace-edged coat of liquid over the bottle's top and shoulders; the tree shows Cap hidden and Cap (Honey) with its clip flows as simulated, the inspector's Liquid section says Honey, viscosity 10,000 mm²/s, particle size 1.54 mm automatic, recorded 25 frames of 3,826 particles; the physics bar says Liquid: 3,826 particles, Paused."><br>
-`liquid-pour.png` · `c0bb8fe` · The example's *Cap* ▸ *Convert to liquid* ▸ *Honey* from the scene tree, then *Start* in the physics bar, paused at one simulated second (`tools/s7-check.mjs --only pour`): the cap is hidden and *Cap (Honey)* flows over the collar and the bottle's shoulders in *Fast*, its surface rebuilt by marching cubes every frame; the Liquid section says the preset, its motion, the automatic particle size and what the run recorded, and the timeline row says the clip *flows as simulated*. *Fast* draws the honey with the preview's glass (grey-gold against the dark studio), not the render's colour (S7).
+<a id="c-cloth-drape"></a><img src="ui/cloth-drape.png" width="960" alt="Two viewports in Fast side by side: a white box on the floor, and the same box after Drape over the part, a sheet of cloth at rest over it, flat on its top and hanging in soft folds down its sides."><br>
+`cloth-drape.png` · `87fe497` · *Drape over the part* on a box, before and after: a sheet of fine cotton laid over it falls, folds over its edges and settles by itself, drawn in *Fast* from the recorded frame. `tools/cloth-check.mjs`.
 
-<a id="c-liquid-sheet"></a><img src="ui/liquid-sheet.png" width="480" alt="A contact sheet of ten renders of a clear cylindrical glass on a grey floor, each with a liquid settled in its bottom third: water, oil (yellow), honey (amber), milk (white), gel (pale blue), syrup (dark amber), orange juice (opaque orange), red wine (nearly black at this depth), water a quarter of a second into the pour (splashing), and water without priorities; under each, its particles, simulated time, the surface's volume over the poured volume and the render's samples."><br>
-`liquid-sheet.png` · `8d7c358` · The liquids sheet (`rt --liquid-sheet out`, captured with `tools/s7-check.mjs --only sheet`): each preset poured into the example glass from a 40 × 40 × 55 mm block (5,400 particles at 2.5 mm, 2 s simulated), rendered with the glass at priority 2 over the liquid at 1 (nested dielectrics) and denoised; then water a quarter of a second into the pour, and water at rest without the priorities (its contact with the glass as against air). The captions give the rendered surface's volume over the poured one (0.999 to 1.017 at rest). The looks and motions are ◆ for the verdict: red wine's absorption of 6 mm makes a glass of it nearly black (S7).
+<a id="c-cloth-bar"></a><img src="ui/cloth-bar.png" width="960" alt="The physics bar while the cloth runs: Simulated 1.88 s, Cloth: 1,089 vertices, Running."><br>
+`cloth-bar.png` · `87fe497` · The physics bar while the cloth runs: the simulated time and *Cloth: 1,089 vertices*, the vertices the simulator moves. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-inspector"></a><img src="ui/cloth-inspector.png" width="320" alt="The inspector's Physics section with the role Cloth: Fabric Fine cotton · 120 g/m², Weight, Stiffness, Thickness, Anchors None, Top edge or Box, Pressure disabled for an open cloth, Self-collision, Keep area, Resolution with what it makes now, Face, and the Start and Drape over the part buttons."><br>
+`cloth-inspector.png` · `87fe497` · The *Physics* section of a cloth: the fabric preset, *Weight* (from the fabric), *Stiffness*, *Thickness*, the anchors, *Pressure* (disabled: the sheet is open), *Self-collision*, *Keep area*, *Resolution* (*Now: 2,048 triangles, 10.6 mm*), which of the part is cloth, *Start* and *Drape over the part*. `tools/cloth-check.mjs`.
+
+<a id="c-cloth-sheet"></a><img src="ui/cloth-sheet.png" width="960" alt="Four renders by the engine of the example bottle draped by a sheet: silk falls close around it in many small folds, linen and denim hang stiffer in broad panels, thick leather stands out as a bell with a few wide folds."><br>
+`cloth-sheet.png` · `87fe497` · Four fabrics of the contact sheet `out/cloth-sheet.html` over the example bottle, rendered by the engine (*Full*): silk, linen, denim and thick leather, each as its simulation left it (S9 ◆1). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
 
 ### v0.1.22 · 2026-10-18
 
@@ -948,12 +990,16 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
 - [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
-- [`physics-rain-floor.png`](#c-physics-rain-floor) · Unreleased · S3e
-- [`rain-moving.png`](#c-rain-moving) · Unreleased · S3e
-- [`rain-floor.png`](#c-rain-floor) · Unreleased · S3e
-- [`dust-motes.png`](#c-dust-motes) · Unreleased · S3e
-- [`physics-inspector.png`](#c-physics-inspector) · Unreleased · U16
-- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · Unreleased · U16
+- [`physics-rain-floor.png`](#c-physics-rain-floor) · v0.1.23 · S3e
+- [`rain-moving.png`](#c-rain-moving) · v0.1.23 · S3e
+- [`rain-floor.png`](#c-rain-floor) · v0.1.23 · S3e
+- [`dust-motes.png`](#c-dust-motes) · v0.1.23 · S3e
+- [`physics-inspector.png`](#c-physics-inspector) · v0.1.23 · U16
+- [`physics-drawer-summary.png`](#c-physics-drawer-summary) · v0.1.23 · U16
+- [`cloth-drape.png`](#c-cloth-drape) · v0.1.23 · S9
+- [`cloth-sheet.png`](#c-cloth-sheet) · v0.1.23 · S9
+- [`cloth-inspector.png`](#c-cloth-inspector) · v0.1.23 · S9
+- [`cloth-bar.png`](#c-cloth-bar) · v0.1.23 · S9
 - [`liquid-pour.png`](#c-liquid-pour) · Unreleased · S7
 - [`liquid-sheet.png`](#c-liquid-sheet) · Unreleased · S7
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a
@@ -1038,6 +1084,10 @@ Features from `CHANGELOG.md` that have no screenshot in `docs/ui/`, or only a pa
 
 | Version | Phase | What is missing |
 | --- | --- | --- |
+| v0.1.27 | — | The update window's **What changed**, **Skip this version** and the **install followed in the window** (progress, *Cancel the update*, *Restart now*, a failure with *Try again*): as with the window itself (v0.1.26), it shows only when the releases feed reports a newer version, which the screenshot tools cannot arrange on demand. |
+| v0.1.26 | — | The **update window at startup** (*Install and restart*, *Release notes*, *Later*): it shows only when the releases feed reports a newer version than the one running, which the screenshot tools cannot arrange on demand. |
+| v0.1.25 | — | The **Open project** button in the empty viewport, and a project file opened at startup (a desktop behaviour: the launcher hands the file to the page, which asks for it on load, so there is nothing new to show on the page itself). |
+| v0.1.24 | — | The **API presets** (Google Gemini, xAI Grok Imagine) in *Settings ▸ AI*, the **Test connection** button and its result line, and the **Partial** marker of a stopped render in the results viewer: the UI exists, but the existing AI screenshots predate them. |
 | v0.1.16 | N1 | The **fade to black or white** in the viewport and in a rendered frame, a part that **fades** (translucent in *Fast*, with its coverage in *Full*), the **pivot** of a spin and the **sun arc**: `tools/video-check.mjs` checks the viewport's fade but does not capture it. There is no frame of the video either, nor MP4, which the tests' Chromium does not encode. |
 | v0.1.15 | K1 | The seven new rows of the **Interior Doctor** with the Interior type (scale and units, opening for the sun and sky, window glass, lens too wide, eye height, near clipping, wall normals). `tools/scene-type-check.mjs` checks them but only leaves `scene-type-interior.png`, which shows the control and the recipes. |
 | v0.1.14 | Q1 | The timeline's **Section** move (shifts the plane along its normal) and the two palette actions. The two screenshots are of the inspector and the viewport. |

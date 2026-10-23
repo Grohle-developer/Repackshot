@@ -90,6 +90,8 @@ function verb(clip: MotionClip, lang: Lang): string {
   if (clip.move === 'PHYSICS' && clip.glass) return tIn(lang, 'say.PHYSICS_GLASS');
   // S3c: the recorded rain, dust and snow on the parts.
   if (clip.move === 'PHYSICS' && clip.parts) return tIn(lang, 'say.PHYSICS_PARTS');
+  // S9: the recorded shape of a cloth part.
+  if (clip.move === 'PHYSICS' && clip.cloth) return tIn(lang, 'say.PHYSICS_CLOTH');
   // S7: the recorded liquid of a liquid part.
   if (clip.move === 'PHYSICS' && clip.liquid) return tIn(lang, 'say.PHYSICS_LIQUID');
   switch (clip.move) {
