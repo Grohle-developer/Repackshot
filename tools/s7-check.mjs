@@ -244,11 +244,11 @@ async function pourCheck(browser) {
       const time = Number((q('phys.time').match(/[0-9.]+/) ?? ['0'])[0]);
       if (!window.__paused && q('phys.state') === 'Running' && time >= 1) {
         window.__paused = [time, q('phys.liquid')];
-        document.querySelector('[data-action="phys.pause"]').click();
+        document.querySelector('.phys [data-action="phys.pause"]').click();
       }
     }).observe(document.querySelector('.phys'), { subtree: true, childList: true, characterData: true });
   });
-  await page.click('[data-action="phys.start"]');
+  await page.click('.phys [data-action="phys.start"]');
   const start = Date.now();
   for (;;) {
     const now = await bar(page);
