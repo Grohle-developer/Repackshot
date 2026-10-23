@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 184 files: 182 spread by version (or unreleased) and phase, and 2 under “Orphans”.
+The screenshots in `docs/ui/` gathered by what each version brought, to have at hand what exists and how it looks when it is time to take some to the `README.md`. There are 185 files: 183 spread by version (or unreleased) and phase, and 2 under “Orphans”.
 
 **Where they come from.** They are made by the tools in `tools/` (the `*-check.mjs`) with headless Chromium and software rendering (SwiftShader) and, for the engine's renders, the `rt` binary (for example `rt --sheet`). They are not from a real Windows machine: what you see is the interface in Chromium on Linux, and Windows' own window (WebView2) is not captured.
 
@@ -22,11 +22,11 @@ The screenshots in `docs/ui/` gathered by what each version brought, to have at 
 
 ## By version
 
-From newest to oldest: Unreleased and 28 versions, 21 of the versions with new screenshots; the screenshots are spread over 65 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
+From newest to oldest: Unreleased and 28 versions, 21 of the versions with new screenshots; the screenshots are spread over 66 ROADMAP phases and two groups with no phase. Within each version, by phase, in the order they landed.
 
 ### Unreleased
 
-Cloth's second round (S9): the cap under silk, Cusick's drape tester.
+Cloth's second round (S9): the cap under silk, Cusick's drape tester; water that reads as water (S3g), which re-records, without changing place, `rain-organic.png` (S3f) and `physics-inspector.png` (U16).
 
 #### S9 · Cloth with real physics
 
@@ -35,6 +35,11 @@ Cloth's second round (S9): the cap under silk, Cusick's drape tester.
 
 <a id="c-cloth-cusick"></a><img src="ui/cloth-cusick.png" width="960" alt="Four discs of fabric seen from straight above, each held on a smaller support and hanging over its edge: silk in thirteen narrow waves, linen and denim in six broad ones, thick leather almost flat with six shallow ones; each captioned with its drape coefficient and nodes."><br>
 `cloth-cusick.png` · `1fa3b98` · Silk, linen, denim and thick leather on Cusick's drape tester (a 300 mm disc held on a 180 mm one, BS 5058), from straight above, as the engine's test drapes them, with their drape coefficients (0.19, 0.67, 0.76, 0.88) and nodes (13, 6, 6, 6). `tools/cloth-sheet.mjs` and `tools/cloth-check.mjs`.
+
+#### S3g · Water that reads as water
+
+<a id="c-rain-bottle"></a><img src="ui/rain-bottle.png" width="480" alt="Close on the example bottle's painted body after 10 s of the default rain: round drops of different sizes, scattered, a few small clear ones, the white paper label at the right edge, and a white scale bar of 5 mm at the bottom left."><br>
+`rain-bottle.png` · `432216f` · The example bottle's painted body (wetting as paint) at 10 s of the default *Rain* with *On the parts*, square-on and 30 mm across (the bar is 5 mm at the surface), rendered by the native engine from the run the page records (`tests/water-dump.test.ts`): the drops that ran down it left their trail and no line of beads behind them (S3f's rivulet left dotted lines here), each drawn the size of its contact with the surface. `tools/water-sheet.mjs --bottle-shot`.
 
 ### v0.1.27 · 2026-10-20
 
@@ -80,8 +85,8 @@ Dust motes, moving parts, the studio floor and the set's fine samples (S3e); the
 
 #### U16 · The physics of each part in one place
 
-<a id="c-physics-inspector"></a><img src="ui/physics-inspector.png" width="340" alt="The inspector of the example bottle's Body in the dark theme: the Material card with Metallic paint and, under its name, the underlined line Physics: Static · gets wet as Metal; its parameters; Textures, Wear and Part folded; the Physics section with the subhead Motion (the role under its label with Static, Dynamic, Cloth and Liquid, Static pressed, the line Stays where it is: things fall onto it and the weather settles on it, Friction and Bounciness) and the subhead Weather (Gets wet and Gets dust and snow on, Surface From the material (Metal), the line Drops start to run at about 4.9 mm across on a vertical face, and the note Nothing in the scene leaves rain, dust or snow on the parts: switch On the parts on in an effect, with the button Edit Rain)."><br>
-`physics-inspector.png` · `1de5766` · The example bottle's *Body* (metallic paint, which wets as *Metal*) with a *Rain* whose *On the parts* is off: under the material's name, the pointer *Physics: Static · gets wet as Metal* (a click opens the section); the *Physics* section in its two groups, **Motion** (the role, the line that says what it does, and the fields a static part uses, friction and bounciness, ◆5) and **Weather** (*Gets wet*, *Gets dust and snow*, *Surface* naming the material's family, *Drops start to run at about 4.9 mm across on a vertical face*, computed with the engine's formula, ◆3), and the note that nothing leaves rain, dust or snow on the parts, with *Edit Rain*. `tools/u16-check.mjs`.
+<a id="c-physics-inspector"></a><img src="ui/physics-inspector.png" width="340" alt="The inspector of the example bottle's Body in the dark theme: the Material card with Metallic paint and, under its name, the underlined line Physics: Static · gets wet as Paint; its parameters; Textures, Wear and Part folded; the Physics section with the subhead Motion (the role under its label with Static, Dynamic, Cloth and Liquid, Static pressed, the line Stays where it is: things fall onto it and the weather settles on it, Friction and Bounciness) and the subhead Weather (Gets wet and Gets dust and snow on, Surface From the material (Paint), the line Drops start to run at about 4.2 mm across on a vertical face, and the note Nothing in the scene leaves rain, dust or snow on the parts: switch On the parts on in an effect, with the button Edit Rain)."><br>
+`physics-inspector.png` · `1de5766` · The example bottle's *Body* (metallic paint, which wets as *Paint*: re-recorded in Unreleased, S3g, which corrected the family of a clear-coated paint; U16 recorded it wetting as *Metal*) with a *Rain* whose *On the parts* is off: under the material's name, the pointer *Physics: Static · gets wet as Paint* (a click opens the section); the *Physics* section in its two groups, **Motion** (the role, the line that says what it does, and the fields a static part uses, friction and bounciness, ◆5) and **Weather** (*Gets wet*, *Gets dust and snow*, *Surface* naming the material's family, *Drops start to run at about 4.2 mm across on a vertical face*, computed with the engine's formula, ◆3), and the note that nothing leaves rain, dust or snow on the parts, with *Edit Rain*. `tools/u16-check.mjs`.
 
 <a id="c-physics-drawer-summary"></a><img src="ui/physics-drawer-summary.png" width="960" alt="The physics drawer above the bottom bar, stopped: Start, Pause, Stop and Reset, the state Stopped, and the line Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry), above the note on how to start."><br>
 `physics-drawer-summary.png` · `1de5766` · The physics drawer, stopped, with the rain *On the parts*, the *Body* Dynamic and the *Cap* kept dry: the line *Start simulates: 1 dynamic part · rain on 6 parts (1 stays dry)*, from the scene as it is (the five parts of the bottle and the set's pieces; ◆4). `tools/u16-check.mjs`.
@@ -125,8 +130,8 @@ Drips and splashes that fall through the air, and the meter that says what is on
 
 #### S3f · Organic drops
 
-<a id="c-rain-organic"></a><img src="ui/rain-organic.png" width="480" alt="Six frames of a dark pane with water drops, at 0, 0.25, 0.5, 0.75, 1 and 1.25 s: a drop near the top slides down through smaller pinned drops, the path above it left clean, growing and getting longer with a rounder head as it speeds up; in the last frame a line of small beads runs down the pane where it passed."><br>
-`rain-organic.png` · `540471b` · The S3f parity scene (`rt_phys::example::s3f_organic_scene_at`) rendered by the native engine at 0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the pane: a drop past its critical size slides down a vertical pane through smaller pinned drops, gathers those on its path (the path above it is clean), grows and runs faster, stretched along its motion with a rounder head (S3f ◆1), and once fast enough leaves the beads of a rivulet (◆5), which the last frame shows above it. `tools/s3f-strip.mjs`.
+<a id="c-rain-organic"></a><img src="ui/rain-organic.png" width="480" alt="Six frames of a dark pane with water drops, at 0, 0.25, 0.5, 0.75, 1 and 1.25 s: a drop near the top slides down through smaller pinned drops, the path above it left clean, growing and getting longer with a rounder head as it speeds up; no line of beads behind it."><br>
+`rain-organic.png` · `540471b` · The S3f parity scene (`rt_phys::example::s3f_organic_scene_at`) rendered by the native engine at 0, 0.25, 0.5, 0.75, 1 and 1.25 s, each frame aimed at the largest drop on the pane: a drop past its critical size slides down a vertical pane through smaller pinned drops, gathers those on its path (the path above it is clean), grows and runs faster, stretched along its motion with a rounder head (S3f ◆1). Re-recorded in Unreleased (S3g): it leaves its wet trail and no beads (S3f's last frame showed a rivulet's beads above it, ◆5). `tools/s3f-strip.mjs`.
 
 #### X7 · The AI through an API
 
@@ -989,17 +994,18 @@ The index for the `README.md`: the screenshots by area, newest first (the link j
 - [`ambient-shape.png`](#c-ambient-shape) · v0.1.21 · S3b
 - [`physics-rain-set.png`](#c-physics-rain-set) · v0.1.21 · S3c
 - [`physics-rain-air.png`](#c-physics-rain-air) · v0.1.22 · S3d
-- [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f
+- [`rain-organic.png`](#c-rain-organic) · v0.1.22 · S3f (re-recorded in Unreleased, S3g)
 - [`physics-rain-floor.png`](#c-physics-rain-floor) · v0.1.23 · S3e
 - [`rain-moving.png`](#c-rain-moving) · v0.1.23 · S3e
 - [`rain-floor.png`](#c-rain-floor) · v0.1.23 · S3e
 - [`dust-motes.png`](#c-dust-motes) · v0.1.23 · S3e
-- [`physics-inspector.png`](#c-physics-inspector) · v0.1.23 · U16
+- [`physics-inspector.png`](#c-physics-inspector) · v0.1.23 · U16 (re-recorded in Unreleased, S3g)
 - [`physics-drawer-summary.png`](#c-physics-drawer-summary) · v0.1.23 · U16
 - [`cloth-drape.png`](#c-cloth-drape) · v0.1.23 · S9
 - [`cloth-sheet.png`](#c-cloth-sheet) · v0.1.23 · S9
 - [`cloth-inspector.png`](#c-cloth-inspector) · v0.1.23 · S9
 - [`cloth-bar.png`](#c-cloth-bar) · v0.1.23 · S9
+- [`rain-bottle.png`](#c-rain-bottle) · Unreleased · S3g
 - [`cloth-cap.png`](#c-cloth-cap) · Unreleased · S9
 - [`cloth-cusick.png`](#c-cloth-cusick) · Unreleased · S9
 - [`ambient-section.png`](#c-ambient-section) · v0.1.6 · S4a

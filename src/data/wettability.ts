@@ -79,13 +79,23 @@ export const FRONT_GLASS_FAMILY: WettabilityFamily = 'GLASS';
 /** S3c: the angle of repose of settled snow, degrees from the horizontal (◆ a proposal). */
 export const SNOW_REPOSE_DEG = 50;
 
+/** S3g: the catalogue's paper and board (its stable keys, src/data/materials.ts): they wet as paper. */
+export const PAPER_PRESETS: readonly string[] = ['PAPER', 'CARDBOARD'];
+
 /**
  * S3c: the family a part wets as, from the category of its material (◆ a proposal): metal, plastic, glass, wood and
  * fabric their own; an emitter as glass (a lamp's cover); the others by their recipe: glass and fabric and wood as such,
- * a metallic one as metal, the rest as paint (ceramics, rubber, lacquers).
+ * a metallic one as metal, the rest as paint (ceramics, rubber, lacquers). S3g: a material made from the catalogue's
+ * paper or board (`preset`, or `origin` once edited) wets as paper; among the others, one with a clear coat (`coat` of
+ * 0.5 or more: a car or metallic paint, a glaze, a coated carbon fibre) wets as paint, whatever its metallic flakes or
+ * its weave, since water meets its coat. A bare metal stays metal.
  */
-export function wettabilityFamilyOf(m: { category: string; family: string; params?: { metallic?: number } } | null | undefined): WettabilityFamily {
+export function wettabilityFamilyOf(
+  m: { category: string; family: string; preset?: string | null; origin?: string | null; params?: { metallic?: number; coat?: number } } | null | undefined,
+): WettabilityFamily {
   if (!m) return 'PAINT';
+  const key = m.preset ?? m.origin ?? null;
+  if (key !== null && PAPER_PRESETS.includes(key)) return 'PAPER';
   switch (m.category) {
     case 'METAL':
       return 'METAL';
@@ -99,6 +109,7 @@ export function wettabilityFamilyOf(m: { category: string; family: string; param
     case 'FABRIC':
       return 'FABRIC';
     default:
+      if ((m.params?.coat ?? 0) >= 0.5) return 'PAINT';
       if (m.family === 'GLASS') return 'GLASS';
       if (m.family === 'FABRIC') return 'FABRIC';
       if (m.family === 'WOOD') return 'WOOD';

@@ -374,7 +374,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts tests/s3e-floor.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts tests/section-rsb.test.ts tests/ies-engine.test.ts tests/interior-camera.test.ts tests/lens-o4.test.ts tests/s3-drops.test.ts tests/s3b-wet.test.ts tests/s3c-parts.test.ts tests/s3d-flight.test.ts tests/s3f-organic.test.ts tests/s3e-floor.test.ts tests/s3g-water.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
@@ -399,6 +399,10 @@ jobs:
           # the page's port matches bit for bit).
           cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_u16
           RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_u16
+          # S3g: runners that leave their trail and no beads, pearls past the transition, outlines of the contact area,
+          # and the pinned run of the pearls.
+          cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3g
+          RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-phys --release --target wasm32-wasip1 --test wet_parts_s3g
 
       - name: Ray throughput (smoke run of rt-bench)
         run: cargo run --release -p rt-cli --bin rt-bench -- --rays 200000 --triangles 200000

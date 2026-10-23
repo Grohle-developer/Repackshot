@@ -19,7 +19,8 @@
 // what the frame holds, for the meter: rain, dust and snow, on how many parts, the drops on them and in the air.
 //
 // S3f: the drops are organic (rt_phys::wet_parts): they grow, let go past their critical size, gather the drops on their
-// path, merge with a neck that relaxes, leave a rivulet, hang and pinch off. Every changed drop's record carries its
+// path, merge with a neck that relaxes, leave a wet trail (S3g: past the pearling transition, a few small pearls), hang
+// and pinch off. Every changed drop's record carries its
 // shape (rt_core::weather::DropShape: 15 numbers, `DropShape` here), which the track keeps per version
 // (`PartsTrack.shapes`), the render draws (the shape tail of WETP, for an engine with bit 10) and Fast too.
 //
@@ -58,9 +59,10 @@ export const NO_BODY = 0xffffffff;
  * air, and the drips and splashes that land later than they leave. 3 (S3f): the shapes of the drops, and the organic
  * drops (the gathering, the merges that relax, the rivulets, the drops that hang at an edge and pinch off). 4 (S3e): the
  * studio floor, the parts that move, the set's fine samples, the wind on the drops in the air and the drops that run
- * along a sloping edge.
+ * along a sloping edge. 5 (S3g): the same record of another simulation: a runner leaves its trail and no beads (only past
+ * the pearling transition a few small pearls), and the outline of a drop keeps its contact area.
  */
-export const PARTS_FORMAT_VERSION = 4;
+export const PARTS_FORMAT_VERSION = 5;
 /**
  * S3f: a drop's shape (rt_core::weather::DropShape, its floats in the order of the WETP tail): axis[3] aspect bulge
  * taper, merge_axis[3] merge_along merge_across neck shift, sag pinch. The axes are in the part's object space.

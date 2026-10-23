@@ -117,7 +117,7 @@ describe('S3d: the drops in the air in the record of a run', () => {
     expect(partsFrame(before, 1)!.falling).toEqual([]);
     expect(partsFrame(before, 1)!.parts[0].drops).toHaveLength(1);
     // The key of a simulation says the format: a track of before is not the simulation of now (S3f: 3).
-    expect(wetPartsKey(spec1).startsWith('wpt4:')).toBe(true);
+    expect(wetPartsKey(spec1).startsWith('wpt5:')).toBe(true);
   });
 });
 

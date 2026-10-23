@@ -303,6 +303,50 @@ fn write_s3e_strip_writes_a_scene_per_frame() {
 }
 
 #[test]
+fn the_water_table_reads_its_input_and_writes_a_row_per_family_and_tilt() {
+    let input = scratch("water.txt");
+    let output = scratch("water.json");
+    std::fs::write(
+        &input,
+        "seconds 0.5\nrain 2e-5 6576 1.2 0.4\nfamily GLASS 70 50\nfamily PLASTIC 90 65\n",
+    )
+    .expect("written");
+    let args = [
+        "--water-table".to_string(),
+        input.to_str().unwrap().to_string(),
+        "-o".to_string(),
+        output.to_str().unwrap().to_string(),
+    ];
+    let command = parse_args(&args).expect("valid arguments");
+    assert_eq!(
+        command,
+        Command::WaterTable {
+            input: input.clone(),
+            output: output.clone()
+        }
+    );
+    run(command).expect("the table runs");
+    let json = std::fs::read_to_string(&output).expect("written");
+    assert!(json.starts_with("{\"seconds\":0.5,\"rain\":{\"density\":0.00002"));
+    assert_eq!(json.matches("\"family\":").count(), 2 * 5);
+    for tilt in rt_phys::example::WATER_TILTS_DEG {
+        assert!(json.contains(&format!("\"tiltDeg\":{tilt},")), "{tilt}");
+    }
+    assert!(json.contains("\"outline\":{\"round\":"));
+    // Without -o, with another option, or a bad input: refused.
+    assert!(parse_args(&args[..2]).is_err());
+    assert!(parse_args(&[args.to_vec(), vec!["--samples".into(), "2".into()]].concat()).is_err());
+    for bad in [
+        "rain 2e-5 6576 1.2 0.4\n",
+        "family GLASS 70 50\n",
+        "rain 2e-5 x 1.2 0.4\nfamily GLASS 70 50\n",
+        "rain 2e-5 6576 1.2 0.4\nfamily GLASS 70 50\nsnow 3\n",
+    ] {
+        assert!(rt_cli::cli::water_input(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
 fn write_s3b_wet_spec_writes_the_parity_panes_spec() {
     let path = scratch("s3b-wet.wet1");
     let args = [

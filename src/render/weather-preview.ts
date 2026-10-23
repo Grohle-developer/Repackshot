@@ -98,6 +98,19 @@ export function localShape(shape: DropShape, q: THREE.Quaternion, gravityObject:
   };
 }
 
+/**
+ * S3g: the hanging step of a shape (rt-core `weather::hang_stretch`): the thinning across gravity at the cap's top
+ * (`1 + b t` at height share `t`, none at the contact line), the pinch, and the stretch along gravity that keeps the
+ * volume of a paraboloid cap.
+ */
+export function hangStretch(sag: number, pinch: number): [number, number, number] {
+  const k = 1 + Math.max(0, sag);
+  const c = Math.min(0.95, Math.max(0, pinch));
+  const b = 1 / Math.sqrt(k) - 1;
+  const i = 1 - (4 * c) / 3 + (8 * c * c) / 15 + b * (2 / 3 - (16 * c) / 15 + (16 * c * c) / 35) + b * b * (1 / 6 - (4 * c) / 15 + (4 * c * c) / 35);
+  return [b, c, i > 0 ? 1 / i : 1];
+}
+
 /** S3f: where the point `p` of a round unit cap goes under `s` (the twin of the vertex shader's `wShape`). */
 export function shapePointLocal(p: readonly number[], s: LocalShape): [number, number, number] {
   let [x, y, z] = p;
@@ -125,12 +138,10 @@ export function shapePointLocal(p: readonly number[], s: LocalShape): [number, n
     if (keep > 0) z /= keep;
   }
   if (s.sag > 0 || s.pinch > 0) {
-    const k = 1 + Math.max(0, s.sag);
-    const c = Math.min(0.95, Math.max(0, s.pinch));
-    const kt = k / (1 - (4 * c) / 3 + (8 * c * c) / 15);
+    const [b, c, kt] = hangStretch(s.sag, s.pinch);
     const [gx, gy, gz] = s.gravity;
     const par = x * gx + y * gy + z * gz;
-    const across = (1 - c * 4 * t * (1 - t)) / Math.sqrt(k);
+    const across = (1 - c * 4 * t * (1 - t)) * (1 + b * t);
     [x, y, z] = [gx * par * kt + (x - gx * par) * across, gy * par * kt + (y - gy * par) * across, gz * par * kt + (z - gz * par) * across];
   }
   return [x, y, z];
@@ -170,11 +181,13 @@ vec3 wShape(vec3 q) {
   if (aShapeC.w > 0.0 || aShapeD.x > 0.0) {
     float k = 1.0 + max(aShapeC.w, 0.0);
     float c = clamp(aShapeD.x, 0.0, 0.95);
-    float kt = k / (1.0 - 4.0 * c / 3.0 + 8.0 * c * c / 15.0);
+    float b = 1.0 / sqrt(k) - 1.0;
+    float i = (1.0 - 4.0 * c / 3.0 + 8.0 * c * c / 15.0) + b * (2.0 / 3.0 - 16.0 * c / 15.0 + 16.0 * c * c / 35.0) + b * b * (1.0 / 6.0 - 4.0 * c / 15.0 + 4.0 * c * c / 35.0);
+    float kt = i > 0.0 ? 1.0 / i : 1.0;
     vec3 g = aShapeD.yzw;
     float par = dot(q, g);
     vec3 perp = q - g * par;
-    q = g * (par * kt) + perp * ((1.0 - c * 4.0 * t * (1.0 - t)) / sqrt(k));
+    q = g * (par * kt) + perp * ((1.0 - c * 4.0 * t * (1.0 - t)) * (1.0 + b * t));
   }
   return q;
 }

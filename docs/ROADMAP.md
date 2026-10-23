@@ -13536,6 +13536,319 @@ clean), grows, stretches as it speeds up, and leaves the beads of a rivulet.
 6. ◆ That an open edge holds every drop that reaches it, and lets go from rest
    (S3d ◆4 replaced).
 
+### S3g · Water that reads as water — **Opus** (after S3e) — done
+
+The owner's report (2026-10-18): *"the water does not feel fully realistic: it
+leaves trails like little beads, or a drop gets very big before it slides or
+breaks the surface tension."* On top of `rt_phys::wet_parts` (S3c to S3f),
+`rt_core::weather` and *Fast*.
+
+**What.**
+1. **Measure first, then change.** `out/water-sheet.html`: the example bottle
+   under the default *Rain* with *On the parts*, at 2, 5, 10 and 20 s, rendered
+   by the native engine, close on four places (the vertical body, the shoulder,
+   the paper label, the top of the cap) with a millimetre scale bar; a table per
+   wettability family and tilt (90°, 60°, 45°, 30°, 15°) of the model's critical
+   contact radius, the contact diameter of the drops when they depin in the run
+   (median and 90th percentile) and their equivalent sphere, the size of a
+   typical runner, and the rendered outline's area-equivalent diameter against
+   the physical contact area; compared with published measurements of when
+   water drops start to slide (Furmidge 1962; Extrand and Kumagai 1995;
+   ElSherbini and Jacobi 2004 and 2006 as candidates), cited, checked, no number
+   invented.
+2. **The beads.** The rivulet regime of S3f (`RUN_REAR_SHARE`, `RUN_BEAD`,
+   `RUN_WIDTH`, `RUN_RELAX_TIMES`) leaves a vertical dotted line of equal round
+   beads (the 1.25 s frame of `docs/ui/rain-organic.png`). (a) The threshold
+   from the published pearling transition (the dynamic receding angle and the
+   corner, in terms of Ca), so ordinary rain runners on the example's surfaces
+   leave no pearls; (b) past it, sparse pearls much smaller than the runner,
+   irregularly spaced from a seeded hash; (c) the streak stays a continuous film.
+3. **Too big before it slides.** Which of these makes drops look too big, and
+   fix what is wrong: (i) the hold's width `w = 2a` and Furmidge's prefactor
+   against the literature; (ii) the rendered outline against the physics
+   (`SLIDE_STRETCH`, the downhill bulge, `HANG_SAG`, `MAX_ASPECT`, the merge neck
+   that spans both drops for `MERGE_TIMES` capillary times), the outline keeping
+   the physical contact area within ±10 % in every state; (iii) dynamic
+   depinning, only from a published model; (iv) the wettability table against
+   published values for real outdoor surfaces, corrections as ◆.
+4. **Coordination.** U16 adds the `WPT1` part flag `PART_DRY = 2`: left to it;
+   S3g keeps `WPT1` as it is.
+5. **The surfaces of the example** (added to (iv)): `wettabilityFamilyOf` (S3c ◆)
+   gives the example bottle the wrong ones: its metallic paint (category
+   *Other*, metallic 0.65, clear coat 1) wets as *Metal*, and no material maps
+   to *Paper* (the label wets as *Paint*). Clear-coated paints to `PAINT`, the
+   paper and board materials to `PAPER`, bare metals staying `METAL`; tests on
+   the catalogue's materials, each with its mutation.
+
+**Acceptance.** A typical runner on a vertical pane leaves 0 beads; past the
+threshold, the coefficient of variation of the pearls' spacing is above 0.3 and
+every pearl is under 0.3 of the runner's radius (◆ the limits); the outline
+keeps the physical contact area within ±10 % in every state; each with its
+mutation. `docs/ui/rain-organic.png` re-recorded; `docs/ui/rain-bottle.png`, the
+bottle's body at 10 s with the scale bar.
+
+**Done.** All of it, but (iii), for which no published model was found, and
+(iv), whose corrections are proposals.
+
+**1. The measurements** (`tools/water-sheet.mjs`; the table is
+`rt --water-table`, `rt_phys::example::water_row`: one plate 100 mm square of
+each family at each tilt, 10 s of the default rain falling onto it square-on, so
+every tilt takes the same water: 2.0 × 10⁻⁵ drops per mm³ of 1.2 mm ± 40 % at
+6.58 m/s, as the page gives it to the engine). Before (S3f and S3e) → after:
+
+| Family θ_A/θ_R | Tilt | Critical contact ⌀ (model) | Contact ⌀ at depinning, median / p90 | Sphere ⌀ | Runner contact ⌀ (median) | Pearls (S3f's beads) in 10 s | Outline over contact ⌀, merging / hanging |
+|---|---|---|---|---|---|---|---|
+| Glass 70/50 | 90° | 4.19 mm | 4.32 / 4.85 mm | 2.69 mm | 5.43 mm | 1077 → 0 | 0.71–1.34 / 0.87–1.67 → 1.00 / 1.00 |
+| Glass 70/50 | 30° | 5.92 | 6.04 / 7.32 | 3.75 | 9.39 | 291 → 0 | 0.69–1.33 / 0.66–1.07 → 1.00 / 1.00 |
+| Glass 70/50 | 15° | 8.23 | 8.58 / 10.07 | 5.34 | 12.30 | 71 → 0 | 0.70–1.33 / 0.61–0.97 → 1.00 / 1.00 |
+| Plastic 90/65 | 90° | 4.03 | 4.10 / 4.75 | 2.93 | 5.72 | 0 → 0 | 0.67–1.32 / 0.84–1.85 → 1.00 / 1.00 |
+| Metal 80/50 | 90° | 4.92 | 5.01 / 5.40 | 3.24 | 7.33 | 682 → 0 | 0.71–1.36 / 0.83–1.95 → 1.00 / 1.00 |
+| Paint 85/60 | 90° | 4.22 | 4.33 / 4.86 | 2.97 | 5.95 | 0 → 0 | 0.69–1.29 / 0.85–1.92 → 1.00 / 1.00 |
+| Paper 100/20 | 90° | 8.05 | 8.10 / 9.95 | 5.04 | 15.41 | 233 → 7 | 0.71–1.34 / 0.86–1.77 → 1.00 / 1.00 |
+| Wood 85/40 | 90° | 6.10 | 6.22 / 7.24 | 3.95 | 10.11 | 568 → 16 | 0.68–1.35 / 0.86–1.85 → 1.00 / 1.00 |
+| Fabric 110/40 | 90° | 6.72 | 7.01 / 7.96 | 4.92 | 16.06 | 358 → 6 | 0.69–1.37 / 0.85–2.04 → 1.00 / 1.00 |
+
+(All 35 rows are in the sheet; the outline columns are least–most over every
+drop at every frame, as area-equivalent diameters over the contact diameter; a
+pinned and a sliding drop's outline was already 1.00.) The drops depin at their
+critical size (the median within 6 % of it, the 90th percentile 4 to 34 % past
+it: a merge overshoots), and the critical size goes as `1/√sin α`. On the
+bottle (`tests/water-dump.test.ts`, with its surfaces corrected: What, 5): at
+20 s 830 drops (S3f: 1003), the painted body's 478 (S3f, wetting as metal: 700,
+its beads among them), the paper label's 160 (S3f, as paint: 108); the largest
+on a level face, the top of the cap, 20.2 mm across in both (below).
+
+**Against the literature** (each checked against the text read; where a claim
+is quoted from another paper, that paper is named):
+- **The hold.** Furmidge's balance `ρ g V sin α = k γ w (cos θ_R − cos θ_A)`
+  (J. Colloid Sci. 17, 1962) with `k = 1` is the balance of a drop whose front
+  half is at `θ_A` and rear half at `θ_R` (de la Madrid et al., arXiv:1505.04104,
+  2015); assumed distributions of the angle around the contact line give
+  `k = 2/π` (Extrand and Gent 1990), `24/π³ = 0.774` (ElSherbini and Jacobi 2006)
+  and `π/4` (Carré and Shanahan), as de la Madrid et al. list them
+  (arXiv:1902.06721, 2019). Measured: `k_s` from 0.5 to 1.5, 0.88 ± 0.2 on
+  average over 23 liquid and surface pairs, 0.63 for water on a silicon wafer
+  (Li, Bodziony, Yin, Marschall, Berger and Butt, "Kinetic drop friction", Nat.
+  Commun. 14, 4571, 2023, Table 1), and 0.97 ± 0.04 for water on PMMA (de la
+  Madrid et al., arXiv:2306.08689, 2023, Table 1: 183 ± 4 µN at θ_A 69.9°,
+  θ_R 47.2°, a width of 7.79 mm; `γ w (cos θ_R − cos θ_A)` gives 188 µN, 3 %
+  more). (i): **`k = 1` with `w = 2a` is within the measurements**, at their top
+  (◆1); it does not make drops too big by itself (with 0.88 the critical contact
+  diameters would be 6 % smaller).
+- **The tilt.** ElSherbini and Jacobi (J. Colloid Interface Sci. 299, 2006,
+  abstract): "the Bond number of a critical drop is found to be constant for a
+  given surface and liquid": the model's critical radius goes as `1/√sin α`, so
+  `V^(2/3) sin α` is the same at every tilt of the table. Extrand and Kumagai
+  (1995) and ElSherbini and Jacobi (2004) could not be read; nothing of theirs
+  is used.
+- **The speed.** Li et al. (2023) fit the friction of sliding drops as
+  `F_0 + β w η U` up to 0.7 m/s, β from 20 to 200 (water: 56 on a thiol
+  monolayer to 216 on a silicon wafer); the model's drag `C μ a U` with
+  `C = 300` (`rt_phys::wet::SLIDE_DRAG`) is β = 150.
+- **The beads.** Running drops are round, then cornered, then cusped, and the
+  cusp "emits smaller drops (“pearls”)" as Ca grows (Podgorski, Flesselles and
+  Limat, Phys. Rev. Lett. 87, 036102, 2001, abstract); the corner appears at a
+  receding angle of about 23° (Le Grand, Daerr and Limat, J. Fluid Mech. 541,
+  2005, as Kumar and Puthenveettil report it, arXiv:1006.1506, 2010); "on rigid
+  substrates, the trailing edge contact angle decreases almost to zero at the
+  pearling transition threshold", about 10° just before it (Oléron, Limat,
+  Dervaux and Roché, arXiv:2304.04925, 2023, citing Le Grand et al.); without
+  excitation pearling sets in near Ca ≈ 0.007 (Peters, Snoeijer, Daerr and
+  Limat, Phys. Rev. Lett. 103, 2009, as Liang and Tietze report it, Sci. Rep. 7,
+  14164, 2017); the satellites are "of considerably smaller volume" than the
+  drop (Engelnkemper, Wilczek, Gurevich and Thiele, Phys. Rev. Fluids 1, 2016,
+  arXiv:1607.05482), "tiny satellite droplets" past ≈ 0.7 m/s for water (Li et
+  al. 2023); Liang and Tietze saw at most two (once three) leave a 10 to 30 µL
+  water drop over a 200 mm coated glass plate that Lamb waves helped it down.
+  S3f's rivulet started at 0.8 of
+  the receding angle (40° on glass, Ca ≈ 3 × 10⁻³, 210 mm/s): every fast runner
+  left a line of beads a third of its width wide.
+- **Puddles.** A drop wider than the capillary length (`√(γ/ρg)` = 2.71 mm for
+  water) flattens into a puddle `2 √(γ/ρg) sin(θ/2)` tall (de Gennes,
+  Brochard-Wyart and Quéré, *Capillarity and Wetting Phenomena*, 2004, as Tavares
+  et al. give it, arXiv:2402.10185, 2024, eq. 59; the energy of a puddle of
+  depth `h`, `γ(1 − cos θ) V/h + ρ g h V/2`, is least there). The model draws
+  every drop as a spherical cap: the 20 mm drop on the cap's top (gold, 80/50)
+  is drawn 6.4 mm tall, a puddle of it would be 2.9 mm.
+
+**2. The beads.** (a) `PEARL_REAR_DEG = 10°`: a runner pearls once its
+Cox–Voinov receding angle is down to it, at `Ca = (θ_R³ − θ_p³) / 9Λ`: 6.1 × 10⁻³
+on glass and metal (0.44 m/s), 1.1 × 10⁻² on paint, 1.3 × 10⁻² on plastic, 3.0 ×
+10⁻³ on wood and fabric (0.22 m/s), 3.4 × 10⁻⁴ on paper (25 mm/s). The fastest a
+drop slides is 250 mm/s (Ca 3.5 × 10⁻³), so on glass, metal, paint and plastic
+no runner pearls; on paper, wood and fabric, a few. (b) A pearl is round,
+pinned, of a contact radius between half of and all of `PEARL_RADIUS = 0.25` of
+its runner's, behind the start of its step, every distance drawn from an
+exponential law of mean `PEARL_SPACING = 12` contact diameters (`pearl_gap`,
+`pearl_hash`): six runners of twice their critical size down a vertical pane of
+40°/12° leave 31 pearls in 3 s, 119 ± 106 mm apart (CV 0.89), the largest 0.27
+of its runner's radius at the end. (c) The trail was already a continuous film
+(2 µm, as wide as the drop, wetting and wiping the samples): it is all that
+remains behind a runner; no source was found for residual droplets where a film
+breaks up, so there are none.
+
+**3. Too big before it slides.** (i) Within the literature (above): unchanged,
+◆1. (ii) **Wrong, fixed.** The outline of a merge spanned both drops, with its
+neck, for its `MERGE_TIMES`: from 0.67 to 1.56 of the contact diameter (an area
+from 0.45 to 2.4 of the contact area); a hanging drop's stretch moved its
+contact line too: from 0.61 to 2.04 (an area from 0.37 to 4.2). Now `shape_of`
+measures the outline the renderer draws (`rt_core::weather::outline_area`) and
+stretches the merge's along and across alike to bring it back to `π a²`, and
+`shape_point`'s hanging step keeps the contact line where it is (thinner above
+it, linearly to `1/√(1 + sag)` at the top, pinched by `4c t(1 − t)`, stretched
+along gravity by what keeps the volume: `hang_stretch`). A pinned drop's bulge
+and a sliding drop's stretch (`SLIDE_STRETCH`, `MAX_ASPECT`, the taper) already
+kept it. Every drop at every frame of the organic scene, two water plates, a
+tilted ceiling and three runners: within 0.01 % of its contact area (the 35
+plates of the table: within 0.03 % of its contact diameter). (iii) **No
+published model found** of how much earlier a drop near its critical size runs
+after a raindrop strikes it or a merge moves its contact line. Gao et al.
+("How drops start sliding over solid surfaces", Nat. Phys. 14, 2018) find that
+static lateral adhesion exceeds kinetic, and the Max Planck Institute's
+release of it says the difference is minimal on flat surfaces chemically
+similar to the liquid, but gives no model of an impact or a merge; Berejnov
+and Thorne (arXiv:physics/0609208) describe the stages of a pinned drop's
+depinning on an incline. Not implemented. (A merge that takes a drop past its critical
+size already makes it run in that step.) (iv) The published values that could
+be read are of clean laboratory surfaces, none of weathered outdoor ones: water
+on a silicon wafer's native oxide 65°/35° (Li et al. 2023), on a coated glass
+64–86°/20–38° (Liang and Tietze 2017, at the onset on a tilted plate), on PMMA
+69.9°/47.2° and 67.5°/43.8° (de la Madrid et al. 2023), on polystyrene 95°/78°
+(Li et al. 2023). Proposals in ◆7. **The mapping, fixed** (5): a material made
+from the catalogue's paper or board (`PAPER_PRESETS`, by its `preset` or, once
+edited, its `origin`) wets as paper; among the materials of no category of
+their own, a clear-coated one (`coat` ≥ 0.5) wets as paint before its metallic
+flakes or its weave are looked at; the categories keep their families (a bare
+metal stays metal, a glossy plastic plastic). In the catalogue this moves the
+metallic paint (*Metal* → *Paint*), the coated carbon fibre (*Fabric*, which
+soaks water like cloth, → *Paint*) and the paper and the cardboard (*Paint* →
+*Paper*); the car paint, the ceramic, the rubber and the leather stay paint.
+The example bottle: base plastic, body paint (85°/60°), label paper (100°/20°,
+it soaks), collar and cap metal. No pin or fixture moves with it: the engine's
+parity scenes give their angles themselves, and the page's fixtures are the
+engine's; no angle of the table moves, so U16's `tests/fixtures/u16-critical.json`
+stays as it is. U16's capture `docs/ui/physics-inspector.png` is re-recorded
+(`tools/u16-check.mjs`): the *Body* now says *gets wet as Paint* and its drops
+run at about 4.2 mm on a vertical face (it said *Metal* and 4.9 mm).
+
+**What made drops look too big**, then: the outlines of merges and hanging
+drops (fixed), S3f's beads (gone), and two things that remain (below): a drop on
+a level face never slides (the cap's top: one drop grows to cover it, 20 mm
+across at 20 s) and every drop is drawn as a spherical cap, so a large one is
+drawn twice as tall as a puddle of its volume. The quasi-static size at which
+drops start to slide agrees with the published balance.
+
+**Pins.** New: `PINNED_S3G_PEARLS = 0x533b5c9d`
+(`rt-phys/tests/wet_parts_s3g.rs`, the pearling run), natively and in
+`wasm32-wasip1` scalar and simd128. Moved, on purpose: the parity scenes had
+runners fast enough for S3f's rivulet (the S3c scene from its first step, the
+organic one at step 242, the S3e scene at step 554; checked by replaying them
+with S3f's threshold) and shaped drops whose outline is now their contact area:
+`PINNED_WET_PARTS` 0xdc58fa46 → 0xb671a2b3, `PINNED_S3F_PARTS` 0x1c5a82bb →
+0xec4c7e6b, `PINNED_S3E_PARTS` 0x8cbf1fd2 → 0xf45d1240, the images
+`PINNED_S3C_WET_4SPP` 0xfc96fb05 → 0xaf75aead, `PINNED_S3D_FLIGHT_4SPP`
+0x3ba00640 → 0x77d7f09c and its six passes (albedo 0x95e59402 → 0x0384f4a7,
+normal 0x63734817 → 0x6cbca8cd, depth 0x04dee46d → 0xd0485554, part and material
+id 0x787b3f07 → 0x2dd869f3, CoC 0x79183f06 → 0x709d4ae9),
+`PINNED_S3F_ORGANIC_4SPP` 0xbfb0b45a → 0x1008858c, `PINNED_S3E_FLOOR_4SPP`
+0xa5311343 → 0x0cee573e and `PINNED_S3E_MOVING_4SPP` 0xe7e964e9 → 0x2608cbab
+(its parts hash `PINNED_S3E_MOVING` holds: no runner there, only merges whose
+outline changed). `PINNED_S3E_MOVING`, `PINNED_S3E_DUST_4SPP` and every pin of
+S3b and before hold. All of them hold natively, in `wasm32-wasip1` scalar and
+simd128, and (S3c, S3d with its passes, S3f) in the real `rt.wasm` with the
+fixtures `s3c-wet.rsb`, `s3d-flight.rsb` and `s3f-organic.rsb`, written again.
+The record's format goes to 5 (`wpt5:`): the same bytes of another simulation.
+
+**Tests** (each checked with its mutation: it fails with it, passes without):
+- `rt-phys/tests/wet_parts_s3g.rs` (4): drops of 1.5, 2 and 3 times their
+  critical size down a vertical glass pane leave no beads, below the pearling
+  Ca, and every sample on their path is wet (mutation: S3f's threshold, 0.8 of
+  the receding angle); six runners on a 40°/12° pane leave 12 to 60 pearls whose
+  spacings have a CV past 0.3, each under 0.3 of its runner's radius, and the
+  same runners on glass none, with the pinned hash (mutations: pearls at a fixed
+  spacing; pearls up to half the runner); every drop's outline within ±10 % of
+  its contact area in every state (mutation: the outline not brought back); the
+  water table's drops depin at their critical size (mutation: no depinning
+  logged).
+- `rt-core` (`weather_s3g_tests.rs`, 2): a round, a sliding and a merging
+  outline; a hanging drop keeps its contact line, its volume (the integral) and
+  is longer along gravity (mutations: the contact line thinned as in S3f; the
+  stretch not keeping the volume). The S3f cap test now checks the contact line
+  instead of a thinner one.
+- `wet_parts.rs`: S3f's rivulet test becomes "no beads, fast or slow"; the merge
+  test checks the outline's proportions and its area; the organic pin test no
+  pearls. `rt-cli`: `--water-table` and its input.
+- `tests/s3g-water.test.ts` (6): *Fast*'s hanging drop keeps its contact line
+  and volume and `hangStretch` keeps the paraboloid's volume (mutation: *Fast*'s
+  stretch of S3f, also caught by `tests/s3f-organic.test.ts`); format 5; the
+  tip in English and Spanish; every catalogue material wets as its surface
+  (clear-coated paints paint, paper and board paper, each category its own, an
+  edited paper still paper) and the example bottle's parts as theirs
+  (mutations: the coat not looked at, as in S3c; no material as paper, as in
+  S3c; the coat looked at before the category, which made a glossy plastic
+  paint). `tests/water-dump.test.ts` (skipped by `npm test`)
+  writes the sheet's scenes.
+
+**Captures.** `docs/ui/rain-organic.png` re-recorded (`tools/s3f-strip.mjs`):
+the runner slides down through the pinned drops and gathers them with no line
+of beads behind it. `docs/ui/rain-bottle.png` (`tools/water-sheet.mjs
+--bottle-shot`): the example bottle's painted body (wetting as paint) at 10 s of
+the default rain, 30 mm across, square-on, with a 5 mm bar.
+
+**What did not fit the plan.**
+- **(iii) is not done**: no published model found (above).
+- **(iv) has no outdoor data**: only laboratory surfaces could be read.
+- **A drop on a level face has no critical size** (Furmidge: `sin α = 0`): on
+  the cap's top one drop grows by merging until it covers it. A real one would
+  spread to the rim and hold there while its angle stays within Gibbs's limits
+  ("equilibrium is possible as long as the pinning angle at the edge falls
+  between the equilibrium contact angles corresponding to the flanks of the
+  edge", as Graña Otero and Parra Fabián put it, arXiv:1908.07971; Oliver, Huh
+  and Mason, J. Colloid Interface Sci. 59, 1977), then spill over (◆8).
+- **Every drop is drawn as a spherical cap**: past the capillary length it
+  should flatten into a puddle (above; ◆8).
+- **The pearls' spacing and size have no published coefficients**: the
+  literature says only that they are smaller and, on these surfaces, few
+  (◆2, ◆3). On a uniform lab surface they leave at regular intervals
+  (Engelnkemper et al. 2016: "identical size or … periodic patterns"); the
+  irregular spacing stands for the heterogeneity of a real surface.
+- **A hanging drop sags less**: keeping its contact line and its volume, the
+  same `HANG_SAG = 0.6` at its hold now stretches it 1.15 times along gravity
+  (S3f: 1.6) (◆6).
+- **The sheet's renders use the page's default rain**, which is very heavy
+  (about 400 mm of water an hour): the drops merge fast and the plates of the
+  table are crowded.
+
+**For the verdict** (rule 11, ◆; to be decided in *Judgement calls*):
+1. ◆ The hold: keep Furmidge's `k = 1` with `w = 2a` (within the measurements,
+   at their top), or take Li et al.'s mean 0.88 (critical contact diameters 6 %
+   smaller, volumes 17 %).
+2. ◆ The pearls' size: `PEARL_RADIUS = 0.25` (each between 0.125 and 0.25 of its
+   runner's contact radius), and the test's limit of 0.3.
+3. ◆ The pearls' spacing: `PEARL_SPACING = 12` contact diameters on average,
+   exponential, and the test's CV limit of 0.3.
+4. ◆ The pearling angle: `PEARL_REAR_DEG = 10°` (Le Grand et al. 2005), with
+   `COX_VOINOV_LOG = 12` (S3f).
+5. ◆ The outline keeps the contact area by a uniform stretch in the plane (a
+   merge stays as long over as wide as it was, a hanging drop on a sloping face
+   is narrower across gravity); the ±10 % limit (it holds to 0.01 %).
+6. ◆ The hanging drop's thinning: from none at its contact line to
+   `1/√(1 + sag)` at its top, linearly; and whether `HANG_SAG` should grow to
+   keep S3f's visible stretch.
+7. ◆ The wettability table: GLASS's receding angle of 50° is above what was
+   measured on clean silica (35°, Li et al.) and on a coated glass (20 to 38°,
+   Liang and Tietze): proposal 65°/35° (on vertical glass the critical contact
+   diameter would go from 4.2 to 5.4 mm: drops would hold *larger*);
+   PLASTIC's 90°/65° lies between PMMA (70°/47°) and polystyrene (95°/78°): keep;
+   METAL, PAINT, PAPER, WOOD and FABRIC: no value found to check them against.
+8. ◆ A follow-up for level faces and large drops: a drop that spreads to the
+   rim of a level face holds there within Gibbs's limits and spills over; a drop
+   past the capillary length drawn (and weighed) as a puddle
+   `2 √(γ/ρg) sin(θ/2)` tall.
+9. ◆ The mapping's thresholds: a clear coat of 0.5 or more makes a material of
+   no category of its own wet as paint; paper and board are known by their
+   catalogue keys only (an imported paper-like material wets as paint).
+
 ## M5 · Thread-by-thread weave and real fuzz — **Opus**, verdict **Fable** (after E6 and E9; the fuzz after S8)
 
 Request: fabric type (*plain weave*, twill…) simulated
@@ -14820,6 +15133,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **S3d** · What remains of drops and dust on the parts: dripping and splashes that fall through the air, dust motes, dynamic parts getting wet, the studio floor, finer samples on the set, the drops' part id and the meter text (S3c, “S3d”). **Done in part**: the meter text, the drops' part id in the passes and the dripping and splashes that fall through the air (in the simulation, the engine and *Fast*); the dust motes, moving parts, the studio floor and the set's fine samples, **S3e** (see S3d and S3e, after S3c).
 - **S3e** · The dust motes, dynamic parts that get wet as they move, the studio floor that gets wet and dusty, and the set's fine samples (S3d, “S3e”); and the wind pushing the drops in the air (S3d ◆2). **Done**: see S3e, after S3d; its ◆ decided in *Judgement calls*.
 - **S3f** · Organic drops (the owner's request of 2026-10-18): drops that grow to their critical size and let go, gather the drops on their path, merge with a neck and no jump, leave a rivulet on a steep face, take shapes from their physics (in the engine, `WETP`'s shape tail with bit 10, and in *Fast*), and hang, neck and drip one drop at a time. **Done**: see S3f, after S3e; its ◆ decided in *Judgement calls*.
+- **S3g** · Water that reads as water (the owner's report of 2026-10-18: drops that leave trails like little beads, and get very big before they slide): the measurements against the literature, runners that leave their trail and no beads (pearls only past the published transition, sparse, small and irregular), outlines that keep the contact area. **Done**: see S3g, after S3f; its ◆ decided in *Judgement calls*.
 
 - **O2** (the traced-lens sheet). Accepted as it stands:
   - which lenses give cat's eye, bubble, creamy and swirl;
@@ -14922,6 +15236,7 @@ it changes mean luminance and saturation by less than 0.1 %).
 - **X7** (the AI through an API). Accepted as it stands: ◆1, both presets ship (Stability SD 3.5 image-to-image and OpenAI image edits), each written from the service's published OpenAPI document and marked *not verified* in the interface until a run against the live service confirms it; ◆2, the depth and edge passes stay off by default, so only the image leaves the computer unless the user asks; ◆3, 120 s per call, 2 tries and a 30 s cap on `Retry-After`: the cost of a render (tiles × attempts × tries) is bounded and the setting says each try may be charged; ◆4, the consent wording, asked in place under the switch, per host and revocable; ◆5, in the browser the key lives in local storage with the warning shown under it; ◆6, plain `http` only to this computer: a service on the local network needs `https`. Plain `http` to a private address, with its own warning, is left for a later phase if it is asked for.
 - **S3e** (the studio floor, moving parts, fine samples, dust motes, the wind on the drops in the air, side edges). Accepted as it stands: ◆1, a drop on a moving part feels gravity minus the part's acceleration, the jolt of a landing included, and meets the rain at the rain's velocity minus the part's: the frame is the part's, as it physically is; ◆2, the floor's rectangle is the union of the feeding effects' regions, at z = 0; ◆3, 2 mm floor cells within 250,000; ◆4, the floor is a film, with no puddles and no splashes off it: **puddles and the splashes off the floor are left for a later phase**, if they are asked for; ◆5, the shadow catcher keeps its layers (cover for dust and snow, a water Fresnel film as a mirror of roughness 0.03); ◆6, the wet catcher darkens as a porous grey of 0.5 by `0.5^(wet×0.5)`, and a visible floor is a matte diffuse under its layers; ◆7, the fine samples of 2 mm where a shadow edge crosses, within 300,000 and up to 4,095 steps a side: the strip shows the coarse sawtooth gone and a 2 mm one left only at macro framing; ◆8, the motes (threshold 0.3, `MOTE_SHARE` 0.02, the octahedron a third of its radius out of the surface, dry dust, 20,000 at most); ◆9, the air of the drops in the air is the rain effects' wind weighted by their densities; ◆10, a drop at a sloping side edge runs along it with its face's hold before it would hang, and the lowest edge and corner keep S3f ◆6. That the studio floor stays dry under a set's own floor is right: the set's floor is a part, and it gets wet as one.
 - **U16** (the physics of each part in one place). Accepted as it stands: ◆1, `WATER_REPELLENT` at 120° advancing and 105° receding, no soak and no darkening, from Ray and Bartell (1953): a wax or coating on a product, whose drops run off at about 1.9 mm on a vertical face; ◆2, two flags (`PART_DRY`, no water; `PART_NO_DUST`, no dust or snow), and a drop in the air that meets a dry part is gone and counted as lost water; ◆3, the size line as it is (twice the critical contact radius on a vertical face, one decimal, a range for several families, *It keeps dry* when all are dry); ◆4, the drawer's counts as they are; ◆5, friction and bounciness for a static part too, since S2 uses both; ◆6, the mixed switch and that a click turns every part on; ◆7, the Spanish names (*Movimiento*, *Intemperie*, *Se moja*, *Coge polvo y nieve*, *Superficie*, *Hidrófugo*); ◆8, the pointer under the material's name. The role goes under its label, so that the four roles fit (the lead's change at review). That the example's metallic paint wets as *Metal* and its paper label as *Paint* (`wettabilityFamilyOf`, S3c) goes to **S3g** with the rest of the wettability table.
+- **S3g** (water that reads as water). Accepted: ◆1, Furmidge's k stays 1 (inside the published spread); ◆2–◆4, pearls only past a rear angle of 10°, 0.25 of the runner's radius, exponential spacing of 12 contact diameters (so rain on glass, metal, paint and plastic leaves a continuous streak); ◆5, the outline keeps the contact area by a uniform stretch, within ±10 % (measured 0.01 %); ◆6, the hanging drop's thinning as it is, `HANG_SAG` unchanged; ◆9, the mapping (clear coat ≥ 0.5 wets as Paint, paper by catalogue key). **Not accepted**: ◆7, glass to 65/35, since it makes drops on vertical glass larger (4.2 → 5.4 mm), against the owner's report that they grow too big; the table stays as S3b decided. ◆8, drops held at the rim of a level face and spilling over, and puddles past the capillary length, go to a later phase if they are asked for.
 
 **1.9** (double bar in aintfilm's LUT carousel) belongs to another
 repository; the triage notes that Repackshot also draws the plugin's recipe

@@ -5,6 +5,11 @@ roadmap phase (`ROADMAP.md`) each line comes from.
 
 ## Unreleased
 
+### Scene and ambient
+
+- **Water that reads as water**: a drop running down a part leaves a continuous wet streak behind it instead of a dotted line of equal beads; only a drop running fast over a surface water wets well (paper, for example) sheds a few small pearls, at irregular distances (S3g).
+- **Drops drawn their real size**: the outline of every drop is its contact with the surface in every state, so two drops that just merged and a drop hanging from an edge no longer look larger (or smaller) than they are; a hanging drop stays where its contact line is and stretches below it (S3g).
+
 ## v0.1.27 — 2026-10-20
 
 ### Updates
